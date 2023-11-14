@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 """Preflight and migration helper for Qdrant embedding dimension upgrades.
 
 Default usage runs a non-destructive preflight:
@@ -94,11 +95,7 @@ def _extract_vectors_config(info: Any) -> Any:
         if params is not None:
             return getattr(params, "vectors", None)
     if isinstance(info, dict):
-        return (
-            info.get("config", {})
-            .get("params", {})
-            .get("vectors")
-        )
+        return info.get("config", {}).get("params", {}).get("vectors")
     return None
 
 
@@ -298,6 +295,7 @@ async def _migrate_collection(
         f"[migrated] {collection_name}: total={total_points}, "
         f"migrated={migrated_points}, skipped={len(skipped_ids)}"
     )
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(

@@ -145,9 +145,15 @@ class TestQdrantMemoryInitialize:
         mock_client.get_collection = AsyncMock(return_value=info)
 
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
-            with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
+            with patch(
+                "zetherion_ai.memory.qdrant.AsyncQdrantClient",
+                return_value=mock_client,
+            ):
                 with patch("zetherion_ai.memory.qdrant.get_embeddings_client"):
-                    with patch("zetherion_ai.memory.qdrant.get_embedding_dimension", return_value=3072):
+                    with patch(
+                        "zetherion_ai.memory.qdrant.get_embedding_dimension",
+                        return_value=3072,
+                    ):
                         memory = QdrantMemory()
                         with pytest.raises(ValueError, match="vector size mismatch"):
                             await memory.initialize()

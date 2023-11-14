@@ -93,11 +93,7 @@ class QdrantMemory:
                 vectors = getattr(params, "vectors", None)
 
         if vectors is None and isinstance(info, dict):
-            vectors = (
-                info.get("config", {})
-                .get("params", {})
-                .get("vectors")
-            )
+            vectors = info.get("config", {}).get("params", {}).get("vectors")
 
         return self._extract_vector_size(vectors)
 

@@ -1,0 +1,13 @@
+{
+  "status": "success",
+  "run_context": "local",
+  "head_sha": "local",
+  "suites": {
+    "docker_e2e": {
+      "status": "passed"
+    },
+    "discord_required_e2e": {
+      "status": "passed"
+    }
+  }
+}
