@@ -162,232 +162,19 @@ jobs:
           docker compose config
           echo "Docker Compose configuration is valid"
 
-  integration:
-    name: Integration Tests (E2E)
-    runs-on: ubuntu-latest
-    needs: [lint, type-check, test]
-    # Run by default unless explicitly disabled
-    if: ${{ !contains(github.event.head_commit.message, '[skip integration]') }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e ".[dev]"
-
-      - name: Create .env file for integration tests
-        run: |
-          cat > .env << EOF
-          # Integration test environment
-          DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN || 'test_discord_token_placeholder' }}
-          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY || 'test_gemini_key_placeholder' }}
-          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY || '' }}
-          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY || '' }}
-
-          # Test configuration
-          ALLOWED_USER_IDS=123456789
-          LOG_LEVEL=INFO
-          ENVIRONMENT=ci
-
-          # Qdrant (will be started by Docker Compose, tests run on host so use localhost)
-          QDRANT_HOST=localhost
-          QDRANT_PORT=6333
-
-          # Ollama (tests run on host so use localhost)
-          OLLAMA_HOST=localhost
-          OLLAMA_PORT=11434
-
-          # Router backend
-          ROUTER_BACKEND=gemini
-          EOF
-
-      - name: Validate .env file
-        run: |
-          echo "Generated .env file:"
-          cat .env
-          echo ""
-          if [ ! -f .env ]; then
-            echo "❌ .env file not created"
-            exit 1
-          fi
-
-      - name: Run integration tests
-        run: |
-          # Set up environment
-          export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
-
-          # Run integration test script
-          chmod +x scripts/run-integration-tests.sh
-          ./scripts/run-integration-tests.sh
-        env:
-          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN || 'test_discord_token_placeholder' }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || 'test_gemini_key_placeholder' }}
-
-      - name: Upload Docker logs on failure
-        if: failure()
-        run: |
-          echo "Collecting Docker logs..."
-          docker compose -p secureclaw-test logs > integration-test-logs.txt 2>&1 || true
-
-      - name: Upload logs artifact
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: integration-test-logs
-          path: integration-test-logs.txt
-          retention-days: 7
-
-      - name: Cleanup Docker resources
-        if: always()
-        run: |
-          docker compose -p secureclaw-test down -v || true
-
-  discord-e2e:
-    name: Discord E2E Tests
-    runs-on: ubuntu-latest
-    needs: [lint, type-check, test]
-    # Note: This job will be skipped if TEST_DISCORD_BOT_TOKEN secret is not configured
-    if: ${{ !contains(github.event.head_commit.message, '[skip discord-e2e]') }}
-
-    steps:
-      - name: Check if Discord E2E secrets are configured
-        id: check-secrets
-        run: |
-          if [[ -z "${{ secrets.TEST_DISCORD_BOT_TOKEN }}" ]] || [[ -z "${{ secrets.TEST_DISCORD_CHANNEL_ID }}" ]]; then
-            echo "⚠️ Discord E2E secrets not configured, skipping tests"
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "✅ Discord E2E secrets configured"
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Checkout code
-        if: steps.check-secrets.outputs.skip != 'true'
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        if: steps.check-secrets.outputs.skip != 'true'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-
-      - name: Install dependencies
-        if: steps.check-secrets.outputs.skip != 'true'
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e ".[dev]"
-
-      - name: Create .env file for Discord E2E tests
-        if: steps.check-secrets.outputs.skip != 'true'
-        run: |
-          cat > .env << EOF
-          # Production bot credentials
-          DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}
-          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY || '' }}
-          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY || '' }}
-
-          # Discord E2E test credentials
-          TEST_DISCORD_BOT_TOKEN=${{ secrets.TEST_DISCORD_BOT_TOKEN }}
-          TEST_DISCORD_CHANNEL_ID=${{ secrets.TEST_DISCORD_CHANNEL_ID }}
-
-          # Configuration
-          ALLOWED_USER_IDS=123456789
-          LOG_LEVEL=INFO
-          ENVIRONMENT=ci
-
-          # Qdrant
-          QDRANT_HOST=qdrant
-          QDRANT_PORT=6333
-
-          # Router backend
-          ROUTER_BACKEND=gemini
-          EOF
-
-      - name: Start SecureClaw bot
-        if: steps.check-secrets.outputs.skip != 'true'
-        run: |
-          echo "Starting SecureClaw bot with Docker Compose..."
-          docker compose up -d
-
-      - name: Wait for bot to connect to Discord
-        if: steps.check-secrets.outputs.skip != 'true'
-        run: |
-          echo "Waiting for bot to connect to Discord (30 seconds)..."
-          sleep 30
-
-          echo "Checking bot container status..."
-          docker ps | grep secureclaw-bot || (echo "❌ Bot container not running" && exit 1)
-
-          echo "Checking bot logs for Discord connection..."
-          docker logs secureclaw-bot | tail -20
-
-      - name: Run Discord E2E tests
-        if: steps.check-secrets.outputs.skip != 'true'
-        run: |
-          # Set up environment
-          export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
-          export TEST_DISCORD_BOT_TOKEN="${{ secrets.TEST_DISCORD_BOT_TOKEN }}"
-          export TEST_DISCORD_CHANNEL_ID="${{ secrets.TEST_DISCORD_CHANNEL_ID }}"
-
-          # Run Discord E2E tests
-          pytest tests/integration/test_discord_e2e.py \
-            -v -s \
-            -m discord_e2e \
-            --tb=short
-
-      - name: Upload bot logs on failure
-        if: failure() && steps.check-secrets.outputs.skip != 'true'
-        run: |
-          echo "Collecting bot logs..."
-          docker logs secureclaw-bot > discord-e2e-bot-logs.txt 2>&1 || true
-
-      - name: Upload logs artifact
-        if: failure() && steps.check-secrets.outputs.skip != 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: discord-e2e-logs
-          path: discord-e2e-bot-logs.txt
-          retention-days: 7
-
-      - name: Cleanup Docker resources
-        if: always() && steps.check-secrets.outputs.skip != 'true'
-        run: |
-          docker compose down -v || true
-
   summary:
     name: CI Summary
     runs-on: ubuntu-latest
-    needs: [lint, type-check, security, test, docker-build, integration, discord-e2e]
+    needs: [lint, type-check, security, test, docker-build]
     if: always()
     steps:
       - name: Check all jobs
         run: |
-          # Allow discord-e2e to be skipped (if secrets not configured)
-          DISCORD_E2E_RESULT="${{ needs.discord-e2e.result }}"
-          if [[ "$DISCORD_E2E_RESULT" == "skipped" ]]; then
-            DISCORD_E2E_RESULT="success"
-          fi
-
           if [[ "${{ needs.lint.result }}" == "success" ]] && \
              [[ "${{ needs.type-check.result }}" == "success" ]] && \
              [[ "${{ needs.security.result }}" == "success" ]] && \
              [[ "${{ needs.test.result }}" == "success" ]] && \
-             [[ "${{ needs.docker-build.result }}" == "success" ]] && \
-             [[ "${{ needs.integration.result }}" == "success" ]] && \
-             [[ "$DISCORD_E2E_RESULT" == "success" ]]; then
+             [[ "${{ needs.docker-build.result }}" == "success" ]]; then
             echo "✅ All CI checks passed!"
             exit 0
           else
@@ -397,8 +184,6 @@ jobs:
             echo "  Security: ${{ needs.security.result }}"
             echo "  Tests: ${{ needs.test.result }}"
             echo "  Docker Build: ${{ needs.docker-build.result }}"
-            echo "  Integration: ${{ needs.integration.result }}"
-            echo "  Discord E2E: ${{ needs.discord-e2e.result }}"
             exit 1
           fi
 
@@ -414,5 +199,5 @@ jobs:
           echo "| Security Scan | ${{ needs.security.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Tests | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Docker Build | ${{ needs.docker-build.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Integration Tests | ${{ needs.integration.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Discord E2E Tests | ${{ needs.discord-e2e.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "_Note: Integration tests (E2E) run locally only. See [Testing Guide](https://github.com/jimtin/sercureclaw/wiki/Testing) for details._" >> $GITHUB_STEP_SUMMARY

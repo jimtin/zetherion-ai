@@ -1,25 +1,42 @@
 # GitHub Secrets Configuration
 
-This document lists all GitHub secrets required for SecureClaw's CI/CD pipeline.
+This document lists all GitHub secrets for SecureClaw's CI/CD pipeline.
+
+> **⚠️ Important:** As of v1.1.0, **integration tests run locally only**. GitHub CI runs only unit tests, linting, type checking, security scans, and Docker builds. **No secrets are required** for CI/CD to pass.
 
 ## 📋 Quick Reference
 
 | Secret Name | Required? | Purpose | Used In |
 |-------------|-----------|---------|---------|
-| `DISCORD_TOKEN` | ✅ **Required** | Production bot token | Integration tests, Discord E2E tests |
-| `GEMINI_API_KEY` | ✅ **Required** | Gemini API for routing & embeddings | Integration tests, Discord E2E tests |
-| `ANTHROPIC_API_KEY` | ⚠️ Optional | Claude API for complex tasks | Integration tests, Discord E2E tests |
-| `OPENAI_API_KEY` | ⚠️ Optional | OpenAI API for complex tasks | Integration tests, Discord E2E tests |
-| `TEST_DISCORD_BOT_TOKEN` | ⚠️ Optional | Test bot token for E2E tests | Discord E2E tests only |
-| `TEST_DISCORD_CHANNEL_ID` | ⚠️ Optional | Test channel ID for E2E tests | Discord E2E tests only |
+| `DISCORD_TOKEN` | ⚠️ Optional | Production bot token | Local integration tests only |
+| `GEMINI_API_KEY` | ⚠️ Optional | Gemini API for routing & embeddings | Local integration tests only |
+| `ANTHROPIC_API_KEY` | ⚠️ Optional | Claude API for complex tasks | Local integration tests only |
+| `OPENAI_API_KEY` | ⚠️ Optional | OpenAI API for complex tasks | Local integration tests only |
+| `TEST_DISCORD_BOT_TOKEN` | ⚠️ Optional | Test bot token for E2E tests | Local Discord E2E tests only |
+| `TEST_DISCORD_CHANNEL_ID` | ⚠️ Optional | Test channel ID for E2E tests | Local Discord E2E tests only |
+
+**All secrets are now optional** - they're only needed if you want to run integration tests locally.
 
 ---
 
-## 🎯 Required Secrets
+## ✅ CI/CD Pipeline (No Secrets Required)
+
+The GitHub Actions CI/CD pipeline runs:
+- ✅ Linting & Formatting
+- ✅ Type Checking
+- ✅ Security Scanning
+- ✅ Unit Tests (Python 3.12 & 3.13)
+- ✅ Docker Build Test
+
+**These require no secrets and will pass out of the box.**
+
+---
+
+## 🧪 Local Integration Testing (Optional)
 
 ### 1. DISCORD_TOKEN
 
-**Purpose:** Your production Discord bot token for integration testing.
+**Purpose:** Your production Discord bot token for local integration testing.
 
 **How to get it:**
 1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
@@ -197,12 +214,20 @@ Value: <your-channel-id-here>
 
 ## 🚀 Quick Setup Guide
 
-### Minimum Required Setup (Integration Tests Only)
+### For GitHub CI/CD (No Setup Needed!)
 
-To run integration tests (Docker services, mocked Discord):
+**No secrets required!** The CI/CD pipeline runs unit tests, linting, type checking, security scans, and Docker builds - all without any secrets.
+
+Just push your code and CI will pass automatically.
+
+---
+
+### For Local Integration Tests (Optional)
+
+If you want to run integration tests locally, add these to your `.env` file:
 
 ```bash
-# Required
+# Required for local integration tests
 DISCORD_TOKEN=<your-production-bot-token>
 GEMINI_API_KEY=<your-gemini-api-key>
 
@@ -211,33 +236,35 @@ ANTHROPIC_API_KEY=<your-claude-api-key>
 OPENAI_API_KEY=<your-openai-api-key>
 ```
 
-**Result:** ✅ Lint, Type Check, Security, Tests, Docker Build, Integration Tests will pass
+**Run with:** `./scripts/run-integration-tests.sh`
 
 ---
 
-### Full Setup (All Tests Including Discord E2E)
+### For Local Discord E2E Tests (Optional)
 
-To run all tests including real Discord API tests:
+To run Discord E2E tests locally with real Discord API:
 
 ```bash
-# Required
+# Required for Discord E2E tests
 DISCORD_TOKEN=<your-production-bot-token>
 GEMINI_API_KEY=<your-gemini-api-key>
+TEST_DISCORD_BOT_TOKEN=<your-test-bot-token>
+TEST_DISCORD_CHANNEL_ID=<your-test-channel-id>
 
 # Optional but recommended
 ANTHROPIC_API_KEY=<your-claude-api-key>
 OPENAI_API_KEY=<your-openai-api-key>
-
-# For Discord E2E tests
-TEST_DISCORD_BOT_TOKEN=<your-test-bot-token>
-TEST_DISCORD_CHANNEL_ID=<your-test-channel-id>
 ```
 
-**Result:** ✅ All CI/CD jobs pass including Discord E2E tests
+**Run with:** `pytest tests/integration/test_discord_e2e.py -v -s -m discord_e2e`
 
 ---
 
-## 📝 Adding Secrets to GitHub
+## 📝 Adding Secrets to GitHub (Optional)
+
+> **Note:** GitHub secrets are **optional** now since integration tests run locally only.
+
+If you want to add secrets for future use:
 
 ### Via GitHub Web UI
 
@@ -252,11 +279,9 @@ TEST_DISCORD_CHANNEL_ID=<your-test-channel-id>
 ### Via GitHub CLI
 
 ```bash
-# Required secrets
+# All secrets are optional for local testing
 gh secret set DISCORD_TOKEN
 gh secret set GEMINI_API_KEY
-
-# Optional secrets
 gh secret set ANTHROPIC_API_KEY
 gh secret set OPENAI_API_KEY
 gh secret set TEST_DISCORD_BOT_TOKEN
@@ -267,25 +292,16 @@ You'll be prompted to paste the value for each secret.
 
 ---
 
-## 🔍 Verifying Secrets
+## 🔍 Verifying CI/CD
 
-### Check Which Secrets Are Set
+### Check CI Status
 
-```bash
-gh secret list
-```
+Push a commit and check the GitHub Actions tab. You should see:
 
-### Test in CI
+### Expected CI Output (No Secrets Needed)
 
-Push a commit and check the GitHub Actions tab. Look for:
+All CI jobs should pass without any secrets:
 
-- ✅ **Integration Tests**: Should pass with just `DISCORD_TOKEN` and `GEMINI_API_KEY`
-- ⏭️ **Discord E2E Tests**: Will be skipped if `TEST_DISCORD_BOT_TOKEN` not set
-- 📊 **Summary**: Shows which tests ran and which were skipped
-
-### Example Output
-
-**With minimum secrets:**
 ```
 ✅ Linting & Formatting
 ✅ Type Checking
@@ -293,20 +309,9 @@ Push a commit and check the GitHub Actions tab. Look for:
 ✅ Unit Tests (Python 3.12)
 ✅ Unit Tests (Python 3.13)
 ✅ Docker Build
-✅ Integration Tests
-⏭️ Discord E2E Tests (skipped - secrets not configured)
-```
+✅ CI Summary
 
-**With all secrets:**
-```
-✅ Linting & Formatting
-✅ Type Checking
-✅ Security Scanning
-✅ Unit Tests (Python 3.12)
-✅ Unit Tests (Python 3.13)
-✅ Docker Build
-✅ Integration Tests
-✅ Discord E2E Tests
+Note: Integration tests (E2E) run locally only.
 ```
 
 ---
@@ -333,59 +338,53 @@ Push a commit and check the GitHub Actions tab. Look for:
 
 ## 💰 Cost Estimates
 
-### Monthly Cost for CI/CD Only
+### CI/CD Cost: $0/month
 
-**Assuming 50 pushes/month:**
+**GitHub CI/CD is completely free!** No API keys or secrets required.
+
+### Local Integration Testing Cost
+
+If you run integration tests locally:
 
 | Service | Usage | Cost |
 |---------|-------|------|
-| Gemini API | 100-200 requests/run | **Free** (within free tier) |
-| Anthropic Claude | 50-100 requests/run | ~$5-10/month |
-| OpenAI GPT-4o | 50-100 requests/run | ~$3-7/month |
+| Gemini API | 10-20 requests/test run | **Free** (within free tier) |
+| Anthropic Claude | 5-10 requests/test run | ~$0.10-0.50/run |
+| OpenAI GPT-4o | 5-10 requests/test run | ~$0.05-0.30/run |
 | Discord API | Unlimited | **Free** |
 
-**Total: $0-17/month** depending on which APIs you enable.
-
-### Reducing Costs
-
-1. **Use only Gemini**: Set only `DISCORD_TOKEN` and `GEMINI_API_KEY`
-   - Cost: **$0/month** ✅
-   - Trade-off: Less comprehensive testing
-
-2. **Skip Discord E2E**: Don't set `TEST_DISCORD_BOT_TOKEN`
-   - Saves: API calls to Discord + LLM costs for real responses
-   - Trade-off: No real Discord API testing
-
-3. **Use `[skip integration]` in commit messages**: Skip integration tests for docs-only changes
-   - Example: `git commit -m "docs: update README [skip integration]"`
+**Typical cost:** $0-1/month for occasional local testing.
 
 ---
 
 ## 🆘 Troubleshooting
 
-### "Discord E2E Tests" not running
+### CI is failing
 
-**Cause:** `TEST_DISCORD_BOT_TOKEN` or `TEST_DISCORD_CHANNEL_ID` not set.
-
-**Solution:** These are optional. If you want to run E2E tests, add both secrets.
-
-### "Integration Tests" failing with auth errors
-
-**Cause:** `DISCORD_TOKEN` or `GEMINI_API_KEY` invalid or missing.
+**Cause:** Usually linting, type checking, or unit test failures.
 
 **Solution:**
-1. Verify secrets are set: `gh secret list`
+1. Run locally: `pytest tests/ -m "not integration"`
+2. Check pre-commit hooks: `pre-commit run --all-files`
+3. Review GitHub Actions logs for specific error
+
+### Local integration tests failing with auth errors
+
+**Cause:** `DISCORD_TOKEN` or `GEMINI_API_KEY` invalid or missing in `.env` file.
+
+**Solution:**
+1. Verify `.env` file exists and has required keys
 2. Regenerate tokens if expired
-3. Check for typos in secret names (case-sensitive!)
+3. Check for typos in environment variable names (case-sensitive!)
 
-### API rate limit errors
+### API rate limit errors (local testing)
 
-**Cause:** Too many CI runs hitting API limits.
+**Cause:** Too many local test runs hitting API limits.
 
 **Solution:**
-1. Use `[skip integration]` for non-code changes
-2. Increase API quotas (Gemini: upgrade plan)
-3. Add delays between retries in code
+1. Wait for quotas to reset (Gemini: 60 seconds for per-minute limits)
+2. Increase API quotas (Gemini: upgrade from free tier)
+3. Run fewer tests: `pytest tests/integration/test_e2e.py::test_simple_question -v`
 
 ### "Secret not found" errors
 
