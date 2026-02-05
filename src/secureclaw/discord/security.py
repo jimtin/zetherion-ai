@@ -1,5 +1,6 @@
 """Discord rate limiting and security utilities."""
 
+import re
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -61,8 +62,7 @@ class RateLimiter:
             warning = None
             if now - state.last_warning > self._warning_cooldown:
                 warning = (
-                    f"You're sending messages too quickly. "
-                    f"Please wait a moment before trying again."
+                    "You're sending messages too quickly. Please wait a moment before trying again."
                 )
                 state.last_warning = now
             return False, warning
@@ -123,7 +123,7 @@ class UserAllowlist:
 
 
 def detect_prompt_injection(content: str) -> bool:
-    """Basic detection of common prompt injection patterns.
+    """Enhanced detection of common prompt injection patterns using regex.
 
     Args:
         content: The message content to check.
@@ -134,30 +134,68 @@ def detect_prompt_injection(content: str) -> bool:
     # Convert to lowercase for checking
     lower_content = content.lower()
 
-    # Common injection patterns
-    injection_patterns = [
-        "ignore previous instructions",
-        "ignore all previous",
-        "disregard your instructions",
-        "forget your instructions",
-        "you are now",
-        "act as if",
-        "pretend you are",
-        "new instructions:",
-        "system prompt:",
-        "override:",
-        "jailbreak",
-        "dan mode",
-        "developer mode enable",
+    # Regex patterns for more robust detection (handles spacing, punctuation variations)
+    regex_patterns = [
+        r"\bignore\s+(?:all\s+)?(?:previous|prior|earlier)\s+(?:instructions?|commands?|prompts?)",
+        r"\bdisregard\s+(?:your|all|the)\s+(?:instructions?|commands?|rules?)",
+        r"\bforget\s+(?:your|all|the)\s+(?:instructions?|commands?|rules?|prompts?)",
+        r"\boverride\s+(?:your|all|the|system)\s+(?:instructions?|commands?|settings?)",
+        r"\byou\s+are\s+now\s+(?:a|an|in)",
+        r"\bact\s+as\s+(?:if|though|a|an)",
+        r"\bpretend\s+(?:you\s+are|to\s+be|that)",
+        r"\bnew\s+(?:instructions?|commands?|rules?)[\s:]+",
+        r"\bsystem\s+(?:prompt|message|instruction)[\s:]+",
+        r"\bjailbreak(?:ing)?",
+        r"\bdan\s+mode",
+        r"\bdeveloper\s+mode\s+(?:enable|on|activated?)",
+        r"\brole[\s:]?\s*system",
+        r"\bbegin\s+new\s+(?:task|role|persona)",
+        r"\bignor[ei]ng\s+safeguards?",
+        r"\bdisable\s+(?:filters?|safety|restrictions?)",
+        r"\bbypass\s+(?:filters?|safety|restrictions?)",
     ]
 
-    for pattern in injection_patterns:
-        if pattern in lower_content:
+    # Check regex patterns
+    for pattern in regex_patterns:
+        match = re.search(pattern, lower_content, re.IGNORECASE)
+        if match:
             log.warning(
                 "potential_prompt_injection_detected",
                 pattern=pattern,
+                matched_text=match.group(0),
                 content_preview=content[:100],
             )
             return True
+
+    # Additional heuristic: check for excessive role-play markers
+    roleplay_markers = lower_content.count("[") + lower_content.count("(system")
+    if roleplay_markers > 5:
+        log.warning(
+            "potential_prompt_injection_detected",
+            reason="excessive_roleplay_markers",
+            count=roleplay_markers,
+            content_preview=content[:100],
+        )
+        return True
+
+    # Check for Unicode obfuscation attempts (homoglyphs)
+    # Normalize and check if significantly different from original
+    try:
+        import unicodedata
+
+        normalized = unicodedata.normalize("NFKC", content)
+        if (
+            len(normalized) != len(content)
+            and abs(len(normalized) - len(content)) > len(content) * 0.1
+        ):
+            log.warning(
+                "potential_prompt_injection_detected",
+                reason="unicode_obfuscation_detected",
+                content_preview=content[:100],
+            )
+            return True
+    except Exception as e:
+        # Skip unicode check if it fails (graceful degradation)
+        log.debug("unicode_normalization_check_skipped", error=str(e))
 
     return False

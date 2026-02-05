@@ -41,6 +41,18 @@ ENV/
 
 # Data directory (local only)
 data/
+qdrant_storage/
+ollama_models/
+
+# Logs
+logs/
+*.log
+
+# Git hook logs (from setup-git-hooks.sh)
+git-hook-logs/
+
+# Ollama assessment marker
+.ollama_assessed
 
 # Test cache
 .pytest_cache/
@@ -52,3 +64,4 @@ htmlcov/
 .coverage
 .coverage.*
 coverage.xml
+docs/implementation_plan.md

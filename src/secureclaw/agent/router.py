@@ -1,7 +1,10 @@
 """Message router using Gemini Flash for intent classification."""
 
+import json
+import re
 from dataclasses import dataclass
 from enum import Enum
+from typing import Protocol
 
 from google import genai
 
@@ -10,8 +13,21 @@ from secureclaw.logging import get_logger
 
 log = get_logger("secureclaw.agent.router")
 
-# Fast, cheap model for routing decisions
-ROUTER_MODEL = "gemini-2.0-flash"
+
+class RouterBackend(Protocol):
+    """Protocol defining the interface for router backends."""
+
+    async def classify(self, message: str) -> "RoutingDecision":
+        """Classify a message."""
+        ...
+
+    async def generate_simple_response(self, message: str) -> str:
+        """Generate a simple response."""
+        ...
+
+    async def health_check(self) -> bool:
+        """Check backend health."""
+        ...
 
 
 class MessageIntent(Enum):
@@ -38,16 +54,18 @@ ROUTER_PROMPT = """You are a message router. Classify the user's message into on
 
 1. SIMPLE_QUERY - Greetings, quick factual questions, simple requests
    Examples: "Hi", "What's 2+2?", "What day is it?", "Thanks!"
-   
+
 2. COMPLEX_TASK - Code generation, detailed analysis, creative writing, multi-step tasks
-   Examples: "Write a Python script to...", "Explain how transformers work in detail", "Help me debug this code..."
-   
+   Examples: "Write a Python script to...", "Explain how transformers work in detail", \
+"Help me debug this code..."
+
 3. MEMORY_STORE - User explicitly wants you to remember something
    Examples: "Remember that I prefer dark mode", "My birthday is March 15", "Note that..."
-   
+
 4. MEMORY_RECALL - User asking about past conversations or stored information
-   Examples: "What did we talk about yesterday?", "What do you know about me?", "What are my preferences?"
-   
+   Examples: "What did we talk about yesterday?", "What do you know about me?", \
+"What are my preferences?"
+
 5. SYSTEM_COMMAND - Bot commands, settings, help requests
    Examples: "Help", "What can you do?", "List commands", "Settings"
 
@@ -56,15 +74,15 @@ Respond with ONLY a JSON object:
 """
 
 
-class MessageRouter:
-    """Routes messages to appropriate handlers using Gemini Flash."""
+class GeminiRouterBackend:
+    """Router backend using Gemini Flash."""
 
     def __init__(self) -> None:
-        """Initialize the router with Gemini Flash."""
+        """Initialize the Gemini router backend."""
         settings = get_settings()
         self._client = genai.Client(api_key=settings.gemini_api_key.get_secret_value())
-        self._model = ROUTER_MODEL
-        log.info("message_router_initialized", model=self._model)
+        self._model = settings.router_model
+        log.info("gemini_router_initialized", model=self._model)
 
     async def classify(self, message: str) -> RoutingDecision:
         """Classify a message and determine routing.
@@ -85,22 +103,53 @@ class MessageRouter:
                 },
             )
 
-            # Parse the response
-            import json
-            result_text = response.text.strip()
-            
-            # Handle potential markdown code blocks
-            if result_text.startswith("```"):
-                result_text = result_text.split("```")[1]
-                if result_text.startswith("json"):
-                    result_text = result_text[4:]
-            result_text = result_text.strip()
-            
-            result = json.loads(result_text)
+            result_text = (response.text or "").strip()
 
-            intent = MessageIntent(result["intent"].lower())
+            # Extract JSON using regex to handle markdown code blocks robustly
+            json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", result_text, re.DOTALL)
+            if json_match:
+                result_text = json_match.group(1)
+            else:
+                # Try to find raw JSON object
+                json_match = re.search(r"\{.*?\}", result_text, re.DOTALL)
+                if json_match:
+                    result_text = json_match.group(0)
+
+            result_text = result_text.strip()
+
+            # Parse JSON
+            try:
+                result = json.loads(result_text)
+            except json.JSONDecodeError as e:
+                log.warning(
+                    "json_parse_failed",
+                    error=str(e),
+                    response_text=result_text[:200],
+                )
+                raise ValueError(f"Invalid JSON response: {e}") from e
+
+            # Validate schema
+            if "intent" not in result:
+                raise ValueError("Missing 'intent' field in response")
+
+            # Parse intent with error handling
+            try:
+                intent = MessageIntent(result["intent"].lower())
+            except (ValueError, KeyError) as e:
+                log.warning(
+                    "invalid_intent",
+                    intent_value=result.get("intent"),
+                    error=str(e),
+                )
+                raise ValueError(f"Invalid intent value: {result.get('intent')}") from e
+
             confidence = float(result.get("confidence", 0.8))
             reasoning = result.get("reasoning", "")
+
+            # Validate confidence range
+            if not 0.0 <= confidence <= 1.0:
+                log.warning("invalid_confidence", confidence=confidence)
+                confidence = max(0.0, min(1.0, confidence))
 
             # Determine if we need Claude (expensive) or can use Flash (cheap)
             use_claude = intent == MessageIntent.COMPLEX_TASK and confidence > 0.7
@@ -121,13 +170,44 @@ class MessageRouter:
 
             return decision
 
+        except json.JSONDecodeError as e:
+            log.warning(
+                "json_decode_error",
+                error=str(e),
+                message=message[:50],
+            )
+            # Default to simple query on JSON errors (likely model issue)
+            return RoutingDecision(
+                intent=MessageIntent.SIMPLE_QUERY,
+                confidence=0.5,
+                reasoning="JSON decode failed, using simple query as fallback",
+                use_claude=False,
+            )
+        except ValueError as e:
+            log.warning(
+                "validation_error",
+                error=str(e),
+                message=message[:50],
+            )
+            # Default to simple query on validation errors
+            return RoutingDecision(
+                intent=MessageIntent.SIMPLE_QUERY,
+                confidence=0.5,
+                reasoning="Validation failed, using simple query as fallback",
+                use_claude=False,
+            )
         except Exception as e:
-            log.warning("classification_failed", error=str(e), message=message[:50])
-            # Default to complex task with Claude on classification failure
+            log.error(
+                "classification_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+                message=message[:50],
+            )
+            # Default to complex task with Claude only on unexpected errors
             return RoutingDecision(
                 intent=MessageIntent.COMPLEX_TASK,
                 confidence=0.5,
-                reasoning="Classification failed, defaulting to complex task",
+                reasoning="Classification failed unexpectedly, defaulting to complex task",
                 use_claude=True,
             )
 
@@ -149,7 +229,78 @@ class MessageRouter:
                     "max_output_tokens": 500,
                 },
             )
-            return response.text
+            return response.text or ""
         except Exception as e:
             log.error("flash_generation_failed", error=str(e))
             return "I'm having trouble processing that. Could you try again?"
+
+    async def health_check(self) -> bool:
+        """Check if Gemini is healthy and available.
+
+        Returns:
+            True if healthy, False otherwise.
+        """
+        try:
+            # Simple health check - try to generate a short response
+            response = self._client.models.generate_content(
+                model=self._model,
+                contents="test",
+                config={
+                    "temperature": 0.1,
+                    "max_output_tokens": 10,
+                },
+            )
+            is_healthy = bool(response.text)
+            if is_healthy:
+                log.info("gemini_health_check_passed", model=self._model)
+            return is_healthy
+        except Exception as e:
+            log.error("gemini_health_check_failed", error=str(e))
+            return False
+
+
+class MessageRouter:
+    """Message router with pluggable backend support.
+
+    This wrapper class maintains backward compatibility while allowing
+    different backend implementations (Gemini, Ollama, etc.).
+    """
+
+    def __init__(self, backend: RouterBackend | None = None) -> None:
+        """Initialize the message router.
+
+        Args:
+            backend: Router backend to use. If None, uses GeminiRouterBackend.
+        """
+        self._backend: RouterBackend = backend or GeminiRouterBackend()
+        log.info("message_router_initialized", backend=type(self._backend).__name__)
+
+    async def classify(self, message: str) -> RoutingDecision:
+        """Classify a message using the configured backend.
+
+        Args:
+            message: The user's message to classify.
+
+        Returns:
+            RoutingDecision with intent and routing info.
+        """
+        return await self._backend.classify(message)
+
+    async def generate_simple_response(self, message: str) -> str:
+        """Generate a simple response using the configured backend.
+
+        Args:
+            message: The user's simple query.
+
+        Returns:
+            Generated response.
+        """
+        return await self._backend.generate_simple_response(message)
+
+    async def health_check(self) -> bool:
+        """Check if the backend is healthy.
+
+        Returns:
+            True if healthy, False otherwise.
+        """
+        return await self._backend.health_check()

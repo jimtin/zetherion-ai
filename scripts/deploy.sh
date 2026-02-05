@@ -43,15 +43,15 @@ case $choice in
         ;;
     2)
         echo -e "${YELLOW}Full deploy to $REMOTE_HOST...${NC}"
-        
+
         # Sync .env
         echo "  → Syncing .env..."
         scp .env "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/.env"
-        
+
         # Git pull and restart
         echo "  → Pulling latest code and restarting..."
         ssh "$REMOTE_USER@$REMOTE_HOST" "cd $REMOTE_PATH && git pull && docker compose down && docker compose up -d --build"
-        
+
         echo -e "${GREEN}Done! Bot deployed and running.${NC}"
         ;;
     3)

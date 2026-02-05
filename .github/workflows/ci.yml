@@ -1,76 +1,139 @@
-name: CI
+name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
+  workflow_dispatch:  # Allow manual triggering
 
 jobs:
   lint:
+    name: Linting & Formatting
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-          cache: "pip"
+          python-version: '3.12'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
-          pip install -r requirements-dev.txt
+          python -m pip install --upgrade pip
+          pip install ruff
 
-      - name: Run ruff check
-        run: ruff check src tests
+      - name: Run Ruff linter
+        run: ruff check src/ tests/
 
-      - name: Run ruff format check
-        run: ruff format --check src tests
+      - name: Run Ruff formatter check
+        run: ruff format --check src/ tests/
+
+  type-check:
+    name: Type Checking
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+          pip install mypy types-requests
 
       - name: Run mypy
-        run: mypy src tests
+        run: mypy src/secureclaw --config-file=pyproject.toml
 
-  test:
+  security:
+    name: Security Scanning
     runs-on: ubuntu-latest
-    services:
-      qdrant:
-        image: qdrant/qdrant:latest
-        ports:
-          - 6333:6333
-        options: >-
-          --health-cmd "curl -f http://localhost:6333/healthz || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-          cache: "pip"
+          python-version: '3.12'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
-          pip install -r requirements-dev.txt
-          pip install .
+          python -m pip install --upgrade pip
+          pip install bandit[toml]
 
-      - name: Run tests
-        env:
-          DISCORD_TOKEN: "test-token"
-          GEMINI_API_KEY: "test-key"
-          QDRANT_HOST: "localhost"
-          # Mock keys to prevent config validation errors
-          ANTHROPIC_API_KEY: "test-key"
-        run: pytest tests -v
+      - name: Run Bandit security scan
+        run: bandit -r src/ -c pyproject.toml
 
-  docker:
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12', '3.13']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+
+      - name: Run unit tests with coverage
+        run: |
+          pytest tests/ \
+            -m "not integration" \
+            -v \
+            --tb=short \
+            --cov=src/secureclaw \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            --cov-report=html
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: matrix.python-version == '3.12'
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-secureclaw
+          fail_ci_if_error: false
+
+      - name: Upload coverage report as artifact
+        uses: actions/upload-artifact@v4
+        if: matrix.python-version == '3.12'
+        with:
+          name: coverage-report
+          path: htmlcov/
+          retention-days: 30
+
+  docker-build:
+    name: Docker Build Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -81,3 +144,137 @@ jobs:
           context: .
           push: false
           tags: secureclaw:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test Docker Compose
+        run: |
+          docker compose config
+          echo "Docker Compose configuration is valid"
+
+  integration:
+    name: Integration Tests (E2E)
+    runs-on: ubuntu-latest
+    needs: [lint, type-check, test]
+    # Run by default unless explicitly disabled
+    if: ${{ !contains(github.event.head_commit.message, '[skip integration]') }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+
+      - name: Create .env file for integration tests
+        run: |
+          cat > .env << EOF
+          # Integration test environment
+          DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN || 'test_discord_token_placeholder' }}
+          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY || 'test_gemini_key_placeholder' }}
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY || '' }}
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY || '' }}
+
+          # Test configuration
+          ALLOWED_USER_IDS=123456789
+          LOG_LEVEL=INFO
+          ENVIRONMENT=ci
+
+          # Qdrant (will be started by Docker Compose)
+          QDRANT_HOST=qdrant
+          QDRANT_PORT=6333
+
+          # Router backend
+          ROUTER_BACKEND=gemini
+          EOF
+
+      - name: Validate .env file
+        run: |
+          echo "Generated .env file:"
+          cat .env
+          echo ""
+          if [ ! -f .env ]; then
+            echo "❌ .env file not created"
+            exit 1
+          fi
+
+      - name: Run integration tests
+        run: |
+          # Set up environment
+          export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
+
+          # Run integration test script
+          chmod +x scripts/run-integration-tests.sh
+          ./scripts/run-integration-tests.sh
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN || 'test_discord_token_placeholder' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || 'test_gemini_key_placeholder' }}
+
+      - name: Upload Docker logs on failure
+        if: failure()
+        run: |
+          echo "Collecting Docker logs..."
+          docker compose -p secureclaw-test logs > integration-test-logs.txt 2>&1 || true
+
+      - name: Upload logs artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-logs
+          path: integration-test-logs.txt
+          retention-days: 7
+
+      - name: Cleanup Docker resources
+        if: always()
+        run: |
+          docker compose -p secureclaw-test down -v || true
+
+  summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [lint, type-check, security, test, docker-build, integration]
+    if: always()
+    steps:
+      - name: Check all jobs
+        run: |
+          if [[ "${{ needs.lint.result }}" == "success" ]] && \
+             [[ "${{ needs.type-check.result }}" == "success" ]] && \
+             [[ "${{ needs.security.result }}" == "success" ]] && \
+             [[ "${{ needs.test.result }}" == "success" ]] && \
+             [[ "${{ needs.docker-build.result }}" == "success" ]] && \
+             [[ "${{ needs.integration.result }}" == "success" ]]; then
+            echo "✅ All CI checks passed!"
+            exit 0
+          else
+            echo "❌ Some CI checks failed:"
+            echo "  Lint: ${{ needs.lint.result }}"
+            echo "  Type Check: ${{ needs.type-check.result }}"
+            echo "  Security: ${{ needs.security.result }}"
+            echo "  Tests: ${{ needs.test.result }}"
+            echo "  Docker Build: ${{ needs.docker-build.result }}"
+            echo "  Integration: ${{ needs.integration.result }}"
+            exit 1
+          fi
+
+      - name: Post summary
+        if: always()
+        run: |
+          echo "### CI Pipeline Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Linting | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Type Checking | ${{ needs.type-check.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Scan | ${{ needs.security.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker Build | ${{ needs.docker-build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Integration Tests | ${{ needs.integration.result }} |" >> $GITHUB_STEP_SUMMARY

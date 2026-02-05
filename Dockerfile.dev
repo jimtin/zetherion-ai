@@ -10,11 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy dependency files
 COPY requirements.txt requirements-dev.txt ./
 
-# Install all dependencies including dev
-RUN pip install --no-cache-dir -r requirements-dev.txt
-
-# Create data directory
-RUN mkdir -p /app/data
+# Install all dependencies including dev and create data directory
+RUN pip install --no-cache-dir -r requirements-dev.txt && \
+    mkdir -p /app/data
 
 # Set Python path
 ENV PYTHONPATH=/app/src

@@ -18,8 +18,32 @@ services:
       - ENVIRONMENT=production
     volumes:
       - ./data:/app/data
+      - ./logs:/app/logs
     networks:
       - secureclaw-net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: secureclaw-ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - secureclaw-net
+    # Uncomment for GPU support (NVIDIA)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -37,6 +61,7 @@ services:
 
 volumes:
   qdrant_storage:
+  ollama_models:
 
 networks:
   secureclaw-net:

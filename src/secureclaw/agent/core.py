@@ -1,14 +1,96 @@
 """Agent core - LLM interaction and response generation with routing."""
 
+import asyncio
+from collections.abc import Awaitable, Callable
+from typing import Any
+
 import anthropic
+import openai
+from anthropic import APIConnectionError, APITimeoutError, RateLimitError
+from openai import APIConnectionError as OpenAIConnectionError
+from openai import APITimeoutError as OpenAITimeoutError
+from openai import RateLimitError as OpenAIRateLimitError
 
 from secureclaw.agent.prompts import SYSTEM_PROMPT
-from secureclaw.agent.router import MessageIntent, MessageRouter, RoutingDecision
+from secureclaw.agent.router import MessageIntent, RoutingDecision
+from secureclaw.agent.router_factory import create_router_sync
 from secureclaw.config import get_settings
 from secureclaw.logging import get_logger
 from secureclaw.memory.qdrant import QdrantMemory
 
 log = get_logger("secureclaw.agent.core")
+
+
+async def retry_with_exponential_backoff(
+    func: Callable[[], Awaitable[Any]],
+    max_retries: int = 3,
+    initial_delay: float = 1.0,
+    max_delay: float = 60.0,
+    exponential_base: float = 2.0,
+) -> Any:
+    """Retry a function with exponential backoff.
+
+    Args:
+        func: Async function to retry.
+        max_retries: Maximum number of retry attempts.
+        initial_delay: Initial delay in seconds.
+        max_delay: Maximum delay in seconds.
+        exponential_base: Base for exponential backoff.
+
+    Returns:
+        Result of the function call.
+
+    Raises:
+        The last exception if all retries fail.
+    """
+    delay = initial_delay
+    last_exception: Exception | None = None
+
+    for attempt in range(max_retries):
+        try:
+            return await func()
+        except (
+            APIConnectionError,
+            APITimeoutError,
+            OpenAIConnectionError,
+            OpenAITimeoutError,
+        ) as e:
+            last_exception = e
+            if attempt < max_retries - 1:
+                log.warning(
+                    "api_call_failed_retrying",
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    delay=delay,
+                    error=str(e),
+                )
+                await asyncio.sleep(delay)
+                delay = min(delay * exponential_base, max_delay)
+            else:
+                log.error(
+                    "api_call_failed_max_retries",
+                    max_retries=max_retries,
+                    error=str(e),
+                )
+        except (RateLimitError, OpenAIRateLimitError) as e:
+            last_exception = e
+            # For rate limits, use longer backoff
+            if attempt < max_retries - 1:
+                rate_limit_delay = min(delay * 2, max_delay)
+                log.warning(
+                    "rate_limit_hit_retrying",
+                    attempt=attempt + 1,
+                    max_retries=max_retries,
+                    delay=rate_limit_delay,
+                )
+                await asyncio.sleep(rate_limit_delay)
+                delay = min(delay * exponential_base, max_delay)
+            else:
+                log.error("rate_limit_max_retries", max_retries=max_retries)
+
+    if last_exception:
+        raise last_exception
+    raise RuntimeError("Retry function failed without exception")
 
 
 class Agent:
@@ -22,20 +104,37 @@ class Agent:
         """
         settings = get_settings()
         self._memory = memory
-        self._router = MessageRouter()
+        self._router = create_router_sync()
 
         # Initialize Anthropic client for complex tasks
+        self._claude_client: anthropic.AsyncAnthropic | None
         if settings.anthropic_api_key:
             self._claude_client = anthropic.AsyncAnthropic(
                 api_key=settings.anthropic_api_key.get_secret_value()
             )
-            self._claude_model = "claude-sonnet-4-20250514"
+            self._claude_model = settings.claude_model
             self._has_claude = True
-            log.info("agent_initialized", providers=["gemini_flash", "claude"])
         else:
             self._claude_client = None
             self._has_claude = False
-            log.info("agent_initialized", providers=["gemini_flash"])
+
+        # Initialize OpenAI client as alternative
+        self._openai_client: openai.AsyncOpenAI | None
+        if settings.openai_api_key:
+            self._openai_client = openai.AsyncOpenAI(
+                api_key=settings.openai_api_key.get_secret_value()
+            )
+            self._openai_model = settings.openai_model
+            self._has_openai = True
+        else:
+            self._openai_client = None
+            self._has_openai = False
+
+        log.info(
+            "agent_initialized",
+            has_claude=self._has_claude,
+            has_openai=self._has_openai,
+        )
 
     async def generate_response(
         self,
@@ -73,13 +172,9 @@ class Agent:
             case MessageIntent.SIMPLE_QUERY:
                 response = await self._handle_simple_query(message)
             case MessageIntent.COMPLEX_TASK:
-                response = await self._handle_complex_task(
-                    user_id, channel_id, message, routing
-                )
+                response = await self._handle_complex_task(user_id, channel_id, message, routing)
             case _:
-                response = await self._handle_complex_task(
-                    user_id, channel_id, message, routing
-                )
+                response = await self._handle_complex_task(user_id, channel_id, message, routing)
 
         # Step 3: Store the exchange in memory
         await self._memory.store_message(
@@ -110,6 +205,37 @@ class Agent:
         log.debug("handling_simple_query")
         return await self._router.generate_simple_response(message)
 
+    async def _build_context(
+        self,
+        user_id: int,
+        channel_id: int,
+        message: str,
+        memory_limit: int = 5,
+        history_limit: int = 20,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Build context from recent messages and relevant memories.
+
+        Args:
+            user_id: Discord user ID.
+            channel_id: Discord channel ID.
+            message: The user's message.
+            memory_limit: Maximum number of memories to retrieve.
+            history_limit: Maximum number of recent messages to retrieve.
+
+        Returns:
+            Tuple of (recent_messages, relevant_memories).
+        """
+        # Fetch context in parallel for better performance
+        recent_messages, relevant_memories = await asyncio.gather(
+            self._memory.get_recent_context(
+                user_id=user_id,
+                channel_id=channel_id,
+                limit=history_limit,
+            ),
+            self._memory.search_memories(query=message, limit=memory_limit),
+        )
+        return recent_messages, relevant_memories
+
     async def _handle_complex_task(
         self,
         user_id: int,
@@ -128,19 +254,95 @@ class Agent:
         Returns:
             Generated response.
         """
+        # Fetch context once for reuse across models
+        recent_messages, relevant_memories = await self._build_context(user_id, channel_id, message)
+
         # If Claude is available and this warrants it, use Claude
-        if routing.use_claude and self._has_claude:
-            return await self._generate_claude_response(user_id, channel_id, message)
+        if routing.use_claude:
+            if self._has_claude:
+                return await self._generate_claude_response(
+                    user_id, channel_id, message, recent_messages, relevant_memories
+                )
+            elif self._has_openai:
+                return await self._generate_openai_response(
+                    user_id, channel_id, message, recent_messages, relevant_memories
+                )
 
         # Otherwise use Gemini Flash
-        log.debug("using_flash_for_complex", reason="no_claude_or_low_complexity")
+        log.debug("using_flash_for_complex", reason="no_complex_model_available")
         return await self._router.generate_simple_response(message)
+
+    async def _generate_openai_response(
+        self,
+        user_id: int,
+        channel_id: int,
+        message: str,
+        recent_messages: list[dict[str, Any]],
+        relevant_memories: list[dict[str, Any]],
+    ) -> str:
+        """Generate a response using OpenAI for complex tasks.
+
+        Args:
+            user_id: Discord user ID.
+            channel_id: Discord channel ID.
+            message: The user's message.
+            recent_messages: Recent conversation history.
+            relevant_memories: Relevant memories from search.
+
+        Returns:
+            Generated response.
+        """
+        if not self._openai_client:
+            return await self._router.generate_simple_response(message)
+
+        # Build context from provided data
+        context_parts = []
+        if relevant_memories:
+            memory_text = "\n".join(
+                f"- {m['content']}" for m in relevant_memories if m["score"] > 0.7
+            )
+            if memory_text:
+                context_parts.append(f"## Relevant Memories\n{memory_text}")
+
+        messages = []
+        # System prompt
+        system_content = SYSTEM_PROMPT
+        if context_parts:
+            system_content = f"{SYSTEM_PROMPT}\n\n" + "\n\n".join(context_parts)
+
+        messages.append({"role": "system", "content": system_content})
+
+        # History
+        for msg in recent_messages[-10:]:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+
+        messages.append({"role": "user", "content": message})
+
+        try:
+            # Use retry logic for API calls
+            async def make_request() -> Any:
+                return await self._openai_client.chat.completions.create(  # type: ignore[union-attr]
+                    model=self._openai_model,
+                    messages=messages,  # type: ignore[arg-type]
+                    max_tokens=2048,
+                )
+
+            response = await retry_with_exponential_backoff(make_request)
+            return response.choices[0].message.content or ""
+        except (OpenAIConnectionError, OpenAITimeoutError, OpenAIRateLimitError) as e:
+            log.error("openai_connection_error", error=str(e), error_type=type(e).__name__)
+            return await self._router.generate_simple_response(message)
+        except Exception as e:
+            log.error("openai_api_error", error=str(e), error_type=type(e).__name__)
+            return await self._router.generate_simple_response(message)
 
     async def _generate_claude_response(
         self,
         user_id: int,
         channel_id: int,
         message: str,
+        recent_messages: list[dict[str, Any]],
+        relevant_memories: list[dict[str, Any]],
     ) -> str:
         """Generate a response using Claude for complex tasks.
 
@@ -148,6 +350,8 @@ class Agent:
             user_id: Discord user ID.
             channel_id: Discord channel ID.
             message: The user's message.
+            recent_messages: Recent conversation history.
+            relevant_memories: Relevant memories from search.
 
         Returns:
             Generated response.
@@ -155,20 +359,7 @@ class Agent:
         if not self._claude_client:
             return await self._router.generate_simple_response(message)
 
-        # Get recent conversation context
-        recent_messages = await self._memory.get_recent_context(
-            user_id=user_id,
-            channel_id=channel_id,
-            limit=20,
-        )
-
-        # Search for relevant memories
-        relevant_memories = await self._memory.search_memories(
-            query=message,
-            limit=5,
-        )
-
-        # Build context
+        # Build context from provided data
         context_parts = []
 
         if relevant_memories:
@@ -181,14 +372,18 @@ class Agent:
         # Build message history for Claude
         messages = []
         for msg in recent_messages[-10:]:
-            messages.append({
-                "role": msg["role"],
-                "content": msg["content"],
-            })
-        messages.append({
-            "role": "user",
-            "content": message,
-        })
+            messages.append(
+                {
+                    "role": msg["role"],
+                    "content": msg["content"],
+                }
+            )
+        messages.append(
+            {
+                "role": "user",
+                "content": message,
+            }
+        )
 
         # Build system prompt with context
         system = SYSTEM_PROMPT
@@ -196,12 +391,16 @@ class Agent:
             system = f"{SYSTEM_PROMPT}\n\n" + "\n\n".join(context_parts)
 
         try:
-            response = await self._claude_client.messages.create(
-                model=self._claude_model,
-                max_tokens=2048,
-                system=system,
-                messages=messages,
-            )
+            # Use retry logic for API calls
+            async def make_request() -> Any:
+                return await self._claude_client.messages.create(  # type: ignore[union-attr]
+                    model=self._claude_model,
+                    max_tokens=2048,
+                    system=system,
+                    messages=messages,  # type: ignore[arg-type]
+                )
+
+            response = await retry_with_exponential_backoff(make_request)
 
             log.debug(
                 "claude_response_generated",
@@ -209,11 +408,18 @@ class Agent:
                 output_tokens=response.usage.output_tokens,
             )
 
-            return response.content[0].text
+            return response.content[0].text  # type: ignore[no-any-return]
 
-        except anthropic.APIError as e:
-            log.error("claude_api_error", error=str(e))
+        except (APIConnectionError, APITimeoutError, RateLimitError) as e:
+            log.error("claude_connection_error", error=str(e), error_type=type(e).__name__)
             # Fallback to Flash
+            return await self._router.generate_simple_response(message)
+        except anthropic.APIError as e:
+            log.error("claude_api_error", error=str(e), error_type=type(e).__name__)
+            # Fallback to Flash
+            return await self._router.generate_simple_response(message)
+        except Exception as e:
+            log.error("claude_unexpected_error", error=str(e), error_type=type(e).__name__)
             return await self._router.generate_simple_response(message)
 
     async def _handle_memory_store(self, message: str) -> str:
@@ -230,11 +436,14 @@ class Agent:
         log.debug("handling_memory_store")
 
         # Use Flash to extract the memory content
-        extraction_prompt = f"""The user wants to remember something. Extract just the key information to store.
+        extraction_prompt = (
+            f"""The user wants to remember something. """
+            f"""Extract just the key information to store.
 
 User message: {message}
 
 Respond with ONLY the fact/preference to remember, nothing else."""
+        )
 
         extracted = await self._router.generate_simple_response(extraction_prompt)
 
@@ -270,9 +479,7 @@ Respond with ONLY the fact/preference to remember, nothing else."""
         context_parts = []
 
         if memories:
-            mem_text = "\n".join(
-                f"- {m['content']}" for m in memories if m["score"] > 0.5
-            )
+            mem_text = "\n".join(f"- {m['content']}" for m in memories if m["score"] > 0.5)
             if mem_text:
                 context_parts.append(f"Stored memories:\n{mem_text}")
 
@@ -286,12 +493,15 @@ Respond with ONLY the fact/preference to remember, nothing else."""
                 context_parts.append(f"Past conversations:\n{conv_text}")
 
         if not context_parts:
-            return "I found some vague matches, but nothing strongly related. Could you be more specific?"
+            return (
+                "I found some vague matches, but nothing strongly related. "
+                "Could you be more specific?"
+            )
 
         summary_prompt = f"""The user is asking: {query}
 
 Here's what I found in my memory:
-{chr(10).join(context_parts)}
+{"\n".join(context_parts)}
 
 Summarize what I know about this in a helpful, conversational way."""
 
@@ -326,7 +536,8 @@ Summarize what I know about this in a helpful, conversational way."""
 - `/search` - Search your memories
 - `/ping` - Check if I'm online
 
-I route messages intelligently - simple queries are fast and free, complex tasks use more capable models."""
+I route messages intelligently - simple queries are fast and free, """
+            """complex tasks use more capable models."""
 
         return "I'm not sure what you're asking. Try saying 'help' to see what I can do!"
 

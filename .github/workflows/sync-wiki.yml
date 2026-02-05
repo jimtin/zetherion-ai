@@ -1,0 +1,70 @@
+name: Sync Documentation to Wiki
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/**'
+      - 'README.md'
+
+jobs:
+  sync-wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+
+      - name: Checkout wiki
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}.wiki
+          path: wiki
+
+      - name: Sync documentation files
+        run: |
+          # Copy docs to wiki
+          cp docs/TROUBLESHOOTING.md wiki/Troubleshooting.md
+          cp docs/FAQ.md wiki/FAQ.md
+          cp docs/COMMANDS.md wiki/Commands.md
+
+          # Create Home page from README
+          cp README.md wiki/Home.md
+
+          # Or create custom wiki home page:
+          cat > wiki/Home.md << 'EOF'
+          # SecureClaw Wiki
+
+          Welcome to the SecureClaw documentation wiki!
+
+          ## Getting Started
+          - [Setup Guide](https://github.com/${{ github.repository }}#setup-guide)
+          - [Quick Start](https://github.com/${{ github.repository }}#quick-start)
+
+          ## Documentation
+          - [Command Reference](Commands) - All Discord commands for testing
+          - [Troubleshooting Guide](Troubleshooting) - Common issues and solutions
+          - [FAQ](FAQ) - Frequently asked questions
+
+          ## Quick Links
+          - [Test Commands](Commands#testing-checklist)
+          - [Discord Setup](Troubleshooting#discord-errors)
+          - [Configuration Issues](Troubleshooting#configuration-issues)
+
+          ## Support
+          - [GitHub Issues](https://github.com/${{ github.repository }}/issues)
+          - [Discussions](https://github.com/${{ github.repository }}/discussions)
+          EOF
+
+      - name: Commit and push changes to wiki
+        working-directory: wiki
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          if git diff --staged --quiet; then
+            echo "No changes to wiki"
+          else
+            git commit -m "Auto-sync from docs/ [skip ci]"
+            git push
+          fi

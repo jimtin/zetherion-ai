@@ -26,7 +26,8 @@ When the user asks you to remember something, confirm that you'll store it.
 - Ask clarifying questions when the request is ambiguous
 """
 
-MEMORY_STORE_PROMPT = """Based on the conversation, extract any information that should be stored as long-term memory.
+MEMORY_STORE_PROMPT = """Based on the conversation, extract any information \
+that should be stored as long-term memory.
 This includes:
 - User preferences
 - Important facts about the user

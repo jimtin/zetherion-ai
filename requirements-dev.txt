@@ -1,7 +1,17 @@
 # Dev dependencies
 -r requirements.txt
-pytest>=8.0.0
-pytest-asyncio>=0.23.0
-watchfiles>=0.21.0
-ruff>=0.2.0
-mypy>=1.8.0
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+pytest-mock==3.14.0
+coverage[toml]==7.6.9
+
+# Code quality
+ruff==0.8.4
+mypy==1.13.0
+watchfiles==1.0.3
+
+# Type stubs
+types-requests==2.32.0.20241016

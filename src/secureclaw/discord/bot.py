@@ -42,23 +42,33 @@ class SecureClawBot(discord.Client):
         """Set up slash commands."""
 
         @self._tree.command(name="ask", description="Ask SecureClaw a question")
-        async def ask_command(interaction: discord.Interaction, question: str) -> None:
+        async def ask_command(
+            interaction: discord.Interaction[discord.Client], question: str
+        ) -> None:
             await self._handle_ask(interaction, question)
 
         @self._tree.command(name="remember", description="Ask SecureClaw to remember something")
-        async def remember_command(interaction: discord.Interaction, content: str) -> None:
+        async def remember_command(
+            interaction: discord.Interaction[discord.Client], content: str
+        ) -> None:
             await self._handle_remember(interaction, content)
 
         @self._tree.command(name="search", description="Search your memories")
-        async def search_command(interaction: discord.Interaction, query: str) -> None:
+        async def search_command(
+            interaction: discord.Interaction[discord.Client], query: str
+        ) -> None:
             await self._handle_search(interaction, query)
 
         @self._tree.command(name="ping", description="Check if SecureClaw is online")
-        async def ping_command(interaction: discord.Interaction) -> None:
+        async def ping_command(interaction: discord.Interaction[discord.Client]) -> None:
             await interaction.response.send_message(
                 f"🦀 Pong! Latency: {round(self.latency * 1000)}ms",
                 ephemeral=True,
             )
+
+        @self._tree.command(name="channels", description="List channels SecureClaw can access")
+        async def channels_command(interaction: discord.Interaction[discord.Client]) -> None:
+            await self._handle_channels(interaction)
 
     async def setup_hook(self) -> None:
         """Called when the bot is ready to set up."""
@@ -151,7 +161,7 @@ class SecureClawBot(discord.Client):
 
     async def _handle_ask(
         self,
-        interaction: discord.Interaction,
+        interaction: discord.Interaction[discord.Client],
         question: str,
     ) -> None:
         """Handle /ask command."""
@@ -175,8 +185,7 @@ class SecureClawBot(discord.Client):
         # Check for prompt injection
         if detect_prompt_injection(question):
             await interaction.response.send_message(
-                "I noticed some unusual patterns in your question. "
-                "Could you rephrase it?",
+                "I noticed some unusual patterns in your question. Could you rephrase it?",
                 ephemeral=True,
             )
             return
@@ -184,9 +193,7 @@ class SecureClawBot(discord.Client):
         await interaction.response.defer()
 
         if self._agent is None:
-            await interaction.followup.send(
-                "I'm still starting up. Please try again in a moment."
-            )
+            await interaction.followup.send("I'm still starting up. Please try again in a moment.")
             return
 
         response = await self._agent.generate_response(
@@ -200,7 +207,7 @@ class SecureClawBot(discord.Client):
 
     async def _handle_remember(
         self,
-        interaction: discord.Interaction,
+        interaction: discord.Interaction[discord.Client],
         content: str,
     ) -> None:
         """Handle /remember command."""
@@ -214,9 +221,7 @@ class SecureClawBot(discord.Client):
         await interaction.response.defer(ephemeral=True)
 
         if self._agent is None:
-            await interaction.followup.send(
-                "I'm still starting up. Please try again in a moment."
-            )
+            await interaction.followup.send("I'm still starting up. Please try again in a moment.")
             return
 
         confirmation = await self._agent.store_memory_from_request(content)
@@ -224,7 +229,7 @@ class SecureClawBot(discord.Client):
 
     async def _handle_search(
         self,
-        interaction: discord.Interaction,
+        interaction: discord.Interaction[discord.Client],
         query: str,
     ) -> None:
         """Handle /search command."""
@@ -251,6 +256,79 @@ class SecureClawBot(discord.Client):
             lines.append(f"{i}. [{score_pct}%] {mem['content'][:200]}")
 
         await interaction.followup.send("\n".join(lines))
+
+    async def _handle_channels(
+        self,
+        interaction: discord.Interaction[discord.Client],
+    ) -> None:
+        """Handle /channels command - list accessible channels."""
+        if not self._allowlist.is_allowed(interaction.user.id):
+            await interaction.response.send_message(
+                "Sorry, you're not authorized to use this bot.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        if not interaction.guild:
+            await interaction.followup.send("This command only works in servers, not DMs.")
+            return
+
+        # Get all channels the bot can see
+        text_channels = []
+        voice_channels = []
+        categories = []
+
+        for channel in interaction.guild.channels:
+            permissions = channel.permissions_for(interaction.guild.me)
+
+            # Check if bot can view the channel
+            if not permissions.view_channel:
+                continue
+
+            if isinstance(channel, discord.TextChannel):
+                can_send = "✓" if permissions.send_messages else "✗"
+                can_read = "✓" if permissions.read_message_history else "✗"
+                text_channels.append(f"  #{channel.name} (Send: {can_send}, Read: {can_read})")
+            elif isinstance(channel, discord.VoiceChannel):
+                can_connect = "✓" if permissions.connect else "✗"
+                voice_channels.append(f"  🔊 {channel.name} (Connect: {can_connect})")
+            elif isinstance(channel, discord.CategoryChannel):
+                categories.append(f"  📁 {channel.name}")
+
+        # Format response
+        lines = [
+            f"**Channels in {interaction.guild.name}**\n",
+            f"**Text Channels ({len(text_channels)}):**",
+        ]
+        lines.extend(text_channels if text_channels else ["  None"])
+
+        if voice_channels:
+            lines.append(f"\n**Voice Channels ({len(voice_channels)}):**")
+            lines.extend(voice_channels)
+
+        if categories:
+            lines.append(f"\n**Categories ({len(categories)}):**")
+            lines.extend(categories)
+
+        lines.append(f"\n**Total Accessible:** {len(text_channels) + len(voice_channels)} channels")
+
+        response = "\n".join(lines)
+
+        # Split if too long (Discord 2000 char limit)
+        if len(response) > 2000:
+            # Send first batch
+            first_batch = text_channels[:20] if len(text_channels) > 0 else []
+            await interaction.followup.send(
+                f"**Text Channels ({len(text_channels)}):**\n" + "\n".join(first_batch)
+            )
+            # Send remaining if needed
+            if len(text_channels) > 20:
+                remaining = text_channels[20:40]
+                await interaction.followup.send("\n".join(remaining))
+        else:
+            await interaction.followup.send(response)
 
     async def _send_long_message(
         self,

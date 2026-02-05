@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-from qdrant_client import QdrantClient
+from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models as qdrant_models
 
 from secureclaw.config import get_settings
@@ -24,7 +24,7 @@ class QdrantMemory:
     def __init__(self) -> None:
         """Initialize the Qdrant memory client."""
         settings = get_settings()
-        self._client = QdrantClient(
+        self._client = AsyncQdrantClient(
             host=settings.qdrant_host,
             port=settings.qdrant_port,
         )
@@ -39,11 +39,11 @@ class QdrantMemory:
 
     async def _ensure_collection(self, name: str) -> None:
         """Ensure a collection exists, creating it if necessary."""
-        collections = self._client.get_collections().collections
-        collection_names = [c.name for c in collections]
+        collections = await self._client.get_collections()
+        collection_names = [c.name for c in collections.collections]
 
         if name not in collection_names:
-            self._client.create_collection(
+            await self._client.create_collection(
                 collection_name=name,
                 vectors_config=qdrant_models.VectorParams(
                     size=EMBEDDING_DIMENSION,
@@ -84,7 +84,7 @@ class QdrantMemory:
             **(metadata or {}),
         }
 
-        self._client.upsert(
+        await self._client.upsert(
             collection_name=CONVERSATIONS_COLLECTION,
             points=[
                 qdrant_models.PointStruct(
@@ -129,7 +129,7 @@ class QdrantMemory:
             **(metadata or {}),
         }
 
-        self._client.upsert(
+        await self._client.upsert(
             collection_name=LONG_TERM_MEMORY_COLLECTION,
             points=[
                 qdrant_models.PointStruct(
@@ -172,7 +172,7 @@ class QdrantMemory:
                 ]
             )
 
-        results = self._client.search(
+        results = await self._client.search(  # type: ignore[attr-defined]
             collection_name=CONVERSATIONS_COLLECTION,
             query_vector=query_vector,
             query_filter=filter_conditions,
@@ -183,7 +183,7 @@ class QdrantMemory:
             {
                 "id": str(hit.id),
                 "score": hit.score,
-                **hit.payload,
+                **(hit.payload or {}),
             }
             for hit in results
         ]
@@ -217,7 +217,7 @@ class QdrantMemory:
                 ]
             )
 
-        results = self._client.search(
+        results = await self._client.search(  # type: ignore[attr-defined]
             collection_name=LONG_TERM_MEMORY_COLLECTION,
             query_vector=query_vector,
             query_filter=filter_conditions,
@@ -228,7 +228,7 @@ class QdrantMemory:
             {
                 "id": str(hit.id),
                 "score": hit.score,
-                **hit.payload,
+                **(hit.payload or {}),
             }
             for hit in results
         ]
@@ -249,7 +249,7 @@ class QdrantMemory:
         Returns:
             List of recent messages, oldest first.
         """
-        results = self._client.scroll(
+        results = await self._client.scroll(
             collection_name=CONVERSATIONS_COLLECTION,
             scroll_filter=qdrant_models.Filter(
                 must=[
@@ -271,7 +271,7 @@ class QdrantMemory:
         messages = [
             {
                 "id": str(point.id),
-                **point.payload,
+                **(point.payload or {}),
             }
             for point in results[0]
         ]

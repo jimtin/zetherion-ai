@@ -1,5 +1,7 @@
 """Gemini embeddings client using the new google-genai package."""
 
+import asyncio
+
 from google import genai
 
 from secureclaw.config import get_settings
@@ -7,8 +9,7 @@ from secureclaw.logging import get_logger
 
 log = get_logger("secureclaw.memory.embeddings")
 
-# Embedding model - highest quality on MTEB benchmark
-EMBEDDING_MODEL = "text-embedding-004"
+# Embedding dimension for text-embedding-004
 EMBEDDING_DIMENSION = 768
 
 
@@ -19,7 +20,7 @@ class GeminiEmbeddings:
         """Initialize the Gemini embeddings client."""
         settings = get_settings()
         self._client = genai.Client(api_key=settings.gemini_api_key.get_secret_value())
-        self._model = EMBEDDING_MODEL
+        self._model = settings.embedding_model
         log.info("gemini_embeddings_initialized", model=self._model)
 
     async def embed_text(self, text: str) -> list[float]:
@@ -35,7 +36,7 @@ class GeminiEmbeddings:
             model=self._model,
             contents=text,
         )
-        return list(result.embeddings[0].values)
+        return list(result.embeddings[0].values)  # type: ignore[index, arg-type]
 
     async def embed_query(self, query: str) -> list[float]:
         """Generate embedding for a search query.
@@ -50,7 +51,7 @@ class GeminiEmbeddings:
         return await self.embed_text(query)
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Generate embeddings for multiple texts.
+        """Generate embeddings for multiple texts in parallel.
 
         Args:
             texts: List of texts to embed.
@@ -58,8 +59,6 @@ class GeminiEmbeddings:
         Returns:
             A list of embedding vectors.
         """
-        results = []
-        for text in texts:
-            embedding = await self.embed_text(text)
-            results.append(embedding)
-        return results
+        # Generate all embeddings concurrently for better performance
+        results = await asyncio.gather(*[self.embed_text(text) for text in texts])
+        return list(results)
