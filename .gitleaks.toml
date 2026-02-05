@@ -35,6 +35,8 @@ paths = [
     # Ignore documentation with examples
     '''docs/implementation_plan\.md''',
     '''docs/SECURITY\.md''',  # Contains example patterns for secret detection
+    # Ignore wiki directory (copy of docs with example secrets)
+    '''wiki/''',
 ]
 
 # Regexes to ignore (known false positives)
