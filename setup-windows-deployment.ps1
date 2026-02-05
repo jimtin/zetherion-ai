@@ -52,29 +52,61 @@ try {
     } else {
         throw "Docker not found"
     }
-
-    # Check if Docker is running
-    docker info 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "[OK] Docker is running" -ForegroundColor Green
-    } else {
-        Write-Host "[WARNING] Docker is installed but not running. Starting Docker Desktop..." -ForegroundColor Yellow
-        Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
-        Write-Output "Waiting 30 seconds for Docker to start..."
-        Start-Sleep -Seconds 30
-
-        docker info 2>$null | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "[OK] Docker started successfully" -ForegroundColor Green
-        } else {
-            Write-Host "[ERROR] Docker failed to start. Please start Docker Desktop manually and run this script again." -ForegroundColor Red
-            exit 1
-        }
-    }
 } catch {
     Write-Host "[ERROR] Docker is not installed. Please install Docker Desktop:" -ForegroundColor Red
     Write-Output "  Download from: https://www.docker.com/products/docker-desktop/"
     exit 1
+}
+
+# Check if Docker is running (separate from installation check)
+$dockerRunning = $false
+try {
+    $ErrorActionPreference = "SilentlyContinue"
+    docker info 2>$null | Out-Null
+    $ErrorActionPreference = "Stop"
+    if ($LASTEXITCODE -eq 0) {
+        $dockerRunning = $true
+    }
+} catch {
+    $dockerRunning = $false
+}
+
+if ($dockerRunning) {
+    Write-Host "[OK] Docker is running" -ForegroundColor Green
+} else {
+    Write-Host "[WARNING] Docker is installed but not running. Starting Docker Desktop..." -ForegroundColor Yellow
+
+    # Try to start Docker Desktop
+    try {
+        Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe" -ErrorAction SilentlyContinue
+        Write-Output "Waiting 30 seconds for Docker to start..."
+        Start-Sleep -Seconds 30
+
+        # Check again
+        $ErrorActionPreference = "SilentlyContinue"
+        docker info 2>$null | Out-Null
+        $ErrorActionPreference = "Stop"
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "[OK] Docker started successfully" -ForegroundColor Green
+        } else {
+            Write-Host "[ERROR] Docker failed to start automatically." -ForegroundColor Red
+            Write-Output ""
+            Write-Output "Please start Docker Desktop manually:"
+            Write-Output "  1. Press Windows key"
+            Write-Output "  2. Type 'Docker Desktop'"
+            Write-Output "  3. Click to open"
+            Write-Output "  4. Wait for Docker to start (icon in system tray will turn green)"
+            Write-Output "  5. Run this script again"
+            Write-Output ""
+            exit 1
+        }
+    } catch {
+        Write-Host "[ERROR] Failed to start Docker Desktop automatically." -ForegroundColor Red
+        Write-Output ""
+        Write-Output "Please start Docker Desktop manually and run this script again."
+        exit 1
+    }
 }
 
 # Check Git
