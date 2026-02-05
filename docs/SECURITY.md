@@ -334,7 +334,7 @@ This produces 14 tests (7 scenarios x 2 backends) with no code duplication.
 
 ## 12. Gap Analysis & Recommendations
 
-The following are automated security best practices that are **not yet implemented** in this project. They are ordered by impact and effort.
+The following automated security best practices have been **fully implemented** as of 2026-02-06. This section documents what was done and serves as a reference for the security controls now in place.
 
 ### HIGH IMPACT
 
@@ -603,15 +603,26 @@ jobs:
 
 | # | Recommendation | Impact | Effort | Status |
 |---|---------------|--------|--------|--------|
-| 12.1 | Container image scanning (Trivy) | HIGH | Low | Not implemented |
-| 12.2 | Pin Docker images by digest | HIGH | Low | Not implemented |
-| 12.3 | SBOM generation | HIGH | Low | Not implemented |
-| 12.4 | Signed commits & branch protection | HIGH | Medium | Not implemented |
-| 12.5 | `pip-audit` in CI | MEDIUM | Low | Not implemented |
-| 12.6 | Read-only container filesystem | MEDIUM | Low | Not implemented |
-| 12.7 | Container resource limits | MEDIUM | Low | Not implemented |
-| 12.8 | Explicit non-root user in Dockerfile | MEDIUM | Low | Not implemented |
-| 12.9 | Pin GitHub Actions by SHA | MEDIUM | Medium | Not implemented |
-| 12.10 | Pre-commit in CI (safety net) | LOW | Low | Not implemented |
-| 12.11 | Security policy at repo root | LOW | Low | Not implemented |
-| 12.12 | Automated license compliance | LOW | Low | Not implemented |
+| 12.1 | Container image scanning (Trivy) | HIGH | Low | ✅ Implemented |
+| 12.2 | Pin Docker images by digest | HIGH | Low | ✅ Implemented |
+| 12.3 | SBOM generation | HIGH | Low | ✅ Implemented |
+| 12.4 | Signed commits & branch protection | HIGH | Medium | ✅ Implemented |
+| 12.5 | `pip-audit` in CI | MEDIUM | Low | ✅ Implemented |
+| 12.6 | Read-only container filesystem | MEDIUM | Low | ✅ Implemented |
+| 12.7 | Container resource limits | MEDIUM | Low | ✅ Implemented |
+| 12.8 | Explicit non-root user in Dockerfile | MEDIUM | Low | ✅ Implemented |
+| 12.9 | Pin GitHub Actions by SHA | MEDIUM | Medium | ✅ Implemented |
+| 12.10 | Pre-commit in CI (safety net) | LOW | Low | ✅ Implemented |
+| 12.11 | Security policy at repo root | LOW | Low | ✅ Implemented |
+| 12.12 | Automated license compliance | LOW | Low | ✅ Implemented |
+
+### Additional Security Scanning (Added 2026-02-06)
+
+Beyond the original 12 gaps, the following additional security measures were implemented:
+
+| Tool | Category | What It Does |
+|------|----------|-------------|
+| **Semgrep CE** | SAST | 3000+ Python rules with taint tracking and data-flow analysis. SARIF results uploaded to GitHub Security tab. |
+| **Trivy (filesystem mode)** | Dependencies | Scans OS-level packages inside the container that pip-audit can't see |
+| **GitHub Ruleset** | Access Control | Branch protection on `main`: require PRs, status checks, block force pushes |
+| **CODEOWNERS** | Access Control | Assigns ownership of security-critical paths for review requirements |
