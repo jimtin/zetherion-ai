@@ -6,8 +6,7 @@
 
 param(
     [string]$DeploymentPath = "C:\SecureClaw",
-    [string]$RunnerPath = "C:\actions-runner",
-    [switch]$SkipRunnerSetup = $false,
+    [int]$PollIntervalMinutes = 5,
     [switch]$AutoStart = $false
 )
 
@@ -27,12 +26,11 @@ Write-Output "This script will:"
 Write-Output "  1. Verify prerequisites (Docker, Git, GitHub CLI)"
 Write-Output "  2. Clone the SecureClaw repository"
 Write-Output "  3. Set up environment configuration"
-Write-Output "  4. Install GitHub Actions self-hosted runner"
-Write-Output "  5. Create deployment scripts"
-Write-Output "  6. Configure auto-deployment workflow"
+Write-Output "  4. Create deployment scripts"
+Write-Output "  5. Configure auto-deployment polling (every $PollIntervalMinutes minutes)"
 Write-Output ""
 Write-Output "Deployment path: $DeploymentPath"
-Write-Output "Runner path: $RunnerPath"
+Write-Output "Poll interval: $PollIntervalMinutes minutes"
 Write-Output ""
 
 $confirmation = Read-Host "Continue with setup? (yes/no)"
@@ -287,28 +285,114 @@ docker-compose logs -f secureclaw
 
 Set-Content -Path "logs.ps1" -Value $logsScript
 
-# Create auto-deploy.ps1
+# Create auto-deploy.ps1 with CI status checking
 $autoDeployScript = @'
 # auto-deploy.ps1 - Monitor for changes and auto-deploy
+# This script polls GitHub every few minutes and deploys when:
+# 1. New commits are detected on main branch
+# 2. GitHub Actions CI has passed for those commits
+
 param(
-    [int]$IntervalSeconds = 60
+    [int]$IntervalMinutes = 5
 )
 
-Write-Host "[AUTO-DEPLOY] Monitor started (checking every $IntervalSeconds seconds)" -ForegroundColor Cyan
-Write-Host "Press Ctrl+C to stop" -ForegroundColor Yellow
+$IntervalSeconds = $IntervalMinutes * 60
 
+Write-Host "[AUTO-DEPLOY] Starting deployment monitor" -ForegroundColor Cyan
+Write-Host "Poll interval: $IntervalMinutes minutes ($IntervalSeconds seconds)" -ForegroundColor Cyan
+Write-Host "Press Ctrl+C to stop" -ForegroundColor Yellow
+Write-Host ""
+
+# Get initial commit
 $lastCommit = git rev-parse HEAD
+$lastDeployTime = Get-Date
+Write-Host "[INFO] Current commit: $($lastCommit.Substring(0,7))" -ForegroundColor Cyan
+Write-Host "[INFO] Monitoring for changes..." -ForegroundColor Cyan
+Write-Host ""
 
 while ($true) {
     Start-Sleep -Seconds $IntervalSeconds
 
-    git fetch origin main
+    # Fetch latest from GitHub
+    try {
+        git fetch origin main 2>&1 | Out-Null
+    } catch {
+        Write-Host "[WARNING] Failed to fetch from GitHub: $_" -ForegroundColor Yellow
+        continue
+    }
+
+    # Get latest commit on origin/main
     $currentCommit = git rev-parse origin/main
 
     if ($lastCommit -ne $currentCommit) {
-        Write-Host "[INFO] New changes detected! Deploying..." -ForegroundColor Green
-        .\deploy-windows.ps1
-        $lastCommit = $currentCommit
+        Write-Host ""
+        Write-Host "[DETECTED] New commit: $($currentCommit.Substring(0,7))" -ForegroundColor Green
+
+        # Check CI status using GitHub CLI
+        Write-Host "[INFO] Checking GitHub Actions CI status..." -ForegroundColor Cyan
+
+        try {
+            # Get the latest workflow run for this commit
+            $runStatus = gh run list --commit $currentCommit --limit 1 --json conclusion,status,workflowName | ConvertFrom-Json
+
+            if ($runStatus.Count -gt 0) {
+                $conclusion = $runStatus[0].conclusion
+                $status = $runStatus[0].status
+                $workflowName = $runStatus[0].workflowName
+
+                Write-Host "[INFO] Workflow: $workflowName" -ForegroundColor Cyan
+                Write-Host "[INFO] Status: $status" -ForegroundColor Cyan
+
+                if ($status -eq "completed") {
+                    if ($conclusion -eq "success") {
+                        Write-Host "[OK] CI passed! Deploying..." -ForegroundColor Green
+                        Write-Host ""
+
+                        # Deploy
+                        .\deploy-windows.ps1
+
+                        $lastCommit = $currentCommit
+                        $lastDeployTime = Get-Date
+
+                        Write-Host ""
+                        Write-Host "[OK] Deployment complete at $lastDeployTime" -ForegroundColor Green
+                        Write-Host "[INFO] Monitoring for next change..." -ForegroundColor Cyan
+                        Write-Host ""
+                    } else {
+                        Write-Host "[WARNING] CI failed with conclusion: $conclusion" -ForegroundColor Yellow
+                        Write-Host "[WARNING] Skipping deployment until CI passes" -ForegroundColor Yellow
+                        Write-Host ""
+                    }
+                } else {
+                    Write-Host "[INFO] CI still running ($status). Will check again in $IntervalMinutes minutes..." -ForegroundColor Cyan
+                    Write-Host ""
+                }
+            } else {
+                Write-Host "[WARNING] No workflow runs found for commit $($currentCommit.Substring(0,7))" -ForegroundColor Yellow
+                Write-Host "[WARNING] Deploying anyway (CI may not have started yet)" -ForegroundColor Yellow
+                Write-Host ""
+
+                # Deploy anyway - CI might not have started yet
+                .\deploy-windows.ps1
+                $lastCommit = $currentCommit
+                $lastDeployTime = Get-Date
+                Write-Host ""
+            }
+        } catch {
+            Write-Host "[WARNING] Failed to check CI status: $_" -ForegroundColor Yellow
+            Write-Host "[WARNING] Deploying anyway" -ForegroundColor Yellow
+            Write-Host ""
+
+            # Deploy anyway
+            .\deploy-windows.ps1
+            $lastCommit = $currentCommit
+            $lastDeployTime = Get-Date
+            Write-Host ""
+        }
+    } else {
+        # No changes
+        $timeSinceLastDeploy = (Get-Date) - $lastDeployTime
+        Write-Host "[$(Get-Date -Format 'HH:mm:ss')] No changes. Last deploy: $($timeSinceLastDeploy.ToString('hh\:mm\:ss')) ago" -ForegroundColor Gray
     }
 }
 '@
@@ -317,138 +401,20 @@ Set-Content -Path "auto-deploy.ps1" -Value $autoDeployScript
 
 Write-Host "[OK] Deployment scripts created" -ForegroundColor Green
 
-if (-not $SkipRunnerSetup) {
-    Write-Output ""
-    Write-Host "[STEP 5] Setting up GitHub Actions runner..." -ForegroundColor Cyan
-
-    Write-Output "Opening GitHub runner registration page..."
-    # Use single quotes to prevent ampersand interpretation
-    Start-Process 'https://github.com/jimtin/sercureclaw/settings/actions/runners/new?arch=x64&os=win'
-
-    Write-Output ""
-    Write-Output "1. Wait for the GitHub page to open in your browser"
-    Write-Output "2. On the GitHub page that just opened:"
-    Write-Output "   - Select: Windows (x64)"
-    Write-Output "   - Copy the TOKEN from the Configure command (it starts with 'A')"
-    Write-Output ""
-
-    $token = Read-Host "Paste the registration token here"
-
-    if ([string]::IsNullOrWhiteSpace($token)) {
-        Write-Host "[WARNING] No token provided. Skipping runner setup." -ForegroundColor Yellow
-        Write-Output "You can set up the runner manually later by running:"
-        Write-Output "  powershell -File setup-runner.ps1"
-    } else {
-        # Create runner directory
-        if (Test-Path $RunnerPath) {
-            Write-Host "[WARNING] Runner directory already exists: $RunnerPath" -ForegroundColor Yellow
-            $removeRunner = Read-Host "Remove and reinstall? (yes/no)"
-            if ($removeRunner -eq "yes") {
-                Remove-Item -Recurse -Force $RunnerPath
-            } else {
-                Write-Output "Using existing runner directory"
-            }
-        }
-
-        if (-not (Test-Path $RunnerPath)) {
-            New-Item -ItemType Directory -Path $RunnerPath | Out-Null
-        }
-
-        Set-Location $RunnerPath
-
-        # Download runner
-        Write-Output "Downloading GitHub Actions runner..."
-        $runnerZip = "actions-runner-win-x64-2.311.0.zip"
-        Invoke-WebRequest -Uri "https://github.com/actions/runner/releases/download/v2.311.0/$runnerZip" -OutFile $runnerZip
-
-        # Extract runner
-        Write-Output "Extracting runner..."
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-        [System.IO.Compression.ZipFile]::ExtractToDirectory("$RunnerPath\$runnerZip", $RunnerPath)
-
-        # Configure runner
-        Write-Output "Configuring runner..."
-        $configCmd = ".\config.cmd --url https://github.com/jimtin/sercureclaw --token $token --name windows-production --work _work --runasservice"
-
-        $process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $configCmd" -Wait -PassThru -NoNewWindow
-
-        if ($process.ExitCode -eq 0) {
-            Write-Output "Installing runner as Windows service..."
-            .\svc.sh install
-
-            Write-Output "Starting runner service..."
-            .\svc.sh start
-
-            Write-Host "[OK] Runner service started" -ForegroundColor Green
-
-            # Return to deployment directory
-            Set-Location $DeploymentPath
-        } else {
-            Write-Host "[ERROR] Failed to configure runner. Please set up manually." -ForegroundColor Red
-        }
-    }
-} else {
-    Write-Host "[WARNING] Skipped runner setup (SkipRunnerSetup flag specified)" -ForegroundColor Yellow
-}
-
-Write-Output ""
-Write-Host "[STEP 6] Creating deployment workflow..." -ForegroundColor Cyan
-
-# Create .github/workflows directory if it doesn't exist
-$workflowDir = ".github\workflows"
-if (-not (Test-Path $workflowDir)) {
-    New-Item -ItemType Directory -Path $workflowDir -Force | Out-Null
-}
-
-# Create deploy-windows.yml workflow
-$deployWorkflow = @'
-name: Deploy to Windows
-
-on:
-  workflow_run:
-    workflows: ["CI/CD Pipeline"]
-    types:
-      - completed
-    branches: [main]
-
-jobs:
-  deploy:
-    name: Deploy to Windows Production
-    runs-on: self-hosted
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Deploy
-        run: .\deploy-windows.ps1
-        shell: powershell
-
-      - name: Health check
-        run: |
-          Start-Sleep -Seconds 15
-          docker-compose ps
-        shell: powershell
-'@
-
-Set-Content -Path "$workflowDir\deploy-windows.yml" -Value $deployWorkflow
-
-Write-Host "[OK] Deployment workflow created" -ForegroundColor Green
-
 # Create auto-start task if requested
 if ($AutoStart) {
     Write-Output ""
-    Write-Host "[INFO] Creating auto-start scheduled task..." -ForegroundColor Cyan
+    Write-Host "[STEP 5] Creating auto-start scheduled task..." -ForegroundColor Cyan
 
-    $taskAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-File `"$DeploymentPath\start.ps1`""
+    $taskAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$DeploymentPath\auto-deploy.ps1`" -IntervalMinutes $PollIntervalMinutes"
     $taskTrigger = New-ScheduledTaskTrigger -AtStartup
     $taskPrincipal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Highest
     $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 
     try {
-        Register-ScheduledTask -TaskName "SecureClaw-AutoStart" -Action $taskAction -Trigger $taskTrigger -Principal $taskPrincipal -Settings $taskSettings -Force | Out-Null
-        Write-Host "[OK] Created auto-start scheduled task" -ForegroundColor Green
+        Register-ScheduledTask -TaskName "SecureClaw-AutoDeploy" -Action $taskAction -Trigger $taskTrigger -Principal $taskPrincipal -Settings $taskSettings -Force | Out-Null
+        Write-Host "[OK] Created auto-deploy scheduled task" -ForegroundColor Green
+        Write-Output "The deployment monitor will start automatically on system boot."
     } catch {
         Write-Host "[WARNING] Failed to create auto-start task: $_" -ForegroundColor Yellow
     }
@@ -465,27 +431,29 @@ Write-Host @"
 
 Write-Output ""
 Write-Output "Deployment directory: $DeploymentPath"
-if (-not $SkipRunnerSetup) {
-    Write-Output "Runner directory: $RunnerPath"
-}
+Write-Output "Poll interval: $PollIntervalMinutes minutes"
 Write-Output ""
 Write-Output "Quick Commands:"
 Write-Output "  Deploy now:           .\deploy-windows.ps1"
 Write-Output "  Start bot:            .\start.ps1"
 Write-Output "  Stop bot:             .\stop.ps1"
 Write-Output "  View logs:            .\logs.ps1"
-Write-Output "  Auto-deploy monitor:  .\auto-deploy.ps1"
+Write-Output "  Start auto-deploy:    .\auto-deploy.ps1"
 Write-Output ""
 Write-Output "Next Steps:"
 Write-Output "  1. Test deployment:   .\deploy-windows.ps1"
 Write-Output "  2. Verify bot works:  .\logs.ps1"
-Write-Output "  3. Commit workflow:   git add .github/workflows/deploy-windows.yml"
-Write-Output "                        git commit -m 'feat: add Windows deployment workflow'"
-Write-Output "                        git push origin main"
+Write-Output "  3. Start monitoring:  .\auto-deploy.ps1"
 Write-Output ""
-Write-Output "Automatic Deployment:"
-Write-Output "  - Triggers when CI passes on main branch"
-Write-Output "  - Runner service runs in background"
-Write-Output "  - Check status: Set-Location $RunnerPath; .\svc.sh status"
+Write-Output "Auto-Deployment:"
+Write-Output "  - Polls GitHub every $PollIntervalMinutes minutes"
+Write-Output "  - Checks CI status before deploying"
+Write-Output "  - Only deploys if CI passes"
+if ($AutoStart) {
+    Write-Output "  - Starts automatically on boot (scheduled task created)"
+} else {
+    Write-Output "  - Run manually: .\auto-deploy.ps1"
+    Write-Output "  - Or rerun setup with -AutoStart flag for automatic startup"
+}
 Write-Output ""
 Write-Host "[OK] Setup complete! Your Windows deployment is ready." -ForegroundColor Green

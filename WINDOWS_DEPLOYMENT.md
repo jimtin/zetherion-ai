@@ -1,6 +1,6 @@
 # Windows Deployment Setup Guide
 
-This guide explains how to set up automated deployment on your Windows machine.
+This guide explains how to set up automated deployment on your Windows machine using a simple, secure polling approach.
 
 ## 🚀 One-Command Setup
 
@@ -28,12 +28,10 @@ powershell -ExecutionPolicy Bypass -File setup-windows-deployment.ps1
 2. ✅ Installs missing tools automatically
 3. ✅ Clones the repository to `C:\SecureClaw`
 4. ✅ Creates `.env` file from template
-5. ✅ Sets up GitHub Actions self-hosted runner
-6. ✅ Installs runner as Windows service
-7. ✅ Creates deployment scripts
-8. ✅ Creates deployment workflow file
+5. ✅ Creates deployment scripts
+6. ✅ Sets up auto-deployment polling (every 5 minutes)
 
-## Manual Setup Options
+## Setup Options
 
 ### Custom Deployment Path
 
@@ -41,10 +39,11 @@ powershell -ExecutionPolicy Bypass -File setup-windows-deployment.ps1
 .\setup-windows-deployment.ps1 -DeploymentPath "D:\MyProjects\SecureClaw"
 ```
 
-### Skip Runner Setup (Manual Later)
+### Custom Poll Interval
 
 ```powershell
-.\setup-windows-deployment.ps1 -SkipRunnerSetup
+# Poll every 10 minutes instead of 5
+.\setup-windows-deployment.ps1 -PollIntervalMinutes 10
 ```
 
 ### Enable Auto-Start on Boot
@@ -53,10 +52,15 @@ powershell -ExecutionPolicy Bypass -File setup-windows-deployment.ps1
 .\setup-windows-deployment.ps1 -AutoStart
 ```
 
-### Custom Runner Path
+This creates a Windows Scheduled Task that starts the deployment monitor automatically when your computer boots.
+
+### All Options Combined
 
 ```powershell
-.\setup-windows-deployment.ps1 -RunnerPath "D:\actions-runner"
+.\setup-windows-deployment.ps1 `
+    -DeploymentPath "D:\SecureClaw" `
+    -PollIntervalMinutes 10 `
+    -AutoStart
 ```
 
 ## Post-Setup Steps
@@ -84,25 +88,18 @@ cd C:\SecureClaw
 .\deploy-windows.ps1
 ```
 
-### 3. Commit Workflow File
+### 3. Start Auto-Deployment Monitor
 
 ```powershell
-git add .github/workflows/deploy-windows.yml
-git commit -m "feat: add Windows deployment workflow"
-git push origin main
+.\auto-deploy.ps1
 ```
 
-### 4. Verify Runner
-
-Check runner status:
-
-```powershell
-cd C:\actions-runner
-.\svc.sh status
-```
-
-You should see the runner online in GitHub:
-`https://github.com/jimtin/sercureclaw/settings/actions/runners`
+This will:
+- Poll GitHub every 5 minutes (or your custom interval)
+- Check if new commits exist on main branch
+- Verify GitHub Actions CI has passed
+- Deploy automatically if CI passed
+- Skip deployment if CI failed
 
 ## Available Commands
 
@@ -138,81 +135,126 @@ Stops the bot containers.
 ```
 Shows live logs from the bot (Ctrl+C to exit).
 
-### Auto-Deploy Monitor
+### Start Auto-Deploy Monitor
 ```powershell
 .\auto-deploy.ps1
 ```
-Polls GitHub every 60 seconds and auto-deploys on changes.
+Starts the deployment monitor (polls every 5 minutes by default).
 
 Custom interval:
 ```powershell
-.\auto-deploy.ps1 -IntervalSeconds 30
+.\auto-deploy.ps1 -IntervalMinutes 10
 ```
 
 ## How Automatic Deployment Works
 
-1. **You push code to GitHub** → CI pipeline runs
-2. **CI passes** → `deploy-windows.yml` workflow triggers
-3. **Self-hosted runner** picks up the job (your Windows machine)
-4. **Deployment runs:**
-   - Pulls latest code
-   - Preserves `.env` file
-   - Stops old containers (30s graceful shutdown)
-   - Builds new Docker image
-   - Starts new containers
-5. **Bot reconnects** with new code (<1 minute downtime)
+### Polling-Based Approach
+
+1. **Monitor runs** on your Windows machine (in PowerShell window or as scheduled task)
+2. **Every 5 minutes** (configurable):
+   - Checks GitHub for new commits on main branch
+   - If new commits found, checks GitHub Actions CI status
+   - If CI passed → deploys automatically
+   - If CI failed → waits for next poll
+   - If CI still running → waits for next poll
+3. **Hot-swaps containers** (<1 minute downtime)
+4. **Logs all activity** to console
+
+### Why Polling Instead of Self-Hosted Runner?
+
+✅ **More secure** - No inbound connections, no GitHub access to your machine
+✅ **Simpler** - Just one PowerShell script, no runner installation
+✅ **Easier to control** - Start/stop anytime, runs in visible PowerShell window
+✅ **No maintenance** - No runner updates, no token management
+✅ **Zero cost** - No GitHub runner overhead
 
 ## Monitoring & Management
 
-### Check Runner Status
-```powershell
-cd C:\actions-runner
-.\svc.sh status
+### Check Monitor Status
+
+If running in a PowerShell window, you'll see output like:
+
+```
+[AUTO-DEPLOY] Starting deployment monitor
+Poll interval: 5 minutes (300 seconds)
+Press Ctrl+C to stop
+
+[INFO] Current commit: a1b2c3d
+[INFO] Monitoring for changes...
+
+[12:00:00] No changes. Last deploy: 01:30:00 ago
+[12:05:00] No changes. Last deploy: 01:35:00 ago
+
+[DETECTED] New commit: e4f5g6h
+[INFO] Checking GitHub Actions CI status...
+[INFO] Workflow: CI/CD Pipeline
+[INFO] Status: completed
+[OK] CI passed! Deploying...
+...
+[OK] Deployment complete at 12:10:15
 ```
 
-### View Runner Logs
-```powershell
-cd C:\actions-runner
-Get-Content -Path "_diag\Runner_*.log" -Tail 50 -Wait
-```
+### Run as Background Task
 
-### Restart Runner Service
+If you used `-AutoStart`:
+
 ```powershell
-cd C:\actions-runner
-.\svc.sh stop
-.\svc.sh start
+# Check if scheduled task exists
+Get-ScheduledTask -TaskName "SecureClaw-AutoDeploy"
+
+# Start manually
+Start-ScheduledTask -TaskName "SecureClaw-AutoDeploy"
+
+# Stop manually
+Stop-ScheduledTask -TaskName "SecureClaw-AutoDeploy"
+
+# Remove auto-start
+Unregister-ScheduledTask -TaskName "SecureClaw-AutoDeploy" -Confirm:$false
 ```
 
 ### View Container Status
+
 ```powershell
 docker ps --filter "name=secureclaw"
 ```
 
 ### View Container Logs
+
 ```powershell
 docker logs secureclaw-bot --tail 50 --follow
 ```
 
-### Check Deployment History
+### Check Git Status
+
 ```powershell
-gh run list --workflow=deploy-windows.yml --limit 10
+cd C:\SecureClaw
+git status
+git log --oneline -10
+```
+
+### Verify CI Passed
+
+```powershell
+gh run list --limit 5
 ```
 
 ## Troubleshooting
 
-### Runner Not Starting
+### Monitor Not Detecting Changes
 
+**Cause:** GitHub CLI (`gh`) not authenticated or git fetch failing.
+
+**Solution:**
 ```powershell
-# Check service status
-cd C:\actions-runner
-.\svc.sh status
+# Authenticate GitHub CLI
+gh auth login
 
-# View detailed logs
-Get-Content -Path "_diag\Runner_*.log" -Tail 100
+# Test git fetch
+cd C:\SecureClaw
+git fetch origin main
 
-# Restart service
-.\svc.sh stop
-.\svc.sh start
+# Test gh command
+gh run list --limit 1
 ```
 
 ### Docker Not Running
@@ -261,39 +303,43 @@ docker-compose up -d
 docker logs secureclaw-bot --follow
 ```
 
-### Runner Offline in GitHub
+### Monitor Keeps Deploying Same Commit
 
+**Cause:** Git state not being updated after deployment.
+
+**Solution:**
 ```powershell
-# Remove old runner
-cd C:\actions-runner
-.\config.cmd remove --token YOUR_REMOVAL_TOKEN
+# Stop monitor (Ctrl+C)
+cd C:\SecureClaw
+git fetch origin main
+git reset --hard origin/main
 
-# Get new token from GitHub
-# https://github.com/jimtin/sercureclaw/settings/actions/runners/new
+# Restart monitor
+.\auto-deploy.ps1
+```
 
-# Re-register
-.\config.cmd --url https://github.com/jimtin/sercureclaw --token YOUR_NEW_TOKEN --name windows-production
+### CI Status Check Failing
 
-# Reinstall service
-.\svc.sh install
-.\svc.sh start
+**Cause:** GitHub CLI not properly authenticated or workflow name changed.
+
+**Solution:**
+```powershell
+# Re-authenticate
+gh auth login
+
+# Check workflow runs
+gh run list --limit 5
+
+# Check specific commit
+gh run list --commit <commit-sha>
 ```
 
 ## Uninstall
 
-### Remove Runner
+### Remove Auto-Deploy Task
 
 ```powershell
-cd C:\actions-runner
-.\svc.sh stop
-.\svc.sh uninstall
-
-# Get removal token from GitHub and run:
-.\config.cmd remove --token YOUR_REMOVAL_TOKEN
-
-# Remove directory
-cd \
-Remove-Item -Recurse -Force C:\actions-runner
+Unregister-ScheduledTask -TaskName "SecureClaw-AutoDeploy" -Confirm:$false
 ```
 
 ### Remove Deployment
@@ -308,41 +354,57 @@ cd \
 Remove-Item -Recurse -Force C:\SecureClaw
 ```
 
-### Remove Auto-Start Task
+## Advanced Configuration
+
+### Change Poll Interval After Setup
+
+Edit the scheduled task:
 
 ```powershell
-Unregister-ScheduledTask -TaskName "SecureClaw-AutoStart" -Confirm:$false
+# Get current task
+$task = Get-ScheduledTask -TaskName "SecureClaw-AutoDeploy"
+
+# Update arguments (change -IntervalMinutes value)
+$task.Actions[0].Arguments = '-WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\SecureClaw\auto-deploy.ps1" -IntervalMinutes 10'
+
+# Save
+Set-ScheduledTask -InputObject $task
 ```
 
-## Alternative: Polling Script (No Runner)
+Or just stop the scheduled task and run manually with a different interval:
 
-If you prefer not to set up the GitHub runner, use the polling script:
+```powershell
+.\auto-deploy.ps1 -IntervalMinutes 10
+```
+
+### Run Monitor in Background (Without Scheduled Task)
+
+```powershell
+# Start hidden PowerShell window
+Start-Process powershell -ArgumentList "-WindowStyle Hidden -ExecutionPolicy Bypass -File C:\SecureClaw\auto-deploy.ps1" -WorkingDirectory C:\SecureClaw
+```
+
+### Manual Deployment (Skip CI Check)
 
 ```powershell
 cd C:\SecureClaw
-
-# Run continuously in a PowerShell window
-.\auto-deploy.ps1
-
-# Or run in background with Task Scheduler
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-File C:\SecureClaw\auto-deploy.ps1"
-$trigger = New-ScheduledTaskTrigger -AtStartup
-Register-ScheduledTask -TaskName "SecureClaw-Monitor" -Action $action -Trigger $trigger
+git pull origin main
+.\deploy-windows.ps1
 ```
-
-This polls GitHub every 60 seconds instead of getting instant notifications.
 
 ## Security Notes
 
-- ✅ Runner communicates outbound only (no open ports)
-- ✅ .env file never committed to Git
-- ✅ Runner runs as Windows service with your user account
-- ✅ GitHub Actions secrets not needed (uses local .env)
-- ✅ No external webhooks or exposed endpoints
+- ✅ Polling is outbound-only (no open ports, no inbound connections)
+- ✅ `.env` file never committed to Git
+- ✅ Monitor runs with your user account permissions
+- ✅ GitHub Actions secrets not needed (uses local `.env`)
+- ✅ No GitHub access to your machine
+- ✅ No webhooks or exposed endpoints
+- ✅ Simple to audit (single PowerShell script)
 
 ## Cost
 
-**$0/month** - Everything runs on your local Windows machine, no cloud costs.
+**$0/month** - Everything runs on your local Windows machine, no cloud costs, no GitHub runner costs.
 
 ## Support
 
@@ -353,5 +415,5 @@ For issues:
 
 ---
 
-**Last Updated:** 2026-02-05
-**Version:** 1.0.0
+**Last Updated:** 2026-02-06
+**Version:** 2.0.0 (Polling-based deployment)
