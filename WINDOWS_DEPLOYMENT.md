@@ -8,7 +8,7 @@ This guide explains how to set up automated deployment on your Windows machine u
 
 ```powershell
 # Download and run the setup script
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/jimtin/sercureclaw/main/setup-windows-deployment.ps1" -OutFile "$env:TEMP\setup-windows-deployment.ps1"
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/jimtin/zetherion-ai/main/setup-windows-deployment.ps1" -OutFile "$env:TEMP\setup-windows-deployment.ps1"
 powershell -ExecutionPolicy Bypass -File "$env:TEMP\setup-windows-deployment.ps1"
 ```
 
@@ -16,7 +16,7 @@ Or if you've already cloned the repo:
 
 ```powershell
 # Navigate to your repo
-cd C:\path\to\sercureclaw
+cd C:\path\to\zetherion-ai
 
 # Run the setup script
 powershell -ExecutionPolicy Bypass -File setup-windows-deployment.ps1
@@ -26,7 +26,7 @@ powershell -ExecutionPolicy Bypass -File setup-windows-deployment.ps1
 
 1. ✅ Verifies prerequisites (Docker, Git, GitHub CLI)
 2. ✅ Installs missing tools automatically
-3. ✅ Clones the repository to `C:\SecureClaw`
+3. ✅ Clones the repository to `C:\Zetherion AI`
 4. ✅ Creates `.env` file from template
 5. ✅ Creates deployment scripts
 6. ✅ Sets up auto-deployment polling (every 5 minutes)
@@ -36,7 +36,7 @@ powershell -ExecutionPolicy Bypass -File setup-windows-deployment.ps1
 ### Custom Deployment Path
 
 ```powershell
-.\setup-windows-deployment.ps1 -DeploymentPath "D:\MyProjects\SecureClaw"
+.\setup-windows-deployment.ps1 -DeploymentPath "D:\MyProjects\Zetherion AI"
 ```
 
 ### Custom Poll Interval
@@ -58,7 +58,7 @@ This creates a Windows Scheduled Task that starts the deployment monitor automat
 
 ```powershell
 .\setup-windows-deployment.ps1 `
-    -DeploymentPath "D:\SecureClaw" `
+    -DeploymentPath "D:\Zetherion AI" `
     -PollIntervalMinutes 10 `
     -AutoStart
 ```
@@ -70,7 +70,7 @@ This creates a Windows Scheduled Task that starts the deployment monitor automat
 Edit your `.env` file with production credentials:
 
 ```powershell
-notepad C:\SecureClaw\.env
+notepad C:\Zetherion AI\.env
 ```
 
 Required:
@@ -84,7 +84,7 @@ Optional:
 ### 2. Test Deployment
 
 ```powershell
-cd C:\SecureClaw
+cd C:\Zetherion AI
 .\deploy-windows.ps1
 ```
 
@@ -200,16 +200,16 @@ If you used `-AutoStart`:
 
 ```powershell
 # Check if scheduled task exists
-Get-ScheduledTask -TaskName "SecureClaw-AutoDeploy"
+Get-ScheduledTask -TaskName "Zetherion AI-AutoDeploy"
 
 # Start manually
-Start-ScheduledTask -TaskName "SecureClaw-AutoDeploy"
+Start-ScheduledTask -TaskName "Zetherion AI-AutoDeploy"
 
 # Stop manually
-Stop-ScheduledTask -TaskName "SecureClaw-AutoDeploy"
+Stop-ScheduledTask -TaskName "Zetherion AI-AutoDeploy"
 
 # Remove auto-start
-Unregister-ScheduledTask -TaskName "SecureClaw-AutoDeploy" -Confirm:$false
+Unregister-ScheduledTask -TaskName "Zetherion AI-AutoDeploy" -Confirm:$false
 ```
 
 ### View Container Status
@@ -227,7 +227,7 @@ docker logs secureclaw-bot --tail 50 --follow
 ### Check Git Status
 
 ```powershell
-cd C:\SecureClaw
+cd C:\Zetherion AI
 git status
 git log --oneline -10
 ```
@@ -250,7 +250,7 @@ gh run list --limit 5
 gh auth login
 
 # Test git fetch
-cd C:\SecureClaw
+cd C:\Zetherion AI
 git fetch origin main
 
 # Test gh command
@@ -283,7 +283,7 @@ docker logs secureclaw-bot --tail 100
 docker-compose logs
 
 # Verify .env file exists
-Test-Path C:\SecureClaw\.env
+Test-Path C:\Zetherion AI\.env
 
 # Check Docker Compose config
 docker-compose config
@@ -293,7 +293,7 @@ docker-compose config
 
 ```powershell
 # Clean restart
-cd C:\SecureClaw
+cd C:\Zetherion AI
 docker-compose down -v
 docker system prune -f
 docker-compose build --no-cache
@@ -310,7 +310,7 @@ docker logs secureclaw-bot --follow
 **Solution:**
 ```powershell
 # Stop monitor (Ctrl+C)
-cd C:\SecureClaw
+cd C:\Zetherion AI
 git fetch origin main
 git reset --hard origin/main
 
@@ -339,19 +339,19 @@ gh run list --commit <commit-sha>
 ### Remove Auto-Deploy Task
 
 ```powershell
-Unregister-ScheduledTask -TaskName "SecureClaw-AutoDeploy" -Confirm:$false
+Unregister-ScheduledTask -TaskName "Zetherion AI-AutoDeploy" -Confirm:$false
 ```
 
 ### Remove Deployment
 
 ```powershell
 # Stop containers
-cd C:\SecureClaw
+cd C:\Zetherion AI
 docker-compose down -v
 
 # Remove deployment
 cd \
-Remove-Item -Recurse -Force C:\SecureClaw
+Remove-Item -Recurse -Force C:\Zetherion AI
 ```
 
 ## Advanced Configuration
@@ -362,10 +362,10 @@ Edit the scheduled task:
 
 ```powershell
 # Get current task
-$task = Get-ScheduledTask -TaskName "SecureClaw-AutoDeploy"
+$task = Get-ScheduledTask -TaskName "Zetherion AI-AutoDeploy"
 
 # Update arguments (change -IntervalMinutes value)
-$task.Actions[0].Arguments = '-WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\SecureClaw\auto-deploy.ps1" -IntervalMinutes 10'
+$task.Actions[0].Arguments = '-WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\Zetherion AI\auto-deploy.ps1" -IntervalMinutes 10'
 
 # Save
 Set-ScheduledTask -InputObject $task
@@ -381,13 +381,13 @@ Or just stop the scheduled task and run manually with a different interval:
 
 ```powershell
 # Start hidden PowerShell window
-Start-Process powershell -ArgumentList "-WindowStyle Hidden -ExecutionPolicy Bypass -File C:\SecureClaw\auto-deploy.ps1" -WorkingDirectory C:\SecureClaw
+Start-Process powershell -ArgumentList "-WindowStyle Hidden -ExecutionPolicy Bypass -File C:\Zetherion AI\auto-deploy.ps1" -WorkingDirectory C:\Zetherion AI
 ```
 
 ### Manual Deployment (Skip CI Check)
 
 ```powershell
-cd C:\SecureClaw
+cd C:\Zetherion AI
 git pull origin main
 .\deploy-windows.ps1
 ```
@@ -411,7 +411,7 @@ git pull origin main
 For issues:
 1. Check [Troubleshooting](#troubleshooting) section above
 2. View logs: `.\logs.ps1`
-3. Open issue: https://github.com/jimtin/sercureclaw/issues
+3. Open issue: https://github.com/jimtin/zetherion-ai/issues
 
 ---
 

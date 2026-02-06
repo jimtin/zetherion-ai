@@ -1,6 +1,6 @@
-# Contributing to SecureClaw
+# Contributing to Zetherion AI
 
-Thank you for your interest in contributing to SecureClaw! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to Zetherion AI! This document provides guidelines and instructions for contributing.
 
 ## Table of Contents
 
@@ -48,7 +48,7 @@ Thank you for your interest in contributing to SecureClaw! This document provide
    ```
 3. Add the upstream repository:
    ```bash
-   git remote add upstream https://github.com/jimtin/sercureclaw.git
+   git remote add upstream https://github.com/jimtin/zetherion-ai.git
    ```
 4. Create a new branch for your feature:
    ```bash
@@ -428,8 +428,8 @@ Your PR will be evaluated on:
 ## Getting Help
 
 - **Discord**: Join our [Discord server](https://discord.gg/your-server) (if available)
-- **Issues**: Search [existing issues](https://github.com/jimtin/sercureclaw/issues) or create a new one
-- **Discussions**: Use [GitHub Discussions](https://github.com/jimtin/sercureclaw/discussions) for questions
+- **Issues**: Search [existing issues](https://github.com/jimtin/zetherion-ai/issues) or create a new one
+- **Discussions**: Use [GitHub Discussions](https://github.com/jimtin/zetherion-ai/discussions) for questions
 
 ## Recognition
 
@@ -438,4 +438,4 @@ Contributors are recognized in:
 - Release notes
 - GitHub contributors page
 
-Thank you for contributing to SecureClaw! 🎉
+Thank you for contributing to Zetherion AI! 🎉

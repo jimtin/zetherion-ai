@@ -1,6 +1,6 @@
-# SecureClaw Troubleshooting Guide
+# Zetherion AI Troubleshooting Guide
 
-Common issues and their solutions for running SecureClaw.
+Common issues and their solutions for running Zetherion AI.
 
 ## Table of Contents
 - [Discord Errors](#discord-errors)
@@ -264,7 +264,7 @@ httpcore._exceptions.ConnectError: [Errno 61] Connection refused
 ERROR: Package 'secureclaw' requires a different Python: 3.11.6 not in '>=3.12'
 ```
 
-**Cause:** SecureClaw requires Python 3.12+, but you have an older version.
+**Cause:** Zetherion AI requires Python 3.12+, but you have an older version.
 
 **Solutions:**
 

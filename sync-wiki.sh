@@ -64,9 +64,9 @@ cp CHANGELOG.md wiki/Changelog.md
 
 # Create Home page
 cat > wiki/Home.md << EOF
-# SecureClaw Wiki
+# Zetherion AI Wiki
 
-Welcome to the SecureClaw documentation! This wiki provides comprehensive guides for users, contributors, and developers.
+Welcome to the Zetherion AI documentation! This wiki provides comprehensive guides for users, contributors, and developers.
 
 ## 🚀 Getting Started
 - [Setup Guide](https://github.com/${REPO_NAME}#setup-guide) - Initial setup and configuration
@@ -84,7 +84,7 @@ Welcome to the SecureClaw documentation! This wiki provides comprehensive guides
 - [Security](Security) - Security controls and testing
 
 ## 🧪 Development & Testing
-- [Contributing Guide](Contributing) - How to contribute to SecureClaw
+- [Contributing Guide](Contributing) - How to contribute to Zetherion AI
 - [Development Guide](Development) - Advanced developer documentation
 - [Testing Guide](Testing) - Testing patterns and coverage
 - [CI/CD Pipeline](CI-CD) - Continuous integration and deployment
@@ -108,7 +108,7 @@ Welcome to the SecureClaw documentation! This wiki provides comprehensive guides
 
 ---
 *Documentation last synced: $(date)*
-*SecureClaw v1.0.0 | Test Coverage: 87.58%*
+*Zetherion AI v1.0.0 | Test Coverage: 87.58%*
 EOF
 
 # Commit and push changes

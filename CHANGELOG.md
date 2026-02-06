@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to SecureClaw will be documented in this file.
+All notable changes to Zetherion AI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -206,7 +206,7 @@ None yet - this is the initial stable release with comprehensive testing.
 
 ## Known Issues
 
-None currently reported. See [GitHub Issues](https://github.com/jimtin/sercureclaw/issues) for the latest.
+None currently reported. See [GitHub Issues](https://github.com/jimtin/zetherion-ai/issues) for the latest.
 
 ---
 

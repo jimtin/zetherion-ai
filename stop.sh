@@ -20,7 +20,7 @@ print_info() {
 
 echo ""
 echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
-echo -e "${BLUE}  Stopping SecureClaw${NC}"
+echo -e "${BLUE}  Stopping Zetherion AI${NC}"
 echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
 echo ""
 
@@ -52,5 +52,5 @@ else
 fi
 
 echo ""
-print_success "SecureClaw stopped successfully"
+print_success "Zetherion AI stopped successfully"
 echo ""

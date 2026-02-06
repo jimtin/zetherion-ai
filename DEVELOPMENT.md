@@ -1,6 +1,6 @@
 # Development Guide
 
-This guide provides in-depth information for developers working on SecureClaw. For contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
+This guide provides in-depth information for developers working on Zetherion AI. For contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Table of Contents
 
@@ -118,9 +118,9 @@ User Response (Discord)
 
 1. **Clone and set up remote**:
    ```bash
-   git clone https://github.com/jimtin/sercureclaw.git
+   git clone https://github.com/jimtin/zetherion-ai.git
    cd secureclaw
-   git remote add upstream https://github.com/jimtin/sercureclaw.git
+   git remote add upstream https://github.com/jimtin/zetherion-ai.git
    ```
 
 2. **Create virtual environment**:
@@ -607,7 +607,7 @@ docker compose logs ollama -f
 
 **Exec into containers**:
 ```bash
-# SecureClaw container
+# Zetherion AI container
 docker exec -it secureclaw-bot bash
 
 # Qdrant container
@@ -1083,6 +1083,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines.
 
 ## Contact
 
-- **Issues**: https://github.com/jimtin/sercureclaw/issues
-- **Discussions**: https://github.com/jimtin/sercureclaw/discussions
+- **Issues**: https://github.com/jimtin/zetherion-ai/issues
+- **Discussions**: https://github.com/jimtin/zetherion-ai/discussions
 - **Email**: [Your email if public]

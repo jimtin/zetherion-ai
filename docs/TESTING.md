@@ -1,10 +1,10 @@
 # Testing Guide
 
-Complete guide to SecureClaw's three-layer testing approach.
+Complete guide to Zetherion AI's three-layer testing approach.
 
 ## Test Types
 
-SecureClaw uses a **three-layer testing pyramid** for comprehensive coverage:
+Zetherion AI uses a **three-layer testing pyramid** for comprehensive coverage:
 
 1. **Unit Tests** - Fast, isolated tests with mocked dependencies (Discord bot, Agent, Router, Memory)
 2. **Integration Tests** - Full stack tests with Docker services (bypasses Discord API)
@@ -88,7 +88,7 @@ pytest tests/integration/test_e2e.py -v -s -m integration
 ### What Integration Tests Do
 
 1. **Start Docker Compose** with test project name
-2. **Wait for services** to be healthy (Qdrant, SecureClaw)
+2. **Wait for services** to be healthy (Qdrant, Zetherion AI)
 3. **Run test scenarios**:
    - Simple questions
    - Memory storage and recall
@@ -104,7 +104,7 @@ pytest tests/integration/test_e2e.py -v -s -m integration
 🐳 Starting Docker Compose environment...
 ⏳ Waiting for services to be healthy...
 ✅ Qdrant is healthy
-✅ SecureClaw is running
+✅ Zetherion AI is running
 
 test_simple_question PASSED
 test_memory_store_and_recall PASSED
@@ -157,7 +157,7 @@ pytest
 #### 1. Create Test Bot in Discord Developer Portal
 
 1. Go to https://discord.com/developers/applications
-2. Click "New Application" → Name: "SecureClaw Test Bot"
+2. Click "New Application" → Name: "Zetherion AI Test Bot"
 3. Navigate to "Bot" tab
 4. Click "Reset Token" → **Copy token** (you'll need this)
 5. **Enable Required Privileged Gateway Intents:**
@@ -218,7 +218,7 @@ ALLOW_BOT_MESSAGES=true
 - Never commit `TEST_DISCORD_BOT_TOKEN` to git
 - Test bot should only have access to test servers
 - **`ALLOW_BOT_MESSAGES=true` is required** for Discord E2E tests to work
-  - By default, SecureClaw ignores messages from other bots (to prevent bot-to-bot spam)
+  - By default, Zetherion AI ignores messages from other bots (to prevent bot-to-bot spam)
   - Setting this to `true` allows the test bot to send messages to your production bot
   - **Keep this `false` in production** unless you specifically need bot-to-bot communication
 
@@ -253,7 +253,7 @@ async def test_bot_responds_to_message(discord_test_client):
     """Test bot responds to a real Discord message."""
     # Send actual message through Discord API
     test_message = await discord_test_client.send_message(
-        "Hello SecureClaw, what is 2+2?"
+        "Hello Zetherion AI, what is 2+2?"
     )
 
     # Wait for bot response (real Discord event)
@@ -455,7 +455,7 @@ pytest --cov=src/secureclaw --cov-report=xml
 If integration tests fail, check Docker logs:
 
 ```bash
-# View SecureClaw logs
+# View Zetherion AI logs
 docker compose -p secureclaw-test logs secureclaw
 
 # View Qdrant logs

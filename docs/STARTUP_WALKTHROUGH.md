@@ -1,4 +1,4 @@
-# SecureClaw Startup Script Walkthrough
+# Zetherion AI Startup Script Walkthrough
 
 A comprehensive guide to understanding the `start.sh` script - what it does, why, and how it handles errors.
 
@@ -16,7 +16,7 @@ A comprehensive guide to understanding the `start.sh` script - what it does, why
 
 ## Overview
 
-The `start.sh` script is the **single entry point** for running SecureClaw. It handles:
+The `start.sh` script is the **single entry point** for running Zetherion AI. It handles:
 
 - ✅ Dependency verification (Python, Docker)
 - ✅ Environment configuration (.env file)
@@ -169,7 +169,7 @@ fi
 - Fall back to generic python3 if >= 3.12
 - Exit with error if none found
 
-**Why 3.12+?** SecureClaw uses modern Python features (type hints, pattern matching) requiring 3.12+.
+**Why 3.12+?** Zetherion AI uses modern Python features (type hints, pattern matching) requiring 3.12+.
 
 **Error Example:**
 ```
@@ -323,7 +323,7 @@ if [ -z "$ROUTER_BACKEND" ]; then
   Router Backend Selection
 ═══════════════════════════════════════════════
 
-SecureClaw can use two different backends for message routing:
+Zetherion AI can use two different backends for message routing:
 
   1. Gemini (Google) - Cloud-based, fast, minimal setup
      • Uses your existing Gemini API key
@@ -406,7 +406,7 @@ fi
 - Slow path: 30-60 seconds (first time)
 
 **Why `pip install -e .`?**
-- Installs SecureClaw in "editable" mode
+- Installs Zetherion AI in "editable" mode
 - Code changes apply immediately (no reinstall needed)
 
 ---
@@ -536,7 +536,7 @@ else:
 **Output:**
 ```
 ═══════════════════════════════════════════════
-SecureClaw System Assessment
+Zetherion AI System Assessment
 ═══════════════════════════════════════════════
 
 🖥️  HARDWARE DETECTED:
@@ -852,7 +852,7 @@ success
 **Display (Lines 473-488):**
 ```
 ═══════════════════════════════════════════════
-  Starting SecureClaw Bot
+  Starting Zetherion AI Bot
 ═══════════════════════════════════════════════
 
 ℹ Configuration Summary:
@@ -889,7 +889,7 @@ PYTHONPATH="${PWD}/src:${PYTHONPATH}" python -m secureclaw
 ```
 
 **Why set PYTHONPATH?**
-- SecureClaw source is in `src/secureclaw/`
+- Zetherion AI source is in `src/secureclaw/`
 - Running as module (`-m secureclaw`) requires it to be importable
 - Adding `src/` to path makes this work
 

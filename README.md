@@ -1,7 +1,7 @@
-# SecureClaw
+# Zetherion AI
 
-[![CI Pipeline](https://github.com/jimtin/sercureclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/jimtin/sercureclaw/actions/workflows/ci.yml)
-[![Test Coverage](https://img.shields.io/badge/coverage-87.58%25-brightgreen)](https://github.com/jimtin/sercureclaw/actions)
+[![CI Pipeline](https://github.com/jimtin/zetherion-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/jimtin/zetherion-ai/actions/workflows/ci.yml)
+[![Test Coverage](https://img.shields.io/badge/coverage-87.58%25-brightgreen)](https://github.com/jimtin/zetherion-ai/actions)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -19,12 +19,12 @@ A secure, simplified personal AI assistant. Discord-based with vector memory.
 
 ## Quick Start
 
-SecureClaw includes automated startup scripts that check all prerequisites and start the bot:
+Zetherion AI includes automated startup scripts that check all prerequisites and start the bot:
 
 ```bash
 # 1. Clone and configure
-git clone https://github.com/youruser/secureclaw.git
-cd secureclaw
+git clone https://github.com/youruser/zetherion-ai.git
+cd zetherion-ai
 cp .env.example .env  # Edit with your API keys (see Setup Guide below)
 
 # 2. Start everything automatically
@@ -74,9 +74,9 @@ cp .env.example .env  # Edit with your API keys (see Setup Guide below)
 
 ## Management Scripts
 
-SecureClaw includes three management scripts for easy operation:
+Zetherion AI includes three management scripts for easy operation:
 
-### `./start.sh` - Start SecureClaw
+### `./start.sh` - Start Zetherion AI
 Performs comprehensive checks and starts all services:
 - Validates Python 3.12+ installation
 - Confirms Docker is running (auto-launches Docker Desktop if needed)
@@ -112,7 +112,7 @@ Shows the current state of all components:
 
 Use this to verify everything is running correctly.
 
-### `./stop.sh` - Stop SecureClaw
+### `./stop.sh` - Stop Zetherion AI
 Gracefully stops all services:
 - Stops the Discord bot process
 - Stops the Qdrant container (data is preserved)
@@ -124,7 +124,7 @@ All containers are stopped but not removed, so your data and downloaded models p
 
 ### 1. Create Discord Bot
 1. Go to the [Discord Developer Portal](https://discord.com/developers/applications).
-2. Click **New Application** and name it (e.g., "SecureClaw").
+2. Click **New Application** and name it (e.g., "Zetherion AI").
 3. Go to the **Bot** tab and click **Reset Token**.
    - Copy this token immediately (you won't see it again).
    - Uncheck "Public Bot" if you want it private.
@@ -158,7 +158,7 @@ All containers are stopped but not removed, so your data and downloaded models p
 You already have this from Step 1 above.
 
 #### B. Gemini API Key (Required)
-Gemini is used for embeddings, routing, and simple queries. This is **required** for SecureClaw to function.
+Gemini is used for embeddings, routing, and simple queries. This is **required** for Zetherion AI to function.
 
 1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey)
 2. Sign in with your Google account
@@ -179,7 +179,7 @@ Claude is used for complex tasks requiring advanced reasoning. **Optional** but 
 2. Sign up or sign in
 3. Go to **Settings** → **API Keys**
 4. Click **"Create Key"**
-5. Give it a name (e.g., "SecureClaw")
+5. Give it a name (e.g., "Zetherion AI")
 6. Copy the API key (starts with `sk-ant-...`)
 7. **Add credits**: You'll need to add payment method and credits to use Claude
    - Go to **Settings** → **Billing**
@@ -197,7 +197,7 @@ GPT-4o is used as an alternative to Claude for complex tasks if Claude isn't ava
 2. Sign up or sign in
 3. Click your profile icon → **"View API keys"** or go to https://platform.openai.com/api-keys
 4. Click **"Create new secret key"**
-5. Give it a name (e.g., "SecureClaw")
+5. Give it a name (e.g., "Zetherion AI")
 6. Copy the API key (starts with `sk-...`) - **you won't see it again!**
 7. **Add credits**:
    - Go to **Settings** → **Billing**
@@ -228,8 +228,8 @@ Restrict bot access to specific users only.
 ### 4. Configure Environment
 1. Clone the repository:
    ```bash
-   git clone https://github.com/youruser/secureclaw.git
-   cd secureclaw
+   git clone https://github.com/youruser/zetherion-ai.git
+   cd zetherion-ai
    ```
 2. Create your config file:
    ```bash
@@ -261,7 +261,7 @@ Restrict bot access to specific users only.
 
 ## Testing & Quality Assurance
 
-SecureClaw maintains **87.58% test coverage** with a comprehensive three-tier testing approach:
+Zetherion AI maintains **87.58% test coverage** with a comprehensive three-tier testing approach:
 
 ### Test Coverage by Module
 
@@ -325,7 +325,7 @@ Automated checks on every `git commit`:
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 # Run tests
-docker compose exec secureclaw pytest
+docker compose exec zetherion-ai pytest
 ```
 
 ### Without Docker (Local Development)
@@ -339,7 +339,7 @@ pip install -r requirements.txt
 docker run -p 6333:6333 qdrant/qdrant
 
 # Run the bot
-python -m secureclaw
+python -m zetherion-ai
 
 # Run tests
 pytest
@@ -360,12 +360,12 @@ pytest
 ### "Claude/OpenAI Not Available"
 - These are optional - bot works without them (uses Gemini for all queries)
 - Check API key is correct and has credits
-- View logs with `docker compose logs secureclaw` for details
+- View logs with `docker compose logs zetherion-ai` for details
 
 ### Bot Not Responding
 - Check bot is online in Discord server members list
 - Verify you've added your User ID to `ALLOWED_USER_IDS` (or left it empty)
-- Check logs: `docker compose logs -f secureclaw`
+- Check logs: `docker compose logs -f zetherion-ai`
 - Ensure "Message Content Intent" is enabled in Discord Developer Portal
 
 ### Memory/Vector Search Not Working
@@ -385,7 +385,7 @@ pytest
 - **GPT-4o**: Alternative for complex tasks (optional, paid)
 
 ### Intelligent Routing
-SecureClaw automatically routes messages to the most cost-effective model:
+Zetherion AI automatically routes messages to the most cost-effective model:
 - **Simple queries** (greetings, quick facts) → Router backend (Gemini or Ollama)
 - **Complex tasks** (analysis, code, reasoning) → Claude/GPT-4 (paid, if available)
 

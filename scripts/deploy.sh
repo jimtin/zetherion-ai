@@ -1,5 +1,5 @@
 #!/bin/bash
-# SecureClaw Deployment Script
+# Zetherion AI Deployment Script
 # Deploys to MacBook Air from MacBook Pro
 
 set -e
@@ -15,7 +15,7 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-echo -e "${GREEN}SecureClaw Deployment${NC}"
+echo -e "${GREEN}Zetherion AI Deployment${NC}"
 echo "====================="
 
 # Check if .env exists locally

@@ -1,6 +1,6 @@
-# SecureClaw Architecture
+# Zetherion AI Architecture
 
-This document provides a comprehensive overview of SecureClaw's system architecture, design decisions, and key components.
+This document provides a comprehensive overview of Zetherion AI's system architecture, design decisions, and key components.
 
 ## Table of Contents
 
@@ -18,7 +18,7 @@ This document provides a comprehensive overview of SecureClaw's system architect
 
 ## Overview
 
-SecureClaw is a Discord bot with advanced AI capabilities, featuring:
+Zetherion AI is a Discord bot with advanced AI capabilities, featuring:
 - **Dual LLM backends** for intelligent routing (Gemini + Ollama for routing, Claude/OpenAI for complex tasks)
 - **Vector memory** for long-term context using Qdrant
 - **Comprehensive security** with rate limiting, allowlists, and prompt injection detection
@@ -739,8 +739,8 @@ See [`memory/phase5-plan.md`](../memory/phase5-plan.md) for detailed plan.
 
 ## Contact & Support
 
-- **Issues:** https://github.com/jimtin/sercureclaw/issues
-- **Discussions:** https://github.com/jimtin/sercureclaw/discussions
+- **Issues:** https://github.com/jimtin/zetherion-ai/issues
+- **Discussions:** https://github.com/jimtin/zetherion-ai/discussions
 - **Documentation:** See [docs/](.) directory for detailed guides
 
 ---

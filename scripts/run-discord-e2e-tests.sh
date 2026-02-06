@@ -1,5 +1,5 @@
 #!/bin/bash
-# Discord E2E test runner for SecureClaw
+# Discord E2E test runner for Zetherion AI
 set -e
 
 # Colors for output
@@ -10,7 +10,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
-echo -e "${BLUE}  SecureClaw Discord E2E Tests${NC}"
+echo -e "${BLUE}  Zetherion AI Discord E2E Tests${NC}"
 echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
 echo ""
 
@@ -44,9 +44,9 @@ echo -e "${GREEN}✓ Discord E2E test configuration found${NC}"
 echo ""
 
 # Check if Discord bot is running
-echo -e "${BLUE}Checking if SecureClaw bot is running...${NC}"
+echo -e "${BLUE}Checking if Zetherion AI bot is running...${NC}"
 if ! docker ps | grep -q "secureclaw-bot"; then
-    echo -e "${YELLOW}⚠️  SecureClaw bot not running${NC}"
+    echo -e "${YELLOW}⚠️  Zetherion AI bot not running${NC}"
     echo "Starting bot with ./start.sh..."
     ./start.sh &
     STARTED_BOT=1

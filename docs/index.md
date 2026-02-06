@@ -1,4 +1,4 @@
-# SecureClaw
+# Zetherion AI
 
 Secure personal AI assistant with encrypted memory, multi-provider LLM routing, and privacy-first design.
 
@@ -14,8 +14,8 @@ Secure personal AI assistant with encrypted memory, multi-provider LLM routing, 
 
 ```bash
 # Clone the repository
-git clone https://github.com/jimtin/sercureclaw.git
-cd sercureclaw
+git clone https://github.com/jimtin/zetherion-ai.git
+cd zetherion-ai
 
 # Configure environment
 cp .env.example .env
@@ -47,6 +47,6 @@ See the [Startup Walkthrough](STARTUP_WALKTHROUGH.md) for detailed setup instruc
 
 ## Links
 
-- [GitHub Repository](https://github.com/jimtin/sercureclaw)
-- [Report Issues](https://github.com/jimtin/sercureclaw/issues)
-- [Wiki](https://github.com/jimtin/sercureclaw/wiki)
+- [GitHub Repository](https://github.com/jimtin/zetherion-ai)
+- [Report Issues](https://github.com/jimtin/zetherion-ai/issues)
+- [Wiki](https://github.com/jimtin/zetherion-ai/wiki)

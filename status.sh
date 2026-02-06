@@ -25,7 +25,7 @@ print_info() {
 
 echo ""
 echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
-echo -e "${BLUE}  SecureClaw Status${NC}"
+echo -e "${BLUE}  Zetherion AI Status${NC}"
 echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
 echo ""
 
@@ -114,11 +114,11 @@ echo ""
 print_info "Overall Status:"
 if docker ps --format '{{.Names}}' | grep -q "^secureclaw-qdrant$" && \
    pgrep -f "python -m secureclaw" >/dev/null; then
-    print_success "SecureClaw is fully operational"
+    print_success "Zetherion AI is fully operational"
 else
-    print_warning "SecureClaw is not fully running"
+    print_warning "Zetherion AI is not fully running"
     echo ""
-    print_info "To start SecureClaw, run: ./start.sh"
+    print_info "To start Zetherion AI, run: ./start.sh"
 fi
 
 echo ""

@@ -2,24 +2,24 @@
 
 ## General Questions
 
-### What is SecureClaw?
-SecureClaw is a secure, intelligent Discord bot with vector-based memory. It can remember conversations, answer questions, and assist with complex tasks using multiple AI models (Gemini, Claude, GPT-4).
+### What is Zetherion AI?
+Zetherion AI is a secure, intelligent Discord bot with vector-based memory. It can remember conversations, answer questions, and assist with complex tasks using multiple AI models (Gemini, Claude, GPT-4).
 
-### Is SecureClaw free to use?
+### Is Zetherion AI free to use?
 The bot itself is open source and free. However, you need API keys:
 - **Gemini API** - Free tier available (sufficient for personal use)
 - **Discord Bot** - Free
 - **Claude/GPT-4** - Optional, paid tiers only
 
-### Can I use SecureClaw in production?
+### Can I use Zetherion AI in production?
 Yes, but:
 - Set `ALLOWED_USER_IDS` to restrict access
 - Use proper API rate limits
 - Monitor costs for paid API usage
 - Consider enabling additional security features
 
-### Does SecureClaw store my data?
-Yes, SecureClaw stores:
+### Does Zetherion AI store my data?
+Yes, Zetherion AI stores:
 - **Conversation history** - In Qdrant vector database (local to your machine)
 - **Long-term memories** - Things you explicitly ask it to remember
 - **Nothing is sent to third parties** - All data stays on your infrastructure
@@ -73,7 +73,7 @@ Without Claude/GPT-4, all queries use Gemini Flash (still very capable).
 ### How do I talk to the bot?
 **In Discord:**
 - **DM the bot directly** - Just send a message
-- **Mention in server** - `@SecureClaw your message here`
+- **Mention in server** - `@Zetherion AI your message here`
 - **Slash commands** - `/ask`, `/remember`, `/search`, `/ping`
 
 ### What's the difference between `/ask` and mentioning?
@@ -82,7 +82,7 @@ None functionally - both do the same thing. Use whatever is more convenient:
 - Mentioning - More natural, like talking to a person
 
 ### Can it remember previous conversations?
-Yes! SecureClaw automatically:
+Yes! Zetherion AI automatically:
 - Remembers recent conversation context (last 20 messages)
 - Searches relevant past conversations using vector similarity
 - Recalls explicitly stored memories
@@ -212,7 +212,7 @@ ALLOWED_USER_IDS=id1,id2,id3
 Otherwise anyone in the server can use (and rack up API costs).
 
 ### What about prompt injection attacks?
-SecureClaw has built-in protection:
+Zetherion AI has built-in protection:
 - 17 regex patterns detect injection attempts
 - Unicode obfuscation detection
 - Excessive role-play marker detection
@@ -237,7 +237,7 @@ See `src/secureclaw/discord/security.py` for details.
 
 ## Development Questions
 
-### Can I contribute to SecureClaw?
+### Can I contribute to Zetherion AI?
 Yes! Contributions welcome:
 1. Fork the repo
 2. Create feature branch

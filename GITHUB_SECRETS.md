@@ -1,6 +1,6 @@
 # GitHub Secrets Configuration
 
-This document lists all GitHub secrets for SecureClaw's CI/CD pipeline.
+This document lists all GitHub secrets for Zetherion AI's CI/CD pipeline.
 
 > **⚠️ Important:** As of v1.1.0, **integration tests run locally only**. GitHub CI runs only unit tests, linting, type checking, security scans, and Docker builds. **No secrets are required** for CI/CD to pass.
 
@@ -130,7 +130,7 @@ Value: <your-api-key-here>
 **How to get it:**
 1. Go to [OpenAI Platform](https://platform.openai.com/api-keys)
 2. Click "Create new secret key"
-3. Name it (e.g., "SecureClaw CI")
+3. Name it (e.g., "Zetherion AI CI")
 4. Copy the API key immediately
 
 **Format:** `sk-proj-` followed by ~48 alphanumeric characters
@@ -162,7 +162,7 @@ Value: <your-api-key-here>
 1. Create a **separate** Discord application for testing
 2. Go to [Discord Developer Portal](https://discord.com/developers/applications)
 3. Click "New Application"
-4. Name it "SecureClaw Test Bot"
+4. Name it "Zetherion AI Test Bot"
 5. Go to "Bot" section
 6. Copy the bot token
 
@@ -411,7 +411,7 @@ If you run integration tests locally:
 
 **Date:** 2026-02-06
 **CI/CD Version:** v1.0.0
-**SecureClaw Version:** Phases 1-4 complete
+**Zetherion AI Version:** Phases 1-4 complete
 
 ---
 
@@ -420,4 +420,4 @@ If you run integration tests locally:
 If you have issues with secrets configuration:
 1. Check [Troubleshooting](#-troubleshooting) section above
 2. Review [CI/CD Documentation](docs/CI_CD.md)
-3. Open an issue on [GitHub](https://github.com/jimtin/sercureclaw/issues)
+3. Open an issue on [GitHub](https://github.com/jimtin/zetherion-ai/issues)

@@ -1,6 +1,6 @@
 # CI/CD Pipeline Documentation
 
-Complete guide to SecureClaw's testing and continuous integration setup.
+Complete guide to Zetherion AI's testing and continuous integration setup.
 
 ## Table of Contents
 
@@ -17,7 +17,7 @@ Complete guide to SecureClaw's testing and continuous integration setup.
 
 ## Overview
 
-SecureClaw uses a **three-tier testing approach** to ensure code quality:
+Zetherion AI uses a **three-tier testing approach** to ensure code quality:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -235,7 +235,7 @@ pre-commit autoupdate
 
 **Configuration:**
 - Rules defined in `.gitleaks.toml`
-- Custom rules for SecureClaw-specific secrets
+- Custom rules for Zetherion AI-specific secrets
 - Allowlist for false positives (e.g., `.env.example`, test fixtures)
 
 **What's Excluded:**
@@ -369,7 +369,7 @@ docker-build (30s)
   └─ Validate docker-compose.yml
 
 integration (2-3 min) ⚡ RUNS BY DEFAULT
-  ├─ Start Docker Compose (Qdrant + SecureClaw)
+  ├─ Start Docker Compose (Qdrant + Zetherion AI)
   ├─ Wait for services to be healthy
   ├─ Run full end-to-end integration tests
   ├─ Upload logs on failure

@@ -38,7 +38,7 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-print_header "SecureClaw Startup Script"
+print_header "Zetherion AI Startup Script"
 
 # 1. Check Python 3.12+
 print_info "Checking Python version..."
@@ -189,7 +189,7 @@ if [ -z "$ROUTER_BACKEND" ]; then
     echo -e "${BLUE}  Router Backend Selection${NC}"
     echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
     echo ""
-    echo "SecureClaw can use two different backends for message routing:"
+    echo "Zetherion AI can use two different backends for message routing:"
     echo ""
     echo "  1. ${GREEN}Gemini${NC} (Google) - Cloud-based, fast, minimal setup"
     echo "     • Uses your existing Gemini API key"
@@ -470,7 +470,7 @@ else
 fi
 
 # 9. Final checks
-print_header "Starting SecureClaw Bot"
+print_header "Starting Zetherion AI Bot"
 
 print_info "Configuration Summary:"
 echo "  • Python: $($PYTHON_CMD --version)"

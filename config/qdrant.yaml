@@ -1,4 +1,4 @@
-# Qdrant configuration for SecureClaw
+# Qdrant configuration for Zetherion AI
 # TLS enabled for secure communication
 
 service:

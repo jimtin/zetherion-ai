@@ -10,7 +10,7 @@
 
 **Please do NOT report security vulnerabilities through public GitHub issues.**
 
-Instead, use [GitHub Security Advisories](https://github.com/jimtin/sercureclaw/security/advisories/new) to report vulnerabilities privately.
+Instead, use [GitHub Security Advisories](https://github.com/jimtin/zetherion-ai/security/advisories/new) to report vulnerabilities privately.
 
 ### What to Include
 
@@ -30,11 +30,11 @@ Instead, use [GitHub Security Advisories](https://github.com/jimtin/sercureclaw/
 
 ## Security Documentation
 
-For a comprehensive overview of SecureClaw's security controls, testing strategy, and CI/CD pipeline, see [docs/SECURITY.md](docs/SECURITY.md).
+For a comprehensive overview of Zetherion AI's security controls, testing strategy, and CI/CD pipeline, see [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Security Features
 
-SecureClaw implements multiple layers of security:
+Zetherion AI implements multiple layers of security:
 
 - **Input validation**: Prompt injection detection with 17+ regex patterns
 - **Access control**: User allowlist + per-user rate limiting

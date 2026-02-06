@@ -8,7 +8,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-echo -e "${GREEN}SecureClaw Setup${NC}"
+echo -e "${GREEN}Zetherion AI Setup${NC}"
 echo "================"
 
 # Check for Docker
@@ -39,7 +39,7 @@ if grep -q "^DISCORD_TOKEN=$" .env; then
 fi
 
 # Build and start
-echo -e "${YELLOW}Building and starting SecureClaw...${NC}"
+echo -e "${YELLOW}Building and starting Zetherion AI...${NC}"
 docker compose up -d --build
 
 echo ""

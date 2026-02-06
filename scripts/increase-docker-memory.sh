@@ -198,7 +198,7 @@ EOF
                 echo ""
                 echo -e "${GREEN}✓${NC} Docker Desktop restarted successfully with ${REQUIRED_GB}GB memory"
                 if [[ "$AUTO_YES" == false ]]; then
-                    echo "You can now run ./start.sh to start SecureClaw"
+                    echo "You can now run ./start.sh to start Zetherion AI"
                 fi
                 exit 0
             fi

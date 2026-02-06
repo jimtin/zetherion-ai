@@ -1,8 +1,8 @@
-site_name: SecureClaw
+site_name: Zetherion AI
 site_description: Secure personal AI assistant with encrypted memory and multi-provider LLM routing
-site_url: https://jimtin.github.io/sercureclaw
-repo_url: https://github.com/jimtin/sercureclaw
-repo_name: jimtin/sercureclaw
+site_url: https://jimtin.github.io/zetherion-ai
+repo_url: https://github.com/jimtin/zetherion-ai
+repo_name: jimtin/zetherion-ai
 
 theme:
   name: material
@@ -65,4 +65,4 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/jimtin/sercureclaw
+      link: https://github.com/jimtin/zetherion-ai

@@ -1,6 +1,6 @@
 # Docker Architecture and Memory Management
 
-This document explains how Docker works on macOS, the distinction between Docker Desktop and containers, and how SecureClaw automatically manages Docker memory allocation for Ollama models.
+This document explains how Docker works on macOS, the distinction between Docker Desktop and containers, and how Zetherion AI automatically manages Docker memory allocation for Ollama models.
 
 ## Table of Contents
 
@@ -161,7 +161,7 @@ Container memory limits (`docker run --memory=X`) are different:
 
 ## Automated Memory Management
 
-SecureClaw includes a fully automated pipeline to handle Docker memory requirements for Ollama models.
+Zetherion AI includes a fully automated pipeline to handle Docker memory requirements for Ollama models.
 
 ### The Pipeline
 

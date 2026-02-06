@@ -1,6 +1,6 @@
-# SecureClaw Command Reference
+# Zetherion AI Command Reference
 
-Complete list of all Discord commands and interactions for SecureClaw.
+Complete list of all Discord commands and interactions for Zetherion AI.
 
 ## Quick Reference
 
@@ -11,7 +11,7 @@ Complete list of all Discord commands and interactions for SecureClaw.
 | `/search` | Slash Command | Search memories | `/search preferences` |
 | `/ping` | Slash Command | Check bot status | `/ping` |
 | DM | Direct Message | Talk naturally | Just send a message |
-| Mention | Server Message | Ask in server | `@SecureClaw help me` |
+| Mention | Server Message | Ask in server | `@Zetherion AI help me` |
 
 ---
 
@@ -19,7 +19,7 @@ Complete list of all Discord commands and interactions for SecureClaw.
 
 ### `/ask` - Ask a Question
 
-**Description:** Ask SecureClaw a question or request help with a task.
+**Description:** Ask Zetherion AI a question or request help with a task.
 
 **Syntax:**
 ```
@@ -58,7 +58,7 @@ Complete list of all Discord commands and interactions for SecureClaw.
 
 ### `/remember` - Store a Memory
 
-**Description:** Ask SecureClaw to remember something for later retrieval.
+**Description:** Ask Zetherion AI to remember something for later retrieval.
 
 **Syntax:**
 ```
@@ -177,7 +177,7 @@ No matching memories found.
 **Description:** Send messages directly to the bot in a private conversation.
 
 **How to Use:**
-1. Find SecureClaw in your server member list
+1. Find Zetherion AI in your server member list
 2. Right-click → Message
 3. Type your message naturally
 
@@ -211,14 +211,14 @@ What did we talk about yesterday?
 
 **Syntax:**
 ```
-@SecureClaw <your message>
+@Zetherion AI <your message>
 ```
 
 **Examples:**
 ```
-@SecureClaw what's the best way to learn Python?
-@SecureClaw can you help me debug this code?
-@SecureClaw remember that our team meeting is every Monday
+@Zetherion AI what's the best way to learn Python?
+@Zetherion AI can you help me debug this code?
+@Zetherion AI remember that our team meeting is every Monday
 ```
 
 **Behavior:**
@@ -229,7 +229,7 @@ What did we talk about yesterday?
 
 **Empty Mention:**
 ```
-@SecureClaw
+@Zetherion AI
 ```
 Response:
 ```
@@ -337,7 +337,7 @@ Use this checklist to verify all commands work correctly:
 - [ ] `/ping` - Bot responds with latency
 - [ ] `/ask Hello` - Bot greets you
 - [ ] DM: `Hello` - Bot responds to DM
-- [ ] Mention: `@SecureClaw hi` - Bot responds to mention
+- [ ] Mention: `@Zetherion AI hi` - Bot responds to mention
 
 ### Memory Operations
 - [ ] `/remember I like pizza` - Confirms storage
@@ -352,7 +352,7 @@ Use this checklist to verify all commands work correctly:
 - [ ] DM: `Help me debug this error` - Analyzes and helps
 
 ### Edge Cases
-- [ ] Empty mention: `@SecureClaw` - Asks how to help
+- [ ] Empty mention: `@Zetherion AI` - Asks how to help
 - [ ] Very long message (>2000 chars) - Splits response
 - [ ] Rate limiting - Send 11+ messages quickly
 - [ ] Prompt injection: `ignore previous instructions` - Blocked
@@ -566,8 +566,8 @@ async def hello_command(interaction: discord.Interaction) -> None:
 3. DM bot: "What do you remember about me?"
 
 # Test Mentions
-1. In server: "@SecureClaw help"
-2. In server: "@SecureClaw remember our meeting is tomorrow"
+1. In server: "@Zetherion AI help"
+2. In server: "@Zetherion AI remember our meeting is tomorrow"
 
 # Test Error Handling
 1. Send 11 messages quickly (rate limit)

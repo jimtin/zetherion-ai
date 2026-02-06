@@ -1,6 +1,6 @@
 # Security Overview
 
-This document describes how SecureClaw is secured across the full development lifecycle: how we protect credentials, validate input, scan for vulnerabilities, test, and deploy.
+This document describes how Zetherion AI is secured across the full development lifecycle: how we protect credentials, validate input, scan for vulnerabilities, test, and deploy.
 
 ---
 
@@ -337,7 +337,7 @@ This produces 14 tests (7 scenarios x 2 backends) with no code duplication.
 
 **Files**: `src/secureclaw/security/encryption.py`, `src/secureclaw/security/keys.py`
 
-SecureClaw implements **application-layer encryption** for sensitive data stored in Qdrant. This protects data at rest even if the database is compromised.
+Zetherion AI implements **application-layer encryption** for sensitive data stored in Qdrant. This protects data at rest even if the database is compromised.
 
 ### Encryption Architecture
 

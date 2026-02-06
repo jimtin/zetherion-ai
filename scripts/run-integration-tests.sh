@@ -1,5 +1,5 @@
 #!/bin/bash
-# Integration test runner for SecureClaw
+# Integration test runner for Zetherion AI
 set -e
 
 # Colors for output
@@ -10,7 +10,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
-echo -e "${BLUE}  SecureClaw Integration Tests${NC}"
+echo -e "${BLUE}  Zetherion AI Integration Tests${NC}"
 echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
 echo ""
 

@@ -32,7 +32,7 @@ openssl genrsa -out "$CERTS_DIR/server.key" 4096
 openssl req -new \
     -key "$CERTS_DIR/server.key" \
     -out "$CERTS_DIR/server.csr" \
-    -subj "/CN=qdrant/O=SecureClaw/C=US" \
+    -subj "/CN=qdrant/O=Zetherion AI/C=US" \
     -addext "subjectAltName=DNS:qdrant,DNS:localhost,IP:127.0.0.1"
 
 # Generate self-signed certificate
