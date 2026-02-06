@@ -1,0 +1,3619 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Secure personal AI assistant with encrypted memory and multi-provider LLM routing">
+      
+      
+      
+        <link rel="canonical" href="https://jimtin.github.io/sercureclaw/STARTUP_WALKTHROUGH/">
+      
+      
+        <link rel="prev" href="..">
+      
+      
+        <link rel="next" href="../COMMANDS/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Quick Start - SecureClaw</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#secureclaw-startup-script-walkthrough" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="SecureClaw" class="md-header__button md-logo" aria-label="SecureClaw" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            SecureClaw
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Quick Start
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/jimtin/sercureclaw" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    jimtin/sercureclaw
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="SecureClaw" class="md-nav__button md-logo" aria-label="SecureClaw" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    SecureClaw
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/jimtin/sercureclaw" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    jimtin/sercureclaw
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#execution-flow-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Execution Flow Diagram
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-by-phase-breakdown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase-by-Phase Breakdown
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase-by-Phase Breakdown">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-environment-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: Environment Validation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 1: Environment Validation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11-python-version-check-lines-43-65" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 Python Version Check (Lines 43-65)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-docker-check-auto-launch-lines-67-157" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.2 Docker Check &amp; Auto-Launch (Lines 67-157)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13-env-file-validation-lines-159-183" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.3 .env File Validation (Lines 159-183)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-router-backend-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: Router Backend Selection
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2: Router Backend Selection">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#trigger-condition-line-186" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trigger Condition (Line 186)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-3-python-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3: Python Environment
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 3: Python Environment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-virtual-environment-creation-lines-228-238" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Virtual Environment Creation (Lines 228-238)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-dependency-installation-lines-240-250" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 Dependency Installation (Lines 240-250)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-4-qdrant-vector-database" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4: Qdrant Vector Database
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 4: Qdrant Vector Database">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#container-lifecycle-lines-252-270" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Container Lifecycle (Lines 252-270)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#health-check-lines-272-287" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Health Check (Lines 272-287)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5-ollama-system-assessment-ollama-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5: Ollama System Assessment (Ollama Only)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 5: Ollama System Assessment (Ollama Only)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#assessment-trigger-lines-293-294" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Assessment Trigger (Lines 293-294)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hardware-detection-lines-295-326" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hardware Detection (Lines 295-326)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-6-docker-memory-check-ollama-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 6: Docker Memory Check (Ollama Only)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 6: Docker Memory Check (Ollama Only)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#memory-requirement-calculation-lines-343-352" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory Requirement Calculation (Lines 343-352)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#user-prompt-lines-353-409" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        User Prompt (Lines 353-409)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-7-ollama-container-model-ollama-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 7: Ollama Container &amp; Model (Ollama Only)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 7: Ollama Container &amp; Model (Ollama Only)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#container-management-lines-411-431" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Container Management (Lines 411-431)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#api-health-check-lines-433-448" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Health Check (Lines 433-448)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-download-lines-450-467" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model Download (Lines 450-467)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-8-configuration-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 8: Configuration Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-9-start-bot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 9: Start Bot
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decision-trees" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision Trees
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Decision Trees">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#docker-launch-decision-tree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docker Launch Decision Tree
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#router-backend-selection-tree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Router Backend Selection Tree
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ollama-memory-management-tree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama Memory Management Tree
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timing-expectations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Timing Expectations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Timing Expectations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#first-run-ollama-no-containers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First Run (Ollama, No Containers)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#first-run-gemini-no-containers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First Run (Gemini, No Containers)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subsequent-runs-warm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subsequent Runs (Warm)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cold-docker-start-worst-case" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cold Docker Start (Worst Case)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Handling
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Error Handling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#exit-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exit Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-categories" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Categories
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Error Categories">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-missing-prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Missing Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-configuration-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Configuration Errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-docker-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Docker Errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-container-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Container Errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-model-download-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Model Download Errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variables
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Environment Variables">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#required-must-be-in-env" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required (Must be in .env)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optional-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ollama-specific" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama-Specific
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto-configured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-Configured
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#appendix-script-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Appendix: Script Structure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Appendix: Script Structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#helper-functions-lines-11-39" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Helper Functions (Lines 11-39)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-handling-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Handling Pattern
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../COMMANDS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../FAQ/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ARCHITECTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../DOCKER_ARCHITECTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../SECURITY/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TESTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../CI_CD/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI/CD
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TROUBLESHOOTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#execution-flow-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Execution Flow Diagram
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-by-phase-breakdown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase-by-Phase Breakdown
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase-by-Phase Breakdown">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-environment-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: Environment Validation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 1: Environment Validation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11-python-version-check-lines-43-65" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 Python Version Check (Lines 43-65)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-docker-check-auto-launch-lines-67-157" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.2 Docker Check &amp; Auto-Launch (Lines 67-157)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13-env-file-validation-lines-159-183" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.3 .env File Validation (Lines 159-183)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-router-backend-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: Router Backend Selection
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2: Router Backend Selection">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#trigger-condition-line-186" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trigger Condition (Line 186)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-3-python-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3: Python Environment
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 3: Python Environment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-virtual-environment-creation-lines-228-238" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Virtual Environment Creation (Lines 228-238)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-dependency-installation-lines-240-250" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 Dependency Installation (Lines 240-250)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-4-qdrant-vector-database" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4: Qdrant Vector Database
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 4: Qdrant Vector Database">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#container-lifecycle-lines-252-270" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Container Lifecycle (Lines 252-270)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#health-check-lines-272-287" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Health Check (Lines 272-287)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5-ollama-system-assessment-ollama-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5: Ollama System Assessment (Ollama Only)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 5: Ollama System Assessment (Ollama Only)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#assessment-trigger-lines-293-294" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Assessment Trigger (Lines 293-294)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hardware-detection-lines-295-326" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hardware Detection (Lines 295-326)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-6-docker-memory-check-ollama-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 6: Docker Memory Check (Ollama Only)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 6: Docker Memory Check (Ollama Only)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#memory-requirement-calculation-lines-343-352" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory Requirement Calculation (Lines 343-352)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#user-prompt-lines-353-409" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        User Prompt (Lines 353-409)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-7-ollama-container-model-ollama-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 7: Ollama Container &amp; Model (Ollama Only)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 7: Ollama Container &amp; Model (Ollama Only)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#container-management-lines-411-431" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Container Management (Lines 411-431)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#api-health-check-lines-433-448" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Health Check (Lines 433-448)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-download-lines-450-467" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model Download (Lines 450-467)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-8-configuration-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 8: Configuration Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-9-start-bot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 9: Start Bot
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decision-trees" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision Trees
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Decision Trees">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#docker-launch-decision-tree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docker Launch Decision Tree
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#router-backend-selection-tree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Router Backend Selection Tree
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ollama-memory-management-tree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama Memory Management Tree
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#timing-expectations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Timing Expectations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Timing Expectations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#first-run-ollama-no-containers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First Run (Ollama, No Containers)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#first-run-gemini-no-containers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First Run (Gemini, No Containers)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subsequent-runs-warm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subsequent Runs (Warm)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cold-docker-start-worst-case" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cold Docker Start (Worst Case)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Handling
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Error Handling">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#exit-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exit Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-categories" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Categories
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Error Categories">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-missing-prerequisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Missing Prerequisites
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-configuration-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Configuration Errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-docker-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Docker Errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-container-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Container Errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-model-download-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Model Download Errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variables
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Environment Variables">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#required-must-be-in-env" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Required (Must be in .env)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optional-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ollama-specific" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama-Specific
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto-configured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-Configured
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#appendix-script-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Appendix: Script Structure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Appendix: Script Structure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#helper-functions-lines-11-39" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Helper Functions (Lines 11-39)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-handling-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Handling Pattern
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="secureclaw-startup-script-walkthrough">SecureClaw Startup Script Walkthrough<a class="headerlink" href="#secureclaw-startup-script-walkthrough" title="Permanent link">&para;</a></h1>
+<p>A comprehensive guide to understanding the <code>start.sh</code> script - what it does, why, and how it handles errors.</p>
+<h2 id="table-of-contents">Table of Contents<a class="headerlink" href="#table-of-contents" title="Permanent link">&para;</a></h2>
+<ol>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#execution-flow-diagram">Execution Flow Diagram</a></li>
+<li><a href="#phase-by-phase-breakdown">Phase-by-Phase Breakdown</a></li>
+<li><a href="#decision-trees">Decision Trees</a></li>
+<li><a href="#timing-expectations">Timing Expectations</a></li>
+<li><a href="#error-handling">Error Handling</a></li>
+<li><a href="#environment-variables">Environment Variables</a></li>
+</ol>
+<hr />
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>The <code>start.sh</code> script is the <strong>single entry point</strong> for running SecureClaw. It handles:</p>
+<ul>
+<li>✅ Dependency verification (Python, Docker)</li>
+<li>✅ Environment configuration (.env file)</li>
+<li>✅ Virtual environment management</li>
+<li>✅ Docker container orchestration</li>
+<li>✅ Ollama model download and memory management</li>
+<li>✅ Automatic Docker Desktop management</li>
+</ul>
+<p><strong>Design Philosophy:</strong>
+- <strong>Zero-knowledge startup</strong>: Works for first-time users with minimal configuration
+- <strong>Idempotent</strong>: Safe to run multiple times - won't duplicate work
+- <strong>Fail-fast</strong>: Exits immediately on critical errors with clear guidance
+- <strong>Progressive enhancement</strong>: Detects capabilities and offers upgrades</p>
+<p><strong>Typical runtime:</strong>
+- First run with Ollama: <strong>5-10 minutes</strong> (model download)
+- First run with Gemini: <strong>30-60 seconds</strong> (Docker startup)
+- Subsequent runs: <strong>10-20 seconds</strong> (containers already exist)</p>
+<hr />
+<h2 id="execution-flow-diagram">Execution Flow Diagram<a class="headerlink" href="#execution-flow-diagram" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>┌──────────────────────────────────────────────────────┐
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>│ START: ./start.sh                                     │
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>└───────────────────┬──────────────────────────────────┘
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>                    │
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>┌───────────────────▼──────────────────────────────────┐
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│ Phase 1: Environment Validation                       │
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│  • Check Python 3.12+                                 │
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│  • Check Docker installed                             │
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>│  • Check Docker daemon ready                          │
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>│  • Launch Docker if needed                            │
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│  • Check .env file exists                             │
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│  • Validate required vars (DISCORD_TOKEN, GEMINI_KEY) │
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│  Duration: 5-90 seconds (if launching Docker)         │
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>└───────────────────┬──────────────────────────────────┘
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>                    │
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>┌───────────────────▼──────────────────────────────────┐
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>│ Phase 2: Router Backend Selection (if not set)       │
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>│  • Prompt user: Gemini or Ollama?                     │
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>│  • Save choice to .env                                │
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>│  Duration: 5-10 seconds (user interaction)            │
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>└───────────────────┬──────────────────────────────────┘
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>                    │
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>┌───────────────────▼──────────────────────────────────┐
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>│ Phase 3: Python Environment                           │
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>│  • Create/activate virtual environment                │
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>│  • Install dependencies if missing                    │
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>│  Duration: 5-60 seconds (depends on cache)            │
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>└───────────────────┬──────────────────────────────────┘
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>                    │
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>┌───────────────────▼──────────────────────────────────┐
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>│ Phase 4: Qdrant Vector Database                       │
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>│  • Check if container exists                          │
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>│  • Create or start container                          │
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>│  • Wait for health check (30s max)                    │
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>│  Duration: 5-15 seconds                               │
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>└───────────────────┬──────────────────────────────────┘
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>                    │
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>                    │      ┌─────────────────────┐
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>                    ├──────► ROUTER_BACKEND=gemini?
+<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>                    │      └──────┬──────────────┘
+<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>                    │             │ Yes
+<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>                    │             ▼
+<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a>                    │      ┌─────────────────────┐
+<a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a>                    │      │ Skip Ollama phases  │
+<a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a>                    │      │ Go to Phase 8       │
+<a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a>                    │      └──────┬──────────────┘
+<a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a>                    │             │
+<a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a>                    │ No (Ollama) │
+<a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a>                    ▼             │
+<a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a>┌───────────────────┴─────────────▼────────────────────┐
+<a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a>│ Phase 5: Ollama System Assessment (Ollama only)       │
+<a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a>│  • Check if already assessed (.ollama_assessed)       │
+<a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a>│  • Run hardware detection                             │
+<a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a>│  • Recommend model based on RAM/CPU/GPU               │
+<a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a>│  • Update .env with OLLAMA_ROUTER_MODEL &amp; DOCKER_MEM  │
+<a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a>│  Duration: 10-20 seconds (user interaction)           │
+<a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a>└───────────────────┬──────────────────────────────────┘
+<a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a>                    │
+<a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a>┌───────────────────▼──────────────────────────────────┐
+<a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a>│ Phase 6: Docker Memory Check (Ollama only)            │
+<a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a>│  • Read OLLAMA_DOCKER_MEMORY from .env               │
+<a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a>│  • Check Docker Desktop total memory                  │
+<a id="__codelineno-0-63" name="__codelineno-0-63" href="#__codelineno-0-63"></a>│  • If insufficient, prompt user:                      │
+<a id="__codelineno-0-64" name="__codelineno-0-64" href="#__codelineno-0-64"></a>│    1. Auto-increase (calls increase-docker-memory.sh) │
+<a id="__codelineno-0-65" name="__codelineno-0-65" href="#__codelineno-0-65"></a>│    2. Choose smaller model (exit, re-run)            │
+<a id="__codelineno-0-66" name="__codelineno-0-66" href="#__codelineno-0-66"></a>│    3. Continue anyway (risky)                         │
+<a id="__codelineno-0-67" name="__codelineno-0-67" href="#__codelineno-0-67"></a>│  Duration: 30-90 seconds (if increasing memory)       │
+<a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a>└───────────────────┬──────────────────────────────────┘
+<a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a>                    │
+<a id="__codelineno-0-70" name="__codelineno-0-70" href="#__codelineno-0-70"></a>┌───────────────────▼──────────────────────────────────┐
+<a id="__codelineno-0-71" name="__codelineno-0-71" href="#__codelineno-0-71"></a>│ Phase 7: Ollama Container &amp; Model (Ollama only)       │
+<a id="__codelineno-0-72" name="__codelineno-0-72" href="#__codelineno-0-72"></a>│  • Create/start Ollama container                      │
+<a id="__codelineno-0-73" name="__codelineno-0-73" href="#__codelineno-0-73"></a>│  • Wait for API ready (30s max)                       │
+<a id="__codelineno-0-74" name="__codelineno-0-74" href="#__codelineno-0-74"></a>│  • Check if model downloaded                          │
+<a id="__codelineno-0-75" name="__codelineno-0-75" href="#__codelineno-0-75"></a>│  • Pull model if missing (~4.7GB, 3-7 minutes)        │
+<a id="__codelineno-0-76" name="__codelineno-0-76" href="#__codelineno-0-76"></a>│  Duration: 10 seconds - 10 minutes (first run)        │
+<a id="__codelineno-0-77" name="__codelineno-0-77" href="#__codelineno-0-77"></a>└───────────────────┬──────────────────────────────────┘
+<a id="__codelineno-0-78" name="__codelineno-0-78" href="#__codelineno-0-78"></a>                    │
+<a id="__codelineno-0-79" name="__codelineno-0-79" href="#__codelineno-0-79"></a>┌───────────────────▼──────────────────────────────────┐
+<a id="__codelineno-0-80" name="__codelineno-0-80" href="#__codelineno-0-80"></a>│ Phase 8: Configuration Summary                        │
+<a id="__codelineno-0-81" name="__codelineno-0-81" href="#__codelineno-0-81"></a>│  • Display all settings                               │
+<a id="__codelineno-0-82" name="__codelineno-0-82" href="#__codelineno-0-82"></a>│  • Show API keys (truncated)                          │
+<a id="__codelineno-0-83" name="__codelineno-0-83" href="#__codelineno-0-83"></a>│  • Show backend choice                                │
+<a id="__codelineno-0-84" name="__codelineno-0-84" href="#__codelineno-0-84"></a>│  Duration: 1 second                                   │
+<a id="__codelineno-0-85" name="__codelineno-0-85" href="#__codelineno-0-85"></a>└───────────────────┬──────────────────────────────────┘
+<a id="__codelineno-0-86" name="__codelineno-0-86" href="#__codelineno-0-86"></a>                    │
+<a id="__codelineno-0-87" name="__codelineno-0-87" href="#__codelineno-0-87"></a>┌───────────────────▼──────────────────────────────────┐
+<a id="__codelineno-0-88" name="__codelineno-0-88" href="#__codelineno-0-88"></a>│ Phase 9: Start Bot                                    │
+<a id="__codelineno-0-89" name="__codelineno-0-89" href="#__codelineno-0-89"></a>│  • Set PYTHONPATH                                     │
+<a id="__codelineno-0-90" name="__codelineno-0-90" href="#__codelineno-0-90"></a>│  • Launch: python -m secureclaw                       │
+<a id="__codelineno-0-91" name="__codelineno-0-91" href="#__codelineno-0-91"></a>│  • Run until Ctrl+C                                   │
+<a id="__codelineno-0-92" name="__codelineno-0-92" href="#__codelineno-0-92"></a>└──────────────────────────────────────────────────────┘
+</code></pre></div>
+<hr />
+<h2 id="phase-by-phase-breakdown">Phase-by-Phase Breakdown<a class="headerlink" href="#phase-by-phase-breakdown" title="Permanent link">&para;</a></h2>
+<h3 id="phase-1-environment-validation">Phase 1: Environment Validation<a class="headerlink" href="#phase-1-environment-validation" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> Ensure all prerequisites are met before continuing.</p>
+<h4 id="11-python-version-check-lines-43-65">1.1 Python Version Check (Lines 43-65)<a class="headerlink" href="#11-python-version-check-lines-43-65" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Check for Python 3.12 or 3.13 explicitly</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">if</span><span class="w"> </span>command_exists<span class="w"> </span>python3.12<span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="nv">PYTHON_CMD</span><span class="o">=</span><span class="s2">&quot;python3.12&quot;</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">elif</span><span class="w"> </span>command_exists<span class="w"> </span>python3.13<span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nv">PYTHON_CMD</span><span class="o">=</span><span class="s2">&quot;python3.13&quot;</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="k">elif</span><span class="w"> </span>command_exists<span class="w"> </span>python3<span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="c1"># Fallback: check if python3 is &gt;= 3.12</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="nv">PYTHON_VERSION</span><span class="o">=</span><span class="k">$(</span>python3<span class="w"> </span>--version<span class="w"> </span><span class="p">|</span><span class="w"> </span>cut<span class="w"> </span>-d<span class="s1">&#39; &#39;</span><span class="w"> </span>-f2<span class="w"> </span><span class="p">|</span><span class="w"> </span>cut<span class="w"> </span>-d<span class="s1">&#39;.&#39;</span><span class="w"> </span>-f1,2<span class="k">)</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="o">[[</span><span class="w"> </span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PYTHON_VERSION</span><span class="s2"> &gt;= 3.12&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>bc<span class="w"> </span>-l<span class="k">)</span><span class="w"> </span>-eq<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="o">]]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">        </span><span class="nv">PYTHON_CMD</span><span class="o">=</span><span class="s2">&quot;python3&quot;</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="k">else</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">        </span><span class="nb">exit</span><span class="w"> </span><span class="m">1</span><span class="w">  </span><span class="c1"># Version too old</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="k">fi</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="k">else</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">    </span><span class="nb">exit</span><span class="w"> </span><span class="m">1</span><span class="w">  </span><span class="c1"># Not found</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="k">fi</span>
+</code></pre></div>
+<p><strong>Decision Logic:</strong>
+- Prefer explicit versions (python3.12, python3.13)
+- Fall back to generic python3 if &gt;= 3.12
+- Exit with error if none found</p>
+<p><strong>Why 3.12+?</strong> SecureClaw uses modern Python features (type hints, pattern matching) requiring 3.12+.</p>
+<p><strong>Error Example:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>✗ Python 3.12+ required, found 3.11
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>ℹ Install with: brew install python@3.12
+</code></pre></div></p>
+<h4 id="12-docker-check-auto-launch-lines-67-157">1.2 Docker Check &amp; Auto-Launch (Lines 67-157)<a class="headerlink" href="#12-docker-check-auto-launch-lines-67-157" title="Permanent link">&para;</a></h4>
+<p><strong>Step 1: Check if Docker CLI exists</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">if</span><span class="w"> </span>!<span class="w"> </span>command_exists<span class="w"> </span>docker<span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span>print_error<span class="w"> </span><span class="s2">&quot;Docker not found&quot;</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nb">exit</span><span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="k">fi</span>
+</code></pre></div></p>
+<p><strong>Step 2: Check if daemon is ready</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">if</span><span class="w"> </span>!<span class="w"> </span>docker<span class="w"> </span>info<span class="w"> </span>&gt;/dev/null<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">    </span><span class="c1"># Daemon not ready - check if Docker Desktop is starting</span>
+</code></pre></div></p>
+<p><strong>Step 3: Determine Docker state</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>┌─────────────────────────────────────────┐
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>│ Is Docker daemon ready?                 │
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>│ (docker info succeeds)                  │
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>└──────────┬─────────────┬────────────────┘
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>           │ Yes         │ No
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>           ▼             ▼
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    ┌──────────┐   ┌────────────────────┐
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    │ Continue │   │ Is Docker Desktop  │
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    │          │   │ process running?   │
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>    │          │   │ (pgrep -x &quot;Docker&quot;)│
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>    └──────────┘   └──────┬─────────────┘
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>                          │
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>                ┌─────────┴─────────┐
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>                │ Yes               │ No
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>                ▼                   ▼
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>        ┌───────────────┐   ┌─────────────────┐
+<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>        │ Starting...   │   │ Launch Docker   │
+<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>        │ Wait 90s max  │   │ Desktop         │
+<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a>        └───────────────┘   │ Wait for daemon │
+<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a>                            └─────────────────┘
+</code></pre></div></p>
+<p><strong>Step 4: Launch Docker if needed</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Verify Docker.app exists</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>!<span class="w"> </span>-d<span class="w"> </span><span class="s2">&quot;/Applications/Docker.app&quot;</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span>print_error<span class="w"> </span><span class="s2">&quot;Docker Desktop not found at /Applications/Docker.app&quot;</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="nb">exit</span><span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="k">fi</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="c1"># Launch</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>open<span class="w"> </span>-a<span class="w"> </span>Docker
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="c1"># Initial wait (5 seconds) for process to spawn</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>sleep<span class="w"> </span><span class="m">5</span>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="c1"># Quick check loop (4 attempts x 5 seconds = 20s total)</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="k">for</span><span class="w"> </span>attempt<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="o">{</span><span class="m">1</span>..4<span class="o">}</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span>docker<span class="w"> </span>info<span class="w"> </span>&gt;/dev/null<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a><span class="w">        </span>print_success<span class="w"> </span><span class="s2">&quot;Docker daemon is ready&quot;</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="w">        </span><span class="k">break</span><span class="w"> </span><span class="m">2</span><span class="w">  </span><span class="c1"># Success! Exit both loops</span>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="w">    </span><span class="k">fi</span>
+<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="w">    </span>sleep<span class="w"> </span><span class="m">5</span>
+<a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="k">done</span>
+</code></pre></div></p>
+<p><strong>Two-Phase Wait Strategy:</strong></p>
+<ol>
+<li><strong>Quick Phase (20 seconds):</strong> 4 attempts with 5-second intervals</li>
+<li>Optimized for fast machines / warm starts</li>
+<li>
+<p>Most machines ready in 10-20 seconds</p>
+</li>
+<li>
+<p><strong>Extended Phase (90 seconds):</strong> Continues if quick phase fails</p>
+</li>
+<li>Handles slow machines / cold starts</li>
+<li>Shows progress every 10 seconds</li>
+</ol>
+<p><strong>Why this approach?</strong>
+- Fast machines don't wait unnecessarily
+- Slow machines get enough time
+- Clear progress feedback to user</p>
+<p><strong>Timing Breakdown:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>Fast machine (Docker already warm):
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>  Launch: 2s + Quick phase: 5-10s = 7-12 seconds total
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>Slow machine (Docker cold start):
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>  Launch: 2s + Quick phase: 20s + Extended: 30s = 52 seconds total
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>Very slow machine:
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>  Launch: 2s + Quick phase: 20s + Extended: 60s = 82 seconds total
+</code></pre></div></p>
+<h4 id="13-env-file-validation-lines-159-183">1.3 .env File Validation (Lines 159-183)<a class="headerlink" href="#13-env-file-validation-lines-159-183" title="Permanent link">&para;</a></h4>
+<p><strong>Check file exists:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>!<span class="w"> </span>-f<span class="w"> </span>.env<span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">    </span>print_error<span class="w"> </span><span class="s2">&quot;.env file not found&quot;</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span>print_info<span class="w"> </span><span class="s2">&quot;Copy .env.example to .env and add your API keys&quot;</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span><span class="nb">exit</span><span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="k">fi</span>
+</code></pre></div></p>
+<p><strong>Validate required variables:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nb">source</span><span class="w"> </span>.env<span class="w">  </span><span class="c1"># Load variables</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nv">MISSING_VARS</span><span class="o">=()</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>-z<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$DISCORD_TOKEN</span><span class="s2">&quot;</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">    </span><span class="nv">MISSING_VARS</span><span class="o">+=(</span><span class="s2">&quot;DISCORD_TOKEN&quot;</span><span class="o">)</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="k">fi</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>-z<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$GEMINI_API_KEY</span><span class="s2">&quot;</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">    </span><span class="nv">MISSING_VARS</span><span class="o">+=(</span><span class="s2">&quot;GEMINI_API_KEY&quot;</span><span class="o">)</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="k">fi</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="si">${#</span><span class="nv">MISSING_VARS</span><span class="p">[@]</span><span class="si">}</span><span class="w"> </span>-gt<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="w">    </span>print_error<span class="w"> </span><span class="s2">&quot;Missing required environment variables: </span><span class="si">${</span><span class="nv">MISSING_VARS</span><span class="p">[*]</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="w">    </span><span class="nb">exit</span><span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="k">fi</span>
+</code></pre></div></p>
+<p><strong>Why source early?</strong> We need env vars for subsequent phases (router selection, Ollama config).</p>
+<hr />
+<h3 id="phase-2-router-backend-selection">Phase 2: Router Backend Selection<a class="headerlink" href="#phase-2-router-backend-selection" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> One-time choice between Gemini (cloud) and Ollama (local) routing.</p>
+<h4 id="trigger-condition-line-186">Trigger Condition (Line 186)<a class="headerlink" href="#trigger-condition-line-186" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>-z<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$ROUTER_BACKEND</span><span class="s2">&quot;</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">    </span><span class="c1"># Not set in .env - ask user</span>
+</code></pre></div>
+<p><strong>When does this happen?</strong>
+- First run (fresh .env from .env.example)
+- User manually removed ROUTER_BACKEND from .env</p>
+<p><strong>Interactive Prompt (Lines 187-225):</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>═══════════════════════════════════════════════
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>  Router Backend Selection
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>═══════════════════════════════════════════════
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>SecureClaw can use two different backends for message routing:
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>  1. Gemini (Google) - Cloud-based, fast, minimal setup
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>     • Uses your existing Gemini API key
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>     • No additional downloads
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>     • Recommended for cloud-based workflows
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>
+<a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>  2. Ollama (Local) - Privacy-focused, runs on your machine
+<a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a>     • No data sent to external APIs for routing
+<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a>     • ~5GB model download (first time only)
+<a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a>     • Recommended for privacy-conscious users
+<a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a>
+<a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a>Which backend would you like to use? (1=Gemini, 2=Ollama) [1]:
+</code></pre></div>
+<p><strong>Decision Logic:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="k">case</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$REPLY</span><span class="s2">&quot;</span><span class="w"> </span><span class="k">in</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">    </span><span class="m">2</span><span class="o">)</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">        </span><span class="nv">ROUTER_BACKEND</span><span class="o">=</span><span class="s2">&quot;ollama&quot;</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">        </span><span class="p">;;</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">    </span><span class="m">1</span><span class="p">|</span><span class="s2">&quot;&quot;</span><span class="o">)</span><span class="w">  </span><span class="c1"># Default to Gemini if user just presses Enter</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="w">        </span><span class="nv">ROUTER_BACKEND</span><span class="o">=</span><span class="s2">&quot;gemini&quot;</span>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="w">        </span><span class="p">;;</span>
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">    </span>*<span class="o">)</span>
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">        </span>print_warning<span class="w"> </span><span class="s2">&quot;Invalid selection, defaulting to Gemini&quot;</span>
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="w">        </span><span class="nv">ROUTER_BACKEND</span><span class="o">=</span><span class="s2">&quot;gemini&quot;</span>
+<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="w">        </span><span class="p">;;</span>
+<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="k">esac</span>
+<a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>
+<a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a><span class="c1"># Save to .env for future runs</span>
+<a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;ROUTER_BACKEND=</span><span class="nv">$ROUTER_BACKEND</span><span class="s2">&quot;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>.env
+</code></pre></div></p>
+<p><strong>Why persist to .env?</strong>
+- User only chooses once
+- Subsequent runs skip this prompt
+- Can be changed by editing .env manually</p>
+<p><strong>Typical Timing:</strong> 5-10 seconds (user reading and choosing)</p>
+<hr />
+<h3 id="phase-3-python-environment">Phase 3: Python Environment<a class="headerlink" href="#phase-3-python-environment" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> Isolate dependencies in a virtual environment.</p>
+<h4 id="31-virtual-environment-creation-lines-228-238">3.1 Virtual Environment Creation (Lines 228-238)<a class="headerlink" href="#31-virtual-environment-creation-lines-228-238" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>!<span class="w"> </span>-d<span class="w"> </span><span class="s2">&quot;.venv&quot;</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">    </span>print_warning<span class="w"> </span><span class="s2">&quot;Virtual environment not found, creating...&quot;</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">    </span><span class="nv">$PYTHON_CMD</span><span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">    </span>print_success<span class="w"> </span><span class="s2">&quot;Virtual environment created&quot;</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="k">fi</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
+</code></pre></div>
+<p><strong>Why check first?</strong> Avoid re-creating existing venv (wastes time).</p>
+<p><strong>Timing:</strong> 3-5 seconds to create, &lt;1 second to activate</p>
+<h4 id="32-dependency-installation-lines-240-250">3.2 Dependency Installation (Lines 240-250)<a class="headerlink" href="#32-dependency-installation-lines-240-250" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="k">if</span><span class="w"> </span>!<span class="w"> </span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import discord&quot;</span><span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">    </span><span class="c1"># discord.py is a core dependency - if it&#39;s not installed, nothing is</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">    </span>print_warning<span class="w"> </span><span class="s2">&quot;Dependencies not installed, installing...&quot;</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">    </span>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>pip
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">    </span>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">    </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">    </span>print_success<span class="w"> </span><span class="s2">&quot;Dependencies installed&quot;</span>
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="k">else</span>
+<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="w">    </span>print_success<span class="w"> </span><span class="s2">&quot;Dependencies already installed&quot;</span>
+<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a><span class="k">fi</span>
+</code></pre></div>
+<p><strong>Optimization:</strong> Test for a single package instead of all packages.
+- Fast path: &lt;1 second (dependencies already installed)
+- Slow path: 30-60 seconds (first time)</p>
+<p><strong>Why <code>pip install -e .</code>?</strong>
+- Installs SecureClaw in "editable" mode
+- Code changes apply immediately (no reinstall needed)</p>
+<hr />
+<h3 id="phase-4-qdrant-vector-database">Phase 4: Qdrant Vector Database<a class="headerlink" href="#phase-4-qdrant-vector-database" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> Start vector database for conversation memory and embeddings.</p>
+<h4 id="container-lifecycle-lines-252-270">Container Lifecycle (Lines 252-270)<a class="headerlink" href="#container-lifecycle-lines-252-270" title="Permanent link">&para;</a></h4>
+<p><strong>State Machine:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>┌────────────────────────────────────┐
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>│ Does container exist?               │
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>│ (docker ps -a | grep secureclaw-    │
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>│  qdrant)                           │
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>└──────┬──────────────┬──────────────┘
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>       │ Yes          │ No
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>       ▼              ▼
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>┌──────────────┐  ┌─────────────────┐
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>│ Is it        │  │ Create new      │
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a>│ running?     │  │ container:      │
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>│ (docker ps)  │  │ docker run -d   │
+<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a>└──┬───────┬───┘  │   --name ...    │
+<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a>   │ Yes   │ No   │   -p 6333:6333  │
+<a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a>   ▼       ▼      │   -v ...        │
+<a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a>┌────┐  ┌────┐   │   qdrant/qdrant │
+<a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a>│Skip│  │Start│  └─────────────────┘
+<a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a>└────┘  └────┘
+</code></pre></div></p>
+<p><strong>Create Command:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">    </span>--name<span class="w"> </span>secureclaw-qdrant<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">    </span>-p<span class="w"> </span><span class="m">6333</span>:6333<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">    </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span><span class="s2">/qdrant_storage:/qdrant/storage&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">    </span>qdrant/qdrant:latest
+</code></pre></div></p>
+<p><strong>Why volume mount?</strong> Persist vector embeddings across container restarts.</p>
+<h4 id="health-check-lines-272-287">Health Check (Lines 272-287)<a class="headerlink" href="#health-check-lines-272-287" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nv">MAX_RETRIES</span><span class="o">=</span><span class="m">30</span><span class="w">  </span><span class="c1"># 30 seconds max</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="nv">RETRY_COUNT</span><span class="o">=</span><span class="m">0</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="k">while</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="nv">$RETRY_COUNT</span><span class="w"> </span>-lt<span class="w"> </span><span class="nv">$MAX_RETRIES</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span>curl<span class="w"> </span>-s<span class="w"> </span>http://localhost:6333/healthz<span class="w"> </span>&gt;/dev/null<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="w">        </span>print_success<span class="w"> </span><span class="s2">&quot;Qdrant is ready&quot;</span>
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="w">        </span><span class="k">break</span>
+<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="w">    </span><span class="k">fi</span>
+<a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="w">    </span><span class="nv">RETRY_COUNT</span><span class="o">=</span><span class="k">$((</span><span class="nv">RETRY_COUNT</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="m">1</span><span class="k">))</span>
+<a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="w">    </span>sleep<span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a><span class="k">done</span>
+</code></pre></div>
+<p><strong>Why curl healthz?</strong>
+- Qdrant exposes a health endpoint
+- More reliable than assuming "started = ready"</p>
+<p><strong>Typical Timing:</strong>
+- Container already running: 1-2 seconds
+- Container starting: 3-5 seconds
+- First time (pulling image): 10-30 seconds</p>
+<hr />
+<h3 id="phase-5-ollama-system-assessment-ollama-only">Phase 5: Ollama System Assessment (Ollama Only)<a class="headerlink" href="#phase-5-ollama-system-assessment-ollama-only" title="Permanent link">&para;</a></h3>
+<p><strong>Skip Condition:</strong> If <code>ROUTER_BACKEND != "ollama"</code>, phases 5-7 are skipped entirely.</p>
+<p><strong>Purpose:</strong> Detect hardware and recommend optimal Ollama model.</p>
+<h4 id="assessment-trigger-lines-293-294">Assessment Trigger (Lines 293-294)<a class="headerlink" href="#assessment-trigger-lines-293-294" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>!<span class="w"> </span>-f<span class="w"> </span><span class="s2">&quot;.ollama_assessed&quot;</span><span class="w"> </span><span class="o">]</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>-z<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$OLLAMA_ROUTER_MODEL</span><span class="s2">&quot;</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">    </span><span class="c1"># Run assessment</span>
+</code></pre></div>
+<p><strong>When does this run?</strong>
+1. First time using Ollama (<code>.ollama_assessed</code> doesn't exist)
+2. User removed model from .env (<code>OLLAMA_ROUTER_MODEL</code> empty)</p>
+<p><strong>When is it skipped?</strong>
+- <code>.ollama_assessed</code> marker exists AND <code>OLLAMA_ROUTER_MODEL</code> is set
+- User can force re-assessment: <code>rm .ollama_assessed &amp;&amp; ./start.sh</code></p>
+<h4 id="hardware-detection-lines-295-326">Hardware Detection (Lines 295-326)<a class="headerlink" href="#hardware-detection-lines-295-326" title="Permanent link">&para;</a></h4>
+<p><strong>Script:</strong> <code>scripts/assess-system.py</code></p>
+<p><strong>What it detects:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="p">{</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>    <span class="s1">&#39;platform&#39;</span><span class="p">:</span> <span class="s1">&#39;Darwin&#39;</span><span class="p">,</span>        <span class="c1"># macOS</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>    <span class="s1">&#39;machine&#39;</span><span class="p">:</span> <span class="s1">&#39;arm64&#39;</span><span class="p">,</span>          <span class="c1"># Apple Silicon</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>    <span class="s1">&#39;cpu_count&#39;</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>             <span class="c1"># Physical cores</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>    <span class="s1">&#39;cpu_threads&#39;</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>           <span class="c1"># Logical cores</span>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>    <span class="s1">&#39;ram_gb&#39;</span><span class="p">:</span> <span class="mf">16.0</span><span class="p">,</span>              <span class="c1"># Total RAM</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>    <span class="s1">&#39;available_ram_gb&#39;</span><span class="p">:</span> <span class="mf">8.5</span><span class="p">,</span>     <span class="c1"># Available now</span>
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>    <span class="s1">&#39;disk_free_gb&#39;</span><span class="p">:</span> <span class="mf">250.0</span><span class="p">,</span>       <span class="c1"># Free disk space</span>
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a>    <span class="s1">&#39;gpu&#39;</span><span class="p">:</span> <span class="p">{</span>
+<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a>        <span class="s1">&#39;type&#39;</span><span class="p">:</span> <span class="s1">&#39;apple_silicon&#39;</span><span class="p">,</span> <span class="c1"># or &#39;nvidia&#39;, &#39;none&#39;</span>
+<a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a>        <span class="s1">&#39;name&#39;</span><span class="p">:</span> <span class="s1">&#39;Apple Silicon&#39;</span><span class="p">,</span>
+<a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a>        <span class="s1">&#39;unified_memory&#39;</span><span class="p">:</span> <span class="kc">True</span>
+<a id="__codelineno-19-13" name="__codelineno-19-13" href="#__codelineno-19-13"></a>    <span class="p">}</span>
+<a id="__codelineno-19-14" name="__codelineno-19-14" href="#__codelineno-19-14"></a><span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Recommendation Logic:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="k">if</span> <span class="n">ram</span> <span class="o">&lt;</span> <span class="mi">6</span><span class="p">:</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>    <span class="k">return</span> <span class="n">phi3</span><span class="p">:</span><span class="n">mini</span> <span class="p">(</span><span class="mi">5</span><span class="n">GB</span> <span class="n">Docker</span><span class="p">,</span> <span class="mf">2.3</span><span class="n">GB</span> <span class="n">model</span><span class="p">)</span>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="k">elif</span> <span class="n">ram</span> <span class="o">&lt;</span> <span class="mi">12</span> <span class="ow">and</span> <span class="n">gpu</span> <span class="o">==</span> <span class="s1">&#39;none&#39;</span><span class="p">:</span>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>    <span class="k">return</span> <span class="n">llama3</span><span class="mf">.1</span><span class="p">:</span><span class="mi">8</span><span class="n">b</span> <span class="p">(</span><span class="mi">8</span><span class="n">GB</span> <span class="n">Docker</span><span class="p">,</span> <span class="mf">4.7</span><span class="n">GB</span> <span class="n">model</span><span class="p">)</span>
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a><span class="k">elif</span> <span class="n">gpu</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;nvidia&#39;</span><span class="p">,</span> <span class="s1">&#39;apple_silicon&#39;</span><span class="p">]:</span>
+<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a>    <span class="k">return</span> <span class="n">qwen2</span><span class="mf">.5</span><span class="p">:</span><span class="mi">7</span><span class="n">b</span> <span class="p">(</span><span class="mi">10</span><span class="n">GB</span> <span class="n">Docker</span><span class="p">,</span> <span class="mf">4.7</span><span class="n">GB</span> <span class="n">model</span><span class="p">)</span>  <span class="c1"># GPU accelerated</span>
+<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="k">elif</span> <span class="n">ram</span> <span class="o">&gt;=</span> <span class="mi">16</span><span class="p">:</span>
+<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>    <span class="k">return</span> <span class="n">qwen2</span><span class="mf">.5</span><span class="p">:</span><span class="mi">7</span><span class="n">b</span> <span class="p">(</span><span class="mi">10</span><span class="n">GB</span> <span class="n">Docker</span><span class="p">,</span> <span class="mf">4.7</span><span class="n">GB</span> <span class="n">model</span><span class="p">)</span>  <span class="c1"># High RAM</span>
+<a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a><span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a>    <span class="k">return</span> <span class="n">llama3</span><span class="mf">.1</span><span class="p">:</span><span class="mi">8</span><span class="n">b</span> <span class="p">(</span><span class="mi">8</span><span class="n">GB</span> <span class="n">Docker</span><span class="p">,</span> <span class="mf">4.7</span><span class="n">GB</span> <span class="n">model</span><span class="p">)</span>  <span class="c1"># Default</span>
+</code></pre></div></p>
+<p><strong>Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>═══════════════════════════════════════════════
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>SecureClaw System Assessment
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>═══════════════════════════════════════════════
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a>
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>🖥️  HARDWARE DETECTED:
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>  Platform: Darwin (arm64)
+<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a>  CPU: 10 cores (10 threads)
+<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a>  RAM: 16.0 GB total
+<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a>  RAM Available: 8.5 GB
+<a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a>  Disk Space: 250.0 GB free
+<a id="__codelineno-21-11" name="__codelineno-21-11" href="#__codelineno-21-11"></a>  GPU: Apple Silicon
+<a id="__codelineno-21-12" name="__codelineno-21-12" href="#__codelineno-21-12"></a>
+<a id="__codelineno-21-13" name="__codelineno-21-13" href="#__codelineno-21-13"></a>🤖 RECOMMENDED MODEL:
+<a id="__codelineno-21-14" name="__codelineno-21-14" href="#__codelineno-21-14"></a>  Model: qwen2.5:7b
+<a id="__codelineno-21-15" name="__codelineno-21-15" href="#__codelineno-21-15"></a>  Download Size: 4.7 GB
+<a id="__codelineno-21-16" name="__codelineno-21-16" href="#__codelineno-21-16"></a>  RAM Required: 8 GB minimum
+<a id="__codelineno-21-17" name="__codelineno-21-17" href="#__codelineno-21-17"></a>  Docker Memory: 10 GB (automatically configured)
+<a id="__codelineno-21-18" name="__codelineno-21-18" href="#__codelineno-21-18"></a>  Expected Speed: ~2-3s (CPU), ~500ms (GPU)
+<a id="__codelineno-21-19" name="__codelineno-21-19" href="#__codelineno-21-19"></a>  Quality: Best
+<a id="__codelineno-21-20" name="__codelineno-21-20" href="#__codelineno-21-20"></a>  Description: Best reasoning quality for routing
+<a id="__codelineno-21-21" name="__codelineno-21-21" href="#__codelineno-21-21"></a>
+<a id="__codelineno-21-22" name="__codelineno-21-22" href="#__codelineno-21-22"></a>💡 RECOMMENDATION REASON:
+<a id="__codelineno-21-23" name="__codelineno-21-23" href="#__codelineno-21-23"></a>  GPU detected! You can use higher quality models with fast inference.
+<a id="__codelineno-21-24" name="__codelineno-21-24" href="#__codelineno-21-24"></a>
+<a id="__codelineno-21-25" name="__codelineno-21-25" href="#__codelineno-21-25"></a>Would you like to use the recommended model? (Y/n):
+</code></pre></div></p>
+<p><strong>User Interaction:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="nb">read</span><span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;Would you like to use the recommended model? (Y/n): &quot;</span><span class="w"> </span>-r
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="k">if</span><span class="w"> </span><span class="o">[[</span><span class="w"> </span>!<span class="w"> </span><span class="nv">$REPLY</span><span class="w"> </span><span class="o">=</span>~<span class="w"> </span>^<span class="o">[</span>Nn<span class="o">]</span>$<span class="w"> </span><span class="o">]]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="w">    </span><span class="c1"># User accepted (or just pressed Enter)</span>
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="w">    </span><span class="nv">$PYTHON_CMD</span><span class="w"> </span>scripts/assess-system.py<span class="w"> </span>--update-env
+<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a>
+<a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a><span class="w">    </span><span class="c1"># This updates .env with:</span>
+<a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a><span class="w">    </span><span class="c1"># OLLAMA_ROUTER_MODEL=qwen2.5:7b</span>
+<a id="__codelineno-22-9" name="__codelineno-22-9" href="#__codelineno-22-9"></a><span class="w">    </span><span class="c1"># OLLAMA_DOCKER_MEMORY=10</span>
+<a id="__codelineno-22-10" name="__codelineno-22-10" href="#__codelineno-22-10"></a>
+<a id="__codelineno-22-11" name="__codelineno-22-11" href="#__codelineno-22-11"></a><span class="w">    </span><span class="nb">source</span><span class="w"> </span>.env<span class="w">  </span><span class="c1"># Reload to get updated values</span>
+<a id="__codelineno-22-12" name="__codelineno-22-12" href="#__codelineno-22-12"></a><span class="w">    </span>touch<span class="w"> </span>.ollama_assessed<span class="w">  </span><span class="c1"># Mark as assessed</span>
+<a id="__codelineno-22-13" name="__codelineno-22-13" href="#__codelineno-22-13"></a><span class="k">fi</span>
+</code></pre></div></p>
+<p><strong>Timing:</strong> 5-15 seconds (hardware detection + user reading + interaction)</p>
+<hr />
+<h3 id="phase-6-docker-memory-check-ollama-only">Phase 6: Docker Memory Check (Ollama Only)<a class="headerlink" href="#phase-6-docker-memory-check-ollama-only" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> Ensure Docker Desktop has enough RAM allocated for the selected model.</p>
+<h4 id="memory-requirement-calculation-lines-343-352">Memory Requirement Calculation (Lines 343-352)<a class="headerlink" href="#memory-requirement-calculation-lines-343-352" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="c1"># Get required memory from .env (set by assess-system.py)</span>
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="nv">OLLAMA_DOCKER_MEMORY</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">OLLAMA_DOCKER_MEMORY</span><span class="k">:-</span><span class="nv">8</span><span class="si">}</span><span class="s2">&quot;</span><span class="w">  </span><span class="c1"># Default 8GB</span>
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="c1"># Get current Docker allocation</span>
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="nv">DOCKER_TOTAL_MEMORY</span><span class="o">=</span><span class="k">$(</span>docker<span class="w"> </span>info<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">&quot;Total Memory&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>awk<span class="w"> </span><span class="s1">&#39;{print $3}&#39;</span><span class="k">)</span>
+<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a><span class="nv">DOCKER_MEMORY_GB</span><span class="o">=</span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$DOCKER_TOTAL_MEMORY</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>sed<span class="w"> </span><span class="s1">&#39;s/GiB//&#39;</span><span class="k">)</span>
+<a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a>
+<a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a><span class="c1"># Compare</span>
+<a id="__codelineno-23-9" name="__codelineno-23-9" href="#__codelineno-23-9"></a><span class="nv">REQUIRED_MEMORY</span><span class="o">=</span><span class="nv">$OLLAMA_DOCKER_MEMORY</span>
+<a id="__codelineno-23-10" name="__codelineno-23-10" href="#__codelineno-23-10"></a><span class="k">if</span><span class="w"> </span><span class="o">((</span><span class="w"> </span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$DOCKER_MEMORY_GB</span><span class="s2"> &lt; </span><span class="nv">$REQUIRED_MEMORY</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>bc<span class="w"> </span>-l<span class="k">)</span><span class="w"> </span><span class="o">))</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-23-11" name="__codelineno-23-11" href="#__codelineno-23-11"></a><span class="w">    </span><span class="c1"># Insufficient memory!</span>
+</code></pre></div>
+<p><strong>Example Scenario:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>Selected model: qwen2.5:7b
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>OLLAMA_DOCKER_MEMORY: 10 (from assess-system.py)
+<a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a>Current Docker allocation: 4GB
+<a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a>
+<a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a>Problem: 4GB &lt; 10GB ❌
+</code></pre></div></p>
+<h4 id="user-prompt-lines-353-409">User Prompt (Lines 353-409)<a class="headerlink" href="#user-prompt-lines-353-409" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>⚠ Docker has only 4GB allocated
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>⚠ Your selected model requires 10GB
+<a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a>
+<a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a>What would you like to do?
+<a id="__codelineno-25-5" name="__codelineno-25-5" href="#__codelineno-25-5"></a>  1. Automatically increase Docker memory to 10GB (recommended)
+<a id="__codelineno-25-6" name="__codelineno-25-6" href="#__codelineno-25-6"></a>  2. Choose a smaller model that fits current Docker memory
+<a id="__codelineno-25-7" name="__codelineno-25-7" href="#__codelineno-25-7"></a>  3. Continue anyway (may fail)
+<a id="__codelineno-25-8" name="__codelineno-25-8" href="#__codelineno-25-8"></a>
+<a id="__codelineno-25-9" name="__codelineno-25-9" href="#__codelineno-25-9"></a>Enter choice (1/2/3) [1]:
+</code></pre></div>
+<p><strong>Decision Tree:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>                User Choice
+<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a>                     │
+<a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a>        ┌────────────┼────────────┐
+<a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a>        │            │            │
+<a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a>        ▼            ▼            ▼
+<a id="__codelineno-26-6" name="__codelineno-26-6" href="#__codelineno-26-6"></a>    Option 1     Option 2     Option 3
+<a id="__codelineno-26-7" name="__codelineno-26-7" href="#__codelineno-26-7"></a>  Auto-increase  Smaller    Continue
+<a id="__codelineno-26-8" name="__codelineno-26-8" href="#__codelineno-26-8"></a>                  model      anyway
+<a id="__codelineno-26-9" name="__codelineno-26-9" href="#__codelineno-26-9"></a>        │            │            │
+<a id="__codelineno-26-10" name="__codelineno-26-10" href="#__codelineno-26-10"></a>        ▼            ▼            ▼
+<a id="__codelineno-26-11" name="__codelineno-26-11" href="#__codelineno-26-11"></a>┌───────────────┐ ┌──────┐  ┌──────────┐
+<a id="__codelineno-26-12" name="__codelineno-26-12" href="#__codelineno-26-12"></a>│ Call increase-│ │ rm   │  │ Continue │
+<a id="__codelineno-26-13" name="__codelineno-26-13" href="#__codelineno-26-13"></a>│ docker-memory.│ │ .olla│  │ (risky)  │
+<a id="__codelineno-26-14" name="__codelineno-26-14" href="#__codelineno-26-14"></a>│ sh --yes      │ │ ma_  │  └──────────┘
+<a id="__codelineno-26-15" name="__codelineno-26-15" href="#__codelineno-26-15"></a>│               │ │ asses│
+<a id="__codelineno-26-16" name="__codelineno-26-16" href="#__codelineno-26-16"></a>│ • Backup JSON │ │ sed  │
+<a id="__codelineno-26-17" name="__codelineno-26-17" href="#__codelineno-26-17"></a>│ • Update      │ │      │
+<a id="__codelineno-26-18" name="__codelineno-26-18" href="#__codelineno-26-18"></a>│   memoryMiB   │ │ Exit │
+<a id="__codelineno-26-19" name="__codelineno-26-19" href="#__codelineno-26-19"></a>│ • Restart     │ │ 0    │
+<a id="__codelineno-26-20" name="__codelineno-26-20" href="#__codelineno-26-20"></a>│   Docker      │ └──────┘
+<a id="__codelineno-26-21" name="__codelineno-26-21" href="#__codelineno-26-21"></a>│ • Wait for    │
+<a id="__codelineno-26-22" name="__codelineno-26-22" href="#__codelineno-26-22"></a>│   daemon      │
+<a id="__codelineno-26-23" name="__codelineno-26-23" href="#__codelineno-26-23"></a>└───────────────┘
+</code></pre></div></p>
+<p><strong>Option 1: Auto-increase (Default)</strong></p>
+<p><strong>Script:</strong> <code>scripts/increase-docker-memory.sh --yes</code></p>
+<p><strong>What it does:</strong>
+1. <strong>Backup settings:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>cp<span class="w"> </span>~/Library/Group<span class="se">\ </span>Containers/group.com.docker/settings.json<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a><span class="w">   </span>~/Library/Group<span class="se">\ </span>Containers/group.com.docker/settings.json.backup.20260205_143022
+</code></pre></div></p>
+<ol>
+<li>
+<p><strong>Update JSON:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>
+<a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a><span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">settings_file</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+<a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a>    <span class="n">settings</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+<a id="__codelineno-28-5" name="__codelineno-28-5" href="#__codelineno-28-5"></a>
+<a id="__codelineno-28-6" name="__codelineno-28-6" href="#__codelineno-28-6"></a><span class="n">settings</span><span class="p">[</span><span class="s1">&#39;memoryMiB&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">10240</span>  <span class="c1"># 10GB in MiB</span>
+<a id="__codelineno-28-7" name="__codelineno-28-7" href="#__codelineno-28-7"></a>
+<a id="__codelineno-28-8" name="__codelineno-28-8" href="#__codelineno-28-8"></a><span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">settings_file</span><span class="p">,</span> <span class="s1">&#39;w&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+<a id="__codelineno-28-9" name="__codelineno-28-9" href="#__codelineno-28-9"></a>    <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">settings</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Restart Docker:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a><span class="c1"># Try AppleScript first</span>
+<a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a>osascript<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;quit app &quot;Docker&quot;&#39;</span>
+<a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a>
+<a id="__codelineno-29-4" name="__codelineno-29-4" href="#__codelineno-29-4"></a><span class="c1"># Fallback to killall if osascript fails</span>
+<a id="__codelineno-29-5" name="__codelineno-29-5" href="#__codelineno-29-5"></a><span class="k">if</span><span class="w"> </span>!<span class="w"> </span>osascript<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;quit app &quot;Docker&quot;&#39;</span><span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-29-6" name="__codelineno-29-6" href="#__codelineno-29-6"></a><span class="w">    </span>killall<span class="w"> </span>Docker
+<a id="__codelineno-29-7" name="__codelineno-29-7" href="#__codelineno-29-7"></a><span class="k">fi</span>
+<a id="__codelineno-29-8" name="__codelineno-29-8" href="#__codelineno-29-8"></a>
+<a id="__codelineno-29-9" name="__codelineno-29-9" href="#__codelineno-29-9"></a><span class="c1"># Wait for full shutdown (up to 20s)</span>
+<a id="__codelineno-29-10" name="__codelineno-29-10" href="#__codelineno-29-10"></a><span class="k">for</span><span class="w"> </span>i<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="o">{</span><span class="m">1</span>..20<span class="o">}</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-29-11" name="__codelineno-29-11" href="#__codelineno-29-11"></a><span class="w">    </span>!<span class="w"> </span>pgrep<span class="w"> </span>-x<span class="w"> </span><span class="s2">&quot;Docker&quot;</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="k">break</span>
+<a id="__codelineno-29-12" name="__codelineno-29-12" href="#__codelineno-29-12"></a><span class="w">    </span>sleep<span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-29-13" name="__codelineno-29-13" href="#__codelineno-29-13"></a><span class="k">done</span>
+<a id="__codelineno-29-14" name="__codelineno-29-14" href="#__codelineno-29-14"></a>
+<a id="__codelineno-29-15" name="__codelineno-29-15" href="#__codelineno-29-15"></a><span class="c1"># Launch</span>
+<a id="__codelineno-29-16" name="__codelineno-29-16" href="#__codelineno-29-16"></a>open<span class="w"> </span>-a<span class="w"> </span>Docker
+<a id="__codelineno-29-17" name="__codelineno-29-17" href="#__codelineno-29-17"></a>
+<a id="__codelineno-29-18" name="__codelineno-29-18" href="#__codelineno-29-18"></a><span class="c1"># Wait for daemon (up to 60s)</span>
+<a id="__codelineno-29-19" name="__codelineno-29-19" href="#__codelineno-29-19"></a><span class="k">for</span><span class="w"> </span>i<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="o">{</span><span class="m">1</span>..60<span class="o">}</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-29-20" name="__codelineno-29-20" href="#__codelineno-29-20"></a><span class="w">    </span>docker<span class="w"> </span>info<span class="w"> </span>&gt;/dev/null<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="k">break</span>
+<a id="__codelineno-29-21" name="__codelineno-29-21" href="#__codelineno-29-21"></a><span class="w">    </span>sleep<span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-29-22" name="__codelineno-29-22" href="#__codelineno-29-22"></a><span class="k">done</span>
+</code></pre></div></p>
+</li>
+</ol>
+<p><strong>Why AppleScript first?</strong>
+- More graceful shutdown
+- Allows Docker to save state
+- Fallback to <code>killall</code> if it fails</p>
+<p><strong>Why wait loops with timeouts?</strong>
+- Prevent infinite hangs
+- Provide clear error messages
+- Show progress to user</p>
+<p><strong>Timing:</strong>
+- Stop Docker: 5-10 seconds
+- Start Docker: 30-60 seconds
+- <strong>Total: 35-70 seconds</strong></p>
+<p><strong>Option 2: Smaller Model</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>rm<span class="w"> </span>-f<span class="w"> </span>.ollama_assessed<span class="w">  </span><span class="c1"># Remove marker</span>
+<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a>print_info<span class="w"> </span><span class="s2">&quot;Please run ./start.sh again to choose a smaller model&quot;</span>
+<a id="__codelineno-30-3" name="__codelineno-30-3" href="#__codelineno-30-3"></a><span class="nb">exit</span><span class="w"> </span><span class="m">0</span>
+</code></pre></div>
+- Clean exit
+- Next run triggers assessment again
+- User can choose <code>phi3:mini</code> (5GB) instead</p>
+<p><strong>Option 3: Continue Anyway</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>print_warning<span class="w"> </span><span class="s2">&quot;Continuing with insufficient memory. Model may crash.&quot;</span>
+<a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a><span class="c1"># Script continues, but Ollama likely to OOM</span>
+</code></pre></div>
+- Not recommended
+- Useful for testing or if user knows better
+- Model will likely crash with OOM errors</p>
+<hr />
+<h3 id="phase-7-ollama-container-model-ollama-only">Phase 7: Ollama Container &amp; Model (Ollama Only)<a class="headerlink" href="#phase-7-ollama-container-model-ollama-only" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> Start Ollama container and download the selected model.</p>
+<h4 id="container-management-lines-411-431">Container Management (Lines 411-431)<a class="headerlink" href="#container-management-lines-411-431" title="Permanent link">&para;</a></h4>
+<p><strong>State Machine (same as Qdrant):</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>Container exists? → Yes → Running? → Yes → Skip
+<a id="__codelineno-32-2" name="__codelineno-32-2" href="#__codelineno-32-2"></a>                           │          No  → Start
+<a id="__codelineno-32-3" name="__codelineno-32-3" href="#__codelineno-32-3"></a>                    No ───────────────────→ Create
+</code></pre></div></p>
+<p><strong>Create Command:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-33-2" name="__codelineno-33-2" href="#__codelineno-33-2"></a><span class="w">    </span>--name<span class="w"> </span>secureclaw-ollama<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-33-3" name="__codelineno-33-3" href="#__codelineno-33-3"></a><span class="w">    </span>--memory<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">OLLAMA_DOCKER_MEMORY</span><span class="si">}</span><span class="s2">g&quot;</span><span class="w"> </span><span class="se">\ </span><span class="w">       </span><span class="c1"># e.g., 10g</span>
+<a id="__codelineno-33-4" name="__codelineno-33-4" href="#__codelineno-33-4"></a><span class="w">    </span>--memory-swap<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">OLLAMA_DOCKER_MEMORY</span><span class="si">}</span><span class="s2">g&quot;</span><span class="w"> </span><span class="se">\ </span><span class="w"> </span><span class="c1"># Prevent swap usage</span>
+<a id="__codelineno-33-5" name="__codelineno-33-5" href="#__codelineno-33-5"></a><span class="w">    </span>-p<span class="w"> </span><span class="m">11434</span>:11434<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-33-6" name="__codelineno-33-6" href="#__codelineno-33-6"></a><span class="w">    </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span><span class="s2">/ollama_models:/root/.ollama&quot;</span><span class="w"> </span><span class="se">\ </span><span class="w">  </span><span class="c1"># Persist models</span>
+<a id="__codelineno-33-7" name="__codelineno-33-7" href="#__codelineno-33-7"></a><span class="w">    </span>ollama/ollama:latest
+</code></pre></div></p>
+<p><strong>Key Parameters:</strong>
+- <code>--memory</code>: Container RAM limit (matches Docker Desktop allocation)
+- <code>--memory-swap</code>: Same as memory (prevents swapping to disk)
+- <code>-v</code>: Persist downloaded models across container restarts</p>
+<p><strong>Why volume for models?</strong>
+- Models are large (2-5GB each)
+- Re-downloading every time wastes time and bandwidth
+- Survives <code>docker rm secureclaw-ollama</code></p>
+<h4 id="api-health-check-lines-433-448">API Health Check (Lines 433-448)<a class="headerlink" href="#api-health-check-lines-433-448" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a><span class="nv">MAX_RETRIES</span><span class="o">=</span><span class="m">30</span>
+<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a><span class="k">while</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="nv">$RETRY_COUNT</span><span class="w"> </span>-lt<span class="w"> </span><span class="nv">$MAX_RETRIES</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span>curl<span class="w"> </span>-s<span class="w"> </span>http://localhost:11434/api/tags<span class="w"> </span>&gt;/dev/null<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-34-4" name="__codelineno-34-4" href="#__codelineno-34-4"></a><span class="w">        </span><span class="k">break</span><span class="w">  </span><span class="c1"># Ready!</span>
+<a id="__codelineno-34-5" name="__codelineno-34-5" href="#__codelineno-34-5"></a><span class="w">    </span><span class="k">fi</span>
+<a id="__codelineno-34-6" name="__codelineno-34-6" href="#__codelineno-34-6"></a><span class="w">    </span>sleep<span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-34-7" name="__codelineno-34-7" href="#__codelineno-34-7"></a><span class="k">done</span>
+</code></pre></div>
+<p><strong>Why <code>/api/tags</code>?</strong>
+- Ollama's "list models" endpoint
+- Returns empty list if no models, but proves API is responsive</p>
+<p><strong>Timing:</strong>
+- Already running: 1-2 seconds
+- Starting: 3-5 seconds
+- First time (pulling image): 20-40 seconds</p>
+<h4 id="model-download-lines-450-467">Model Download (Lines 450-467)<a class="headerlink" href="#model-download-lines-450-467" title="Permanent link">&para;</a></h4>
+<p><strong>Check if model exists:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a><span class="nv">OLLAMA_MODEL</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">OLLAMA_ROUTER_MODEL</span><span class="k">:-</span><span class="nv">llama3</span><span class="p">.1:</span><span class="nv">8b</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-35-2" name="__codelineno-35-2" href="#__codelineno-35-2"></a>
+<a id="__codelineno-35-3" name="__codelineno-35-3" href="#__codelineno-35-3"></a><span class="k">if</span><span class="w"> </span>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>secureclaw-ollama<span class="w"> </span>ollama<span class="w"> </span>list<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-q<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$OLLAMA_MODEL</span><span class="s2">&quot;</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-35-4" name="__codelineno-35-4" href="#__codelineno-35-4"></a><span class="w">    </span>print_success<span class="w"> </span><span class="s2">&quot;Model &#39;</span><span class="nv">$OLLAMA_MODEL</span><span class="s2">&#39; already available&quot;</span>
+<a id="__codelineno-35-5" name="__codelineno-35-5" href="#__codelineno-35-5"></a><span class="k">else</span>
+<a id="__codelineno-35-6" name="__codelineno-35-6" href="#__codelineno-35-6"></a><span class="w">    </span><span class="c1"># Not downloaded yet</span>
+</code></pre></div></p>
+<p><strong>Pull model:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a>print_warning<span class="w"> </span><span class="s2">&quot;Model &#39;</span><span class="nv">$OLLAMA_MODEL</span><span class="s2">&#39; not found, downloading (this may take several minutes)...&quot;</span>
+<a id="__codelineno-36-2" name="__codelineno-36-2" href="#__codelineno-36-2"></a>print_info<span class="w"> </span><span class="s2">&quot;Model size: ~4.7GB - please be patient...&quot;</span>
+<a id="__codelineno-36-3" name="__codelineno-36-3" href="#__codelineno-36-3"></a>
+<a id="__codelineno-36-4" name="__codelineno-36-4" href="#__codelineno-36-4"></a><span class="k">if</span><span class="w"> </span>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>secureclaw-ollama<span class="w"> </span>ollama<span class="w"> </span>pull<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$OLLAMA_MODEL</span><span class="s2">&quot;</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-36-5" name="__codelineno-36-5" href="#__codelineno-36-5"></a><span class="w">    </span>print_success<span class="w"> </span><span class="s2">&quot;Model &#39;</span><span class="nv">$OLLAMA_MODEL</span><span class="s2">&#39; downloaded successfully&quot;</span>
+<a id="__codelineno-36-6" name="__codelineno-36-6" href="#__codelineno-36-6"></a><span class="k">else</span>
+<a id="__codelineno-36-7" name="__codelineno-36-7" href="#__codelineno-36-7"></a><span class="w">    </span>print_error<span class="w"> </span><span class="s2">&quot;Failed to download model &#39;</span><span class="nv">$OLLAMA_MODEL</span><span class="s2">&#39;&quot;</span>
+<a id="__codelineno-36-8" name="__codelineno-36-8" href="#__codelineno-36-8"></a><span class="w">    </span>print_warning<span class="w"> </span><span class="s2">&quot;Continuing anyway - the bot will fall back to Gemini if the model isn&#39;t available&quot;</span>
+<a id="__codelineno-36-9" name="__codelineno-36-9" href="#__codelineno-36-9"></a><span class="k">fi</span>
+</code></pre></div></p>
+<p><strong>Download Progress Example:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a>pulling manifest
+<a id="__codelineno-37-2" name="__codelineno-37-2" href="#__codelineno-37-2"></a>pulling 8934d96d3f08... 100% ▕████████████████▏ 4.7 GB
+<a id="__codelineno-37-3" name="__codelineno-37-3" href="#__codelineno-37-3"></a>pulling 8c17c2ebb0ea... 100% ▕████████████████▏ 7.0 KB
+<a id="__codelineno-37-4" name="__codelineno-37-4" href="#__codelineno-37-4"></a>pulling 7c23fb36d801... 100% ▕████████████████▏ 4.8 KB
+<a id="__codelineno-37-5" name="__codelineno-37-5" href="#__codelineno-37-5"></a>pulling 2e0493f67d0c... 100% ▕████████████████▏   59 B
+<a id="__codelineno-37-6" name="__codelineno-37-6" href="#__codelineno-37-6"></a>pulling fa304d675061... 100% ▕████████████████▏   91 B
+<a id="__codelineno-37-7" name="__codelineno-37-7" href="#__codelineno-37-7"></a>pulling 42ba7f8a01dd... 100% ▕████████████████▏  557 B
+<a id="__codelineno-37-8" name="__codelineno-37-8" href="#__codelineno-37-8"></a>verifying sha256 digest
+<a id="__codelineno-37-9" name="__codelineno-37-9" href="#__codelineno-37-9"></a>writing manifest
+<a id="__codelineno-37-10" name="__codelineno-37-10" href="#__codelineno-37-10"></a>success
+</code></pre></div></p>
+<p><strong>Timing:</strong>
+- Model already downloaded: 1-2 seconds
+- Downloading 2.3GB (phi3): 2-4 minutes (fast connection)
+- Downloading 4.7GB (llama3.1, qwen2.5): 3-7 minutes</p>
+<p><strong>Graceful Failure:</strong>
+- If download fails, script continues
+- Bot will use Gemini as fallback
+- User can manually pull later: <code>docker exec secureclaw-ollama ollama pull &lt;model&gt;</code></p>
+<hr />
+<h3 id="phase-8-configuration-summary">Phase 8: Configuration Summary<a class="headerlink" href="#phase-8-configuration-summary" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> Show user exactly what configuration will be used.</p>
+<p><strong>Display (Lines 473-488):</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a>═══════════════════════════════════════════════
+<a id="__codelineno-38-2" name="__codelineno-38-2" href="#__codelineno-38-2"></a>  Starting SecureClaw Bot
+<a id="__codelineno-38-3" name="__codelineno-38-3" href="#__codelineno-38-3"></a>═══════════════════════════════════════════════
+<a id="__codelineno-38-4" name="__codelineno-38-4" href="#__codelineno-38-4"></a>
+<a id="__codelineno-38-5" name="__codelineno-38-5" href="#__codelineno-38-5"></a>ℹ Configuration Summary:
+<a id="__codelineno-38-6" name="__codelineno-38-6" href="#__codelineno-38-6"></a>  • Python: Python 3.12.1
+<a id="__codelineno-38-7" name="__codelineno-38-7" href="#__codelineno-38-7"></a>  • Discord Token: DISCORD_TOKEN_START...
+<a id="__codelineno-38-8" name="__codelineno-38-8" href="#__codelineno-38-8"></a>  • Gemini API: GEMINI_API_KEY_START...
+<a id="__codelineno-38-9" name="__codelineno-38-9" href="#__codelineno-38-9"></a>  • Anthropic API: ANTHROPIC_API_KEY_S...
+<a id="__codelineno-38-10" name="__codelineno-38-10" href="#__codelineno-38-10"></a>  • OpenAI API: OPENAI_API_KEY_START...
+<a id="__codelineno-38-11" name="__codelineno-38-11" href="#__codelineno-38-11"></a>  • Qdrant: http://localhost:6333
+<a id="__codelineno-38-12" name="__codelineno-38-12" href="#__codelineno-38-12"></a>  • Router Backend: ollama
+<a id="__codelineno-38-13" name="__codelineno-38-13" href="#__codelineno-38-13"></a>  • Ollama: http://localhost:11434 (Model: qwen2.5:7b)
+<a id="__codelineno-38-14" name="__codelineno-38-14" href="#__codelineno-38-14"></a>  • File Logging: true (Directory: logs)
+<a id="__codelineno-38-15" name="__codelineno-38-15" href="#__codelineno-38-15"></a>  • Allowed Users: 123456789,987654321
+</code></pre></div></p>
+<p><strong>Security:</strong> API keys truncated to first 20 characters only.</p>
+<p><strong>Timing:</strong> &lt;1 second</p>
+<hr />
+<h3 id="phase-9-start-bot">Phase 9: Start Bot<a class="headerlink" href="#phase-9-start-bot" title="Permanent link">&para;</a></h3>
+<p><strong>Final Step (Lines 490-497):</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a>print_success<span class="w"> </span><span class="s2">&quot;All checks passed! Starting bot...&quot;</span>
+<a id="__codelineno-39-2" name="__codelineno-39-2" href="#__codelineno-39-2"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;&quot;</span>
+<a id="__codelineno-39-3" name="__codelineno-39-3" href="#__codelineno-39-3"></a><span class="nb">echo</span><span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">GREEN</span><span class="si">}</span><span class="s2">Press Ctrl+C to stop the bot</span><span class="si">${</span><span class="nv">NC</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-39-4" name="__codelineno-39-4" href="#__codelineno-39-4"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;&quot;</span>
+<a id="__codelineno-39-5" name="__codelineno-39-5" href="#__codelineno-39-5"></a>
+<a id="__codelineno-39-6" name="__codelineno-39-6" href="#__codelineno-39-6"></a><span class="c1"># Set PYTHONPATH to include src directory</span>
+<a id="__codelineno-39-7" name="__codelineno-39-7" href="#__codelineno-39-7"></a><span class="nv">PYTHONPATH</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">PWD</span><span class="si">}</span><span class="s2">/src:</span><span class="si">${</span><span class="nv">PYTHONPATH</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span>python<span class="w"> </span>-m<span class="w"> </span>secureclaw
+</code></pre></div>
+<p><strong>Why set PYTHONPATH?</strong>
+- SecureClaw source is in <code>src/secureclaw/</code>
+- Running as module (<code>-m secureclaw</code>) requires it to be importable
+- Adding <code>src/</code> to path makes this work</p>
+<p><strong>What happens next?</strong>
+1. Python loads <code>src/secureclaw/__main__.py</code>
+2. Initializes logging, settings, memory systems
+3. Connects to Discord
+4. Bot runs until Ctrl+C</p>
+<hr />
+<h2 id="decision-trees">Decision Trees<a class="headerlink" href="#decision-trees" title="Permanent link">&para;</a></h2>
+<h3 id="docker-launch-decision-tree">Docker Launch Decision Tree<a class="headerlink" href="#docker-launch-decision-tree" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-40-1" name="__codelineno-40-1" href="#__codelineno-40-1"></a>┌─────────────────────────────────────┐
+<a id="__codelineno-40-2" name="__codelineno-40-2" href="#__codelineno-40-2"></a>│ Does `docker` command exist?        │
+<a id="__codelineno-40-3" name="__codelineno-40-3" href="#__codelineno-40-3"></a>└──────┬──────────────┬───────────────┘
+<a id="__codelineno-40-4" name="__codelineno-40-4" href="#__codelineno-40-4"></a>       │ Yes          │ No
+<a id="__codelineno-40-5" name="__codelineno-40-5" href="#__codelineno-40-5"></a>       ▼              ▼
+<a id="__codelineno-40-6" name="__codelineno-40-6" href="#__codelineno-40-6"></a>  ┌────────┐    ┌─────────────────────┐
+<a id="__codelineno-40-7" name="__codelineno-40-7" href="#__codelineno-40-7"></a>  │Continue│    │ ERROR: Install      │
+<a id="__codelineno-40-8" name="__codelineno-40-8" href="#__codelineno-40-8"></a>  └────────┘    │ Docker Desktop      │
+<a id="__codelineno-40-9" name="__codelineno-40-9" href="#__codelineno-40-9"></a>                │ EXIT 1              │
+<a id="__codelineno-40-10" name="__codelineno-40-10" href="#__codelineno-40-10"></a>                └─────────────────────┘
+<a id="__codelineno-40-11" name="__codelineno-40-11" href="#__codelineno-40-11"></a>
+<a id="__codelineno-40-12" name="__codelineno-40-12" href="#__codelineno-40-12"></a>┌─────────────────────────────────────┐
+<a id="__codelineno-40-13" name="__codelineno-40-13" href="#__codelineno-40-13"></a>│ Is daemon ready? (docker info)      │
+<a id="__codelineno-40-14" name="__codelineno-40-14" href="#__codelineno-40-14"></a>└──────┬──────────────┬───────────────┘
+<a id="__codelineno-40-15" name="__codelineno-40-15" href="#__codelineno-40-15"></a>       │ Yes          │ No
+<a id="__codelineno-40-16" name="__codelineno-40-16" href="#__codelineno-40-16"></a>       ▼              ▼
+<a id="__codelineno-40-17" name="__codelineno-40-17" href="#__codelineno-40-17"></a>  ┌────────┐    ┌──────────────────────┐
+<a id="__codelineno-40-18" name="__codelineno-40-18" href="#__codelineno-40-18"></a>  │Continue│    │ Is Docker.app running│
+<a id="__codelineno-40-19" name="__codelineno-40-19" href="#__codelineno-40-19"></a>  └────────┘    │ (pgrep -x &quot;Docker&quot;)? │
+<a id="__codelineno-40-20" name="__codelineno-40-20" href="#__codelineno-40-20"></a>                └──────┬──────────┬────┘
+<a id="__codelineno-40-21" name="__codelineno-40-21" href="#__codelineno-40-21"></a>                       │ Yes      │ No
+<a id="__codelineno-40-22" name="__codelineno-40-22" href="#__codelineno-40-22"></a>                       ▼          ▼
+<a id="__codelineno-40-23" name="__codelineno-40-23" href="#__codelineno-40-23"></a>               ┌───────────┐  ┌──────────────┐
+<a id="__codelineno-40-24" name="__codelineno-40-24" href="#__codelineno-40-24"></a>               │ Wait for  │  │ Launch Docker│
+<a id="__codelineno-40-25" name="__codelineno-40-25" href="#__codelineno-40-25"></a>               │ daemon    │  │ Desktop      │
+<a id="__codelineno-40-26" name="__codelineno-40-26" href="#__codelineno-40-26"></a>               │ 90s max   │  │ (open -a)    │
+<a id="__codelineno-40-27" name="__codelineno-40-27" href="#__codelineno-40-27"></a>               └───────────┘  └──────┬───────┘
+<a id="__codelineno-40-28" name="__codelineno-40-28" href="#__codelineno-40-28"></a>                                     │
+<a id="__codelineno-40-29" name="__codelineno-40-29" href="#__codelineno-40-29"></a>                                     ▼
+<a id="__codelineno-40-30" name="__codelineno-40-30" href="#__codelineno-40-30"></a>                              ┌──────────────┐
+<a id="__codelineno-40-31" name="__codelineno-40-31" href="#__codelineno-40-31"></a>                              │ Wait 5s for  │
+<a id="__codelineno-40-32" name="__codelineno-40-32" href="#__codelineno-40-32"></a>                              │ process spawn│
+<a id="__codelineno-40-33" name="__codelineno-40-33" href="#__codelineno-40-33"></a>                              └──────┬───────┘
+<a id="__codelineno-40-34" name="__codelineno-40-34" href="#__codelineno-40-34"></a>                                     │
+<a id="__codelineno-40-35" name="__codelineno-40-35" href="#__codelineno-40-35"></a>                                     ▼
+<a id="__codelineno-40-36" name="__codelineno-40-36" href="#__codelineno-40-36"></a>                              ┌──────────────┐
+<a id="__codelineno-40-37" name="__codelineno-40-37" href="#__codelineno-40-37"></a>                              │ Quick loop:  │
+<a id="__codelineno-40-38" name="__codelineno-40-38" href="#__codelineno-40-38"></a>                              │ 4 x 5s = 20s │
+<a id="__codelineno-40-39" name="__codelineno-40-39" href="#__codelineno-40-39"></a>                              └──────┬───────┘
+<a id="__codelineno-40-40" name="__codelineno-40-40" href="#__codelineno-40-40"></a>                                     │
+<a id="__codelineno-40-41" name="__codelineno-40-41" href="#__codelineno-40-41"></a>                                     ▼
+<a id="__codelineno-40-42" name="__codelineno-40-42" href="#__codelineno-40-42"></a>                              ┌──────────────┐
+<a id="__codelineno-40-43" name="__codelineno-40-43" href="#__codelineno-40-43"></a>                              │ Extended:    │
+<a id="__codelineno-40-44" name="__codelineno-40-44" href="#__codelineno-40-44"></a>                              │ 90s total    │
+<a id="__codelineno-40-45" name="__codelineno-40-45" href="#__codelineno-40-45"></a>                              └──────┬───────┘
+<a id="__codelineno-40-46" name="__codelineno-40-46" href="#__codelineno-40-46"></a>                                     │
+<a id="__codelineno-40-47" name="__codelineno-40-47" href="#__codelineno-40-47"></a>                        ┌────────────┴────────────┐
+<a id="__codelineno-40-48" name="__codelineno-40-48" href="#__codelineno-40-48"></a>                        │ Ready?                  │
+<a id="__codelineno-40-49" name="__codelineno-40-49" href="#__codelineno-40-49"></a>                        ▼                         ▼
+<a id="__codelineno-40-50" name="__codelineno-40-50" href="#__codelineno-40-50"></a>                   ┌─────────┐            ┌─────────────┐
+<a id="__codelineno-40-51" name="__codelineno-40-51" href="#__codelineno-40-51"></a>                   │Continue │            │ ERROR: Timed│
+<a id="__codelineno-40-52" name="__codelineno-40-52" href="#__codelineno-40-52"></a>                   └─────────┘            │ out after   │
+<a id="__codelineno-40-53" name="__codelineno-40-53" href="#__codelineno-40-53"></a>                                          │ 90 seconds  │
+<a id="__codelineno-40-54" name="__codelineno-40-54" href="#__codelineno-40-54"></a>                                          │ EXIT 1      │
+<a id="__codelineno-40-55" name="__codelineno-40-55" href="#__codelineno-40-55"></a>                                          └─────────────┘
+</code></pre></div>
+<h3 id="router-backend-selection-tree">Router Backend Selection Tree<a class="headerlink" href="#router-backend-selection-tree" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a>┌────────────────────────────────────┐
+<a id="__codelineno-41-2" name="__codelineno-41-2" href="#__codelineno-41-2"></a>│ Is ROUTER_BACKEND set in .env?     │
+<a id="__codelineno-41-3" name="__codelineno-41-3" href="#__codelineno-41-3"></a>└──────┬────────────────┬────────────┘
+<a id="__codelineno-41-4" name="__codelineno-41-4" href="#__codelineno-41-4"></a>       │ Yes            │ No
+<a id="__codelineno-41-5" name="__codelineno-41-5" href="#__codelineno-41-5"></a>       ▼                ▼
+<a id="__codelineno-41-6" name="__codelineno-41-6" href="#__codelineno-41-6"></a>  ┌────────┐      ┌──────────────────┐
+<a id="__codelineno-41-7" name="__codelineno-41-7" href="#__codelineno-41-7"></a>  │ Use it │      │ Prompt user:     │
+<a id="__codelineno-41-8" name="__codelineno-41-8" href="#__codelineno-41-8"></a>  └────────┘      │ 1=Gemini 2=Ollama│
+<a id="__codelineno-41-9" name="__codelineno-41-9" href="#__codelineno-41-9"></a>                  └────────┬─────────┘
+<a id="__codelineno-41-10" name="__codelineno-41-10" href="#__codelineno-41-10"></a>                           │
+<a id="__codelineno-41-11" name="__codelineno-41-11" href="#__codelineno-41-11"></a>                  ┌────────┴────────┐
+<a id="__codelineno-41-12" name="__codelineno-41-12" href="#__codelineno-41-12"></a>                  ▼                 ▼
+<a id="__codelineno-41-13" name="__codelineno-41-13" href="#__codelineno-41-13"></a>            ┌──────────┐      ┌──────────┐
+<a id="__codelineno-41-14" name="__codelineno-41-14" href="#__codelineno-41-14"></a>            │ User: 2  │      │ User: 1  │
+<a id="__codelineno-41-15" name="__codelineno-41-15" href="#__codelineno-41-15"></a>            │ or       │      │ or &lt;Enter│
+<a id="__codelineno-41-16" name="__codelineno-41-16" href="#__codelineno-41-16"></a>            │ &lt;invalid&gt;│      │ &gt;        │
+<a id="__codelineno-41-17" name="__codelineno-41-17" href="#__codelineno-41-17"></a>            └────┬─────┘      └─────┬────┘
+<a id="__codelineno-41-18" name="__codelineno-41-18" href="#__codelineno-41-18"></a>                 │                  │
+<a id="__codelineno-41-19" name="__codelineno-41-19" href="#__codelineno-41-19"></a>                 ▼                  ▼
+<a id="__codelineno-41-20" name="__codelineno-41-20" href="#__codelineno-41-20"></a>         ┌──────────────┐    ┌─────────────┐
+<a id="__codelineno-41-21" name="__codelineno-41-21" href="#__codelineno-41-21"></a>         │ ROUTER_      │    │ ROUTER_     │
+<a id="__codelineno-41-22" name="__codelineno-41-22" href="#__codelineno-41-22"></a>         │ BACKEND=     │    │ BACKEND=    │
+<a id="__codelineno-41-23" name="__codelineno-41-23" href="#__codelineno-41-23"></a>         │ ollama       │    │ gemini      │
+<a id="__codelineno-41-24" name="__codelineno-41-24" href="#__codelineno-41-24"></a>         └──────┬───────┘    └──────┬──────┘
+<a id="__codelineno-41-25" name="__codelineno-41-25" href="#__codelineno-41-25"></a>                │                   │
+<a id="__codelineno-41-26" name="__codelineno-41-26" href="#__codelineno-41-26"></a>                │                   │
+<a id="__codelineno-41-27" name="__codelineno-41-27" href="#__codelineno-41-27"></a>                └───────┬───────────┘
+<a id="__codelineno-41-28" name="__codelineno-41-28" href="#__codelineno-41-28"></a>                        │
+<a id="__codelineno-41-29" name="__codelineno-41-29" href="#__codelineno-41-29"></a>                        ▼
+<a id="__codelineno-41-30" name="__codelineno-41-30" href="#__codelineno-41-30"></a>               ┌────────────────────┐
+<a id="__codelineno-41-31" name="__codelineno-41-31" href="#__codelineno-41-31"></a>               │ echo ROUTER_BACKEND│
+<a id="__codelineno-41-32" name="__codelineno-41-32" href="#__codelineno-41-32"></a>               │ to .env            │
+<a id="__codelineno-41-33" name="__codelineno-41-33" href="#__codelineno-41-33"></a>               │ (persist choice)   │
+<a id="__codelineno-41-34" name="__codelineno-41-34" href="#__codelineno-41-34"></a>               └────────────────────┘
+</code></pre></div>
+<h3 id="ollama-memory-management-tree">Ollama Memory Management Tree<a class="headerlink" href="#ollama-memory-management-tree" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-42-1" name="__codelineno-42-1" href="#__codelineno-42-1"></a>┌───────────────────────────────────────┐
+<a id="__codelineno-42-2" name="__codelineno-42-2" href="#__codelineno-42-2"></a>│ ROUTER_BACKEND == &quot;ollama&quot;?           │
+<a id="__codelineno-42-3" name="__codelineno-42-3" href="#__codelineno-42-3"></a>└──────┬────────────────┬───────────────┘
+<a id="__codelineno-42-4" name="__codelineno-42-4" href="#__codelineno-42-4"></a>       │ Yes            │ No
+<a id="__codelineno-42-5" name="__codelineno-42-5" href="#__codelineno-42-5"></a>       ▼                ▼
+<a id="__codelineno-42-6" name="__codelineno-42-6" href="#__codelineno-42-6"></a>  ┌────────┐      ┌──────────┐
+<a id="__codelineno-42-7" name="__codelineno-42-7" href="#__codelineno-42-7"></a>  │Continue│      │ Skip all │
+<a id="__codelineno-42-8" name="__codelineno-42-8" href="#__codelineno-42-8"></a>  │ to     │      │ Ollama   │
+<a id="__codelineno-42-9" name="__codelineno-42-9" href="#__codelineno-42-9"></a>  │ Ollama │      │ phases   │
+<a id="__codelineno-42-10" name="__codelineno-42-10" href="#__codelineno-42-10"></a>  │ phases │      └──────────┘
+<a id="__codelineno-42-11" name="__codelineno-42-11" href="#__codelineno-42-11"></a>  └────┬───┘
+<a id="__codelineno-42-12" name="__codelineno-42-12" href="#__codelineno-42-12"></a>       │
+<a id="__codelineno-42-13" name="__codelineno-42-13" href="#__codelineno-42-13"></a>       ▼
+<a id="__codelineno-42-14" name="__codelineno-42-14" href="#__codelineno-42-14"></a>┌───────────────────────────────────────┐
+<a id="__codelineno-42-15" name="__codelineno-42-15" href="#__codelineno-42-15"></a>│ Check Docker memory vs requirement    │
+<a id="__codelineno-42-16" name="__codelineno-42-16" href="#__codelineno-42-16"></a>│ docker info | grep &quot;Total Memory&quot;     │
+<a id="__codelineno-42-17" name="__codelineno-42-17" href="#__codelineno-42-17"></a>└──────┬────────────────┬───────────────┘
+<a id="__codelineno-42-18" name="__codelineno-42-18" href="#__codelineno-42-18"></a>       │                │
+<a id="__codelineno-42-19" name="__codelineno-42-19" href="#__codelineno-42-19"></a>       │ Sufficient     │ Insufficient
+<a id="__codelineno-42-20" name="__codelineno-42-20" href="#__codelineno-42-20"></a>       ▼                ▼
+<a id="__codelineno-42-21" name="__codelineno-42-21" href="#__codelineno-42-21"></a>  ┌────────┐      ┌──────────────────────┐
+<a id="__codelineno-42-22" name="__codelineno-42-22" href="#__codelineno-42-22"></a>  │Continue│      │ Prompt user:         │
+<a id="__codelineno-42-23" name="__codelineno-42-23" href="#__codelineno-42-23"></a>  └────────┘      │ 1. Auto-increase     │
+<a id="__codelineno-42-24" name="__codelineno-42-24" href="#__codelineno-42-24"></a>                  │ 2. Smaller model     │
+<a id="__codelineno-42-25" name="__codelineno-42-25" href="#__codelineno-42-25"></a>                  │ 3. Continue anyway   │
+<a id="__codelineno-42-26" name="__codelineno-42-26" href="#__codelineno-42-26"></a>                  └────────┬─────────────┘
+<a id="__codelineno-42-27" name="__codelineno-42-27" href="#__codelineno-42-27"></a>                           │
+<a id="__codelineno-42-28" name="__codelineno-42-28" href="#__codelineno-42-28"></a>             ┌─────────────┼─────────────┐
+<a id="__codelineno-42-29" name="__codelineno-42-29" href="#__codelineno-42-29"></a>             │             │             │
+<a id="__codelineno-42-30" name="__codelineno-42-30" href="#__codelineno-42-30"></a>             ▼             ▼             ▼
+<a id="__codelineno-42-31" name="__codelineno-42-31" href="#__codelineno-42-31"></a>        ┌────────┐   ┌─────────┐   ┌────────┐
+<a id="__codelineno-42-32" name="__codelineno-42-32" href="#__codelineno-42-32"></a>        │ Call   │   │ rm      │   │Continue│
+<a id="__codelineno-42-33" name="__codelineno-42-33" href="#__codelineno-42-33"></a>        │increase│   │.ollama_ │   │(risky) │
+<a id="__codelineno-42-34" name="__codelineno-42-34" href="#__codelineno-42-34"></a>        │-docker-│   │assessed │   └────────┘
+<a id="__codelineno-42-35" name="__codelineno-42-35" href="#__codelineno-42-35"></a>        │memory  │   │         │
+<a id="__codelineno-42-36" name="__codelineno-42-36" href="#__codelineno-42-36"></a>        │.sh     │   │EXIT 0   │
+<a id="__codelineno-42-37" name="__codelineno-42-37" href="#__codelineno-42-37"></a>        └───┬────┘   └─────────┘
+<a id="__codelineno-42-38" name="__codelineno-42-38" href="#__codelineno-42-38"></a>            │
+<a id="__codelineno-42-39" name="__codelineno-42-39" href="#__codelineno-42-39"></a>            ▼
+<a id="__codelineno-42-40" name="__codelineno-42-40" href="#__codelineno-42-40"></a>     ┌─────────────┐
+<a id="__codelineno-42-41" name="__codelineno-42-41" href="#__codelineno-42-41"></a>     │ Backup JSON │
+<a id="__codelineno-42-42" name="__codelineno-42-42" href="#__codelineno-42-42"></a>     │ Update mem  │
+<a id="__codelineno-42-43" name="__codelineno-42-43" href="#__codelineno-42-43"></a>     │ Restart     │
+<a id="__codelineno-42-44" name="__codelineno-42-44" href="#__codelineno-42-44"></a>     │ Docker      │
+<a id="__codelineno-42-45" name="__codelineno-42-45" href="#__codelineno-42-45"></a>     └──────┬──────┘
+<a id="__codelineno-42-46" name="__codelineno-42-46" href="#__codelineno-42-46"></a>            │
+<a id="__codelineno-42-47" name="__codelineno-42-47" href="#__codelineno-42-47"></a>    ┌───────┴────────┐
+<a id="__codelineno-42-48" name="__codelineno-42-48" href="#__codelineno-42-48"></a>    │ Success?       │
+<a id="__codelineno-42-49" name="__codelineno-42-49" href="#__codelineno-42-49"></a>    ▼                ▼
+<a id="__codelineno-42-50" name="__codelineno-42-50" href="#__codelineno-42-50"></a>┌────────┐      ┌──────────┐
+<a id="__codelineno-42-51" name="__codelineno-42-51" href="#__codelineno-42-51"></a>│Continue│      │ ERROR    │
+<a id="__codelineno-42-52" name="__codelineno-42-52" href="#__codelineno-42-52"></a>└────────┘      │ Give user│
+<a id="__codelineno-42-53" name="__codelineno-42-53" href="#__codelineno-42-53"></a>                │ options  │
+<a id="__codelineno-42-54" name="__codelineno-42-54" href="#__codelineno-42-54"></a>                │ EXIT 1   │
+<a id="__codelineno-42-55" name="__codelineno-42-55" href="#__codelineno-42-55"></a>                └──────────┘
+</code></pre></div>
+<hr />
+<h2 id="timing-expectations">Timing Expectations<a class="headerlink" href="#timing-expectations" title="Permanent link">&para;</a></h2>
+<h3 id="first-run-ollama-no-containers">First Run (Ollama, No Containers)<a class="headerlink" href="#first-run-ollama-no-containers" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Task</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1.1</td>
+<td>Python check</td>
+<td>1s</td>
+</tr>
+<tr>
+<td>1.2</td>
+<td>Docker launch (cold)</td>
+<td>60s</td>
+</tr>
+<tr>
+<td>1.3</td>
+<td>.env validation</td>
+<td>1s</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Router selection (user)</td>
+<td>10s</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Venv + deps install</td>
+<td>60s</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Qdrant pull + start</td>
+<td>30s</td>
+</tr>
+<tr>
+<td>5</td>
+<td>System assessment (user)</td>
+<td>15s</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Docker memory increase</td>
+<td>60s</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Ollama pull + start</td>
+<td>40s</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Model download (4.7GB)</td>
+<td>300s</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Summary</td>
+<td>1s</td>
+</tr>
+<tr>
+<td><strong>TOTAL</strong></td>
+<td></td>
+<td><strong>~9 minutes</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="first-run-gemini-no-containers">First Run (Gemini, No Containers)<a class="headerlink" href="#first-run-gemini-no-containers" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Task</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1-2</td>
+<td>Validation + router</td>
+<td>72s</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Venv + deps</td>
+<td>60s</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Qdrant pull + start</td>
+<td>30s</td>
+</tr>
+<tr>
+<td>5-7</td>
+<td>(Skipped - Gemini)</td>
+<td>0s</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Summary</td>
+<td>1s</td>
+</tr>
+<tr>
+<td><strong>TOTAL</strong></td>
+<td></td>
+<td><strong>~3 minutes</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="subsequent-runs-warm">Subsequent Runs (Warm)<a class="headerlink" href="#subsequent-runs-warm" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Task</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Validation (Docker warm)</td>
+<td>5s</td>
+</tr>
+<tr>
+<td>2</td>
+<td>(Skipped - already set)</td>
+<td>0s</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Venv activate</td>
+<td>2s</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Qdrant start</td>
+<td>3s</td>
+</tr>
+<tr>
+<td>5</td>
+<td>(Skipped - assessed)</td>
+<td>0s</td>
+</tr>
+<tr>
+<td>6</td>
+<td>(Skipped - sufficient)</td>
+<td>2s</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Ollama start</td>
+<td>5s</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Summary</td>
+<td>1s</td>
+</tr>
+<tr>
+<td><strong>TOTAL</strong></td>
+<td></td>
+<td><strong>~18 seconds</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="cold-docker-start-worst-case">Cold Docker Start (Worst Case)<a class="headerlink" href="#cold-docker-start-worst-case" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Task</th>
+<th>Time</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1.2</td>
+<td>Docker launch</td>
+<td>90s</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Qdrant first start</td>
+<td>10s</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Ollama first start</td>
+<td>10s</td>
+</tr>
+<tr>
+<td><strong>TOTAL ADDED</strong></td>
+<td></td>
+<td><strong>+110s</strong></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="error-handling">Error Handling<a class="headerlink" href="#error-handling" title="Permanent link">&para;</a></h2>
+<h3 id="exit-codes">Exit Codes<a class="headerlink" href="#exit-codes" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+<th>Example Trigger</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>Success</td>
+<td>Normal completion</td>
+</tr>
+<tr>
+<td>1</td>
+<td>Fatal error</td>
+<td>Missing dependency, .env invalid, timeout</td>
+</tr>
+</tbody>
+</table>
+<h3 id="error-categories">Error Categories<a class="headerlink" href="#error-categories" title="Permanent link">&para;</a></h3>
+<h4 id="1-missing-prerequisites">1. Missing Prerequisites<a class="headerlink" href="#1-missing-prerequisites" title="Permanent link">&para;</a></h4>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-43-1" name="__codelineno-43-1" href="#__codelineno-43-1"></a>✗<span class="w"> </span>Python<span class="w"> </span><span class="m">3</span>.12+<span class="w"> </span>required,<span class="w"> </span>found<span class="w"> </span><span class="m">3</span>.11
+<a id="__codelineno-43-2" name="__codelineno-43-2" href="#__codelineno-43-2"></a>ℹ<span class="w"> </span>Install<span class="w"> </span>with:<span class="w"> </span>brew<span class="w"> </span>install<span class="w"> </span>python@3.12
+</code></pre></div>
+<strong>Action:</strong> Install suggested package, re-run</p>
+<h4 id="2-configuration-errors">2. Configuration Errors<a class="headerlink" href="#2-configuration-errors" title="Permanent link">&para;</a></h4>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-44-1" name="__codelineno-44-1" href="#__codelineno-44-1"></a>✗<span class="w"> </span>Missing<span class="w"> </span>required<span class="w"> </span>environment<span class="w"> </span>variables:<span class="w"> </span>DISCORD_TOKEN<span class="w"> </span>GEMINI_API_KEY
+<a id="__codelineno-44-2" name="__codelineno-44-2" href="#__codelineno-44-2"></a>ℹ<span class="w"> </span>Please<span class="w"> </span>add<span class="w"> </span>them<span class="w"> </span>to<span class="w"> </span>your<span class="w"> </span>.env<span class="w"> </span>file
+</code></pre></div>
+<strong>Action:</strong> Edit .env, add missing keys, re-run</p>
+<h4 id="3-docker-errors">3. Docker Errors<a class="headerlink" href="#3-docker-errors" title="Permanent link">&para;</a></h4>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-45-1" name="__codelineno-45-1" href="#__codelineno-45-1"></a>✗<span class="w"> </span>Docker<span class="w"> </span>daemon<span class="w"> </span>did<span class="w"> </span>not<span class="w"> </span>become<span class="w"> </span>ready<span class="w"> </span>after<span class="w"> </span><span class="m">90</span><span class="w"> </span>seconds
+<a id="__codelineno-45-2" name="__codelineno-45-2" href="#__codelineno-45-2"></a>ℹ<span class="w"> </span>Check<span class="w"> </span>Docker<span class="w"> </span>Desktop<span class="w"> </span>status<span class="w"> </span><span class="k">in</span><span class="w"> </span>menu<span class="w"> </span>bar<span class="w"> </span>and<span class="w"> </span>try<span class="w"> </span>again
+<a id="__codelineno-45-3" name="__codelineno-45-3" href="#__codelineno-45-3"></a>ℹ<span class="w"> </span>You<span class="w"> </span>may<span class="w"> </span>need<span class="w"> </span>to<span class="w"> </span>restart<span class="w"> </span>Docker<span class="w"> </span>Desktop<span class="w"> </span>manually
+</code></pre></div>
+<strong>Action:</strong>
+- Check Docker Desktop icon in menu bar
+- Look for error messages in Docker Desktop GUI
+- Try manually restarting: Docker menu → Restart
+- Check Console.app for Docker crashes</p>
+<h4 id="4-container-errors">4. Container Errors<a class="headerlink" href="#4-container-errors" title="Permanent link">&para;</a></h4>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-46-1" name="__codelineno-46-1" href="#__codelineno-46-1"></a>✗<span class="w"> </span>Qdrant<span class="w"> </span>failed<span class="w"> </span>to<span class="w"> </span>start
+</code></pre></div>
+<strong>Action:</strong>
+- Check if port already in use: <code>lsof -i :6333</code>
+- Check container logs: <code>docker logs secureclaw-qdrant</code>
+- Remove and retry: <code>docker rm -f secureclaw-qdrant &amp;&amp; ./start.sh</code></p>
+<h4 id="5-model-download-errors">5. Model Download Errors<a class="headerlink" href="#5-model-download-errors" title="Permanent link">&para;</a></h4>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-47-1" name="__codelineno-47-1" href="#__codelineno-47-1"></a>✗<span class="w"> </span>Failed<span class="w"> </span>to<span class="w"> </span>download<span class="w"> </span>model<span class="w"> </span><span class="s1">&#39;qwen2.5:7b&#39;</span>
+<a id="__codelineno-47-2" name="__codelineno-47-2" href="#__codelineno-47-2"></a>ℹ<span class="w"> </span>You<span class="w"> </span>can<span class="w"> </span>manually<span class="w"> </span>pull<span class="w"> </span>it<span class="w"> </span>later<span class="w"> </span>with:<span class="w"> </span>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>secureclaw-ollama<span class="w"> </span>ollama<span class="w"> </span>pull<span class="w"> </span>qwen2.5:7b
+<a id="__codelineno-47-3" name="__codelineno-47-3" href="#__codelineno-47-3"></a>⚠<span class="w"> </span>Continuing<span class="w"> </span>anyway<span class="w"> </span>-<span class="w"> </span>the<span class="w"> </span>bot<span class="w"> </span>will<span class="w"> </span>fall<span class="w"> </span>back<span class="w"> </span>to<span class="w"> </span>Gemini<span class="w"> </span><span class="k">if</span><span class="w"> </span>the<span class="w"> </span>model<span class="w"> </span>isn<span class="err">&#39;</span>t<span class="w"> </span>available
+</code></pre></div>
+<strong>Action:</strong>
+- Script continues (non-fatal)
+- Bot uses Gemini for routing instead
+- Manually pull later when network is better
+- Or choose smaller model: <code>rm .ollama_assessed &amp;&amp; ./start.sh</code></p>
+<hr />
+<h2 id="environment-variables">Environment Variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h2>
+<h3 id="required-must-be-in-env">Required (Must be in .env)<a class="headerlink" href="#required-must-be-in-env" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Example</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DISCORD_TOKEN</code></td>
+<td><code>MTA...</code></td>
+<td>Discord bot authentication</td>
+</tr>
+<tr>
+<td><code>GEMINI_API_KEY</code></td>
+<td><code>AIza...</code></td>
+<td>Google Gemini API (embeddings, routing)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="optional-configuration">Optional Configuration<a class="headerlink" href="#optional-configuration" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ROUTER_BACKEND</code></td>
+<td><code>gemini</code></td>
+<td>Router: <code>gemini</code> or <code>ollama</code></td>
+</tr>
+<tr>
+<td><code>ANTHROPIC_API_KEY</code></td>
+<td><code>None</code></td>
+<td>Claude for complex tasks</td>
+</tr>
+<tr>
+<td><code>OPENAI_API_KEY</code></td>
+<td><code>None</code></td>
+<td>GPT for complex tasks</td>
+</tr>
+<tr>
+<td><code>ALLOWED_USER_IDS</code></td>
+<td><code>[]</code></td>
+<td>Discord user ID allowlist</td>
+</tr>
+<tr>
+<td><code>LOG_TO_FILE</code></td>
+<td><code>true</code></td>
+<td>Enable file logging</td>
+</tr>
+<tr>
+<td><code>LOG_DIRECTORY</code></td>
+<td><code>logs</code></td>
+<td>Log file location</td>
+</tr>
+</tbody>
+</table>
+<h3 id="ollama-specific">Ollama-Specific<a class="headerlink" href="#ollama-specific" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Set By</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>OLLAMA_HOST</code></td>
+<td><code>ollama</code></td>
+<td><code>start.sh</code></td>
+<td>Ollama container host</td>
+</tr>
+<tr>
+<td><code>OLLAMA_PORT</code></td>
+<td><code>11434</code></td>
+<td>Manual</td>
+<td>Ollama API port</td>
+</tr>
+<tr>
+<td><code>OLLAMA_ROUTER_MODEL</code></td>
+<td><code>llama3.1:8b</code></td>
+<td><code>assess-system.py</code></td>
+<td>Model to use</td>
+</tr>
+<tr>
+<td><code>OLLAMA_DOCKER_MEMORY</code></td>
+<td><code>8</code></td>
+<td><code>assess-system.py</code></td>
+<td>Docker RAM (GB)</td>
+</tr>
+<tr>
+<td><code>OLLAMA_TIMEOUT</code></td>
+<td><code>30</code></td>
+<td>Manual</td>
+<td>API timeout (seconds)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="auto-configured">Auto-Configured<a class="headerlink" href="#auto-configured" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>When Set</th>
+<th>By Whom</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ROUTER_BACKEND</code></td>
+<td>Phase 2 (first run)</td>
+<td>User prompt → <code>start.sh</code></td>
+</tr>
+<tr>
+<td><code>OLLAMA_HOST</code></td>
+<td>Phase 7 (if <code>ollama</code>)</td>
+<td><code>start.sh</code> (sets to <code>localhost</code>)</td>
+</tr>
+<tr>
+<td><code>OLLAMA_ROUTER_MODEL</code></td>
+<td>Phase 5 (if accepted)</td>
+<td><code>assess-system.py --update-env</code></td>
+</tr>
+<tr>
+<td><code>OLLAMA_DOCKER_MEMORY</code></td>
+<td>Phase 5 (if accepted)</td>
+<td><code>assess-system.py --update-env</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="appendix-script-structure">Appendix: Script Structure<a class="headerlink" href="#appendix-script-structure" title="Permanent link">&para;</a></h2>
+<h3 id="helper-functions-lines-11-39">Helper Functions (Lines 11-39)<a class="headerlink" href="#helper-functions-lines-11-39" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-48-1" name="__codelineno-48-1" href="#__codelineno-48-1"></a>print_success<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<a id="__codelineno-48-2" name="__codelineno-48-2" href="#__codelineno-48-2"></a><span class="w">    </span><span class="nb">echo</span><span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">GREEN</span><span class="si">}</span><span class="s2">✓</span><span class="si">${</span><span class="nv">NC</span><span class="si">}</span><span class="s2"> </span><span class="nv">$1</span><span class="s2">&quot;</span>
+<a id="__codelineno-48-3" name="__codelineno-48-3" href="#__codelineno-48-3"></a><span class="o">}</span>
+<a id="__codelineno-48-4" name="__codelineno-48-4" href="#__codelineno-48-4"></a>
+<a id="__codelineno-48-5" name="__codelineno-48-5" href="#__codelineno-48-5"></a>print_error<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<a id="__codelineno-48-6" name="__codelineno-48-6" href="#__codelineno-48-6"></a><span class="w">    </span><span class="nb">echo</span><span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">RED</span><span class="si">}</span><span class="s2">✗</span><span class="si">${</span><span class="nv">NC</span><span class="si">}</span><span class="s2"> </span><span class="nv">$1</span><span class="s2">&quot;</span>
+<a id="__codelineno-48-7" name="__codelineno-48-7" href="#__codelineno-48-7"></a><span class="o">}</span>
+<a id="__codelineno-48-8" name="__codelineno-48-8" href="#__codelineno-48-8"></a>
+<a id="__codelineno-48-9" name="__codelineno-48-9" href="#__codelineno-48-9"></a>print_warning<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<a id="__codelineno-48-10" name="__codelineno-48-10" href="#__codelineno-48-10"></a><span class="w">    </span><span class="nb">echo</span><span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">YELLOW</span><span class="si">}</span><span class="s2">⚠</span><span class="si">${</span><span class="nv">NC</span><span class="si">}</span><span class="s2"> </span><span class="nv">$1</span><span class="s2">&quot;</span>
+<a id="__codelineno-48-11" name="__codelineno-48-11" href="#__codelineno-48-11"></a><span class="o">}</span>
+<a id="__codelineno-48-12" name="__codelineno-48-12" href="#__codelineno-48-12"></a>
+<a id="__codelineno-48-13" name="__codelineno-48-13" href="#__codelineno-48-13"></a>print_info<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<a id="__codelineno-48-14" name="__codelineno-48-14" href="#__codelineno-48-14"></a><span class="w">    </span><span class="nb">echo</span><span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">BLUE</span><span class="si">}</span><span class="s2">ℹ</span><span class="si">${</span><span class="nv">NC</span><span class="si">}</span><span class="s2"> </span><span class="nv">$1</span><span class="s2">&quot;</span>
+<a id="__codelineno-48-15" name="__codelineno-48-15" href="#__codelineno-48-15"></a><span class="o">}</span>
+<a id="__codelineno-48-16" name="__codelineno-48-16" href="#__codelineno-48-16"></a>
+<a id="__codelineno-48-17" name="__codelineno-48-17" href="#__codelineno-48-17"></a>print_header<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<a id="__codelineno-48-18" name="__codelineno-48-18" href="#__codelineno-48-18"></a><span class="w">    </span><span class="nb">echo</span><span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">BLUE</span><span class="si">}</span><span class="s2">═══════════════════════════════════════════════</span><span class="si">${</span><span class="nv">NC</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-48-19" name="__codelineno-48-19" href="#__codelineno-48-19"></a><span class="w">    </span><span class="nb">echo</span><span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">BLUE</span><span class="si">}</span><span class="s2">  </span><span class="nv">$1</span><span class="si">${</span><span class="nv">NC</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-48-20" name="__codelineno-48-20" href="#__codelineno-48-20"></a><span class="w">    </span><span class="nb">echo</span><span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">BLUE</span><span class="si">}</span><span class="s2">═══════════════════════════════════════════════</span><span class="si">${</span><span class="nv">NC</span><span class="si">}</span><span class="s2">&quot;</span>
+<a id="__codelineno-48-21" name="__codelineno-48-21" href="#__codelineno-48-21"></a><span class="o">}</span>
+<a id="__codelineno-48-22" name="__codelineno-48-22" href="#__codelineno-48-22"></a>
+<a id="__codelineno-48-23" name="__codelineno-48-23" href="#__codelineno-48-23"></a>command_exists<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<a id="__codelineno-48-24" name="__codelineno-48-24" href="#__codelineno-48-24"></a><span class="w">    </span><span class="nb">command</span><span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$1</span><span class="s2">&quot;</span><span class="w"> </span>&gt;/dev/null<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span>
+<a id="__codelineno-48-25" name="__codelineno-48-25" href="#__codelineno-48-25"></a><span class="o">}</span>
+</code></pre></div>
+<p><strong>Why standardize output?</strong>
+- Consistent UX
+- Colored output for clarity
+- Easy to scan for errors (red ✗) vs success (green ✓)</p>
+<h3 id="error-handling-pattern">Error Handling Pattern<a class="headerlink" href="#error-handling-pattern" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-49-1" name="__codelineno-49-1" href="#__codelineno-49-1"></a><span class="nb">set</span><span class="w"> </span>-e<span class="w">  </span><span class="c1"># Exit on any error</span>
+<a id="__codelineno-49-2" name="__codelineno-49-2" href="#__codelineno-49-2"></a>
+<a id="__codelineno-49-3" name="__codelineno-49-3" href="#__codelineno-49-3"></a><span class="c1"># For non-fatal errors:</span>
+<a id="__codelineno-49-4" name="__codelineno-49-4" href="#__codelineno-49-4"></a><span class="k">if</span><span class="w"> </span>!<span class="w"> </span>some_command<span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-49-5" name="__codelineno-49-5" href="#__codelineno-49-5"></a><span class="w">    </span>print_warning<span class="w"> </span><span class="s2">&quot;Command failed, continuing...&quot;</span>
+<a id="__codelineno-49-6" name="__codelineno-49-6" href="#__codelineno-49-6"></a><span class="k">fi</span>
+<a id="__codelineno-49-7" name="__codelineno-49-7" href="#__codelineno-49-7"></a>
+<a id="__codelineno-49-8" name="__codelineno-49-8" href="#__codelineno-49-8"></a><span class="c1"># For fatal errors:</span>
+<a id="__codelineno-49-9" name="__codelineno-49-9" href="#__codelineno-49-9"></a><span class="k">if</span><span class="w"> </span>!<span class="w"> </span>critical_command<span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-49-10" name="__codelineno-49-10" href="#__codelineno-49-10"></a><span class="w">    </span>print_error<span class="w"> </span><span class="s2">&quot;Critical failure&quot;</span>
+<a id="__codelineno-49-11" name="__codelineno-49-11" href="#__codelineno-49-11"></a><span class="w">    </span>print_info<span class="w"> </span><span class="s2">&quot;How to fix: ...&quot;</span>
+<a id="__codelineno-49-12" name="__codelineno-49-12" href="#__codelineno-49-12"></a><span class="w">    </span><span class="nb">exit</span><span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-49-13" name="__codelineno-49-13" href="#__codelineno-49-13"></a><span class="k">fi</span>
+</code></pre></div>
+<hr />
+<h2 id="summary">Summary<a class="headerlink" href="#summary" title="Permanent link">&para;</a></h2>
+<p>The startup script handles:
+- ✅ <strong>Environment validation</strong> (Python, Docker, .env)
+- ✅ <strong>User choices</strong> (router backend, model selection)
+- ✅ <strong>Dependency management</strong> (venv, pip packages)
+- ✅ <strong>Container orchestration</strong> (Qdrant, Ollama)
+- ✅ <strong>Docker memory automation</strong> (detect, prompt, increase)
+- ✅ <strong>Model downloads</strong> (Ollama pull)
+- ✅ <strong>Clear feedback</strong> (colored output, progress messages)
+- ✅ <strong>Graceful failures</strong> (timeouts, fallbacks, suggestions)</p>
+<p><strong>First run:</strong> 3-9 minutes (depending on backend and network)</p>
+<p><strong>Subsequent runs:</strong> 10-20 seconds (all containers already exist)</p>
+<p><strong>User interaction points:</strong>
+1. Router backend choice (first run)
+2. Model recommendation acceptance (Ollama first run)
+3. Docker memory increase approval (if needed)</p>
+<p><strong>Exit points:</strong>
+- Fatal: Missing Python, Docker, .env keys
+- Soft: User chooses smaller model (can re-run immediately)</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/jimtin/sercureclaw" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

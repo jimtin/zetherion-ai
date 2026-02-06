@@ -1,0 +1,2740 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Secure personal AI assistant with encrypted memory and multi-provider LLM routing">
+      
+      
+      
+        <link rel="canonical" href="https://jimtin.github.io/sercureclaw/ARCHITECTURE/">
+      
+      
+        <link rel="prev" href="../FAQ/">
+      
+      
+        <link rel="next" href="../DOCKER_ARCHITECTURE/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Overview - SecureClaw</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#secureclaw-architecture" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="SecureClaw" class="md-header__button md-logo" aria-label="SecureClaw" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            SecureClaw
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Overview
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/jimtin/sercureclaw" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    jimtin/sercureclaw
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="SecureClaw" class="md-nav__button md-logo" aria-label="SecureClaw" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    SecureClaw
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/jimtin/sercureclaw" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    jimtin/sercureclaw
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../STARTUP_WALKTHROUGH/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../COMMANDS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../FAQ/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#key-design-principles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Design Principles
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#high-level-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        High-Level Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#core-components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Components
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Core Components">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-discord-interface-srcsecureclawdiscord" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Discord Interface (src/secureclaw/discord/)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-agent-core-srcsecureclawagent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Agent Core (src/secureclaw/agent/)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-memory-system-srcsecureclawmemory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Memory System (src/secureclaw/memory/)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-configuration-srcsecureclawconfigpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Configuration (src/secureclaw/config.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-logging-srcsecureclawloggingpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Logging (src/secureclaw/logging.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Data Flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example-user-sends-what-is-async-programming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: User Sends "What is async programming?"
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#design-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design Patterns
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Design Patterns">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-factory-pattern-router-backend-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Factory Pattern (Router Backend Selection)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-strategy-pattern-llm-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Strategy Pattern (LLM Backends)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-repository-pattern-memory-abstraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Repository Pattern (Memory Abstraction)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-singleton-pattern-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Singleton Pattern (Configuration)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-retry-pattern-api-resilience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Retry Pattern (API Resilience)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#technology-stack" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Technology Stack
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Technology Stack">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#core-technologies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Technologies
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#development-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Development Tools
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#api-integrations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Integrations
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scalability-performance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scalability &amp; Performance
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Scalability &amp; Performance">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#current-performance-characteristics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current Performance Characteristics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optimization-strategies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optimization Strategies
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scalability-considerations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scalability Considerations
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Security Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#defense-in-depth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Defense in Depth
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-security-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Security Controls
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security-gap-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security Gap Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#future-roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Future Roadmap
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Future Roadmap">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-5-advanced-features-planned" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5: Advanced Features (Planned)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#long-term-vision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Long-Term Vision
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#design-decisions-log" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design Decisions Log
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Design Decisions Log">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-gemini-for-embeddings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why Gemini for Embeddings?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-dual-routing-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why Dual Routing Backends?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-discordpy-over-other-libraries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why Discord.py Over Other Libraries?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-qdrant-over-alternatives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why Qdrant Over Alternatives?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-pydantic-settings-over-python-decouple" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why Pydantic Settings Over python-decouple?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#diagrams" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Diagrams
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Diagrams">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#component-interaction-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Component Interaction Diagram
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        References
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#contact-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contact &amp; Support
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../DOCKER_ARCHITECTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../SECURITY/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TESTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../CI_CD/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI/CD
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TROUBLESHOOTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#key-design-principles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Design Principles
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#high-level-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        High-Level Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#core-components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Components
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Core Components">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-discord-interface-srcsecureclawdiscord" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Discord Interface (src/secureclaw/discord/)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-agent-core-srcsecureclawagent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Agent Core (src/secureclaw/agent/)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-memory-system-srcsecureclawmemory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Memory System (src/secureclaw/memory/)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-configuration-srcsecureclawconfigpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Configuration (src/secureclaw/config.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-logging-srcsecureclawloggingpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Logging (src/secureclaw/logging.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Flow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Data Flow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#example-user-sends-what-is-async-programming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example: User Sends "What is async programming?"
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#design-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design Patterns
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Design Patterns">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-factory-pattern-router-backend-selection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Factory Pattern (Router Backend Selection)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-strategy-pattern-llm-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Strategy Pattern (LLM Backends)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-repository-pattern-memory-abstraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Repository Pattern (Memory Abstraction)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-singleton-pattern-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Singleton Pattern (Configuration)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-retry-pattern-api-resilience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Retry Pattern (API Resilience)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#technology-stack" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Technology Stack
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Technology Stack">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#core-technologies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Technologies
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#development-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Development Tools
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#api-integrations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Integrations
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scalability-performance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scalability &amp; Performance
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Scalability &amp; Performance">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#current-performance-characteristics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current Performance Characteristics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optimization-strategies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optimization Strategies
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scalability-considerations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scalability Considerations
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Security Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#defense-in-depth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Defense in Depth
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#key-security-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Security Controls
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security-gap-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security Gap Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#future-roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Future Roadmap
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Future Roadmap">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-5-advanced-features-planned" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5: Advanced Features (Planned)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#long-term-vision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Long-Term Vision
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#design-decisions-log" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design Decisions Log
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Design Decisions Log">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-gemini-for-embeddings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why Gemini for Embeddings?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-dual-routing-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why Dual Routing Backends?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-discordpy-over-other-libraries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why Discord.py Over Other Libraries?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-qdrant-over-alternatives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why Qdrant Over Alternatives?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-pydantic-settings-over-python-decouple" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why Pydantic Settings Over python-decouple?
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#diagrams" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Diagrams
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Diagrams">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#component-interaction-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Component Interaction Diagram
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        References
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#contact-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contact &amp; Support
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="secureclaw-architecture">SecureClaw Architecture<a class="headerlink" href="#secureclaw-architecture" title="Permanent link">&para;</a></h1>
+<p>This document provides a comprehensive overview of SecureClaw's system architecture, design decisions, and key components.</p>
+<h2 id="table-of-contents">Table of Contents<a class="headerlink" href="#table-of-contents" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#high-level-architecture">High-Level Architecture</a></li>
+<li><a href="#core-components">Core Components</a></li>
+<li><a href="#data-flow">Data Flow</a></li>
+<li><a href="#design-patterns">Design Patterns</a></li>
+<li><a href="#technology-stack">Technology Stack</a></li>
+<li><a href="#scalability--performance">Scalability &amp; Performance</a></li>
+<li><a href="#security-architecture">Security Architecture</a></li>
+<li><a href="#future-roadmap">Future Roadmap</a></li>
+</ul>
+<hr />
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>SecureClaw is a Discord bot with advanced AI capabilities, featuring:
+- <strong>Dual LLM backends</strong> for intelligent routing (Gemini + Ollama for routing, Claude/OpenAI for complex tasks)
+- <strong>Vector memory</strong> for long-term context using Qdrant
+- <strong>Comprehensive security</strong> with rate limiting, allowlists, and prompt injection detection
+- <strong>Full Docker containerization</strong> for reproducible deployment</p>
+<h3 id="key-design-principles">Key Design Principles<a class="headerlink" href="#key-design-principles" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Modularity</strong> - Clean separation of concerns (Discord, Agent, Memory, Security)</li>
+<li><strong>Extensibility</strong> - Pluggable backends via factory pattern</li>
+<li><strong>Resilience</strong> - Retry logic, fallbacks, graceful degradation</li>
+<li><strong>Security-First</strong> - Defense in depth, least privilege, secrets management</li>
+<li><strong>Performance</strong> - Async-first, parallel operations, efficient caching</li>
+<li><strong>Maintainability</strong> - 87.58% test coverage, type hints, comprehensive logging</li>
+</ol>
+<hr />
+<h2 id="high-level-architecture">High-Level Architecture<a class="headerlink" href="#high-level-architecture" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>┌─────────────────────────────────────────────────────────────────┐
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>│                         User Interface                          │
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>│                      Discord (discord.py)                       │
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>│  Commands: /channels, /remember, /summarize                    │
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│  Interactions: DMs, @mentions, slash commands                  │
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>└────────────────────────┬────────────────────────────────────────┘
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>                         │
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>                         ▼
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>┌─────────────────────────────────────────────────────────────────┐
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>│                      Security Layer                             │
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│  ┌──────────────┐  ┌──────────────┐  ┌───────────────────┐    │
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│  │  Allowlist   │  │ Rate Limiter │  │ Injection Detect  │    │
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│  │  User IDs    │  │ 10 msg/60s   │  │ 17 Regex Patterns │    │
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│  └──────────────┘  └──────────────┘  └───────────────────┘    │
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>└────────────────────────┬────────────────────────────────────────┘
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>                         │
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>                         ▼
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>┌─────────────────────────────────────────────────────────────────┐
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>│                      Agent Core                                 │
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>│  ┌─────────────────────────────────────────────────────────┐   │
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>│  │  Message Router (Factory Pattern)                       │   │
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>│  │  ┌──────────────────┐  ┌──────────────────────┐        │   │
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>│  │  │ Gemini Backend   │  │ Ollama Backend       │        │   │
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>│  │  │ - Cloud API      │  │ - Local Container    │        │   │
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>│  │  │ - Fast, reliable │  │ - Privacy-focused    │        │   │
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>│  │  │ - Default        │  │ - Cost-effective     │        │   │
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>│  │  └──────────────────┘  └──────────────────────┘        │   │
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>│  │  Output: {intent: &quot;simple_query&quot; | &quot;complex_task&quot;}     │   │
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>│  └─────────────────────────────────────────────────────────┘   │
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>│                                                                 │
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>│  ┌─────────────────────────────────────────────────────────┐   │
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>│  │  Response Generation (Dual Generators)                  │   │
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>│  │  ┌──────────────────────┐  ┌──────────────────────┐    │   │
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>│  │  │ Complex Task Handler │  │ Simple Query Handler │    │   │
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>│  │  │ - Claude Sonnet 4.5  │  │ - Gemini 2.5 Flash   │    │   │
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>│  │  │ - OpenAI GPT-4o      │  │ - Ollama Llama 3.1   │    │   │
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>│  │  │ - Code, reasoning    │  │ - Facts, greetings   │    │   │
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>│  │  └──────────────────────┘  └──────────────────────┘    │   │
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>│  └─────────────────────────────────────────────────────────┘   │
+<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>│                                                                 │
+<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>│  ┌─────────────────────────────────────────────────────────┐   │
+<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>│  │  Memory Manager                                         │   │
+<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a>│  │  - Context building from vector search                 │   │
+<a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a>│  │  - Deduplication (search once, use twice)              │   │
+<a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a>│  │  - Retry logic with exponential backoff                │   │
+<a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a>│  └─────────────────────────────────────────────────────────┘   │
+<a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a>└────────────────────────┬────────────────────────────────────────┘
+<a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a>                         │
+<a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a>                         ▼
+<a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a>┌─────────────────────────────────────────────────────────────────┐
+<a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a>│                   Memory Layer                                  │
+<a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a>│  ┌───────────────────────────┐  ┌───────────────────────────┐  │
+<a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a>│  │  Qdrant Vector Database   │  │  Embeddings Service       │  │
+<a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a>│  │  - AsyncQdrantClient      │  │  - Gemini text-embed-004  │  │
+<a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a>│  │  - Collections per user   │  │  - 768-dim vectors        │  │
+<a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a>│  │  - Semantic search        │  │  - Parallel batching      │  │
+<a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a>│  │  - Docker container       │  │  - Caching (TODO)         │  │
+<a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a>│  └───────────────────────────┘  └───────────────────────────┘  │
+<a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a>└─────────────────────────────────────────────────────────────────┘
+<a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a>                         │
+<a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a>                         ▼
+<a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a>┌─────────────────────────────────────────────────────────────────┐
+<a id="__codelineno-0-63" name="__codelineno-0-63" href="#__codelineno-0-63"></a>│                   Infrastructure                                │
+<a id="__codelineno-0-64" name="__codelineno-0-64" href="#__codelineno-0-64"></a>│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐    │
+<a id="__codelineno-0-65" name="__codelineno-0-65" href="#__codelineno-0-65"></a>│  │   Docker    │  │  Logging    │  │  Configuration      │    │
+<a id="__codelineno-0-66" name="__codelineno-0-66" href="#__codelineno-0-66"></a>│  │   Compose   │  │  Structlog  │  │  Pydantic Settings  │    │
+<a id="__codelineno-0-67" name="__codelineno-0-67" href="#__codelineno-0-67"></a>│  │   - qdrant  │  │  - Console  │  │  - SecretStr        │    │
+<a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a>│  │   - ollama  │  │  - Files    │  │  - .env validation  │    │
+<a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a>│  │   - bot     │  │  - JSON     │  │                     │    │
+<a id="__codelineno-0-70" name="__codelineno-0-70" href="#__codelineno-0-70"></a>│  └─────────────┘  └─────────────┘  └─────────────────────┘    │
+<a id="__codelineno-0-71" name="__codelineno-0-71" href="#__codelineno-0-71"></a>└─────────────────────────────────────────────────────────────────┘
+</code></pre></div>
+<hr />
+<h2 id="core-components">Core Components<a class="headerlink" href="#core-components" title="Permanent link">&para;</a></h2>
+<h3 id="1-discord-interface-srcsecureclawdiscord">1. Discord Interface (<code>src/secureclaw/discord/</code>)<a class="headerlink" href="#1-discord-interface-srcsecureclawdiscord" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> Handle all Discord interactions and command routing.</p>
+<p><strong>Key Files:</strong>
+- <code>bot.py</code> - Main bot class, event handlers
+- <code>commands.py</code> - Slash command definitions
+- <code>security.py</code> - Security controls (allowlist, rate limiting, injection detection)</p>
+<p><strong>Features:</strong>
+- Slash commands: <code>/channels</code>, <code>/remember</code>, <code>/summarize</code>
+- DM and @mention support
+- Message splitting for 2000-char limit
+- Typing indicators for better UX
+- Error handling and user feedback</p>
+<p><strong>Design Decisions:</strong>
+- Used <code>discord.py</code> for stable API and strong typing
+- Commands implemented as app_commands for modern Discord UI
+- Security checks run before any agent processing
+- Async throughout for non-blocking I/O</p>
+<h3 id="2-agent-core-srcsecureclawagent">2. Agent Core (<code>src/secureclaw/agent/</code>)<a class="headerlink" href="#2-agent-core-srcsecureclawagent" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> Intelligent message routing and response generation.</p>
+<p><strong>Key Files:</strong>
+- <code>core.py</code> - Agent class (orchestrates routing and generation)
+- <code>router.py</code> - Gemini router backend
+- <code>router_ollama.py</code> - Ollama router backend
+- <code>router_factory.py</code> - Backend selection factory
+- <code>router_base.py</code> - Abstract router interface (Protocol)</p>
+<p><strong>Message Flow:</strong>
+1. Router classifies message intent (simple vs complex)
+2. Agent searches memory for relevant context
+3. Appropriate generator creates response
+4. Response returned to Discord</p>
+<p><strong>Routing Decision Logic:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  <span class="s2">&quot;intent&quot;</span><span class="p">:</span> <span class="s2">&quot;simple_query&quot;</span><span class="p">,</span>  <span class="c1"># or &quot;complex_task&quot;</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  <span class="s2">&quot;confidence&quot;</span><span class="p">:</span> <span class="mf">0.95</span><span class="p">,</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  <span class="s2">&quot;use_claude&quot;</span><span class="p">:</span> <span class="n">false</span>  <span class="c1"># true for complex tasks</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Design Decisions:</strong>
+- Factory pattern allows runtime backend selection
+- Dual generators optimize cost and latency
+- Retry logic with exponential backoff (max 3 retries)
+- Context deduplication (search once, use for both generators)</p>
+<h3 id="3-memory-system-srcsecureclawmemory">3. Memory System (<code>src/secureclaw/memory/</code>)<a class="headerlink" href="#3-memory-system-srcsecureclawmemory" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> Long-term semantic memory via vector embeddings.</p>
+<p><strong>Key Files:</strong>
+- <code>qdrant.py</code> - Vector database client
+- <code>embeddings.py</code> - Gemini embedding generation</p>
+<p><strong>Features:</strong>
+- Per-user collections in Qdrant
+- Semantic search for context retrieval
+- Parallel batch embeddings (10x faster)
+- Async operations throughout</p>
+<p><strong>Vector Storage:</strong>
+- <strong>Model:</strong> <code>text-embedding-004</code> (Gemini)
+- <strong>Dimensions:</strong> 768
+- <strong>Similarity:</strong> Cosine similarity
+- <strong>Storage:</strong> Qdrant Docker container</p>
+<p><strong>Design Decisions:</strong>
+- AsyncQdrantClient prevents event loop blocking
+- Parallel embeddings via <code>asyncio.gather()</code>
+- Collections auto-created on first use
+- No embedding caching (TODO for Phase 5)</p>
+<h3 id="4-configuration-srcsecureclawconfigpy">4. Configuration (<code>src/secureclaw/config.py</code>)<a class="headerlink" href="#4-configuration-srcsecureclawconfigpy" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> Centralized settings with validation and secrets management.</p>
+<p><strong>Features:</strong>
+- Pydantic Settings for type-safe configuration
+- <code>SecretStr</code> for all credentials (never logged)
+- Environment variable loading from <code>.env</code>
+- Field validators for critical settings
+- Computed properties for derived values</p>
+<p><strong>Configuration Sources:</strong>
+1. Environment variables
+2. <code>.env</code> file (development)
+3. Default values (fallback)</p>
+<p><strong>Design Decisions:</strong>
+- <code>SecretStr</code> ensures credentials never leak to logs
+- LRU cache prevents repeated file reads
+- Validators catch misconfigurations early
+- Clear separation of dev vs prod settings</p>
+<h3 id="5-logging-srcsecureclawloggingpy">5. Logging (<code>src/secureclaw/logging.py</code>)<a class="headerlink" href="#5-logging-srcsecureclawloggingpy" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> Structured logging for debugging and monitoring.</p>
+<p><strong>Features:</strong>
+- Dual handlers (console + rotating files)
+- Structured logs with <code>structlog</code>
+- JSON format for files (parseable with <code>jq</code>)
+- Colored console output in development
+- Log rotation (10MB × 6 files)</p>
+<p><strong>Log Levels:</strong>
+- <strong>DEBUG:</strong> Detailed diagnostics (development only)
+- <strong>INFO:</strong> Normal operations
+- <strong>WARNING:</strong> Potential issues
+- <strong>ERROR:</strong> Errors that don't crash the bot
+- <strong>CRITICAL:</strong> System failures</p>
+<p><strong>Design Decisions:</strong>
+- Structlog for structured, performant logging
+- Separate formatters for console vs files
+- Reduced third-party noise (discord.py, httpx)
+- Rotation prevents disk filling</p>
+<hr />
+<h2 id="data-flow">Data Flow<a class="headerlink" href="#data-flow" title="Permanent link">&para;</a></h2>
+<h3 id="example-user-sends-what-is-async-programming">Example: User Sends "What is async programming?"<a class="headerlink" href="#example-user-sends-what-is-async-programming" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>1. Discord Event
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>   ├─ User sends message in channel
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>   └─ on_message() handler triggered
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>2. Security Checks
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>   ├─ Allowlist: Is user authorized?
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>   ├─ Rate Limit: Within 10 msg/60s?
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>   └─ Injection: Contains malicious patterns?
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>3. Message Routing
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>   ├─ Router Backend (Gemini or Ollama) classifies
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>   └─ Result: {intent: &quot;complex_task&quot;, confidence: 0.92, use_claude: true}
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>4. Memory Search (Parallel)
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>   ├─ Generate embedding: embed_text(&quot;What is async programming?&quot;)
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>   ├─ Search Qdrant: top_k=5 similar memories
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>   └─ Return context: [&quot;Previous async discussion...&quot;, &quot;User prefers Python...&quot;]
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>5. Response Generation (Claude)
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>   ├─ Build prompt: message + context
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>   ├─ Call Claude API: claude-sonnet-4-5-20250929
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>   └─ Get response: &quot;Async programming is...&quot;
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>6. Response Delivery
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a>   ├─ Split if &gt; 2000 chars
+<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>   ├─ Send to Discord channel
+<a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a>   └─ Store interaction in memory
+<a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a>
+<a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a>7. Memory Storage
+<a id="__codelineno-2-30" name="__codelineno-2-30" href="#__codelineno-2-30"></a>   ├─ Embed user message + bot response
+<a id="__codelineno-2-31" name="__codelineno-2-31" href="#__codelineno-2-31"></a>   ├─ Store in Qdrant collection (user-specific)
+<a id="__codelineno-2-32" name="__codelineno-2-32" href="#__codelineno-2-32"></a>   └─ Ready for future context retrieval
+</code></pre></div>
+<hr />
+<h2 id="design-patterns">Design Patterns<a class="headerlink" href="#design-patterns" title="Permanent link">&para;</a></h2>
+<h3 id="1-factory-pattern-router-backend-selection">1. Factory Pattern (Router Backend Selection)<a class="headerlink" href="#1-factory-pattern-router-backend-selection" title="Permanent link">&para;</a></h3>
+<p><strong>Problem:</strong> Need to support multiple routing backends (Gemini, Ollama) without tight coupling.</p>
+<p><strong>Solution:</strong> Factory function creates appropriate backend at runtime.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">create_router</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">MessageRouter</span><span class="p">:</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">settings</span> <span class="o">=</span> <span class="n">get_settings</span><span class="p">()</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="k">if</span> <span class="n">settings</span><span class="o">.</span><span class="n">router_backend</span> <span class="o">==</span> <span class="s2">&quot;ollama&quot;</span><span class="p">:</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>        <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>            <span class="n">backend</span> <span class="o">=</span> <span class="n">OllamaRouterBackend</span><span class="p">()</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>            <span class="k">if</span> <span class="k">await</span> <span class="n">backend</span><span class="o">.</span><span class="n">health_check</span><span class="p">():</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>                <span class="k">return</span> <span class="n">MessageRouter</span><span class="p">(</span><span class="n">backend</span><span class="p">)</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>            <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Ollama failed, falling back to Gemini&quot;</span><span class="p">)</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>    <span class="c1"># Default to Gemini</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>    <span class="k">return</span> <span class="n">MessageRouter</span><span class="p">(</span><span class="n">GeminiRouterBackend</span><span class="p">())</span>
+</code></pre></div>
+<p><strong>Benefits:</strong>
+- Easy to add new backends
+- Runtime configuration
+- Graceful fallbacks</p>
+<h3 id="2-strategy-pattern-llm-backends">2. Strategy Pattern (LLM Backends)<a class="headerlink" href="#2-strategy-pattern-llm-backends" title="Permanent link">&para;</a></h3>
+<p><strong>Problem:</strong> Different LLMs excel at different tasks (Claude for code, Gemini for speed).</p>
+<p><strong>Solution:</strong> Agent selects generator based on router decision.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">if</span> <span class="n">routing</span><span class="o">.</span><span class="n">use_claude</span><span class="p">:</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">response</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_claude</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="n">response</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_gemini</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>Benefits:</strong>
+- Cost optimization
+- Performance tuning
+- Easy to swap implementations</p>
+<h3 id="3-repository-pattern-memory-abstraction">3. Repository Pattern (Memory Abstraction)<a class="headerlink" href="#3-repository-pattern-memory-abstraction" title="Permanent link">&para;</a></h3>
+<p><strong>Problem:</strong> Need to abstract vector database operations from business logic.</p>
+<p><strong>Solution:</strong> <code>QdrantMemory</code> class provides high-level memory interface.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">QdrantMemory</span><span class="p">:</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">store</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">metadata</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Store text with metadata in vector DB.&quot;&quot;&quot;</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">search</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">query</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">top_k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;Search for similar memories.&quot;&quot;&quot;</span>
+</code></pre></div>
+<p><strong>Benefits:</strong>
+- Easy to swap Qdrant for another vector DB
+- Business logic decoupled from storage
+- Testable with mocks</p>
+<h3 id="4-singleton-pattern-configuration">4. Singleton Pattern (Configuration)<a class="headerlink" href="#4-singleton-pattern-configuration" title="Permanent link">&para;</a></h3>
+<p><strong>Problem:</strong> Settings should be loaded once and reused.</p>
+<p><strong>Solution:</strong> LRU cache ensures single settings instance.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nd">@lru_cache</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_settings</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Settings</span><span class="p">:</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="k">return</span> <span class="n">Settings</span><span class="p">()</span>
+</code></pre></div>
+<p><strong>Benefits:</strong>
+- Fast lookups (no repeated .env parsing)
+- Consistent configuration throughout app
+- Memory efficient</p>
+<h3 id="5-retry-pattern-api-resilience">5. Retry Pattern (API Resilience)<a class="headerlink" href="#5-retry-pattern-api-resilience" title="Permanent link">&para;</a></h3>
+<p><strong>Problem:</strong> Cloud APIs have transient failures (rate limits, timeouts).</p>
+<p><strong>Solution:</strong> Exponential backoff retry logic.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">retries</span> <span class="o">=</span> <span class="mi">0</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="k">while</span> <span class="n">retries</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>        <span class="k">return</span> <span class="k">await</span> <span class="n">api_call</span><span class="p">()</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>    <span class="k">except</span> <span class="p">(</span><span class="ne">ConnectionError</span><span class="p">,</span> <span class="ne">TimeoutError</span><span class="p">,</span> <span class="n">RateLimitError</span><span class="p">):</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>        <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span> <span class="o">**</span> <span class="n">retries</span><span class="p">)</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>        <span class="n">retries</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="k">raise</span> <span class="n">MaxRetriesExceeded</span><span class="p">()</span>
+</code></pre></div>
+<p><strong>Benefits:</strong>
+- Handles transient failures
+- Prevents retry storms
+- User-friendly (no immediate errors)</p>
+<hr />
+<h2 id="technology-stack">Technology Stack<a class="headerlink" href="#technology-stack" title="Permanent link">&para;</a></h2>
+<h3 id="core-technologies">Core Technologies<a class="headerlink" href="#core-technologies" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Technology</th>
+<th>Version</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Language</strong></td>
+<td>Python</td>
+<td>3.12+</td>
+<td>Modern async features, type hints</td>
+</tr>
+<tr>
+<td><strong>Discord Library</strong></td>
+<td>discord.py</td>
+<td>2.4.0+</td>
+<td>Discord bot API</td>
+</tr>
+<tr>
+<td><strong>Vector DB</strong></td>
+<td>Qdrant</td>
+<td>Latest</td>
+<td>Semantic memory storage</td>
+</tr>
+<tr>
+<td><strong>Embeddings</strong></td>
+<td>Gemini</td>
+<td>text-embedding-004</td>
+<td>768-dim vectors</td>
+</tr>
+<tr>
+<td><strong>LLMs</strong></td>
+<td>Claude</td>
+<td>Sonnet 4.5</td>
+<td>Complex reasoning, code</td>
+</tr>
+<tr>
+<td></td>
+<td>OpenAI</td>
+<td>GPT-4o</td>
+<td>Alternative complex tasks</td>
+</tr>
+<tr>
+<td></td>
+<td>Gemini</td>
+<td>2.5 Flash</td>
+<td>Simple queries, routing</td>
+</tr>
+<tr>
+<td></td>
+<td>Ollama</td>
+<td>Llama 3.1:8b</td>
+<td>Local routing (optional)</td>
+</tr>
+<tr>
+<td><strong>Containerization</strong></td>
+<td>Docker</td>
+<td>Latest</td>
+<td>Reproducible deployment</td>
+</tr>
+<tr>
+<td><strong>Logging</strong></td>
+<td>structlog</td>
+<td>Latest</td>
+<td>Structured, performant logs</td>
+</tr>
+<tr>
+<td><strong>Config</strong></td>
+<td>Pydantic</td>
+<td>2.0+</td>
+<td>Type-safe settings</td>
+</tr>
+</tbody>
+</table>
+<h3 id="development-tools">Development Tools<a class="headerlink" href="#development-tools" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Ruff</strong></td>
+<td>Linting, formatting (600+ rules)</td>
+</tr>
+<tr>
+<td><strong>Mypy</strong></td>
+<td>Type checking (strict mode)</td>
+</tr>
+<tr>
+<td><strong>Pytest</strong></td>
+<td>Testing framework</td>
+</tr>
+<tr>
+<td><strong>Pre-commit</strong></td>
+<td>Git hooks for quality checks</td>
+</tr>
+<tr>
+<td><strong>Gitleaks</strong></td>
+<td>Secret scanning</td>
+</tr>
+<tr>
+<td><strong>Bandit</strong></td>
+<td>Security scanning</td>
+</tr>
+<tr>
+<td><strong>Hadolint</strong></td>
+<td>Dockerfile linting</td>
+</tr>
+<tr>
+<td><strong>GitHub Actions</strong></td>
+<td>CI/CD pipeline</td>
+</tr>
+<tr>
+<td><strong>Dependabot</strong></td>
+<td>Dependency updates</td>
+</tr>
+<tr>
+<td><strong>CodeQL</strong></td>
+<td>Static analysis</td>
+</tr>
+</tbody>
+</table>
+<h3 id="api-integrations">API Integrations<a class="headerlink" href="#api-integrations" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>API</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Anthropic</strong></td>
+<td>Claude API</td>
+<td>Complex task generation</td>
+</tr>
+<tr>
+<td><strong>OpenAI</strong></td>
+<td>Chat Completions</td>
+<td>Alternative complex tasks</td>
+</tr>
+<tr>
+<td><strong>Google</strong></td>
+<td>Gemini API</td>
+<td>Routing, simple queries, embeddings</td>
+</tr>
+<tr>
+<td><strong>Ollama</strong></td>
+<td>HTTP API</td>
+<td>Local routing (optional)</td>
+</tr>
+<tr>
+<td><strong>Discord</strong></td>
+<td>Gateway &amp; REST</td>
+<td>Bot interactions</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="scalability-performance">Scalability &amp; Performance<a class="headerlink" href="#scalability-performance" title="Permanent link">&para;</a></h2>
+<h3 id="current-performance-characteristics">Current Performance Characteristics<a class="headerlink" href="#current-performance-characteristics" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Latency</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Router Classification</strong></td>
+<td>200-500ms</td>
+<td>Gemini Flash (fast)</td>
+</tr>
+<tr>
+<td><strong>Simple Response</strong></td>
+<td>500-1000ms</td>
+<td>Gemini Flash</td>
+</tr>
+<tr>
+<td><strong>Complex Response</strong></td>
+<td>2-5s</td>
+<td>Claude Sonnet</td>
+</tr>
+<tr>
+<td><strong>Memory Search</strong></td>
+<td>100-200ms</td>
+<td>Qdrant local</td>
+</tr>
+<tr>
+<td><strong>Embedding Generation</strong></td>
+<td>200-400ms</td>
+<td>Parallel batching</td>
+</tr>
+<tr>
+<td><strong>Discord Message Send</strong></td>
+<td>100-300ms</td>
+<td>Discord API</td>
+</tr>
+</tbody>
+</table>
+<h3 id="optimization-strategies">Optimization Strategies<a class="headerlink" href="#optimization-strategies" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Parallel Operations</strong></li>
+<li>Embeddings: <code>asyncio.gather()</code> for batch processing</li>
+<li>Memory searches: Single search reused for both generators</li>
+<li>
+<p>Independent API calls: Concurrent execution</p>
+</li>
+<li>
+<p><strong>Caching</strong> (TODO for Phase 5)</p>
+</li>
+<li>Embedding cache for repeated queries</li>
+<li>Response cache for identical messages</li>
+<li>
+<p>Memory cache for frequently accessed context</p>
+</li>
+<li>
+<p><strong>Async-First Architecture</strong></p>
+</li>
+<li>AsyncQdrantClient (non-blocking vector DB)</li>
+<li>Async Discord handlers</li>
+<li>Async LLM API calls</li>
+<li>
+<p>No blocking I/O in event loop</p>
+</li>
+<li>
+<p><strong>Resource Limits</strong></p>
+</li>
+<li>Rate limiting (10 msg/60s per user)</li>
+<li>Memory search top_k=5 (limits context size)</li>
+<li>Message splitting (prevents Discord rate limits)</li>
+</ol>
+<h3 id="scalability-considerations">Scalability Considerations<a class="headerlink" href="#scalability-considerations" title="Permanent link">&para;</a></h3>
+<p><strong>Current Scale:</strong>
+- Single Discord server
+- ~10-50 concurrent users
+- ~100-500 messages/hour
+- Docker Compose on single host</p>
+<p><strong>Future Scale (Phase 5+):</strong>
+- Multiple Discord servers
+- 100-1000 concurrent users
+- Kubernetes deployment
+- Distributed Qdrant cluster
+- Horizontal scaling of bot instances
+- Load balancing across LLM providers</p>
+<hr />
+<h2 id="security-architecture">Security Architecture<a class="headerlink" href="#security-architecture" title="Permanent link">&para;</a></h2>
+<p>See <a href="../SECURITY/">docs/SECURITY.md</a> for comprehensive security documentation.</p>
+<h3 id="defense-in-depth">Defense in Depth<a class="headerlink" href="#defense-in-depth" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>Layer 1: Network (Docker bridge network, no exposed ports)
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>  ↓
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>Layer 2: Input Validation (Allowlist, rate limiting)
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>  ↓
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>Layer 3: Content Filtering (Prompt injection detection)
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>  ↓
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>Layer 4: Secrets Management (Pydantic SecretStr, env vars)
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>  ↓
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>Layer 5: Monitoring (Structured logs, error tracking)
+</code></pre></div>
+<h3 id="key-security-controls">Key Security Controls<a class="headerlink" href="#key-security-controls" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>User Allowlist</strong> - Only authorized Discord user IDs can interact</li>
+<li><strong>Rate Limiting</strong> - 10 messages per 60 seconds per user</li>
+<li><strong>Prompt Injection Detection</strong> - 17 regex patterns + Unicode obfuscation</li>
+<li><strong>Secrets Management</strong> - SecretStr, never logged, .env gitignored</li>
+<li><strong>Secret Scanning</strong> - Gitleaks pre-commit hook</li>
+<li><strong>Dependency Scanning</strong> - Dependabot weekly updates</li>
+<li><strong>Static Analysis</strong> - CodeQL weekly scans</li>
+<li><strong>Container Security</strong> - Slim base image, health checks</li>
+</ol>
+<h3 id="security-gap-analysis">Security Gap Analysis<a class="headerlink" href="#security-gap-analysis" title="Permanent link">&para;</a></h3>
+<p>See <a href="../SECURITY/#12-gap-analysis">docs/SECURITY.md#12-gap-analysis</a> for:
+- Container image scanning (Trivy)
+- SBOM generation
+- Signed commits
+- Read-only container filesystem
+- And 8 more recommendations</p>
+<hr />
+<h2 id="future-roadmap">Future Roadmap<a class="headerlink" href="#future-roadmap" title="Permanent link">&para;</a></h2>
+<h3 id="phase-5-advanced-features-planned">Phase 5: Advanced Features (Planned)<a class="headerlink" href="#phase-5-advanced-features-planned" title="Permanent link">&para;</a></h3>
+<p>See <a href="../memory/phase5-plan.md"><code>memory/phase5-plan.md</code></a> for detailed plan.</p>
+<p><strong>5A: Encrypted Memory</strong>
+- AES-256-GCM encryption for sensitive data
+- PyCA cryptography library
+- Encrypted fields in Qdrant metadata</p>
+<p><strong>5B: User Profiling</strong>
+- Preferences tracking (language, timezone, interests)
+- Automatic profile updates from conversations
+- Profile-aware context building</p>
+<p><strong>5C: Skills Framework</strong>
+- Pluggable command system
+- Separate Docker container for skills
+- Python sandbox for user-contributed skills</p>
+<p><strong>5D: Smart Multi-Provider Routing</strong>
+- Provider capability matrix (Claude for code, OpenAI for reasoning, Gemini for docs)
+- Dynamic routing based on message analysis
+- Cost-aware provider selection</p>
+<p><strong>5E: Heartbeat Scheduler</strong>
+- Proactive tasks (daily summaries, reminders)
+- Cron-like scheduling
+- Background task management</p>
+<p><strong>5F: Advanced Memory</strong>
+- Embedding caching
+- Multi-modal memory (images, files)
+- Memory consolidation and pruning</p>
+<p><strong>5G: Production Hardening</strong>
+- Kubernetes deployment
+- Distributed tracing (OpenTelemetry)
+- Metrics (Prometheus)
+- Alerting (PagerDuty/Slack)</p>
+<h3 id="long-term-vision">Long-Term Vision<a class="headerlink" href="#long-term-vision" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Multi-Channel Support</strong> - Slack, Teams, Telegram</li>
+<li><strong>Web Dashboard</strong> - Admin UI for configuration</li>
+<li><strong>Mobile App</strong> - React Native or Flutter</li>
+<li><strong>Custom Model Fine-Tuning</strong> - Domain-specific models</li>
+<li><strong>Federated Deployment</strong> - Multi-region for low latency</li>
+<li><strong>Plugin Marketplace</strong> - Community-contributed skills</li>
+</ul>
+<hr />
+<h2 id="design-decisions-log">Design Decisions Log<a class="headerlink" href="#design-decisions-log" title="Permanent link">&para;</a></h2>
+<h3 id="why-gemini-for-embeddings">Why Gemini for Embeddings?<a class="headerlink" href="#why-gemini-for-embeddings" title="Permanent link">&para;</a></h3>
+<p><strong>Decision:</strong> Use Gemini <code>text-embedding-004</code> instead of OpenAI <code>text-embedding-3-small</code>.</p>
+<p><strong>Rationale:</strong>
+- Same API as routing (fewer integrations)
+- 768 dimensions (good balance of quality vs storage)
+- Free tier available
+- Proven quality in benchmarks</p>
+<p><strong>Trade-offs:</strong>
+- Tied to Google ecosystem
+- Less flexibility than OpenAI</p>
+<h3 id="why-dual-routing-backends">Why Dual Routing Backends?<a class="headerlink" href="#why-dual-routing-backends" title="Permanent link">&para;</a></h3>
+<p><strong>Decision:</strong> Support both Gemini (cloud) and Ollama (local) for routing.</p>
+<p><strong>Rationale:</strong>
+- Privacy: Some users prefer local inference
+- Cost: Ollama has no API costs
+- Reliability: Fallback if one provider fails
+- Flexibility: Users can choose based on needs</p>
+<p><strong>Trade-offs:</strong>
+- Increased complexity
+- More testing required
+- Ollama requires GPU for good performance</p>
+<h3 id="why-discordpy-over-other-libraries">Why Discord.py Over Other Libraries?<a class="headerlink" href="#why-discordpy-over-other-libraries" title="Permanent link">&para;</a></h3>
+<p><strong>Decision:</strong> Use <code>discord.py</code> instead of alternatives like <code>discord.js</code> or <code>pycord</code>.</p>
+<p><strong>Rationale:</strong>
+- Python ecosystem (same language as backend)
+- Strong typing support
+- Active maintenance
+- Excellent documentation
+- Mature slash command support</p>
+<p><strong>Trade-offs:</strong>
+- Python slower than Node.js (not critical for this use case)
+- Fewer real-time features than discord.js</p>
+<h3 id="why-qdrant-over-alternatives">Why Qdrant Over Alternatives?<a class="headerlink" href="#why-qdrant-over-alternatives" title="Permanent link">&para;</a></h3>
+<p><strong>Decision:</strong> Use Qdrant instead of Pinecone, Weaviate, or Milvus.</p>
+<p><strong>Rationale:</strong>
+- Self-hosted (no vendor lock-in)
+- Docker-native (easy deployment)
+- Excellent async Python client
+- Good performance on consumer hardware
+- Open source</p>
+<p><strong>Trade-offs:</strong>
+- Less managed than Pinecone
+- Smaller ecosystem than Weaviate
+- Manual scaling required</p>
+<h3 id="why-pydantic-settings-over-python-decouple">Why Pydantic Settings Over python-decouple?<a class="headerlink" href="#why-pydantic-settings-over-python-decouple" title="Permanent link">&para;</a></h3>
+<p><strong>Decision:</strong> Use Pydantic Settings for configuration.</p>
+<p><strong>Rationale:</strong>
+- Type validation at load time
+- SecretStr for credentials
+- Computed properties
+- Same library as data models
+- Better IDE support</p>
+<p><strong>Trade-offs:</strong>
+- Heavier than python-decouple
+- Requires Pydantic knowledge</p>
+<hr />
+<h2 id="diagrams">Diagrams<a class="headerlink" href="#diagrams" title="Permanent link">&para;</a></h2>
+<h3 id="component-interaction-diagram">Component Interaction Diagram<a class="headerlink" href="#component-interaction-diagram" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>┌─────────────┐
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>│   Discord   │
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>│    User     │
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>└──────┬──────┘
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>       │ Message
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>       ▼
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>┌─────────────────────────────────────────┐
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>│          Security Layer                 │
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>│  ┌────────┐ ┌────────┐ ┌─────────────┐ │
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>│  │Allowlist│→│Rate    │→│Injection    │ │
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>│  │Check    │ │Limit   │ │Detection    │ │
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>│  └────────┘ └────────┘ └─────────────┘ │
+<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>└─────────────────────────────────────────┘
+<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a>       │ Authorized
+<a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a>       ▼
+<a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a>┌─────────────────────────────────────────┐
+<a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a>│          Agent Core                     │
+<a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a>│  ┌─────────────────────────────────┐   │
+<a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a>│  │  Router Factory                 │   │
+<a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a>│  │  ┌──────────┐   ┌──────────┐   │   │
+<a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a>│  │  │ Gemini   │ or│ Ollama   │   │   │
+<a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a>│  │  └──────────┘   └──────────┘   │   │
+<a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a>│  └─────────────────────────────────┘   │
+<a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a>│       │                                 │
+<a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a>│       │ Routing Decision                │
+<a id="__codelineno-9-26" name="__codelineno-9-26" href="#__codelineno-9-26"></a>│       ▼                                 │
+<a id="__codelineno-9-27" name="__codelineno-9-27" href="#__codelineno-9-27"></a>│  ┌─────────────────────────────────┐   │
+<a id="__codelineno-9-28" name="__codelineno-9-28" href="#__codelineno-9-28"></a>│  │  Memory Manager                 │   │
+<a id="__codelineno-9-29" name="__codelineno-9-29" href="#__codelineno-9-29"></a>│  │  Search Qdrant for context      │   │
+<a id="__codelineno-9-30" name="__codelineno-9-30" href="#__codelineno-9-30"></a>│  └─────────────────────────────────┘   │
+<a id="__codelineno-9-31" name="__codelineno-9-31" href="#__codelineno-9-31"></a>│       │                                 │
+<a id="__codelineno-9-32" name="__codelineno-9-32" href="#__codelineno-9-32"></a>│       │ Context                         │
+<a id="__codelineno-9-33" name="__codelineno-9-33" href="#__codelineno-9-33"></a>│       ▼                                 │
+<a id="__codelineno-9-34" name="__codelineno-9-34" href="#__codelineno-9-34"></a>│  ┌─────────────────────────────────┐   │
+<a id="__codelineno-9-35" name="__codelineno-9-35" href="#__codelineno-9-35"></a>│  │  Generator Selection            │   │
+<a id="__codelineno-9-36" name="__codelineno-9-36" href="#__codelineno-9-36"></a>│  │  ┌─────────┐   ┌──────────┐    │   │
+<a id="__codelineno-9-37" name="__codelineno-9-37" href="#__codelineno-9-37"></a>│  │  │ Claude  │ or│ Gemini   │    │   │
+<a id="__codelineno-9-38" name="__codelineno-9-38" href="#__codelineno-9-38"></a>│  │  └─────────┘   └──────────┘    │   │
+<a id="__codelineno-9-39" name="__codelineno-9-39" href="#__codelineno-9-39"></a>│  └─────────────────────────────────┘   │
+<a id="__codelineno-9-40" name="__codelineno-9-40" href="#__codelineno-9-40"></a>└─────────────────────────────────────────┘
+<a id="__codelineno-9-41" name="__codelineno-9-41" href="#__codelineno-9-41"></a>       │ Response
+<a id="__codelineno-9-42" name="__codelineno-9-42" href="#__codelineno-9-42"></a>       ▼
+<a id="__codelineno-9-43" name="__codelineno-9-43" href="#__codelineno-9-43"></a>┌─────────────────────────────────────────┐
+<a id="__codelineno-9-44" name="__codelineno-9-44" href="#__codelineno-9-44"></a>│          Memory Storage                 │
+<a id="__codelineno-9-45" name="__codelineno-9-45" href="#__codelineno-9-45"></a>│  Embed and store in Qdrant              │
+<a id="__codelineno-9-46" name="__codelineno-9-46" href="#__codelineno-9-46"></a>└─────────────────────────────────────────┘
+<a id="__codelineno-9-47" name="__codelineno-9-47" href="#__codelineno-9-47"></a>       │
+<a id="__codelineno-9-48" name="__codelineno-9-48" href="#__codelineno-9-48"></a>       ▼
+<a id="__codelineno-9-49" name="__codelineno-9-49" href="#__codelineno-9-49"></a>┌─────────────┐
+<a id="__codelineno-9-50" name="__codelineno-9-50" href="#__codelineno-9-50"></a>│   Discord   │
+<a id="__codelineno-9-51" name="__codelineno-9-51" href="#__codelineno-9-51"></a>│   Response  │
+<a id="__codelineno-9-52" name="__codelineno-9-52" href="#__codelineno-9-52"></a>└─────────────┘
+</code></pre></div>
+<hr />
+<h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="https://discordpy.readthedocs.io/">Discord.py Documentation</a></li>
+<li><a href="https://qdrant.tech/documentation/">Qdrant Documentation</a></li>
+<li><a href="https://docs.anthropic.com/">Anthropic Claude API</a></li>
+<li><a href="https://platform.openai.com/docs/">OpenAI API</a></li>
+<li><a href="https://ai.google.dev/docs">Google Gemini API</a></li>
+<li><a href="https://docs.pydantic.dev/">Pydantic Documentation</a></li>
+<li><a href="https://docs.docker.com/">Docker Documentation</a></li>
+<li><a href="https://www.structlog.org/">Structlog Documentation</a></li>
+</ul>
+<hr />
+<h2 id="contact-support">Contact &amp; Support<a class="headerlink" href="#contact-support" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Issues:</strong> https://github.com/jimtin/sercureclaw/issues</li>
+<li><strong>Discussions:</strong> https://github.com/jimtin/sercureclaw/discussions</li>
+<li><strong>Documentation:</strong> See <a href=".">docs/</a> directory for detailed guides</li>
+</ul>
+<hr />
+<p><strong>Last Updated:</strong> 2026-02-06
+<strong>Version:</strong> 1.0.0 (Phases 1-4 complete, 87.58% test coverage)</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/jimtin/sercureclaw" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

@@ -1,0 +1,2889 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Secure personal AI assistant with encrypted memory and multi-provider LLM routing">
+      
+      
+      
+        <link rel="canonical" href="https://jimtin.github.io/sercureclaw/TROUBLESHOOTING/">
+      
+      
+        <link rel="prev" href="../CI_CD/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Troubleshooting - SecureClaw</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#secureclaw-troubleshooting-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="SecureClaw" class="md-header__button md-logo" aria-label="SecureClaw" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            SecureClaw
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Troubleshooting
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/jimtin/sercureclaw" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    jimtin/sercureclaw
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="SecureClaw" class="md-nav__button md-logo" aria-label="SecureClaw" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    SecureClaw
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/jimtin/sercureclaw" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    jimtin/sercureclaw
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../STARTUP_WALKTHROUGH/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../COMMANDS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../FAQ/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ARCHITECTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../DOCKER_ARCHITECTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../SECURITY/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TESTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../CI_CD/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI/CD
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#discord-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discord Errors
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Discord Errors">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#error-privilegedintentsrequired" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error: PrivilegedIntentsRequired
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bot-not-responding-in-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bot Not Responding in Server
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#slash-commands-not-appearing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Slash Commands Not Appearing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#error-error-parsing-value-for-field-allowed_user_ids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error: error parsing value for field "allowed_user_ids"
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#missing-environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Missing Environment Variables
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#qdrant-connection-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Qdrant Connection Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Qdrant Connection Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#error-connection-refused-to-qdrant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error: Connection Refused to Qdrant
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#qdrant-data-persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Qdrant Data Persistence
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#python-version-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python Version Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Python Version Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#error-package-requires-a-different-python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error: Package requires a different Python
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#multiple-python-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Multiple Python Versions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#api-key-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Key Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="API Key Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#invalid-discord-token" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Invalid Discord Token
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#invalid-gemini-api-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Invalid Gemini API Key
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rate-limiting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rate Limiting
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#performance-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Performance Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#slow-response-times" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Slow Response Times
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#high-memory-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        High Memory Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#docker-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docker Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Docker Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#docker-not-running" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docker Not Running
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#docker-daemon-not-ready-after-launch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docker Daemon Not Ready After Launch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#docker-desktop-memory-allocation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docker Desktop Memory Allocation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#port-already-in-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Port Already in Use
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ollama-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Ollama Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ollama-container-fails-with-out-of-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama Container Fails with "Out of Memory"
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ollama-model-download-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama Model Download Fails
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ollama-connection-error" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama Connection Error
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ollama-slow-response-times" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama Slow Response Times
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#docker-desktop-wont-start-after-memory-increase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docker Desktop Won't Start After Memory Increase
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#switch-between-gemini-and-ollama" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Switch Between Gemini and Ollama
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#getting-help" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting Help
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Getting Help">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#collecting-debug-information" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Collecting Debug Information
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enable-debug-logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enable Debug Logging
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#report-an-issue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Report an Issue
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#common-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Checklist
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#still-having-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Still Having Issues?
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#discord-errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discord Errors
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Discord Errors">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#error-privilegedintentsrequired" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error: PrivilegedIntentsRequired
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bot-not-responding-in-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bot Not Responding in Server
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#slash-commands-not-appearing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Slash Commands Not Appearing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#error-error-parsing-value-for-field-allowed_user_ids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error: error parsing value for field "allowed_user_ids"
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#missing-environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Missing Environment Variables
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#qdrant-connection-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Qdrant Connection Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Qdrant Connection Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#error-connection-refused-to-qdrant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error: Connection Refused to Qdrant
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#qdrant-data-persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Qdrant Data Persistence
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#python-version-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python Version Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Python Version Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#error-package-requires-a-different-python" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error: Package requires a different Python
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#multiple-python-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Multiple Python Versions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#api-key-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Key Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="API Key Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#invalid-discord-token" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Invalid Discord Token
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#invalid-gemini-api-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Invalid Gemini API Key
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rate-limiting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rate Limiting
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#performance-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Performance Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#slow-response-times" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Slow Response Times
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#high-memory-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        High Memory Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#docker-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docker Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Docker Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#docker-not-running" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docker Not Running
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#docker-daemon-not-ready-after-launch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docker Daemon Not Ready After Launch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#docker-desktop-memory-allocation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docker Desktop Memory Allocation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#port-already-in-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Port Already in Use
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ollama-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama Issues
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Ollama Issues">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ollama-container-fails-with-out-of-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama Container Fails with "Out of Memory"
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ollama-model-download-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama Model Download Fails
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ollama-connection-error" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama Connection Error
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ollama-slow-response-times" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ollama Slow Response Times
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#docker-desktop-wont-start-after-memory-increase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Docker Desktop Won't Start After Memory Increase
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#switch-between-gemini-and-ollama" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Switch Between Gemini and Ollama
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#getting-help" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting Help
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Getting Help">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#collecting-debug-information" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Collecting Debug Information
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enable-debug-logging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enable Debug Logging
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#report-an-issue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Report an Issue
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#common-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Checklist
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#still-having-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Still Having Issues?
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="secureclaw-troubleshooting-guide">SecureClaw Troubleshooting Guide<a class="headerlink" href="#secureclaw-troubleshooting-guide" title="Permanent link">&para;</a></h1>
+<p>Common issues and their solutions for running SecureClaw.</p>
+<h2 id="table-of-contents">Table of Contents<a class="headerlink" href="#table-of-contents" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="#discord-errors">Discord Errors</a></li>
+<li><a href="#configuration-issues">Configuration Issues</a></li>
+<li><a href="#docker-issues">Docker Issues</a></li>
+<li><a href="#ollama-issues">Ollama Issues</a></li>
+<li><a href="#qdrant-connection-issues">Qdrant Connection Issues</a></li>
+<li><a href="#python-version-issues">Python Version Issues</a></li>
+<li><a href="#api-key-issues">API Key Issues</a></li>
+<li><a href="#performance-issues">Performance Issues</a></li>
+</ul>
+<hr />
+<h2 id="discord-errors">Discord Errors<a class="headerlink" href="#discord-errors" title="Permanent link">&para;</a></h2>
+<h3 id="error-privilegedintentsrequired">Error: <code>PrivilegedIntentsRequired</code><a class="headerlink" href="#error-privilegedintentsrequired" title="Permanent link">&para;</a></h3>
+<p><strong>Full Error:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>discord.errors.PrivilegedIntentsRequired: Shard ID None is requesting privileged intents
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>that have not been explicitly enabled in the developer portal.
+</code></pre></div></p>
+<p><strong>Cause:</strong> The bot needs the Message Content Intent to read messages, but it's not enabled in Discord.</p>
+<p><strong>Solution:</strong>
+1. Go to https://discord.com/developers/applications
+2. Select your bot application
+3. Go to <strong>Bot</strong> tab
+4. Scroll to <strong>Privileged Gateway Intents</strong>
+5. <strong>Enable "MESSAGE CONTENT INTENT"</strong> (toggle it ON)
+6. Click <strong>Save Changes</strong>
+7. Restart the bot: <code>./stop.sh &amp;&amp; ./start.sh</code></p>
+<p><strong>Why Required:</strong> Discord requires explicit permission to read message content for privacy/security.</p>
+<hr />
+<h3 id="bot-not-responding-in-server">Bot Not Responding in Server<a class="headerlink" href="#bot-not-responding-in-server" title="Permanent link">&para;</a></h3>
+<p><strong>Symptoms:</strong>
+- Bot is online but doesn't respond to mentions
+- Slash commands work but messages don't</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li><strong>Check Bot Permissions:</strong></li>
+<li>Bot needs <code>Send Messages</code>, <code>Read Messages</code>, <code>Embed Links</code> permissions</li>
+<li>
+<p>Right-click the bot in server → Manage → Check role permissions</p>
+</li>
+<li>
+<p><strong>Verify Message Content Intent:</strong></p>
+</li>
+<li>
+<p>See <a href="#error-privilegedintentsrequired">PrivilegedIntentsRequired</a> above</p>
+</li>
+<li>
+<p><strong>Check if Bot is Being Mentioned:</strong></p>
+</li>
+<li>
+<p>Bot only responds to DMs or when mentioned: <code>@BotName your message</code></p>
+</li>
+<li>
+<p><strong>Check Allowlist:</strong></p>
+</li>
+<li>If <code>ALLOWED_USER_IDS</code> is set in <code>.env</code>, your user ID must be included</li>
+<li>To allow all users: <code>ALLOWED_USER_IDS=</code> (leave empty)</li>
+</ol>
+<hr />
+<h3 id="slash-commands-not-appearing">Slash Commands Not Appearing<a class="headerlink" href="#slash-commands-not-appearing" title="Permanent link">&para;</a></h3>
+<p><strong>Symptoms:</strong>
+- Can't see <code>/ask</code>, <code>/remember</code>, <code>/search</code> commands</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li><strong>Wait for Sync:</strong></li>
+<li>Commands can take up to 1 hour to appear globally</li>
+<li>
+<p>Restart Discord app to force refresh</p>
+</li>
+<li>
+<p><strong>Check Bot Scope:</strong></p>
+</li>
+<li>When you invited the bot, did you select <code>applications.commands</code> scope?</li>
+<li>
+<p>If not, generate new invite URL with both <code>bot</code> and <code>applications.commands</code></p>
+</li>
+<li>
+<p><strong>Reinvite Bot:</strong></p>
+</li>
+<li>Go to OAuth2 → URL Generator in Discord Developer Portal</li>
+<li>Select: <code>bot</code> + <code>applications.commands</code></li>
+<li>
+<p>Use new URL to invite bot</p>
+</li>
+<li>
+<p><strong>Check Logs:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Look for &quot;commands_synced&quot; message</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>./status.sh
+</code></pre></div></p>
+</li>
+</ol>
+<hr />
+<h2 id="configuration-issues">Configuration Issues<a class="headerlink" href="#configuration-issues" title="Permanent link">&para;</a></h2>
+<h3 id="error-error-parsing-value-for-field-allowed_user_ids">Error: <code>error parsing value for field "allowed_user_ids"</code><a class="headerlink" href="#error-error-parsing-value-for-field-allowed_user_ids" title="Permanent link">&para;</a></h3>
+<p><strong>Full Error:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pydantic_settings.sources.SettingsError: error parsing value for field &quot;allowed_user_ids&quot;
+</code></pre></div></p>
+<p><strong>Cause:</strong> Invalid format for <code>ALLOWED_USER_IDS</code> in <code>.env</code> file.</p>
+<p><strong>Solution:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Correct formats:</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nv">ALLOWED_USER_IDS</span><span class="o">=</span><span class="w">                        </span><span class="c1"># Allow all users (empty)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nv">ALLOWED_USER_IDS</span><span class="o">=</span><span class="m">123456789</span><span class="w">               </span><span class="c1"># Single user</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="nv">ALLOWED_USER_IDS</span><span class="o">=</span><span class="m">123456789</span>,987654321<span class="w">     </span><span class="c1"># Multiple users (comma-separated, no spaces)</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="c1"># Wrong formats:</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="nv">ALLOWED_USER_IDS</span><span class="o">=</span><span class="m">123456789</span>,<span class="w"> </span><span class="m">987654321</span><span class="w">    </span><span class="c1"># Extra spaces after comma</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="nv">ALLOWED_USER_IDS</span><span class="o">=[</span><span class="m">123456789</span><span class="o">]</span><span class="w">             </span><span class="c1"># JSON format (not supported)</span>
+</code></pre></div></p>
+<p><strong>Get Your Discord User ID:</strong>
+1. Enable Developer Mode in Discord: Settings → Advanced → Developer Mode
+2. Right-click your username anywhere
+3. Select "Copy User ID"
+4. Paste into <code>.env</code>: <code>ALLOWED_USER_IDS=your_id_here</code></p>
+<hr />
+<h3 id="missing-environment-variables">Missing Environment Variables<a class="headerlink" href="#missing-environment-variables" title="Permanent link">&para;</a></h3>
+<p><strong>Error:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Field required [type=missing]
+</code></pre></div></p>
+<p><strong>Solution:</strong></p>
+<ol>
+<li><strong>Check Required Variables:</strong></li>
+<li><code>DISCORD_TOKEN</code> (required)</li>
+<li>
+<p><code>GEMINI_API_KEY</code> (required)</p>
+</li>
+<li>
+<p><strong>Optional Variables:</strong></p>
+</li>
+<li><code>ANTHROPIC_API_KEY</code> (for Claude)</li>
+<li><code>OPENAI_API_KEY</code> (for GPT-4)</li>
+<li><code>ALLOWED_USER_IDS</code> (defaults to allow all)</li>
+<li><code>QDRANT_HOST</code> (defaults to "qdrant")</li>
+<li>
+<p><code>QDRANT_PORT</code> (defaults to 6333)</p>
+</li>
+<li>
+<p><strong>Verify <code>.env</code> File Exists:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>ls<span class="w"> </span>-la<span class="w"> </span>.env
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1"># If missing:</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>cp<span class="w"> </span>.env.example<span class="w"> </span>.env
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Check for Trailing Spaces:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Bad:</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nv">DISCORD_TOKEN</span><span class="o">=</span>abc123
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># Good:</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="nv">DISCORD_TOKEN</span><span class="o">=</span>abc123
+</code></pre></div></p>
+</li>
+</ol>
+<hr />
+<h2 id="qdrant-connection-issues">Qdrant Connection Issues<a class="headerlink" href="#qdrant-connection-issues" title="Permanent link">&para;</a></h2>
+<h3 id="error-connection-refused-to-qdrant">Error: Connection Refused to Qdrant<a class="headerlink" href="#error-connection-refused-to-qdrant" title="Permanent link">&para;</a></h3>
+<p><strong>Full Error:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>ConnectionRefusedError: [Errno 61] Connection refused
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>httpcore._exceptions.ConnectError: [Errno 61] Connection refused
+</code></pre></div></p>
+<p><strong>Cause:</strong> Bot can't connect to Qdrant vector database.</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Check Qdrant is Running:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>docker<span class="w"> </span>ps<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>qdrant
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="c1"># Should show secureclaw-qdrant running</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Start Qdrant if Stopped:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>docker<span class="w"> </span>start<span class="w"> </span>secureclaw-qdrant
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="c1"># Or use the start script:</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>./start.sh
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Check <code>QDRANT_HOST</code> Setting:</strong></p>
+</li>
+</ol>
+<p><strong>For Local Development (./start.sh):</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># In .env:</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nv">QDRANT_HOST</span><span class="o">=</span>localhost
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="nv">QDRANT_PORT</span><span class="o">=</span><span class="m">6333</span>
+</code></pre></div></p>
+<p><strong>For Docker Compose:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># In .env:</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nv">QDRANT_HOST</span><span class="o">=</span>qdrant
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="nv">QDRANT_PORT</span><span class="o">=</span><span class="m">6333</span>
+</code></pre></div></p>
+<ol>
+<li>
+<p><strong>Verify Qdrant Health:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>curl<span class="w"> </span>http://localhost:6333/healthz
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="c1"># Should return: healthy</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Check Port Availability:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>lsof<span class="w"> </span>-i<span class="w"> </span>:6333
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="c1"># Should show Docker using port 6333</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Restart Qdrant:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>docker<span class="w"> </span>restart<span class="w"> </span>secureclaw-qdrant
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="c1"># Wait 10 seconds</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>curl<span class="w"> </span>http://localhost:6333/healthz
+</code></pre></div></p>
+</li>
+</ol>
+<hr />
+<h3 id="qdrant-data-persistence">Qdrant Data Persistence<a class="headerlink" href="#qdrant-data-persistence" title="Permanent link">&para;</a></h3>
+<p><strong>Symptoms:</strong>
+- Bot loses all memories after restart
+- Collections disappear</p>
+<p><strong>Cause:</strong> Qdrant data not being persisted to disk.</p>
+<p><strong>Solution:</strong></p>
+<ol>
+<li>
+<p><strong>Check Volume Mount:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>docker<span class="w"> </span>inspect<span class="w"> </span>secureclaw-qdrant<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-A<span class="w"> </span><span class="m">5</span><span class="w"> </span>Mounts
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="c1"># Should show volume mounted to /qdrant/storage</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Verify Data Directory:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>ls<span class="w"> </span>-la<span class="w"> </span>qdrant_storage/
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="c1"># Should contain Qdrant database files</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Recreate with Proper Volume:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>docker<span class="w"> </span>stop<span class="w"> </span>secureclaw-qdrant
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>docker<span class="w"> </span>rm<span class="w"> </span>secureclaw-qdrant
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>./start.sh<span class="w">  </span><span class="c1"># Will recreate with volume</span>
+</code></pre></div></p>
+</li>
+</ol>
+<hr />
+<h2 id="python-version-issues">Python Version Issues<a class="headerlink" href="#python-version-issues" title="Permanent link">&para;</a></h2>
+<h3 id="error-package-requires-a-different-python">Error: <code>Package requires a different Python</code><a class="headerlink" href="#error-package-requires-a-different-python" title="Permanent link">&para;</a></h3>
+<p><strong>Full Error:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>ERROR: Package &#39;secureclaw&#39; requires a different Python: 3.11.6 not in &#39;&gt;=3.12&#39;
+</code></pre></div></p>
+<p><strong>Cause:</strong> SecureClaw requires Python 3.12+, but you have an older version.</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Install Python 3.12+ (macOS with Homebrew):</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>brew<span class="w"> </span>install<span class="w"> </span>python@3.12
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Verify Installation:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>python3.12<span class="w"> </span>--version
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="c1"># Should show: Python 3.12.x</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Recreate Virtual Environment:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>rm<span class="w"> </span>-rf<span class="w"> </span>.venv
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>python3.12<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Use start.sh (Automatic):</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>./start.sh
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="c1"># Automatically finds Python 3.12+</span>
+</code></pre></div></p>
+</li>
+</ol>
+<hr />
+<h3 id="multiple-python-versions">Multiple Python Versions<a class="headerlink" href="#multiple-python-versions" title="Permanent link">&para;</a></h3>
+<p><strong>Symptoms:</strong>
+- <code>python3 --version</code> shows old version
+- But <code>python3.12</code> exists</p>
+<p><strong>Solution:</strong>
+The start script handles this automatically. If you need to manually use Python 3.12:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="c1"># Always use explicit version:</span>
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>python3.12<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="c1"># Or use the start script:</span>
+<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a>./start.sh
+</code></pre></div>
+<hr />
+<h2 id="api-key-issues">API Key Issues<a class="headerlink" href="#api-key-issues" title="Permanent link">&para;</a></h2>
+<h3 id="invalid-discord-token">Invalid Discord Token<a class="headerlink" href="#invalid-discord-token" title="Permanent link">&para;</a></h3>
+<p><strong>Error:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>discord.errors.LoginFailure: Improper token has been passed
+</code></pre></div></p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li><strong>Regenerate Token:</strong></li>
+<li>Go to Discord Developer Portal → Bot tab</li>
+<li>Click "Reset Token"</li>
+<li>Copy new token immediately</li>
+<li>
+<p>Update <code>.env</code>: <code>DISCORD_TOKEN=new_token_here</code></p>
+</li>
+<li>
+<p><strong>Check for Extra Spaces:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="c1"># Bad:</span>
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a><span class="nv">DISCORD_TOKEN</span><span class="o">=</span><span class="w"> </span>abc123
+<a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a><span class="nv">DISCORD_TOKEN</span><span class="o">=</span>abc123
+<a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a>
+<a id="__codelineno-25-5" name="__codelineno-25-5" href="#__codelineno-25-5"></a><span class="c1"># Good:</span>
+<a id="__codelineno-25-6" name="__codelineno-25-6" href="#__codelineno-25-6"></a><span class="nv">DISCORD_TOKEN</span><span class="o">=</span>abc123
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Verify Token Format:</strong></p>
+</li>
+<li>Three parts separated by dots (Base64-encoded)</li>
+<li>Format: <code>&lt;FIRST_PART&gt;.&lt;SECOND_PART&gt;.&lt;THIRD_PART&gt;</code></li>
+<li>Each part contains alphanumeric characters, hyphens, and underscores</li>
+<li>Real tokens are much longer (70+ characters total)</li>
+<li>No quotes needed in <code>.env</code></li>
+<li><strong>Never share your actual token!</strong></li>
+</ol>
+<hr />
+<h3 id="invalid-gemini-api-key">Invalid Gemini API Key<a class="headerlink" href="#invalid-gemini-api-key" title="Permanent link">&para;</a></h3>
+<p><strong>Error:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>google.api_core.exceptions.PermissionDenied: 403 API key not valid
+</code></pre></div></p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li><strong>Verify API Key:</strong></li>
+<li>Go to https://aistudio.google.com/app/apikey</li>
+<li>Check if key exists and is enabled</li>
+<li>
+<p>Generate new key if needed</p>
+</li>
+<li>
+<p><strong>Check Gemini API Quotas:</strong></p>
+</li>
+<li>Free tier has limits</li>
+<li>
+<p>Check quota at: https://aistudio.google.com/app/apikey</p>
+</li>
+<li>
+<p><strong>Enable Gemini API:</strong></p>
+</li>
+<li>Some Google accounts need to enable the API first</li>
+<li>Visit: https://makersuite.google.com/</li>
+</ol>
+<hr />
+<h3 id="rate-limiting">Rate Limiting<a class="headerlink" href="#rate-limiting" title="Permanent link">&para;</a></h3>
+<p><strong>Error:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>429 Too Many Requests
+<a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a>anthropic.RateLimitError: rate_limit_error
+</code></pre></div></p>
+<p><strong>Cause:</strong> Too many API requests in short time.</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li><strong>Wait Before Retrying:</strong></li>
+<li>The bot has automatic retry with backoff</li>
+<li>
+<p>Wait 1-2 minutes before trying again</p>
+</li>
+<li>
+<p><strong>Reduce Usage:</strong></p>
+</li>
+<li>Gemini Flash: 15 requests/minute (free tier)</li>
+<li>Claude: Depends on your tier</li>
+<li>
+<p>OpenAI: Depends on your tier</p>
+</li>
+<li>
+<p><strong>Check API Dashboard:</strong></p>
+</li>
+<li>Anthropic: https://console.anthropic.com/</li>
+<li>
+<p>OpenAI: https://platform.openai.com/usage</p>
+</li>
+<li>
+<p><strong>Upgrade API Tier:</strong></p>
+</li>
+<li>Most rate limits are per-tier</li>
+<li>Free → Paid tier often increases limits significantly</li>
+</ol>
+<hr />
+<h2 id="performance-issues">Performance Issues<a class="headerlink" href="#performance-issues" title="Permanent link">&para;</a></h2>
+<h3 id="slow-response-times">Slow Response Times<a class="headerlink" href="#slow-response-times" title="Permanent link">&para;</a></h3>
+<p><strong>Symptoms:</strong>
+- Bot takes 10+ seconds to respond
+- Timeouts in Discord</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li><strong>Check Which Model is Being Used:</strong></li>
+<li>Simple queries → Gemini Flash (fast)</li>
+<li>
+<p>Complex tasks → Claude/GPT-4 (slower)</p>
+</li>
+<li>
+<p><strong>Adjust Router Threshold:</strong></p>
+</li>
+<li>Edit <code>src/secureclaw/agent/router.py</code></li>
+<li>
+<p>Line 136: Change <code>confidence &gt; 0.7</code> to <code>0.8</code> to use Flash more often</p>
+</li>
+<li>
+<p><strong>Check Qdrant Performance:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>curl<span class="w"> </span>http://localhost:6333/metrics
+<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a><span class="c1"># Check for slow queries</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Reduce Memory Context:</strong></p>
+</li>
+<li>Edit <code>src/secureclaw/agent/core.py</code></li>
+<li>Line ~145: Reduce <code>memory_limit</code> and <code>history_limit</code></li>
+</ol>
+<hr />
+<h3 id="high-memory-usage">High Memory Usage<a class="headerlink" href="#high-memory-usage" title="Permanent link">&para;</a></h3>
+<p><strong>Symptoms:</strong>
+- Bot using multiple GB of RAM
+- System slowing down</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Check Qdrant Memory:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>docker<span class="w"> </span>stats<span class="w"> </span>secureclaw-qdrant
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Limit Qdrant Memory:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a><span class="c1"># Stop and recreate with memory limit:</span>
+<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a>docker<span class="w"> </span>stop<span class="w"> </span>secureclaw-qdrant
+<a id="__codelineno-30-3" name="__codelineno-30-3" href="#__codelineno-30-3"></a>docker<span class="w"> </span>rm<span class="w"> </span>secureclaw-qdrant
+<a id="__codelineno-30-4" name="__codelineno-30-4" href="#__codelineno-30-4"></a>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-30-5" name="__codelineno-30-5" href="#__codelineno-30-5"></a><span class="w">  </span>--name<span class="w"> </span>secureclaw-qdrant<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-30-6" name="__codelineno-30-6" href="#__codelineno-30-6"></a><span class="w">  </span>-p<span class="w"> </span><span class="m">6333</span>:6333<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-30-7" name="__codelineno-30-7" href="#__codelineno-30-7"></a><span class="w">  </span>--memory<span class="o">=</span><span class="s2">&quot;2g&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-30-8" name="__codelineno-30-8" href="#__codelineno-30-8"></a><span class="w">  </span>-v<span class="w"> </span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>/qdrant_storage:/qdrant/storage<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-30-9" name="__codelineno-30-9" href="#__codelineno-30-9"></a><span class="w">  </span>qdrant/qdrant:latest
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Clear Old Memories:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a><span class="c1"># Delete qdrant_storage and restart:</span>
+<a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a>rm<span class="w"> </span>-rf<span class="w"> </span>qdrant_storage
+<a id="__codelineno-31-3" name="__codelineno-31-3" href="#__codelineno-31-3"></a>./start.sh
+</code></pre></div></p>
+</li>
+</ol>
+<hr />
+<h2 id="docker-issues">Docker Issues<a class="headerlink" href="#docker-issues" title="Permanent link">&para;</a></h2>
+<h3 id="docker-not-running">Docker Not Running<a class="headerlink" href="#docker-not-running" title="Permanent link">&para;</a></h3>
+<p><strong>Error:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>Cannot connect to the Docker daemon
+</code></pre></div></p>
+<p><strong>Solution:</strong></p>
+<p><strong>Automatic (Recommended):</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>./start.sh
+<a id="__codelineno-33-2" name="__codelineno-33-2" href="#__codelineno-33-2"></a><span class="c1"># The script will detect Docker is not running and:</span>
+<a id="__codelineno-33-3" name="__codelineno-33-3" href="#__codelineno-33-3"></a><span class="c1"># 1. Launch Docker Desktop automatically</span>
+<a id="__codelineno-33-4" name="__codelineno-33-4" href="#__codelineno-33-4"></a><span class="c1"># 2. Wait for daemon to be ready (up to 90 seconds)</span>
+<a id="__codelineno-33-5" name="__codelineno-33-5" href="#__codelineno-33-5"></a><span class="c1"># 3. Continue with setup</span>
+</code></pre></div></p>
+<p><strong>Manual:</strong>
+1. Open Docker Desktop application
+2. Wait for it to fully start (green icon in menu bar)
+3. Verify: <code>docker ps</code>
+4. Retry: <code>./start.sh</code></p>
+<p><strong>If Docker Desktop won't start:</strong>
+- Check Activity Monitor for stuck Docker processes
+- Try: <code>killall Docker</code> then relaunch
+- Check Console.app for Docker error logs
+- Reinstall Docker Desktop if necessary</p>
+<hr />
+<h3 id="docker-daemon-not-ready-after-launch">Docker Daemon Not Ready After Launch<a class="headerlink" href="#docker-daemon-not-ready-after-launch" title="Permanent link">&para;</a></h3>
+<p><strong>Symptoms:</strong>
+- Docker Desktop GUI is open
+- <code>docker info</code> returns connection error
+- startup script times out waiting for daemon</p>
+<p><strong>Causes:</strong>
+- Docker still initializing (can take 30-60 seconds on cold start)
+- Docker settings corrupted
+- Insufficient system resources</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Wait Longer:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a><span class="c1"># The start script waits up to 90 seconds</span>
+<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a><span class="c1"># If you manually started Docker, wait before running commands:</span>
+<a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a><span class="k">for</span><span class="w"> </span>i<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="o">{</span><span class="m">1</span>..60<span class="o">}</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-34-4" name="__codelineno-34-4" href="#__codelineno-34-4"></a><span class="w">  </span>docker<span class="w"> </span>info<span class="w"> </span>&gt;/dev/null<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Ready!&quot;</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="k">break</span>
+<a id="__codelineno-34-5" name="__codelineno-34-5" href="#__codelineno-34-5"></a><span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Waiting... (</span><span class="nv">$i</span><span class="s2">/60)&quot;</span>
+<a id="__codelineno-34-6" name="__codelineno-34-6" href="#__codelineno-34-6"></a><span class="w">  </span>sleep<span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-34-7" name="__codelineno-34-7" href="#__codelineno-34-7"></a><span class="k">done</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Check Docker Desktop Status:</strong></p>
+</li>
+<li>Look at menu bar icon</li>
+<li>Should show green icon with no error messages</li>
+<li>
+<p>If yellow or red, click for details</p>
+</li>
+<li>
+<p><strong>Restart Docker Desktop:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a>osascript<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;quit app &quot;Docker&quot;&#39;</span>
+<a id="__codelineno-35-2" name="__codelineno-35-2" href="#__codelineno-35-2"></a>sleep<span class="w"> </span><span class="m">5</span>
+<a id="__codelineno-35-3" name="__codelineno-35-3" href="#__codelineno-35-3"></a>open<span class="w"> </span>-a<span class="w"> </span>Docker
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Check Available Resources:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a><span class="c1"># macOS:</span>
+<a id="__codelineno-36-2" name="__codelineno-36-2" href="#__codelineno-36-2"></a>vm_stat<span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-3
+<a id="__codelineno-36-3" name="__codelineno-36-3" href="#__codelineno-36-3"></a>df<span class="w"> </span>-h<span class="w"> </span>/<span class="w">  </span><span class="c1"># Disk space</span>
+<a id="__codelineno-36-4" name="__codelineno-36-4" href="#__codelineno-36-4"></a>
+<a id="__codelineno-36-5" name="__codelineno-36-5" href="#__codelineno-36-5"></a><span class="c1"># Ensure you have:</span>
+<a id="__codelineno-36-6" name="__codelineno-36-6" href="#__codelineno-36-6"></a><span class="c1"># - At least 2GB free RAM</span>
+<a id="__codelineno-36-7" name="__codelineno-36-7" href="#__codelineno-36-7"></a><span class="c1"># - At least 10GB free disk space</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Reset Docker (if stuck):</strong></p>
+</li>
+<li>Docker Desktop → Troubleshoot → Reset to factory defaults</li>
+<li><strong>WARNING:</strong> Deletes all containers/images</li>
+<li>Run <code>./start.sh</code> to rebuild</li>
+</ol>
+<hr />
+<h3 id="docker-desktop-memory-allocation">Docker Desktop Memory Allocation<a class="headerlink" href="#docker-desktop-memory-allocation" title="Permanent link">&para;</a></h3>
+<p><strong>How much memory should Docker have?</strong></p>
+<p><strong>Depends on router backend:</strong></p>
+<p><strong>Gemini (Cloud):</strong>
+- Minimum: 2GB (for Qdrant only)
+- Recommended: 4GB (safe buffer)</p>
+<p><strong>Ollama (Local):</strong>
+- Depends on model selected
+- See recommendations:
+  - <code>phi3:mini</code>: 5GB
+  - <code>llama3.1:8b</code>: 8GB
+  - <code>qwen2.5:7b</code>: 10GB
+  - <code>mistral:7b</code>: 7GB</p>
+<p><strong>Automated Management:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a><span class="c1"># The startup script handles this automatically:</span>
+<a id="__codelineno-37-2" name="__codelineno-37-2" href="#__codelineno-37-2"></a>./start.sh
+<a id="__codelineno-37-3" name="__codelineno-37-3" href="#__codelineno-37-3"></a>
+<a id="__codelineno-37-4" name="__codelineno-37-4" href="#__codelineno-37-4"></a><span class="c1"># It will:</span>
+<a id="__codelineno-37-5" name="__codelineno-37-5" href="#__codelineno-37-5"></a><span class="c1"># 1. Detect your selected model</span>
+<a id="__codelineno-37-6" name="__codelineno-37-6" href="#__codelineno-37-6"></a><span class="c1"># 2. Check Docker&#39;s current allocation</span>
+<a id="__codelineno-37-7" name="__codelineno-37-7" href="#__codelineno-37-7"></a><span class="c1"># 3. Prompt to increase if needed</span>
+<a id="__codelineno-37-8" name="__codelineno-37-8" href="#__codelineno-37-8"></a><span class="c1"># 4. Automatically update Docker settings</span>
+<a id="__codelineno-37-9" name="__codelineno-37-9" href="#__codelineno-37-9"></a><span class="c1"># 5. Restart Docker if required</span>
+</code></pre></div></p>
+<p><strong>Manual Check:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a><span class="c1"># Check current allocation:</span>
+<a id="__codelineno-38-2" name="__codelineno-38-2" href="#__codelineno-38-2"></a>docker<span class="w"> </span>info<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">&quot;Total Memory&quot;</span>
+<a id="__codelineno-38-3" name="__codelineno-38-3" href="#__codelineno-38-3"></a>
+<a id="__codelineno-38-4" name="__codelineno-38-4" href="#__codelineno-38-4"></a><span class="c1"># Check what&#39;s required:</span>
+<a id="__codelineno-38-5" name="__codelineno-38-5" href="#__codelineno-38-5"></a>grep<span class="w"> </span>OLLAMA_DOCKER_MEMORY<span class="w"> </span>.env
+</code></pre></div></p>
+<p><strong>See also:</strong> <a href="../DOCKER_ARCHITECTURE/#memory-hierarchy">Docker Architecture</a> for detailed explanation.</p>
+<hr />
+<h3 id="port-already-in-use">Port Already in Use<a class="headerlink" href="#port-already-in-use" title="Permanent link">&para;</a></h3>
+<p><strong>Error:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a>Error starting userland proxy: listen tcp 0.0.0.0:6333: bind: address already in use
+</code></pre></div></p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Find What's Using Port 6333:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-40-1" name="__codelineno-40-1" href="#__codelineno-40-1"></a>lsof<span class="w"> </span>-i<span class="w"> </span>:6333
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Kill the Process:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a><span class="c1"># Get PID from lsof, then:</span>
+<a id="__codelineno-41-2" name="__codelineno-41-2" href="#__codelineno-41-2"></a><span class="nb">kill</span><span class="w"> </span>&lt;PID&gt;
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Use Different Port:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-42-1" name="__codelineno-42-1" href="#__codelineno-42-1"></a><span class="c1"># In .env:</span>
+<a id="__codelineno-42-2" name="__codelineno-42-2" href="#__codelineno-42-2"></a><span class="nv">QDRANT_PORT</span><span class="o">=</span><span class="m">6334</span>
+<a id="__codelineno-42-3" name="__codelineno-42-3" href="#__codelineno-42-3"></a>
+<a id="__codelineno-42-4" name="__codelineno-42-4" href="#__codelineno-42-4"></a><span class="c1"># Recreate Qdrant:</span>
+<a id="__codelineno-42-5" name="__codelineno-42-5" href="#__codelineno-42-5"></a>docker<span class="w"> </span>rm<span class="w"> </span>-f<span class="w"> </span>secureclaw-qdrant
+<a id="__codelineno-42-6" name="__codelineno-42-6" href="#__codelineno-42-6"></a>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-42-7" name="__codelineno-42-7" href="#__codelineno-42-7"></a><span class="w">  </span>--name<span class="w"> </span>secureclaw-qdrant<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-42-8" name="__codelineno-42-8" href="#__codelineno-42-8"></a><span class="w">  </span>-p<span class="w"> </span><span class="m">6334</span>:6333<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-42-9" name="__codelineno-42-9" href="#__codelineno-42-9"></a><span class="w">  </span>-v<span class="w"> </span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>/qdrant_storage:/qdrant/storage<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-42-10" name="__codelineno-42-10" href="#__codelineno-42-10"></a><span class="w">  </span>qdrant/qdrant:latest
+</code></pre></div></p>
+</li>
+</ol>
+<hr />
+<h2 id="ollama-issues">Ollama Issues<a class="headerlink" href="#ollama-issues" title="Permanent link">&para;</a></h2>
+<h3 id="ollama-container-fails-with-out-of-memory">Ollama Container Fails with "Out of Memory"<a class="headerlink" href="#ollama-container-fails-with-out-of-memory" title="Permanent link">&para;</a></h3>
+<p><strong>Error:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-43-1" name="__codelineno-43-1" href="#__codelineno-43-1"></a>Error: llama runner process has terminated: signal: killed
+<a id="__codelineno-43-2" name="__codelineno-43-2" href="#__codelineno-43-2"></a>Server error: &#39;500 Internal Server Error&#39;
+</code></pre></div></p>
+<p><strong>Cause:</strong> Docker Desktop doesn't have enough RAM allocated for the Ollama model.</p>
+<p><strong>Solution:</strong></p>
+<p>The startup script should handle this automatically, but if you encounter it manually:</p>
+<ol>
+<li>
+<p><strong>Check Docker Desktop Memory:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-44-1" name="__codelineno-44-1" href="#__codelineno-44-1"></a>docker<span class="w"> </span>info<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">&quot;Total Memory&quot;</span>
+<a id="__codelineno-44-2" name="__codelineno-44-2" href="#__codelineno-44-2"></a><span class="c1"># Example output: Total Memory: 4 GiB</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Increase Docker Desktop Memory:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-45-1" name="__codelineno-45-1" href="#__codelineno-45-1"></a><span class="c1"># Automated approach (recommended):</span>
+<a id="__codelineno-45-2" name="__codelineno-45-2" href="#__codelineno-45-2"></a><span class="nb">cd</span><span class="w"> </span>scripts
+<a id="__codelineno-45-3" name="__codelineno-45-3" href="#__codelineno-45-3"></a>./increase-docker-memory.sh
+<a id="__codelineno-45-4" name="__codelineno-45-4" href="#__codelineno-45-4"></a>
+<a id="__codelineno-45-5" name="__codelineno-45-5" href="#__codelineno-45-5"></a><span class="c1"># This will:</span>
+<a id="__codelineno-45-6" name="__codelineno-45-6" href="#__codelineno-45-6"></a><span class="c1"># - Detect required memory from .env</span>
+<a id="__codelineno-45-7" name="__codelineno-45-7" href="#__codelineno-45-7"></a><span class="c1"># - Update Docker Desktop settings</span>
+<a id="__codelineno-45-8" name="__codelineno-45-8" href="#__codelineno-45-8"></a><span class="c1"># - Restart Docker automatically</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Manual Approach (if script fails):</strong></p>
+</li>
+<li>Open Docker Desktop</li>
+<li>Go to <strong>Settings</strong> → <strong>Resources</strong> → <strong>Advanced</strong></li>
+<li>Increase <strong>Memory</strong> slider to match your model's requirement:<ul>
+<li><code>phi3:mini</code> → 5GB minimum</li>
+<li><code>llama3.1:8b</code> → 8GB minimum</li>
+<li><code>qwen2.5:7b</code> → 10GB minimum</li>
+<li><code>mistral:7b</code> → 7GB minimum</li>
+</ul>
+</li>
+<li>Click <strong>Apply &amp; Restart</strong></li>
+<li>
+<p>Wait for Docker to restart (30-60 seconds)</p>
+</li>
+<li>
+<p><strong>Verify the Change:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-46-1" name="__codelineno-46-1" href="#__codelineno-46-1"></a>docker<span class="w"> </span>info<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">&quot;Total Memory&quot;</span>
+<a id="__codelineno-46-2" name="__codelineno-46-2" href="#__codelineno-46-2"></a><span class="c1"># Should show your new allocation</span>
+</code></pre></div></p>
+</li>
+</ol>
+<p><strong>See also:</strong> <a href="../DOCKER_ARCHITECTURE/">Docker Architecture</a> for understanding Docker Desktop vs container memory.</p>
+<hr />
+<h3 id="ollama-model-download-fails">Ollama Model Download Fails<a class="headerlink" href="#ollama-model-download-fails" title="Permanent link">&para;</a></h3>
+<p><strong>Error:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-47-1" name="__codelineno-47-1" href="#__codelineno-47-1"></a>Failed to download model &#39;qwen2.5:7b&#39;
+<a id="__codelineno-47-2" name="__codelineno-47-2" href="#__codelineno-47-2"></a>pulling manifest: Get &quot;https://registry.ollama.ai/v2/library/qwen2.5/manifests/7b&quot;: EOF
+</code></pre></div></p>
+<p><strong>Causes:</strong>
+- Network connectivity issues
+- Registry temporarily unavailable
+- Insufficient disk space</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Check Internet Connection:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-48-1" name="__codelineno-48-1" href="#__codelineno-48-1"></a>curl<span class="w"> </span>-I<span class="w"> </span>https://ollama.ai
+<a id="__codelineno-48-2" name="__codelineno-48-2" href="#__codelineno-48-2"></a><span class="c1"># Should return: HTTP/2 200</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Check Disk Space:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-49-1" name="__codelineno-49-1" href="#__codelineno-49-1"></a>df<span class="w"> </span>-h<span class="w"> </span>.
+<a id="__codelineno-49-2" name="__codelineno-49-2" href="#__codelineno-49-2"></a><span class="c1"># Ensure at least 10GB free for large models</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Manually Pull Model:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-50-1" name="__codelineno-50-1" href="#__codelineno-50-1"></a><span class="c1"># If automatic pull failed, try manually:</span>
+<a id="__codelineno-50-2" name="__codelineno-50-2" href="#__codelineno-50-2"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>secureclaw-ollama<span class="w"> </span>ollama<span class="w"> </span>pull<span class="w"> </span>qwen2.5:7b
+<a id="__codelineno-50-3" name="__codelineno-50-3" href="#__codelineno-50-3"></a>
+<a id="__codelineno-50-4" name="__codelineno-50-4" href="#__codelineno-50-4"></a><span class="c1"># For smaller model:</span>
+<a id="__codelineno-50-5" name="__codelineno-50-5" href="#__codelineno-50-5"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>secureclaw-ollama<span class="w"> </span>ollama<span class="w"> </span>pull<span class="w"> </span>phi3:mini
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Use Different Model:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-51-1" name="__codelineno-51-1" href="#__codelineno-51-1"></a><span class="c1"># Switch to smaller model:</span>
+<a id="__codelineno-51-2" name="__codelineno-51-2" href="#__codelineno-51-2"></a>rm<span class="w"> </span>.ollama_assessed
+<a id="__codelineno-51-3" name="__codelineno-51-3" href="#__codelineno-51-3"></a><span class="c1"># Edit .env to prefer smaller model</span>
+<a id="__codelineno-51-4" name="__codelineno-51-4" href="#__codelineno-51-4"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;OLLAMA_ROUTER_MODEL=phi3:mini&quot;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>.env
+<a id="__codelineno-51-5" name="__codelineno-51-5" href="#__codelineno-51-5"></a>./start.sh
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Fallback to Gemini:</strong></p>
+</li>
+<li>The bot automatically falls back to Gemini if Ollama model unavailable</li>
+<li>Change router backend in <code>.env</code>:
+     <div class="highlight"><pre><span></span><code><a id="__codelineno-52-1" name="__codelineno-52-1" href="#__codelineno-52-1"></a><span class="nv">ROUTER_BACKEND</span><span class="o">=</span>gemini
+</code></pre></div></li>
+</ol>
+<hr />
+<h3 id="ollama-connection-error">Ollama Connection Error<a class="headerlink" href="#ollama-connection-error" title="Permanent link">&para;</a></h3>
+<p><strong>Error:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-53-1" name="__codelineno-53-1" href="#__codelineno-53-1"></a>[Errno 8] nodename nor servname provided, or not known
+<a id="__codelineno-53-2" name="__codelineno-53-2" href="#__codelineno-53-2"></a>httpx.ConnectError: [Errno 61] Connection refused
+</code></pre></div></p>
+<p><strong>Cause:</strong> Bot can't connect to Ollama container.</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Check Ollama Container is Running:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-54-1" name="__codelineno-54-1" href="#__codelineno-54-1"></a>docker<span class="w"> </span>ps<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>ollama
+<a id="__codelineno-54-2" name="__codelineno-54-2" href="#__codelineno-54-2"></a><span class="c1"># Should show: secureclaw-ollama</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Start Ollama Container:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-55-1" name="__codelineno-55-1" href="#__codelineno-55-1"></a>docker<span class="w"> </span>start<span class="w"> </span>secureclaw-ollama
+<a id="__codelineno-55-2" name="__codelineno-55-2" href="#__codelineno-55-2"></a><span class="c1"># Or use the start script:</span>
+<a id="__codelineno-55-3" name="__codelineno-55-3" href="#__codelineno-55-3"></a>./start.sh
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Check <code>OLLAMA_HOST</code> Setting:</strong></p>
+</li>
+</ol>
+<p><strong>For Local Development (./start.sh):</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-56-1" name="__codelineno-56-1" href="#__codelineno-56-1"></a><span class="c1"># In .env:</span>
+<a id="__codelineno-56-2" name="__codelineno-56-2" href="#__codelineno-56-2"></a><span class="nv">OLLAMA_HOST</span><span class="o">=</span>localhost
+<a id="__codelineno-56-3" name="__codelineno-56-3" href="#__codelineno-56-3"></a><span class="nv">OLLAMA_PORT</span><span class="o">=</span><span class="m">11434</span>
+</code></pre></div></p>
+<p><strong>For Docker Compose:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-57-1" name="__codelineno-57-1" href="#__codelineno-57-1"></a><span class="c1"># In .env:</span>
+<a id="__codelineno-57-2" name="__codelineno-57-2" href="#__codelineno-57-2"></a><span class="nv">OLLAMA_HOST</span><span class="o">=</span>ollama
+<a id="__codelineno-57-3" name="__codelineno-57-3" href="#__codelineno-57-3"></a><span class="nv">OLLAMA_PORT</span><span class="o">=</span><span class="m">11434</span>
+</code></pre></div></p>
+<ol>
+<li>
+<p><strong>Verify Ollama API:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-58-1" name="__codelineno-58-1" href="#__codelineno-58-1"></a>curl<span class="w"> </span>http://localhost:11434/api/tags
+<a id="__codelineno-58-2" name="__codelineno-58-2" href="#__codelineno-58-2"></a><span class="c1"># Should return JSON with list of models</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Check Container Logs:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-59-1" name="__codelineno-59-1" href="#__codelineno-59-1"></a>docker<span class="w"> </span>logs<span class="w"> </span>secureclaw-ollama
+<a id="__codelineno-59-2" name="__codelineno-59-2" href="#__codelineno-59-2"></a><span class="c1"># Look for errors or OOM messages</span>
+</code></pre></div></p>
+</li>
+</ol>
+<hr />
+<h3 id="ollama-slow-response-times">Ollama Slow Response Times<a class="headerlink" href="#ollama-slow-response-times" title="Permanent link">&para;</a></h3>
+<p><strong>Symptoms:</strong>
+- Ollama takes 30+ seconds to respond
+- Slower than expected inference</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Check CPU Usage:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-60-1" name="__codelineno-60-1" href="#__codelineno-60-1"></a>docker<span class="w"> </span>stats<span class="w"> </span>secureclaw-ollama
+<a id="__codelineno-60-2" name="__codelineno-60-2" href="#__codelineno-60-2"></a><span class="c1"># Look at CPU% - should be 100-400% during inference</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Verify Model Size:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-61-1" name="__codelineno-61-1" href="#__codelineno-61-1"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>secureclaw-ollama<span class="w"> </span>ollama<span class="w"> </span>list
+<a id="__codelineno-61-2" name="__codelineno-61-2" href="#__codelineno-61-2"></a><span class="c1"># Smaller models (phi3:mini) are faster than large ones</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Switch to Smaller Model:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-62-1" name="__codelineno-62-1" href="#__codelineno-62-1"></a><span class="c1"># Remove assessment marker to choose again:</span>
+<a id="__codelineno-62-2" name="__codelineno-62-2" href="#__codelineno-62-2"></a>rm<span class="w"> </span>.ollama_assessed
+<a id="__codelineno-62-3" name="__codelineno-62-3" href="#__codelineno-62-3"></a>./start.sh
+<a id="__codelineno-62-4" name="__codelineno-62-4" href="#__codelineno-62-4"></a><span class="c1"># Select phi3:mini or mistral:7b when prompted</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Check Docker Memory:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-63-1" name="__codelineno-63-1" href="#__codelineno-63-1"></a>docker<span class="w"> </span>stats<span class="w"> </span>secureclaw-ollama
+<a id="__codelineno-63-2" name="__codelineno-63-2" href="#__codelineno-63-2"></a><span class="c1"># MEM USAGE should be well below LIMIT</span>
+<a id="__codelineno-63-3" name="__codelineno-63-3" href="#__codelineno-63-3"></a><span class="c1"># If at limit, model is swapping (very slow)</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Add More Docker Memory:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-64-1" name="__codelineno-64-1" href="#__codelineno-64-1"></a><span class="c1"># See &quot;Ollama Container Fails with Out of Memory&quot; above</span>
+<a id="__codelineno-64-2" name="__codelineno-64-2" href="#__codelineno-64-2"></a>./scripts/increase-docker-memory.sh
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Use GPU Acceleration (if available):</strong></p>
+</li>
+<li>Requires NVIDIA GPU with Docker GPU support</li>
+<li>Or Apple Silicon Mac (uses Metal automatically)</li>
+<li>Check logs for "GPU detected" message</li>
+</ol>
+<hr />
+<h3 id="docker-desktop-wont-start-after-memory-increase">Docker Desktop Won't Start After Memory Increase<a class="headerlink" href="#docker-desktop-wont-start-after-memory-increase" title="Permanent link">&para;</a></h3>
+<p><strong>Symptoms:</strong>
+- Ran <code>increase-docker-memory.sh</code>
+- Docker Desktop GUI opens but daemon never becomes ready
+- Stuck at "Docker Desktop is starting..."</p>
+<p><strong>Possible Causes:</strong>
+- Requested more RAM than system has available
+- Other applications using too much memory
+- Docker settings corrupted</p>
+<p><strong>Solutions:</strong></p>
+<ol>
+<li>
+<p><strong>Check System RAM Availability:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-65-1" name="__codelineno-65-1" href="#__codelineno-65-1"></a><span class="c1"># macOS:</span>
+<a id="__codelineno-65-2" name="__codelineno-65-2" href="#__codelineno-65-2"></a>vm_stat<span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-2
+<a id="__codelineno-65-3" name="__codelineno-65-3" href="#__codelineno-65-3"></a><span class="c1"># Look at &quot;Pages free&quot;</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Restore Backup Settings:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-66-1" name="__codelineno-66-1" href="#__codelineno-66-1"></a><span class="c1"># increase-docker-memory.sh creates backups</span>
+<a id="__codelineno-66-2" name="__codelineno-66-2" href="#__codelineno-66-2"></a><span class="nb">cd</span><span class="w"> </span>~/Library/Group<span class="se">\ </span>Containers/group.com.docker/
+<a id="__codelineno-66-3" name="__codelineno-66-3" href="#__codelineno-66-3"></a>ls<span class="w"> </span>-lt<span class="w"> </span>settings.json.backup.*
+<a id="__codelineno-66-4" name="__codelineno-66-4" href="#__codelineno-66-4"></a>
+<a id="__codelineno-66-5" name="__codelineno-66-5" href="#__codelineno-66-5"></a><span class="c1"># Restore most recent backup:</span>
+<a id="__codelineno-66-6" name="__codelineno-66-6" href="#__codelineno-66-6"></a>cp<span class="w"> </span>settings.json.backup.20260205_143022<span class="w"> </span>settings.json
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Manually Reduce Memory:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-67-1" name="__codelineno-67-1" href="#__codelineno-67-1"></a><span class="c1"># Edit settings file:</span>
+<a id="__codelineno-67-2" name="__codelineno-67-2" href="#__codelineno-67-2"></a>vim<span class="w"> </span>~/Library/Group<span class="se">\ </span>Containers/group.com.docker/settings.json
+<a id="__codelineno-67-3" name="__codelineno-67-3" href="#__codelineno-67-3"></a>
+<a id="__codelineno-67-4" name="__codelineno-67-4" href="#__codelineno-67-4"></a><span class="c1"># Find &quot;memoryMiB&quot; and set to safe value:</span>
+<a id="__codelineno-67-5" name="__codelineno-67-5" href="#__codelineno-67-5"></a><span class="o">{</span>
+<a id="__codelineno-67-6" name="__codelineno-67-6" href="#__codelineno-67-6"></a><span class="w">  </span><span class="s2">&quot;memoryMiB&quot;</span>:<span class="w"> </span><span class="m">6144</span>,<span class="w">  </span>//<span class="w"> </span>6GB<span class="w"> </span>-<span class="w"> </span>usually<span class="w"> </span>safe
+<a id="__codelineno-67-7" name="__codelineno-67-7" href="#__codelineno-67-7"></a><span class="w">  </span>...
+<a id="__codelineno-67-8" name="__codelineno-67-8" href="#__codelineno-67-8"></a><span class="o">}</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Restart Docker:</strong>
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-68-1" name="__codelineno-68-1" href="#__codelineno-68-1"></a><span class="c1"># Quit Docker Desktop</span>
+<a id="__codelineno-68-2" name="__codelineno-68-2" href="#__codelineno-68-2"></a>osascript<span class="w"> </span>-e<span class="w"> </span><span class="s1">&#39;quit app &quot;Docker&quot;&#39;</span>
+<a id="__codelineno-68-3" name="__codelineno-68-3" href="#__codelineno-68-3"></a>sleep<span class="w"> </span><span class="m">5</span>
+<a id="__codelineno-68-4" name="__codelineno-68-4" href="#__codelineno-68-4"></a>
+<a id="__codelineno-68-5" name="__codelineno-68-5" href="#__codelineno-68-5"></a><span class="c1"># Relaunch</span>
+<a id="__codelineno-68-6" name="__codelineno-68-6" href="#__codelineno-68-6"></a>open<span class="w"> </span>-a<span class="w"> </span>Docker
+<a id="__codelineno-68-7" name="__codelineno-68-7" href="#__codelineno-68-7"></a>
+<a id="__codelineno-68-8" name="__codelineno-68-8" href="#__codelineno-68-8"></a><span class="c1"># Wait for daemon</span>
+<a id="__codelineno-68-9" name="__codelineno-68-9" href="#__codelineno-68-9"></a><span class="k">for</span><span class="w"> </span>i<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="o">{</span><span class="m">1</span>..60<span class="o">}</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-68-10" name="__codelineno-68-10" href="#__codelineno-68-10"></a><span class="w">  </span>docker<span class="w"> </span>info<span class="w"> </span>&gt;/dev/null<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Ready!&quot;</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="k">break</span>
+<a id="__codelineno-68-11" name="__codelineno-68-11" href="#__codelineno-68-11"></a><span class="w">  </span>sleep<span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-68-12" name="__codelineno-68-12" href="#__codelineno-68-12"></a><span class="k">done</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Reset Docker Desktop (Last Resort):</strong></p>
+</li>
+<li>Open Docker Desktop</li>
+<li>Go to <strong>Troubleshoot</strong> → <strong>Reset to factory defaults</strong></li>
+<li><strong>WARNING:</strong> This deletes all containers and images</li>
+<li>
+<p>After reset, run <code>./start.sh</code> to recreate everything</p>
+</li>
+<li>
+<p><strong>Close Other Memory-Intensive Apps:</strong></p>
+</li>
+<li>Quit Chrome, Slack, IDEs, etc.</li>
+<li>Check Activity Monitor for memory hogs</li>
+<li>Try increasing Docker memory again with more free RAM</li>
+</ol>
+<hr />
+<h3 id="switch-between-gemini-and-ollama">Switch Between Gemini and Ollama<a class="headerlink" href="#switch-between-gemini-and-ollama" title="Permanent link">&para;</a></h3>
+<p><strong>How to change router backend after initial setup:</strong></p>
+<p><strong>Switch to Ollama:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-69-1" name="__codelineno-69-1" href="#__codelineno-69-1"></a><span class="c1"># 1. Edit .env</span>
+<a id="__codelineno-69-2" name="__codelineno-69-2" href="#__codelineno-69-2"></a>sed<span class="w"> </span>-i<span class="w"> </span><span class="s1">&#39;&#39;</span><span class="w"> </span><span class="s1">&#39;s/ROUTER_BACKEND=gemini/ROUTER_BACKEND=ollama/&#39;</span><span class="w"> </span>.env
+<a id="__codelineno-69-3" name="__codelineno-69-3" href="#__codelineno-69-3"></a>
+<a id="__codelineno-69-4" name="__codelineno-69-4" href="#__codelineno-69-4"></a><span class="c1"># 2. Run assessment (if not done before)</span>
+<a id="__codelineno-69-5" name="__codelineno-69-5" href="#__codelineno-69-5"></a>rm<span class="w"> </span>.ollama_assessed<span class="w">  </span><span class="c1"># Force re-assessment</span>
+<a id="__codelineno-69-6" name="__codelineno-69-6" href="#__codelineno-69-6"></a>./start.sh
+</code></pre></div></p>
+<p><strong>Switch to Gemini:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-70-1" name="__codelineno-70-1" href="#__codelineno-70-1"></a><span class="c1"># 1. Edit .env</span>
+<a id="__codelineno-70-2" name="__codelineno-70-2" href="#__codelineno-70-2"></a>sed<span class="w"> </span>-i<span class="w"> </span><span class="s1">&#39;&#39;</span><span class="w"> </span><span class="s1">&#39;s/ROUTER_BACKEND=ollama/ROUTER_BACKEND=gemini/&#39;</span><span class="w"> </span>.env
+<a id="__codelineno-70-3" name="__codelineno-70-3" href="#__codelineno-70-3"></a>
+<a id="__codelineno-70-4" name="__codelineno-70-4" href="#__codelineno-70-4"></a><span class="c1"># 2. Restart bot</span>
+<a id="__codelineno-70-5" name="__codelineno-70-5" href="#__codelineno-70-5"></a>./stop.sh<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>./start.sh
+</code></pre></div></p>
+<p><strong>Or manually edit <code>.env</code>:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-71-1" name="__codelineno-71-1" href="#__codelineno-71-1"></a><span class="c1"># Change this line:</span>
+<a id="__codelineno-71-2" name="__codelineno-71-2" href="#__codelineno-71-2"></a><span class="nv">ROUTER_BACKEND</span><span class="o">=</span>gemini<span class="w">  </span><span class="c1"># or ollama</span>
+</code></pre></div></p>
+<hr />
+<h2 id="getting-help">Getting Help<a class="headerlink" href="#getting-help" title="Permanent link">&para;</a></h2>
+<h3 id="collecting-debug-information">Collecting Debug Information<a class="headerlink" href="#collecting-debug-information" title="Permanent link">&para;</a></h3>
+<p>Before asking for help, gather this information:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-72-1" name="__codelineno-72-1" href="#__codelineno-72-1"></a><span class="c1"># 1. Check status</span>
+<a id="__codelineno-72-2" name="__codelineno-72-2" href="#__codelineno-72-2"></a>./status.sh
+<a id="__codelineno-72-3" name="__codelineno-72-3" href="#__codelineno-72-3"></a>
+<a id="__codelineno-72-4" name="__codelineno-72-4" href="#__codelineno-72-4"></a><span class="c1"># 2. Get bot logs (last 50 lines)</span>
+<a id="__codelineno-72-5" name="__codelineno-72-5" href="#__codelineno-72-5"></a>docker<span class="w"> </span>logs<span class="w"> </span>secureclaw-qdrant<span class="w"> </span>--tail<span class="w"> </span><span class="m">50</span>
+<a id="__codelineno-72-6" name="__codelineno-72-6" href="#__codelineno-72-6"></a>
+<a id="__codelineno-72-7" name="__codelineno-72-7" href="#__codelineno-72-7"></a><span class="c1"># 3. Check Python version</span>
+<a id="__codelineno-72-8" name="__codelineno-72-8" href="#__codelineno-72-8"></a>python3<span class="w"> </span>--version
+<a id="__codelineno-72-9" name="__codelineno-72-9" href="#__codelineno-72-9"></a>
+<a id="__codelineno-72-10" name="__codelineno-72-10" href="#__codelineno-72-10"></a><span class="c1"># 4. Check Docker version</span>
+<a id="__codelineno-72-11" name="__codelineno-72-11" href="#__codelineno-72-11"></a>docker<span class="w"> </span>--version
+<a id="__codelineno-72-12" name="__codelineno-72-12" href="#__codelineno-72-12"></a>
+<a id="__codelineno-72-13" name="__codelineno-72-13" href="#__codelineno-72-13"></a><span class="c1"># 5. Test Qdrant</span>
+<a id="__codelineno-72-14" name="__codelineno-72-14" href="#__codelineno-72-14"></a>curl<span class="w"> </span>http://localhost:6333/healthz
+<a id="__codelineno-72-15" name="__codelineno-72-15" href="#__codelineno-72-15"></a>
+<a id="__codelineno-72-16" name="__codelineno-72-16" href="#__codelineno-72-16"></a><span class="c1"># 6. Check disk space</span>
+<a id="__codelineno-72-17" name="__codelineno-72-17" href="#__codelineno-72-17"></a>df<span class="w"> </span>-h<span class="w"> </span>.
+</code></pre></div>
+<h3 id="enable-debug-logging">Enable Debug Logging<a class="headerlink" href="#enable-debug-logging" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-73-1" name="__codelineno-73-1" href="#__codelineno-73-1"></a><span class="c1"># In .env:</span>
+<a id="__codelineno-73-2" name="__codelineno-73-2" href="#__codelineno-73-2"></a><span class="nv">LOG_LEVEL</span><span class="o">=</span>DEBUG
+<a id="__codelineno-73-3" name="__codelineno-73-3" href="#__codelineno-73-3"></a>
+<a id="__codelineno-73-4" name="__codelineno-73-4" href="#__codelineno-73-4"></a><span class="c1"># Restart:</span>
+<a id="__codelineno-73-5" name="__codelineno-73-5" href="#__codelineno-73-5"></a>./stop.sh<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>./start.sh
+</code></pre></div>
+<h3 id="report-an-issue">Report an Issue<a class="headerlink" href="#report-an-issue" title="Permanent link">&para;</a></h3>
+<p>Include:
+- OS version (macOS/Linux)
+- Python version
+- Full error message (last 20 lines)
+- Steps to reproduce
+- What you've already tried</p>
+<hr />
+<h2 id="quick-reference">Quick Reference<a class="headerlink" href="#quick-reference" title="Permanent link">&para;</a></h2>
+<h3 id="common-commands">Common Commands<a class="headerlink" href="#common-commands" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-74-1" name="__codelineno-74-1" href="#__codelineno-74-1"></a><span class="c1"># Start bot</span>
+<a id="__codelineno-74-2" name="__codelineno-74-2" href="#__codelineno-74-2"></a>./start.sh
+<a id="__codelineno-74-3" name="__codelineno-74-3" href="#__codelineno-74-3"></a>
+<a id="__codelineno-74-4" name="__codelineno-74-4" href="#__codelineno-74-4"></a><span class="c1"># Check status</span>
+<a id="__codelineno-74-5" name="__codelineno-74-5" href="#__codelineno-74-5"></a>./status.sh
+<a id="__codelineno-74-6" name="__codelineno-74-6" href="#__codelineno-74-6"></a>
+<a id="__codelineno-74-7" name="__codelineno-74-7" href="#__codelineno-74-7"></a><span class="c1"># Stop bot</span>
+<a id="__codelineno-74-8" name="__codelineno-74-8" href="#__codelineno-74-8"></a>./stop.sh
+<a id="__codelineno-74-9" name="__codelineno-74-9" href="#__codelineno-74-9"></a>
+<a id="__codelineno-74-10" name="__codelineno-74-10" href="#__codelineno-74-10"></a><span class="c1"># View logs</span>
+<a id="__codelineno-74-11" name="__codelineno-74-11" href="#__codelineno-74-11"></a>tail<span class="w"> </span>-f<span class="w"> </span>logs/secureclaw.log<span class="w">  </span><span class="c1"># if logging to file</span>
+<a id="__codelineno-74-12" name="__codelineno-74-12" href="#__codelineno-74-12"></a>
+<a id="__codelineno-74-13" name="__codelineno-74-13" href="#__codelineno-74-13"></a><span class="c1"># Restart bot</span>
+<a id="__codelineno-74-14" name="__codelineno-74-14" href="#__codelineno-74-14"></a>./stop.sh<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>./start.sh
+<a id="__codelineno-74-15" name="__codelineno-74-15" href="#__codelineno-74-15"></a>
+<a id="__codelineno-74-16" name="__codelineno-74-16" href="#__codelineno-74-16"></a><span class="c1"># Check Qdrant health</span>
+<a id="__codelineno-74-17" name="__codelineno-74-17" href="#__codelineno-74-17"></a>curl<span class="w"> </span>http://localhost:6333/healthz
+<a id="__codelineno-74-18" name="__codelineno-74-18" href="#__codelineno-74-18"></a>
+<a id="__codelineno-74-19" name="__codelineno-74-19" href="#__codelineno-74-19"></a><span class="c1"># List Docker containers</span>
+<a id="__codelineno-74-20" name="__codelineno-74-20" href="#__codelineno-74-20"></a>docker<span class="w"> </span>ps<span class="w"> </span>-a
+<a id="__codelineno-74-21" name="__codelineno-74-21" href="#__codelineno-74-21"></a>
+<a id="__codelineno-74-22" name="__codelineno-74-22" href="#__codelineno-74-22"></a><span class="c1"># View bot process</span>
+<a id="__codelineno-74-23" name="__codelineno-74-23" href="#__codelineno-74-23"></a>ps<span class="w"> </span>aux<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>secureclaw
+</code></pre></div>
+<h3 id="configuration-checklist">Configuration Checklist<a class="headerlink" href="#configuration-checklist" title="Permanent link">&para;</a></h3>
+<ul>
+<li>[ ] Discord Token in <code>.env</code></li>
+<li>[ ] Gemini API Key in <code>.env</code></li>
+<li>[ ] Message Content Intent enabled in Discord</li>
+<li>[ ] Bot invited with <code>applications.commands</code> scope</li>
+<li>[ ] Router backend selected (<code>ROUTER_BACKEND</code> in <code>.env</code>)</li>
+<li>[ ] Qdrant running on correct host/port</li>
+<li>[ ] Ollama container running (if using Ollama backend)</li>
+<li>[ ] Docker Desktop has sufficient memory (check <code>docker info</code>)</li>
+<li>[ ] Python 3.12+ installed</li>
+<li>[ ] Docker Desktop running</li>
+<li>[ ] Correct <code>QDRANT_HOST</code> for your setup</li>
+<li>[ ] Correct <code>OLLAMA_HOST</code> for your setup (if using Ollama)</li>
+</ul>
+<hr />
+<h2 id="still-having-issues">Still Having Issues?<a class="headerlink" href="#still-having-issues" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Check the <a href="../README.md">README.md</a> for setup instructions</li>
+<li>Enable debug logging: <code>LOG_LEVEL=DEBUG</code> in <code>.env</code></li>
+<li>Search existing GitHub issues</li>
+<li>Create new issue with debug information</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/jimtin/sercureclaw" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
