@@ -4,12 +4,12 @@ import time
 
 import pytest
 
-from secureclaw.profile.cache import (
+from zetherion_ai.profile.cache import (
     EmploymentProfileSummary,
     ProfileCache,
     UserProfileSummary,
 )
-from secureclaw.profile.models import (
+from zetherion_ai.profile.models import (
     ProfileCategory,
     ProfileEntry,
     ProfileSource,

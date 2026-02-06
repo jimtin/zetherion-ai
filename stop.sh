@@ -26,8 +26,8 @@ echo ""
 
 # Stop Ollama container
 print_info "Stopping Ollama container..."
-if docker ps --format '{{.Names}}' | grep -q "^secureclaw-ollama$"; then
-    docker stop secureclaw-ollama
+if docker ps --format '{{.Names}}' | grep -q "^zetherion_ai-ollama$"; then
+    docker stop zetherion_ai-ollama
     print_success "Ollama container stopped"
 else
     print_warning "Ollama container not running"
@@ -35,8 +35,8 @@ fi
 
 # Stop Qdrant container
 print_info "Stopping Qdrant container..."
-if docker ps --format '{{.Names}}' | grep -q "^secureclaw-qdrant$"; then
-    docker stop secureclaw-qdrant
+if docker ps --format '{{.Names}}' | grep -q "^zetherion_ai-qdrant$"; then
+    docker stop zetherion_ai-qdrant
     print_success "Qdrant container stopped"
 else
     print_warning "Qdrant container not running"
@@ -44,8 +44,8 @@ fi
 
 # Kill any running bot processes
 print_info "Checking for running bot processes..."
-if pgrep -f "python -m secureclaw" >/dev/null; then
-    pkill -f "python -m secureclaw"
+if pgrep -f "python -m zetherion_ai" >/dev/null; then
+    pkill -f "python -m zetherion_ai"
     print_success "Bot processes stopped"
 else
     print_warning "No bot processes found"

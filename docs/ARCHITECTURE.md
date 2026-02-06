@@ -115,7 +115,7 @@ Zetherion AI is a Discord bot with advanced AI capabilities, featuring:
 
 ## Core Components
 
-### 1. Discord Interface (`src/secureclaw/discord/`)
+### 1. Discord Interface (`src/zetherion_ai/discord/`)
 
 **Purpose:** Handle all Discord interactions and command routing.
 
@@ -137,7 +137,7 @@ Zetherion AI is a Discord bot with advanced AI capabilities, featuring:
 - Security checks run before any agent processing
 - Async throughout for non-blocking I/O
 
-### 2. Agent Core (`src/secureclaw/agent/`)
+### 2. Agent Core (`src/zetherion_ai/agent/`)
 
 **Purpose:** Intelligent message routing and response generation.
 
@@ -169,7 +169,7 @@ Zetherion AI is a Discord bot with advanced AI capabilities, featuring:
 - Retry logic with exponential backoff (max 3 retries)
 - Context deduplication (search once, use for both generators)
 
-### 3. Memory System (`src/secureclaw/memory/`)
+### 3. Memory System (`src/zetherion_ai/memory/`)
 
 **Purpose:** Long-term semantic memory via vector embeddings.
 
@@ -195,7 +195,7 @@ Zetherion AI is a Discord bot with advanced AI capabilities, featuring:
 - Collections auto-created on first use
 - No embedding caching (TODO for Phase 5)
 
-### 4. Configuration (`src/secureclaw/config.py`)
+### 4. Configuration (`src/zetherion_ai/config.py`)
 
 **Purpose:** Centralized settings with validation and secrets management.
 
@@ -217,7 +217,7 @@ Zetherion AI is a Discord bot with advanced AI capabilities, featuring:
 - Validators catch misconfigurations early
 - Clear separation of dev vs prod settings
 
-### 5. Logging (`src/secureclaw/logging.py`)
+### 5. Logging (`src/zetherion_ai/logging.py`)
 
 **Purpose:** Structured logging for debugging and monitoring.
 

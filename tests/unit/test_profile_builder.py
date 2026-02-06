@@ -5,16 +5,16 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from secureclaw.profile.builder import (
+from zetherion_ai.profile.builder import (
     ProfileBuilder,
     extract_profile_updates_background,
     schedule_profile_extraction,
 )
-from secureclaw.profile.cache import ProfileCache
-from secureclaw.profile.models import (
+from zetherion_ai.profile.cache import ProfileCache
+from zetherion_ai.profile.models import (
     ProfileUpdate,
 )
-from secureclaw.profile.storage import ProfileStorage
+from zetherion_ai.profile.storage import ProfileStorage
 
 
 class TestProfileBuilder:
@@ -176,7 +176,7 @@ class TestProfileBuilder:
     @pytest.mark.asyncio
     async def test_get_profile_summary_uses_cache(self, builder, mock_cache):
         """Test that get_profile_summary uses cache."""
-        from secureclaw.profile.cache import UserProfileSummary
+        from zetherion_ai.profile.cache import UserProfileSummary
 
         # Pre-populate cache
         summary = UserProfileSummary(user_id="user123", name="John")

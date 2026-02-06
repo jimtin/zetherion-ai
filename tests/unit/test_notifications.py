@@ -2,7 +2,7 @@
 
 import pytest
 
-from secureclaw.notifications.dispatcher import (
+from zetherion_ai.notifications.dispatcher import (
     Notification,
     NotificationChannel,
     NotificationDispatcher,

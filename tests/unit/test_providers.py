@@ -2,7 +2,7 @@
 
 import pytest
 
-from secureclaw.agent.providers import (
+from zetherion_ai.agent.providers import (
     CAPABILITY_MATRIX,
     OLLAMA_MODEL_TIERS,
     OLLAMA_TIER_CAPABILITIES,

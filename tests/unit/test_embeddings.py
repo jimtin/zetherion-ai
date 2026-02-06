@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from secureclaw.memory.embeddings import EMBEDDING_DIMENSION, GeminiEmbeddings
+from zetherion_ai.memory.embeddings import EMBEDDING_DIMENSION, GeminiEmbeddings
 
 
 @pytest.fixture
@@ -29,9 +29,9 @@ class TestGeminiEmbeddingsInit:
     def test_init(self, mock_settings):
         """Test initialization."""
         mock_client = MagicMock()
-        with patch("secureclaw.memory.embeddings.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
             with patch(
-                "secureclaw.memory.embeddings.genai.Client", return_value=mock_client
+                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_client
             ) as mock_genai:
                 embeddings = GeminiEmbeddings()
                 mock_genai.assert_called_once_with(api_key="test-api-key")
@@ -52,8 +52,8 @@ class TestGeminiEmbeddingsEmbedText:
         mock_client = MagicMock()
         mock_client.models.embed_content.return_value = mock_result
 
-        with patch("secureclaw.memory.embeddings.get_settings", return_value=mock_settings):
-            with patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.genai.Client", return_value=mock_client):
                 embeddings = GeminiEmbeddings()
                 result = await embeddings.embed_text("Hello, world!")
 
@@ -74,8 +74,8 @@ class TestGeminiEmbeddingsEmbedText:
         mock_client = MagicMock()
         mock_client.models.embed_content.return_value = mock_result
 
-        with patch("secureclaw.memory.embeddings.get_settings", return_value=mock_settings):
-            with patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.genai.Client", return_value=mock_client):
                 embeddings = GeminiEmbeddings()
                 result = await embeddings.embed_text("")
 
@@ -93,8 +93,8 @@ class TestGeminiEmbeddingsEmbedText:
         mock_client = MagicMock()
         mock_client.models.embed_content.return_value = mock_result
 
-        with patch("secureclaw.memory.embeddings.get_settings", return_value=mock_settings):
-            with patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.genai.Client", return_value=mock_client):
                 embeddings = GeminiEmbeddings()
                 result = await embeddings.embed_text(long_text)
 
@@ -115,8 +115,8 @@ class TestGeminiEmbeddingsEmbedQuery:
         mock_client = MagicMock()
         mock_client.models.embed_content.return_value = mock_result
 
-        with patch("secureclaw.memory.embeddings.get_settings", return_value=mock_settings):
-            with patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.genai.Client", return_value=mock_client):
                 embeddings = GeminiEmbeddings()
                 result = await embeddings.embed_query("What is Python?")
 
@@ -133,8 +133,8 @@ class TestGeminiEmbeddingsEmbedQuery:
         mock_client = MagicMock()
         mock_client.models.embed_content.return_value = mock_result
 
-        with patch("secureclaw.memory.embeddings.get_settings", return_value=mock_settings):
-            with patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.genai.Client", return_value=mock_client):
                 embeddings = GeminiEmbeddings()
 
                 # Embed the same text both ways
@@ -159,8 +159,8 @@ class TestGeminiEmbeddingsEmbedBatch:
         mock_client = MagicMock()
         mock_client.models.embed_content.return_value = mock_result
 
-        with patch("secureclaw.memory.embeddings.get_settings", return_value=mock_settings):
-            with patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.genai.Client", return_value=mock_client):
                 embeddings = GeminiEmbeddings()
                 results = await embeddings.embed_batch(["Hello"])
 
@@ -178,8 +178,8 @@ class TestGeminiEmbeddingsEmbedBatch:
         mock_client = MagicMock()
         mock_client.models.embed_content.return_value = mock_result
 
-        with patch("secureclaw.memory.embeddings.get_settings", return_value=mock_settings):
-            with patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.genai.Client", return_value=mock_client):
                 embeddings = GeminiEmbeddings()
                 texts = ["Text 1", "Text 2", "Text 3"]
                 results = await embeddings.embed_batch(texts)
@@ -193,8 +193,8 @@ class TestGeminiEmbeddingsEmbedBatch:
         """Test embedding an empty batch."""
         mock_client = MagicMock()
 
-        with patch("secureclaw.memory.embeddings.get_settings", return_value=mock_settings):
-            with patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.genai.Client", return_value=mock_client):
                 embeddings = GeminiEmbeddings()
                 results = await embeddings.embed_batch([])
 
@@ -217,8 +217,8 @@ class TestGeminiEmbeddingsEmbedBatch:
         mock_client = MagicMock()
         mock_client.models.embed_content.side_effect = mock_embed_content
 
-        with patch("secureclaw.memory.embeddings.get_settings", return_value=mock_settings):
-            with patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.genai.Client", return_value=mock_client):
                 embeddings = GeminiEmbeddings()
                 texts = ["A", "B", "C", "D", "E"]
                 results = await embeddings.embed_batch(texts)
@@ -246,8 +246,8 @@ class TestEmbeddingDimension:
         mock_client = MagicMock()
         mock_client.models.embed_content.return_value = mock_result
 
-        with patch("secureclaw.memory.embeddings.get_settings", return_value=mock_settings):
-            with patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.genai.Client", return_value=mock_client):
                 embeddings = GeminiEmbeddings()
                 result = await embeddings.embed_text("test")
 

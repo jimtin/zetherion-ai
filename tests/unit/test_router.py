@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from secureclaw.agent.router import (
+from zetherion_ai.agent.router import (
     GeminiRouterBackend,
     MessageIntent,
     MessageRouter,
@@ -33,6 +33,10 @@ class TestMessageIntent:
             "MEMORY_STORE",
             "MEMORY_RECALL",
             "SYSTEM_COMMAND",
+            # Phase 5G skill intents
+            "TASK_MANAGEMENT",
+            "CALENDAR_QUERY",
+            "PROFILE_QUERY",
         ]
         for intent in expected:
             assert hasattr(MessageIntent, intent)
@@ -44,6 +48,10 @@ class TestMessageIntent:
         assert MessageIntent.MEMORY_STORE.value == "memory_store"
         assert MessageIntent.MEMORY_RECALL.value == "memory_recall"
         assert MessageIntent.SYSTEM_COMMAND.value == "system_command"
+        # Phase 5G skill intents
+        assert MessageIntent.TASK_MANAGEMENT.value == "task_management"
+        assert MessageIntent.CALENDAR_QUERY.value == "calendar_query"
+        assert MessageIntent.PROFILE_QUERY.value == "profile_query"
 
 
 class TestRoutingDecision:
@@ -87,8 +95,8 @@ class TestGeminiRouterBackendInit:
     def test_init(self, mock_settings):
         """Test initialization."""
         mock_client = MagicMock()
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 assert backend._model == "gemini-2.0-flash-exp"
 
@@ -111,8 +119,8 @@ class TestGeminiRouterBackendClassify:
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 decision = await backend.classify("Hello!")
 
@@ -135,8 +143,8 @@ class TestGeminiRouterBackendClassify:
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 decision = await backend.classify("Write a Python script to sort a list")
 
@@ -158,8 +166,8 @@ class TestGeminiRouterBackendClassify:
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 decision = await backend.classify("Remember that I prefer dark mode")
 
@@ -180,8 +188,8 @@ class TestGeminiRouterBackendClassify:
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 decision = await backend.classify("What's my favorite color?")
 
@@ -202,12 +210,81 @@ class TestGeminiRouterBackendClassify:
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 decision = await backend.classify("help")
 
         assert decision.intent == MessageIntent.SYSTEM_COMMAND
+
+    @pytest.mark.asyncio
+    async def test_classify_task_management(self, mock_settings):
+        """Test classifying a task management request."""
+        mock_response = MagicMock()
+        mock_response.text = json.dumps(
+            {
+                "intent": "task_management",
+                "confidence": 0.92,
+                "reasoning": "User wants to create a task",
+            }
+        )
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
+                backend = GeminiRouterBackend()
+                decision = await backend.classify("Add a task to buy groceries")
+
+        assert decision.intent == MessageIntent.TASK_MANAGEMENT
+        assert decision.use_claude is False  # Skills handle their own processing
+
+    @pytest.mark.asyncio
+    async def test_classify_calendar_query(self, mock_settings):
+        """Test classifying a calendar query."""
+        mock_response = MagicMock()
+        mock_response.text = json.dumps(
+            {
+                "intent": "calendar_query",
+                "confidence": 0.88,
+                "reasoning": "User asking about schedule",
+            }
+        )
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
+                backend = GeminiRouterBackend()
+                decision = await backend.classify("What's on my calendar today?")
+
+        assert decision.intent == MessageIntent.CALENDAR_QUERY
+        assert decision.use_claude is False
+
+    @pytest.mark.asyncio
+    async def test_classify_profile_query(self, mock_settings):
+        """Test classifying a profile query."""
+        mock_response = MagicMock()
+        mock_response.text = json.dumps(
+            {
+                "intent": "profile_query",
+                "confidence": 0.95,
+                "reasoning": "User asking about stored profile data",
+            }
+        )
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
+                backend = GeminiRouterBackend()
+                decision = await backend.classify("What do you know about me?")
+
+        assert decision.intent == MessageIntent.PROFILE_QUERY
+        assert decision.use_claude is False
 
     @pytest.mark.asyncio
     async def test_classify_json_in_code_block(self, mock_settings):
@@ -224,8 +301,8 @@ class TestGeminiRouterBackendClassify:
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 decision = await backend.classify("What is 2+2?")
 
@@ -240,8 +317,8 @@ class TestGeminiRouterBackendClassify:
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 decision = await backend.classify("test")
 
@@ -263,8 +340,8 @@ class TestGeminiRouterBackendClassify:
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 decision = await backend.classify("test")
 
@@ -286,8 +363,8 @@ class TestGeminiRouterBackendClassify:
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 decision = await backend.classify("test")
 
@@ -309,8 +386,8 @@ class TestGeminiRouterBackendClassify:
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 decision = await backend.classify("test")
 
@@ -322,8 +399,8 @@ class TestGeminiRouterBackendClassify:
         mock_client = MagicMock()
         mock_client.models.generate_content.side_effect = Exception("API Error")
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 decision = await backend.classify("test")
 
@@ -346,8 +423,8 @@ class TestGeminiRouterBackendClassify:
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 decision = await backend.classify("maybe complex task")
 
@@ -367,8 +444,8 @@ class TestGeminiRouterBackendGenerateSimpleResponse:
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 response = await backend.generate_simple_response("Hi")
 
@@ -383,8 +460,8 @@ class TestGeminiRouterBackendGenerateSimpleResponse:
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 response = await backend.generate_simple_response("Hi")
 
@@ -396,8 +473,8 @@ class TestGeminiRouterBackendGenerateSimpleResponse:
         mock_client = MagicMock()
         mock_client.models.generate_content.side_effect = Exception("API Error")
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 response = await backend.generate_simple_response("Hi")
 
@@ -416,8 +493,8 @@ class TestGeminiRouterBackendHealthCheck:
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 is_healthy = await backend.health_check()
 
@@ -432,8 +509,8 @@ class TestGeminiRouterBackendHealthCheck:
         mock_client = MagicMock()
         mock_client.models.generate_content.return_value = mock_response
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 is_healthy = await backend.health_check()
 
@@ -445,8 +522,8 @@ class TestGeminiRouterBackendHealthCheck:
         mock_client = MagicMock()
         mock_client.models.generate_content.side_effect = Exception("Connection error")
 
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
                 backend = GeminiRouterBackend()
                 is_healthy = await backend.health_check()
 
@@ -458,8 +535,8 @@ class TestMessageRouter:
 
     def test_init_default_backend(self, mock_settings):
         """Test initialization with default backend."""
-        with patch("secureclaw.agent.router.get_settings", return_value=mock_settings):
-            with patch("secureclaw.agent.router.genai.Client"):
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client"):
                 router = MessageRouter()
                 assert isinstance(router._backend, GeminiRouterBackend)
 

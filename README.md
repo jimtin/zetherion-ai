@@ -1,7 +1,8 @@
 # Zetherion AI
 
 [![CI Pipeline](https://github.com/jimtin/zetherion-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/jimtin/zetherion-ai/actions/workflows/ci.yml)
-[![Test Coverage](https://img.shields.io/badge/coverage-87.58%25-brightgreen)](https://github.com/jimtin/zetherion-ai/actions)
+[![Test Coverage](https://img.shields.io/badge/coverage-78%25-brightgreen)](https://github.com/jimtin/zetherion-ai/actions)
+[![Unit Tests](https://img.shields.io/badge/tests-885-blue)](https://github.com/jimtin/zetherion-ai/actions)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -9,11 +10,14 @@ A secure, simplified personal AI assistant. Discord-based with vector memory.
 
 ## ✨ Key Features
 
-- 🔒 **Security-First**: Pre-commit secret scanning, prompt injection defense, allowlist-based access control
-- 🧠 **Smart Routing**: Automatically routes queries to the most cost-effective AI model
-- 💾 **Vector Memory**: Long-term semantic memory powered by Qdrant
-- 🎯 **87.58% Test Coverage**: Comprehensive unit, integration, and E2E tests
-- 🐳 **Docker-Based**: Fully containerized with automated setup and management
+- 🔒 **Security-First**: AES-256-GCM encryption, pre-commit secret scanning, prompt injection defense
+- 🧠 **Smart Routing**: InferenceBroker routes tasks to optimal provider (Claude/OpenAI/Gemini/Ollama)
+- 💾 **Encrypted Vector Memory**: Long-term semantic memory powered by Qdrant with field-level encryption
+- 📋 **Skills Framework**: Task management, calendar awareness, profile management via natural language
+- 👤 **User Profiling**: Builds understanding of you over time with tiered inference
+- ⏰ **Proactive Scheduler**: Morning briefings, deadline reminders, end-of-day summaries
+- 🎯 **885 Unit Tests**: Comprehensive test coverage (78%)
+- 🐳 **Docker-Based**: Fully containerized with isolated skills service
 - 🌐 **Dual Router Options**: Cloud (Gemini) or Local (Ollama) for privacy
 - 🚀 **18-Second Startup**: After initial setup, starts in under 20 seconds
 

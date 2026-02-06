@@ -15,9 +15,9 @@ class TestGeminiEmbeddings:
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
         with patch(
-            "secureclaw.memory.embeddings.genai.Client", return_value=mock_embeddings_client
+            "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
         ):
-            from secureclaw.memory.embeddings import GeminiEmbeddings
+            from zetherion_ai.memory.embeddings import GeminiEmbeddings
 
             return GeminiEmbeddings()
 
@@ -58,6 +58,6 @@ class TestGeminiEmbeddings:
 
     def test_embedding_dimension_constant(self):
         """Test that EMBEDDING_DIMENSION constant is correct."""
-        from secureclaw.memory.embeddings import EMBEDDING_DIMENSION
+        from zetherion_ai.memory.embeddings import EMBEDDING_DIMENSION
 
         assert EMBEDDING_DIMENSION == 768

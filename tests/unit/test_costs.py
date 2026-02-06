@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from secureclaw.costs.aggregator import CostAggregate, CostAggregator
-from secureclaw.costs.reports import CostReportGenerator, DailyReport, MonthlyReport
-from secureclaw.costs.storage import CostStorage, UsageRecord
-from secureclaw.costs.tracker import CostTracker
+from zetherion_ai.costs.aggregator import CostAggregate, CostAggregator
+from zetherion_ai.costs.reports import CostReportGenerator, DailyReport, MonthlyReport
+from zetherion_ai.costs.storage import CostStorage, UsageRecord
+from zetherion_ai.costs.tracker import CostTracker
 
 
 @pytest.fixture

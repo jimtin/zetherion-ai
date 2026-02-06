@@ -15,10 +15,12 @@ class TestQdrantMemory:
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
         with (
-            patch("secureclaw.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_embeddings_client),
+            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
+            patch(
+                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
+            ),
         ):
-            from secureclaw.memory.qdrant import QdrantMemory
+            from zetherion_ai.memory.qdrant import QdrantMemory
 
             return QdrantMemory()
 

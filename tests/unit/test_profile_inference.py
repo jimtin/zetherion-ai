@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pytest
 
-from secureclaw.profile.inference import (
+from zetherion_ai.profile.inference import (
     ConversationFlowInference,
     IdentityContextInference,
     PreferenceInference,
@@ -14,7 +14,7 @@ from secureclaw.profile.inference import (
     Tier2Inference,
     UrgencyMoodInference,
 )
-from secureclaw.profile.models import ProfileCategory
+from zetherion_ai.profile.models import ProfileCategory
 
 
 class TestTier1Inference:

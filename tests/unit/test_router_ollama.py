@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from secureclaw.agent.router import MessageIntent
-from secureclaw.agent.router_ollama import OllamaRouterBackend
+from zetherion_ai.agent.router import MessageIntent
+from zetherion_ai.agent.router_ollama import OllamaRouterBackend
 
 
 @pytest.fixture
@@ -25,7 +25,7 @@ class TestOllamaRouterBackendInit:
 
     def test_init(self, mock_settings):
         """Test initialization."""
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             assert backend._url == "http://localhost:11434"
             assert backend._model == "llama3.1:8b"
@@ -51,7 +51,7 @@ class TestOllamaRouterBackendClassify:
             )
         }
 
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.post = AsyncMock(return_value=mock_response)
@@ -78,7 +78,7 @@ class TestOllamaRouterBackendClassify:
             )
         }
 
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.post = AsyncMock(return_value=mock_response)
@@ -104,7 +104,7 @@ class TestOllamaRouterBackendClassify:
             )
         }
 
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.post = AsyncMock(return_value=mock_response)
@@ -129,7 +129,7 @@ class TestOllamaRouterBackendClassify:
             )
         }
 
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.post = AsyncMock(return_value=mock_response)
@@ -154,7 +154,7 @@ class TestOllamaRouterBackendClassify:
             )
         }
 
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.post = AsyncMock(return_value=mock_response)
@@ -162,6 +162,84 @@ class TestOllamaRouterBackendClassify:
             decision = await backend.classify("help")
 
         assert decision.intent == MessageIntent.SYSTEM_COMMAND
+
+    @pytest.mark.asyncio
+    async def test_classify_task_management(self, mock_settings):
+        """Test classifying a task management request."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "response": json.dumps(
+                {
+                    "intent": "task_management",
+                    "confidence": 0.92,
+                    "reasoning": "User wants to create a task",
+                }
+            )
+        }
+
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
+            backend = OllamaRouterBackend()
+            backend._client = MagicMock()
+            backend._client.post = AsyncMock(return_value=mock_response)
+
+            decision = await backend.classify("Add a task to buy groceries")
+
+        assert decision.intent == MessageIntent.TASK_MANAGEMENT
+        assert decision.use_claude is False
+
+    @pytest.mark.asyncio
+    async def test_classify_calendar_query(self, mock_settings):
+        """Test classifying a calendar query."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "response": json.dumps(
+                {
+                    "intent": "calendar_query",
+                    "confidence": 0.88,
+                    "reasoning": "User asking about schedule",
+                }
+            )
+        }
+
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
+            backend = OllamaRouterBackend()
+            backend._client = MagicMock()
+            backend._client.post = AsyncMock(return_value=mock_response)
+
+            decision = await backend.classify("What's on my calendar today?")
+
+        assert decision.intent == MessageIntent.CALENDAR_QUERY
+        assert decision.use_claude is False
+
+    @pytest.mark.asyncio
+    async def test_classify_profile_query(self, mock_settings):
+        """Test classifying a profile query."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "response": json.dumps(
+                {
+                    "intent": "profile_query",
+                    "confidence": 0.95,
+                    "reasoning": "User asking about stored profile data",
+                }
+            )
+        }
+
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
+            backend = OllamaRouterBackend()
+            backend._client = MagicMock()
+            backend._client.post = AsyncMock(return_value=mock_response)
+
+            decision = await backend.classify("What do you know about me?")
+
+        assert decision.intent == MessageIntent.PROFILE_QUERY
+        assert decision.use_claude is False
 
     @pytest.mark.asyncio
     async def test_classify_json_in_code_block(self, mock_settings):
@@ -175,7 +253,7 @@ class TestOllamaRouterBackendClassify:
 ```"""
         }
 
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.post = AsyncMock(return_value=mock_response)
@@ -187,7 +265,7 @@ class TestOllamaRouterBackendClassify:
     @pytest.mark.asyncio
     async def test_classify_timeout(self, mock_settings):
         """Test handling timeout."""
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.post = AsyncMock(side_effect=httpx.TimeoutException("Timeout"))
@@ -201,7 +279,7 @@ class TestOllamaRouterBackendClassify:
     @pytest.mark.asyncio
     async def test_classify_connection_error(self, mock_settings):
         """Test handling connection error."""
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.post = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
@@ -220,7 +298,7 @@ class TestOllamaRouterBackendClassify:
         mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {"response": "This is not valid JSON"}
 
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.post = AsyncMock(return_value=mock_response)
@@ -245,7 +323,7 @@ class TestOllamaRouterBackendClassify:
             )
         }
 
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.post = AsyncMock(return_value=mock_response)
@@ -269,7 +347,7 @@ class TestOllamaRouterBackendClassify:
             )
         }
 
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.post = AsyncMock(return_value=mock_response)
@@ -294,7 +372,7 @@ class TestOllamaRouterBackendClassify:
             )
         }
 
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.post = AsyncMock(return_value=mock_response)
@@ -306,7 +384,7 @@ class TestOllamaRouterBackendClassify:
     @pytest.mark.asyncio
     async def test_classify_unexpected_error(self, mock_settings):
         """Test handling unexpected error."""
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.post = AsyncMock(side_effect=RuntimeError("Unexpected"))
@@ -332,7 +410,7 @@ class TestOllamaRouterBackendClassify:
             )
         }
 
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.post = AsyncMock(return_value=mock_response)
@@ -354,7 +432,7 @@ class TestOllamaRouterBackendGenerateSimpleResponse:
         mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {"response": "Hello! How can I help you?"}
 
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.post = AsyncMock(return_value=mock_response)
@@ -366,7 +444,7 @@ class TestOllamaRouterBackendGenerateSimpleResponse:
     @pytest.mark.asyncio
     async def test_generate_simple_response_error(self, mock_settings):
         """Test handling error in response generation."""
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.post = AsyncMock(side_effect=Exception("API Error"))
@@ -392,7 +470,7 @@ class TestOllamaRouterBackendHealthCheck:
             ]
         }
 
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.get = AsyncMock(return_value=mock_response)
@@ -413,7 +491,7 @@ class TestOllamaRouterBackendHealthCheck:
             ]
         }
 
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.get = AsyncMock(return_value=mock_response)
@@ -425,7 +503,7 @@ class TestOllamaRouterBackendHealthCheck:
     @pytest.mark.asyncio
     async def test_health_check_error(self, mock_settings):
         """Test health check with error."""
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.get = AsyncMock(side_effect=Exception("Connection error"))
@@ -441,7 +519,7 @@ class TestOllamaRouterBackendClose:
     @pytest.mark.asyncio
     async def test_close(self, mock_settings):
         """Test closing the HTTP client."""
-        with patch("secureclaw.agent.router_ollama.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
             backend._client.aclose = AsyncMock()

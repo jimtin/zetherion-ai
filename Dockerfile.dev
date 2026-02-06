@@ -18,4 +18,4 @@ RUN pip install --no-cache-dir -r requirements-dev.txt && \
 ENV PYTHONPATH=/app/src
 
 # Source will be mounted as volume for hot reload
-CMD ["python", "-m", "watchfiles", "python -m secureclaw", "./src"]
+CMD ["python", "-m", "watchfiles", "python -m zetherion_ai", "./src"]

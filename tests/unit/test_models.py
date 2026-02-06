@@ -2,7 +2,7 @@
 
 import pytest
 
-from secureclaw.models.pricing import (
+from zetherion_ai.models.pricing import (
     CostResult,
     _infer_tier_from_id,
     _normalize_model_id,
@@ -11,7 +11,7 @@ from secureclaw.models.pricing import (
     has_pricing,
     update_pricing,
 )
-from secureclaw.models.tiers import ModelInfo, Tier, infer_tier
+from zetherion_ai.models.tiers import ModelInfo, Tier, infer_tier
 
 
 class TestTier:

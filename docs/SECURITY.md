@@ -28,7 +28,7 @@ All credentials are loaded from environment variables via a `.env` file and neve
 
 | Control | Implementation | File |
 |---------|---------------|------|
-| Typed secrets | `pydantic.SecretStr` prevents accidental logging/serialisation of tokens | `src/secureclaw/config.py` |
+| Typed secrets | `pydantic.SecretStr` prevents accidental logging/serialisation of tokens | `src/zetherion_ai/config.py` |
 | `.env` excluded from Git | `.gitignore` blocks `.env`, `data/`, `ollama_models/` | `.gitignore` |
 | Example file provided | `.env.example` documents every variable without real values | `.env.example` |
 | Minimal exposure | `SecretStr.get_secret_value()` called only at point-of-use (API client init) | Agent & router modules |
@@ -80,7 +80,7 @@ The allowlist avoids blocking legitimate code:
 
 ## 3. Input Validation & Prompt Injection Defence
 
-**File**: `src/secureclaw/discord/security.py`
+**File**: `src/zetherion_ai/discord/security.py`
 
 Every user message is checked before being forwarded to LLM backends.
 
@@ -140,7 +140,7 @@ Per-user tracking with automatic timestamp cleanup. Exceeding the limit returns 
 |------|---------|---------------|
 | **Ruff** linter | v0.2.2 | PEP 8, unused imports, complexity, bugbear, simplify (rule sets: E, F, I, N, W, UP, B, C4, SIM) |
 | **Ruff** formatter | v0.2.2 | Consistent formatting, 100-char line length |
-| **mypy** | v1.8.0 | Full strict type checking (`strict = true`) on `src/secureclaw` |
+| **mypy** | v1.8.0 | Full strict type checking (`strict = true`) on `src/zetherion_ai` |
 | **Bandit** | 1.7.7 | Common Python security issues (SQL injection, hardcoded passwords, exec calls) |
 | **Hadolint** | v2.12.0 | Dockerfile best practices |
 | **pre-commit-hooks** | v4.5.0 | Large files (>1MB), merge conflicts, YAML/TOML/JSON syntax, trailing whitespace, private key detection |
@@ -185,7 +185,7 @@ Per-user tracking with automatic timestamp cleanup. Exceeding the limit returns 
 | **Health checks** | All services (Qdrant, Ollama) have TCP health checks with intervals, timeouts, retries, and start periods |
 | **Restart policy** | `unless-stopped` for resilience |
 | **Service dependency** | Bot waits for `qdrant: service_healthy` before starting |
-| **Network isolation** | All services on a dedicated `secureclaw-net` bridge network |
+| **Network isolation** | All services on a dedicated `zetherion_ai-net` bridge network |
 | **Named volumes** | `qdrant_storage`, `ollama_models` for persistent data |
 | **No privileged mode** | Containers run without elevated privileges |
 
@@ -227,7 +227,7 @@ Push/PR to main or develop
 | Job | Duration | What It Does |
 |-----|----------|-------------|
 | **Lint** | ~5s | `ruff check` + `ruff format --check` on `src/` and `tests/` |
-| **Type Check** | ~10s | `mypy src/secureclaw` in strict mode |
+| **Type Check** | ~10s | `mypy src/zetherion_ai` in strict mode |
 | **Security** | ~10s | `bandit -r src/` for Python security issues |
 | **Test** | ~60s | Unit tests on Python 3.12 + 3.13 matrix, coverage to Codecov |
 | **Docker Build** | ~30s | Buildx with GHA caching, validates `docker compose config` |
@@ -310,7 +310,7 @@ This produces 14 tests (7 scenarios x 2 backends) with no code duplication.
 
 ## 10. Logging & Monitoring
 
-**File**: `src/secureclaw/logging.py`
+**File**: `src/zetherion_ai/logging.py`
 
 | Control | Detail |
 |---------|--------|
@@ -326,7 +326,7 @@ This produces 14 tests (7 scenarios x 2 backends) with no code duplication.
 
 | Control | Detail |
 |---------|--------|
-| **Docker bridge network** | All services communicate on `secureclaw-net`, isolated from host network by default |
+| **Docker bridge network** | All services communicate on `zetherion_ai-net`, isolated from host network by default |
 | **No exposed ports in production** | Only Qdrant (6333) and Ollama (11434) expose ports (for dev/test); the bot container exposes none |
 | **TLS for external APIs** | All API clients (Anthropic, OpenAI, Gemini) use HTTPS by default via `httpx` |
 | **No inbound web server** | The bot connects outbound to Discord's gateway; it does not listen on any HTTP port |
@@ -335,7 +335,7 @@ This produces 14 tests (7 scenarios x 2 backends) with no code duplication.
 
 ## 12. Data Encryption (Phase 5A)
 
-**Files**: `src/secureclaw/security/encryption.py`, `src/secureclaw/security/keys.py`
+**Files**: `src/zetherion_ai/security/encryption.py`, `src/zetherion_ai/security/keys.py`
 
 Zetherion AI implements **application-layer encryption** for sensitive data stored in Qdrant. This protects data at rest even if the database is compromised.
 
@@ -428,7 +428,7 @@ The following automated security best practices have been **fully implemented** 
 - name: Run Trivy vulnerability scanner
   uses: aquasecurity/trivy-action@master
   with:
-    image-ref: secureclaw:test
+    image-ref: zetherion_ai:test
     format: 'sarif'
     output: 'trivy-results.sarif'
     severity: 'CRITICAL,HIGH'
@@ -478,7 +478,7 @@ Update digests via Dependabot (already configured for Docker ecosystem).
 - name: Generate SBOM
   uses: anchore/sbom-action@v0
   with:
-    image: secureclaw:test
+    image: zetherion_ai:test
     format: spdx-json
     output-file: sbom.spdx.json
 
@@ -502,12 +502,12 @@ Update digests via Dependabot (already configured for Docker ecosystem).
 **Recommendation**:
 1. Enable **branch protection** on `main`: require PR reviews, status checks to pass, and linear history.
 2. Require **GPG or SSH signed commits** to prevent commit spoofing.
-3. Enable **CODEOWNERS** for critical paths (`src/secureclaw/discord/security.py`, `.github/workflows/`, `.gitleaks.toml`).
+3. Enable **CODEOWNERS** for critical paths (`src/zetherion_ai/discord/security.py`, `.github/workflows/`, `.gitleaks.toml`).
 
 ```
 # .github/CODEOWNERS
 /.github/       @jameshinton
-/src/secureclaw/discord/security.py  @jameshinton
+/src/zetherion_ai/discord/security.py  @jameshinton
 /.gitleaks.toml @jameshinton
 ```
 
@@ -545,7 +545,7 @@ Update digests via Dependabot (already configured for Docker ecosystem).
 **Recommendation**: Set `read_only: true` in `docker-compose.yml` and use `tmpfs` for writable directories.
 
 ```yaml
-secureclaw:
+zetherion_ai:
   read_only: true
   tmpfs:
     - /tmp
@@ -567,7 +567,7 @@ secureclaw:
 **Recommendation**: Set resource limits in `docker-compose.yml`.
 
 ```yaml
-secureclaw:
+zetherion_ai:
   deploy:
     resources:
       limits:

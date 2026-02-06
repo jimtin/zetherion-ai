@@ -187,7 +187,7 @@ class DiscordTestClient:
 
         return await self.channel.send(content)
 
-    def get_secureclaw_bot_id(self) -> int | None:
+    def get_zetherion_ai_bot_id(self) -> int | None:
         """Get the SecureClaw production bot's user ID.
 
         Returns:
@@ -202,7 +202,7 @@ class DiscordTestClient:
                 if (
                     member.bot
                     and member.id != self.client.user.id  # type: ignore[union-attr]
-                    and "secureclaw" in member.name.lower()
+                    and "zetherion_ai" in member.name.lower()
                 ):
                     print(f"Found SecureClaw bot: {member.name} (ID: {member.id})")
                     return member.id
@@ -230,7 +230,7 @@ class DiscordTestClient:
 
         # If bot_id not provided, try to find it
         if not bot_id:
-            bot_id = self.get_secureclaw_bot_id()
+            bot_id = self.get_zetherion_ai_bot_id()
             if not bot_id:
                 # Fallback: check recent message history
                 async for message in self.channel.history(limit=50):
@@ -293,7 +293,7 @@ async def discord_test_client() -> AsyncGenerator[DiscordTestClient, None]:
 async def test_bot_responds_to_message(discord_test_client: DiscordTestClient) -> None:
     """Test bot responds to a simple message."""
     # Get bot ID to mention it
-    bot_id = discord_test_client.get_secureclaw_bot_id()
+    bot_id = discord_test_client.get_zetherion_ai_bot_id()
     if not bot_id:
         pytest.skip("Could not find SecureClaw bot in channel")
 
@@ -324,7 +324,7 @@ async def test_bot_responds_to_message(discord_test_client: DiscordTestClient) -
 async def test_bot_handles_complex_query(discord_test_client: DiscordTestClient) -> None:
     """Test bot handles complex queries."""
     # Get bot ID to mention it
-    bot_id = discord_test_client.get_secureclaw_bot_id()
+    bot_id = discord_test_client.get_zetherion_ai_bot_id()
     if not bot_id:
         pytest.skip("Could not find SecureClaw bot in channel")
 
@@ -354,7 +354,7 @@ async def test_bot_handles_complex_query(discord_test_client: DiscordTestClient)
 async def test_bot_remembers_information(discord_test_client: DiscordTestClient) -> None:
     """Test bot memory functionality."""
     # Get bot ID to mention it
-    bot_id = discord_test_client.get_secureclaw_bot_id()
+    bot_id = discord_test_client.get_zetherion_ai_bot_id()
     if not bot_id:
         pytest.skip("Could not find SecureClaw bot in channel")
 
@@ -409,7 +409,7 @@ async def test_bot_remembers_information(discord_test_client: DiscordTestClient)
 async def test_bot_handles_mention(discord_test_client: DiscordTestClient) -> None:
     """Test bot responds to mentions."""
     # Get bot ID to mention it
-    bot_id = discord_test_client.get_secureclaw_bot_id()
+    bot_id = discord_test_client.get_zetherion_ai_bot_id()
     if not bot_id:
         pytest.skip("Could not find SecureClaw bot in channel")
 

@@ -43,8 +43,8 @@ Thank you for your interest in contributing to Zetherion AI! This document provi
 1. Fork the repository on GitHub
 2. Clone your fork locally:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/secureclaw.git
-   cd secureclaw
+   git clone https://github.com/YOUR_USERNAME/zetherion_ai.git
+   cd zetherion_ai
    ```
 3. Add the upstream repository:
    ```bash
@@ -109,7 +109,7 @@ Thank you for your interest in contributing to Zetherion AI! This document provi
    pytest tests/integration/test_e2e.py -m integration
 
    # All tests with coverage
-   pytest tests/ -m "not discord_e2e" --cov=src/secureclaw --cov-report=html
+   pytest tests/ -m "not discord_e2e" --cov=src/zetherion_ai --cov-report=html
    ```
 
 4. **Check code quality**:
@@ -119,10 +119,10 @@ Thank you for your interest in contributing to Zetherion AI! This document provi
    ruff format .
 
    # Type checking
-   mypy src/secureclaw
+   mypy src/zetherion_ai
 
    # Security scan
-   bandit -r src/secureclaw
+   bandit -r src/zetherion_ai
    ```
 
 5. **Commit your changes**:
@@ -150,7 +150,7 @@ Thank you for your interest in contributing to Zetherion AI! This document provi
 1. **Unit Tests** (`tests/test_*.py`):
    ```python
    import pytest
-   from secureclaw.module import YourClass
+   from zetherion_ai.module import YourClass
 
    @pytest.mark.asyncio
    async def test_your_feature():
@@ -188,7 +188,7 @@ pytest tests/integration/test_e2e.py -m integration
 pytest tests/integration/test_discord_e2e.py -m discord_e2e
 
 # All tests with coverage
-pytest tests/ -m "not discord_e2e" --cov=src/secureclaw --cov-report=html
+pytest tests/ -m "not discord_e2e" --cov=src/zetherion_ai --cov-report=html
 
 # Coverage report
 open htmlcov/index.html  # macOS
@@ -215,7 +215,7 @@ We follow **PEP 8** with the following specifics:
 
 from typing import Any
 
-from secureclaw.module import SomeClass
+from zetherion_ai.module import SomeClass
 
 
 async def example_function(param: str, optional: int = 0) -> dict[str, Any]:
@@ -322,7 +322,7 @@ Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
 
 2. **Run full test suite**:
    ```bash
-   pytest tests/ -m "not discord_e2e" --cov=src/secureclaw
+   pytest tests/ -m "not discord_e2e" --cov=src/zetherion_ai
    ```
 
 3. **Ensure all pre-commit hooks pass**:

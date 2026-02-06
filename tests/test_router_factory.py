@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic import SecretStr
 
-from secureclaw.agent.router import GeminiRouterBackend, MessageRouter
-from secureclaw.agent.router_factory import create_router, create_router_sync
-from secureclaw.agent.router_ollama import OllamaRouterBackend
+from zetherion_ai.agent.router import GeminiRouterBackend, MessageRouter
+from zetherion_ai.agent.router_factory import create_router, create_router_sync
+from zetherion_ai.agent.router_ollama import OllamaRouterBackend
 
 
 @pytest.fixture
@@ -29,8 +29,10 @@ class TestCreateRouter:
     @pytest.mark.asyncio
     async def test_create_router_gemini_backend(self, mock_settings):
         """Test creating router with Gemini backend."""
-        with patch("secureclaw.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
-            with patch("secureclaw.agent.router_factory.GeminiRouterBackend") as mock_gemini_class:
+        with patch("zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
+            with patch(
+                "zetherion_ai.agent.router_factory.GeminiRouterBackend"
+            ) as mock_gemini_class:
                 mock_gemini_backend = MagicMock(spec=GeminiRouterBackend)
                 mock_gemini_class.return_value = mock_gemini_backend
 
@@ -45,8 +47,10 @@ class TestCreateRouter:
         """Test creating router with healthy Ollama backend."""
         mock_settings.router_backend = "ollama"
 
-        with patch("secureclaw.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
-            with patch("secureclaw.agent.router_factory.OllamaRouterBackend") as mock_ollama_class:
+        with patch("zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
+            with patch(
+                "zetherion_ai.agent.router_factory.OllamaRouterBackend"
+            ) as mock_ollama_class:
                 # Create mock backend that reports healthy
                 mock_ollama_backend = MagicMock(spec=OllamaRouterBackend)
                 mock_ollama_backend.health_check = AsyncMock(return_value=True)
@@ -64,10 +68,12 @@ class TestCreateRouter:
         """Test Ollama unhealthy falls back to Gemini."""
         mock_settings.router_backend = "ollama"
 
-        with patch("secureclaw.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
-            with patch("secureclaw.agent.router_factory.OllamaRouterBackend") as mock_ollama_class:
+        with patch("zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
+            with patch(
+                "zetherion_ai.agent.router_factory.OllamaRouterBackend"
+            ) as mock_ollama_class:
                 with patch(
-                    "secureclaw.agent.router_factory.GeminiRouterBackend"
+                    "zetherion_ai.agent.router_factory.GeminiRouterBackend"
                 ) as mock_gemini_class:
                     # Ollama reports unhealthy
                     mock_ollama_backend = MagicMock(spec=OllamaRouterBackend)
@@ -92,10 +98,12 @@ class TestCreateRouter:
         """Test Ollama initialization exception falls back to Gemini."""
         mock_settings.router_backend = "ollama"
 
-        with patch("secureclaw.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
-            with patch("secureclaw.agent.router_factory.OllamaRouterBackend") as mock_ollama_class:
+        with patch("zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
+            with patch(
+                "zetherion_ai.agent.router_factory.OllamaRouterBackend"
+            ) as mock_ollama_class:
                 with patch(
-                    "secureclaw.agent.router_factory.GeminiRouterBackend"
+                    "zetherion_ai.agent.router_factory.GeminiRouterBackend"
                 ) as mock_gemini_class:
                     # Ollama raises exception during initialization
                     mock_ollama_class.side_effect = ConnectionError("Ollama not available")
@@ -116,8 +124,10 @@ class TestCreateRouter:
         mock_settings.router_backend = "ollama"
         mock_settings.gemini_api_key = None  # No Gemini API key
 
-        with patch("secureclaw.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
-            with patch("secureclaw.agent.router_factory.OllamaRouterBackend") as mock_ollama_class:
+        with patch("zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
+            with patch(
+                "zetherion_ai.agent.router_factory.OllamaRouterBackend"
+            ) as mock_ollama_class:
                 # Ollama raises exception
                 mock_ollama_class.side_effect = ConnectionError("Ollama not available")
 
@@ -133,8 +143,10 @@ class TestCreateRouter:
         mock_settings.router_backend = "ollama"
         mock_settings.gemini_api_key = None  # No Gemini API key
 
-        with patch("secureclaw.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
-            with patch("secureclaw.agent.router_factory.OllamaRouterBackend") as mock_ollama_class:
+        with patch("zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
+            with patch(
+                "zetherion_ai.agent.router_factory.OllamaRouterBackend"
+            ) as mock_ollama_class:
                 # Ollama reports unhealthy
                 mock_ollama_backend = MagicMock(spec=OllamaRouterBackend)
                 mock_ollama_backend.health_check = AsyncMock(return_value=False)
@@ -152,7 +164,7 @@ class TestCreateRouter:
         """Test invalid backend raises ValueError."""
         mock_settings.router_backend = "invalid_backend"
 
-        with patch("secureclaw.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
+        with patch("zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
             with pytest.raises(ValueError) as exc_info:
                 await create_router()
 
@@ -165,8 +177,10 @@ class TestCreateRouterSync:
 
     def test_create_router_sync_gemini_backend(self, mock_settings):
         """Test creating router synchronously with Gemini backend."""
-        with patch("secureclaw.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
-            with patch("secureclaw.agent.router_factory.GeminiRouterBackend") as mock_gemini_class:
+        with patch("zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
+            with patch(
+                "zetherion_ai.agent.router_factory.GeminiRouterBackend"
+            ) as mock_gemini_class:
                 mock_gemini_backend = MagicMock(spec=GeminiRouterBackend)
                 mock_gemini_class.return_value = mock_gemini_backend
 
@@ -180,8 +194,10 @@ class TestCreateRouterSync:
         """Test creating router synchronously with Ollama backend (no health check)."""
         mock_settings.router_backend = "ollama"
 
-        with patch("secureclaw.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
-            with patch("secureclaw.agent.router_factory.OllamaRouterBackend") as mock_ollama_class:
+        with patch("zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
+            with patch(
+                "zetherion_ai.agent.router_factory.OllamaRouterBackend"
+            ) as mock_ollama_class:
                 mock_ollama_backend = MagicMock(spec=OllamaRouterBackend)
                 mock_ollama_class.return_value = mock_ollama_backend
 
@@ -199,7 +215,7 @@ class TestCreateRouterSync:
         """Test invalid backend raises ValueError in sync mode."""
         mock_settings.router_backend = "invalid_backend"
 
-        with patch("secureclaw.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
+        with patch("zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
             with pytest.raises(ValueError) as exc_info:
                 create_router_sync()
 
@@ -215,10 +231,12 @@ class TestRouterFactoryEdgeCases:
         """Test Ollama health check timeout falls back to Gemini."""
         mock_settings.router_backend = "ollama"
 
-        with patch("secureclaw.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
-            with patch("secureclaw.agent.router_factory.OllamaRouterBackend") as mock_ollama_class:
+        with patch("zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
+            with patch(
+                "zetherion_ai.agent.router_factory.OllamaRouterBackend"
+            ) as mock_ollama_class:
                 with patch(
-                    "secureclaw.agent.router_factory.GeminiRouterBackend"
+                    "zetherion_ai.agent.router_factory.GeminiRouterBackend"
                 ) as mock_gemini_class:
                     # Ollama health check times out
                     mock_ollama_backend = MagicMock(spec=OllamaRouterBackend)
@@ -240,8 +258,10 @@ class TestRouterFactoryEdgeCases:
     @pytest.mark.asyncio
     async def test_create_router_preserves_backend_reference(self, mock_settings):
         """Test that MessageRouter correctly wraps the backend."""
-        with patch("secureclaw.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
-            with patch("secureclaw.agent.router_factory.GeminiRouterBackend") as mock_gemini_class:
+        with patch("zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings):  # noqa: SIM117
+            with patch(
+                "zetherion_ai.agent.router_factory.GeminiRouterBackend"
+            ) as mock_gemini_class:
                 mock_gemini_backend = MagicMock(spec=GeminiRouterBackend)
                 mock_gemini_class.return_value = mock_gemini_backend
 

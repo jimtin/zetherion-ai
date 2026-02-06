@@ -57,7 +57,7 @@ class TestRetryWithExponentialBackoff:
     @pytest.mark.asyncio
     async def test_successful_first_attempt(self):
         """Test that function succeeds on first attempt without retry."""
-        from secureclaw.agent.core import retry_with_exponential_backoff
+        from zetherion_ai.agent.core import retry_with_exponential_backoff
 
         async def success_func():
             return "success"
@@ -68,7 +68,7 @@ class TestRetryWithExponentialBackoff:
     @pytest.mark.asyncio
     async def test_retry_on_connection_error(self):
         """Test retry logic on connection errors."""
-        from secureclaw.agent.core import retry_with_exponential_backoff
+        from zetherion_ai.agent.core import retry_with_exponential_backoff
 
         call_count = 0
 
@@ -86,7 +86,7 @@ class TestRetryWithExponentialBackoff:
     @pytest.mark.asyncio
     async def test_retry_on_timeout_error(self):
         """Test retry logic on timeout errors."""
-        from secureclaw.agent.core import retry_with_exponential_backoff
+        from zetherion_ai.agent.core import retry_with_exponential_backoff
 
         call_count = 0
 
@@ -104,7 +104,7 @@ class TestRetryWithExponentialBackoff:
     @pytest.mark.asyncio
     async def test_retry_on_openai_connection_error(self):
         """Test retry logic on OpenAI connection errors."""
-        from secureclaw.agent.core import retry_with_exponential_backoff
+        from zetherion_ai.agent.core import retry_with_exponential_backoff
 
         call_count = 0
 
@@ -122,7 +122,7 @@ class TestRetryWithExponentialBackoff:
     @pytest.mark.asyncio
     async def test_max_retries_exceeded(self):
         """Test that exception is raised when max retries exceeded."""
-        from secureclaw.agent.core import retry_with_exponential_backoff
+        from zetherion_ai.agent.core import retry_with_exponential_backoff
 
         async def always_fail():
             raise APIConnectionError(message="Always fails", request=create_mock_request())
@@ -133,7 +133,7 @@ class TestRetryWithExponentialBackoff:
     @pytest.mark.asyncio
     async def test_rate_limit_retry(self):
         """Test retry logic handles rate limits with longer backoff."""
-        from secureclaw.agent.core import retry_with_exponential_backoff
+        from zetherion_ai.agent.core import retry_with_exponential_backoff
 
         call_count = 0
 
@@ -151,7 +151,7 @@ class TestRetryWithExponentialBackoff:
     @pytest.mark.asyncio
     async def test_openai_rate_limit_retry(self):
         """Test retry logic handles OpenAI rate limits."""
-        from secureclaw.agent.core import retry_with_exponential_backoff
+        from zetherion_ai.agent.core import retry_with_exponential_backoff
 
         call_count = 0
 
@@ -171,7 +171,7 @@ class TestRetryWithExponentialBackoff:
         """Test that delay increases exponentially."""
         import asyncio
 
-        from secureclaw.agent.core import retry_with_exponential_backoff
+        from zetherion_ai.agent.core import retry_with_exponential_backoff
 
         delays = []
 
@@ -205,7 +205,7 @@ class TestRetryWithExponentialBackoff:
         """Test that delay is capped at max_delay."""
         import asyncio
 
-        from secureclaw.agent.core import retry_with_exponential_backoff
+        from zetherion_ai.agent.core import retry_with_exponential_backoff
 
         delays = []
 
@@ -248,12 +248,14 @@ class TestAgentInitialization:
         monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
 
         with (
-            patch("secureclaw.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_embeddings_client),
-            patch("secureclaw.agent.router.genai.Client", return_value=Mock()),
+            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
+            patch(
+                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
+            ),
+            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
         ):
-            from secureclaw.agent.core import Agent
-            from secureclaw.memory.qdrant import QdrantMemory
+            from zetherion_ai.agent.core import Agent
+            from zetherion_ai.memory.qdrant import QdrantMemory
 
             memory = QdrantMemory()
             agent = Agent(memory)
@@ -274,18 +276,20 @@ class TestAgentInitialization:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "")  # Empty string to ensure no key
 
         # Force settings reload after environment change
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
         with (
-            patch("secureclaw.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_embeddings_client),
-            patch("secureclaw.agent.router.genai.Client", return_value=Mock()),
-            patch("secureclaw.agent.router_ollama.httpx.AsyncClient"),
+            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
+            patch(
+                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
+            ),
+            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
+            patch("zetherion_ai.agent.router_ollama.httpx.AsyncClient"),
         ):
-            from secureclaw.agent.core import Agent
-            from secureclaw.memory.qdrant import QdrantMemory
+            from zetherion_ai.agent.core import Agent
+            from zetherion_ai.memory.qdrant import QdrantMemory
 
             memory = QdrantMemory()
             agent = Agent(memory)
@@ -306,18 +310,20 @@ class TestAgentInitialization:
         monkeypatch.setenv("OPENAI_API_KEY", "")  # Empty string to ensure no key
 
         # Force settings reload after environment change
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
         with (
-            patch("secureclaw.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_embeddings_client),
-            patch("secureclaw.agent.router.genai.Client", return_value=Mock()),
-            patch("secureclaw.agent.router_ollama.httpx.AsyncClient"),
+            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
+            patch(
+                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
+            ),
+            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
+            patch("zetherion_ai.agent.router_ollama.httpx.AsyncClient"),
         ):
-            from secureclaw.agent.core import Agent
-            from secureclaw.memory.qdrant import QdrantMemory
+            from zetherion_ai.agent.core import Agent
+            from zetherion_ai.memory.qdrant import QdrantMemory
 
             memory = QdrantMemory()
             agent = Agent(memory)
@@ -338,18 +344,20 @@ class TestAgentInitialization:
         monkeypatch.setenv("OPENAI_API_KEY", "")  # Empty string to ensure no key
 
         # Force settings reload after environment change
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
         with (
-            patch("secureclaw.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_embeddings_client),
-            patch("secureclaw.agent.router.genai.Client", return_value=Mock()),
-            patch("secureclaw.agent.router_ollama.httpx.AsyncClient"),
+            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
+            patch(
+                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
+            ),
+            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
+            patch("zetherion_ai.agent.router_ollama.httpx.AsyncClient"),
         ):
-            from secureclaw.agent.core import Agent
-            from secureclaw.memory.qdrant import QdrantMemory
+            from zetherion_ai.agent.core import Agent
+            from zetherion_ai.memory.qdrant import QdrantMemory
 
             memory = QdrantMemory()
             agent = Agent(memory)
@@ -371,12 +379,14 @@ class TestBuildContext:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
 
         with (
-            patch("secureclaw.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_embeddings_client),
-            patch("secureclaw.agent.router.genai.Client", return_value=Mock()),
+            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
+            patch(
+                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
+            ),
+            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
         ):
-            from secureclaw.agent.core import Agent
-            from secureclaw.memory.qdrant import QdrantMemory
+            from zetherion_ai.agent.core import Agent
+            from zetherion_ai.memory.qdrant import QdrantMemory
 
             memory = QdrantMemory()
             return Agent(memory)
@@ -446,15 +456,17 @@ class TestClaudeResponseGeneration:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
 
         with (
-            patch("secureclaw.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_embeddings_client),
-            patch("secureclaw.agent.router.genai.Client", return_value=Mock()),
+            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
             patch(
-                "secureclaw.agent.core.anthropic.AsyncAnthropic", return_value=mock_claude_client
+                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
+            ),
+            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
+            patch(
+                "zetherion_ai.agent.core.anthropic.AsyncAnthropic", return_value=mock_claude_client
             ),
         ):
-            from secureclaw.agent.core import Agent
-            from secureclaw.memory.qdrant import QdrantMemory
+            from zetherion_ai.agent.core import Agent
+            from zetherion_ai.memory.qdrant import QdrantMemory
 
             memory = QdrantMemory()
             agent = Agent(memory)
@@ -573,13 +585,15 @@ class TestOpenAIResponseGeneration:
         monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
 
         with (
-            patch("secureclaw.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_embeddings_client),
-            patch("secureclaw.agent.router.genai.Client", return_value=Mock()),
-            patch("secureclaw.agent.core.openai.AsyncOpenAI", return_value=mock_openai_client),
+            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
+            patch(
+                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
+            ),
+            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
+            patch("zetherion_ai.agent.core.openai.AsyncOpenAI", return_value=mock_openai_client),
         ):
-            from secureclaw.agent.core import Agent
-            from secureclaw.memory.qdrant import QdrantMemory
+            from zetherion_ai.agent.core import Agent
+            from zetherion_ai.memory.qdrant import QdrantMemory
 
             memory = QdrantMemory()
             agent = Agent(memory)
@@ -667,18 +681,20 @@ class TestFallbackToGeminiFlash:
         monkeypatch.setenv("OPENAI_API_KEY", "")  # Empty string to ensure no key
 
         # Force settings reload
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
         with (
-            patch("secureclaw.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_embeddings_client),
-            patch("secureclaw.agent.router.genai.Client", return_value=Mock()),
-            patch("secureclaw.agent.router_ollama.httpx.AsyncClient"),
+            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
+            patch(
+                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
+            ),
+            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
+            patch("zetherion_ai.agent.router_ollama.httpx.AsyncClient"),
         ):
-            from secureclaw.agent.core import Agent
-            from secureclaw.memory.qdrant import QdrantMemory
+            from zetherion_ai.agent.core import Agent
+            from zetherion_ai.memory.qdrant import QdrantMemory
 
             memory = QdrantMemory()
             return Agent(memory)
@@ -686,7 +702,7 @@ class TestFallbackToGeminiFlash:
     @pytest.mark.asyncio
     async def test_fallback_to_flash_for_complex_task(self, agent_flash_only):
         """Test that complex tasks fall back to Flash when no other models available."""
-        from secureclaw.agent.router import MessageIntent, RoutingDecision
+        from zetherion_ai.agent.router import MessageIntent, RoutingDecision
 
         routing = RoutingDecision(
             intent=MessageIntent.COMPLEX_TASK,
@@ -722,12 +738,14 @@ class TestMemoryHandlers:
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
         with (
-            patch("secureclaw.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_embeddings_client),
-            patch("secureclaw.agent.router.genai.Client", return_value=Mock()),
+            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
+            patch(
+                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
+            ),
+            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
         ):
-            from secureclaw.agent.core import Agent
-            from secureclaw.memory.qdrant import QdrantMemory
+            from zetherion_ai.agent.core import Agent
+            from zetherion_ai.memory.qdrant import QdrantMemory
 
             memory = QdrantMemory()
             return Agent(memory)
@@ -832,12 +850,14 @@ class TestSystemCommandHandler:
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
         with (
-            patch("secureclaw.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_embeddings_client),
-            patch("secureclaw.agent.router.genai.Client", return_value=Mock()),
+            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
+            patch(
+                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
+            ),
+            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
         ):
-            from secureclaw.agent.core import Agent
-            from secureclaw.memory.qdrant import QdrantMemory
+            from zetherion_ai.agent.core import Agent
+            from zetherion_ai.memory.qdrant import QdrantMemory
 
             memory = QdrantMemory()
             return Agent(memory)
@@ -880,12 +900,14 @@ class TestGenerateResponse:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
 
         with (
-            patch("secureclaw.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_embeddings_client),
-            patch("secureclaw.agent.router.genai.Client", return_value=Mock()),
+            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
+            patch(
+                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
+            ),
+            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
         ):
-            from secureclaw.agent.core import Agent
-            from secureclaw.memory.qdrant import QdrantMemory
+            from zetherion_ai.agent.core import Agent
+            from zetherion_ai.memory.qdrant import QdrantMemory
 
             memory = QdrantMemory()
             return Agent(memory)
@@ -893,7 +915,7 @@ class TestGenerateResponse:
     @pytest.mark.asyncio
     async def test_generate_response_simple_query(self, agent):
         """Test generate_response for simple query."""
-        from secureclaw.agent.router import MessageIntent, RoutingDecision
+        from zetherion_ai.agent.router import MessageIntent, RoutingDecision
 
         # Mock routing
         agent._router.classify = AsyncMock(
@@ -920,7 +942,7 @@ class TestGenerateResponse:
     @pytest.mark.asyncio
     async def test_generate_response_memory_store(self, agent):
         """Test generate_response for memory store intent."""
-        from secureclaw.agent.router import MessageIntent, RoutingDecision
+        from zetherion_ai.agent.router import MessageIntent, RoutingDecision
 
         agent._router.classify = AsyncMock(
             return_value=RoutingDecision(
@@ -946,7 +968,7 @@ class TestGenerateResponse:
     @pytest.mark.asyncio
     async def test_generate_response_memory_recall(self, agent):
         """Test generate_response for memory recall intent."""
-        from secureclaw.agent.router import MessageIntent, RoutingDecision
+        from zetherion_ai.agent.router import MessageIntent, RoutingDecision
 
         agent._router.classify = AsyncMock(
             return_value=RoutingDecision(
@@ -978,7 +1000,7 @@ class TestGenerateResponse:
     @pytest.mark.asyncio
     async def test_generate_response_system_command(self, agent):
         """Test generate_response for system command."""
-        from secureclaw.agent.router import MessageIntent, RoutingDecision
+        from zetherion_ai.agent.router import MessageIntent, RoutingDecision
 
         agent._router.classify = AsyncMock(
             return_value=RoutingDecision(
@@ -1002,7 +1024,7 @@ class TestGenerateResponse:
     @pytest.mark.asyncio
     async def test_generate_response_complex_task_with_claude(self, agent, mock_claude_client):
         """Test generate_response for complex task routed to Claude."""
-        from secureclaw.agent.router import MessageIntent, RoutingDecision
+        from zetherion_ai.agent.router import MessageIntent, RoutingDecision
 
         agent._router.classify = AsyncMock(
             return_value=RoutingDecision(
@@ -1029,7 +1051,7 @@ class TestGenerateResponse:
     @pytest.mark.asyncio
     async def test_generate_response_stores_metadata(self, agent):
         """Test that generate_response stores intent metadata."""
-        from secureclaw.agent.router import MessageIntent, RoutingDecision
+        from zetherion_ai.agent.router import MessageIntent, RoutingDecision
 
         agent._router.classify = AsyncMock(
             return_value=RoutingDecision(
@@ -1064,12 +1086,14 @@ class TestErrorHandling:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
 
         with (
-            patch("secureclaw.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch("secureclaw.memory.embeddings.genai.Client", return_value=mock_embeddings_client),
-            patch("secureclaw.agent.router.genai.Client", return_value=Mock()),
+            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
+            patch(
+                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
+            ),
+            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
         ):
-            from secureclaw.agent.core import Agent
-            from secureclaw.memory.qdrant import QdrantMemory
+            from zetherion_ai.agent.core import Agent
+            from zetherion_ai.memory.qdrant import QdrantMemory
 
             memory = QdrantMemory()
             return Agent(memory)

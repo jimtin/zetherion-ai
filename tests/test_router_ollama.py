@@ -25,16 +25,16 @@ class TestOllamaRouterBackend:
         monkeypatch.setenv("OLLAMA_ROUTER_MODEL", "llama3.1:8b")
 
         with patch(
-            "secureclaw.agent.router_ollama.httpx.AsyncClient", return_value=mock_httpx_client
+            "zetherion_ai.agent.router_ollama.httpx.AsyncClient", return_value=mock_httpx_client
         ):
-            from secureclaw.agent.router_ollama import OllamaRouterBackend
+            from zetherion_ai.agent.router_ollama import OllamaRouterBackend
 
             return OllamaRouterBackend()
 
     @pytest.mark.asyncio
     async def test_router_imports(self) -> None:
         """Test that Ollama router imports correctly."""
-        from secureclaw.agent.router_ollama import OllamaRouterBackend
+        from zetherion_ai.agent.router_ollama import OllamaRouterBackend
 
         assert OllamaRouterBackend is not None
 

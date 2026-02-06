@@ -2,7 +2,7 @@
 
 import pytest
 
-from secureclaw.discord.security import (
+from zetherion_ai.discord.security import (
     RateLimiter,
     UserAllowlist,
     detect_prompt_injection,
@@ -56,7 +56,7 @@ class TestUserAllowlist:
         monkeypatch.setenv("ALLOWED_USER_IDS", "")
 
         # Clear cached settings
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -69,7 +69,7 @@ class TestUserAllowlist:
         monkeypatch.setenv("GEMINI_API_KEY", "test")
         monkeypatch.setenv("ALLOWED_USER_IDS", "123,456")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -355,7 +355,7 @@ class TestUserAllowlistMethods:
         monkeypatch.setenv("GEMINI_API_KEY", "test")
         monkeypatch.setenv("ALLOWED_USER_IDS", "123")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -371,7 +371,7 @@ class TestUserAllowlistMethods:
         monkeypatch.setenv("GEMINI_API_KEY", "test")
         monkeypatch.setenv("ALLOWED_USER_IDS", "123,456")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -387,7 +387,7 @@ class TestUserAllowlistMethods:
         monkeypatch.setenv("GEMINI_API_KEY", "test")
         monkeypatch.setenv("ALLOWED_USER_IDS", "")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 

@@ -31,7 +31,7 @@ echo ""
 
 # Check Qdrant
 print_info "Checking Qdrant..."
-if docker ps --format '{{.Names}}' | grep -q "^secureclaw-qdrant$"; then
+if docker ps --format '{{.Names}}' | grep -q "^zetherion_ai-qdrant$"; then
     if curl -s http://localhost:6333/healthz >/dev/null 2>&1; then
         print_success "Qdrant is running and healthy"
         # Get Qdrant info
@@ -40,7 +40,7 @@ if docker ps --format '{{.Names}}' | grep -q "^secureclaw-qdrant$"; then
     else
         print_warning "Qdrant container is running but not responding"
     fi
-elif docker ps -a --format '{{.Names}}' | grep -q "^secureclaw-qdrant$"; then
+elif docker ps -a --format '{{.Names}}' | grep -q "^zetherion_ai-qdrant$"; then
     print_warning "Qdrant container exists but is not running"
 else
     print_error "Qdrant container not found"
@@ -50,8 +50,8 @@ echo ""
 
 # Check bot process
 print_info "Checking bot process..."
-if pgrep -f "python -m secureclaw" >/dev/null; then
-    PID=$(pgrep -f "python -m secureclaw")
+if pgrep -f "python -m zetherion_ai" >/dev/null; then
+    PID=$(pgrep -f "python -m zetherion_ai")
     print_success "Bot is running (PID: $PID)"
 
     # Check how long it's been running
@@ -112,8 +112,8 @@ echo ""
 
 # Overall status
 print_info "Overall Status:"
-if docker ps --format '{{.Names}}' | grep -q "^secureclaw-qdrant$" && \
-   pgrep -f "python -m secureclaw" >/dev/null; then
+if docker ps --format '{{.Names}}' | grep -q "^zetherion_ai-qdrant$" && \
+   pgrep -f "python -m zetherion_ai" >/dev/null; then
     print_success "Zetherion AI is fully operational"
 else
     print_warning "Zetherion AI is not fully running"

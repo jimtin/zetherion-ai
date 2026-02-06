@@ -45,7 +45,7 @@ echo ""
 
 # Check if Discord bot is running
 echo -e "${BLUE}Checking if Zetherion AI bot is running...${NC}"
-if ! docker ps | grep -q "secureclaw-bot"; then
+if ! docker ps | grep -q "zetherion_ai-bot"; then
     echo -e "${YELLOW}⚠️  Zetherion AI bot not running${NC}"
     echo "Starting bot with ./start.sh..."
     ./start.sh &
@@ -102,7 +102,7 @@ else
     echo -e "${RED}═══════════════════════════════════════════════${NC}"
     echo ""
     echo -e "${YELLOW}Tip: Check bot logs for more details:${NC}"
-    echo "  docker logs secureclaw-bot"
+    echo "  docker logs zetherion_ai-bot"
     EXIT_CODE=1
 fi
 

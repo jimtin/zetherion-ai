@@ -73,7 +73,7 @@ echo ""
 echo "--- Code Quality ---"
 run_check "Ruff linter" "ruff check src/ tests/" "false" "ruff"
 run_check "Ruff formatter" "ruff format --check src/ tests/" "false" "ruff"
-run_check "mypy type check" "mypy src/secureclaw --config-file=pyproject.toml" "false" "mypy"
+run_check "mypy type check" "mypy src/zetherion_ai --config-file=pyproject.toml" "false" "mypy"
 
 # Security
 echo ""
@@ -97,10 +97,10 @@ run_check "pytest (unit)" "pytest tests/ -m 'not integration' -q --tb=no" "false
 if [[ "$DOCKER" == "true" ]]; then
     echo ""
     echo "--- Docker ---"
-    run_check "Docker build" "docker build -t secureclaw:test . -q" "false" "docker"
+    run_check "Docker build" "docker build -t zetherion_ai:test . -q" "false" "docker"
 
-    if docker images secureclaw:test -q 2>/dev/null | grep -q .; then
-        run_check "Trivy scan" "trivy image --severity CRITICAL,HIGH --exit-code 0 secureclaw:test -q" "false" "trivy"
+    if docker images zetherion_ai:test -q 2>/dev/null | grep -q .; then
+        run_check "Trivy scan" "trivy image --severity CRITICAL,HIGH --exit-code 0 zetherion_ai:test -q" "false" "trivy"
         run_check "Docker Compose config" "docker compose config -q" "false" "docker"
     fi
 fi

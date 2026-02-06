@@ -5,7 +5,7 @@ from uuid import UUID
 
 import pytest
 
-from secureclaw.profile.models import (
+from zetherion_ai.profile.models import (
     CONFIDENCE_AUTO_APPLY,
     CONFIDENCE_FLAG_CONFIRM,
     CONFIDENCE_LOG_ONLY,

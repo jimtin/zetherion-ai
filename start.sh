@@ -251,18 +251,18 @@ fi
 
 # 6. Check/start Qdrant container
 print_info "Checking Qdrant vector database..."
-if docker ps -a --format '{{.Names}}' | grep -q "^secureclaw-qdrant$"; then
-    if docker ps --format '{{.Names}}' | grep -q "^secureclaw-qdrant$"; then
+if docker ps -a --format '{{.Names}}' | grep -q "^zetherion_ai-qdrant$"; then
+    if docker ps --format '{{.Names}}' | grep -q "^zetherion_ai-qdrant$"; then
         print_success "Qdrant container already running"
     else
         print_warning "Qdrant container exists but not running, starting..."
-        docker start secureclaw-qdrant
+        docker start zetherion_ai-qdrant
         print_success "Qdrant container started"
     fi
 else
     print_warning "Qdrant container not found, creating..."
     docker run -d \
-        --name secureclaw-qdrant \
+        --name zetherion_ai-qdrant \
         -p 6333:6333 \
         -v "$(pwd)/qdrant_storage:/qdrant/storage" \
         qdrant/qdrant:latest
@@ -410,18 +410,18 @@ if [ "$ROUTER_BACKEND" = "ollama" ]; then
 
     print_info "Starting Ollama container..."
 
-    if docker ps -a --format '{{.Names}}' | grep -q "^secureclaw-ollama$"; then
-        if docker ps --format '{{.Names}}' | grep -q "^secureclaw-ollama$"; then
+    if docker ps -a --format '{{.Names}}' | grep -q "^zetherion_ai-ollama$"; then
+        if docker ps --format '{{.Names}}' | grep -q "^zetherion_ai-ollama$"; then
             print_success "Ollama container already running"
         else
             print_warning "Ollama container exists but not running, starting..."
-            docker start secureclaw-ollama
+            docker start zetherion_ai-ollama
             print_success "Ollama container started"
         fi
     else
         print_warning "Ollama container not found, creating..."
         docker run -d \
-            --name secureclaw-ollama \
+            --name zetherion_ai-ollama \
             --memory="${OLLAMA_DOCKER_MEMORY}g" \
             --memory-swap="${OLLAMA_DOCKER_MEMORY}g" \
             -p 11434:11434 \
@@ -451,17 +451,17 @@ if [ "$ROUTER_BACKEND" = "ollama" ]; then
     OLLAMA_MODEL="${OLLAMA_ROUTER_MODEL:-llama3.1:8b}"
     print_info "Checking if model '$OLLAMA_MODEL' is available..."
 
-    if docker exec secureclaw-ollama ollama list | grep -q "$OLLAMA_MODEL"; then
+    if docker exec zetherion_ai-ollama ollama list | grep -q "$OLLAMA_MODEL"; then
         print_success "Model '$OLLAMA_MODEL' already available"
     else
         print_warning "Model '$OLLAMA_MODEL' not found, downloading (this may take several minutes)..."
         print_info "Model size: ~4.7GB - please be patient..."
 
-        if docker exec secureclaw-ollama ollama pull "$OLLAMA_MODEL"; then
+        if docker exec zetherion_ai-ollama ollama pull "$OLLAMA_MODEL"; then
             print_success "Model '$OLLAMA_MODEL' downloaded successfully"
         else
             print_error "Failed to download model '$OLLAMA_MODEL'"
-            print_info "You can manually pull it later with: docker exec secureclaw-ollama ollama pull $OLLAMA_MODEL"
+            print_info "You can manually pull it later with: docker exec zetherion_ai-ollama ollama pull $OLLAMA_MODEL"
             print_warning "Continuing anyway - the bot will fall back to Gemini if the model isn't available"
         fi
     fi
@@ -494,4 +494,4 @@ echo -e "${GREEN}Press Ctrl+C to stop the bot${NC}"
 echo ""
 
 # Run the bot (set PYTHONPATH to include src directory)
-PYTHONPATH="${PWD}/src:${PYTHONPATH}" python -m secureclaw
+PYTHONPATH="${PWD}/src:${PYTHONPATH}" python -m zetherion_ai

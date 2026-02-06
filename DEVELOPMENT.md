@@ -119,7 +119,7 @@ User Response (Discord)
 1. **Clone and set up remote**:
    ```bash
    git clone https://github.com/jimtin/zetherion-ai.git
-   cd secureclaw
+   cd zetherion_ai
    git remote add upstream https://github.com/jimtin/zetherion-ai.git
    ```
 
@@ -152,7 +152,7 @@ User Response (Discord)
 
 6. **Verify setup**:
    ```bash
-   python -c "from secureclaw.config import get_settings; print('Config loaded successfully')"
+   python -c "from zetherion_ai.config import get_settings; print('Config loaded successfully')"
    pytest tests/ -m "not integration and not discord_e2e" --maxfail=1
    ```
 
@@ -187,8 +187,8 @@ Settings (`.vscode/settings.json`):
 ## Project Structure
 
 ```
-secureclaw/
-├── src/secureclaw/          # Main application code
+zetherion_ai/
+├── src/zetherion_ai/          # Main application code
 │   ├── agent/               # Agent core logic
 │   │   ├── core.py          # Agent class (message handling, retry)
 │   │   ├── router.py        # Gemini router backend
@@ -293,14 +293,14 @@ secureclaw/
 
 4. **Verify all tests pass**:
    ```bash
-   pytest tests/ -m "not discord_e2e" --cov=src/secureclaw
+   pytest tests/ -m "not discord_e2e" --cov=src/zetherion_ai
    ```
 
 5. **Check code quality**:
    ```bash
    ruff check --fix .
    ruff format .
-   mypy src/secureclaw
+   mypy src/zetherion_ai
    ```
 
 6. **Commit with conventional format**:
@@ -467,7 +467,7 @@ from unittest.mock import patch, AsyncMock
 
 def test_with_mock():
     """Test with mocked dependency."""
-    with patch("secureclaw.agent.router.gemini") as mock_gemini:
+    with patch("zetherion_ai.agent.router.gemini") as mock_gemini:
         mock_gemini.generate_content.return_value = AsyncMock(
             text='{"intent": "simple_query", "confidence": 0.9}'
         )
@@ -478,8 +478,8 @@ def test_with_mock():
 
 **Patching multiple targets**:
 ```python
-@patch("secureclaw.memory.embeddings.genai")
-@patch("secureclaw.memory.qdrant.AsyncQdrantClient")
+@patch("zetherion_ai.memory.embeddings.genai")
+@patch("zetherion_ai.memory.qdrant.AsyncQdrantClient")
 async def test_with_multiple_mocks(mock_qdrant, mock_genai):
     """Test with multiple mocked dependencies."""
     # Configure mocks
@@ -500,13 +500,13 @@ async def test_with_multiple_mocks(mock_qdrant, mock_genai):
 **Generate coverage report**:
 ```bash
 # HTML report
-pytest tests/ -m "not discord_e2e" --cov=src/secureclaw --cov-report=html
+pytest tests/ -m "not discord_e2e" --cov=src/zetherion_ai --cov-report=html
 
 # Terminal summary
-pytest tests/ -m "not discord_e2e" --cov=src/secureclaw --cov-report=term
+pytest tests/ -m "not discord_e2e" --cov=src/zetherion_ai --cov-report=term
 
 # XML for CI
-pytest tests/ -m "not discord_e2e" --cov=src/secureclaw --cov-report=xml
+pytest tests/ -m "not discord_e2e" --cov=src/zetherion_ai --cov-report=xml
 ```
 
 ---
@@ -547,33 +547,33 @@ ENVIRONMENT=development
 **File output (production)**:
 - JSON format for parsing with `jq`
 - Rotating log files (10MB × 6 files)
-- Located in `logs/secureclaw.log`
+- Located in `logs/zetherion_ai.log`
 
 ### Common Debugging Tasks
 
 **1. Debug Discord bot interactions**:
 ```bash
 # Watch logs in real-time
-tail -f logs/secureclaw.log | jq 'select(.event | contains("discord"))'
+tail -f logs/zetherion_ai.log | jq 'select(.event | contains("discord"))'
 ```
 
 **2. Debug router decisions**:
 ```bash
 # Filter routing events
-jq 'select(.event == "message_routed")' logs/secureclaw.log
+jq 'select(.event == "message_routed")' logs/zetherion_ai.log
 ```
 
 **3. Debug LLM API calls**:
 ```bash
 # Set LOG_LEVEL=DEBUG
 # Check logs for API request/response
-jq 'select(.event | contains("api"))' logs/secureclaw.log
+jq 'select(.event | contains("api"))' logs/zetherion_ai.log
 ```
 
 **4. Debug memory searches**:
 ```bash
 # Check embedding and search operations
-jq 'select(.event | contains("memory") or contains("embedding"))' logs/secureclaw.log
+jq 'select(.event | contains("memory") or contains("embedding"))' logs/zetherion_ai.log
 ```
 
 **5. Interactive debugging with pdb**:
@@ -600,7 +600,7 @@ pytest tests/ -l
 
 **Check container logs**:
 ```bash
-docker compose logs secureclaw -f
+docker compose logs zetherion_ai -f
 docker compose logs qdrant -f
 docker compose logs ollama -f
 ```
@@ -608,30 +608,30 @@ docker compose logs ollama -f
 **Exec into containers**:
 ```bash
 # Zetherion AI container
-docker exec -it secureclaw-bot bash
+docker exec -it zetherion_ai-bot bash
 
 # Qdrant container
-docker exec -it secureclaw-qdrant bash
+docker exec -it zetherion_ai-qdrant bash
 
 # Ollama container
-docker exec -it secureclaw-ollama bash
+docker exec -it zetherion_ai-ollama bash
 ```
 
 **Check container health**:
 ```bash
 docker compose ps
-docker inspect secureclaw-bot | jq '.[0].State.Health'
+docker inspect zetherion_ai-bot | jq '.[0].State.Health'
 ```
 
 **Network debugging**:
 ```bash
 # Check network connectivity
-docker exec secureclaw-bot ping qdrant
-docker exec secureclaw-bot ping ollama
+docker exec zetherion_ai-bot ping qdrant
+docker exec zetherion_ai-bot ping ollama
 
 # Check port availability
-docker exec secureclaw-bot nc -zv qdrant 6333
-docker exec secureclaw-bot nc -zv ollama 11434
+docker exec zetherion_ai-bot nc -zv qdrant 6333
+docker exec zetherion_ai-bot nc -zv ollama 11434
 ```
 
 ---
@@ -703,7 +703,7 @@ async def timed_operation(name: str):
 
 **Profile with cProfile**:
 ```bash
-python -m cProfile -o output.prof src/secureclaw/main.py
+python -m cProfile -o output.prof src/zetherion_ai/main.py
 python -m pstats output.prof
 # (Pstats) sort cumulative
 # (Pstats) stats 20
@@ -712,7 +712,7 @@ python -m pstats output.prof
 **Async profiling with yappi**:
 ```bash
 pip install yappi
-python -m yappi --clock wall src/secureclaw/main.py
+python -m yappi --clock wall src/zetherion_ai/main.py
 ```
 
 ---
@@ -773,9 +773,9 @@ python -m yappi --clock wall src/secureclaw/main.py
 
 1. **Create backend implementation**:
    ```python
-   # src/secureclaw/agent/router_newbackend.py
+   # src/zetherion_ai/agent/router_newbackend.py
    import structlog
-   from secureclaw.agent.router_base import RoutingDecision
+   from zetherion_ai.agent.router_base import RoutingDecision
 
    log = structlog.get_logger(__name__)
 
@@ -797,8 +797,8 @@ python -m yappi --clock wall src/secureclaw/main.py
 
 2. **Update factory**:
    ```python
-   # src/secureclaw/agent/router_factory.py
-   from secureclaw.agent.router_newbackend import NewBackendRouter
+   # src/zetherion_ai/agent/router_factory.py
+   from zetherion_ai.agent.router_newbackend import NewBackendRouter
 
    def create_router() -> MessageRouter:
        settings = get_settings()
@@ -810,7 +810,7 @@ python -m yappi --clock wall src/secureclaw/main.py
 
 3. **Add configuration**:
    ```python
-   # src/secureclaw/config.py
+   # src/zetherion_ai/config.py
    router_backend: str = Field(
        default="gemini",
        description="Router backend: 'gemini', 'ollama', or 'newbackend'"
@@ -870,15 +870,15 @@ docker compose up -d
 docker compose logs -f
 
 # Specific service
-docker compose logs secureclaw -f
+docker compose logs zetherion_ai -f
 
 # Last 100 lines
-docker compose logs --tail=100 secureclaw
+docker compose logs --tail=100 zetherion_ai
 ```
 
 **Restart single service**:
 ```bash
-docker compose restart secureclaw
+docker compose restart zetherion_ai
 ```
 
 **Clean up everything**:
@@ -910,7 +910,7 @@ Increase Docker memory (macOS):
 
 Monitor Ollama memory usage:
 ```bash
-docker stats secureclaw-ollama
+docker stats zetherion_ai-ollama
 ```
 
 ---
@@ -924,7 +924,7 @@ docker stats secureclaw-ollama
    - OpenAI: https://platform.openai.com/docs/models
    - Gemini: https://ai.google.dev/gemini-api/docs/models
 
-2. **Update `src/secureclaw/config.py`**:
+2. **Update `src/zetherion_ai/config.py`**:
    ```python
    claude_model: str = Field(default="claude-sonnet-4-5-20250929")
    openai_model: str = Field(default="gpt-4o")
@@ -971,7 +971,7 @@ pre-commit run gitleaks --all-files
 
 **Bandit (Python security)**:
 ```bash
-bandit -r src/secureclaw -ll
+bandit -r src/zetherion_ai -ll
 ```
 
 **Dependency vulnerabilities** (not yet implemented):
@@ -991,7 +991,7 @@ sphinx-build -b html docs/api docs/api/_build
 
 **Coverage badge**:
 ```bash
-pytest tests/ --cov=src/secureclaw --cov-report=term
+pytest tests/ --cov=src/zetherion_ai --cov-report=term
 # Update badge URL in README.md
 ```
 
@@ -1008,7 +1008,7 @@ ruff check --fix .
 ruff format .
 
 # Fix Mypy issues
-mypy src/secureclaw --show-error-codes
+mypy src/zetherion_ai --show-error-codes
 
 # Skip hooks (emergency only)
 git commit --no-verify
@@ -1038,8 +1038,8 @@ lsof -i :11434  # Ollama
 
 **Issue: Ollama model not found**
 ```bash
-docker exec secureclaw-ollama ollama list
-docker exec secureclaw-ollama ollama pull llama3.1:8b
+docker exec zetherion_ai-ollama ollama list
+docker exec zetherion_ai-ollama ollama pull llama3.1:8b
 ```
 
 **Issue: Qdrant connection refused**

@@ -4,14 +4,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from secureclaw.agent.inference import (
+from zetherion_ai.agent.inference import (
     COST_PER_MILLION_TOKENS,
     CostTracker,
     InferenceBroker,
     InferenceResult,
     ProviderHealth,
 )
-from secureclaw.agent.providers import (
+from zetherion_ai.agent.providers import (
     CAPABILITY_MATRIX,
     OLLAMA_TIER_CAPABILITIES,
     OllamaTier,
@@ -375,7 +375,7 @@ class TestCostPerMillionTokens:
 class TestInferenceBrokerInit:
     """Tests for InferenceBroker initialization."""
 
-    @patch("secureclaw.agent.inference.get_settings")
+    @patch("zetherion_ai.agent.inference.get_settings")
     def test_init_with_all_providers(self, mock_get_settings):
         """InferenceBroker initializes with all providers when keys available."""
         mock_settings = MagicMock()
@@ -393,9 +393,9 @@ class TestInferenceBrokerInit:
         mock_get_settings.return_value = mock_settings
 
         with (
-            patch("secureclaw.agent.inference.anthropic.AsyncAnthropic"),
-            patch("secureclaw.agent.inference.openai.AsyncOpenAI"),
-            patch("secureclaw.agent.inference.genai.Client"),
+            patch("zetherion_ai.agent.inference.anthropic.AsyncAnthropic"),
+            patch("zetherion_ai.agent.inference.openai.AsyncOpenAI"),
+            patch("zetherion_ai.agent.inference.genai.Client"),
         ):
             broker = InferenceBroker()
 
@@ -404,7 +404,7 @@ class TestInferenceBrokerInit:
         assert Provider.GEMINI in broker.available_providers
         assert Provider.OLLAMA in broker.available_providers
 
-    @patch("secureclaw.agent.inference.get_settings")
+    @patch("zetherion_ai.agent.inference.get_settings")
     def test_init_without_anthropic_key(self, mock_get_settings):
         """InferenceBroker works without Anthropic key."""
         mock_settings = MagicMock()
@@ -420,15 +420,15 @@ class TestInferenceBrokerInit:
         mock_get_settings.return_value = mock_settings
 
         with (
-            patch("secureclaw.agent.inference.openai.AsyncOpenAI"),
-            patch("secureclaw.agent.inference.genai.Client"),
+            patch("zetherion_ai.agent.inference.openai.AsyncOpenAI"),
+            patch("zetherion_ai.agent.inference.genai.Client"),
         ):
             broker = InferenceBroker()
 
         assert Provider.CLAUDE not in broker.available_providers
         assert Provider.OPENAI in broker.available_providers
 
-    @patch("secureclaw.agent.inference.get_settings")
+    @patch("zetherion_ai.agent.inference.get_settings")
     def test_ollama_tier_detection(self, mock_get_settings):
         """InferenceBroker correctly detects Ollama tier."""
         mock_settings = MagicMock()
@@ -441,7 +441,7 @@ class TestInferenceBrokerInit:
         mock_settings.router_model = "gemini-2.0-flash"
         mock_get_settings.return_value = mock_settings
 
-        with patch("secureclaw.agent.inference.genai.Client"):
+        with patch("zetherion_ai.agent.inference.genai.Client"):
             broker = InferenceBroker()
 
         assert broker._ollama_tier == OllamaTier.MEDIUM
@@ -450,7 +450,7 @@ class TestInferenceBrokerInit:
 class TestInferenceBrokerCostTracking:
     """Tests for InferenceBroker cost tracking."""
 
-    @patch("secureclaw.agent.inference.get_settings")
+    @patch("zetherion_ai.agent.inference.get_settings")
     def test_estimate_cost_claude(self, mock_get_settings):
         """Verify cost estimation for Claude uses pricing module."""
         mock_settings = MagicMock()
@@ -463,7 +463,7 @@ class TestInferenceBrokerCostTracking:
         mock_settings.router_model = "gemini-2.0-flash"
         mock_get_settings.return_value = mock_settings
 
-        with patch("secureclaw.agent.inference.genai.Client"):
+        with patch("zetherion_ai.agent.inference.genai.Client"):
             broker = InferenceBroker()
 
         # Claude Sonnet: $3/M input, $15/M output
@@ -477,7 +477,7 @@ class TestInferenceBrokerCostTracking:
         assert abs(cost - 0.0105) < 0.0001
         assert estimated is False  # Known model
 
-    @patch("secureclaw.agent.inference.get_settings")
+    @patch("zetherion_ai.agent.inference.get_settings")
     def test_estimate_cost_ollama(self, mock_get_settings):
         """Verify Ollama is free."""
         mock_settings = MagicMock()
@@ -490,7 +490,7 @@ class TestInferenceBrokerCostTracking:
         mock_settings.router_model = "gemini-2.0-flash"
         mock_get_settings.return_value = mock_settings
 
-        with patch("secureclaw.agent.inference.genai.Client"):
+        with patch("zetherion_ai.agent.inference.genai.Client"):
             broker = InferenceBroker()
 
         cost, estimated = broker._estimate_cost(
@@ -502,7 +502,7 @@ class TestInferenceBrokerCostTracking:
         assert cost == 0.0
         assert estimated is False  # Ollama is always known (free)
 
-    @patch("secureclaw.agent.inference.get_settings")
+    @patch("zetherion_ai.agent.inference.get_settings")
     def test_track_cost_updates_tracker(self, mock_get_settings):
         """Verify cost tracking updates the tracker correctly."""
         mock_settings = MagicMock()
@@ -515,7 +515,7 @@ class TestInferenceBrokerCostTracking:
         mock_settings.router_model = "gemini-2.0-flash"
         mock_get_settings.return_value = mock_settings
 
-        with patch("secureclaw.agent.inference.genai.Client"):
+        with patch("zetherion_ai.agent.inference.genai.Client"):
             broker = InferenceBroker()
 
         result = InferenceResult(
@@ -537,7 +537,7 @@ class TestInferenceBrokerCostTracking:
         assert tracker.total_cost_usd == 0.01
         assert tracker.by_task_type["code_generation"] == 0.01
 
-    @patch("secureclaw.agent.inference.get_settings")
+    @patch("zetherion_ai.agent.inference.get_settings")
     def test_get_cost_summary(self, mock_get_settings):
         """Verify cost summary generation."""
         mock_settings = MagicMock()
@@ -550,7 +550,7 @@ class TestInferenceBrokerCostTracking:
         mock_settings.router_model = "gemini-2.0-flash"
         mock_get_settings.return_value = mock_settings
 
-        with patch("secureclaw.agent.inference.genai.Client"):
+        with patch("zetherion_ai.agent.inference.genai.Client"):
             broker = InferenceBroker()
 
         # Track some costs
@@ -591,7 +591,7 @@ class TestInferenceBrokerInfer:
     """Tests for InferenceBroker.infer method."""
 
     @pytest.mark.asyncio
-    @patch("secureclaw.agent.inference.get_settings")
+    @patch("zetherion_ai.agent.inference.get_settings")
     async def test_infer_selects_correct_provider(self, mock_get_settings):
         """Verify infer selects the correct provider based on task type."""
         mock_settings = MagicMock()
@@ -607,8 +607,8 @@ class TestInferenceBrokerInfer:
         mock_get_settings.return_value = mock_settings
 
         with (
-            patch("secureclaw.agent.inference.anthropic.AsyncAnthropic") as mock_claude,
-            patch("secureclaw.agent.inference.genai.Client"),
+            patch("zetherion_ai.agent.inference.anthropic.AsyncAnthropic") as mock_claude,
+            patch("zetherion_ai.agent.inference.genai.Client"),
         ):
             mock_client = AsyncMock()
             mock_response = MagicMock()
@@ -628,7 +628,7 @@ class TestInferenceBrokerInfer:
         assert result.task_type == TaskType.CODE_GENERATION
 
     @pytest.mark.asyncio
-    @patch("secureclaw.agent.inference.get_settings")
+    @patch("zetherion_ai.agent.inference.get_settings")
     async def test_infer_falls_back_on_failure(self, mock_get_settings):
         """Verify infer falls back to another provider on failure."""
         mock_settings = MagicMock()
@@ -646,9 +646,9 @@ class TestInferenceBrokerInfer:
         mock_get_settings.return_value = mock_settings
 
         with (
-            patch("secureclaw.agent.inference.anthropic.AsyncAnthropic") as mock_claude,
-            patch("secureclaw.agent.inference.openai.AsyncOpenAI") as mock_openai,
-            patch("secureclaw.agent.inference.genai.Client"),
+            patch("zetherion_ai.agent.inference.anthropic.AsyncAnthropic") as mock_claude,
+            patch("zetherion_ai.agent.inference.openai.AsyncOpenAI") as mock_openai,
+            patch("zetherion_ai.agent.inference.genai.Client"),
         ):
             # Claude fails
             mock_claude_client = AsyncMock()
@@ -676,7 +676,7 @@ class TestInferenceBrokerInfer:
         assert result.content == "OpenAI response"
 
     @pytest.mark.asyncio
-    @patch("secureclaw.agent.inference.get_settings")
+    @patch("zetherion_ai.agent.inference.get_settings")
     async def test_infer_tracks_latency(self, mock_get_settings):
         """Verify infer tracks latency."""
         mock_settings = MagicMock()
@@ -689,7 +689,7 @@ class TestInferenceBrokerInfer:
         mock_settings.router_model = "gemini-2.0-flash"
         mock_get_settings.return_value = mock_settings
 
-        with patch("secureclaw.agent.inference.genai.Client") as mock_gemini:
+        with patch("zetherion_ai.agent.inference.genai.Client") as mock_gemini:
             mock_client = MagicMock()
             mock_response = MagicMock()
             mock_response.text = "Gemini response"
@@ -712,7 +712,7 @@ class TestInferenceBrokerHealthCheck:
     """Tests for InferenceBroker health checks."""
 
     @pytest.mark.asyncio
-    @patch("secureclaw.agent.inference.get_settings")
+    @patch("zetherion_ai.agent.inference.get_settings")
     async def test_ollama_health_check(self, mock_get_settings):
         """Verify Ollama health check."""
         mock_settings = MagicMock()
@@ -726,8 +726,8 @@ class TestInferenceBrokerHealthCheck:
         mock_get_settings.return_value = mock_settings
 
         with (
-            patch("secureclaw.agent.inference.genai.Client"),
-            patch("secureclaw.agent.inference.httpx.AsyncClient") as mock_httpx,
+            patch("zetherion_ai.agent.inference.genai.Client"),
+            patch("zetherion_ai.agent.inference.httpx.AsyncClient") as mock_httpx,
         ):
             mock_client = AsyncMock()
             mock_response = MagicMock()
@@ -741,7 +741,7 @@ class TestInferenceBrokerHealthCheck:
         assert is_healthy is True
 
     @pytest.mark.asyncio
-    @patch("secureclaw.agent.inference.get_settings")
+    @patch("zetherion_ai.agent.inference.get_settings")
     async def test_health_check_returns_false_on_error(self, mock_get_settings):
         """Verify health check returns False on error."""
         mock_settings = MagicMock()
@@ -755,8 +755,8 @@ class TestInferenceBrokerHealthCheck:
         mock_get_settings.return_value = mock_settings
 
         with (
-            patch("secureclaw.agent.inference.genai.Client"),
-            patch("secureclaw.agent.inference.httpx.AsyncClient") as mock_httpx,
+            patch("zetherion_ai.agent.inference.genai.Client"),
+            patch("zetherion_ai.agent.inference.httpx.AsyncClient") as mock_httpx,
         ):
             mock_client = AsyncMock()
             mock_client.get = AsyncMock(side_effect=Exception("Connection error"))

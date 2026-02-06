@@ -6,7 +6,7 @@ from pydantic import SecretStr, ValidationError
 
 def create_test_settings(**kwargs):
     """Helper to create Settings instance without loading .env file."""
-    from secureclaw.config import Settings
+    from zetherion_ai.config import Settings
 
     # Disable .env file loading for tests
     return Settings(_env_file=None, **kwargs)
@@ -20,7 +20,7 @@ class TestSettingsInitialization:
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -44,7 +44,7 @@ class TestSettingsInitialization:
         monkeypatch.setenv("ROUTER_MODEL", "gemini-2.0-flash-lite")
         monkeypatch.setenv("EMBEDDING_MODEL", "text-embedding-005")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -65,7 +65,7 @@ class TestSettingsInitialization:
 
     def test_settings_missing_required_fields(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that Settings raises ValidationError when required fields are missing."""
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -90,7 +90,7 @@ class TestSecretStrFields:
         monkeypatch.setenv("DISCORD_TOKEN", "secret-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -105,7 +105,7 @@ class TestSecretStrFields:
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "secret-gemini-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -122,7 +122,7 @@ class TestSecretStrFields:
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "secret-anthropic-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -137,7 +137,7 @@ class TestSecretStrFields:
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("OPENAI_API_KEY", "secret-openai-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -153,7 +153,7 @@ class TestSecretStrFields:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -170,7 +170,7 @@ class TestDefaultValues:
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -185,7 +185,7 @@ class TestDefaultValues:
         monkeypatch.delenv("QDRANT_HOST", raising=False)
         monkeypatch.delenv("QDRANT_PORT", raising=False)
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -198,7 +198,7 @@ class TestDefaultValues:
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -210,7 +210,7 @@ class TestDefaultValues:
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -226,7 +226,7 @@ class TestModelConfigurationDefaults:
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -238,7 +238,7 @@ class TestModelConfigurationDefaults:
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -250,7 +250,7 @@ class TestModelConfigurationDefaults:
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -262,7 +262,7 @@ class TestModelConfigurationDefaults:
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -278,7 +278,7 @@ class TestModelConfigurationDefaults:
         monkeypatch.setenv("ROUTER_MODEL", "custom-router-model")
         monkeypatch.setenv("EMBEDDING_MODEL", "custom-embedding-model")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -298,7 +298,7 @@ class TestIsDevelopmentProperty:
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("ENVIRONMENT", "development")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -310,7 +310,7 @@ class TestIsDevelopmentProperty:
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         # Test uppercase
         monkeypatch.setenv("ENVIRONMENT", "DEVELOPMENT")
@@ -330,7 +330,7 @@ class TestIsDevelopmentProperty:
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("ENVIRONMENT", "production")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -343,7 +343,7 @@ class TestIsDevelopmentProperty:
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("ENVIRONMENT", "test")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -355,7 +355,7 @@ class TestIsDevelopmentProperty:
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -374,7 +374,7 @@ class TestQdrantUrlProperty:
         monkeypatch.delenv("QDRANT_HOST", raising=False)
         monkeypatch.delenv("QDRANT_PORT", raising=False)
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -387,7 +387,7 @@ class TestQdrantUrlProperty:
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("QDRANT_HOST", "custom-qdrant-host")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -402,7 +402,7 @@ class TestQdrantUrlProperty:
         monkeypatch.setenv("QDRANT_HOST", "qdrant")
         monkeypatch.setenv("QDRANT_PORT", "9999")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -416,7 +416,7 @@ class TestQdrantUrlProperty:
         monkeypatch.setenv("QDRANT_HOST", "localhost")
         monkeypatch.setenv("QDRANT_PORT", "8000")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -434,7 +434,7 @@ class TestGetSettings:
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
 
-        from secureclaw.config import Settings, get_settings
+        from zetherion_ai.config import Settings, get_settings
 
         get_settings.cache_clear()
 
@@ -456,12 +456,12 @@ class TestGetSettings:
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
         # Patch Settings to prevent .env file loading
-        with patch("secureclaw.config.Settings") as mock_settings:
+        with patch("zetherion_ai.config.Settings") as mock_settings:
             mock_settings.return_value = create_test_settings()
             settings1 = get_settings()
             settings2 = get_settings()
@@ -474,7 +474,7 @@ class TestGetSettings:
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
 
-        from secureclaw.config import Settings, get_settings
+        from zetherion_ai.config import Settings, get_settings
 
         get_settings.cache_clear()
 
@@ -501,7 +501,7 @@ class TestSettingsValidation:
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("ALLOWED_USER_IDS", "123,456,789")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -514,7 +514,7 @@ class TestSettingsValidation:
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("ALLOWED_USER_IDS", "")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -527,7 +527,7 @@ class TestSettingsValidation:
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("QDRANT_PORT", "not-a-number")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -543,7 +543,7 @@ class TestSettingsValidation:
         monkeypatch.setenv("discord_token", "test-discord-token")
         monkeypatch.setenv("gemini_api_key", "test-gemini-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -557,7 +557,7 @@ class TestSettingsValidation:
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("EXTRA_UNKNOWN_VAR", "should-be-ignored")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -578,7 +578,7 @@ class TestOllamaConfiguration:
         monkeypatch.delenv("OLLAMA_PORT", raising=False)
         monkeypatch.delenv("OLLAMA_ROUTER_MODEL", raising=False)
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -596,7 +596,7 @@ class TestOllamaConfiguration:
         monkeypatch.delenv("OLLAMA_HOST", raising=False)
         monkeypatch.delenv("OLLAMA_PORT", raising=False)
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -609,7 +609,7 @@ class TestOllamaConfiguration:
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("OLLAMA_HOST", "localhost")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -624,7 +624,7 @@ class TestOllamaConfiguration:
         monkeypatch.setenv("OLLAMA_HOST", "ollama")
         monkeypatch.setenv("OLLAMA_PORT", "8080")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -640,7 +640,7 @@ class TestOllamaConfiguration:
         monkeypatch.setenv("OLLAMA_ROUTER_MODEL", "mistral:7b")
         monkeypatch.setenv("OLLAMA_TIMEOUT", "60")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -657,7 +657,7 @@ class TestOllamaConfiguration:
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("OLLAMA_PORT", "not-a-number")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -678,7 +678,7 @@ class TestRouterBackendConfiguration:
         # Explicitly unset to test defaults (avoid .env file interference)
         monkeypatch.delenv("ROUTER_BACKEND", raising=False)
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -691,7 +691,7 @@ class TestRouterBackendConfiguration:
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("ROUTER_BACKEND", "gemini")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -704,7 +704,7 @@ class TestRouterBackendConfiguration:
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("ROUTER_BACKEND", "ollama")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -717,7 +717,7 @@ class TestRouterBackendConfiguration:
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("ROUTER_BACKEND", "invalid-backend")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -739,7 +739,7 @@ class TestLoggingConfiguration:
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -754,25 +754,25 @@ class TestLoggingConfiguration:
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
         settings = create_test_settings()
-        assert settings.log_file_path == "logs/secureclaw.log"
+        assert settings.log_file_path == "logs/zetherion_ai.log"
 
     def test_log_file_path_custom_directory(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test log_file_path with custom directory."""
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
-        monkeypatch.setenv("LOG_DIRECTORY", "/var/log/secureclaw")
+        monkeypatch.setenv("LOG_DIRECTORY", "/var/log/zetherion_ai")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
         settings = create_test_settings()
-        assert settings.log_file_path == "/var/log/secureclaw/secureclaw.log"
+        assert settings.log_file_path == "/var/log/zetherion_ai/zetherion_ai.log"
 
     def test_log_to_file_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that log_to_file can be disabled."""
@@ -780,7 +780,7 @@ class TestLoggingConfiguration:
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("LOG_TO_FILE", "false")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -796,7 +796,7 @@ class TestLoggingConfiguration:
         monkeypatch.setenv("LOG_FILE_MAX_BYTES", "20971520")  # 20MB
         monkeypatch.setenv("LOG_FILE_BACKUP_COUNT", "10")
 
-        from secureclaw.config import get_settings
+        from zetherion_ai.config import get_settings
 
         get_settings.cache_clear()
 
@@ -805,4 +805,4 @@ class TestLoggingConfiguration:
         assert settings.log_directory == "custom_logs"
         assert settings.log_file_max_bytes == 20971520
         assert settings.log_file_backup_count == 10
-        assert settings.log_file_path == "custom_logs/secureclaw.log"
+        assert settings.log_file_path == "custom_logs/zetherion_ai.log"

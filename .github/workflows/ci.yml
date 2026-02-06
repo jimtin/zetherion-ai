@@ -60,7 +60,7 @@ jobs:
           pip install mypy types-requests
 
       - name: Run mypy
-        run: mypy src/secureclaw --config-file=pyproject.toml
+        run: mypy src/zetherion_ai --config-file=pyproject.toml
 
   # ============================================================================
   # Security Scanning Jobs
@@ -218,7 +218,7 @@ jobs:
             -m "not integration" \
             -v \
             --tb=short \
-            --cov=src/secureclaw \
+            --cov=src/zetherion_ai \
             --cov-report=xml \
             --cov-report=term-missing \
             --cov-report=html
@@ -229,7 +229,7 @@ jobs:
         with:
           file: ./coverage.xml
           flags: unittests
-          name: codecov-secureclaw
+          name: codecov-zetherion_ai
           fail_ci_if_error: false
 
       - name: Upload coverage report as artifact
@@ -262,14 +262,14 @@ jobs:
           context: .
           push: false
           load: true  # Load into local daemon for scanning
-          tags: secureclaw:test
+          tags: zetherion_ai:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8  # 0.33.1
         with:
-          image-ref: 'secureclaw:test'
+          image-ref: 'zetherion_ai:test'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
@@ -284,7 +284,7 @@ jobs:
       - name: Generate SBOM
         uses: anchore/sbom-action@28d71544de8eaf1b958d335707167c5f783590ad  # v0.22.2
         with:
-          image: secureclaw:test
+          image: zetherion_ai:test
           format: spdx-json
           output-file: sbom.spdx.json
 

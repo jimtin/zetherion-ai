@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from secureclaw.models.registry import ModelRegistry
-from secureclaw.models.tiers import ModelInfo, Tier
+from zetherion_ai.models.registry import ModelRegistry
+from zetherion_ai.models.tiers import ModelInfo, Tier
 
 
 @pytest.fixture

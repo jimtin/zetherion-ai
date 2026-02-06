@@ -16,13 +16,13 @@ echo ""
 REPO_URL=$(git config --get remote.origin.url)
 if [[ -z "$REPO_URL" ]]; then
     echo -e "${YELLOW}Warning: No git remote found${NC}"
-    read -p "Enter your GitHub repo (e.g., username/secureclaw): " REPO_NAME
+    read -p "Enter your GitHub repo (e.g., username/zetherion_ai): " REPO_NAME
 else
     # Extract username/repo from URL
     if [[ $REPO_URL == *"github.com"* ]]; then
         REPO_NAME=$(echo "$REPO_URL" | sed -E 's#.*github\.com[:/](.+)\.git#\1#')
     else
-        read -p "Enter your GitHub repo (e.g., username/secureclaw): " REPO_NAME
+        read -p "Enter your GitHub repo (e.g., username/zetherion_ai): " REPO_NAME
     fi
 fi
 

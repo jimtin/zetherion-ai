@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from secureclaw.models.discovery import (
+from zetherion_ai.models.discovery import (
     DiscoveryError,
     ModelDiscovery,
     check_deprecation,

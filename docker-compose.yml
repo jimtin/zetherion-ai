@@ -1,11 +1,11 @@
 version: '3.8'
 
 services:
-  secureclaw:
+  zetherion-ai-bot:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: secureclaw-bot
+    container_name: zetherion-ai-bot
     restart: unless-stopped
     # Security: read-only filesystem with writable tmpfs for temp files
     read_only: true
@@ -15,17 +15,20 @@ services:
     depends_on:
       qdrant:
         condition: service_healthy
+      zetherion-ai-skills:
+        condition: service_healthy
     env_file:
       - .env
     environment:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      - SKILLS_SERVICE_URL=http://zetherion-ai-skills:8080
       - ENVIRONMENT=production
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
     networks:
-      - secureclaw-net
+      - zetherion-ai-net
     # Resource limits to prevent runaway processes
     deploy:
       resources:
@@ -36,10 +39,44 @@ services:
           cpus: '0.5'
           memory: 512M
 
+  zetherion-ai-skills:
+    build:
+      context: .
+      dockerfile: Dockerfile.skills
+    container_name: zetherion-ai-skills
+    restart: unless-stopped
+    # Security: read-only filesystem with writable tmpfs for temp files
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/zetherion_ai/.cache
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - SKILLS_HOST=0.0.0.0
+      - SKILLS_PORT=8080
+    # No ports exposed to host - only accessible from bot via internal network
+    networks:
+      - zetherion-ai-net
+    # Resource limits for skills service
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
   ollama:
     # Pin image by digest for reproducible builds (Dependabot auto-updates)
     image: ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed
-    container_name: secureclaw-ollama
+    container_name: zetherion-ai-ollama
     restart: unless-stopped
     ports:
       - "11434:11434"
@@ -52,7 +89,7 @@ services:
     volumes:
       - ollama_models:/root/.ollama
     networks:
-      - secureclaw-net
+      - zetherion-ai-net
     # Resource limits for LLM inference
     deploy:
       resources:
@@ -74,7 +111,7 @@ services:
   qdrant:
     # Pin image by digest for reproducible builds (Dependabot auto-updates)
     image: qdrant/qdrant:latest@sha256:0425e3e03e7fd9b3dc95c4214546afe19de2eb2e28ca621441a56663ac6e1f46
-    container_name: secureclaw-qdrant
+    container_name: zetherion-ai-qdrant
     restart: unless-stopped
     ports:
       - "6333:6333"
@@ -92,7 +129,7 @@ services:
       # - ./data/certs/qdrant:/qdrant/certs:ro
       # - ./config/qdrant.yaml:/qdrant/config/production.yaml:ro
     networks:
-      - secureclaw-net
+      - zetherion-ai-net
     # Resource limits for vector database
     deploy:
       resources:
@@ -108,5 +145,5 @@ volumes:
   ollama_models:
 
 networks:
-  secureclaw-net:
+  zetherion-ai-net:
     driver: bridge

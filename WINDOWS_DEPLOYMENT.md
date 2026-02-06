@@ -215,13 +215,13 @@ Unregister-ScheduledTask -TaskName "Zetherion AI-AutoDeploy" -Confirm:$false
 ### View Container Status
 
 ```powershell
-docker ps --filter "name=secureclaw"
+docker ps --filter "name=zetherion_ai"
 ```
 
 ### View Container Logs
 
 ```powershell
-docker logs secureclaw-bot --tail 50 --follow
+docker logs zetherion_ai-bot --tail 50 --follow
 ```
 
 ### Check Git Status
@@ -277,7 +277,7 @@ docker info
 
 ```powershell
 # Check container logs
-docker logs secureclaw-bot --tail 100
+docker logs zetherion_ai-bot --tail 100
 
 # Check Docker Compose logs
 docker-compose logs
@@ -300,7 +300,7 @@ docker-compose build --no-cache
 docker-compose up -d
 
 # Check logs
-docker logs secureclaw-bot --follow
+docker logs zetherion_ai-bot --follow
 ```
 
 ### Monitor Keeps Deploying Same Commit

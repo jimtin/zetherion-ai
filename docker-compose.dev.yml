@@ -2,7 +2,7 @@
 version: '3.8'
 
 services:
-  secureclaw:
+  zetherion_ai:
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -11,4 +11,4 @@ services:
     volumes:
       - ./src:/app/src:ro
       - ./data:/app/data
-    command: ["python", "-m", "watchfiles", "python -m secureclaw", "./src"]
+    command: ["python", "-m", "watchfiles", "python -m zetherion_ai", "./src"]

@@ -181,7 +181,7 @@ OPENAI_MODEL=gpt-3.5-turbo
 ROUTER_MODEL=gemini-1.5-flash
 ```
 
-See `src/secureclaw/config.py` for all model options.
+See `src/zetherion_ai/config.py` for all model options.
 
 ---
 
@@ -218,7 +218,7 @@ Zetherion AI has built-in protection:
 - Excessive role-play marker detection
 - Auto-rejects suspicious messages
 
-See `src/secureclaw/discord/security.py` for details.
+See `src/zetherion_ai/discord/security.py` for details.
 
 ### Can someone hack my bot?
 **Attack vectors:**
@@ -255,14 +255,14 @@ pip install -r requirements-dev.txt
 pytest tests/ -v
 
 # With coverage:
-pytest tests/ --cov=src/secureclaw --cov-report=html
+pytest tests/ --cov=src/zetherion_ai --cov-report=html
 
 # Open coverage report:
 open htmlcov/index.html
 ```
 
 ### How do I add a new slash command?
-1. Edit `src/secureclaw/discord/bot.py`
+1. Edit `src/zetherion_ai/discord/bot.py`
 2. Add command in `_setup_commands()` method
 3. Create handler method (e.g., `_handle_my_command`)
 4. Restart bot - commands sync automatically
@@ -275,7 +275,7 @@ async def hello_command(interaction: discord.Interaction) -> None:
 ```
 
 ### How do I change the system prompt?
-Edit `src/secureclaw/agent/prompts.py`:
+Edit `src/zetherion_ai/agent/prompts.py`:
 - `CLAUDE_SYSTEM_PROMPT` - Instructions for Claude
 - `OPENAI_SYSTEM_PROMPT` - Instructions for GPT-4
 
@@ -286,7 +286,7 @@ Technically yes, but requires code changes:
 - Current: Qdrant (recommended, fast, easy)
 - Alternatives: Pinecone, Weaviate, Milvus
 
-You'd need to implement the same interface in `src/secureclaw/memory/`.
+You'd need to implement the same interface in `src/zetherion_ai/memory/`.
 
 ---
 
@@ -309,6 +309,6 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md#performance-issues)
 ## Still Have Questions?
 
 1. Check [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
-2. Search [GitHub Issues](https://github.com/youruser/secureclaw/issues)
-3. Ask in [GitHub Discussions](https://github.com/youruser/secureclaw/discussions)
+2. Search [GitHub Issues](https://github.com/youruser/zetherion_ai/issues)
+3. Ask in [GitHub Discussions](https://github.com/youruser/zetherion_ai/discussions)
 4. Create new issue with `[Question]` tag

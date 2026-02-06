@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from secureclaw.notifications.discord import DiscordNotifier
-from secureclaw.notifications.dispatcher import (
+from zetherion_ai.notifications.discord import DiscordNotifier
+from zetherion_ai.notifications.dispatcher import (
     Notification,
     NotificationPriority,
     NotificationType,

@@ -130,7 +130,7 @@ The `start.sh` script is the **single entry point** for running Zetherion AI. It
 ┌───────────────────▼──────────────────────────────────┐
 │ Phase 9: Start Bot                                    │
 │  • Set PYTHONPATH                                     │
-│  • Launch: python -m secureclaw                       │
+│  • Launch: python -m zetherion_ai                       │
 │  • Run until Ctrl+C                                   │
 └──────────────────────────────────────────────────────┘
 ```
@@ -421,7 +421,7 @@ fi
 ```
 ┌────────────────────────────────────┐
 │ Does container exist?               │
-│ (docker ps -a | grep secureclaw-    │
+│ (docker ps -a | grep zetherion_ai-    │
 │  qdrant)                           │
 └──────┬──────────────┬──────────────┘
        │ Yes          │ No
@@ -441,7 +441,7 @@ fi
 **Create Command:**
 ```bash
 docker run -d \
-    --name secureclaw-qdrant \
+    --name zetherion_ai-qdrant \
     -p 6333:6333 \
     -v "$(pwd)/qdrant_storage:/qdrant/storage" \
     qdrant/qdrant:latest
@@ -755,7 +755,7 @@ Container exists? → Yes → Running? → Yes → Skip
 **Create Command:**
 ```bash
 docker run -d \
-    --name secureclaw-ollama \
+    --name zetherion_ai-ollama \
     --memory="${OLLAMA_DOCKER_MEMORY}g" \        # e.g., 10g
     --memory-swap="${OLLAMA_DOCKER_MEMORY}g" \  # Prevent swap usage
     -p 11434:11434 \
@@ -771,7 +771,7 @@ docker run -d \
 **Why volume for models?**
 - Models are large (2-5GB each)
 - Re-downloading every time wastes time and bandwidth
-- Survives `docker rm secureclaw-ollama`
+- Survives `docker rm zetherion_ai-ollama`
 
 #### API Health Check (Lines 433-448)
 
@@ -800,7 +800,7 @@ done
 ```bash
 OLLAMA_MODEL="${OLLAMA_ROUTER_MODEL:-llama3.1:8b}"
 
-if docker exec secureclaw-ollama ollama list | grep -q "$OLLAMA_MODEL"; then
+if docker exec zetherion_ai-ollama ollama list | grep -q "$OLLAMA_MODEL"; then
     print_success "Model '$OLLAMA_MODEL' already available"
 else
     # Not downloaded yet
@@ -811,7 +811,7 @@ else
 print_warning "Model '$OLLAMA_MODEL' not found, downloading (this may take several minutes)..."
 print_info "Model size: ~4.7GB - please be patient..."
 
-if docker exec secureclaw-ollama ollama pull "$OLLAMA_MODEL"; then
+if docker exec zetherion_ai-ollama ollama pull "$OLLAMA_MODEL"; then
     print_success "Model '$OLLAMA_MODEL' downloaded successfully"
 else
     print_error "Failed to download model '$OLLAMA_MODEL'"
@@ -841,7 +841,7 @@ success
 **Graceful Failure:**
 - If download fails, script continues
 - Bot will use Gemini as fallback
-- User can manually pull later: `docker exec secureclaw-ollama ollama pull <model>`
+- User can manually pull later: `docker exec zetherion_ai-ollama ollama pull <model>`
 
 ---
 
@@ -885,16 +885,16 @@ echo -e "${GREEN}Press Ctrl+C to stop the bot${NC}"
 echo ""
 
 # Set PYTHONPATH to include src directory
-PYTHONPATH="${PWD}/src:${PYTHONPATH}" python -m secureclaw
+PYTHONPATH="${PWD}/src:${PYTHONPATH}" python -m zetherion_ai
 ```
 
 **Why set PYTHONPATH?**
-- Zetherion AI source is in `src/secureclaw/`
-- Running as module (`-m secureclaw`) requires it to be importable
+- Zetherion AI source is in `src/zetherion_ai/`
+- Running as module (`-m zetherion_ai`) requires it to be importable
 - Adding `src/` to path makes this work
 
 **What happens next?**
-1. Python loads `src/secureclaw/__main__.py`
+1. Python loads `src/zetherion_ai/__main__.py`
 2. Initializes logging, settings, memory systems
 3. Connects to Discord
 4. Bot runs until Ctrl+C
@@ -1162,13 +1162,13 @@ PYTHONPATH="${PWD}/src:${PYTHONPATH}" python -m secureclaw
 ```
 **Action:**
 - Check if port already in use: `lsof -i :6333`
-- Check container logs: `docker logs secureclaw-qdrant`
-- Remove and retry: `docker rm -f secureclaw-qdrant && ./start.sh`
+- Check container logs: `docker logs zetherion_ai-qdrant`
+- Remove and retry: `docker rm -f zetherion_ai-qdrant && ./start.sh`
 
 #### 5. Model Download Errors
 ```bash
 ✗ Failed to download model 'qwen2.5:7b'
-ℹ You can manually pull it later with: docker exec secureclaw-ollama ollama pull qwen2.5:7b
+ℹ You can manually pull it later with: docker exec zetherion_ai-ollama ollama pull qwen2.5:7b
 ⚠ Continuing anyway - the bot will fall back to Gemini if the model isn't available
 ```
 **Action:**

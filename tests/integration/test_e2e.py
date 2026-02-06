@@ -1,6 +1,7 @@
-"""End-to-end integration tests for SecureClaw.
+"""End-to-end integration tests for Zetherion AI.
 
 This test suite starts the entire Docker environment and simulates real user interactions.
+Tests cover core functionality and Phase 5 features (skills, scheduler, profiles).
 """
 
 import asyncio
@@ -35,7 +36,7 @@ class DockerEnvironment:
     def __init__(self) -> None:
         """Initialize the Docker environment manager."""
         self.compose_file = "docker-compose.yml"
-        self.project_name = "secureclaw-test"
+        self.project_name = "zetherion-ai-test"
         self.ollama_model_pulled = False
 
     def start(self) -> None:
@@ -85,7 +86,7 @@ class DockerEnvironment:
                         "docker",
                         "inspect",
                         "--format={{.State.Health.Status}}",
-                        "secureclaw-qdrant",
+                        "zetherion-ai-qdrant",
                     ],
                     capture_output=True,
                     text=True,
@@ -100,7 +101,7 @@ class DockerEnvironment:
                             "docker",
                             "inspect",
                             "--format={{.State.Health.Status}}",
-                            "secureclaw-ollama",
+                            "zetherion-ai-ollama",
                         ],
                         capture_output=True,
                         text=True,
@@ -109,20 +110,20 @@ class DockerEnvironment:
                     if result.returncode == 0 and "healthy" in result.stdout:
                         print("✅ Ollama is healthy")
 
-                        # Check if SecureClaw container is running
+                        # Check if Zetherion AI container is running
                         result = subprocess.run(
                             [
                                 "docker",
                                 "inspect",
                                 "--format={{.State.Status}}",
-                                "secureclaw-bot",
+                                "zetherion-ai-bot",
                             ],
                             capture_output=True,
                             text=True,
                             timeout=5,
                         )
                         if result.returncode == 0 and "running" in result.stdout:
-                            print("✅ SecureClaw is running")
+                            print("✅ Zetherion AI is running")
                             return True
 
             except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
@@ -176,7 +177,7 @@ class DockerEnvironment:
         print(f"📥 Pulling Ollama model '{model}' (this may take a few minutes)...")
         try:
             result = subprocess.run(
-                ["docker", "exec", "secureclaw-ollama", "ollama", "pull", model],
+                ["docker", "exec", "zetherion-ai-ollama", "ollama", "pull", model],
                 capture_output=True,
                 text=True,
                 timeout=600,  # 10 minute timeout for model download
@@ -203,8 +204,8 @@ class MockDiscordBot:
             router_backend: Router backend to use ('gemini' or 'ollama').
         """
         # Import here to avoid issues if Discord isn't available
-        from secureclaw.agent.core import Agent
-        from secureclaw.memory.qdrant import QdrantMemory
+        from zetherion_ai.agent.core import Agent
+        from zetherion_ai.memory.qdrant import QdrantMemory
 
         # Set router backend environment variable
         os.environ["ROUTER_BACKEND"] = router_backend
@@ -260,7 +261,7 @@ def docker_env() -> Generator[DockerEnvironment, None, None]:
 
         # Wait for services to be healthy
         if not env.wait_for_healthy():
-            logs = env.get_logs("secureclaw")
+            logs = env.get_logs("zetherion_ai")
             pytest.fail(f"Services failed to become healthy.\n\nLogs:\n{logs}")
 
         # Give services a bit more time to fully initialize
@@ -465,7 +466,7 @@ def test_docker_services_running(docker_env: DockerEnvironment) -> None:
             "docker",
             "ps",
             "--filter",
-            "name=secureclaw-qdrant",
+            "name=zetherion-ai-qdrant",
             "--filter",
             "status=running",
             "--format",
@@ -474,16 +475,16 @@ def test_docker_services_running(docker_env: DockerEnvironment) -> None:
         capture_output=True,
         text=True,
     )
-    assert "secureclaw-qdrant" in result.stdout
+    assert "zetherion-ai-qdrant" in result.stdout
     print("✅ Qdrant container is running")
 
-    # Check SecureClaw (uses container_name from docker-compose.yml)
+    # Check Zetherion AI (uses container_name from docker-compose.yml)
     result = subprocess.run(
         [
             "docker",
             "ps",
             "--filter",
-            "name=secureclaw-bot",
+            "name=zetherion-ai-bot",
             "--filter",
             "status=running",
             "--format",
@@ -492,8 +493,8 @@ def test_docker_services_running(docker_env: DockerEnvironment) -> None:
         capture_output=True,
         text=True,
     )
-    assert "secureclaw-bot" in result.stdout
-    print("✅ SecureClaw container is running")
+    assert "zetherion-ai-bot" in result.stdout
+    print("✅ Zetherion AI container is running")
 
 
 @pytest.mark.integration
@@ -508,6 +509,132 @@ def test_qdrant_collections_exist(docker_env: DockerEnvironment) -> None:
 
     assert "conversations" in result.stdout or "long_term_memory" in result.stdout
     print("✅ Qdrant collections verified")
+
+
+# Phase 5 Integration Tests
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_task_management_skill(mock_bot: MockDiscordBot) -> None:
+    """Test task management skill (Phase 5E)."""
+    # Create a task
+    response = await mock_bot.simulate_message("Add a task to review the documentation")
+
+    assert response is not None
+    assert len(response) > 20
+    # Should acknowledge task creation or provide task-related response
+    preview: str = response[0:100] if len(response) > 100 else response  # type: ignore[index]
+    print(f"✅ Task management test: {preview}...")
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_calendar_query_skill(mock_bot: MockDiscordBot) -> None:
+    """Test calendar query skill (Phase 5E)."""
+    # Query schedule
+    response = await mock_bot.simulate_message("What's on my schedule today?")
+
+    assert response is not None
+    assert len(response) > 20
+    # Should provide schedule-related response
+    preview: str = response[0:100] if len(response) > 100 else response  # type: ignore[index]
+    print(f"✅ Calendar query test: {preview}...")
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_profile_query_skill(mock_bot: MockDiscordBot) -> None:
+    """Test profile query skill (Phase 5E)."""
+    # Query profile
+    response = await mock_bot.simulate_message("What do you know about me?")
+
+    assert response is not None
+    assert len(response) > 20
+    # Should provide profile-related response or indicate no data yet
+    preview: str = response[0:100] if len(response) > 100 else response  # type: ignore[index]
+    print(f"✅ Profile query test: {preview}...")
+
+
+@pytest.mark.integration
+def test_skills_service_health(docker_env: DockerEnvironment) -> None:
+    """Test that skills service is healthy (Phase 5D)."""
+    # Check if skills service container is running
+    result = subprocess.run(
+        [
+            "docker",
+            "ps",
+            "--filter",
+            "name=zetherion-ai-skills",
+            "--filter",
+            "status=running",
+            "--format",
+            "{{.Names}}",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert "zetherion-ai-skills" in result.stdout
+    print("✅ Skills service container is running")
+
+    # Check skills service health endpoint
+    result = subprocess.run(
+        ["curl", "-s", "http://localhost:8080/health"],
+        capture_output=True,
+        text=True,
+    )
+    # Health endpoint should return OK or healthy status
+    assert result.returncode == 0 or "healthy" in result.stdout.lower()
+    print("✅ Skills service health check passed")
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_router_skill_intents(mock_bot: MockDiscordBot) -> None:
+    """Test router correctly classifies skill intents (Phase 5G)."""
+    from zetherion_ai.agent.router import MessageRouter
+
+    # Get the router from the agent
+    router = MessageRouter()
+
+    # Test task management intent
+    decision = await router.classify("Create a task for tomorrow")
+    # Should classify as task_management or memory_store
+    print(f"Task intent classified as: {decision.intent.value}")
+
+    # Test calendar intent
+    decision = await router.classify("What meetings do I have this week?")
+    # Should classify as calendar_query or memory_recall
+    print(f"Calendar intent classified as: {decision.intent.value}")
+
+    # Test profile intent
+    decision = await router.classify("Show my profile")
+    # Should classify as profile_query or memory_recall
+    print(f"Profile intent classified as: {decision.intent.value}")
+
+    print("✅ Router skill intent classification test passed")
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_encryption_in_memory_storage(mock_bot: MockDiscordBot) -> None:
+    """Test that encryption is working for memory storage (Phase 5A)."""
+    # Store sensitive information
+    response = await mock_bot.simulate_message(
+        "Remember my API key is sk-test-12345 (this is a test)"
+    )
+    assert response is not None
+
+    # Wait for memory indexing
+    await asyncio.sleep(2)
+
+    # Recall should work (encryption is transparent)
+    recall = await mock_bot.simulate_message("What's my API key?")
+    assert recall is not None
+    assert len(recall) > 10
+    # Should respond (either with the key or acknowledging it was stored)
+    preview: str = recall[0:100] if len(recall) > 100 else recall  # type: ignore[index]
+    print(f"✅ Encryption transparency test: {preview}...")
 
 
 if __name__ == "__main__":

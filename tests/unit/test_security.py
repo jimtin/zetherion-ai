@@ -3,7 +3,7 @@
 import time
 from unittest.mock import patch
 
-from secureclaw.discord.security import (
+from zetherion_ai.discord.security import (
     RateLimiter,
     RateLimitState,
     UserAllowlist,
@@ -125,7 +125,7 @@ class TestUserAllowlist:
 
     def test_empty_allowlist_allows_all(self):
         """Test empty allowlist allows all users."""
-        with patch("secureclaw.discord.security.get_settings") as mock_settings:
+        with patch("zetherion_ai.discord.security.get_settings") as mock_settings:
             mock_settings.return_value.allowed_user_ids = []
 
             allowlist = UserAllowlist()
@@ -135,7 +135,7 @@ class TestUserAllowlist:
 
     def test_configured_allowlist_restricts(self):
         """Test configured allowlist restricts users."""
-        with patch("secureclaw.discord.security.get_settings") as mock_settings:
+        with patch("zetherion_ai.discord.security.get_settings") as mock_settings:
             mock_settings.return_value.allowed_user_ids = [123, 456]
 
             allowlist = UserAllowlist()
@@ -146,7 +146,7 @@ class TestUserAllowlist:
 
     def test_add_user(self):
         """Test adding a user to allowlist."""
-        with patch("secureclaw.discord.security.get_settings") as mock_settings:
+        with patch("zetherion_ai.discord.security.get_settings") as mock_settings:
             mock_settings.return_value.allowed_user_ids = [123]
 
             allowlist = UserAllowlist()
@@ -157,7 +157,7 @@ class TestUserAllowlist:
 
     def test_remove_user(self):
         """Test removing a user from allowlist."""
-        with patch("secureclaw.discord.security.get_settings") as mock_settings:
+        with patch("zetherion_ai.discord.security.get_settings") as mock_settings:
             mock_settings.return_value.allowed_user_ids = [123, 456]
 
             allowlist = UserAllowlist()
@@ -168,7 +168,7 @@ class TestUserAllowlist:
 
     def test_add_disables_allow_all(self):
         """Test adding user to empty list disables allow_all."""
-        with patch("secureclaw.discord.security.get_settings") as mock_settings:
+        with patch("zetherion_ai.discord.security.get_settings") as mock_settings:
             mock_settings.return_value.allowed_user_ids = []
 
             allowlist = UserAllowlist()

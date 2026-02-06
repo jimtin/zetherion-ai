@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from secureclaw.profile.storage import (
+from zetherion_ai.profile.storage import (
     ProfileStats,
     ProfileStorage,
 )

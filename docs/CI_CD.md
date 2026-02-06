@@ -66,10 +66,10 @@ Zetherion AI uses a **three-tier testing approach** to ensure code quality:
 
 ```bash
 # 1. Make your changes
-vim src/secureclaw/some_file.py
+vim src/zetherion_ai/some_file.py
 
 # 2. Commit (pre-commit hooks run automatically)
-git add src/secureclaw/some_file.py
+git add src/zetherion_ai/some_file.py
 git commit -m "Add new feature"
 # → Runs linting, formatting, security checks (~5-10s)
 
@@ -274,7 +274,7 @@ git rebase --continue
 pre-commit run gitleaks --all-files
 
 # Scan specific file
-gitleaks detect --no-git --source=src/secureclaw/config.py
+gitleaks detect --no-git --source=src/zetherion_ai/config.py
 
 # Generate detailed report
 gitleaks detect --no-git --report-path=gitleaks-report.json
@@ -297,7 +297,7 @@ ruff check src/ tests/
 
 **Step 2: Type Checking (mypy)**
 ```bash
-mypy src/secureclaw --config-file=pyproject.toml
+mypy src/zetherion_ai --config-file=pyproject.toml
 ```
 - Static type checking
 - Ensures type safety
@@ -305,7 +305,7 @@ mypy src/secureclaw --config-file=pyproject.toml
 
 **Step 3: Full Test Suite**
 ```bash
-pytest tests/ -v --tb=short --cov=src/secureclaw --cov-report=term-missing
+pytest tests/ -v --tb=short --cov=src/zetherion_ai --cov-report=term-missing
 ```
 - Runs all tests
 - Generates coverage report
@@ -330,8 +330,8 @@ git push --no-verify origin main
 
 # Or run individual steps:
 ruff check src/ tests/
-mypy src/secureclaw --config-file=pyproject.toml
-pytest tests/ -v --cov=src/secureclaw
+mypy src/zetherion_ai --config-file=pyproject.toml
+pytest tests/ -v --cov=src/zetherion_ai
 ```
 
 ---
@@ -355,7 +355,7 @@ lint (5s)
   └─ Ruff formatter check
 
 type-check (10s)
-  └─ mypy on src/secureclaw
+  └─ mypy on src/zetherion_ai
 
 security (10s)
   └─ Bandit security scan
@@ -465,7 +465,7 @@ pytest tests/ -k "test_router" -v
 
 ```bash
 # With coverage
-pytest tests/ --cov=src/secureclaw --cov-report=html
+pytest tests/ --cov=src/zetherion_ai --cov-report=html
 
 # Open coverage report
 open htmlcov/index.html  # macOS
@@ -543,7 +543,7 @@ git push
 **Error: mypy type errors**
 ```bash
 # 1. Run mypy to see details
-mypy src/secureclaw --config-file=pyproject.toml
+mypy src/zetherion_ai --config-file=pyproject.toml
 
 # 2. Fix type errors
 
@@ -554,7 +554,7 @@ git push
 **Error: Coverage too low**
 ```bash
 # 1. Check which files lack coverage
-pytest tests/ --cov=src/secureclaw --cov-report=term-missing
+pytest tests/ --cov=src/zetherion_ai --cov-report=term-missing
 
 # 2. Add tests for missing coverage
 
@@ -586,7 +586,7 @@ git push
 **Error: Docker build fails on GitHub**
 ```bash
 # Test Docker build locally
-docker build -t secureclaw:test .
+docker build -t zetherion_ai:test .
 
 # If fails, fix Dockerfile and try again
 ```
@@ -650,7 +650,7 @@ addopts = [
     "-v",
     "--strict-markers",
     "--tb=short",
-    "--cov=src/secureclaw",
+    "--cov=src/zetherion_ai",
 ]
 ```
 
@@ -695,10 +695,10 @@ git commit -m "chore: Update dependencies"
 
 ```bash
 # Check current coverage
-pytest tests/ --cov=src/secureclaw --cov-report=term
+pytest tests/ --cov=src/zetherion_ai --cov-report=term
 
 # View detailed report
-pytest tests/ --cov=src/secureclaw --cov-report=html
+pytest tests/ --cov=src/zetherion_ai --cov-report=html
 open htmlcov/index.html
 ```
 
@@ -706,7 +706,7 @@ open htmlcov/index.html
 
 **Before committing:**
 1. Run `ruff check --fix src/ tests/`
-2. Run `mypy src/secureclaw`
+2. Run `mypy src/zetherion_ai`
 3. Run `pytest tests/`
 4. Review changes: `git diff`
 
@@ -733,7 +733,7 @@ pre-commit run --all-files
 pytest tests/ -v
 
 # Run tests with coverage
-pytest tests/ --cov=src/secureclaw
+pytest tests/ --cov=src/zetherion_ai
 
 # Run linter
 ruff check src/ tests/
@@ -742,7 +742,7 @@ ruff check src/ tests/
 ruff format src/ tests/
 
 # Run type checker
-mypy src/secureclaw
+mypy src/zetherion_ai
 
 # Update pre-commit hooks
 pre-commit autoupdate
@@ -757,7 +757,7 @@ git push --no-verify
 Add to README.md:
 
 ```markdown
-[![CI](https://github.com/yourusername/secureclaw/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/secureclaw/actions/workflows/ci.yml)
+[![CI](https://github.com/yourusername/zetherion_ai/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/zetherion_ai/actions/workflows/ci.yml)
 ```
 
 ---

@@ -435,7 +435,7 @@ I noticed some unusual patterns in your message. Could you rephrase your questio
 4. After 60s from first message → Counter resets
 
 **Bypass Rate Limit:**
-Set `max_messages=999` in `src/secureclaw/discord/security.py:36`
+Set `max_messages=999` in `src/zetherion_ai/discord/security.py:36`
 
 ---
 
@@ -519,7 +519,7 @@ For programmatic access or building additional features:
 
 ### Command Handler Methods
 ```python
-# In src/secureclaw/discord/bot.py
+# In src/zetherion_ai/discord/bot.py
 
 async def _handle_ask(interaction, question)
 # Handles /ask command
@@ -536,7 +536,7 @@ async def on_message(message)
 
 ### Adding New Commands
 
-1. Edit `src/secureclaw/discord/bot.py`
+1. Edit `src/zetherion_ai/discord/bot.py`
 2. Add command in `_setup_commands()`:
 ```python
 @self._tree.command(name="hello", description="Say hello")
@@ -582,4 +582,4 @@ async def hello_command(interaction: discord.Interaction) -> None:
 **Need help with commands?**
 - [Troubleshooting Guide](TROUBLESHOOTING.md)
 - [FAQ](FAQ.md)
-- [GitHub Issues](https://github.com/yourusername/secureclaw/issues)
+- [GitHub Issues](https://github.com/yourusername/zetherion_ai/issues)

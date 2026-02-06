@@ -38,7 +38,7 @@ Zetherion AI uses a **three-layer testing pyramid** for comprehensive coverage:
 pytest -m "not integration"
 
 # Run with coverage
-pytest --cov=src/secureclaw --cov-report=html
+pytest --cov=src/zetherion_ai --cov-report=html
 
 # Run specific test file
 pytest tests/test_agent_core.py
@@ -53,7 +53,7 @@ Unit tests go in `tests/` directory:
 
 ```python
 import pytest
-from secureclaw.agent.core import Agent
+from zetherion_ai.agent.core import Agent
 
 def test_agent_initialization():
     """Test that agent initializes correctly."""
@@ -282,7 +282,7 @@ echo "TEST_DISCORD_CHANNEL_ID=123456789" >> .env
 ```bash
 # Check bot is online in Discord
 # Check bot logs
-docker logs secureclaw-bot
+docker logs zetherion_ai-bot
 ```
 
 **Verify bot has required permissions in test channel:**
@@ -430,14 +430,14 @@ To enable Discord E2E tests in CI, add these secrets to your GitHub repository:
 
 ```bash
 # HTML report
-pytest --cov=src/secureclaw --cov-report=html
+pytest --cov=src/zetherion_ai --cov-report=html
 open htmlcov/index.html
 
 # Terminal report
-pytest --cov=src/secureclaw --cov-report=term-missing
+pytest --cov=src/zetherion_ai --cov-report=term-missing
 
 # XML report (for CI)
-pytest --cov=src/secureclaw --cov-report=xml
+pytest --cov=src/zetherion_ai --cov-report=xml
 ```
 
 ### Coverage Goals
@@ -456,13 +456,13 @@ If integration tests fail, check Docker logs:
 
 ```bash
 # View Zetherion AI logs
-docker compose -p secureclaw-test logs secureclaw
+docker compose -p zetherion_ai-test logs zetherion_ai
 
 # View Qdrant logs
-docker compose -p secureclaw-test logs qdrant
+docker compose -p zetherion_ai-test logs qdrant
 
 # Follow logs in real-time
-docker compose -p secureclaw-test logs -f
+docker compose -p zetherion_ai-test logs -f
 ```
 
 ### Common Issues
@@ -550,7 +550,7 @@ pre-commit run --all-files
 ./scripts/run-integration-tests.sh
 
 # Coverage report
-pytest --cov=src/secureclaw --cov-report=html && open htmlcov/index.html
+pytest --cov=src/zetherion_ai --cov-report=html && open htmlcov/index.html
 ```
 
 ---
@@ -584,7 +584,7 @@ If test containers don't clean up:
 
 ```bash
 # Manual cleanup
-docker compose -p secureclaw-test down -v
+docker compose -p zetherion_ai-test down -v
 
 # Nuclear option (removes ALL stopped containers)
 docker system prune -a
@@ -600,7 +600,7 @@ docker system prune -a
 """Tests for new feature."""
 
 import pytest
-from secureclaw.feature import NewFeature
+from zetherion_ai.feature import NewFeature
 
 
 @pytest.fixture

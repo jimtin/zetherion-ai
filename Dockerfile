@@ -33,4 +33,4 @@ ENV PYTHONPATH=/app/src
 USER appuser
 
 # Run the bot
-CMD ["python", "-m", "secureclaw"]
+CMD ["python", "-m", "zetherion_ai"]

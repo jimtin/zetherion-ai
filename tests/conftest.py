@@ -20,7 +20,7 @@ def setup_test_environment():
     os.environ.setdefault("ENCRYPTION_PASSPHRASE", "test-encryption-passphrase-for-unit-tests")
 
     # Clear the settings cache to ensure tests start fresh
-    from secureclaw.config import get_settings
+    from zetherion_ai.config import get_settings
 
     get_settings.cache_clear()
 
@@ -33,7 +33,7 @@ def setup_test_environment():
 @pytest.fixture
 def mock_settings():
     """Mock settings for testing."""
-    from secureclaw.config import Settings
+    from zetherion_ai.config import Settings
 
     settings = Settings(
         discord_token="test-discord-token",
@@ -151,7 +151,7 @@ def mock_discord_interaction():
 @pytest.fixture(autouse=True)
 def clear_settings_cache():
     """Clear settings cache before each test."""
-    from secureclaw.config import get_settings
+    from zetherion_ai.config import get_settings
 
     get_settings.cache_clear()
     yield

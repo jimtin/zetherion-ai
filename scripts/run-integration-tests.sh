@@ -61,7 +61,7 @@ echo ""
 
 # Clean up any existing test containers
 echo -e "${BLUE}Cleaning up any existing test containers...${NC}"
-docker compose -p secureclaw-test down -v >/dev/null 2>&1 || true
+docker compose -p zetherion_ai-test down -v >/dev/null 2>&1 || true
 echo -e "${GREEN}✓ Cleanup complete${NC}"
 echo ""
 
@@ -108,7 +108,7 @@ else
     echo -e "${RED}═══════════════════════════════════════════════${NC}"
     echo ""
     echo -e "${YELLOW}Tip: Check Docker logs for more details:${NC}"
-    echo "  docker compose -p secureclaw-test logs secureclaw"
-    echo "  docker compose -p secureclaw-test logs qdrant"
+    echo "  docker compose -p zetherion_ai-test logs zetherion_ai"
+    echo "  docker compose -p zetherion_ai-test logs qdrant"
     exit 1
 fi

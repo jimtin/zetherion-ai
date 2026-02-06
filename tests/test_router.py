@@ -11,7 +11,7 @@ class TestMessageRouter:
     @pytest.mark.asyncio
     async def test_router_imports(self) -> None:
         """Test that router imports correctly."""
-        from secureclaw.agent.router import MessageIntent
+        from zetherion_ai.agent.router import MessageIntent
 
         assert MessageIntent.SIMPLE_QUERY.value == "simple_query"
         assert MessageIntent.COMPLEX_TASK.value == "complex_task"
@@ -21,7 +21,7 @@ class TestMessageRouter:
 
     def test_routing_decision_dataclass(self) -> None:
         """Test RoutingDecision dataclass."""
-        from secureclaw.agent.router import MessageIntent, RoutingDecision
+        from zetherion_ai.agent.router import MessageIntent, RoutingDecision
 
         decision = RoutingDecision(
             intent=MessageIntent.SIMPLE_QUERY,
@@ -36,7 +36,7 @@ class TestMessageRouter:
 
     def test_complex_task_uses_claude(self) -> None:
         """Test that complex tasks with high confidence use Claude."""
-        from secureclaw.agent.router import MessageIntent, RoutingDecision
+        from zetherion_ai.agent.router import MessageIntent, RoutingDecision
 
         decision = RoutingDecision(
             intent=MessageIntent.COMPLEX_TASK,
@@ -54,8 +54,8 @@ class TestMessageRouter:
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
         mock_client = Mock()
-        with patch("secureclaw.agent.router.genai.Client", return_value=mock_client):
-            from secureclaw.agent.router import GeminiRouterBackend
+        with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
+            from zetherion_ai.agent.router import GeminiRouterBackend
 
             return GeminiRouterBackend()
 

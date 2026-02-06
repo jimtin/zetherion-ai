@@ -177,12 +177,12 @@ httpcore._exceptions.ConnectError: [Errno 61] Connection refused
 1. **Check Qdrant is Running:**
    ```bash
    docker ps | grep qdrant
-   # Should show secureclaw-qdrant running
+   # Should show zetherion_ai-qdrant running
    ```
 
 2. **Start Qdrant if Stopped:**
    ```bash
-   docker start secureclaw-qdrant
+   docker start zetherion_ai-qdrant
    # Or use the start script:
    ./start.sh
    ```
@@ -217,7 +217,7 @@ httpcore._exceptions.ConnectError: [Errno 61] Connection refused
 
 6. **Restart Qdrant:**
    ```bash
-   docker restart secureclaw-qdrant
+   docker restart zetherion_ai-qdrant
    # Wait 10 seconds
    curl http://localhost:6333/healthz
    ```
@@ -236,7 +236,7 @@ httpcore._exceptions.ConnectError: [Errno 61] Connection refused
 
 1. **Check Volume Mount:**
    ```bash
-   docker inspect secureclaw-qdrant | grep -A 5 Mounts
+   docker inspect zetherion_ai-qdrant | grep -A 5 Mounts
    # Should show volume mounted to /qdrant/storage
    ```
 
@@ -248,8 +248,8 @@ httpcore._exceptions.ConnectError: [Errno 61] Connection refused
 
 3. **Recreate with Proper Volume:**
    ```bash
-   docker stop secureclaw-qdrant
-   docker rm secureclaw-qdrant
+   docker stop zetherion_ai-qdrant
+   docker rm zetherion_ai-qdrant
    ./start.sh  # Will recreate with volume
    ```
 
@@ -261,7 +261,7 @@ httpcore._exceptions.ConnectError: [Errno 61] Connection refused
 
 **Full Error:**
 ```
-ERROR: Package 'secureclaw' requires a different Python: 3.11.6 not in '>=3.12'
+ERROR: Package 'zetherion_ai' requires a different Python: 3.11.6 not in '>=3.12'
 ```
 
 **Cause:** Zetherion AI requires Python 3.12+, but you have an older version.
@@ -423,7 +423,7 @@ anthropic.RateLimitError: rate_limit_error
    - Complex tasks → Claude/GPT-4 (slower)
 
 2. **Adjust Router Threshold:**
-   - Edit `src/secureclaw/agent/router.py`
+   - Edit `src/zetherion_ai/agent/router.py`
    - Line 136: Change `confidence > 0.7` to `0.8` to use Flash more often
 
 3. **Check Qdrant Performance:**
@@ -433,7 +433,7 @@ anthropic.RateLimitError: rate_limit_error
    ```
 
 4. **Reduce Memory Context:**
-   - Edit `src/secureclaw/agent/core.py`
+   - Edit `src/zetherion_ai/agent/core.py`
    - Line ~145: Reduce `memory_limit` and `history_limit`
 
 ---
@@ -448,16 +448,16 @@ anthropic.RateLimitError: rate_limit_error
 
 1. **Check Qdrant Memory:**
    ```bash
-   docker stats secureclaw-qdrant
+   docker stats zetherion_ai-qdrant
    ```
 
 2. **Limit Qdrant Memory:**
    ```bash
    # Stop and recreate with memory limit:
-   docker stop secureclaw-qdrant
-   docker rm secureclaw-qdrant
+   docker stop zetherion_ai-qdrant
+   docker rm zetherion_ai-qdrant
    docker run -d \
-     --name secureclaw-qdrant \
+     --name zetherion_ai-qdrant \
      -p 6333:6333 \
      --memory="2g" \
      -v $(pwd)/qdrant_storage:/qdrant/storage \
@@ -632,9 +632,9 @@ Error starting userland proxy: listen tcp 0.0.0.0:6333: bind: address already in
    QDRANT_PORT=6334
 
    # Recreate Qdrant:
-   docker rm -f secureclaw-qdrant
+   docker rm -f zetherion_ai-qdrant
    docker run -d \
-     --name secureclaw-qdrant \
+     --name zetherion_ai-qdrant \
      -p 6334:6333 \
      -v $(pwd)/qdrant_storage:/qdrant/storage \
      qdrant/qdrant:latest
@@ -727,10 +727,10 @@ pulling manifest: Get "https://registry.ollama.ai/v2/library/qwen2.5/manifests/7
 3. **Manually Pull Model:**
    ```bash
    # If automatic pull failed, try manually:
-   docker exec secureclaw-ollama ollama pull qwen2.5:7b
+   docker exec zetherion_ai-ollama ollama pull qwen2.5:7b
 
    # For smaller model:
-   docker exec secureclaw-ollama ollama pull phi3:mini
+   docker exec zetherion_ai-ollama ollama pull phi3:mini
    ```
 
 4. **Use Different Model:**
@@ -766,12 +766,12 @@ httpx.ConnectError: [Errno 61] Connection refused
 1. **Check Ollama Container is Running:**
    ```bash
    docker ps | grep ollama
-   # Should show: secureclaw-ollama
+   # Should show: zetherion_ai-ollama
    ```
 
 2. **Start Ollama Container:**
    ```bash
-   docker start secureclaw-ollama
+   docker start zetherion_ai-ollama
    # Or use the start script:
    ./start.sh
    ```
@@ -800,7 +800,7 @@ httpx.ConnectError: [Errno 61] Connection refused
 
 5. **Check Container Logs:**
    ```bash
-   docker logs secureclaw-ollama
+   docker logs zetherion_ai-ollama
    # Look for errors or OOM messages
    ```
 
@@ -816,13 +816,13 @@ httpx.ConnectError: [Errno 61] Connection refused
 
 1. **Check CPU Usage:**
    ```bash
-   docker stats secureclaw-ollama
+   docker stats zetherion_ai-ollama
    # Look at CPU% - should be 100-400% during inference
    ```
 
 2. **Verify Model Size:**
    ```bash
-   docker exec secureclaw-ollama ollama list
+   docker exec zetherion_ai-ollama ollama list
    # Smaller models (phi3:mini) are faster than large ones
    ```
 
@@ -836,7 +836,7 @@ httpx.ConnectError: [Errno 61] Connection refused
 
 4. **Check Docker Memory:**
    ```bash
-   docker stats secureclaw-ollama
+   docker stats zetherion_ai-ollama
    # MEM USAGE should be well below LIMIT
    # If at limit, model is swapping (very slow)
    ```
@@ -968,7 +968,7 @@ Before asking for help, gather this information:
 ./status.sh
 
 # 2. Get bot logs (last 50 lines)
-docker logs secureclaw-qdrant --tail 50
+docker logs zetherion_ai-qdrant --tail 50
 
 # 3. Check Python version
 python3 --version
@@ -1019,7 +1019,7 @@ Include:
 ./stop.sh
 
 # View logs
-tail -f logs/secureclaw.log  # if logging to file
+tail -f logs/zetherion_ai.log  # if logging to file
 
 # Restart bot
 ./stop.sh && ./start.sh
@@ -1031,7 +1031,7 @@ curl http://localhost:6333/healthz
 docker ps -a
 
 # View bot process
-ps aux | grep secureclaw
+ps aux | grep zetherion_ai
 ```
 
 ### Configuration Checklist

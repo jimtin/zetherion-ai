@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from secureclaw.agent.router import MessageRouter
-from secureclaw.agent.router_factory import create_router, create_router_sync
+from zetherion_ai.agent.router import MessageRouter
+from zetherion_ai.agent.router_factory import create_router, create_router_sync
 
 
 @pytest.fixture
@@ -41,9 +41,9 @@ class TestCreateRouter:
         """Test creating router with healthy Ollama backend."""
         with (
             patch(
-                "secureclaw.agent.router_factory.get_settings", return_value=mock_settings_ollama
+                "zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings_ollama
             ),
-            patch("secureclaw.agent.router_factory.OllamaRouterBackend") as mock_ollama,
+            patch("zetherion_ai.agent.router_factory.OllamaRouterBackend") as mock_ollama,
         ):
             mock_backend = MagicMock()
             mock_backend.health_check = AsyncMock(return_value=True)
@@ -59,11 +59,11 @@ class TestCreateRouter:
         """Test falling back to Gemini when Ollama is unhealthy."""
         with (
             patch(
-                "secureclaw.agent.router_factory.get_settings", return_value=mock_settings_ollama
+                "zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings_ollama
             ),
-            patch("secureclaw.agent.router_factory.OllamaRouterBackend") as mock_ollama,
+            patch("zetherion_ai.agent.router_factory.OllamaRouterBackend") as mock_ollama,
         ):
-            with patch("secureclaw.agent.router_factory.GeminiRouterBackend") as mock_gemini:
+            with patch("zetherion_ai.agent.router_factory.GeminiRouterBackend") as mock_gemini:
                 mock_ollama_backend = MagicMock()
                 mock_ollama_backend.health_check = AsyncMock(return_value=False)
                 mock_ollama_backend.close = AsyncMock()
@@ -83,11 +83,11 @@ class TestCreateRouter:
         """Test falling back to Gemini when Ollama initialization fails."""
         with (
             patch(
-                "secureclaw.agent.router_factory.get_settings", return_value=mock_settings_ollama
+                "zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings_ollama
             ),
-            patch("secureclaw.agent.router_factory.OllamaRouterBackend") as mock_ollama,
+            patch("zetherion_ai.agent.router_factory.OllamaRouterBackend") as mock_ollama,
         ):
-            with patch("secureclaw.agent.router_factory.GeminiRouterBackend") as mock_gemini:
+            with patch("zetherion_ai.agent.router_factory.GeminiRouterBackend") as mock_gemini:
                 mock_ollama.side_effect = Exception("Ollama init failed")
 
                 mock_gemini_backend = MagicMock()
@@ -105,9 +105,9 @@ class TestCreateRouter:
 
         with (
             patch(
-                "secureclaw.agent.router_factory.get_settings", return_value=mock_settings_ollama
+                "zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings_ollama
             ),
-            patch("secureclaw.agent.router_factory.OllamaRouterBackend") as mock_ollama,
+            patch("zetherion_ai.agent.router_factory.OllamaRouterBackend") as mock_ollama,
         ):
             mock_ollama_backend = MagicMock()
             mock_ollama_backend.health_check = AsyncMock(return_value=False)
@@ -124,9 +124,9 @@ class TestCreateRouter:
         """Test creating router with Gemini backend."""
         with (
             patch(
-                "secureclaw.agent.router_factory.get_settings", return_value=mock_settings_gemini
+                "zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings_gemini
             ),
-            patch("secureclaw.agent.router_factory.GeminiRouterBackend") as mock_gemini,
+            patch("zetherion_ai.agent.router_factory.GeminiRouterBackend") as mock_gemini,
         ):
             mock_backend = MagicMock()
             mock_gemini.return_value = mock_backend
@@ -142,7 +142,7 @@ class TestCreateRouter:
         mock_settings = MagicMock()
         mock_settings.router_backend = "invalid"
 
-        with patch("secureclaw.agent.router_factory.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings):
             with pytest.raises(ValueError) as exc_info:
                 await create_router()
 
@@ -156,9 +156,9 @@ class TestCreateRouterSync:
         """Test creating router synchronously with Ollama."""
         with (
             patch(
-                "secureclaw.agent.router_factory.get_settings", return_value=mock_settings_ollama
+                "zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings_ollama
             ),
-            patch("secureclaw.agent.router_factory.OllamaRouterBackend") as mock_ollama,
+            patch("zetherion_ai.agent.router_factory.OllamaRouterBackend") as mock_ollama,
         ):
             mock_backend = MagicMock()
             mock_ollama.return_value = mock_backend
@@ -172,9 +172,9 @@ class TestCreateRouterSync:
         """Test creating router synchronously with Gemini."""
         with (
             patch(
-                "secureclaw.agent.router_factory.get_settings", return_value=mock_settings_gemini
+                "zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings_gemini
             ),
-            patch("secureclaw.agent.router_factory.GeminiRouterBackend") as mock_gemini,
+            patch("zetherion_ai.agent.router_factory.GeminiRouterBackend") as mock_gemini,
         ):
             mock_backend = MagicMock()
             mock_gemini.return_value = mock_backend
@@ -189,7 +189,7 @@ class TestCreateRouterSync:
         mock_settings = MagicMock()
         mock_settings.router_backend = "invalid"
 
-        with patch("secureclaw.agent.router_factory.get_settings", return_value=mock_settings):
+        with patch("zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings):
             with pytest.raises(ValueError) as exc_info:
                 create_router_sync()
 

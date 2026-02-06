@@ -7,7 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### Added - Phase 5 (2026-02-06)
+
+#### Phase 5A: Encryption Layer
+- AES-256-GCM field-level encryption for sensitive Qdrant payloads
+- PBKDF2-HMAC-SHA256 key derivation with 600k iterations
+- TLS support for Qdrant connections (optional)
+- `FieldEncryptor` and `KeyManager` classes in `zetherion_ai.security`
+
+#### Phase 5B: InferenceBroker
+- Smart multi-provider LLM routing based on task type
+- Provider capability matrix: Claude (code), OpenAI (reasoning), Gemini (long docs), Ollama (lightweight)
+- 16 TaskTypes for granular routing decisions
+- Automatic fallback chains when primary provider unavailable
+
+#### Phase 5B.1: Model Registry & Cost Tracking
+- Dynamic model discovery via provider APIs
+- Tier-based model selection (quality/balanced/fast)
+- SQLite cost tracking with per-request logging
+- Daily/monthly cost aggregation and reporting
+- Discord notifications for budget alerts
+
+#### Phase 5C: User Profile System
+- 8 profile categories: identity, preferences, schedule, projects, relationships, skills, goals, habits
+- Tiered inference: Tier 1 (regex), Tier 2 (Ollama), Tier 3 (embeddings), Tier 4 (cloud)
+- 5 signal engines for implicit extraction
+- TTL-based caching with confidence scoring
+- Background profile extraction after responses
+
+#### Phase 5C.1: Employment Profile
+- Bot identity and relationship modeling
+- Trust levels: MINIMAL → BUILDING → ESTABLISHED → HIGH → FULL
+- 10 relationship milestones tracking
+- Communication style adaptation (formality, verbosity, proactivity)
+
+#### Phase 5D: Skills Framework
+- Abstract Skill interface with permission-based access control
+- 15 granular permissions (read/write profile, memories, messages, etc.)
+- SkillRegistry for intent routing and heartbeat coordination
+- Separate Docker container for skills service isolation
+- REST API with authentication for bot ↔ skills communication
+
+#### Phase 5E: Built-in Skills
+- **Task Manager**: CRUD operations, priority levels, deadlines, heartbeat reminders
+- **Calendar Awareness**: Event types, recurrence patterns, availability checking
+- **Profile Manager**: GDPR-style view/update/delete/export, confidence reports
+
+#### Phase 5F: Heartbeat Scheduler
+- Configurable interval (default 5 min) with quiet hours support
+- Rate limiting (3 msgs/hour per user)
+- ActionExecutor with handlers for all skill action types
+- Scheduled event handling for one-time triggers
+
+#### Phase 5G: Router Enhancement
+- 3 new skill intents: TASK_MANAGEMENT, CALENDAR_QUERY, PROFILE_QUERY
+- Skill intent examples in router prompts
+- Agent integration for skill intent handling
+
+### Changed
+- **Project renamed** from `secureclaw` to `zetherion-ai`
+- All imports updated to use `zetherion_ai` module name
+- Docker container names now use hyphens (`zetherion-ai-*`)
+- Comprehensive test suite expanded to **885 unit tests** (78% coverage)
+- Integration tests updated for Phase 5 features
+
+### Previous Changes
 - Comprehensive test suite with 87.58% overall coverage
 - Router factory with pluggable backend architecture (Gemini/Ollama)
 - Discord bot commands: `/channels`, `/remember`, `/summarize`
@@ -19,12 +83,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Vector memory using Qdrant for long-term context
 - Async embeddings with parallel batch processing
 - Contributing guidelines and code of conduct
-
-### Changed
-- Improved Discord bot coverage from 68.55% to 89.92% (Phase 2B)
-- Improved router factory coverage from 26% to 100% (Phase 2A)
-- Refactored logging to use dual-handler strategy (console + file)
-- Updated model defaults to latest versions (Claude Sonnet 4.5, GPT-4o, Gemini 2.5 Flash)
 
 ### Fixed
 - All test failures resolved (Phase 1A, 1B, 1C)
@@ -199,7 +257,7 @@ None yet - this is the initial stable release with comprehensive testing.
 
 4. **Monitor Logs**:
    ```bash
-   tail -f logs/secureclaw.log | jq .
+   tail -f logs/zetherion_ai.log | jq .
    ```
 
 ---

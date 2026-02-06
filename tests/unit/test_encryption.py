@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from secureclaw.security.encryption import NONCE_SIZE, FieldEncryptor
-from secureclaw.security.keys import KEY_SIZE, SALT_SIZE, KeyManager
+from zetherion_ai.security.encryption import NONCE_SIZE, FieldEncryptor
+from zetherion_ai.security.keys import KEY_SIZE, SALT_SIZE, KeyManager
 
 
 class TestFieldEncryptor:
