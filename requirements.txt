@@ -11,3 +11,4 @@ pydantic==2.10.3
 pydantic-settings==2.7.0
 structlog==24.4.0
 httpx==0.28.1
+cachetools==5.5.0  # TTL cache for profile system (Phase 5C)

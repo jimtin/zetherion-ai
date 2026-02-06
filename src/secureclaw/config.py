@@ -179,6 +179,58 @@ class Settings(BaseSettings):
     )
     daily_summary_hour: int = Field(default=9, description="Hour (0-23) to send daily cost summary")
 
+    # Profile System Configuration (Phase 5C)
+    profile_inference_enabled: bool = Field(
+        default=True, description="Enable profile extraction from conversations"
+    )
+    profile_tier1_only: bool = Field(
+        default=False, description="Only use Tier 1 (free regex) inference for profiles"
+    )
+    profile_confidence_threshold: float = Field(
+        default=0.6, description="Minimum confidence to auto-apply profile updates"
+    )
+    profile_cache_ttl: int = Field(
+        default=300, description="Profile cache TTL in seconds (default 5 min)"
+    )
+    profile_db_path: str = Field(
+        default="data/profiles.db",
+        description="Path to SQLite database for profile operational data",
+    )
+    profile_max_pending_confirmations: int = Field(
+        default=5, description="Maximum pending confirmations per user"
+    )
+    profile_confirmation_expiry_hours: int = Field(
+        default=72, description="Hours before pending confirmations expire"
+    )
+
+    # Employment Profile Defaults (Phase 5C.1)
+    default_formality: float = Field(
+        default=0.5, description="Initial formality level (0=casual, 1=formal)"
+    )
+    default_verbosity: float = Field(
+        default=0.5, description="Initial verbosity level (0=terse, 1=detailed)"
+    )
+    default_proactivity: float = Field(
+        default=0.3, description="Initial proactivity level (0=reactive, 1=proactive)"
+    )
+    trust_evolution_rate: float = Field(
+        default=0.05, description="How fast trust builds per positive interaction"
+    )
+
+    @field_validator(
+        "profile_confidence_threshold",
+        "default_formality",
+        "default_verbosity",
+        "default_proactivity",
+        "trust_evolution_rate",
+    )
+    @classmethod
+    def validate_float_0_1(cls, v: float) -> float:
+        """Validate float values are between 0 and 1."""
+        if not 0 <= v <= 1:
+            raise ValueError(f"Value must be between 0 and 1, got: {v}")
+        return v
+
     @field_validator("router_backend")
     @classmethod
     def validate_router_backend(cls, v: str) -> str:
