@@ -2232,7 +2232,7 @@
 <tr>
 <td>Typed secrets</td>
 <td><code>pydantic.SecretStr</code> prevents accidental logging/serialisation of tokens</td>
-<td><code>src/secureclaw/config.py</code></td>
+<td><code>src/zetherion_ai/config.py</code></td>
 </tr>
 <tr>
 <td><code>.env</code> excluded from Git</td>
@@ -2347,7 +2347,7 @@
 </ul>
 <hr />
 <h2 id="3-input-validation-prompt-injection-defence">3. Input Validation &amp; Prompt Injection Defence<a class="headerlink" href="#3-input-validation-prompt-injection-defence" title="Permanent link">&para;</a></h2>
-<p><strong>File</strong>: <code>src/secureclaw/discord/security.py</code></p>
+<p><strong>File</strong>: <code>src/zetherion_ai/discord/security.py</code></p>
 <p>Every user message is checked before being forwarded to LLM backends.</p>
 <h3 id="detection-techniques">Detection Techniques<a class="headerlink" href="#detection-techniques" title="Permanent link">&para;</a></h3>
 <ol>
@@ -2447,7 +2447,7 @@
 <tr>
 <td><strong>mypy</strong></td>
 <td>v1.8.0</td>
-<td>Full strict type checking (<code>strict = true</code>) on <code>src/secureclaw</code></td>
+<td>Full strict type checking (<code>strict = true</code>) on <code>src/zetherion_ai</code></td>
 </tr>
 <tr>
 <td><strong>Bandit</strong></td>
@@ -2561,7 +2561,7 @@
 </tr>
 <tr>
 <td><strong>Network isolation</strong></td>
-<td>All services on a dedicated <code>secureclaw-net</code> bridge network</td>
+<td>All services on a dedicated <code>zetherion_ai-net</code> bridge network</td>
 </tr>
 <tr>
 <td><strong>Named volumes</strong></td>
@@ -2618,7 +2618,7 @@
 <tr>
 <td><strong>Type Check</strong></td>
 <td>~10s</td>
-<td><code>mypy src/secureclaw</code> in strict mode</td>
+<td><code>mypy src/zetherion_ai</code> in strict mode</td>
 </tr>
 <tr>
 <td><strong>Security</strong></td>
@@ -2795,7 +2795,7 @@
 </ul>
 <hr />
 <h2 id="10-logging-monitoring">10. Logging &amp; Monitoring<a class="headerlink" href="#10-logging-monitoring" title="Permanent link">&para;</a></h2>
-<p><strong>File</strong>: <code>src/secureclaw/logging.py</code></p>
+<p><strong>File</strong>: <code>src/zetherion_ai/logging.py</code></p>
 <table>
 <thead>
 <tr>
@@ -2838,7 +2838,7 @@
 <tbody>
 <tr>
 <td><strong>Docker bridge network</strong></td>
-<td>All services communicate on <code>secureclaw-net</code>, isolated from host network by default</td>
+<td>All services communicate on <code>zetherion_ai-net</code>, isolated from host network by default</td>
 </tr>
 <tr>
 <td><strong>No exposed ports in production</strong></td>
@@ -2856,7 +2856,7 @@
 </table>
 <hr />
 <h2 id="12-data-encryption-phase-5a">12. Data Encryption (Phase 5A)<a class="headerlink" href="#12-data-encryption-phase-5a" title="Permanent link">&para;</a></h2>
-<p><strong>Files</strong>: <code>src/secureclaw/security/encryption.py</code>, <code>src/secureclaw/security/keys.py</code></p>
+<p><strong>Files</strong>: <code>src/zetherion_ai/security/encryption.py</code>, <code>src/zetherion_ai/security/keys.py</code></p>
 <p>Zetherion AI implements <strong>application-layer encryption</strong> for sensitive data stored in Qdrant. This protects data at rest even if the database is compromised.</p>
 <h3 id="encryption-architecture">Encryption Architecture<a class="headerlink" href="#encryption-architecture" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>User Message --&gt; Gemini Embedding --&gt; Qdrant Payload
@@ -2978,7 +2978,7 @@
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run Trivy vulnerability scanner</span>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aquasecurity/trivy-action@master</span>
 <a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span><span class="nt">with</span><span class="p">:</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span><span class="nt">image-ref</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">secureclaw:test</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span><span class="nt">image-ref</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">zetherion_ai:test</span>
 <a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">    </span><span class="nt">format</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;sarif&#39;</span>
 <a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span><span class="nt">output</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;trivy-results.sarif&#39;</span>
 <a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">    </span><span class="nt">severity</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;CRITICAL,HIGH&#39;</span>
@@ -3012,7 +3012,7 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Generate SBOM</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">anchore/sbom-action@v0</span>
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span><span class="nt">with</span><span class="p">:</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">secureclaw:test</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">zetherion_ai:test</span>
 <a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span><span class="nt">format</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">spdx-json</span>
 <a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">    </span><span class="nt">output-file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sbom.spdx.json</span>
 <a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>
@@ -3031,10 +3031,10 @@
 <p><strong>Recommendation</strong>:
 1. Enable <strong>branch protection</strong> on <code>main</code>: require PR reviews, status checks to pass, and linear history.
 2. Require <strong>GPG or SSH signed commits</strong> to prevent commit spoofing.
-3. Enable <strong>CODEOWNERS</strong> for critical paths (<code>src/secureclaw/discord/security.py</code>, <code>.github/workflows/</code>, <code>.gitleaks.toml</code>).</p>
+3. Enable <strong>CODEOWNERS</strong> for critical paths (<code>src/zetherion_ai/discord/security.py</code>, <code>.github/workflows/</code>, <code>.gitleaks.toml</code>).</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a># .github/CODEOWNERS
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>/.github/       @jameshinton
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>/src/secureclaw/discord/security.py  @jameshinton
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>/src/zetherion_ai/discord/security.py  @jameshinton
 <a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>/.gitleaks.toml @jameshinton
 </code></pre></div>
 <p><strong>References</strong>:
@@ -3057,7 +3057,7 @@
 <h4 id="126-read-only-filesystem-in-production-container">12.6 Read-Only Filesystem in Production Container<a class="headerlink" href="#126-read-only-filesystem-in-production-container" title="Permanent link">&para;</a></h4>
 <p><strong>Gap</strong>: The bot container's filesystem is writable. A compromised process could modify application code.</p>
 <p><strong>Recommendation</strong>: Set <code>read_only: true</code> in <code>docker-compose.yml</code> and use <code>tmpfs</code> for writable directories.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">secureclaw</span><span class="p">:</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">zetherion_ai</span><span class="p">:</span>
 <a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">read_only</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 <a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">tmpfs</span><span class="p">:</span>
 <a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/tmp</span>
@@ -3072,7 +3072,7 @@
 <h4 id="127-runtime-security-headers-resource-limits">12.7 Runtime Security Headers / Resource Limits<a class="headerlink" href="#127-runtime-security-headers-resource-limits" title="Permanent link">&para;</a></h4>
 <p><strong>Gap</strong>: No CPU/memory limits on containers. A runaway process (e.g. OOM from a large embedding batch) could starve other services.</p>
 <p><strong>Recommendation</strong>: Set resource limits in <code>docker-compose.yml</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nt">secureclaw</span><span class="p">:</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nt">zetherion_ai</span><span class="p">:</span>
 <a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span><span class="nt">deploy</span><span class="p">:</span>
 <a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">    </span><span class="nt">resources</span><span class="p">:</span>
 <a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">      </span><span class="nt">limits</span><span class="p">:</span>

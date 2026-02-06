@@ -1968,7 +1968,7 @@
 <a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>pytest -m &quot;not integration&quot;
 <a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>
 <a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a># Run with coverage
-<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>pytest --cov=src/secureclaw --cov-report=html
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>pytest --cov=src/zetherion_ai --cov-report=html
 <a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>
 <a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a># Run specific test file
 <a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>pytest tests/test_agent_core.py
@@ -1979,7 +1979,7 @@
 <h3 id="writing-unit-tests">Writing Unit Tests<a class="headerlink" href="#writing-unit-tests" title="Permanent link">&para;</a></h3>
 <p>Unit tests go in <code>tests/</code> directory:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">secureclaw.agent.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">zetherion_ai.agent.core</span><span class="w"> </span><span class="kn">import</span> <span class="n">Agent</span>
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">def</span><span class="w"> </span><span class="nf">test_agent_initialization</span><span class="p">():</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Test that agent initializes correctly.&quot;&quot;&quot;</span>
@@ -2195,7 +2195,7 @@
 <p><strong>Error</strong>: Bot not responding
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Check bot is online in Discord</span>
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="c1"># Check bot logs</span>
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>docker<span class="w"> </span>logs<span class="w"> </span>secureclaw-bot
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>docker<span class="w"> </span>logs<span class="w"> </span>zetherion_ai-bot
 </code></pre></div></p>
 <p><strong>Verify bot has required permissions in test channel:</strong>
 1. Right-click test channel → "Edit Channel" → "Permissions"
@@ -2341,14 +2341,14 @@
 <h2 id="test-coverage">Test Coverage<a class="headerlink" href="#test-coverage" title="Permanent link">&para;</a></h2>
 <h3 id="generate-coverage-report">Generate Coverage Report<a class="headerlink" href="#generate-coverage-report" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># HTML report</span>
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>pytest<span class="w"> </span>--cov<span class="o">=</span>src/secureclaw<span class="w"> </span>--cov-report<span class="o">=</span>html
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>pytest<span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>html
 <a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>open<span class="w"> </span>htmlcov/index.html
 <a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>
 <a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="c1"># Terminal report</span>
-<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>pytest<span class="w"> </span>--cov<span class="o">=</span>src/secureclaw<span class="w"> </span>--cov-report<span class="o">=</span>term-missing
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>pytest<span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>term-missing
 <a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>
 <a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="c1"># XML report (for CI)</span>
-<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>pytest<span class="w"> </span>--cov<span class="o">=</span>src/secureclaw<span class="w"> </span>--cov-report<span class="o">=</span>xml
+<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>pytest<span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>xml
 </code></pre></div>
 <h3 id="coverage-goals">Coverage Goals<a class="headerlink" href="#coverage-goals" title="Permanent link">&para;</a></h3>
 <ul>
@@ -2361,13 +2361,13 @@
 <h3 id="view-integration-test-logs">View Integration Test Logs<a class="headerlink" href="#view-integration-test-logs" title="Permanent link">&para;</a></h3>
 <p>If integration tests fail, check Docker logs:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># View Zetherion AI logs</span>
-<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>-p<span class="w"> </span>secureclaw-test<span class="w"> </span>logs<span class="w"> </span>secureclaw
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>-p<span class="w"> </span>zetherion_ai-test<span class="w"> </span>logs<span class="w"> </span>zetherion_ai
 <a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>
 <a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="c1"># View Qdrant logs</span>
-<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>docker<span class="w"> </span>compose<span class="w"> </span>-p<span class="w"> </span>secureclaw-test<span class="w"> </span>logs<span class="w"> </span>qdrant
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>docker<span class="w"> </span>compose<span class="w"> </span>-p<span class="w"> </span>zetherion_ai-test<span class="w"> </span>logs<span class="w"> </span>qdrant
 <a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>
 <a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="c1"># Follow logs in real-time</span>
-<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>docker<span class="w"> </span>compose<span class="w"> </span>-p<span class="w"> </span>secureclaw-test<span class="w"> </span>logs<span class="w"> </span>-f
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>docker<span class="w"> </span>compose<span class="w"> </span>-p<span class="w"> </span>zetherion_ai-test<span class="w"> </span>logs<span class="w"> </span>-f
 </code></pre></div>
 <h3 id="common-issues">Common Issues<a class="headerlink" href="#common-issues" title="Permanent link">&para;</a></h3>
 <p><strong>Issue</strong>: "Services failed to become healthy"
@@ -2438,7 +2438,7 @@
 <a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a>./scripts/run-integration-tests.sh
 <a id="__codelineno-18-12" name="__codelineno-18-12" href="#__codelineno-18-12"></a>
 <a id="__codelineno-18-13" name="__codelineno-18-13" href="#__codelineno-18-13"></a><span class="c1"># Coverage report</span>
-<a id="__codelineno-18-14" name="__codelineno-18-14" href="#__codelineno-18-14"></a>pytest<span class="w"> </span>--cov<span class="o">=</span>src/secureclaw<span class="w"> </span>--cov-report<span class="o">=</span>html<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>open<span class="w"> </span>htmlcov/index.html
+<a id="__codelineno-18-14" name="__codelineno-18-14" href="#__codelineno-18-14"></a>pytest<span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>html<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>open<span class="w"> </span>htmlcov/index.html
 </code></pre></div>
 <hr />
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
@@ -2459,7 +2459,7 @@
 <h3 id="docker-cleanup">Docker Cleanup<a class="headerlink" href="#docker-cleanup" title="Permanent link">&para;</a></h3>
 <p>If test containers don't clean up:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="c1"># Manual cleanup</span>
-<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>-p<span class="w"> </span>secureclaw-test<span class="w"> </span>down<span class="w"> </span>-v
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>docker<span class="w"> </span>compose<span class="w"> </span>-p<span class="w"> </span>zetherion_ai-test<span class="w"> </span>down<span class="w"> </span>-v
 <a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>
 <a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="c1"># Nuclear option (removes ALL stopped containers)</span>
 <a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>docker<span class="w"> </span>system<span class="w"> </span>prune<span class="w"> </span>-a
@@ -2470,7 +2470,7 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="sd">&quot;&quot;&quot;Tests for new feature.&quot;&quot;&quot;</span>
 <a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>
 <a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">secureclaw.feature</span><span class="w"> </span><span class="kn">import</span> <span class="n">NewFeature</span>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">zetherion_ai.feature</span><span class="w"> </span><span class="kn">import</span> <span class="n">NewFeature</span>
 <a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>
 <a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a>
 <a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a><span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>

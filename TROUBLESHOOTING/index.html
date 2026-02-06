@@ -1997,12 +1997,12 @@
 <li>
 <p><strong>Check Qdrant is Running:</strong>
    <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>docker<span class="w"> </span>ps<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>qdrant
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="c1"># Should show secureclaw-qdrant running</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="c1"># Should show zetherion_ai-qdrant running</span>
 </code></pre></div></p>
 </li>
 <li>
 <p><strong>Start Qdrant if Stopped:</strong>
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>docker<span class="w"> </span>start<span class="w"> </span>secureclaw-qdrant
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>docker<span class="w"> </span>start<span class="w"> </span>zetherion_ai-qdrant
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="c1"># Or use the start script:</span>
 <a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>./start.sh
 </code></pre></div></p>
@@ -2036,7 +2036,7 @@
 </li>
 <li>
 <p><strong>Restart Qdrant:</strong>
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>docker<span class="w"> </span>restart<span class="w"> </span>secureclaw-qdrant
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>docker<span class="w"> </span>restart<span class="w"> </span>zetherion_ai-qdrant
 <a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="c1"># Wait 10 seconds</span>
 <a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>curl<span class="w"> </span>http://localhost:6333/healthz
 </code></pre></div></p>
@@ -2052,7 +2052,7 @@
 <ol>
 <li>
 <p><strong>Check Volume Mount:</strong>
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>docker<span class="w"> </span>inspect<span class="w"> </span>secureclaw-qdrant<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-A<span class="w"> </span><span class="m">5</span><span class="w"> </span>Mounts
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>docker<span class="w"> </span>inspect<span class="w"> </span>zetherion_ai-qdrant<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-A<span class="w"> </span><span class="m">5</span><span class="w"> </span>Mounts
 <a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="c1"># Should show volume mounted to /qdrant/storage</span>
 </code></pre></div></p>
 </li>
@@ -2064,8 +2064,8 @@
 </li>
 <li>
 <p><strong>Recreate with Proper Volume:</strong>
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>docker<span class="w"> </span>stop<span class="w"> </span>secureclaw-qdrant
-<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>docker<span class="w"> </span>rm<span class="w"> </span>secureclaw-qdrant
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>docker<span class="w"> </span>stop<span class="w"> </span>zetherion_ai-qdrant
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>docker<span class="w"> </span>rm<span class="w"> </span>zetherion_ai-qdrant
 <a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>./start.sh<span class="w">  </span><span class="c1"># Will recreate with volume</span>
 </code></pre></div></p>
 </li>
@@ -2074,7 +2074,7 @@
 <h2 id="python-version-issues">Python Version Issues<a class="headerlink" href="#python-version-issues" title="Permanent link">&para;</a></h2>
 <h3 id="error-package-requires-a-different-python">Error: <code>Package requires a different Python</code><a class="headerlink" href="#error-package-requires-a-different-python" title="Permanent link">&para;</a></h3>
 <p><strong>Full Error:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>ERROR: Package &#39;secureclaw&#39; requires a different Python: 3.11.6 not in &#39;&gt;=3.12&#39;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>ERROR: Package &#39;zetherion_ai&#39; requires a different Python: 3.11.6 not in &#39;&gt;=3.12&#39;
 </code></pre></div></p>
 <p><strong>Cause:</strong> Zetherion AI requires Python 3.12+, but you have an older version.</p>
 <p><strong>Solutions:</strong></p>
@@ -2232,7 +2232,7 @@ The start script handles this automatically. If you need to manually use Python 
 <li>
 <p><strong>Adjust Router Threshold:</strong></p>
 </li>
-<li>Edit <code>src/secureclaw/agent/router.py</code></li>
+<li>Edit <code>src/zetherion_ai/agent/router.py</code></li>
 <li>
 <p>Line 136: Change <code>confidence &gt; 0.7</code> to <code>0.8</code> to use Flash more often</p>
 </li>
@@ -2245,7 +2245,7 @@ The start script handles this automatically. If you need to manually use Python 
 <li>
 <p><strong>Reduce Memory Context:</strong></p>
 </li>
-<li>Edit <code>src/secureclaw/agent/core.py</code></li>
+<li>Edit <code>src/zetherion_ai/agent/core.py</code></li>
 <li>Line ~145: Reduce <code>memory_limit</code> and <code>history_limit</code></li>
 </ol>
 <hr />
@@ -2257,16 +2257,16 @@ The start script handles this automatically. If you need to manually use Python 
 <ol>
 <li>
 <p><strong>Check Qdrant Memory:</strong>
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>docker<span class="w"> </span>stats<span class="w"> </span>secureclaw-qdrant
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>docker<span class="w"> </span>stats<span class="w"> </span>zetherion_ai-qdrant
 </code></pre></div></p>
 </li>
 <li>
 <p><strong>Limit Qdrant Memory:</strong>
    <div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a><span class="c1"># Stop and recreate with memory limit:</span>
-<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a>docker<span class="w"> </span>stop<span class="w"> </span>secureclaw-qdrant
-<a id="__codelineno-30-3" name="__codelineno-30-3" href="#__codelineno-30-3"></a>docker<span class="w"> </span>rm<span class="w"> </span>secureclaw-qdrant
+<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a>docker<span class="w"> </span>stop<span class="w"> </span>zetherion_ai-qdrant
+<a id="__codelineno-30-3" name="__codelineno-30-3" href="#__codelineno-30-3"></a>docker<span class="w"> </span>rm<span class="w"> </span>zetherion_ai-qdrant
 <a id="__codelineno-30-4" name="__codelineno-30-4" href="#__codelineno-30-4"></a>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-30-5" name="__codelineno-30-5" href="#__codelineno-30-5"></a><span class="w">  </span>--name<span class="w"> </span>secureclaw-qdrant<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-30-5" name="__codelineno-30-5" href="#__codelineno-30-5"></a><span class="w">  </span>--name<span class="w"> </span>zetherion_ai-qdrant<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-30-6" name="__codelineno-30-6" href="#__codelineno-30-6"></a><span class="w">  </span>-p<span class="w"> </span><span class="m">6333</span>:6333<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-30-7" name="__codelineno-30-7" href="#__codelineno-30-7"></a><span class="w">  </span>--memory<span class="o">=</span><span class="s2">&quot;2g&quot;</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-30-8" name="__codelineno-30-8" href="#__codelineno-30-8"></a><span class="w">  </span>-v<span class="w"> </span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>/qdrant_storage:/qdrant/storage<span class="w"> </span><span class="se">\</span>
@@ -2418,9 +2418,9 @@ The start script handles this automatically. If you need to manually use Python 
 <a id="__codelineno-42-2" name="__codelineno-42-2" href="#__codelineno-42-2"></a><span class="nv">QDRANT_PORT</span><span class="o">=</span><span class="m">6334</span>
 <a id="__codelineno-42-3" name="__codelineno-42-3" href="#__codelineno-42-3"></a>
 <a id="__codelineno-42-4" name="__codelineno-42-4" href="#__codelineno-42-4"></a><span class="c1"># Recreate Qdrant:</span>
-<a id="__codelineno-42-5" name="__codelineno-42-5" href="#__codelineno-42-5"></a>docker<span class="w"> </span>rm<span class="w"> </span>-f<span class="w"> </span>secureclaw-qdrant
+<a id="__codelineno-42-5" name="__codelineno-42-5" href="#__codelineno-42-5"></a>docker<span class="w"> </span>rm<span class="w"> </span>-f<span class="w"> </span>zetherion_ai-qdrant
 <a id="__codelineno-42-6" name="__codelineno-42-6" href="#__codelineno-42-6"></a>docker<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span><span class="se">\</span>
-<a id="__codelineno-42-7" name="__codelineno-42-7" href="#__codelineno-42-7"></a><span class="w">  </span>--name<span class="w"> </span>secureclaw-qdrant<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-42-7" name="__codelineno-42-7" href="#__codelineno-42-7"></a><span class="w">  </span>--name<span class="w"> </span>zetherion_ai-qdrant<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-42-8" name="__codelineno-42-8" href="#__codelineno-42-8"></a><span class="w">  </span>-p<span class="w"> </span><span class="m">6334</span>:6333<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-42-9" name="__codelineno-42-9" href="#__codelineno-42-9"></a><span class="w">  </span>-v<span class="w"> </span><span class="k">$(</span><span class="nb">pwd</span><span class="k">)</span>/qdrant_storage:/qdrant/storage<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-42-10" name="__codelineno-42-10" href="#__codelineno-42-10"></a><span class="w">  </span>qdrant/qdrant:latest
@@ -2507,10 +2507,10 @@ The start script handles this automatically. If you need to manually use Python 
 <li>
 <p><strong>Manually Pull Model:</strong>
    <div class="highlight"><pre><span></span><code><a id="__codelineno-50-1" name="__codelineno-50-1" href="#__codelineno-50-1"></a><span class="c1"># If automatic pull failed, try manually:</span>
-<a id="__codelineno-50-2" name="__codelineno-50-2" href="#__codelineno-50-2"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>secureclaw-ollama<span class="w"> </span>ollama<span class="w"> </span>pull<span class="w"> </span>qwen2.5:7b
+<a id="__codelineno-50-2" name="__codelineno-50-2" href="#__codelineno-50-2"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion_ai-ollama<span class="w"> </span>ollama<span class="w"> </span>pull<span class="w"> </span>qwen2.5:7b
 <a id="__codelineno-50-3" name="__codelineno-50-3" href="#__codelineno-50-3"></a>
 <a id="__codelineno-50-4" name="__codelineno-50-4" href="#__codelineno-50-4"></a><span class="c1"># For smaller model:</span>
-<a id="__codelineno-50-5" name="__codelineno-50-5" href="#__codelineno-50-5"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>secureclaw-ollama<span class="w"> </span>ollama<span class="w"> </span>pull<span class="w"> </span>phi3:mini
+<a id="__codelineno-50-5" name="__codelineno-50-5" href="#__codelineno-50-5"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion_ai-ollama<span class="w"> </span>ollama<span class="w"> </span>pull<span class="w"> </span>phi3:mini
 </code></pre></div></p>
 </li>
 <li>
@@ -2542,12 +2542,12 @@ The start script handles this automatically. If you need to manually use Python 
 <li>
 <p><strong>Check Ollama Container is Running:</strong>
    <div class="highlight"><pre><span></span><code><a id="__codelineno-54-1" name="__codelineno-54-1" href="#__codelineno-54-1"></a>docker<span class="w"> </span>ps<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>ollama
-<a id="__codelineno-54-2" name="__codelineno-54-2" href="#__codelineno-54-2"></a><span class="c1"># Should show: secureclaw-ollama</span>
+<a id="__codelineno-54-2" name="__codelineno-54-2" href="#__codelineno-54-2"></a><span class="c1"># Should show: zetherion_ai-ollama</span>
 </code></pre></div></p>
 </li>
 <li>
 <p><strong>Start Ollama Container:</strong>
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-55-1" name="__codelineno-55-1" href="#__codelineno-55-1"></a>docker<span class="w"> </span>start<span class="w"> </span>secureclaw-ollama
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-55-1" name="__codelineno-55-1" href="#__codelineno-55-1"></a>docker<span class="w"> </span>start<span class="w"> </span>zetherion_ai-ollama
 <a id="__codelineno-55-2" name="__codelineno-55-2" href="#__codelineno-55-2"></a><span class="c1"># Or use the start script:</span>
 <a id="__codelineno-55-3" name="__codelineno-55-3" href="#__codelineno-55-3"></a>./start.sh
 </code></pre></div></p>
@@ -2575,7 +2575,7 @@ The start script handles this automatically. If you need to manually use Python 
 </li>
 <li>
 <p><strong>Check Container Logs:</strong>
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-59-1" name="__codelineno-59-1" href="#__codelineno-59-1"></a>docker<span class="w"> </span>logs<span class="w"> </span>secureclaw-ollama
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-59-1" name="__codelineno-59-1" href="#__codelineno-59-1"></a>docker<span class="w"> </span>logs<span class="w"> </span>zetherion_ai-ollama
 <a id="__codelineno-59-2" name="__codelineno-59-2" href="#__codelineno-59-2"></a><span class="c1"># Look for errors or OOM messages</span>
 </code></pre></div></p>
 </li>
@@ -2589,13 +2589,13 @@ The start script handles this automatically. If you need to manually use Python 
 <ol>
 <li>
 <p><strong>Check CPU Usage:</strong>
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-60-1" name="__codelineno-60-1" href="#__codelineno-60-1"></a>docker<span class="w"> </span>stats<span class="w"> </span>secureclaw-ollama
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-60-1" name="__codelineno-60-1" href="#__codelineno-60-1"></a>docker<span class="w"> </span>stats<span class="w"> </span>zetherion_ai-ollama
 <a id="__codelineno-60-2" name="__codelineno-60-2" href="#__codelineno-60-2"></a><span class="c1"># Look at CPU% - should be 100-400% during inference</span>
 </code></pre></div></p>
 </li>
 <li>
 <p><strong>Verify Model Size:</strong>
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-61-1" name="__codelineno-61-1" href="#__codelineno-61-1"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>secureclaw-ollama<span class="w"> </span>ollama<span class="w"> </span>list
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-61-1" name="__codelineno-61-1" href="#__codelineno-61-1"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion_ai-ollama<span class="w"> </span>ollama<span class="w"> </span>list
 <a id="__codelineno-61-2" name="__codelineno-61-2" href="#__codelineno-61-2"></a><span class="c1"># Smaller models (phi3:mini) are faster than large ones</span>
 </code></pre></div></p>
 </li>
@@ -2609,7 +2609,7 @@ The start script handles this automatically. If you need to manually use Python 
 </li>
 <li>
 <p><strong>Check Docker Memory:</strong>
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-63-1" name="__codelineno-63-1" href="#__codelineno-63-1"></a>docker<span class="w"> </span>stats<span class="w"> </span>secureclaw-ollama
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-63-1" name="__codelineno-63-1" href="#__codelineno-63-1"></a>docker<span class="w"> </span>stats<span class="w"> </span>zetherion_ai-ollama
 <a id="__codelineno-63-2" name="__codelineno-63-2" href="#__codelineno-63-2"></a><span class="c1"># MEM USAGE should be well below LIMIT</span>
 <a id="__codelineno-63-3" name="__codelineno-63-3" href="#__codelineno-63-3"></a><span class="c1"># If at limit, model is swapping (very slow)</span>
 </code></pre></div></p>
@@ -2730,7 +2730,7 @@ The start script handles this automatically. If you need to manually use Python 
 <a id="__codelineno-72-2" name="__codelineno-72-2" href="#__codelineno-72-2"></a>./status.sh
 <a id="__codelineno-72-3" name="__codelineno-72-3" href="#__codelineno-72-3"></a>
 <a id="__codelineno-72-4" name="__codelineno-72-4" href="#__codelineno-72-4"></a><span class="c1"># 2. Get bot logs (last 50 lines)</span>
-<a id="__codelineno-72-5" name="__codelineno-72-5" href="#__codelineno-72-5"></a>docker<span class="w"> </span>logs<span class="w"> </span>secureclaw-qdrant<span class="w"> </span>--tail<span class="w"> </span><span class="m">50</span>
+<a id="__codelineno-72-5" name="__codelineno-72-5" href="#__codelineno-72-5"></a>docker<span class="w"> </span>logs<span class="w"> </span>zetherion_ai-qdrant<span class="w"> </span>--tail<span class="w"> </span><span class="m">50</span>
 <a id="__codelineno-72-6" name="__codelineno-72-6" href="#__codelineno-72-6"></a>
 <a id="__codelineno-72-7" name="__codelineno-72-7" href="#__codelineno-72-7"></a><span class="c1"># 3. Check Python version</span>
 <a id="__codelineno-72-8" name="__codelineno-72-8" href="#__codelineno-72-8"></a>python3<span class="w"> </span>--version
@@ -2771,7 +2771,7 @@ The start script handles this automatically. If you need to manually use Python 
 <a id="__codelineno-74-8" name="__codelineno-74-8" href="#__codelineno-74-8"></a>./stop.sh
 <a id="__codelineno-74-9" name="__codelineno-74-9" href="#__codelineno-74-9"></a>
 <a id="__codelineno-74-10" name="__codelineno-74-10" href="#__codelineno-74-10"></a><span class="c1"># View logs</span>
-<a id="__codelineno-74-11" name="__codelineno-74-11" href="#__codelineno-74-11"></a>tail<span class="w"> </span>-f<span class="w"> </span>logs/secureclaw.log<span class="w">  </span><span class="c1"># if logging to file</span>
+<a id="__codelineno-74-11" name="__codelineno-74-11" href="#__codelineno-74-11"></a>tail<span class="w"> </span>-f<span class="w"> </span>logs/zetherion_ai.log<span class="w">  </span><span class="c1"># if logging to file</span>
 <a id="__codelineno-74-12" name="__codelineno-74-12" href="#__codelineno-74-12"></a>
 <a id="__codelineno-74-13" name="__codelineno-74-13" href="#__codelineno-74-13"></a><span class="c1"># Restart bot</span>
 <a id="__codelineno-74-14" name="__codelineno-74-14" href="#__codelineno-74-14"></a>./stop.sh<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>./start.sh
@@ -2783,7 +2783,7 @@ The start script handles this automatically. If you need to manually use Python 
 <a id="__codelineno-74-20" name="__codelineno-74-20" href="#__codelineno-74-20"></a>docker<span class="w"> </span>ps<span class="w"> </span>-a
 <a id="__codelineno-74-21" name="__codelineno-74-21" href="#__codelineno-74-21"></a>
 <a id="__codelineno-74-22" name="__codelineno-74-22" href="#__codelineno-74-22"></a><span class="c1"># View bot process</span>
-<a id="__codelineno-74-23" name="__codelineno-74-23" href="#__codelineno-74-23"></a>ps<span class="w"> </span>aux<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>secureclaw
+<a id="__codelineno-74-23" name="__codelineno-74-23" href="#__codelineno-74-23"></a>ps<span class="w"> </span>aux<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>zetherion_ai
 </code></pre></div>
 <h3 id="configuration-checklist">Configuration Checklist<a class="headerlink" href="#configuration-checklist" title="Permanent link">&para;</a></h3>
 <ul>

@@ -2246,7 +2246,7 @@ Response:
 3. User sends 12th message within 30s → ✗ Blocked, no warning (cooldown)
 4. After 60s from first message → Counter resets</p>
 <p><strong>Bypass Rate Limit:</strong>
-Set <code>max_messages=999</code> in <code>src/secureclaw/discord/security.py:36</code></p>
+Set <code>max_messages=999</code> in <code>src/zetherion_ai/discord/security.py:36</code></p>
 <hr />
 <h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
 <h3 id="model-configuration">Model Configuration<a class="headerlink" href="#model-configuration" title="Permanent link">&para;</a></h3>
@@ -2303,7 +2303,7 @@ Set <code>max_messages=999</code> in <code>src/secureclaw/discord/security.py:36
 <h2 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
 <p>For programmatic access or building additional features:</p>
 <h3 id="command-handler-methods">Command Handler Methods<a class="headerlink" href="#command-handler-methods" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a><span class="c1"># In src/secureclaw/discord/bot.py</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a><span class="c1"># In src/zetherion_ai/discord/bot.py</span>
 <a id="__codelineno-32-2" name="__codelineno-32-2" href="#__codelineno-32-2"></a>
 <a id="__codelineno-32-3" name="__codelineno-32-3" href="#__codelineno-32-3"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_handle_ask</span><span class="p">(</span><span class="n">interaction</span><span class="p">,</span> <span class="n">question</span><span class="p">)</span>
 <a id="__codelineno-32-4" name="__codelineno-32-4" href="#__codelineno-32-4"></a><span class="c1"># Handles /ask command</span>
@@ -2319,7 +2319,7 @@ Set <code>max_messages=999</code> in <code>src/secureclaw/discord/security.py:36
 </code></pre></div>
 <h3 id="adding-new-commands">Adding New Commands<a class="headerlink" href="#adding-new-commands" title="Permanent link">&para;</a></h3>
 <ol>
-<li>Edit <code>src/secureclaw/discord/bot.py</code></li>
+<li>Edit <code>src/zetherion_ai/discord/bot.py</code></li>
 <li>Add command in <code>_setup_commands()</code>:
 <div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a><span class="nd">@self</span><span class="o">.</span><span class="n">_tree</span><span class="o">.</span><span class="n">command</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;hello&quot;</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Say hello&quot;</span><span class="p">)</span>
 <a id="__codelineno-33-2" name="__codelineno-33-2" href="#__codelineno-33-2"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">hello_command</span><span class="p">(</span><span class="n">interaction</span><span class="p">:</span> <span class="n">discord</span><span class="o">.</span><span class="n">Interaction</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -2356,7 +2356,7 @@ Set <code>max_messages=999</code> in <code>src/secureclaw/discord/security.py:36
 <p><strong>Need help with commands?</strong>
 - <a href="../TROUBLESHOOTING/">Troubleshooting Guide</a>
 - <a href="../FAQ/">FAQ</a>
-- <a href="https://github.com/yourusername/secureclaw/issues">GitHub Issues</a></p>
+- <a href="https://github.com/yourusername/zetherion_ai/issues">GitHub Issues</a></p>
 
 
 

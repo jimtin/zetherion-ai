@@ -1937,7 +1937,7 @@
 <a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># Use different Gemini model:</span>
 <a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="nv">ROUTER_MODEL</span><span class="o">=</span>gemini-1.5-flash
 </code></pre></div></p>
-<p>See <code>src/secureclaw/config.py</code> for all model options.</p>
+<p>See <code>src/zetherion_ai/config.py</code> for all model options.</p>
 <hr />
 <h2 id="security-questions">Security Questions<a class="headerlink" href="#security-questions" title="Permanent link">&para;</a></h2>
 <h3 id="is-it-safe-to-put-api-keys-in-env">Is it safe to put API keys in .env?<a class="headerlink" href="#is-it-safe-to-put-api-keys-in-env" title="Permanent link">&para;</a></h3>
@@ -1963,7 +1963,7 @@
 - Unicode obfuscation detection
 - Excessive role-play marker detection
 - Auto-rejects suspicious messages</p>
-<p>See <code>src/secureclaw/discord/security.py</code> for details.</p>
+<p>See <code>src/zetherion_ai/discord/security.py</code> for details.</p>
 <h3 id="can-someone-hack-my-bot">Can someone hack my bot?<a class="headerlink" href="#can-someone-hack-my-bot" title="Permanent link">&para;</a></h3>
 <p><strong>Attack vectors:</strong>
 1. <strong>Stolen Discord Token</strong> - Keep token secret, rotate if exposed
@@ -1992,14 +1992,14 @@
 <a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-v
 <a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>
 <a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="c1"># With coverage:</span>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>--cov<span class="o">=</span>src/secureclaw<span class="w"> </span>--cov-report<span class="o">=</span>html
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>html
 <a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>
 <a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="c1"># Open coverage report:</span>
 <a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>open<span class="w"> </span>htmlcov/index.html
 </code></pre></div>
 <h3 id="how-do-i-add-a-new-slash-command">How do I add a new slash command?<a class="headerlink" href="#how-do-i-add-a-new-slash-command" title="Permanent link">&para;</a></h3>
 <ol>
-<li>Edit <code>src/secureclaw/discord/bot.py</code></li>
+<li>Edit <code>src/zetherion_ai/discord/bot.py</code></li>
 <li>Add command in <code>_setup_commands()</code> method</li>
 <li>Create handler method (e.g., <code>_handle_my_command</code>)</li>
 <li>Restart bot - commands sync automatically</li>
@@ -2010,7 +2010,7 @@
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="k">await</span> <span class="n">interaction</span><span class="o">.</span><span class="n">response</span><span class="o">.</span><span class="n">send_message</span><span class="p">(</span><span class="s2">&quot;Hello!&quot;</span><span class="p">)</span>
 </code></pre></div></p>
 <h3 id="how-do-i-change-the-system-prompt">How do I change the system prompt?<a class="headerlink" href="#how-do-i-change-the-system-prompt" title="Permanent link">&para;</a></h3>
-<p>Edit <code>src/secureclaw/agent/prompts.py</code>:
+<p>Edit <code>src/zetherion_ai/agent/prompts.py</code>:
 - <code>CLAUDE_SYSTEM_PROMPT</code> - Instructions for Claude
 - <code>OPENAI_SYSTEM_PROMPT</code> - Instructions for GPT-4</p>
 <p>Restart bot after changes.</p>
@@ -2018,7 +2018,7 @@
 <p>Technically yes, but requires code changes:
 - Current: Qdrant (recommended, fast, easy)
 - Alternatives: Pinecone, Weaviate, Milvus</p>
-<p>You'd need to implement the same interface in <code>src/secureclaw/memory/</code>.</p>
+<p>You'd need to implement the same interface in <code>src/zetherion_ai/memory/</code>.</p>
 <hr />
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
 <h3 id="bot-is-not-responding">Bot is not responding<a class="headerlink" href="#bot-is-not-responding" title="Permanent link">&para;</a></h3>
@@ -2033,8 +2033,8 @@
 <h2 id="still-have-questions">Still Have Questions?<a class="headerlink" href="#still-have-questions" title="Permanent link">&para;</a></h2>
 <ol>
 <li>Check <a href="../TROUBLESHOOTING/">TROUBLESHOOTING.md</a></li>
-<li>Search <a href="https://github.com/youruser/secureclaw/issues">GitHub Issues</a></li>
-<li>Ask in <a href="https://github.com/youruser/secureclaw/discussions">GitHub Discussions</a></li>
+<li>Search <a href="https://github.com/youruser/zetherion_ai/issues">GitHub Issues</a></li>
+<li>Ask in <a href="https://github.com/youruser/zetherion_ai/discussions">GitHub Discussions</a></li>
 <li>Create new issue with <code>[Question]</code> tag</li>
 </ol>
 
