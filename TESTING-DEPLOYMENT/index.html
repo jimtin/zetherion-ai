@@ -1,0 +1,3738 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Secure personal AI assistant with encrypted memory and multi-provider LLM routing">
+      
+      
+      
+        <link rel="canonical" href="https://jimtin.github.io/zetherion-ai/TESTING-DEPLOYMENT/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Testing & Deployment Validation Guide - Zetherion AI</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#testing-deployment-validation-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Zetherion AI" class="md-header__button md-logo" aria-label="Zetherion AI" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Zetherion AI
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Testing &amp; Deployment Validation Guide
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/jimtin/zetherion-ai" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    jimtin/zetherion-ai
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Zetherion AI" class="md-nav__button md-logo" aria-label="Zetherion AI" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Zetherion AI
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/jimtin/zetherion-ai" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    jimtin/zetherion-ai
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../STARTUP_WALKTHROUGH/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../COMMANDS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../FAQ/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ARCHITECTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../DOCKER_ARCHITECTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../SECURITY/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TESTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../CI_CD/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI/CD
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TROUBLESHOOTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pre-testing-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-Testing Checklist
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pre-Testing Checklist">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-clean-environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Clean Environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-prerequisites-verified" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Prerequisites Verified
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-test-configuration-ready" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Test Configuration Ready
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-by-phase-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase-by-Phase Validation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase-by-Phase Validation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-prerequisites-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: Prerequisites Check
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 1: Prerequisites Check">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-11-docker-detection-already-installed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 1.1: Docker Detection (Already Installed)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-12-docker-not-running-manual-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 1.2: Docker Not Running (Manual Test)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-13-low-disk-space-warning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 1.3: Low Disk Space Warning
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-hardware-assessment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: Hardware Assessment
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2: Hardware Assessment">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-21-hardware-assessment-execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 2.1: Hardware Assessment Execution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-22-hardware-assessment-accuracy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 2.2: Hardware Assessment Accuracy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-23-model-recommendation-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 2.3: Model Recommendation Logic
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-3-configuration-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3: Configuration Setup
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 3: Configuration Setup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-31-first-run-interactive-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 3.1: First-Run Interactive Setup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-32-existing-configuration-skip-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 3.2: Existing Configuration (Skip Setup)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-33-invalid-api-key-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 3.3: Invalid API Key Format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-4-docker-build-deploy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4: Docker Build &amp; Deploy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 4: Docker Build &amp; Deploy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-41-distroless-image-build" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 4.1: Distroless Image Build
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-42-container-startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 4.2: Container Startup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-43-health-check-wait" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 4.3: Health Check Wait
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5-model-download-ollama-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5: Model Download (Ollama Only)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 5: Model Download (Ollama Only)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-51-first-time-model-download" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 5.1: First-Time Model Download
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-52-existing-model-skip-download" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 5.2: Existing Model (Skip Download)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-53-model-download-failure-recovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 5.3: Model Download Failure Recovery
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-6-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 6: Verification
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 6: Verification">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-61-qdrant-health-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 6.1: Qdrant Health Check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-62-ollama-health-check-if-enabled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 6.2: Ollama Health Check (If Enabled)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-63-container-status-display" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test 6.3: Container Status Display
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-7-success" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 7: Success
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#platform-specific-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Platform-Specific Testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Platform-Specific Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#windows-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Windows Testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Windows Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-w1-powershell-execution-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test W1: PowerShell Execution Policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-w2-administrator-privileges" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test W2: Administrator Privileges
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-w3-wsl-2-dependency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test W3: WSL 2 Dependency
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#macos-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        macOS Testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="macOS Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-m1-homebrew-auto-install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test M1: Homebrew Auto-Install
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-m2-docker-desktop-installation-macos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test M2: Docker Desktop Installation (macOS)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-m3-apple-silicon-vs-intel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test M3: Apple Silicon vs Intel
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#linux-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Linux Testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Linux Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-l1-docker-installation-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test L1: Docker Installation Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-l2-docker-permission-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test L2: Docker Permission Issues
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-l3-systemd-docker-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test L3: systemd Docker Service
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#container-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Container Validation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Container Validation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#distroless-image-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Distroless Image Verification
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Distroless Image Verification">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-c1-image-size" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test C1: Image Size
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-c2-no-shell-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test C2: No Shell Access
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-c3-python-execution-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test C3: Python Execution Only
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-c4-non-root-user" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test C4: Non-Root User
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#container-health-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Container Health Checks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Container Health Checks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-c5-health-check-execution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test C5: Health Check Execution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-c6-health-check-failure-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test C6: Health Check Failure Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hardware-assessment-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hardware Assessment Testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Hardware Assessment Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cpu-detection-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CPU Detection Tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CPU Detection Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-h1-cpu-model-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test H1: CPU Model Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ram-detection-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RAM Detection Tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="RAM Detection Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-h2-ram-amount-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test H2: RAM Amount Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gpu-detection-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GPU Detection Tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="GPU Detection Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-h3-nvidia-gpu-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test H3: NVIDIA GPU Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-h4-amd-gpu-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test H4: AMD GPU Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-h5-no-gpu-cpu-only-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test H5: No GPU (CPU-Only) Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integration-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integration Testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Integration Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#end-to-end-workflow-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        End-to-End Workflow Tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="End-to-End Workflow Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-i1-fresh-installation-gemini-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test I1: Fresh Installation (Gemini Backend)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-i2-fresh-installation-ollama-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test I2: Fresh Installation (Ollama Backend)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-i3-restart-with-existing-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test I3: Restart with Existing Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#discord-bot-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discord Bot Integration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Discord Bot Integration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-i4-bot-responds-to-mentions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test I4: Bot Responds to Mentions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-i5-memorysearch-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test I5: Memory/Search Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#status-script-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status Script Testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Status Script Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-i6-statusps1-statussh-accuracy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test I6: status.ps1 / status.sh Accuracy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stop-script-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stop Script Testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Stop Script Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-i7-graceful-shutdown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test I7: Graceful Shutdown
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-i8-data-persistence-after-stop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test I8: Data Persistence After Stop
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cleanup-script-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cleanup Script Testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Cleanup Script Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-i9-cleanup-with-keep-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test I9: Cleanup with Keep Data
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-i10-complete-cleanup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test I10: Complete Cleanup
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#performance-benchmarking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance Benchmarking
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Performance Benchmarking">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#startup-time-benchmarks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Startup Time Benchmarks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Startup Time Benchmarks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-p1-first-run-performance-gemini" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test P1: First-Run Performance (Gemini)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-p2-first-run-performance-ollama" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test P2: First-Run Performance (Ollama)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-p3-subsequent-startup-performance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test P3: Subsequent Startup Performance
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resource-usage-benchmarks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resource Usage Benchmarks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Resource Usage Benchmarks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-p4-memory-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test P4: Memory Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-p5-cpu-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test P5: CPU Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-p6-disk-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test P6: Disk Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#response-time-benchmarks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Response Time Benchmarks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Response Time Benchmarks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-p7-bot-response-time-gemini-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test P7: Bot Response Time (Gemini Backend)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-p8-bot-response-time-ollama-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test P8: Bot Response Time (Ollama Backend)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security-testing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security Testing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Security Testing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#container-security-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Container Security Tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Container Security Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-s1-distroless-base-image-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test S1: Distroless Base Image Verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-s2-vulnerability-scanning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test S2: Vulnerability Scanning
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-s3-non-root-user-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test S3: Non-Root User Verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#encryption-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Encryption Tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Encryption Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-s4-encryption-enabled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test S4: Encryption Enabled
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#api-key-security-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Key Security Tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="API Key Security Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-s5-api-keys-not-in-logs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test S5: API Keys Not in Logs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-s6-env-file-permissions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test S6: .env File Permissions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting-test-failures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting Test Failures
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Troubleshooting Test Failures">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#common-test-failures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Test Failures
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Common Test Failures">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#failure-docker-desktop-not-starting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Failure: Docker Desktop Not Starting
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#failure-health-checks-timeout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Failure: Health Checks Timeout
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#failure-model-download-hangs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Failure: Model Download Hangs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#failure-bot-wont-respond-in-discord" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Failure: Bot Won't Respond in Discord
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#debugging-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Debugging Commands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Debugging Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#view-detailed-container-logs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        View Detailed Container Logs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inspect-container-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inspect Container Configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-service-connectivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Service Connectivity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#check-resource-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Check Resource Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-report-template" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Report Template
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="testing-deployment-validation-guide">Testing &amp; Deployment Validation Guide<a class="headerlink" href="#testing-deployment-validation-guide" title="Permanent link">&para;</a></h1>
+<p>Complete testing guide for validating Zetherion AI deployment across all platforms.</p>
+<h2 id="table-of-contents">Table of Contents<a class="headerlink" href="#table-of-contents" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#pre-testing-checklist">Pre-Testing Checklist</a></li>
+<li><a href="#phase-by-phase-validation">Phase-by-Phase Validation</a></li>
+<li><a href="#platform-specific-testing">Platform-Specific Testing</a></li>
+<li><a href="#container-validation">Container Validation</a></li>
+<li><a href="#hardware-assessment-testing">Hardware Assessment Testing</a></li>
+<li><a href="#integration-testing">Integration Testing</a></li>
+<li><a href="#performance-benchmarking">Performance Benchmarking</a></li>
+<li><a href="#security-testing">Security Testing</a></li>
+<li><a href="#troubleshooting-test-failures">Troubleshooting Test Failures</a></li>
+</ul>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>This guide provides comprehensive testing procedures to validate the fully automated Docker deployment of Zetherion AI. All tests should pass before considering a deployment ready for production use.</p>
+<p><strong>Testing Environments:</strong>
+- Windows 10/11 with PowerShell 5.1+
+- macOS 10.15+ (Catalina or later)
+- Linux (Ubuntu 20.04+, Debian 11+, Fedora 35+)</p>
+<p><strong>Required Tools:</strong>
+- Docker Desktop (or Docker Engine on Linux)
+- Git
+- curl or Invoke-WebRequest
+- jq (optional, for JSON parsing)</p>
+<h2 id="pre-testing-checklist">Pre-Testing Checklist<a class="headerlink" href="#pre-testing-checklist" title="Permanent link">&para;</a></h2>
+<p>Before running any tests, verify:</p>
+<h3 id="1-clean-environment">1. Clean Environment<a class="headerlink" href="#1-clean-environment" title="Permanent link">&para;</a></h3>
+<p><strong>Windows:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c"># Stop any running containers</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="p">.\</span><span class="n">stop</span><span class="p">.</span><span class="n">ps1</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c"># Remove all containers and volumes (keeps config)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="p">.\</span><span class="n">cleanup</span><span class="p">.</span><span class="n">ps1</span> <span class="n">-KeepConfig</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c"># Verify clean state</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="n">docker</span> <span class="nb">ps </span><span class="n">-a</span> <span class="p">|</span> <span class="nb">Select-String</span> <span class="s2">&quot;zetherion&quot;</span>  <span class="c"># Should return nothing</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">docker</span> <span class="n">volume</span> <span class="nb">ls </span><span class="p">|</span> <span class="nb">Select-String</span> <span class="s2">&quot;zetherion&quot;</span>  <span class="c"># Should return nothing</span>
+</code></pre></div></p>
+<p><strong>Unix (macOS/Linux):</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Stop any running containers</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>./stop.sh
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Remove all containers and volumes (keeps config)</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>./cleanup.sh<span class="w"> </span>--keep-config
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1"># Verify clean state</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>docker<span class="w"> </span>ps<span class="w"> </span>-a<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>zetherion<span class="w">  </span><span class="c1"># Should return nothing</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>docker<span class="w"> </span>volume<span class="w"> </span>ls<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>zetherion<span class="w">  </span><span class="c1"># Should return nothing</span>
+</code></pre></div></p>
+<h3 id="2-prerequisites-verified">2. Prerequisites Verified<a class="headerlink" href="#2-prerequisites-verified" title="Permanent link">&para;</a></h3>
+<ul>
+<li>✅ Docker Desktop installed and running</li>
+<li>✅ Git installed</li>
+<li>✅ Sufficient disk space (20GB+)</li>
+<li>✅ Internet connection active</li>
+<li>✅ API keys available (Discord, Gemini)</li>
+</ul>
+<h3 id="3-test-configuration-ready">3. Test Configuration Ready<a class="headerlink" href="#3-test-configuration-ready" title="Permanent link">&para;</a></h3>
+<p>Create a test <code>.env</code> file or have API keys ready for interactive setup:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a># Required for testing
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>DISCORD_TOKEN=your_test_discord_token
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>GEMINI_API_KEY=your_gemini_api_key
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a># Optional (can be skipped in tests)
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>ANTHROPIC_API_KEY=
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>OPENAI_API_KEY=
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a># Test configuration
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>ROUTER_BACKEND=gemini  # Use Gemini for faster initial tests
+</code></pre></div>
+<h2 id="phase-by-phase-validation">Phase-by-Phase Validation<a class="headerlink" href="#phase-by-phase-validation" title="Permanent link">&para;</a></h2>
+<h3 id="phase-1-prerequisites-check">Phase 1: Prerequisites Check<a class="headerlink" href="#phase-1-prerequisites-check" title="Permanent link">&para;</a></h3>
+<p><strong>Test Objective:</strong> Verify prerequisite validation and auto-install prompts work correctly.</p>
+<h4 id="test-11-docker-detection-already-installed">Test 1.1: Docker Detection (Already Installed)<a class="headerlink" href="#test-11-docker-detection-already-installed" title="Permanent link">&para;</a></h4>
+<p><strong>Windows:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">.\</span><span class="n">start</span><span class="p">.</span><span class="n">ps1</span>
+</code></pre></div></p>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>[STEP 1/7] Checking prerequisites...
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>[OK] Docker Desktop is running
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>[OK] Git is installed
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>[OK] Disk space: XXX GB available
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Docker detected automatically
+- ✅ Git detected automatically
+- ✅ Disk space warning if &lt;20GB
+- ✅ No errors, proceeds to Phase 2</p>
+<h4 id="test-12-docker-not-running-manual-test">Test 1.2: Docker Not Running (Manual Test)<a class="headerlink" href="#test-12-docker-not-running-manual-test" title="Permanent link">&para;</a></h4>
+<p><strong>Setup:</strong>
+1. Stop Docker Desktop manually
+2. Run start script</p>
+<p><strong>Expected Behavior:</strong>
+- Script detects Docker not running
+- Attempts to start Docker Desktop
+- Waits up to 60 seconds for Docker daemon
+- Proceeds once Docker is ready OR errors with helpful message</p>
+<p><strong>Validation:</strong>
+- ✅ Docker Desktop launched automatically
+- ✅ Script waits for daemon to be ready
+- ✅ Proceeds after Docker starts</p>
+<h4 id="test-13-low-disk-space-warning">Test 1.3: Low Disk Space Warning<a class="headerlink" href="#test-13-low-disk-space-warning" title="Permanent link">&para;</a></h4>
+<p><strong>Manual Test (requires machine with &lt;20GB free):</strong></p>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>[WARNING] Low disk space: 15GB available
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>[WARNING] Recommended: 20GB+ for optimal performance
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>[INFO] Continue anyway? (y/N):
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Warning displayed if &lt;20GB
+- ✅ User can choose to continue or abort
+- ✅ Script proceeds if user confirms</p>
+<h3 id="phase-2-hardware-assessment">Phase 2: Hardware Assessment<a class="headerlink" href="#phase-2-hardware-assessment" title="Permanent link">&para;</a></h3>
+<p><strong>Test Objective:</strong> Verify hardware detection accurately identifies system resources.</p>
+<h4 id="test-21-hardware-assessment-execution">Test 2.1: Hardware Assessment Execution<a class="headerlink" href="#test-21-hardware-assessment-execution" title="Permanent link">&para;</a></h4>
+<p><strong>Windows:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c"># Run start script and observe Phase 2 output</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="p">.\</span><span class="n">start</span><span class="p">.</span><span class="n">ps1</span>
+</code></pre></div></p>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>[STEP 2/7] Assessing hardware...
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>[INFO] Building hardware assessment container...
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>[INFO] CPU: [Detected CPU Model] (X cores, Y threads)
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>[INFO] RAM: XGB total, YGB available
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>[INFO] GPU: [Detected GPU] or &quot;None (CPU-only mode)&quot;
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>[OK] Hardware assessment complete
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>Recommended Ollama Model:
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>  Model: llama3.1:8b (or appropriate for hardware)
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>  Size: 4.7 GB download
+<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>  Quality: High quality, comparable to cloud models
+<a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a>  Speed: Fast (with GPU) or Medium (CPU-only)
+<a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a>  Reason: [Explanation based on detected hardware]
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ CPU cores/threads detected correctly
+- ✅ RAM total and available detected correctly
+- ✅ GPU detected (if present) or "None" reported
+- ✅ Model recommendation matches hardware capability
+- ✅ No errors during assessment</p>
+<h4 id="test-22-hardware-assessment-accuracy">Test 2.2: Hardware Assessment Accuracy<a class="headerlink" href="#test-22-hardware-assessment-accuracy" title="Permanent link">&para;</a></h4>
+<p><strong>Manual Verification:</strong></p>
+<p><strong>Windows:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c"># Check actual hardware</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nb">Get-WmiObject</span> <span class="n">Win32_Processor</span> <span class="p">|</span> <span class="nb">Select-Object</span> <span class="n">Name</span><span class="p">,</span> <span class="n">NumberOfCores</span><span class="p">,</span> <span class="n">NumberOfLogicalProcessors</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="nb">Get-WmiObject</span> <span class="n">Win32_ComputerSystem</span> <span class="p">|</span> <span class="nb">Select-Object</span> <span class="p">@{</span><span class="n">Name</span><span class="p">=</span><span class="s2">&quot;RAM (GB)&quot;</span><span class="p">;</span><span class="n">Expression</span><span class="p">={</span><span class="no">[math]</span><span class="p">::</span><span class="n">Round</span><span class="p">(</span><span class="nv">$_</span><span class="p">.</span><span class="n">TotalPhysicalMemory</span><span class="p">/</span><span class="n">1GB</span><span class="p">,</span><span class="n">2</span><span class="p">)}}</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="nb">Get-WmiObject</span> <span class="n">Win32_VideoController</span> <span class="p">|</span> <span class="nb">Select-Object</span> <span class="n">Name</span><span class="p">,</span> <span class="n">AdapterRAM</span>
+</code></pre></div></p>
+<p><strong>macOS:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Check actual hardware</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>sysctl<span class="w"> </span>-n<span class="w"> </span>machdep.cpu.brand_string
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>sysctl<span class="w"> </span>-n<span class="w"> </span>hw.ncpu
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>sysctl<span class="w"> </span>-n<span class="w"> </span>hw.memsize<span class="w"> </span><span class="p">|</span><span class="w"> </span>awk<span class="w"> </span><span class="s1">&#39;{print $1/1024/1024/1024 &quot; GB&quot;}&#39;</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>system_profiler<span class="w"> </span>SPDisplaysDataType<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">&quot;Chipset Model&quot;</span>
+</code></pre></div></p>
+<p><strong>Linux:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Check actual hardware</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>lscpu<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">&quot;Model name&quot;</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>lscpu<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">&quot;^CPU(s):&quot;</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>free<span class="w"> </span>-h<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>Mem
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>lspci<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>vga
+</code></pre></div></p>
+<p><strong>Compare with script output:</strong>
+- ✅ CPU model matches
+- ✅ Core/thread count matches
+- ✅ RAM amount within 10% tolerance
+- ✅ GPU model matches (if present)</p>
+<h4 id="test-23-model-recommendation-logic">Test 2.3: Model Recommendation Logic<a class="headerlink" href="#test-23-model-recommendation-logic" title="Permanent link">&para;</a></h4>
+<p><strong>Expected Recommendations by Hardware:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Hardware</th>
+<th>Expected Model</th>
+<th>Size</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>&lt;8GB RAM, no GPU</td>
+<td>gemini (cloud)</td>
+<td>0GB</td>
+</tr>
+<tr>
+<td>8-16GB RAM, no GPU</td>
+<td>llama3.1:8b</td>
+<td>4.7GB</td>
+</tr>
+<tr>
+<td>16-32GB RAM, no GPU</td>
+<td>qwen2.5:14b</td>
+<td>9.0GB</td>
+</tr>
+<tr>
+<td>8GB VRAM GPU</td>
+<td>llama3.1:8b</td>
+<td>4.7GB</td>
+</tr>
+<tr>
+<td>12GB+ VRAM GPU</td>
+<td>qwen2.5:14b</td>
+<td>9.0GB</td>
+</tr>
+<tr>
+<td>24GB+ VRAM GPU</td>
+<td>qwen2.5:32b</td>
+<td>18GB</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Validation:</strong>
+- ✅ Recommendation matches table above
+- ✅ Reason provided explains the recommendation
+- ✅ Alternative models listed</p>
+<h3 id="phase-3-configuration-setup">Phase 3: Configuration Setup<a class="headerlink" href="#phase-3-configuration-setup" title="Permanent link">&para;</a></h3>
+<p><strong>Test Objective:</strong> Verify interactive .env generation works correctly.</p>
+<h4 id="test-31-first-run-interactive-setup">Test 3.1: First-Run Interactive Setup<a class="headerlink" href="#test-31-first-run-interactive-setup" title="Permanent link">&para;</a></h4>
+<p><strong>Prerequisite:</strong> No <code>.env</code> file exists</p>
+<p><strong>Windows:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c"># Remove .env if it exists</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nb">Remove-Item</span> <span class="p">.</span><span class="n">env</span> <span class="n">-ErrorAction</span> <span class="n">SilentlyContinue</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="c"># Run start script</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="p">.\</span><span class="n">start</span><span class="p">.</span><span class="n">ps1</span>
+</code></pre></div></p>
+<p><strong>Expected Prompts:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>[STEP 3/7] Configuration setup...
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>[INFO] No .env file found. Let&#39;s set it up!
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>Discord Bot Token (required):
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>&gt; [User enters token]
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>Gemini API Key (required for embeddings):
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>&gt; [User enters key]
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>Anthropic API Key (optional, press Enter to skip):
+<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>&gt; [User enters key or presses Enter]
+<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a>
+<a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>OpenAI API Key (optional, press Enter to skip):
+<a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a>&gt; [User presses Enter]
+<a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a>
+<a id="__codelineno-12-16" name="__codelineno-12-16" href="#__codelineno-12-16"></a>Router Backend:
+<a id="__codelineno-12-17" name="__codelineno-12-17" href="#__codelineno-12-17"></a>  1. Gemini (cloud-based, fast, minimal resources)
+<a id="__codelineno-12-18" name="__codelineno-12-18" href="#__codelineno-12-18"></a>  2. Ollama (local, private, ~5GB download)
+<a id="__codelineno-12-19" name="__codelineno-12-19" href="#__codelineno-12-19"></a>Choose [1/2]: 2
+<a id="__codelineno-12-20" name="__codelineno-12-20" href="#__codelineno-12-20"></a>
+<a id="__codelineno-12-21" name="__codelineno-12-21" href="#__codelineno-12-21"></a>[INFO] Based on your hardware (16GB RAM, RTX 3060), we recommend:
+<a id="__codelineno-12-22" name="__codelineno-12-22" href="#__codelineno-12-22"></a>  Recommended: llama3.1:8b
+<a id="__codelineno-12-23" name="__codelineno-12-23" href="#__codelineno-12-23"></a>Use recommended model &#39;llama3.1:8b&#39;? (Y/n): Y
+<a id="__codelineno-12-24" name="__codelineno-12-24" href="#__codelineno-12-24"></a>
+<a id="__codelineno-12-25" name="__codelineno-12-25" href="#__codelineno-12-25"></a>[OK] Configuration saved to .env
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ All required prompts displayed
+- ✅ Optional prompts allow Enter to skip
+- ✅ Router backend selection works
+- ✅ Model recommendation shown (if Ollama selected)
+- ✅ <code>.env</code> file created with correct values
+- ✅ API keys not displayed in logs</p>
+<h4 id="test-32-existing-configuration-skip-setup">Test 3.2: Existing Configuration (Skip Setup)<a class="headerlink" href="#test-32-existing-configuration-skip-setup" title="Permanent link">&para;</a></h4>
+<p><strong>Prerequisite:</strong> <code>.env</code> file exists</p>
+<p><strong>Windows:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c"># .env already exists from previous test</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="p">.\</span><span class="n">start</span><span class="p">.</span><span class="n">ps1</span>
+</code></pre></div></p>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>[STEP 3/7] Configuration setup...
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>[OK] Configuration file found
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ No prompts displayed
+- ✅ Existing <code>.env</code> used
+- ✅ Script proceeds to Phase 4</p>
+<h4 id="test-33-invalid-api-key-format">Test 3.3: Invalid API Key Format<a class="headerlink" href="#test-33-invalid-api-key-format" title="Permanent link">&para;</a></h4>
+<p><strong>Manual Test:</strong></p>
+<ol>
+<li>Modify interactive setup script to enter invalid key</li>
+<li>Enter malformed Discord token (e.g., "invalid_token")</li>
+</ol>
+<p><strong>Expected Behavior:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>[ERROR] Invalid Discord token format
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>[ERROR] Discord tokens should start with &quot;MT&quot; or &quot;MQ&quot; and contain at least 50 characters
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>[INFO] Discord Bot Token (required):
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>&gt; [Prompts again]
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Invalid format detected
+- ✅ Helpful error message shown
+- ✅ Re-prompts for correct input</p>
+<h3 id="phase-4-docker-build-deploy">Phase 4: Docker Build &amp; Deploy<a class="headerlink" href="#phase-4-docker-build-deploy" title="Permanent link">&para;</a></h3>
+<p><strong>Test Objective:</strong> Verify distroless images build correctly and containers start.</p>
+<h4 id="test-41-distroless-image-build">Test 4.1: Distroless Image Build<a class="headerlink" href="#test-41-distroless-image-build" title="Permanent link">&para;</a></h4>
+<p><strong>Windows:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="c"># Start script initiates build</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="p">.\</span><span class="n">start</span><span class="p">.</span><span class="n">ps1</span>
+</code></pre></div></p>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>[STEP 4/7] Building Docker images...
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>[INFO] Building zetherion-ai-bot...
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>[+] Building 45.2s (18/18) FINISHED
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>[INFO] Building zetherion-ai-skills...
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>[+] Building 38.7s (16/16) FINISHED
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>[OK] Images built successfully
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Multi-stage build completes without errors
+- ✅ Builder stage installs dependencies
+- ✅ Runtime stage uses distroless base
+- ✅ Both bot and skills images build successfully</p>
+<h4 id="test-42-container-startup">Test 4.2: Container Startup<a class="headerlink" href="#test-42-container-startup" title="Permanent link">&para;</a></h4>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>[INFO] Starting Docker containers...
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>[INFO] Starting docker-compose...
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>Creating network &quot;personalbot_default&quot; ... done
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>Creating volume &quot;personalbot_qdrant_storage&quot; ... done
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>Creating volume &quot;personalbot_ollama_models&quot; ... done
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>Creating zetherion-ai-qdrant ... done
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a>Creating zetherion-ai-ollama ... done
+<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a>Creating zetherion-ai-skills ... done
+<a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a>Creating zetherion-ai-bot ... done
+<a id="__codelineno-18-10" name="__codelineno-18-10" href="#__codelineno-18-10"></a>[OK] Containers started
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ All containers created
+- ✅ Networks created
+- ✅ Volumes created
+- ✅ No error messages</p>
+<h4 id="test-43-health-check-wait">Test 4.3: Health Check Wait<a class="headerlink" href="#test-43-health-check-wait" title="Permanent link">&para;</a></h4>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>[INFO] Waiting for services to become healthy...
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>[INFO] Waiting for zetherion-ai-qdrant... (0/120s)
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>[INFO] Waiting for zetherion-ai-qdrant... (5/120s)
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>[OK] zetherion-ai-qdrant is healthy
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>[INFO] Waiting for zetherion-ai-skills... (0/120s)
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>[OK] zetherion-ai-skills is healthy
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>[INFO] Waiting for zetherion-ai-bot... (0/120s)
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>[OK] zetherion-ai-bot is healthy
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Health checks executed
+- ✅ All services become healthy within 120 seconds
+- ✅ Progress updates shown
+- ✅ No timeouts</p>
+<h3 id="phase-5-model-download-ollama-only">Phase 5: Model Download (Ollama Only)<a class="headerlink" href="#phase-5-model-download-ollama-only" title="Permanent link">&para;</a></h3>
+<p><strong>Test Objective:</strong> Verify Ollama model downloads correctly (if Ollama backend selected).</p>
+<h4 id="test-51-first-time-model-download">Test 5.1: First-Time Model Download<a class="headerlink" href="#test-51-first-time-model-download" title="Permanent link">&para;</a></h4>
+<p><strong>Prerequisite:</strong> Ollama backend selected, model not yet downloaded</p>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>[STEP 5/7] Downloading Ollama model (first time only)...
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>[INFO] Checking if model &#39;llama3.1:8b&#39; exists...
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>[INFO] Model not found. Downloading llama3.1:8b (4.7GB)...
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>[INFO] This may take 5-7 minutes depending on internet speed...
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>pulling manifest
+<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a>pulling 8eeb52dfb3bb... 100% ▕████████████████▏ 4.7 GB
+<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a>pulling 73b313b5552d... 100% ▕████████████████▏ 1.5 KB
+<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>pulling 0ba8f0e314b4... 100% ▕████████████████▏  12 KB
+<a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a>pulling 56bb8bd477a5... 100% ▕████████████████▏   96 B
+<a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a>pulling 1a4c3c319823... 100% ▕████████████████▏  485 B
+<a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a>verifying sha256 digest
+<a id="__codelineno-20-12" name="__codelineno-20-12" href="#__codelineno-20-12"></a>writing manifest
+<a id="__codelineno-20-13" name="__codelineno-20-13" href="#__codelineno-20-13"></a>success
+<a id="__codelineno-20-14" name="__codelineno-20-14" href="#__codelineno-20-14"></a>[OK] Model &#39;llama3.1:8b&#39; downloaded successfully
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Model download initiated
+- ✅ Progress bar displayed
+- ✅ Download completes successfully
+- ✅ Model verified</p>
+<h4 id="test-52-existing-model-skip-download">Test 5.2: Existing Model (Skip Download)<a class="headerlink" href="#test-52-existing-model-skip-download" title="Permanent link">&para;</a></h4>
+<p><strong>Prerequisite:</strong> Model already downloaded from previous test</p>
+<p><strong>Windows:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="c"># Stop and restart to test existing model check</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="p">.\</span><span class="n">stop</span><span class="p">.</span><span class="n">ps1</span>
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="p">.\</span><span class="n">start</span><span class="p">.</span><span class="n">ps1</span>
+</code></pre></div></p>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>[STEP 5/7] Checking Ollama model...
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>[INFO] Checking if model &#39;llama3.1:8b&#39; exists...
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>[OK] Model &#39;llama3.1:8b&#39; already downloaded
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Existing model detected
+- ✅ Download skipped
+- ✅ Fast startup (~30 seconds)</p>
+<h4 id="test-53-model-download-failure-recovery">Test 5.3: Model Download Failure Recovery<a class="headerlink" href="#test-53-model-download-failure-recovery" title="Permanent link">&para;</a></h4>
+<p><strong>Manual Test (simulate network failure):</strong></p>
+<ol>
+<li>Disconnect internet during model download</li>
+<li>Observe error handling</li>
+</ol>
+<p><strong>Expected Behavior:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>[ERROR] Failed to download model &#39;llama3.1:8b&#39;
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>[ERROR] Error: connection timeout
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>[INFO] Please check your internet connection and try again
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>[INFO] To retry manually:
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a>  docker exec zetherion-ai-ollama ollama pull llama3.1:8b
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Error caught gracefully
+- ✅ Helpful error message
+- ✅ Manual retry instructions provided</p>
+<h3 id="phase-6-verification">Phase 6: Verification<a class="headerlink" href="#phase-6-verification" title="Permanent link">&para;</a></h3>
+<p><strong>Test Objective:</strong> Verify all services are running and accessible.</p>
+<h4 id="test-61-qdrant-health-check">Test 6.1: Qdrant Health Check<a class="headerlink" href="#test-61-qdrant-health-check" title="Permanent link">&para;</a></h4>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>[STEP 6/7] Verifying deployment...
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>[INFO] Testing Qdrant connection...
+<a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a>[OK] Qdrant is healthy (http://localhost:6333/healthz)
+</code></pre></div></p>
+<p><strong>Manual Verification:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="c"># Windows</span>
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a><span class="nb">Invoke-WebRequest</span> <span class="n">http</span><span class="p">://</span><span class="n">localhost</span><span class="p">:</span><span class="n">6333</span><span class="p">/</span><span class="n">healthz</span>
+<a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a>
+<a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a><span class="c"># Unix</span>
+<a id="__codelineno-25-5" name="__codelineno-25-5" href="#__codelineno-25-5"></a><span class="nb">curl </span><span class="n">http</span><span class="p">://</span><span class="n">localhost</span><span class="p">:</span><span class="n">6333</span><span class="p">/</span><span class="n">healthz</span>
+</code></pre></div></p>
+<p><strong>Expected Response:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="p">{</span>
+<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a><span class="w">  </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qdrant - Vector Search Engine&quot;</span><span class="p">,</span>
+<a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a><span class="w">  </span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;v1.7.4&quot;</span>
+<a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a><span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Qdrant responds to health check
+- ✅ HTTP 200 status code
+- ✅ Version info returned</p>
+<h4 id="test-62-ollama-health-check-if-enabled">Test 6.2: Ollama Health Check (If Enabled)<a class="headerlink" href="#test-62-ollama-health-check-if-enabled" title="Permanent link">&para;</a></h4>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>[INFO] Testing Ollama connection...
+<a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a>[OK] Ollama is healthy (http://localhost:11434/api/tags)
+<a id="__codelineno-27-3" name="__codelineno-27-3" href="#__codelineno-27-3"></a>[OK] Model &#39;llama3.1:8b&#39; loaded
+</code></pre></div></p>
+<p><strong>Manual Verification:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="c"># Windows</span>
+<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a><span class="nb">Invoke-WebRequest</span> <span class="n">http</span><span class="p">://</span><span class="n">localhost</span><span class="p">:</span><span class="n">11434</span><span class="p">/</span><span class="n">api</span><span class="p">/</span><span class="n">tags</span> <span class="p">|</span> <span class="nb">ConvertFrom-Json</span>
+<a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a>
+<a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a><span class="c"># Unix</span>
+<a id="__codelineno-28-5" name="__codelineno-28-5" href="#__codelineno-28-5"></a><span class="nb">curl </span><span class="n">http</span><span class="p">://</span><span class="n">localhost</span><span class="p">:</span><span class="n">11434</span><span class="p">/</span><span class="n">api</span><span class="p">/</span><span class="n">tags</span> <span class="p">|</span> <span class="n">jq</span>
+</code></pre></div></p>
+<p><strong>Expected Response:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a><span class="p">{</span>
+<a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a><span class="w">  </span><span class="nt">&quot;models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-29-4" name="__codelineno-29-4" href="#__codelineno-29-4"></a><span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llama3.1:8b&quot;</span><span class="p">,</span>
+<a id="__codelineno-29-5" name="__codelineno-29-5" href="#__codelineno-29-5"></a><span class="w">      </span><span class="nt">&quot;modified_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-02-07T10:30:00Z&quot;</span><span class="p">,</span>
+<a id="__codelineno-29-6" name="__codelineno-29-6" href="#__codelineno-29-6"></a><span class="w">      </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4661211648</span>
+<a id="__codelineno-29-7" name="__codelineno-29-7" href="#__codelineno-29-7"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-29-8" name="__codelineno-29-8" href="#__codelineno-29-8"></a><span class="w">  </span><span class="p">]</span>
+<a id="__codelineno-29-9" name="__codelineno-29-9" href="#__codelineno-29-9"></a><span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Ollama responds to API request
+- ✅ Model listed in response
+- ✅ Model size matches expected</p>
+<h4 id="test-63-container-status-display">Test 6.3: Container Status Display<a class="headerlink" href="#test-63-container-status-display" title="Permanent link">&para;</a></h4>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>[INFO] Container status:
+<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a>zetherion-ai-qdrant   Up 1 minute (healthy)
+<a id="__codelineno-30-3" name="__codelineno-30-3" href="#__codelineno-30-3"></a>zetherion-ai-ollama   Up 1 minute (healthy)
+<a id="__codelineno-30-4" name="__codelineno-30-4" href="#__codelineno-30-4"></a>zetherion-ai-skills   Up 1 minute (healthy)
+<a id="__codelineno-30-5" name="__codelineno-30-5" href="#__codelineno-30-5"></a>zetherion-ai-bot      Up 1 minute (healthy)
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ All 4 containers listed
+- ✅ All show "Up" status
+- ✅ All show "(healthy)" status
+- ✅ Uptime displayed</p>
+<h3 id="phase-7-success">Phase 7: Success<a class="headerlink" href="#phase-7-success" title="Permanent link">&para;</a></h3>
+<p><strong>Test Objective:</strong> Verify success message and next steps displayed.</p>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>============================================================
+<a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a>  ✓ Zetherion AI is now running!
+<a id="__codelineno-31-3" name="__codelineno-31-3" href="#__codelineno-31-3"></a>============================================================
+<a id="__codelineno-31-4" name="__codelineno-31-4" href="#__codelineno-31-4"></a>
+<a id="__codelineno-31-5" name="__codelineno-31-5" href="#__codelineno-31-5"></a>Next Steps:
+<a id="__codelineno-31-6" name="__codelineno-31-6" href="#__codelineno-31-6"></a>  1. View logs:        docker-compose logs -f
+<a id="__codelineno-31-7" name="__codelineno-31-7" href="#__codelineno-31-7"></a>  2. Check status:     .\status.ps1 (or ./status.sh)
+<a id="__codelineno-31-8" name="__codelineno-31-8" href="#__codelineno-31-8"></a>  3. Stop bot:         .\stop.ps1 (or ./stop.sh)
+<a id="__codelineno-31-9" name="__codelineno-31-9" href="#__codelineno-31-9"></a>
+<a id="__codelineno-31-10" name="__codelineno-31-10" href="#__codelineno-31-10"></a>  4. Invite bot to Discord:
+<a id="__codelineno-31-11" name="__codelineno-31-11" href="#__codelineno-31-11"></a>     https://discord.com/developers/applications
+<a id="__codelineno-31-12" name="__codelineno-31-12" href="#__codelineno-31-12"></a>
+<a id="__codelineno-31-13" name="__codelineno-31-13" href="#__codelineno-31-13"></a>Deployment successful!
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Success banner displayed
+- ✅ Next steps clearly listed
+- ✅ Platform-appropriate commands shown
+- ✅ Discord invite link provided</p>
+<h2 id="platform-specific-testing">Platform-Specific Testing<a class="headerlink" href="#platform-specific-testing" title="Permanent link">&para;</a></h2>
+<h3 id="windows-testing">Windows Testing<a class="headerlink" href="#windows-testing" title="Permanent link">&para;</a></h3>
+<h4 id="test-w1-powershell-execution-policy">Test W1: PowerShell Execution Policy<a class="headerlink" href="#test-w1-powershell-execution-policy" title="Permanent link">&para;</a></h4>
+<p><strong>Test with Restricted Policy:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a><span class="c"># Set restricted policy (simulates fresh Windows)</span>
+<a id="__codelineno-32-2" name="__codelineno-32-2" href="#__codelineno-32-2"></a><span class="nb">Set-ExecutionPolicy</span> <span class="n">-Scope</span> <span class="k">Process</span> <span class="n">-ExecutionPolicy</span> <span class="n">Restricted</span>
+<a id="__codelineno-32-3" name="__codelineno-32-3" href="#__codelineno-32-3"></a>
+<a id="__codelineno-32-4" name="__codelineno-32-4" href="#__codelineno-32-4"></a><span class="c"># Try to run start script</span>
+<a id="__codelineno-32-5" name="__codelineno-32-5" href="#__codelineno-32-5"></a><span class="p">.\</span><span class="n">start</span><span class="p">.</span><span class="n">ps1</span>
+</code></pre></div></p>
+<p><strong>Expected Error:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>.\start.ps1 : File .\start.ps1 cannot be loaded because running scripts is disabled on this system.
+</code></pre></div></p>
+<p><strong>Resolution Test:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a><span class="c"># Script should provide helpful message</span>
+<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a><span class="nb">Set-ExecutionPolicy</span> <span class="n">-Scope</span> <span class="k">Process</span> <span class="n">-ExecutionPolicy</span> <span class="n">Bypass</span>
+<a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a><span class="p">.\</span><span class="n">start</span><span class="p">.</span><span class="n">ps1</span>
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Error message clear and helpful
+- ✅ Documentation includes resolution steps
+- ✅ Script runs after policy change</p>
+<h4 id="test-w2-administrator-privileges">Test W2: Administrator Privileges<a class="headerlink" href="#test-w2-administrator-privileges" title="Permanent link">&para;</a></h4>
+<p><strong>Test without Admin:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a><span class="c"># Run PowerShell as regular user (not admin)</span>
+<a id="__codelineno-35-2" name="__codelineno-35-2" href="#__codelineno-35-2"></a><span class="p">.\</span><span class="n">start</span><span class="p">.</span><span class="n">ps1</span>
+</code></pre></div></p>
+<p><strong>Expected Error:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a>[ERROR] This script requires Administrator privileges
+<a id="__codelineno-36-2" name="__codelineno-36-2" href="#__codelineno-36-2"></a>[ERROR] Right-click PowerShell and select &quot;Run as Administrator&quot;
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Admin check works
+- ✅ Clear error message
+- ✅ Script exits gracefully</p>
+<h4 id="test-w3-wsl-2-dependency">Test W3: WSL 2 Dependency<a class="headerlink" href="#test-w3-wsl-2-dependency" title="Permanent link">&para;</a></h4>
+<p><strong>Test Docker Desktop Start:</strong></p>
+<p><strong>Expected Behavior:</strong>
+- If WSL 2 not installed, Docker Desktop installation prompts for it
+- Script waits for Docker Desktop to be ready
+- Clear error if WSL 2 issues detected</p>
+<p><strong>Validation:</strong>
+- ✅ WSL 2 requirement documented
+- ✅ Helpful error messages if WSL 2 missing
+- ✅ Links to WSL 2 installation guide</p>
+<h3 id="macos-testing">macOS Testing<a class="headerlink" href="#macos-testing" title="Permanent link">&para;</a></h3>
+<h4 id="test-m1-homebrew-auto-install">Test M1: Homebrew Auto-Install<a class="headerlink" href="#test-m1-homebrew-auto-install" title="Permanent link">&para;</a></h4>
+<p><strong>Test on Mac without Homebrew:</strong></p>
+<ol>
+<li>Check if Homebrew installed: <code>which brew</code></li>
+<li>If not, start script should offer to install</li>
+</ol>
+<p><strong>Expected Prompt:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a>[INFO] Homebrew not found
+<a id="__codelineno-37-2" name="__codelineno-37-2" href="#__codelineno-37-2"></a>[INFO] Homebrew is required to install Docker Desktop
+<a id="__codelineno-37-3" name="__codelineno-37-3" href="#__codelineno-37-3"></a>[INFO] Install Homebrew? (Y/n):
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Homebrew detection works
+- ✅ Installation prompt clear
+- ✅ Homebrew installs successfully
+- ✅ Script continues after installation</p>
+<h4 id="test-m2-docker-desktop-installation-macos">Test M2: Docker Desktop Installation (macOS)<a class="headerlink" href="#test-m2-docker-desktop-installation-macos" title="Permanent link">&para;</a></h4>
+<p><strong>Expected Command:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a>brew<span class="w"> </span>install<span class="w"> </span>--cask<span class="w"> </span>docker
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Docker Desktop installed via Homebrew
+- ✅ Application launches automatically
+- ✅ Script waits for Docker daemon
+- ✅ Proceeds after Docker ready</p>
+<h4 id="test-m3-apple-silicon-vs-intel">Test M3: Apple Silicon vs Intel<a class="headerlink" href="#test-m3-apple-silicon-vs-intel" title="Permanent link">&para;</a></h4>
+<p><strong>Test on both architectures:</strong></p>
+<ul>
+<li><strong>Apple Silicon (M1/M2/M3)</strong>: Should use arm64 images</li>
+<li><strong>Intel</strong>: Should use amd64 images</li>
+</ul>
+<p><strong>Validation:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a><span class="c1"># Check architecture in use</span>
+<a id="__codelineno-39-2" name="__codelineno-39-2" href="#__codelineno-39-2"></a>docker<span class="w"> </span>inspect<span class="w"> </span>zetherion-ai-bot<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.[0].Architecture&#39;</span>
+</code></pre></div></p>
+<p><strong>Expected:</strong>
+- ✅ Apple Silicon: "arm64"
+- ✅ Intel: "amd64"
+- ✅ Both architectures work correctly</p>
+<h3 id="linux-testing">Linux Testing<a class="headerlink" href="#linux-testing" title="Permanent link">&para;</a></h3>
+<h4 id="test-l1-docker-installation-detection">Test L1: Docker Installation Detection<a class="headerlink" href="#test-l1-docker-installation-detection" title="Permanent link">&para;</a></h4>
+<p><strong>Test on fresh Ubuntu/Debian:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-40-1" name="__codelineno-40-1" href="#__codelineno-40-1"></a><span class="c1"># Check if Docker installed</span>
+<a id="__codelineno-40-2" name="__codelineno-40-2" href="#__codelineno-40-2"></a>which<span class="w"> </span>docker
+<a id="__codelineno-40-3" name="__codelineno-40-3" href="#__codelineno-40-3"></a>
+<a id="__codelineno-40-4" name="__codelineno-40-4" href="#__codelineno-40-4"></a><span class="c1"># If not, script should provide instructions</span>
+<a id="__codelineno-40-5" name="__codelineno-40-5" href="#__codelineno-40-5"></a>./start.sh
+</code></pre></div>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a>[ERROR] Docker is not installed
+<a id="__codelineno-41-2" name="__codelineno-41-2" href="#__codelineno-41-2"></a>[INFO] Please install Docker using one of these methods:
+<a id="__codelineno-41-3" name="__codelineno-41-3" href="#__codelineno-41-3"></a>[INFO]   Ubuntu/Debian: sudo apt-get update &amp;&amp; sudo apt-get install docker-ce docker-ce-cli containerd.io
+<a id="__codelineno-41-4" name="__codelineno-41-4" href="#__codelineno-41-4"></a>[INFO]   Fedora: sudo dnf install docker-ce
+<a id="__codelineno-41-5" name="__codelineno-41-5" href="#__codelineno-41-5"></a>[INFO]   See: https://docs.docker.com/engine/install/
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Docker detection works
+- ✅ Platform-specific install instructions provided
+- ✅ Clear error message</p>
+<h4 id="test-l2-docker-permission-issues">Test L2: Docker Permission Issues<a class="headerlink" href="#test-l2-docker-permission-issues" title="Permanent link">&para;</a></h4>
+<p><strong>Test without docker group membership:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-42-1" name="__codelineno-42-1" href="#__codelineno-42-1"></a><span class="c1"># Remove user from docker group (if added)</span>
+<a id="__codelineno-42-2" name="__codelineno-42-2" href="#__codelineno-42-2"></a>sudo<span class="w"> </span>gpasswd<span class="w"> </span>-d<span class="w"> </span><span class="nv">$USER</span><span class="w"> </span>docker
+<a id="__codelineno-42-3" name="__codelineno-42-3" href="#__codelineno-42-3"></a>
+<a id="__codelineno-42-4" name="__codelineno-42-4" href="#__codelineno-42-4"></a><span class="c1"># Try to run start script</span>
+<a id="__codelineno-42-5" name="__codelineno-42-5" href="#__codelineno-42-5"></a>./start.sh
+</code></pre></div>
+<p><strong>Expected Error:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-43-1" name="__codelineno-43-1" href="#__codelineno-43-1"></a>docker: permission denied while trying to connect to the Docker daemon socket
+</code></pre></div></p>
+<p><strong>Expected Helpful Message:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-44-1" name="__codelineno-44-1" href="#__codelineno-44-1"></a>[ERROR] Docker permission denied
+<a id="__codelineno-44-2" name="__codelineno-44-2" href="#__codelineno-44-2"></a>[INFO] Add your user to the docker group:
+<a id="__codelineno-44-3" name="__codelineno-44-3" href="#__codelineno-44-3"></a>  sudo usermod -aG docker $USER
+<a id="__codelineno-44-4" name="__codelineno-44-4" href="#__codelineno-44-4"></a>  newgrp docker
+<a id="__codelineno-44-5" name="__codelineno-44-5" href="#__codelineno-44-5"></a>[INFO] Then try again
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Permission error detected
+- ✅ Clear resolution steps
+- ✅ Documentation includes this scenario</p>
+<h4 id="test-l3-systemd-docker-service">Test L3: systemd Docker Service<a class="headerlink" href="#test-l3-systemd-docker-service" title="Permanent link">&para;</a></h4>
+<p><strong>Test Docker service start:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-45-1" name="__codelineno-45-1" href="#__codelineno-45-1"></a><span class="c1"># Check Docker service status</span>
+<a id="__codelineno-45-2" name="__codelineno-45-2" href="#__codelineno-45-2"></a>sudo<span class="w"> </span>systemctl<span class="w"> </span>status<span class="w"> </span>docker
+<a id="__codelineno-45-3" name="__codelineno-45-3" href="#__codelineno-45-3"></a>
+<a id="__codelineno-45-4" name="__codelineno-45-4" href="#__codelineno-45-4"></a><span class="c1"># If not running, script should detect and start</span>
+<a id="__codelineno-45-5" name="__codelineno-45-5" href="#__codelineno-45-5"></a>./start.sh
+</code></pre></div>
+<p><strong>Expected Behavior:</strong>
+- Script detects Docker service not running
+- Attempts to start: <code>sudo systemctl start docker</code>
+- Waits for service to be ready
+- Proceeds with deployment</p>
+<p><strong>Validation:</strong>
+- ✅ Service status detected
+- ✅ Automatic start attempted
+- ✅ Clear error if start fails</p>
+<h2 id="container-validation">Container Validation<a class="headerlink" href="#container-validation" title="Permanent link">&para;</a></h2>
+<h3 id="distroless-image-verification">Distroless Image Verification<a class="headerlink" href="#distroless-image-verification" title="Permanent link">&para;</a></h3>
+<h4 id="test-c1-image-size">Test C1: Image Size<a class="headerlink" href="#test-c1-image-size" title="Permanent link">&para;</a></h4>
+<p><strong>Verify distroless images are smaller:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-46-1" name="__codelineno-46-1" href="#__codelineno-46-1"></a><span class="c1"># Check image sizes</span>
+<a id="__codelineno-46-2" name="__codelineno-46-2" href="#__codelineno-46-2"></a>docker<span class="w"> </span>images<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>zetherion-ai
+</code></pre></div>
+<p><strong>Expected Results:</strong>
+- <code>zetherion-ai-bot:latest</code> ≈ 180-220MB (distroless)
+- <code>zetherion-ai-skills:latest</code> ≈ 180-220MB (distroless)
+- Significantly smaller than python:3.11-slim (~500MB)</p>
+<p><strong>Validation:</strong>
+- ✅ Images under 250MB each
+- ✅ Smaller than traditional Python images</p>
+<h4 id="test-c2-no-shell-access">Test C2: No Shell Access<a class="headerlink" href="#test-c2-no-shell-access" title="Permanent link">&para;</a></h4>
+<p><strong>Verify distroless has no shell:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-47-1" name="__codelineno-47-1" href="#__codelineno-47-1"></a><span class="c1"># Attempt to exec shell (should fail)</span>
+<a id="__codelineno-47-2" name="__codelineno-47-2" href="#__codelineno-47-2"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>zetherion-ai-bot<span class="w"> </span>/bin/sh
+</code></pre></div>
+<p><strong>Expected Error:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-48-1" name="__codelineno-48-1" href="#__codelineno-48-1"></a>OCI runtime exec failed: exec: &quot;/bin/sh&quot;: stat /bin/sh: no such file or directory
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Shell access denied (security feature)
+- ✅ Cannot execute arbitrary commands
+- ✅ Distroless working as intended</p>
+<h4 id="test-c3-python-execution-only">Test C3: Python Execution Only<a class="headerlink" href="#test-c3-python-execution-only" title="Permanent link">&para;</a></h4>
+<p><strong>Verify only Python works:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-49-1" name="__codelineno-49-1" href="#__codelineno-49-1"></a><span class="c1"># Python should work</span>
+<a id="__codelineno-49-2" name="__codelineno-49-2" href="#__codelineno-49-2"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-bot<span class="w"> </span>python3.11<span class="w"> </span>--version
+<a id="__codelineno-49-3" name="__codelineno-49-3" href="#__codelineno-49-3"></a>
+<a id="__codelineno-49-4" name="__codelineno-49-4" href="#__codelineno-49-4"></a><span class="c1"># Shell commands should NOT work</span>
+<a id="__codelineno-49-5" name="__codelineno-49-5" href="#__codelineno-49-5"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-bot<span class="w"> </span>ls
+</code></pre></div>
+<p><strong>Expected Results:</strong>
+- Python version displayed (e.g., "Python 3.11.7")
+- <code>ls</code> command fails (command not found)</p>
+<p><strong>Validation:</strong>
+- ✅ Python interpreter accessible
+- ✅ System utilities not available (security)</p>
+<h4 id="test-c4-non-root-user">Test C4: Non-Root User<a class="headerlink" href="#test-c4-non-root-user" title="Permanent link">&para;</a></h4>
+<p><strong>Verify container runs as non-root:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-50-1" name="__codelineno-50-1" href="#__codelineno-50-1"></a><span class="c1"># Check container user</span>
+<a id="__codelineno-50-2" name="__codelineno-50-2" href="#__codelineno-50-2"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-bot<span class="w"> </span>python3.11<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import os; print(f&#39;UID: {os.getuid()}, GID: {os.getgid()}&#39;)&quot;</span>
+</code></pre></div>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-51-1" name="__codelineno-51-1" href="#__codelineno-51-1"></a>UID: 65532, GID: 65532
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ UID is 65532 (nonroot user)
+- ✅ Not running as root (UID 0)
+- ✅ Security best practice</p>
+<h3 id="container-health-checks">Container Health Checks<a class="headerlink" href="#container-health-checks" title="Permanent link">&para;</a></h3>
+<h4 id="test-c5-health-check-execution">Test C5: Health Check Execution<a class="headerlink" href="#test-c5-health-check-execution" title="Permanent link">&para;</a></h4>
+<p><strong>Monitor health checks:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-52-1" name="__codelineno-52-1" href="#__codelineno-52-1"></a><span class="c1"># Watch health status change from &quot;starting&quot; to &quot;healthy&quot;</span>
+<a id="__codelineno-52-2" name="__codelineno-52-2" href="#__codelineno-52-2"></a>watch<span class="w"> </span>-n<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="s1">&#39;docker ps --format &quot;table {{.Names}}\t{{.Status}}&quot;&#39;</span>
+</code></pre></div>
+<p><strong>Expected Progression:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-53-1" name="__codelineno-53-1" href="#__codelineno-53-1"></a># Initial (0-30s)
+<a id="__codelineno-53-2" name="__codelineno-53-2" href="#__codelineno-53-2"></a>zetherion-ai-bot    Up 5 seconds (health: starting)
+<a id="__codelineno-53-3" name="__codelineno-53-3" href="#__codelineno-53-3"></a>
+<a id="__codelineno-53-4" name="__codelineno-53-4" href="#__codelineno-53-4"></a># After health check passes (30-60s)
+<a id="__codelineno-53-5" name="__codelineno-53-5" href="#__codelineno-53-5"></a>zetherion-ai-bot    Up 45 seconds (healthy)
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Health status changes from "starting" to "healthy"
+- ✅ Happens within 60 seconds
+- ✅ All containers show "healthy"</p>
+<h4 id="test-c6-health-check-failure-detection">Test C6: Health Check Failure Detection<a class="headerlink" href="#test-c6-health-check-failure-detection" title="Permanent link">&para;</a></h4>
+<p><strong>Simulate health check failure:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-54-1" name="__codelineno-54-1" href="#__codelineno-54-1"></a><span class="c1"># Stop Qdrant (bot health check will fail)</span>
+<a id="__codelineno-54-2" name="__codelineno-54-2" href="#__codelineno-54-2"></a>docker<span class="w"> </span>stop<span class="w"> </span>zetherion-ai-qdrant
+<a id="__codelineno-54-3" name="__codelineno-54-3" href="#__codelineno-54-3"></a>
+<a id="__codelineno-54-4" name="__codelineno-54-4" href="#__codelineno-54-4"></a><span class="c1"># Wait 30 seconds for health check to detect failure</span>
+<a id="__codelineno-54-5" name="__codelineno-54-5" href="#__codelineno-54-5"></a>sleep<span class="w"> </span><span class="m">30</span>
+<a id="__codelineno-54-6" name="__codelineno-54-6" href="#__codelineno-54-6"></a>
+<a id="__codelineno-54-7" name="__codelineno-54-7" href="#__codelineno-54-7"></a><span class="c1"># Check bot status</span>
+<a id="__codelineno-54-8" name="__codelineno-54-8" href="#__codelineno-54-8"></a>docker<span class="w"> </span>ps<span class="w"> </span>--format<span class="w"> </span><span class="s2">&quot;table {{.Names}}\t{{.Status}}&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>zetherion-ai-bot
+</code></pre></div>
+<p><strong>Expected Status:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-55-1" name="__codelineno-55-1" href="#__codelineno-55-1"></a>zetherion-ai-bot    Up 2 minutes (unhealthy)
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Unhealthy status detected
+- ✅ Container still running (not crashed)
+- ✅ Can be restarted to recover</p>
+<h2 id="hardware-assessment-testing">Hardware Assessment Testing<a class="headerlink" href="#hardware-assessment-testing" title="Permanent link">&para;</a></h2>
+<h3 id="cpu-detection-tests">CPU Detection Tests<a class="headerlink" href="#cpu-detection-tests" title="Permanent link">&para;</a></h3>
+<h4 id="test-h1-cpu-model-detection">Test H1: CPU Model Detection<a class="headerlink" href="#test-h1-cpu-model-detection" title="Permanent link">&para;</a></h4>
+<p><strong>Windows:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-56-1" name="__codelineno-56-1" href="#__codelineno-56-1"></a><span class="c"># Compare script output with actual CPU</span>
+<a id="__codelineno-56-2" name="__codelineno-56-2" href="#__codelineno-56-2"></a><span class="nv">$scriptCpu</span> <span class="p">=</span> <span class="p">(.\</span><span class="n">start</span><span class="p">.</span><span class="n">ps1</span> <span class="n">2</span><span class="p">&gt;&amp;</span><span class="n">1</span> <span class="p">|</span> <span class="nb">Select-String</span> <span class="s2">&quot;CPU:&quot;</span><span class="p">).</span><span class="n">Line</span>
+<a id="__codelineno-56-3" name="__codelineno-56-3" href="#__codelineno-56-3"></a><span class="nv">$actualCpu</span> <span class="p">=</span> <span class="p">(</span><span class="nb">Get-WmiObject</span> <span class="n">Win32_Processor</span><span class="p">).</span><span class="n">Name</span>
+<a id="__codelineno-56-4" name="__codelineno-56-4" href="#__codelineno-56-4"></a><span class="nb">Write-Host</span> <span class="s2">&quot;Script: $scriptCpu&quot;</span>
+<a id="__codelineno-56-5" name="__codelineno-56-5" href="#__codelineno-56-5"></a><span class="nb">Write-Host</span> <span class="s2">&quot;Actual: $actualCpu&quot;</span>
+</code></pre></div></p>
+<p><strong>Unix:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-57-1" name="__codelineno-57-1" href="#__codelineno-57-1"></a><span class="c1"># Compare script output with actual CPU</span>
+<a id="__codelineno-57-2" name="__codelineno-57-2" href="#__codelineno-57-2"></a><span class="nv">script_cpu</span><span class="o">=</span><span class="k">$(</span>./start.sh<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">&quot;CPU:&quot;</span><span class="k">)</span>
+<a id="__codelineno-57-3" name="__codelineno-57-3" href="#__codelineno-57-3"></a><span class="nv">actual_cpu</span><span class="o">=</span><span class="k">$(</span>lscpu<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">&quot;Model name&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>awk<span class="w"> </span>-F:<span class="w"> </span><span class="s1">&#39;{print $2}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>xargs<span class="k">)</span>
+<a id="__codelineno-57-4" name="__codelineno-57-4" href="#__codelineno-57-4"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Script: </span><span class="nv">$script_cpu</span><span class="s2">&quot;</span>
+<a id="__codelineno-57-5" name="__codelineno-57-5" href="#__codelineno-57-5"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Actual: </span><span class="nv">$actual_cpu</span><span class="s2">&quot;</span>
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ CPU model name matches
+- ✅ Core count matches
+- ✅ Thread count matches</p>
+<h3 id="ram-detection-tests">RAM Detection Tests<a class="headerlink" href="#ram-detection-tests" title="Permanent link">&para;</a></h3>
+<h4 id="test-h2-ram-amount-detection">Test H2: RAM Amount Detection<a class="headerlink" href="#test-h2-ram-amount-detection" title="Permanent link">&para;</a></h4>
+<p><strong>Validation:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-58-1" name="__codelineno-58-1" href="#__codelineno-58-1"></a><span class="c1"># Check detected RAM vs actual</span>
+<a id="__codelineno-58-2" name="__codelineno-58-2" href="#__codelineno-58-2"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>zetherion-ai-assess:distroless<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.ram_total_gb, .ram_available_gb&#39;</span>
+<a id="__codelineno-58-3" name="__codelineno-58-3" href="#__codelineno-58-3"></a>
+<a id="__codelineno-58-4" name="__codelineno-58-4" href="#__codelineno-58-4"></a><span class="c1"># Compare with system info</span>
+<a id="__codelineno-58-5" name="__codelineno-58-5" href="#__codelineno-58-5"></a>free<span class="w"> </span>-g<span class="w">  </span><span class="c1"># Linux</span>
+<a id="__codelineno-58-6" name="__codelineno-58-6" href="#__codelineno-58-6"></a><span class="c1"># or</span>
+<a id="__codelineno-58-7" name="__codelineno-58-7" href="#__codelineno-58-7"></a>vm_stat<span class="w">  </span><span class="c1"># macOS</span>
+</code></pre></div></p>
+<p><strong>Expected:</strong>
+- Detected RAM within 10% of actual
+- Available RAM reasonable (50-90% of total)</p>
+<p><strong>Validation:</strong>
+- ✅ Total RAM detected accurately
+- ✅ Available RAM reasonable
+- ✅ Values in GB, not bytes</p>
+<h3 id="gpu-detection-tests">GPU Detection Tests<a class="headerlink" href="#gpu-detection-tests" title="Permanent link">&para;</a></h3>
+<h4 id="test-h3-nvidia-gpu-detection">Test H3: NVIDIA GPU Detection<a class="headerlink" href="#test-h3-nvidia-gpu-detection" title="Permanent link">&para;</a></h4>
+<p><strong>Prerequisites:</strong> NVIDIA GPU installed</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-59-1" name="__codelineno-59-1" href="#__codelineno-59-1"></a><span class="c1"># Check detected GPU</span>
+<a id="__codelineno-59-2" name="__codelineno-59-2" href="#__codelineno-59-2"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--gpus<span class="w"> </span>all<span class="w"> </span>zetherion-ai-assess:distroless<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.gpu&#39;</span>
+<a id="__codelineno-59-3" name="__codelineno-59-3" href="#__codelineno-59-3"></a>
+<a id="__codelineno-59-4" name="__codelineno-59-4" href="#__codelineno-59-4"></a><span class="c1"># Compare with nvidia-smi</span>
+<a id="__codelineno-59-5" name="__codelineno-59-5" href="#__codelineno-59-5"></a>nvidia-smi<span class="w"> </span>--query-gpu<span class="o">=</span>name,memory.total<span class="w"> </span>--format<span class="o">=</span>csv
+</code></pre></div>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-60-1" name="__codelineno-60-1" href="#__codelineno-60-1"></a><span class="p">{</span>
+<a id="__codelineno-60-2" name="__codelineno-60-2" href="#__codelineno-60-2"></a><span class="w">  </span><span class="nt">&quot;vendor&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;NVIDIA&quot;</span><span class="p">,</span>
+<a id="__codelineno-60-3" name="__codelineno-60-3" href="#__codelineno-60-3"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;GeForce RTX 3060&quot;</span><span class="p">,</span>
+<a id="__codelineno-60-4" name="__codelineno-60-4" href="#__codelineno-60-4"></a><span class="w">  </span><span class="nt">&quot;vram_gb&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">12</span>
+<a id="__codelineno-60-5" name="__codelineno-60-5" href="#__codelineno-60-5"></a><span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ NVIDIA GPU detected
+- ✅ Model name matches nvidia-smi
+- ✅ VRAM amount accurate</p>
+<h4 id="test-h4-amd-gpu-detection">Test H4: AMD GPU Detection<a class="headerlink" href="#test-h4-amd-gpu-detection" title="Permanent link">&para;</a></h4>
+<p><strong>Prerequisites:</strong> AMD GPU installed</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-61-1" name="__codelineno-61-1" href="#__codelineno-61-1"></a><span class="c1"># Check detected GPU</span>
+<a id="__codelineno-61-2" name="__codelineno-61-2" href="#__codelineno-61-2"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>zetherion-ai-assess:distroless<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.gpu&#39;</span>
+<a id="__codelineno-61-3" name="__codelineno-61-3" href="#__codelineno-61-3"></a>
+<a id="__codelineno-61-4" name="__codelineno-61-4" href="#__codelineno-61-4"></a><span class="c1"># Compare with lspci</span>
+<a id="__codelineno-61-5" name="__codelineno-61-5" href="#__codelineno-61-5"></a>lspci<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>VGA
+</code></pre></div>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-62-1" name="__codelineno-62-1" href="#__codelineno-62-1"></a><span class="p">{</span>
+<a id="__codelineno-62-2" name="__codelineno-62-2" href="#__codelineno-62-2"></a><span class="w">  </span><span class="nt">&quot;vendor&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AMD&quot;</span><span class="p">,</span>
+<a id="__codelineno-62-3" name="__codelineno-62-3" href="#__codelineno-62-3"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Radeon RX 6800&quot;</span><span class="p">,</span>
+<a id="__codelineno-62-4" name="__codelineno-62-4" href="#__codelineno-62-4"></a><span class="w">  </span><span class="nt">&quot;vram_gb&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">16</span>
+<a id="__codelineno-62-5" name="__codelineno-62-5" href="#__codelineno-62-5"></a><span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ AMD GPU detected
+- ✅ Model name matches lspci
+- ✅ VRAM amount accurate</p>
+<h4 id="test-h5-no-gpu-cpu-only-detection">Test H5: No GPU (CPU-Only) Detection<a class="headerlink" href="#test-h5-no-gpu-cpu-only-detection" title="Permanent link">&para;</a></h4>
+<p><strong>Prerequisites:</strong> No dedicated GPU, or integrated graphics only</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-63-1" name="__codelineno-63-1" href="#__codelineno-63-1"></a><span class="c1"># Check detected GPU</span>
+<a id="__codelineno-63-2" name="__codelineno-63-2" href="#__codelineno-63-2"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>zetherion-ai-assess:distroless<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.gpu&#39;</span>
+</code></pre></div>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-64-1" name="__codelineno-64-1" href="#__codelineno-64-1"></a><span class="p">{</span>
+<a id="__codelineno-64-2" name="__codelineno-64-2" href="#__codelineno-64-2"></a><span class="w">  </span><span class="nt">&quot;vendor&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<a id="__codelineno-64-3" name="__codelineno-64-3" href="#__codelineno-64-3"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<a id="__codelineno-64-4" name="__codelineno-64-4" href="#__codelineno-64-4"></a><span class="w">  </span><span class="nt">&quot;vram_gb&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
+<a id="__codelineno-64-5" name="__codelineno-64-5" href="#__codelineno-64-5"></a><span class="p">}</span>
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ No GPU detected (null values)
+- ✅ Model recommendation adjusts to CPU-only
+- ✅ Gemini or small models recommended</p>
+<h2 id="integration-testing">Integration Testing<a class="headerlink" href="#integration-testing" title="Permanent link">&para;</a></h2>
+<h3 id="end-to-end-workflow-tests">End-to-End Workflow Tests<a class="headerlink" href="#end-to-end-workflow-tests" title="Permanent link">&para;</a></h3>
+<h4 id="test-i1-fresh-installation-gemini-backend">Test I1: Fresh Installation (Gemini Backend)<a class="headerlink" href="#test-i1-fresh-installation-gemini-backend" title="Permanent link">&para;</a></h4>
+<p><strong>Test Steps:</strong>
+1. Clean environment: <code>./cleanup.sh</code> or <code>.\cleanup.ps1</code>
+2. Remove .env: <code>rm .env</code> or <code>Remove-Item .env</code>
+3. Run start script
+4. Select Gemini backend
+5. Wait for completion
+6. Test Discord bot</p>
+<p><strong>Expected Timeline:</strong>
+- Phase 1-3: ~30 seconds
+- Phase 4 (build): ~2 minutes
+- Phase 6-7: ~30 seconds
+- <strong>Total: ~3 minutes</strong></p>
+<p><strong>Validation:</strong>
+- ✅ Completes in &lt;5 minutes
+- ✅ All phases succeed
+- ✅ Bot responds in Discord</p>
+<h4 id="test-i2-fresh-installation-ollama-backend">Test I2: Fresh Installation (Ollama Backend)<a class="headerlink" href="#test-i2-fresh-installation-ollama-backend" title="Permanent link">&para;</a></h4>
+<p><strong>Test Steps:</strong>
+1. Clean environment
+2. Remove .env
+3. Run start script
+4. Select Ollama backend
+5. Choose llama3.1:8b model
+6. Wait for model download
+7. Test Discord bot</p>
+<p><strong>Expected Timeline:</strong>
+- Phases 1-4: ~2.5 minutes
+- Phase 5 (model download): ~5-7 minutes
+- Phases 6-7: ~30 seconds
+- <strong>Total: ~8-10 minutes</strong></p>
+<p><strong>Validation:</strong>
+- ✅ Completes in &lt;12 minutes
+- ✅ Model downloads successfully
+- ✅ Bot responds in Discord</p>
+<h4 id="test-i3-restart-with-existing-configuration">Test I3: Restart with Existing Configuration<a class="headerlink" href="#test-i3-restart-with-existing-configuration" title="Permanent link">&para;</a></h4>
+<p><strong>Test Steps:</strong>
+1. Stop bot: <code>./stop.sh</code> or <code>.\stop.ps1</code>
+2. Start bot: <code>./start.sh</code> or <code>.\start.ps1</code></p>
+<p><strong>Expected Timeline:</strong>
+- <strong>Total: ~30 seconds</strong></p>
+<p><strong>Validation:</strong>
+- ✅ No configuration prompts
+- ✅ Containers start quickly
+- ✅ Bot operational within 30s</p>
+<h3 id="discord-bot-integration">Discord Bot Integration<a class="headerlink" href="#discord-bot-integration" title="Permanent link">&para;</a></h3>
+<h4 id="test-i4-bot-responds-to-mentions">Test I4: Bot Responds to Mentions<a class="headerlink" href="#test-i4-bot-responds-to-mentions" title="Permanent link">&para;</a></h4>
+<p><strong>Prerequisites:</strong> Bot invited to Discord server</p>
+<p><strong>Test Steps:</strong>
+1. Ensure bot is online (green status)
+2. Send message: <code>@Zetherion AI hello</code>
+3. Wait for response</p>
+<p><strong>Expected Response:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-65-1" name="__codelineno-65-1" href="#__codelineno-65-1"></a>Hello! I&#39;m Zetherion AI, your AI assistant. How can I help you today?
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Bot shows online status
+- ✅ Bot responds within 3 seconds
+- ✅ Response is coherent</p>
+<h4 id="test-i5-memorysearch-commands">Test I5: Memory/Search Commands<a class="headerlink" href="#test-i5-memorysearch-commands" title="Permanent link">&para;</a></h4>
+<p><strong>Test Steps:</strong>
+1. Store memory: <code>@Zetherion AI remember I prefer Python for coding</code>
+2. Wait for confirmation
+3. Search memory: <code>@Zetherion AI search for my coding preferences</code></p>
+<p><strong>Expected Behavior:</strong>
+- Memory stored in Qdrant
+- Search returns stored information</p>
+<p><strong>Validation:</strong>
+- ✅ Memory stored successfully
+- ✅ Search retrieves correct information
+- ✅ Qdrant database working</p>
+<h3 id="status-script-testing">Status Script Testing<a class="headerlink" href="#status-script-testing" title="Permanent link">&para;</a></h3>
+<h4 id="test-i6-statusps1-statussh-accuracy">Test I6: status.ps1 / status.sh Accuracy<a class="headerlink" href="#test-i6-statusps1-statussh-accuracy" title="Permanent link">&para;</a></h4>
+<p><strong>Test Steps:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-66-1" name="__codelineno-66-1" href="#__codelineno-66-1"></a><span class="c1"># Run status script</span>
+<a id="__codelineno-66-2" name="__codelineno-66-2" href="#__codelineno-66-2"></a>./status.sh<span class="w">  </span><span class="c1"># or .\status.ps1</span>
+</code></pre></div></p>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-67-1" name="__codelineno-67-1" href="#__codelineno-67-1"></a>============================================================
+<a id="__codelineno-67-2" name="__codelineno-67-2" href="#__codelineno-67-2"></a>  Zetherion AI Status
+<a id="__codelineno-67-3" name="__codelineno-67-3" href="#__codelineno-67-3"></a>============================================================
+<a id="__codelineno-67-4" name="__codelineno-67-4" href="#__codelineno-67-4"></a>
+<a id="__codelineno-67-5" name="__codelineno-67-5" href="#__codelineno-67-5"></a>[OK] Qdrant is running and healthy
+<a id="__codelineno-67-6" name="__codelineno-67-6" href="#__codelineno-67-6"></a>    Collections: 1
+<a id="__codelineno-67-7" name="__codelineno-67-7" href="#__codelineno-67-7"></a>    Vectors: 42
+<a id="__codelineno-67-8" name="__codelineno-67-8" href="#__codelineno-67-8"></a>
+<a id="__codelineno-67-9" name="__codelineno-67-9" href="#__codelineno-67-9"></a>[OK] Ollama is running and healthy
+<a id="__codelineno-67-10" name="__codelineno-67-10" href="#__codelineno-67-10"></a>    Models: 1
+<a id="__codelineno-67-11" name="__codelineno-67-11" href="#__codelineno-67-11"></a>      - llama3.1:8b
+<a id="__codelineno-67-12" name="__codelineno-67-12" href="#__codelineno-67-12"></a>
+<a id="__codelineno-67-13" name="__codelineno-67-13" href="#__codelineno-67-13"></a>[OK] Skills service is running and healthy
+<a id="__codelineno-67-14" name="__codelineno-67-14" href="#__codelineno-67-14"></a>
+<a id="__codelineno-67-15" name="__codelineno-67-15" href="#__codelineno-67-15"></a>[OK] Bot is running and healthy
+<a id="__codelineno-67-16" name="__codelineno-67-16" href="#__codelineno-67-16"></a>    Uptime: 0d 0h 15m 32s
+<a id="__codelineno-67-17" name="__codelineno-67-17" href="#__codelineno-67-17"></a>
+<a id="__codelineno-67-18" name="__codelineno-67-18" href="#__codelineno-67-18"></a>[OK] Zetherion AI is fully operational
+<a id="__codelineno-67-19" name="__codelineno-67-19" href="#__codelineno-67-19"></a>
+<a id="__codelineno-67-20" name="__codelineno-67-20" href="#__codelineno-67-20"></a>Container Summary:
+<a id="__codelineno-67-21" name="__codelineno-67-21" href="#__codelineno-67-21"></a>zetherion-ai-qdrant   Up 15 minutes (healthy)
+<a id="__codelineno-67-22" name="__codelineno-67-22" href="#__codelineno-67-22"></a>zetherion-ai-ollama   Up 15 minutes (healthy)
+<a id="__codelineno-67-23" name="__codelineno-67-23" href="#__codelineno-67-23"></a>zetherion-ai-skills   Up 15 minutes (healthy)
+<a id="__codelineno-67-24" name="__codelineno-67-24" href="#__codelineno-67-24"></a>zetherion-ai-bot      Up 15 minutes (healthy)
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ All services show [OK]
+- ✅ Collection and vector counts displayed
+- ✅ Loaded models listed
+- ✅ Uptime accurate
+- ✅ Container summary matches docker ps</p>
+<h3 id="stop-script-testing">Stop Script Testing<a class="headerlink" href="#stop-script-testing" title="Permanent link">&para;</a></h3>
+<h4 id="test-i7-graceful-shutdown">Test I7: Graceful Shutdown<a class="headerlink" href="#test-i7-graceful-shutdown" title="Permanent link">&para;</a></h4>
+<p><strong>Test Steps:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-68-1" name="__codelineno-68-1" href="#__codelineno-68-1"></a><span class="c1"># Stop all services</span>
+<a id="__codelineno-68-2" name="__codelineno-68-2" href="#__codelineno-68-2"></a>./stop.sh<span class="w">  </span><span class="c1"># or .\stop.ps1</span>
+</code></pre></div></p>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-69-1" name="__codelineno-69-1" href="#__codelineno-69-1"></a>============================================================
+<a id="__codelineno-69-2" name="__codelineno-69-2" href="#__codelineno-69-2"></a>  Stopping Zetherion AI
+<a id="__codelineno-69-3" name="__codelineno-69-3" href="#__codelineno-69-3"></a>============================================================
+<a id="__codelineno-69-4" name="__codelineno-69-4" href="#__codelineno-69-4"></a>
+<a id="__codelineno-69-5" name="__codelineno-69-5" href="#__codelineno-69-5"></a>[INFO] Stopping Docker containers...
+<a id="__codelineno-69-6" name="__codelineno-69-6" href="#__codelineno-69-6"></a>Stopping zetherion-ai-bot ... done
+<a id="__codelineno-69-7" name="__codelineno-69-7" href="#__codelineno-69-7"></a>Stopping zetherion-ai-skills ... done
+<a id="__codelineno-69-8" name="__codelineno-69-8" href="#__codelineno-69-8"></a>Stopping zetherion-ai-ollama ... done
+<a id="__codelineno-69-9" name="__codelineno-69-9" href="#__codelineno-69-9"></a>Stopping zetherion-ai-qdrant ... done
+<a id="__codelineno-69-10" name="__codelineno-69-10" href="#__codelineno-69-10"></a>
+<a id="__codelineno-69-11" name="__codelineno-69-11" href="#__codelineno-69-11"></a>[OK] All containers stopped
+<a id="__codelineno-69-12" name="__codelineno-69-12" href="#__codelineno-69-12"></a>[INFO] Data preserved in Docker volumes
+<a id="__codelineno-69-13" name="__codelineno-69-13" href="#__codelineno-69-13"></a>[INFO] Run ./start.sh to restart
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ All containers stopped
+- ✅ 30-second timeout respected
+- ✅ No errors
+- ✅ Volumes preserved</p>
+<h4 id="test-i8-data-persistence-after-stop">Test I8: Data Persistence After Stop<a class="headerlink" href="#test-i8-data-persistence-after-stop" title="Permanent link">&para;</a></h4>
+<p><strong>Test Steps:</strong>
+1. Store memory in Discord bot
+2. Stop bot: <code>./stop.sh</code>
+3. Start bot: <code>./start.sh</code>
+4. Search for stored memory</p>
+<p><strong>Validation:</strong>
+- ✅ Memory persists after restart
+- ✅ Qdrant data preserved
+- ✅ Ollama model not re-downloaded</p>
+<h3 id="cleanup-script-testing">Cleanup Script Testing<a class="headerlink" href="#cleanup-script-testing" title="Permanent link">&para;</a></h3>
+<h4 id="test-i9-cleanup-with-keep-data">Test I9: Cleanup with Keep Data<a class="headerlink" href="#test-i9-cleanup-with-keep-data" title="Permanent link">&para;</a></h4>
+<p><strong>Test Steps:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-70-1" name="__codelineno-70-1" href="#__codelineno-70-1"></a><span class="c1"># Stop and cleanup, keeping data</span>
+<a id="__codelineno-70-2" name="__codelineno-70-2" href="#__codelineno-70-2"></a>./cleanup.sh<span class="w"> </span>--keep-data<span class="w">  </span><span class="c1"># or .\cleanup.ps1 -KeepData</span>
+</code></pre></div></p>
+<p><strong>Expected Behavior:</strong>
+- Containers removed
+- Images removed
+- Volumes KEPT
+- .env KEPT</p>
+<p><strong>Validation:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-71-1" name="__codelineno-71-1" href="#__codelineno-71-1"></a><span class="c1"># Check containers (should be none)</span>
+<a id="__codelineno-71-2" name="__codelineno-71-2" href="#__codelineno-71-2"></a>docker<span class="w"> </span>ps<span class="w"> </span>-a<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>zetherion<span class="w">  </span><span class="c1"># Empty</span>
+<a id="__codelineno-71-3" name="__codelineno-71-3" href="#__codelineno-71-3"></a>
+<a id="__codelineno-71-4" name="__codelineno-71-4" href="#__codelineno-71-4"></a><span class="c1"># Check volumes (should exist)</span>
+<a id="__codelineno-71-5" name="__codelineno-71-5" href="#__codelineno-71-5"></a>docker<span class="w"> </span>volume<span class="w"> </span>ls<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>zetherion<span class="w">  </span><span class="c1"># Shows volumes</span>
+<a id="__codelineno-71-6" name="__codelineno-71-6" href="#__codelineno-71-6"></a>
+<a id="__codelineno-71-7" name="__codelineno-71-7" href="#__codelineno-71-7"></a><span class="c1"># Check .env (should exist)</span>
+<a id="__codelineno-71-8" name="__codelineno-71-8" href="#__codelineno-71-8"></a>ls<span class="w"> </span>-la<span class="w"> </span>.env<span class="w">  </span><span class="c1"># File exists</span>
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Containers removed
+- ✅ Volumes preserved
+- ✅ .env preserved</p>
+<h4 id="test-i10-complete-cleanup">Test I10: Complete Cleanup<a class="headerlink" href="#test-i10-complete-cleanup" title="Permanent link">&para;</a></h4>
+<p><strong>Test Steps:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-72-1" name="__codelineno-72-1" href="#__codelineno-72-1"></a><span class="c1"># Complete removal (with confirmation)</span>
+<a id="__codelineno-72-2" name="__codelineno-72-2" href="#__codelineno-72-2"></a>./cleanup.sh<span class="w">  </span><span class="c1"># or .\cleanup.ps1</span>
+<a id="__codelineno-72-3" name="__codelineno-72-3" href="#__codelineno-72-3"></a><span class="c1"># Type &#39;yes&#39; when prompted</span>
+</code></pre></div></p>
+<p><strong>Expected Behavior:</strong>
+- Containers removed
+- Images removed
+- Volumes removed
+- .env removed
+- Complete fresh slate</p>
+<p><strong>Validation:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-73-1" name="__codelineno-73-1" href="#__codelineno-73-1"></a><span class="c1"># Everything should be gone</span>
+<a id="__codelineno-73-2" name="__codelineno-73-2" href="#__codelineno-73-2"></a>docker<span class="w"> </span>ps<span class="w"> </span>-a<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>zetherion<span class="w">  </span><span class="c1"># Empty</span>
+<a id="__codelineno-73-3" name="__codelineno-73-3" href="#__codelineno-73-3"></a>docker<span class="w"> </span>volume<span class="w"> </span>ls<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>zetherion<span class="w">  </span><span class="c1"># Empty</span>
+<a id="__codelineno-73-4" name="__codelineno-73-4" href="#__codelineno-73-4"></a>docker<span class="w"> </span>images<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>zetherion<span class="w">  </span><span class="c1"># Empty</span>
+<a id="__codelineno-73-5" name="__codelineno-73-5" href="#__codelineno-73-5"></a>ls<span class="w"> </span>.env<span class="w">  </span><span class="c1"># File not found</span>
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ All containers removed
+- ✅ All volumes removed
+- ✅ All images removed
+- ✅ .env removed
+- ✅ Clean environment</p>
+<h2 id="performance-benchmarking">Performance Benchmarking<a class="headerlink" href="#performance-benchmarking" title="Permanent link">&para;</a></h2>
+<h3 id="startup-time-benchmarks">Startup Time Benchmarks<a class="headerlink" href="#startup-time-benchmarks" title="Permanent link">&para;</a></h3>
+<h4 id="test-p1-first-run-performance-gemini">Test P1: First-Run Performance (Gemini)<a class="headerlink" href="#test-p1-first-run-performance-gemini" title="Permanent link">&para;</a></h4>
+<p><strong>Measurement:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-74-1" name="__codelineno-74-1" href="#__codelineno-74-1"></a><span class="c"># Windows</span>
+<a id="__codelineno-74-2" name="__codelineno-74-2" href="#__codelineno-74-2"></a><span class="nb">Measure-Command</span> <span class="p">{</span> <span class="p">.\</span><span class="n">start</span><span class="p">.</span><span class="n">ps1</span> <span class="p">}</span>
+<a id="__codelineno-74-3" name="__codelineno-74-3" href="#__codelineno-74-3"></a>
+<a id="__codelineno-74-4" name="__codelineno-74-4" href="#__codelineno-74-4"></a><span class="c"># Unix</span>
+<a id="__codelineno-74-5" name="__codelineno-74-5" href="#__codelineno-74-5"></a><span class="n">time</span> <span class="p">./</span><span class="n">start</span><span class="p">.</span><span class="n">sh</span>
+</code></pre></div></p>
+<p><strong>Expected Times:</strong>
+| Phase | Expected Duration |
+|-------|------------------|
+| Phase 1: Prerequisites | 5-10s |
+| Phase 2: Hardware Assessment | 10-20s |
+| Phase 3: Interactive Setup | 30-60s (user input) |
+| Phase 4: Build &amp; Deploy | 90-120s |
+| Phase 5: N/A (Gemini) | 0s |
+| Phase 6: Verification | 10-20s |
+| <strong>Total</strong> | <strong>3-4 minutes</strong> |</p>
+<p><strong>Validation:</strong>
+- ✅ Completes within 5 minutes
+- ✅ No phase takes excessively long
+- ✅ Build time reasonable</p>
+<h4 id="test-p2-first-run-performance-ollama">Test P2: First-Run Performance (Ollama)<a class="headerlink" href="#test-p2-first-run-performance-ollama" title="Permanent link">&para;</a></h4>
+<p><strong>Expected Times:</strong>
+| Phase | Expected Duration |
+|-------|------------------|
+| Phase 1: Prerequisites | 5-10s |
+| Phase 2: Hardware Assessment | 10-20s |
+| Phase 3: Interactive Setup | 30-60s (user input) |
+| Phase 4: Build &amp; Deploy | 90-120s |
+| Phase 5: Model Download | 300-420s (5-7 min) |
+| Phase 6: Verification | 10-20s |
+| <strong>Total</strong> | <strong>8-10 minutes</strong> |</p>
+<p><strong>Validation:</strong>
+- ✅ Completes within 12 minutes
+- ✅ Model download shows progress
+- ✅ Download speed reasonable for internet connection</p>
+<h4 id="test-p3-subsequent-startup-performance">Test P3: Subsequent Startup Performance<a class="headerlink" href="#test-p3-subsequent-startup-performance" title="Permanent link">&para;</a></h4>
+<p><strong>Measurement:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-75-1" name="__codelineno-75-1" href="#__codelineno-75-1"></a><span class="c1"># Stop and restart</span>
+<a id="__codelineno-75-2" name="__codelineno-75-2" href="#__codelineno-75-2"></a>./stop.sh
+<a id="__codelineno-75-3" name="__codelineno-75-3" href="#__codelineno-75-3"></a><span class="nb">time</span><span class="w"> </span>./start.sh
+</code></pre></div></p>
+<p><strong>Expected Times:</strong>
+| Phase | Expected Duration |
+|-------|------------------|
+| Phase 1: Prerequisites | 5s |
+| Phase 2: Hardware Assessment | 0s (skipped) |
+| Phase 3: Config Check | 1s |
+| Phase 4: Container Start | 15-20s |
+| Phase 5: Model Check | 2s (already exists) |
+| Phase 6: Verification | 5s |
+| <strong>Total</strong> | <strong>30-35 seconds</strong> |</p>
+<p><strong>Validation:</strong>
+- ✅ Completes within 45 seconds
+- ✅ Fast startup from cached images
+- ✅ No unnecessary steps</p>
+<h3 id="resource-usage-benchmarks">Resource Usage Benchmarks<a class="headerlink" href="#resource-usage-benchmarks" title="Permanent link">&para;</a></h3>
+<h4 id="test-p4-memory-usage">Test P4: Memory Usage<a class="headerlink" href="#test-p4-memory-usage" title="Permanent link">&para;</a></h4>
+<p><strong>Measurement:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-76-1" name="__codelineno-76-1" href="#__codelineno-76-1"></a><span class="c1"># Monitor memory usage</span>
+<a id="__codelineno-76-2" name="__codelineno-76-2" href="#__codelineno-76-2"></a>docker<span class="w"> </span>stats<span class="w"> </span>--no-stream<span class="w"> </span>zetherion-ai-bot<span class="w"> </span>zetherion-ai-qdrant<span class="w"> </span>zetherion-ai-ollama<span class="w"> </span>zetherion-ai-skills
+</code></pre></div></p>
+<p><strong>Expected Memory Usage:</strong>
+| Container | Expected RAM | Notes |
+|-----------|--------------|-------|
+| zetherion-ai-bot | 200-400MB | Varies with activity |
+| zetherion-ai-qdrant | 100-200MB | Increases with vectors |
+| zetherion-ai-ollama | 5-8GB | Model in memory |
+| zetherion-ai-skills | 200-300MB | Varies with requests |
+| <strong>Total (Ollama)</strong> | <strong>6-9GB</strong> | |
+| <strong>Total (Gemini)</strong> | <strong>0.5-1GB</strong> | No Ollama |</p>
+<p><strong>Validation:</strong>
+- ✅ Memory usage within expected ranges
+- ✅ No memory leaks over 24 hours
+- ✅ Total under hardware recommendations</p>
+<h4 id="test-p5-cpu-usage">Test P5: CPU Usage<a class="headerlink" href="#test-p5-cpu-usage" title="Permanent link">&para;</a></h4>
+<p><strong>Measurement:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-77-1" name="__codelineno-77-1" href="#__codelineno-77-1"></a><span class="c1"># Monitor CPU usage</span>
+<a id="__codelineno-77-2" name="__codelineno-77-2" href="#__codelineno-77-2"></a>docker<span class="w"> </span>stats<span class="w"> </span>--no-stream<span class="w"> </span>--format<span class="w"> </span><span class="s2">&quot;table {{.Name}}\t{{.CPUPerc}}&quot;</span>
+</code></pre></div></p>
+<p><strong>Expected CPU Usage (Idle):</strong>
+| Container | Expected CPU | Notes |
+|-----------|--------------|-------|
+| zetherion-ai-bot | 0-2% | Idle |
+| zetherion-ai-qdrant | 0-1% | Idle |
+| zetherion-ai-ollama | 0% | Idle |
+| zetherion-ai-skills | 0-1% | Idle |</p>
+<p><strong>Expected CPU Usage (Active - Query):</strong>
+| Container | Expected CPU | Notes |
+|-----------|--------------|-------|
+| zetherion-ai-bot | 10-30% | Processing |
+| zetherion-ai-ollama | 200-400% | Inference (multi-core) |</p>
+<p><strong>Validation:</strong>
+- ✅ Low CPU usage when idle
+- ✅ CPU spikes during queries expected
+- ✅ Returns to idle after query</p>
+<h4 id="test-p6-disk-usage">Test P6: Disk Usage<a class="headerlink" href="#test-p6-disk-usage" title="Permanent link">&para;</a></h4>
+<p><strong>Measurement:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-78-1" name="__codelineno-78-1" href="#__codelineno-78-1"></a><span class="c1"># Check volume sizes</span>
+<a id="__codelineno-78-2" name="__codelineno-78-2" href="#__codelineno-78-2"></a>docker<span class="w"> </span>system<span class="w"> </span>df<span class="w"> </span>-v
+</code></pre></div></p>
+<p><strong>Expected Disk Usage:</strong>
+| Component | Expected Size | Notes |
+|-----------|---------------|-------|
+| zetherion-ai-bot image | 180-220MB | Distroless |
+| zetherion-ai-skills image | 180-220MB | Distroless |
+| qdrant_storage volume | 100MB-1GB | Grows with vectors |
+| ollama_models volume | 5-20GB | Model dependent |
+| <strong>Total (llama3.1:8b)</strong> | <strong>6-8GB</strong> | |
+| <strong>Total (qwen2.5:32b)</strong> | <strong>20-25GB</strong> | Large model |</p>
+<p><strong>Validation:</strong>
+- ✅ Distroless images under 250MB each
+- ✅ Volume sizes reasonable
+- ✅ Total under documented requirements</p>
+<h3 id="response-time-benchmarks">Response Time Benchmarks<a class="headerlink" href="#response-time-benchmarks" title="Permanent link">&para;</a></h3>
+<h4 id="test-p7-bot-response-time-gemini-backend">Test P7: Bot Response Time (Gemini Backend)<a class="headerlink" href="#test-p7-bot-response-time-gemini-backend" title="Permanent link">&para;</a></h4>
+<p><strong>Measurement:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-79-1" name="__codelineno-79-1" href="#__codelineno-79-1"></a><span class="c1"># Time Discord bot response</span>
+<a id="__codelineno-79-2" name="__codelineno-79-2" href="#__codelineno-79-2"></a><span class="c1"># Send: &quot;@Zetherion AI hello&quot;</span>
+<a id="__codelineno-79-3" name="__codelineno-79-3" href="#__codelineno-79-3"></a><span class="c1"># Note timestamp of send and response</span>
+</code></pre></div></p>
+<p><strong>Expected Response Times:</strong>
+| Query Type | Expected Time | Notes |
+|------------|---------------|-------|
+| Simple (hello) | 1-3s | Fast |
+| Memory search | 1-2s | Vector search |
+| Complex query | 3-7s | API call + processing |</p>
+<p><strong>Validation:</strong>
+- ✅ Simple queries under 3 seconds
+- ✅ Complex queries under 10 seconds
+- ✅ Consistent response times</p>
+<h4 id="test-p8-bot-response-time-ollama-backend">Test P8: Bot Response Time (Ollama Backend)<a class="headerlink" href="#test-p8-bot-response-time-ollama-backend" title="Permanent link">&para;</a></h4>
+<p><strong>Expected Response Times:</strong>
+| Query Type | Expected Time | Notes |
+|------------|---------------|-------|
+| Simple (hello) | 2-5s | Local inference |
+| Memory search | 2-4s | Vector + local |
+| Complex query | 5-15s | Longer inference |</p>
+<p><strong>Validation:</strong>
+- ✅ Simple queries under 7 seconds
+- ✅ Complex queries under 20 seconds
+- ✅ Faster with GPU acceleration</p>
+<h2 id="security-testing">Security Testing<a class="headerlink" href="#security-testing" title="Permanent link">&para;</a></h2>
+<h3 id="container-security-tests">Container Security Tests<a class="headerlink" href="#container-security-tests" title="Permanent link">&para;</a></h3>
+<h4 id="test-s1-distroless-base-image-verification">Test S1: Distroless Base Image Verification<a class="headerlink" href="#test-s1-distroless-base-image-verification" title="Permanent link">&para;</a></h4>
+<p><strong>Verify base image:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-80-1" name="__codelineno-80-1" href="#__codelineno-80-1"></a><span class="c1"># Check base image</span>
+<a id="__codelineno-80-2" name="__codelineno-80-2" href="#__codelineno-80-2"></a>docker<span class="w"> </span>inspect<span class="w"> </span>zetherion-ai-bot<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.[0].Config.Image&#39;</span>
+</code></pre></div></p>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-81-1" name="__codelineno-81-1" href="#__codelineno-81-1"></a>&quot;gcr.io/distroless/python3-debian12:nonroot&quot;
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Using distroless base
+- ✅ Using nonroot variant
+- ✅ No shell present</p>
+<h4 id="test-s2-vulnerability-scanning">Test S2: Vulnerability Scanning<a class="headerlink" href="#test-s2-vulnerability-scanning" title="Permanent link">&para;</a></h4>
+<p><strong>Run security scan:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-82-1" name="__codelineno-82-1" href="#__codelineno-82-1"></a><span class="c1"># Scan bot image for vulnerabilities</span>
+<a id="__codelineno-82-2" name="__codelineno-82-2" href="#__codelineno-82-2"></a>docker<span class="w"> </span>scan<span class="w"> </span>zetherion-ai-bot:latest
+<a id="__codelineno-82-3" name="__codelineno-82-3" href="#__codelineno-82-3"></a>
+<a id="__codelineno-82-4" name="__codelineno-82-4" href="#__codelineno-82-4"></a><span class="c1"># Or use Trivy</span>
+<a id="__codelineno-82-5" name="__codelineno-82-5" href="#__codelineno-82-5"></a>trivy<span class="w"> </span>image<span class="w"> </span>zetherion-ai-bot:latest
+</code></pre></div></p>
+<p><strong>Expected Results:</strong>
+- No HIGH or CRITICAL vulnerabilities
+- Significantly fewer vulnerabilities than python:3.11-slim
+- Most findings in base distroless image (maintained by Google)</p>
+<p><strong>Validation:</strong>
+- ✅ Zero CRITICAL vulnerabilities
+- ✅ HIGH vulnerabilities under 5
+- ✅ Fewer CVEs than standard Python images</p>
+<h4 id="test-s3-non-root-user-verification">Test S3: Non-Root User Verification<a class="headerlink" href="#test-s3-non-root-user-verification" title="Permanent link">&para;</a></h4>
+<p><strong>Verify all containers run as non-root:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-83-1" name="__codelineno-83-1" href="#__codelineno-83-1"></a><span class="c1"># Check each container&#39;s user</span>
+<a id="__codelineno-83-2" name="__codelineno-83-2" href="#__codelineno-83-2"></a><span class="k">for</span><span class="w"> </span>container<span class="w"> </span><span class="k">in</span><span class="w"> </span>zetherion-ai-bot<span class="w"> </span>zetherion-ai-skills<span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<a id="__codelineno-83-3" name="__codelineno-83-3" href="#__codelineno-83-3"></a><span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$container</span><span class="s2">:&quot;</span>
+<a id="__codelineno-83-4" name="__codelineno-83-4" href="#__codelineno-83-4"></a><span class="w">  </span>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span><span class="nv">$container</span><span class="w"> </span>python3.11<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import os; print(f&#39;  UID: {os.getuid()}&#39;)&quot;</span>
+<a id="__codelineno-83-5" name="__codelineno-83-5" href="#__codelineno-83-5"></a><span class="k">done</span>
+</code></pre></div></p>
+<p><strong>Expected Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-84-1" name="__codelineno-84-1" href="#__codelineno-84-1"></a>zetherion-ai-bot:
+<a id="__codelineno-84-2" name="__codelineno-84-2" href="#__codelineno-84-2"></a>  UID: 65532
+<a id="__codelineno-84-3" name="__codelineno-84-3" href="#__codelineno-84-3"></a>zetherion-ai-skills:
+<a id="__codelineno-84-4" name="__codelineno-84-4" href="#__codelineno-84-4"></a>  UID: 65532
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ UID 65532 (nonroot)
+- ✅ Not UID 0 (root)
+- ✅ Security best practice</p>
+<h3 id="encryption-tests">Encryption Tests<a class="headerlink" href="#encryption-tests" title="Permanent link">&para;</a></h3>
+<h4 id="test-s4-encryption-enabled">Test S4: Encryption Enabled<a class="headerlink" href="#test-s4-encryption-enabled" title="Permanent link">&para;</a></h4>
+<p><strong>Prerequisites:</strong> Enable encryption in .env:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-85-1" name="__codelineno-85-1" href="#__codelineno-85-1"></a>ENCRYPTION_ENABLED=true
+<a id="__codelineno-85-2" name="__codelineno-85-2" href="#__codelineno-85-2"></a>ENCRYPTION_PASSPHRASE=test-passphrase-for-testing-only
+</code></pre></div></p>
+<p><strong>Test Steps:</strong>
+1. Restart bot with encryption enabled
+2. Store memory: <code>@Zetherion AI remember my secret: test123</code>
+3. Check Qdrant data (should be encrypted)</p>
+<p><strong>Validation:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-86-1" name="__codelineno-86-1" href="#__codelineno-86-1"></a><span class="c1"># Query Qdrant directly (data should be encrypted)</span>
+<a id="__codelineno-86-2" name="__codelineno-86-2" href="#__codelineno-86-2"></a>curl<span class="w"> </span>http://localhost:6333/collections/memories/points/scroll<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq
+</code></pre></div></p>
+<p><strong>Expected:</strong>
+- Payload data encrypted (not plaintext "test123")
+- Metadata may be visible (timestamps, user IDs)
+- Bot can decrypt and retrieve correctly</p>
+<p><strong>Validation:</strong>
+- ✅ Data encrypted in Qdrant
+- ✅ Bot can decrypt and retrieve
+- ✅ Raw data not readable in database</p>
+<h3 id="api-key-security-tests">API Key Security Tests<a class="headerlink" href="#api-key-security-tests" title="Permanent link">&para;</a></h3>
+<h4 id="test-s5-api-keys-not-in-logs">Test S5: API Keys Not in Logs<a class="headerlink" href="#test-s5-api-keys-not-in-logs" title="Permanent link">&para;</a></h4>
+<p><strong>Test Steps:</strong>
+1. View container logs
+2. Check for exposed API keys</p>
+<p><strong>Check Logs:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-87-1" name="__codelineno-87-1" href="#__codelineno-87-1"></a><span class="c1"># Check bot logs</span>
+<a id="__codelineno-87-2" name="__codelineno-87-2" href="#__codelineno-87-2"></a>docker-compose<span class="w"> </span>logs<span class="w"> </span>zetherion-ai-bot<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;api&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span><span class="s2">&quot;key&quot;</span>
+<a id="__codelineno-87-3" name="__codelineno-87-3" href="#__codelineno-87-3"></a>
+<a id="__codelineno-87-4" name="__codelineno-87-4" href="#__codelineno-87-4"></a><span class="c1"># Check start script output</span>
+<a id="__codelineno-87-5" name="__codelineno-87-5" href="#__codelineno-87-5"></a>./start.sh<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s2">&quot;(DISCORD_TOKEN|GEMINI_API_KEY|ANTHROPIC_API_KEY)&quot;</span>
+</code></pre></div></p>
+<p><strong>Expected Result:</strong>
+- No full API keys visible
+- At most, first 4 characters shown (e.g., "sk-an****")
+- No keys in startup output</p>
+<p><strong>Validation:</strong>
+- ✅ API keys redacted in logs
+- ✅ Keys not echoed during setup
+- ✅ .env file not displayed</p>
+<h4 id="test-s6-env-file-permissions">Test S6: .env File Permissions<a class="headerlink" href="#test-s6-env-file-permissions" title="Permanent link">&para;</a></h4>
+<p><strong>Check file permissions:</strong></p>
+<p><strong>Unix:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-88-1" name="__codelineno-88-1" href="#__codelineno-88-1"></a>ls<span class="w"> </span>-la<span class="w"> </span>.env
+</code></pre></div></p>
+<p><strong>Expected:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-89-1" name="__codelineno-89-1" href="#__codelineno-89-1"></a>-rw------- 1 user user 1234 Feb 07 10:30 .env
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Owner read/write only (600)
+- ✅ Not readable by other users
+- ✅ Security best practice</p>
+<p><strong>Windows:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-90-1" name="__codelineno-90-1" href="#__codelineno-90-1"></a><span class="n">icacls</span> <span class="p">.</span><span class="n">env</span>
+</code></pre></div></p>
+<p><strong>Expected:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-91-1" name="__codelineno-91-1" href="#__codelineno-91-1"></a>.env DOMAIN\User:(R,W)
+</code></pre></div></p>
+<p><strong>Validation:</strong>
+- ✅ Only owner has access
+- ✅ Other users denied</p>
+<h2 id="troubleshooting-test-failures">Troubleshooting Test Failures<a class="headerlink" href="#troubleshooting-test-failures" title="Permanent link">&para;</a></h2>
+<h3 id="common-test-failures">Common Test Failures<a class="headerlink" href="#common-test-failures" title="Permanent link">&para;</a></h3>
+<h4 id="failure-docker-desktop-not-starting">Failure: Docker Desktop Not Starting<a class="headerlink" href="#failure-docker-desktop-not-starting" title="Permanent link">&para;</a></h4>
+<p><strong>Symptoms:</strong>
+- Script times out waiting for Docker
+- "Docker daemon not responding"</p>
+<p><strong>Resolution Steps:</strong>
+1. Check WSL 2 (Windows): <code>wsl --status</code>
+2. Update WSL: <code>wsl --update</code>
+3. Restart Docker Desktop manually
+4. Check Docker Desktop settings (Resources)
+5. Restart computer if needed</p>
+<h4 id="failure-health-checks-timeout">Failure: Health Checks Timeout<a class="headerlink" href="#failure-health-checks-timeout" title="Permanent link">&para;</a></h4>
+<p><strong>Symptoms:</strong>
+- Containers start but never become "healthy"
+- Timeout after 120 seconds</p>
+<p><strong>Resolution Steps:</strong>
+1. Check Docker resource allocation (Memory)
+2. View container logs: <code>docker-compose logs &lt;service&gt;</code>
+3. Verify ports not in use: <code>netstat -an | grep 6333</code>
+4. Try clean rebuild: <code>./cleanup.sh &amp;&amp; ./start.sh --force-rebuild</code></p>
+<h4 id="failure-model-download-hangs">Failure: Model Download Hangs<a class="headerlink" href="#failure-model-download-hangs" title="Permanent link">&para;</a></h4>
+<p><strong>Symptoms:</strong>
+- Model download stuck at X%
+- No progress for 5+ minutes</p>
+<p><strong>Resolution Steps:</strong>
+1. Check internet connection
+2. Check disk space: <code>df -h</code> or <code>Get-PSDrive</code>
+3. Stop and retry:
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-92-1" name="__codelineno-92-1" href="#__codelineno-92-1"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-ollama<span class="w"> </span>pkill<span class="w"> </span>ollama
+<a id="__codelineno-92-2" name="__codelineno-92-2" href="#__codelineno-92-2"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-ollama<span class="w"> </span>ollama<span class="w"> </span>pull<span class="w"> </span>llama3.1:8b
+</code></pre></div></p>
+<h4 id="failure-bot-wont-respond-in-discord">Failure: Bot Won't Respond in Discord<a class="headerlink" href="#failure-bot-wont-respond-in-discord" title="Permanent link">&para;</a></h4>
+<p><strong>Symptoms:</strong>
+- Bot shows online but doesn't respond
+- No errors in logs</p>
+<p><strong>Resolution Steps:</strong>
+1. Verify Message Content Intent enabled
+2. Check bot has permissions in channel
+3. Test with direct mention: <code>@Zetherion AI hello</code>
+4. Check logs: <code>docker-compose logs -f zetherion-ai-bot</code>
+5. Verify Discord token valid</p>
+<h3 id="debugging-commands">Debugging Commands<a class="headerlink" href="#debugging-commands" title="Permanent link">&para;</a></h3>
+<h4 id="view-detailed-container-logs">View Detailed Container Logs<a class="headerlink" href="#view-detailed-container-logs" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-93-1" name="__codelineno-93-1" href="#__codelineno-93-1"></a><span class="c1"># All services</span>
+<a id="__codelineno-93-2" name="__codelineno-93-2" href="#__codelineno-93-2"></a>docker-compose<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>--tail<span class="w"> </span><span class="m">100</span>
+<a id="__codelineno-93-3" name="__codelineno-93-3" href="#__codelineno-93-3"></a>
+<a id="__codelineno-93-4" name="__codelineno-93-4" href="#__codelineno-93-4"></a><span class="c1"># Specific service</span>
+<a id="__codelineno-93-5" name="__codelineno-93-5" href="#__codelineno-93-5"></a>docker-compose<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>zetherion-ai-bot
+<a id="__codelineno-93-6" name="__codelineno-93-6" href="#__codelineno-93-6"></a>
+<a id="__codelineno-93-7" name="__codelineno-93-7" href="#__codelineno-93-7"></a><span class="c1"># With timestamps</span>
+<a id="__codelineno-93-8" name="__codelineno-93-8" href="#__codelineno-93-8"></a>docker-compose<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>--timestamps<span class="w"> </span>zetherion-ai-bot
+<a id="__codelineno-93-9" name="__codelineno-93-9" href="#__codelineno-93-9"></a>
+<a id="__codelineno-93-10" name="__codelineno-93-10" href="#__codelineno-93-10"></a><span class="c1"># Last 50 lines only</span>
+<a id="__codelineno-93-11" name="__codelineno-93-11" href="#__codelineno-93-11"></a>docker-compose<span class="w"> </span>logs<span class="w"> </span>--tail<span class="w"> </span><span class="m">50</span><span class="w"> </span>zetherion-ai-bot
+</code></pre></div>
+<h4 id="inspect-container-configuration">Inspect Container Configuration<a class="headerlink" href="#inspect-container-configuration" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-94-1" name="__codelineno-94-1" href="#__codelineno-94-1"></a><span class="c1"># Full container inspect</span>
+<a id="__codelineno-94-2" name="__codelineno-94-2" href="#__codelineno-94-2"></a>docker<span class="w"> </span>inspect<span class="w"> </span>zetherion-ai-bot<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq
+<a id="__codelineno-94-3" name="__codelineno-94-3" href="#__codelineno-94-3"></a>
+<a id="__codelineno-94-4" name="__codelineno-94-4" href="#__codelineno-94-4"></a><span class="c1"># Check environment variables</span>
+<a id="__codelineno-94-5" name="__codelineno-94-5" href="#__codelineno-94-5"></a>docker<span class="w"> </span>inspect<span class="w"> </span>zetherion-ai-bot<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.[0].Config.Env&#39;</span>
+<a id="__codelineno-94-6" name="__codelineno-94-6" href="#__codelineno-94-6"></a>
+<a id="__codelineno-94-7" name="__codelineno-94-7" href="#__codelineno-94-7"></a><span class="c1"># Check health check config</span>
+<a id="__codelineno-94-8" name="__codelineno-94-8" href="#__codelineno-94-8"></a>docker<span class="w"> </span>inspect<span class="w"> </span>zetherion-ai-bot<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.[0].State.Health&#39;</span>
+<a id="__codelineno-94-9" name="__codelineno-94-9" href="#__codelineno-94-9"></a>
+<a id="__codelineno-94-10" name="__codelineno-94-10" href="#__codelineno-94-10"></a><span class="c1"># Check volume mounts</span>
+<a id="__codelineno-94-11" name="__codelineno-94-11" href="#__codelineno-94-11"></a>docker<span class="w"> </span>inspect<span class="w"> </span>zetherion-ai-bot<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.[0].Mounts&#39;</span>
+</code></pre></div>
+<h4 id="test-service-connectivity">Test Service Connectivity<a class="headerlink" href="#test-service-connectivity" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-95-1" name="__codelineno-95-1" href="#__codelineno-95-1"></a><span class="c1"># Test Qdrant</span>
+<a id="__codelineno-95-2" name="__codelineno-95-2" href="#__codelineno-95-2"></a>curl<span class="w"> </span>http://localhost:6333/healthz
+<a id="__codelineno-95-3" name="__codelineno-95-3" href="#__codelineno-95-3"></a>
+<a id="__codelineno-95-4" name="__codelineno-95-4" href="#__codelineno-95-4"></a><span class="c1"># Test Qdrant collections</span>
+<a id="__codelineno-95-5" name="__codelineno-95-5" href="#__codelineno-95-5"></a>curl<span class="w"> </span>http://localhost:6333/collections
+<a id="__codelineno-95-6" name="__codelineno-95-6" href="#__codelineno-95-6"></a>
+<a id="__codelineno-95-7" name="__codelineno-95-7" href="#__codelineno-95-7"></a><span class="c1"># Test Ollama (if enabled)</span>
+<a id="__codelineno-95-8" name="__codelineno-95-8" href="#__codelineno-95-8"></a>curl<span class="w"> </span>http://localhost:11434/api/tags
+<a id="__codelineno-95-9" name="__codelineno-95-9" href="#__codelineno-95-9"></a>
+<a id="__codelineno-95-10" name="__codelineno-95-10" href="#__codelineno-95-10"></a><span class="c1"># Test Ollama generate</span>
+<a id="__codelineno-95-11" name="__codelineno-95-11" href="#__codelineno-95-11"></a>curl<span class="w"> </span>http://localhost:11434/api/generate<span class="w"> </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
+<a id="__codelineno-95-12" name="__codelineno-95-12" href="#__codelineno-95-12"></a><span class="s1">  &quot;model&quot;: &quot;llama3.1:8b&quot;,</span>
+<a id="__codelineno-95-13" name="__codelineno-95-13" href="#__codelineno-95-13"></a><span class="s1">  &quot;prompt&quot;: &quot;Hello!&quot;,</span>
+<a id="__codelineno-95-14" name="__codelineno-95-14" href="#__codelineno-95-14"></a><span class="s1">  &quot;stream&quot;: false</span>
+<a id="__codelineno-95-15" name="__codelineno-95-15" href="#__codelineno-95-15"></a><span class="s1">}&#39;</span>
+</code></pre></div>
+<h4 id="check-resource-usage">Check Resource Usage<a class="headerlink" href="#check-resource-usage" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-96-1" name="__codelineno-96-1" href="#__codelineno-96-1"></a><span class="c1"># Real-time stats</span>
+<a id="__codelineno-96-2" name="__codelineno-96-2" href="#__codelineno-96-2"></a>docker<span class="w"> </span>stats
+<a id="__codelineno-96-3" name="__codelineno-96-3" href="#__codelineno-96-3"></a>
+<a id="__codelineno-96-4" name="__codelineno-96-4" href="#__codelineno-96-4"></a><span class="c1"># Disk usage</span>
+<a id="__codelineno-96-5" name="__codelineno-96-5" href="#__codelineno-96-5"></a>docker<span class="w"> </span>system<span class="w"> </span>df<span class="w"> </span>-v
+<a id="__codelineno-96-6" name="__codelineno-96-6" href="#__codelineno-96-6"></a>
+<a id="__codelineno-96-7" name="__codelineno-96-7" href="#__codelineno-96-7"></a><span class="c1"># Network inspection</span>
+<a id="__codelineno-96-8" name="__codelineno-96-8" href="#__codelineno-96-8"></a>docker<span class="w"> </span>network<span class="w"> </span>inspect<span class="w"> </span>personalbot_default
+<a id="__codelineno-96-9" name="__codelineno-96-9" href="#__codelineno-96-9"></a>
+<a id="__codelineno-96-10" name="__codelineno-96-10" href="#__codelineno-96-10"></a><span class="c1"># Volume inspection</span>
+<a id="__codelineno-96-11" name="__codelineno-96-11" href="#__codelineno-96-11"></a>docker<span class="w"> </span>volume<span class="w"> </span>inspect<span class="w"> </span>zetherion-ai_qdrant_storage
+</code></pre></div>
+<h2 id="test-report-template">Test Report Template<a class="headerlink" href="#test-report-template" title="Permanent link">&para;</a></h2>
+<p>Use this template to document test results:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-97-1" name="__codelineno-97-1" href="#__codelineno-97-1"></a><span class="gh"># Zetherion AI Deployment Test Report</span>
+<a id="__codelineno-97-2" name="__codelineno-97-2" href="#__codelineno-97-2"></a>
+<a id="__codelineno-97-3" name="__codelineno-97-3" href="#__codelineno-97-3"></a><span class="gs">**Date:**</span> YYYY-MM-DD
+<a id="__codelineno-97-4" name="__codelineno-97-4" href="#__codelineno-97-4"></a><span class="gs">**Platform:**</span> Windows 11 / macOS 14 / Ubuntu 22.04
+<a id="__codelineno-97-5" name="__codelineno-97-5" href="#__codelineno-97-5"></a><span class="gs">**Tester:**</span> [Your Name]
+<a id="__codelineno-97-6" name="__codelineno-97-6" href="#__codelineno-97-6"></a><span class="gs">**Version:**</span> [Git commit hash or tag]
+<a id="__codelineno-97-7" name="__codelineno-97-7" href="#__codelineno-97-7"></a>
+<a id="__codelineno-97-8" name="__codelineno-97-8" href="#__codelineno-97-8"></a><span class="gu">## Hardware Configuration</span>
+<a id="__codelineno-97-9" name="__codelineno-97-9" href="#__codelineno-97-9"></a><span class="k">-</span><span class="w"> </span>CPU: [Model, cores, threads]
+<a id="__codelineno-97-10" name="__codelineno-97-10" href="#__codelineno-97-10"></a><span class="k">-</span><span class="w"> </span>RAM: [Total, available]
+<a id="__codelineno-97-11" name="__codelineno-97-11" href="#__codelineno-97-11"></a><span class="k">-</span><span class="w"> </span>GPU: [Model, VRAM] or &quot;None&quot;
+<a id="__codelineno-97-12" name="__codelineno-97-12" href="#__codelineno-97-12"></a><span class="k">-</span><span class="w"> </span>Disk: [Total, free]
+<a id="__codelineno-97-13" name="__codelineno-97-13" href="#__codelineno-97-13"></a>
+<a id="__codelineno-97-14" name="__codelineno-97-14" href="#__codelineno-97-14"></a><span class="gu">## Test Results Summary</span>
+<a id="__codelineno-97-15" name="__codelineno-97-15" href="#__codelineno-97-15"></a>
+<a id="__codelineno-97-16" name="__codelineno-97-16" href="#__codelineno-97-16"></a>| Phase | Tests | Passed | Failed | Notes |
+<a id="__codelineno-97-17" name="__codelineno-97-17" href="#__codelineno-97-17"></a>|-------|-------|--------|--------|-------|
+<a id="__codelineno-97-18" name="__codelineno-97-18" href="#__codelineno-97-18"></a>| Phase 1: Prerequisites | 3 | 3 | 0 | |
+<a id="__codelineno-97-19" name="__codelineno-97-19" href="#__codelineno-97-19"></a>| Phase 2: Hardware Assessment | 5 | 5 | 0 | |
+<a id="__codelineno-97-20" name="__codelineno-97-20" href="#__codelineno-97-20"></a>| Phase 3: Configuration | 3 | 3 | 0 | |
+<a id="__codelineno-97-21" name="__codelineno-97-21" href="#__codelineno-97-21"></a>| Phase 4: Build &amp; Deploy | 4 | 4 | 0 | |
+<a id="__codelineno-97-22" name="__codelineno-97-22" href="#__codelineno-97-22"></a>| Phase 5: Model Download | 3 | 3 | 0 | |
+<a id="__codelineno-97-23" name="__codelineno-97-23" href="#__codelineno-97-23"></a>| Phase 6: Verification | 3 | 3 | 0 | |
+<a id="__codelineno-97-24" name="__codelineno-97-24" href="#__codelineno-97-24"></a>| Platform-Specific | 9 | 9 | 0 | |
+<a id="__codelineno-97-25" name="__codelineno-97-25" href="#__codelineno-97-25"></a>| Container Validation | 6 | 6 | 0 | |
+<a id="__codelineno-97-26" name="__codelineno-97-26" href="#__codelineno-97-26"></a>| Integration Tests | 10 | 10 | 0 | |
+<a id="__codelineno-97-27" name="__codelineno-97-27" href="#__codelineno-97-27"></a>| Performance Tests | 8 | 8 | 0 | |
+<a id="__codelineno-97-28" name="__codelineno-97-28" href="#__codelineno-97-28"></a>| Security Tests | 6 | 6 | 0 | |
+<a id="__codelineno-97-29" name="__codelineno-97-29" href="#__codelineno-97-29"></a>| <span class="gs">**TOTAL**</span> | <span class="gs">**60**</span> | <span class="gs">**60**</span> | <span class="gs">**0**</span> | |
+<a id="__codelineno-97-30" name="__codelineno-97-30" href="#__codelineno-97-30"></a>
+<a id="__codelineno-97-31" name="__codelineno-97-31" href="#__codelineno-97-31"></a><span class="gu">## Detailed Results</span>
+<a id="__codelineno-97-32" name="__codelineno-97-32" href="#__codelineno-97-32"></a>
+<a id="__codelineno-97-33" name="__codelineno-97-33" href="#__codelineno-97-33"></a><span class="gu">### Phase 1: Prerequisites Check</span>
+<a id="__codelineno-97-34" name="__codelineno-97-34" href="#__codelineno-97-34"></a><span class="k">-</span><span class="w"> </span>✅ Test 1.1: Docker Detection - Passed
+<a id="__codelineno-97-35" name="__codelineno-97-35" href="#__codelineno-97-35"></a><span class="k">-</span><span class="w"> </span>✅ Test 1.2: Docker Auto-Start - Passed
+<a id="__codelineno-97-36" name="__codelineno-97-36" href="#__codelineno-97-36"></a><span class="k">-</span><span class="w"> </span>✅ Test 1.3: Disk Space Warning - Passed
+<a id="__codelineno-97-37" name="__codelineno-97-37" href="#__codelineno-97-37"></a>
+<a id="__codelineno-97-38" name="__codelineno-97-38" href="#__codelineno-97-38"></a>[Continue for all phases...]
+<a id="__codelineno-97-39" name="__codelineno-97-39" href="#__codelineno-97-39"></a>
+<a id="__codelineno-97-40" name="__codelineno-97-40" href="#__codelineno-97-40"></a><span class="gu">## Performance Metrics</span>
+<a id="__codelineno-97-41" name="__codelineno-97-41" href="#__codelineno-97-41"></a>
+<a id="__codelineno-97-42" name="__codelineno-97-42" href="#__codelineno-97-42"></a><span class="k">-</span><span class="w"> </span><span class="gs">**First-Run Time (Gemini):**</span> 3m 45s
+<a id="__codelineno-97-43" name="__codelineno-97-43" href="#__codelineno-97-43"></a><span class="k">-</span><span class="w"> </span><span class="gs">**First-Run Time (Ollama):**</span> 9m 12s
+<a id="__codelineno-97-44" name="__codelineno-97-44" href="#__codelineno-97-44"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Subsequent Startup:**</span> 32s
+<a id="__codelineno-97-45" name="__codelineno-97-45" href="#__codelineno-97-45"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Build Time:**</span> 1m 58s
+<a id="__codelineno-97-46" name="__codelineno-97-46" href="#__codelineno-97-46"></a><span class="k">-</span><span class="w"> </span><span class="gs">**Model Download Time:**</span> 6m 24s
+<a id="__codelineno-97-47" name="__codelineno-97-47" href="#__codelineno-97-47"></a>
+<a id="__codelineno-97-48" name="__codelineno-97-48" href="#__codelineno-97-48"></a><span class="gu">## Failed Tests</span>
+<a id="__codelineno-97-49" name="__codelineno-97-49" href="#__codelineno-97-49"></a>
+<a id="__codelineno-97-50" name="__codelineno-97-50" href="#__codelineno-97-50"></a>[List any failures with details]
+<a id="__codelineno-97-51" name="__codelineno-97-51" href="#__codelineno-97-51"></a>
+<a id="__codelineno-97-52" name="__codelineno-97-52" href="#__codelineno-97-52"></a><span class="gu">## Recommendations</span>
+<a id="__codelineno-97-53" name="__codelineno-97-53" href="#__codelineno-97-53"></a>
+<a id="__codelineno-97-54" name="__codelineno-97-54" href="#__codelineno-97-54"></a>[Any suggestions for improvements]
+<a id="__codelineno-97-55" name="__codelineno-97-55" href="#__codelineno-97-55"></a>
+<a id="__codelineno-97-56" name="__codelineno-97-56" href="#__codelineno-97-56"></a><span class="gu">## Sign-Off</span>
+<a id="__codelineno-97-57" name="__codelineno-97-57" href="#__codelineno-97-57"></a>
+<a id="__codelineno-97-58" name="__codelineno-97-58" href="#__codelineno-97-58"></a><span class="k">- [ ]</span> All critical tests passed
+<a id="__codelineno-97-59" name="__codelineno-97-59" href="#__codelineno-97-59"></a><span class="k">- [ ]</span> No security vulnerabilities found
+<a id="__codelineno-97-60" name="__codelineno-97-60" href="#__codelineno-97-60"></a><span class="k">- [ ]</span> Performance within acceptable range
+<a id="__codelineno-97-61" name="__codelineno-97-61" href="#__codelineno-97-61"></a><span class="k">- [ ]</span> Documentation accurate
+<a id="__codelineno-97-62" name="__codelineno-97-62" href="#__codelineno-97-62"></a><span class="k">- [ ]</span> Ready for deployment
+<a id="__codelineno-97-63" name="__codelineno-97-63" href="#__codelineno-97-63"></a>
+<a id="__codelineno-97-64" name="__codelineno-97-64" href="#__codelineno-97-64"></a><span class="gs">**Tester Signature:**</span> _______________________
+<a id="__codelineno-97-65" name="__codelineno-97-65" href="#__codelineno-97-65"></a><span class="gs">**Date:**</span> _______________________
+</code></pre></div>
+<hr />
+<p><strong>Last Updated:</strong> 2026-02-07
+<strong>Version:</strong> 3.0.0 (Fully Automated Docker Deployment)</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/jimtin/zetherion-ai" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

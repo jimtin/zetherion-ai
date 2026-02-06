@@ -1,0 +1,1710 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Secure personal AI assistant with encrypted memory and multi-provider LLM routing">
+      
+      
+      
+        <link rel="canonical" href="https://jimtin.github.io/zetherion-ai/CHANGELOG/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Changelog - Zetherion AI</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#changelog" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Zetherion AI" class="md-header__button md-logo" aria-label="Zetherion AI" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Zetherion AI
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Changelog
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/jimtin/zetherion-ai" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    jimtin/zetherion-ai
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Zetherion AI" class="md-nav__button md-logo" aria-label="Zetherion AI" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Zetherion AI
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/jimtin/zetherion-ai" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    jimtin/zetherion-ai
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../STARTUP_WALKTHROUGH/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../COMMANDS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../FAQ/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ARCHITECTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../DOCKER_ARCHITECTURE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../SECURITY/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TESTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../CI_CD/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI/CD
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../TROUBLESHOOTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#unreleased" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [Unreleased]
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[Unreleased]">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-phase-5-2026-02-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Phase 5 (2026-02-06)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Added - Phase 5 (2026-02-06)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-5a-encryption-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5A: Encryption Layer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5b-inferencebroker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5B: InferenceBroker
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5b1-model-registry-cost-tracking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5B.1: Model Registry &amp; Cost Tracking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5c-user-profile-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5C: User Profile System
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5c1-employment-profile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5C.1: Employment Profile
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5d-skills-framework" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5D: Skills Framework
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5e-built-in-skills" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5E: Built-in Skills
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5f-heartbeat-scheduler" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5F: Heartbeat Scheduler
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-5g-router-enhancement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 5G: Router Enhancement
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#previous-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Previous Changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#100-initial-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [1.0.0] - Initial Release
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[1.0.0] - Initial Release">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#version-history-details" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Version History Details
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Version History Details">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-test-fixes-coverage-42-78" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: Test Fixes (Coverage: ~42% → 78%)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-coverage-improvements-coverage-78-8758" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: Coverage Improvements (Coverage: 78% → 87.58%)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#final-test-statistics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Final Test Statistics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#module-coverage-breakdown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Module Coverage Breakdown
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#documentation-updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation Updates
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Documentation Updates">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recent-documentation-improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recent Documentation Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cicd-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CI/CD Pipeline
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CI/CD Pipeline">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pipeline-stages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pipeline Stages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pre-commit-hooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-Commit Hooks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking Changes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migration-guide" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migration Guide
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Migration Guide">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#from-development-to-production" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        From Development to Production
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-issues" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known Issues
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#future-roadmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Future Roadmap
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Future Roadmap">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#planned-features-phase-5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Planned Features (Phase 5)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#contributors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Contributors
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#license" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        License
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#acknowledgments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Acknowledgments
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
+<p>All notable changes to Zetherion AI will be documented in this file.</p>
+<p>The format is based on <a href="https://keepachangelog.com/en/1.0.0/">Keep a Changelog</a>,
+and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semantic Versioning</a>.</p>
+<h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="added-phase-5-2026-02-06">Added - Phase 5 (2026-02-06)<a class="headerlink" href="#added-phase-5-2026-02-06" title="Permanent link">&para;</a></h3>
+<h4 id="phase-5a-encryption-layer">Phase 5A: Encryption Layer<a class="headerlink" href="#phase-5a-encryption-layer" title="Permanent link">&para;</a></h4>
+<ul>
+<li>AES-256-GCM field-level encryption for sensitive Qdrant payloads</li>
+<li>PBKDF2-HMAC-SHA256 key derivation with 600k iterations</li>
+<li>TLS support for Qdrant connections (optional)</li>
+<li><code>FieldEncryptor</code> and <code>KeyManager</code> classes in <code>zetherion_ai.security</code></li>
+</ul>
+<h4 id="phase-5b-inferencebroker">Phase 5B: InferenceBroker<a class="headerlink" href="#phase-5b-inferencebroker" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Smart multi-provider LLM routing based on task type</li>
+<li>Provider capability matrix: Claude (code), OpenAI (reasoning), Gemini (long docs), Ollama (lightweight)</li>
+<li>16 TaskTypes for granular routing decisions</li>
+<li>Automatic fallback chains when primary provider unavailable</li>
+</ul>
+<h4 id="phase-5b1-model-registry-cost-tracking">Phase 5B.1: Model Registry &amp; Cost Tracking<a class="headerlink" href="#phase-5b1-model-registry-cost-tracking" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Dynamic model discovery via provider APIs</li>
+<li>Tier-based model selection (quality/balanced/fast)</li>
+<li>SQLite cost tracking with per-request logging</li>
+<li>Daily/monthly cost aggregation and reporting</li>
+<li>Discord notifications for budget alerts</li>
+</ul>
+<h4 id="phase-5c-user-profile-system">Phase 5C: User Profile System<a class="headerlink" href="#phase-5c-user-profile-system" title="Permanent link">&para;</a></h4>
+<ul>
+<li>8 profile categories: identity, preferences, schedule, projects, relationships, skills, goals, habits</li>
+<li>Tiered inference: Tier 1 (regex), Tier 2 (Ollama), Tier 3 (embeddings), Tier 4 (cloud)</li>
+<li>5 signal engines for implicit extraction</li>
+<li>TTL-based caching with confidence scoring</li>
+<li>Background profile extraction after responses</li>
+</ul>
+<h4 id="phase-5c1-employment-profile">Phase 5C.1: Employment Profile<a class="headerlink" href="#phase-5c1-employment-profile" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Bot identity and relationship modeling</li>
+<li>Trust levels: MINIMAL → BUILDING → ESTABLISHED → HIGH → FULL</li>
+<li>10 relationship milestones tracking</li>
+<li>Communication style adaptation (formality, verbosity, proactivity)</li>
+</ul>
+<h4 id="phase-5d-skills-framework">Phase 5D: Skills Framework<a class="headerlink" href="#phase-5d-skills-framework" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Abstract Skill interface with permission-based access control</li>
+<li>15 granular permissions (read/write profile, memories, messages, etc.)</li>
+<li>SkillRegistry for intent routing and heartbeat coordination</li>
+<li>Separate Docker container for skills service isolation</li>
+<li>REST API with authentication for bot ↔ skills communication</li>
+</ul>
+<h4 id="phase-5e-built-in-skills">Phase 5E: Built-in Skills<a class="headerlink" href="#phase-5e-built-in-skills" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Task Manager</strong>: CRUD operations, priority levels, deadlines, heartbeat reminders</li>
+<li><strong>Calendar Awareness</strong>: Event types, recurrence patterns, availability checking</li>
+<li><strong>Profile Manager</strong>: GDPR-style view/update/delete/export, confidence reports</li>
+</ul>
+<h4 id="phase-5f-heartbeat-scheduler">Phase 5F: Heartbeat Scheduler<a class="headerlink" href="#phase-5f-heartbeat-scheduler" title="Permanent link">&para;</a></h4>
+<ul>
+<li>Configurable interval (default 5 min) with quiet hours support</li>
+<li>Rate limiting (3 msgs/hour per user)</li>
+<li>ActionExecutor with handlers for all skill action types</li>
+<li>Scheduled event handling for one-time triggers</li>
+</ul>
+<h4 id="phase-5g-router-enhancement">Phase 5G: Router Enhancement<a class="headerlink" href="#phase-5g-router-enhancement" title="Permanent link">&para;</a></h4>
+<ul>
+<li>3 new skill intents: TASK_MANAGEMENT, CALENDAR_QUERY, PROFILE_QUERY</li>
+<li>Skill intent examples in router prompts</li>
+<li>Agent integration for skill intent handling</li>
+</ul>
+<h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Project renamed</strong> from <code>secureclaw</code> to <code>zetherion-ai</code></li>
+<li>All imports updated to use <code>zetherion_ai</code> module name</li>
+<li>Docker container names now use hyphens (<code>zetherion-ai-*</code>)</li>
+<li>Comprehensive test suite expanded to <strong>885 unit tests</strong> (78% coverage)</li>
+<li>Integration tests updated for Phase 5 features</li>
+</ul>
+<h3 id="previous-changes">Previous Changes<a class="headerlink" href="#previous-changes" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Comprehensive test suite with 87.58% overall coverage</li>
+<li>Router factory with pluggable backend architecture (Gemini/Ollama)</li>
+<li>Discord bot commands: <code>/channels</code>, <code>/remember</code>, <code>/summarize</code></li>
+<li>File-based logging with rotation support</li>
+<li>Pre-commit hooks for code quality (Ruff, Mypy, Bandit, Gitleaks, Hadolint)</li>
+<li>CI/CD pipeline with 6 parallel jobs</li>
+<li>Docker Compose setup for local development</li>
+<li>Security controls: rate limiting, user allowlist, prompt injection detection</li>
+<li>Vector memory using Qdrant for long-term context</li>
+<li>Async embeddings with parallel batch processing</li>
+<li>Contributing guidelines and code of conduct</li>
+</ul>
+<h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
+<ul>
+<li>All test failures resolved (Phase 1A, 1B, 1C)</li>
+<li>Config tests with environment variable isolation using monkeypatch</li>
+<li>Docker integration tests with proper service startup</li>
+<li>Type checking errors in async Qdrant client</li>
+<li>GitHub push protection issues with example tokens in documentation</li>
+</ul>
+<h2 id="100-initial-release">[1.0.0] - Initial Release<a class="headerlink" href="#100-initial-release" title="Permanent link">&para;</a></h2>
+<h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Discord bot with dual LLM backends (Gemini + Ollama)</li>
+<li>Message routing with intent classification</li>
+<li>Claude/OpenAI integration for complex tasks</li>
+<li>Gemini/Ollama integration for simple queries</li>
+<li>Qdrant vector database for memory</li>
+<li>Google Gemini embeddings for semantic search</li>
+<li>Docker containerization</li>
+<li>Basic security controls (rate limiting, allowlist)</li>
+<li>Comprehensive error handling and retry logic</li>
+</ul>
+<h3 id="security">Security<a class="headerlink" href="#security" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Pydantic SecretStr for all credentials</li>
+<li>Gitleaks secret scanning in pre-commit hooks</li>
+<li>Bandit security scanning in CI/CD</li>
+<li>CodeQL weekly analysis</li>
+<li>Pinned dependencies with Dependabot</li>
+<li>Prompt injection detection (17 regex patterns)</li>
+<li>User allowlist for Discord interactions</li>
+</ul>
+<hr />
+<h2 id="version-history-details">Version History Details<a class="headerlink" href="#version-history-details" title="Permanent link">&para;</a></h2>
+<h3 id="phase-1-test-fixes-coverage-42-78">Phase 1: Test Fixes (Coverage: ~42% → 78%)<a class="headerlink" href="#phase-1-test-fixes-coverage-42-78" title="Permanent link">&para;</a></h3>
+<p><strong>Phase 1A: Agent Core Tests</strong> - Fixed 13 test failures
+- Resolved Docker service dependency issues
+- Fixed async Qdrant client usage
+- Improved retry logic testing
+- <strong>Result</strong>: 41 tests passing, 94.76% coverage</p>
+<p><strong>Phase 1B: Security Tests</strong> - Fixed 3 test failures
+- Fixed prompt injection detection tests
+- Corrected allowlist and rate limiter tests
+- <strong>Result</strong>: 37 tests passing, 94.12% coverage</p>
+<p><strong>Phase 1C: Config Tests</strong> - Fixed 10 test failures
+- Implemented environment variable isolation with monkeypatch
+- Fixed allowed_user_ids parsing tests
+- Resolved Docker integration test errors (14 tests)
+- <strong>Result</strong>: All config tests passing, 96.88% coverage</p>
+<h3 id="phase-2-coverage-improvements-coverage-78-8758">Phase 2: Coverage Improvements (Coverage: 78% → 87.58%)<a class="headerlink" href="#phase-2-coverage-improvements-coverage-78-8758" title="Permanent link">&para;</a></h3>
+<p><strong>Phase 2A: Router Factory Tests</strong> - 26% → 100% coverage
+- Added 12 comprehensive tests for factory functions
+- Tested async/sync router creation
+- Tested health checks and fallback logic
+- Tested Ollama → Gemini fallback scenarios
+- <strong>Result</strong>: 12 new tests, 100% coverage</p>
+<p><strong>Phase 2B: Discord Bot Edge Cases</strong> - 68.55% → 89.92% coverage
+- Added 11 edge case tests for uncovered code paths
+- <code>/channels</code> command tests (6 tests):
+  - Unauthorized user handling
+  - DM vs guild context
+  - Text/voice/category channel listing
+  - Long response message splitting
+- Agent readiness tests (1 test)
+- <code>_send_long_message</code> helper tests (4 tests)
+- <strong>Result</strong>: 11 new tests, 89.92% coverage (exceeded 85% target)</p>
+<h3 id="final-test-statistics">Final Test Statistics<a class="headerlink" href="#final-test-statistics" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Count</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Unit Tests</strong></td>
+<td>255</td>
+<td>✅ All passing</td>
+</tr>
+<tr>
+<td><strong>Integration Tests</strong></td>
+<td>14</td>
+<td>✅ All passing</td>
+</tr>
+<tr>
+<td><strong>Discord E2E Tests</strong></td>
+<td>4</td>
+<td>✅ 4 passing, 1 skipped</td>
+</tr>
+<tr>
+<td><strong>Overall Coverage</strong></td>
+<td>87.58%</td>
+<td>✅ Target exceeded</td>
+</tr>
+</tbody>
+</table>
+<h3 id="module-coverage-breakdown">Module Coverage Breakdown<a class="headerlink" href="#module-coverage-breakdown" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Coverage</th>
+<th>Tests</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Router Factory</td>
+<td>100%</td>
+<td>12</td>
+<td>✅ Comprehensive</td>
+</tr>
+<tr>
+<td>Config</td>
+<td>96.88%</td>
+<td>15</td>
+<td>✅ Excellent</td>
+</tr>
+<tr>
+<td>Agent Core</td>
+<td>94.76%</td>
+<td>41</td>
+<td>✅ Excellent</td>
+</tr>
+<tr>
+<td>Security</td>
+<td>94.12%</td>
+<td>37</td>
+<td>✅ Excellent</td>
+</tr>
+<tr>
+<td>Discord Bot</td>
+<td>89.92%</td>
+<td>30</td>
+<td>✅ Very Good</td>
+</tr>
+<tr>
+<td>Logging</td>
+<td>85.71%</td>
+<td>8</td>
+<td>✅ Good</td>
+</tr>
+<tr>
+<td>Memory (Qdrant)</td>
+<td>84.62%</td>
+<td>12</td>
+<td>✅ Good</td>
+</tr>
+<tr>
+<td>Memory (Embeddings)</td>
+<td>81.82%</td>
+<td>6</td>
+<td>✅ Good</td>
+</tr>
+<tr>
+<td>Router (Gemini)</td>
+<td>78.95%</td>
+<td>8</td>
+<td>✅ Good</td>
+</tr>
+<tr>
+<td>Router (Ollama)</td>
+<td>75.86%</td>
+<td>8</td>
+<td>✅ Good</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="documentation-updates">Documentation Updates<a class="headerlink" href="#documentation-updates" title="Permanent link">&para;</a></h2>
+<h3 id="recent-documentation-improvements">Recent Documentation Improvements<a class="headerlink" href="#recent-documentation-improvements" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>README.md</strong>: Added CI/CD badges, key features section, comprehensive testing table</li>
+<li><strong>SECURITY.md</strong>: Updated test coverage table with Phase 1 &amp; 2 improvements</li>
+<li><strong>CONTRIBUTING.md</strong>: Created comprehensive contributor guide</li>
+<li><strong>TROUBLESHOOTING.md</strong>: Fixed example tokens to prevent GitHub push protection issues</li>
+<li><strong>TESTING.md</strong>: Added test organization, coverage targets, and debugging guides</li>
+</ul>
+<h3 id="documentation-files">Documentation Files<a class="headerlink" href="#documentation-files" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Purpose</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>README.md</td>
+<td>Project overview and quick start</td>
+<td>✅ Updated</td>
+</tr>
+<tr>
+<td>CONTRIBUTING.md</td>
+<td>Contribution guidelines</td>
+<td>✅ Created</td>
+</tr>
+<tr>
+<td>CHANGELOG.md</td>
+<td>Version history</td>
+<td>✅ Created</td>
+</tr>
+<tr>
+<td>SECURITY.md</td>
+<td>Security controls and testing</td>
+<td>✅ Updated</td>
+</tr>
+<tr>
+<td>docs/ARCHITECTURE.md</td>
+<td>System architecture</td>
+<td>✅ Complete</td>
+</tr>
+<tr>
+<td>docs/TESTING.md</td>
+<td>Testing guide</td>
+<td>✅ Complete</td>
+</tr>
+<tr>
+<td>docs/TROUBLESHOOTING.md</td>
+<td>Common issues</td>
+<td>✅ Updated</td>
+</tr>
+<tr>
+<td>docs/FAQ.md</td>
+<td>Frequently asked questions</td>
+<td>✅ Complete</td>
+</tr>
+<tr>
+<td>docs/COMMANDS.md</td>
+<td>Discord command reference</td>
+<td>✅ Complete</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="cicd-pipeline">CI/CD Pipeline<a class="headerlink" href="#cicd-pipeline" title="Permanent link">&para;</a></h2>
+<h3 id="pipeline-stages">Pipeline Stages<a class="headerlink" href="#pipeline-stages" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Lint</strong> - Ruff linting and formatting</li>
+<li><strong>Type Check</strong> - Mypy strict mode type checking</li>
+<li><strong>Security</strong> - Bandit security scanning</li>
+<li><strong>Tests</strong> - Unit tests on Python 3.12 &amp; 3.13</li>
+<li><strong>Docker Build</strong> - Container build verification</li>
+<li><strong>Integration</strong> - Full integration tests with Docker services</li>
+</ol>
+<h3 id="pre-commit-hooks">Pre-Commit Hooks<a class="headerlink" href="#pre-commit-hooks" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Ruff (linting and formatting)</li>
+<li>Mypy (type checking)</li>
+<li>Gitleaks (secret scanning)</li>
+<li>Bandit (security scanning)</li>
+<li>Hadolint (Dockerfile linting)</li>
+<li>File checks (trailing whitespace, EOF, merge conflicts)</li>
+</ul>
+<hr />
+<h2 id="breaking-changes">Breaking Changes<a class="headerlink" href="#breaking-changes" title="Permanent link">&para;</a></h2>
+<p>None yet - this is the initial stable release with comprehensive testing.</p>
+<hr />
+<h2 id="migration-guide">Migration Guide<a class="headerlink" href="#migration-guide" title="Permanent link">&para;</a></h2>
+<h3 id="from-development-to-production">From Development to Production<a class="headerlink" href="#from-development-to-production" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Update <code>.env</code> file</strong>:</li>
+<li>Set <code>ENVIRONMENT=production</code></li>
+<li>Set <code>LOG_LEVEL=INFO</code></li>
+<li>
+<p>Configure <code>ALLOWED_USER_IDS</code> for production users</p>
+</li>
+<li>
+<p><strong>Review Security Settings</strong>:</p>
+</li>
+<li>Ensure all API keys are properly set</li>
+<li>Verify user allowlist is configured</li>
+<li>
+<p>Check rate limiting settings</p>
+</li>
+<li>
+<p><strong>Deploy with Docker Compose</strong>:
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Monitor Logs</strong>:
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>tail<span class="w"> </span>-f<span class="w"> </span>logs/zetherion_ai.log<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.
+</code></pre></div></p>
+</li>
+</ol>
+<hr />
+<h2 id="known-issues">Known Issues<a class="headerlink" href="#known-issues" title="Permanent link">&para;</a></h2>
+<p>None currently reported. See <a href="https://github.com/jimtin/zetherion-ai/issues">GitHub Issues</a> for the latest.</p>
+<hr />
+<h2 id="future-roadmap">Future Roadmap<a class="headerlink" href="#future-roadmap" title="Permanent link">&para;</a></h2>
+<h3 id="planned-features-phase-5">Planned Features (Phase 5)<a class="headerlink" href="#planned-features-phase-5" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Encrypted memory storage (AES-256-GCM)</li>
+<li>User profiling and preferences</li>
+<li>Skills framework for extensible commands</li>
+<li>Smart multi-provider routing (Claude for code, OpenAI for reasoning, Gemini for docs)</li>
+<li>Heartbeat scheduler for proactive tasks</li>
+</ul>
+<p>See <a href="memory/phase5-plan.md"><code>memory/phase5-plan.md</code></a> for detailed implementation plan.</p>
+<hr />
+<h2 id="contributors">Contributors<a class="headerlink" href="#contributors" title="Permanent link">&para;</a></h2>
+<ul>
+<li>James Hinton (<a href="https://github.com/jimtin">@jimtin</a>) - Project creator and maintainer</li>
+<li>Claude Sonnet 4.5 - AI pair programming assistant</li>
+</ul>
+<p>See <a href="../CONTRIBUTING/">CONTRIBUTING.md</a> for contribution guidelines.</p>
+<hr />
+<h2 id="license">License<a class="headerlink" href="#license" title="Permanent link">&para;</a></h2>
+<p>This project is licensed under the MIT License - see the <a href="LICENSE">LICENSE</a> file for details.</p>
+<hr />
+<h2 id="acknowledgments">Acknowledgments<a class="headerlink" href="#acknowledgments" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Anthropic for Claude API</li>
+<li>Google for Gemini API</li>
+<li>OpenAI for GPT models</li>
+<li>Discord.py community</li>
+<li>Qdrant team for vector database</li>
+<li>Ollama team for local LLM runtime</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/jimtin/zetherion-ai" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

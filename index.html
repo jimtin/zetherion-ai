@@ -350,6 +350,67 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Documentation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#getting-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting Started
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#user-guides" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        User Guides
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#advanced-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#architecture-security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture &amp; Security
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#development" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Development
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -874,6 +935,67 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Documentation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#getting-started" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting Started
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#user-guides" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        User Guides
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#advanced-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#architecture-security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture &amp; Security
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#development" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Development
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -927,21 +1049,48 @@
 <li><strong>Vector Memory</strong> - Long-term context using Qdrant with semantic search</li>
 <li><strong>Security-First</strong> - Rate limiting, prompt injection detection, secrets management</li>
 <li><strong>Self-Hosted</strong> - Run entirely on your own infrastructure with Ollama</li>
+<li><strong>Cost Tracking</strong> - Monitor and budget API spending with alerts</li>
+<li><strong>User Profiles</strong> - Learn preferences and adapt responses</li>
+<li><strong>Skills Framework</strong> - Extensible task management, calendar, and more</li>
 </ul>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Clone the repository</span>
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/jimtin/zetherion-ai.git
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nb">cd</span><span class="w"> </span>zetherion-ai
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># Configure environment</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>cp<span class="w"> </span>.env.example<span class="w"> </span>.env
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Edit .env with your API keys</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="c1"># Start with Docker</span>
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>./start.sh
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># One-command deployment (interactive setup)</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>./start.sh<span class="w">  </span><span class="c1"># or start.ps1 on Windows</span>
 </code></pre></div>
-<p>See the <a href="STARTUP_WALKTHROUGH/">Startup Walkthrough</a> for detailed setup instructions.</p>
+<p>See the <a href="INSTALLATION/">Installation Guide</a> for detailed platform-specific instructions.</p>
 <h2 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h2>
+<h3 id="getting-started">Getting Started<a class="headerlink" href="#getting-started" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Section</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="INSTALLATION/">Installation</a></td>
+<td>Platform-specific setup guide</td>
+</tr>
+<tr>
+<td><a href="CONFIGURATION/">Configuration</a></td>
+<td>All environment variables</td>
+</tr>
+<tr>
+<td><a href="HARDWARE-RECOMMENDATIONS/">Hardware Recommendations</a></td>
+<td>Optimize for your system</td>
+</tr>
+<tr>
+<td><a href="WINDOWS_DEPLOYMENT/">Windows Deployment</a></td>
+<td>Windows-specific guide</td>
+</tr>
+</tbody>
+</table>
+<h3 id="user-guides">User Guides<a class="headerlink" href="#user-guides" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -955,45 +1104,116 @@
 <td>Discord slash commands reference</td>
 </tr>
 <tr>
+<td><a href="FAQ/">FAQ</a></td>
+<td>Frequently asked questions</td>
+</tr>
+<tr>
+<td><a href="TROUBLESHOOTING/">Troubleshooting</a></td>
+<td>Common issues and solutions</td>
+</tr>
+</tbody>
+</table>
+<h3 id="advanced-features">Advanced Features<a class="headerlink" href="#advanced-features" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Section</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="FEATURES/">Features Overview</a></td>
+<td>Phase 5+ features guide</td>
+</tr>
+<tr>
+<td><a href="SKILLS/">Skills Framework</a></td>
+<td>Task management and extensibility</td>
+</tr>
+<tr>
+<td><a href="COST_TRACKING/">Cost Tracking</a></td>
+<td>Budget management and optimization</td>
+</tr>
+<tr>
+<td><a href="PROFILES/">Profile System</a></td>
+<td>User preference learning</td>
+</tr>
+</tbody>
+</table>
+<h3 id="architecture-security">Architecture &amp; Security<a class="headerlink" href="#architecture-security" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Section</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
 <td><a href="ARCHITECTURE/">Architecture</a></td>
 <td>System design and components</td>
+</tr>
+<tr>
+<td><a href="DOCKER_ARCHITECTURE/">Docker Architecture</a></td>
+<td>Container setup and networking</td>
 </tr>
 <tr>
 <td><a href="SECURITY/">Security</a></td>
 <td>Security controls and best practices</td>
 </tr>
+</tbody>
+</table>
+<h3 id="development">Development<a class="headerlink" href="#development" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Section</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
 <tr>
 <td><a href="TESTING/">Testing</a></td>
 <td>Test suite and coverage</td>
 </tr>
 <tr>
-<td><a href="DOCKER_ARCHITECTURE/">Docker</a></td>
-<td>Container setup and networking</td>
+<td><a href="TESTING-DEPLOYMENT/">Testing &amp; Deployment</a></td>
+<td>Comprehensive deployment validation</td>
 </tr>
 <tr>
 <td><a href="CI_CD/">CI/CD</a></td>
 <td>Continuous integration pipeline</td>
 </tr>
 <tr>
-<td><a href="TROUBLESHOOTING/">Troubleshooting</a></td>
-<td>Common issues and solutions</td>
+<td><a href="GITHUB_SECRETS/">GitHub Secrets</a></td>
+<td>CI/CD secrets configuration</td>
 </tr>
 <tr>
-<td><a href="FAQ/">FAQ</a></td>
-<td>Frequently asked questions</td>
+<td><a href="CHANGELOG/">Changelog</a></td>
+<td>Version history</td>
+</tr>
+<tr>
+<td><a href="CONTRIBUTING/">Contributing</a></td>
+<td>Contribution guidelines</td>
+</tr>
+<tr>
+<td><a href="DEVELOPMENT/">Development</a></td>
+<td>Developer documentation</td>
 </tr>
 </tbody>
 </table>
 <h2 id="project-status">Project Status<a class="headerlink" href="#project-status" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Test Coverage: <strong>87.58%</strong> (255 unit + 14 integration + 4 E2E tests)</li>
-<li>Current Phase: 5 (Encrypted memory, InferenceBroker complete)</li>
+<li>Test Coverage: <strong>78%</strong> (885 unit + 14 integration + 4 E2E tests)</li>
+<li>Current Version: 3.0.0 (Fully Automated Docker Deployment)</li>
+<li>Features: Phase 5+ complete (encryption, cost tracking, profiles, skills)</li>
 </ul>
 <h2 id="links">Links<a class="headerlink" href="#links" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="https://github.com/jimtin/zetherion-ai">GitHub Repository</a></li>
 <li><a href="https://github.com/jimtin/zetherion-ai/issues">Report Issues</a></li>
 <li><a href="https://github.com/jimtin/zetherion-ai/wiki">Wiki</a></li>
+<li><a href="https://github.com/jimtin/zetherion-ai/discussions">Discussions</a></li>
 </ul>
 
 
