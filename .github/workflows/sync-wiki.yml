@@ -35,9 +35,9 @@ jobs:
 
           # Or create custom wiki home page:
           cat > wiki/Home.md << 'EOF'
-          # SecureClaw Wiki
+          # Zetherion AI Wiki
 
-          Welcome to the SecureClaw documentation wiki!
+          Welcome to the Zetherion AI documentation wiki!
 
           ## Getting Started
           - [Setup Guide](https://github.com/${{ github.repository }}#setup-guide)

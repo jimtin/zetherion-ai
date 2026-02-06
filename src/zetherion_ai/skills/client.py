@@ -261,7 +261,8 @@ class SkillsClient:
 
             response.raise_for_status()
 
-            return response.json()
+            result: dict[str, Any] = response.json()
+            return result
 
         except httpx.ConnectError as e:
             log.error("skills_status_connection_failed", error=str(e))
@@ -296,7 +297,8 @@ class SkillsClient:
             response.raise_for_status()
 
             data = response.json()
-            return data.get("fragments", [])
+            fragments: list[str] = data.get("fragments", [])
+            return fragments
 
         except httpx.ConnectError as e:
             log.error("skills_prompt_connection_failed", error=str(e))
@@ -323,7 +325,9 @@ async def create_skills_client(
 
     settings = get_settings()
 
-    url = base_url or getattr(settings, "skills_service_url", "http://zetherion_ai-skills:8080")
+    url = base_url or str(
+        getattr(settings, "skills_service_url", "http://zetherion_ai-skills:8080")
+    )
     secret = api_secret or getattr(settings, "skills_api_secret", None)
     if secret and hasattr(secret, "get_secret_value"):
         secret = secret.get_secret_value()

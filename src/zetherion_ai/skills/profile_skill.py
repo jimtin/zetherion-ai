@@ -1,4 +1,4 @@
-"""Profile Management Skill for SecureClaw.
+"""Profile Management Skill for Zetherion AI.
 
 Provides user profile management capabilities:
 - View what the bot knows about the user
@@ -251,13 +251,17 @@ class ProfileSkill(Skill):
                 "Missing required fields: category, key, value",
             )
 
+        # Type assertions after None check
+        cat_str = str(category)
+        key_str = str(key)
+
         # Use profile builder if available
         if self._profile_builder:
             try:
                 await self._profile_builder.update_profile_entry(
                     user_id=request.user_id,
-                    category=category,
-                    key=key,
+                    category=cat_str,
+                    key=key_str,
                     value=value,
                     confidence=1.0,  # Explicit updates get full confidence
                     source="explicit",
@@ -301,13 +305,13 @@ class ProfileSkill(Skill):
                 if entry_id:
                     await self._profile_builder.delete_profile_entry(
                         user_id=request.user_id,
-                        entry_id=entry_id,
+                        entry_id=str(entry_id),
                     )
                 else:
                     await self._profile_builder.delete_profile_entry_by_key(
                         user_id=request.user_id,
-                        category=category,
-                        key=key,
+                        category=str(category),
+                        key=str(key),
                     )
 
                 log.info(
@@ -511,7 +515,7 @@ class ProfileSkill(Skill):
             # Try to get from profile builder, fallback to empty on any error
             try:
                 entries = await self._profile_builder.get_all_profile_entries(user_id)
-                return [e.to_dict() for e in entries]
+                return entries  # Already returns list[dict[str, Any]]
             except Exception:  # nosec B110 - Graceful fallback to empty list
                 pass
 

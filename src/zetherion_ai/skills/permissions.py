@@ -6,6 +6,7 @@ that skills only access their declared resources.
 """
 
 import contextlib
+from collections.abc import Iterator
 from enum import Enum, auto
 
 
@@ -125,7 +126,7 @@ class PermissionSet:
         """Support 'in' operator."""
         return permission in self._permissions
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Permission]:
         """Support iteration."""
         return iter(self._permissions)
 

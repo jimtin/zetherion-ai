@@ -1,8 +1,8 @@
-# Gitleaks Configuration for SecureClaw
+# Gitleaks Configuration for Zetherion AI
 # Detects passwords, API keys, tokens, and other secrets in commits
 # Documentation: https://github.com/gitleaks/gitleaks
 
-title = "SecureClaw Secret Detection"
+title = "Zetherion AI Secret Detection"
 
 [extend]
 # Use default Gitleaks rules as base
@@ -66,7 +66,7 @@ regexes = [
 # Stopwords - ignore commits containing these (e.g., "test" commits)
 stopwords = []
 
-# Custom rules for SecureClaw-specific secrets
+# Custom rules for Zetherion AI-specific secrets
 [[rules]]
 id = "discord-bot-token"
 description = "Discord Bot Token"

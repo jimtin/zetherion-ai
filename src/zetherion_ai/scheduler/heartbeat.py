@@ -98,7 +98,7 @@ class HeartbeatScheduler:
         self._config = config or HeartbeatConfig()
         self._stats = HeartbeatStats()
         self._running = False
-        self._task: asyncio.Task | None = None
+        self._task: asyncio.Task[None] | None = None
         self._user_ids: list[str] = []
         self._scheduled_events: dict[str, ScheduledEvent] = {}
 
@@ -196,10 +196,11 @@ class HeartbeatScheduler:
     async def stop(self) -> None:
         """Stop the heartbeat scheduler."""
         self._running = False
-        if self._task:
-            self._task.cancel()
+        task = self._task
+        if task is not None:
+            task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await self._task
+                await task
             self._task = None
         log.info("heartbeat_scheduler_stopped")
 

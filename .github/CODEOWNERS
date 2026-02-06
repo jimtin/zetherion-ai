@@ -7,7 +7,7 @@
 # Security-critical paths require explicit review
 /.github/                               @jimtin
 /.github/workflows/                     @jimtin
-/src/secureclaw/discord/security.py     @jimtin
+/src/zetherion_ai/discord/security.py   @jimtin
 /.gitleaks.toml                         @jimtin
 /.pre-commit-config.yaml                @jimtin
 /Dockerfile                             @jimtin

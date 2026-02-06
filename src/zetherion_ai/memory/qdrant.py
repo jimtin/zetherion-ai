@@ -335,6 +335,173 @@ class QdrantMemory:
         messages.sort(key=lambda m: m.get("timestamp", ""))
         return messages
 
+    async def ensure_collection(
+        self,
+        name: str,
+        vector_size: int = EMBEDDING_DIMENSION,
+    ) -> None:
+        """Ensure a collection exists, creating it if necessary.
+
+        Public wrapper for skills to create their own collections.
+
+        Args:
+            name: Collection name.
+            vector_size: Size of vectors (default: EMBEDDING_DIMENSION).
+        """
+        collections = await self._client.get_collections()
+        collection_names = [c.name for c in collections.collections]
+
+        if name not in collection_names:
+            await self._client.create_collection(
+                collection_name=name,
+                vectors_config=qdrant_models.VectorParams(
+                    size=vector_size,
+                    distance=qdrant_models.Distance.COSINE,
+                ),
+            )
+            log.info("collection_created", name=name)
+
+    async def store_with_payload(
+        self,
+        collection_name: str,
+        point_id: str,
+        payload: dict[str, Any],
+        content_for_embedding: str | None = None,
+        text: str | None = None,
+    ) -> str:
+        """Store a point with payload in a collection.
+
+        Args:
+            collection_name: Target collection.
+            point_id: Unique ID for the point.
+            payload: Payload data to store.
+            content_for_embedding: Text to embed. If None, uses payload["content"].
+            text: Alias for content_for_embedding.
+
+        Returns:
+            The point ID.
+        """
+        embed_text = text or content_for_embedding or payload.get("content", "")
+        embedding = await self._embeddings.embed_text(str(embed_text))
+
+        # Encrypt sensitive fields if encryptor is configured
+        if self._encryptor is not None:
+            payload = self._encryptor.encrypt_payload(payload)
+
+        await self._client.upsert(
+            collection_name=collection_name,
+            points=[
+                qdrant_models.PointStruct(
+                    id=point_id,
+                    vector=embedding,
+                    payload=payload,
+                )
+            ],
+        )
+
+        log.debug(
+            "point_stored",
+            collection=collection_name,
+            point_id=point_id,
+            encrypted=self._encryptor is not None,
+        )
+        return point_id
+
+    async def get_by_id(
+        self,
+        collection_name: str,
+        point_id: str,
+    ) -> dict[str, Any] | None:
+        """Get a point by ID.
+
+        Args:
+            collection_name: Collection to search.
+            point_id: Point ID to retrieve.
+
+        Returns:
+            Point payload or None if not found.
+        """
+        try:
+            results = await self._client.retrieve(
+                collection_name=collection_name,
+                ids=[point_id],
+                with_payload=True,
+            )
+            if results:
+                payload = results[0].payload or {}
+                if self._encryptor is not None:
+                    payload = self._encryptor.decrypt_payload(payload)
+                return {"id": str(results[0].id), **payload}
+        except Exception as e:
+            log.debug("get_by_id_failed", collection=collection_name, id=point_id, error=str(e))
+        return None
+
+    async def filter_by_field(
+        self,
+        collection_name: str,
+        field: str,
+        value: Any,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Filter points by a field value.
+
+        Args:
+            collection_name: Collection to search.
+            field: Field name to filter on.
+            value: Value to match.
+            limit: Maximum results.
+
+        Returns:
+            List of matching points.
+        """
+        results = await self._client.scroll(
+            collection_name=collection_name,
+            scroll_filter=qdrant_models.Filter(
+                must=[
+                    qdrant_models.FieldCondition(
+                        key=field,
+                        match=qdrant_models.MatchValue(value=value),
+                    )
+                ]
+            ),
+            limit=limit,
+            with_payload=True,
+            with_vectors=False,
+        )
+
+        output = []
+        for point in results[0]:
+            payload = point.payload or {}
+            if self._encryptor is not None:
+                payload = self._encryptor.decrypt_payload(payload)
+            output.append({"id": str(point.id), **payload})
+        return output
+
+    async def delete_by_id(
+        self,
+        collection_name: str,
+        point_id: str,
+    ) -> bool:
+        """Delete a point by ID.
+
+        Args:
+            collection_name: Collection containing the point.
+            point_id: Point ID to delete.
+
+        Returns:
+            True if deleted successfully.
+        """
+        try:
+            await self._client.delete(
+                collection_name=collection_name,
+                points_selector=qdrant_models.PointIdsList(points=[point_id]),
+            )
+            log.debug("point_deleted", collection=collection_name, point_id=point_id)
+            return True
+        except Exception as e:
+            log.error("delete_failed", collection=collection_name, point_id=point_id, error=str(e))
+            return False
+
     async def close(self) -> None:
         """Close the Qdrant client connection."""
         if hasattr(self._client, "close"):

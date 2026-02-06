@@ -147,7 +147,7 @@ def recommend_model(hardware):
 def print_assessment(hardware, recommended_model, reason):
     """Print formatted assessment report."""
     print("\n" + "=" * 60)
-    print("SecureClaw System Assessment")
+    print("Zetherion AI System Assessment")
     print("=" * 60)
 
     print("\n🖥️  HARDWARE DETECTED:")

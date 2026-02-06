@@ -805,6 +805,130 @@ class ProfileBuilder:
             "daily_breakdown": daily,
         }
 
+    async def update_profile_entry(
+        self,
+        user_id: str,
+        category: str,
+        key: str,
+        value: Any,
+        confidence: float = 1.0,
+        source: str = "explicit",
+    ) -> None:
+        """Update or create a profile entry.
+
+        Args:
+            user_id: The user's ID.
+            category: Profile category (e.g., "identity", "preferences").
+            key: The entry key (e.g., "timezone").
+            value: The value to set.
+            confidence: Confidence score (0.0-1.0).
+            source: Source of the update.
+        """
+        if self._memory is None:
+            return
+
+        # Convert string category/source to enums
+        try:
+            cat_enum = ProfileCategory(category)
+        except ValueError:
+            cat_enum = ProfileCategory.PREFERENCES
+
+        try:
+            src_enum = ProfileSource(source)
+        except ValueError:
+            src_enum = ProfileSource.EXPLICIT
+
+        entry = ProfileEntry.create(
+            user_id=user_id,
+            category=cat_enum,
+            key=key,
+            value=value,
+            confidence=confidence,
+            source=src_enum,
+        )
+
+        # Store using memory's store_memory method
+        content = f"{entry.key}: {entry.value}"
+        await self._memory.store_memory(
+            content=content,
+            memory_type="profile",
+            metadata=entry.to_dict(),
+        )
+        log.info("profile_entry_updated", user_id=user_id, category=category, key=key)
+
+    async def delete_profile_entry(
+        self,
+        user_id: str,
+        entry_id: str,
+    ) -> bool:
+        """Delete a profile entry by ID.
+
+        Args:
+            user_id: The user's ID.
+            entry_id: The entry ID to delete.
+
+        Returns:
+            True if deleted successfully.
+        """
+        if self._memory:
+            return await self._memory.delete_by_id(USER_PROFILES_COLLECTION, entry_id)
+        return False
+
+    async def delete_profile_entry_by_key(
+        self,
+        user_id: str,
+        category: str,
+        key: str,
+    ) -> bool:
+        """Delete a profile entry by category and key.
+
+        Args:
+            user_id: The user's ID.
+            category: Profile category.
+            key: The entry key.
+
+        Returns:
+            True if deleted successfully.
+        """
+        if not self._memory:
+            return False
+
+        # Find the entry first
+        entries = await self._memory.filter_by_field(
+            USER_PROFILES_COLLECTION,
+            "user_id",
+            user_id,
+        )
+
+        for entry in entries:
+            if entry.get("category") == category and entry.get("key") == key:
+                return await self._memory.delete_by_id(
+                    USER_PROFILES_COLLECTION,
+                    entry["id"],
+                )
+        return False
+
+    async def get_all_profile_entries(
+        self,
+        user_id: str,
+    ) -> list[dict[str, Any]]:
+        """Get all profile entries for a user.
+
+        Args:
+            user_id: The user's ID.
+
+        Returns:
+            List of profile entries.
+        """
+        if not self._memory:
+            return []
+
+        return await self._memory.filter_by_field(
+            USER_PROFILES_COLLECTION,
+            "user_id",
+            user_id,
+        )
+
 
 async def extract_profile_updates_background(
     builder: ProfileBuilder,

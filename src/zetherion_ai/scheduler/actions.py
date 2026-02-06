@@ -213,7 +213,7 @@ class ActionExecutor:
         # Route to specific handler
         handler = self._get_handler(action.action_type)
         if handler:
-            result = await handler(action)
+            result: ActionResult = await handler(action)
             if result.success and action.action_type in message_actions:
                 self._record_message(action.user_id)
             return result

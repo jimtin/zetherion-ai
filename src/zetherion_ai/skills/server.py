@@ -83,7 +83,8 @@ class SkillsServer:
         """
         # Skip auth for health check
         if request.path == "/health":
-            return await handler(request)
+            response: web.Response = await handler(request)
+            return response
 
         if not self._check_auth(request):
             return web.json_response(
@@ -91,7 +92,8 @@ class SkillsServer:
                 status=401,
             )
 
-        return await handler(request)
+        response = await handler(request)
+        return response
 
     async def handle_health(self, request: web.Request) -> web.Response:
         """Health check endpoint.
@@ -187,7 +189,7 @@ class SkillsServer:
         Returns:
             Skill metadata or 404.
         """
-        name = request.match_info.get("name")
+        name = request.match_info.get("name", "")
         skill = self._registry.get_skill(name)
 
         if skill is None:
@@ -269,6 +271,8 @@ class SkillsServer:
         if self._app is None:
             self.create_app()
 
+        if self._app is None:  # pragma: no cover - create_app() sets self._app
+            raise RuntimeError("create_app() must be called first")
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
 
