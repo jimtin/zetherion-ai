@@ -49,7 +49,7 @@ class TestQdrantMemoryInit:
         """Test initialization without TLS."""
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient") as mock_client:
-                with patch("zetherion_ai.memory.qdrant.GeminiEmbeddings"):
+                with patch("zetherion_ai.memory.qdrant.get_embeddings_client"):
                     memory = QdrantMemory()
                     mock_client.assert_called_once_with(
                         host="localhost",
@@ -62,7 +62,7 @@ class TestQdrantMemoryInit:
         mock_settings.qdrant_use_tls = True
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient") as mock_client:
-                with patch("zetherion_ai.memory.qdrant.GeminiEmbeddings"):
+                with patch("zetherion_ai.memory.qdrant.get_embeddings_client"):
                     QdrantMemory()
                     mock_client.assert_called_once_with(
                         url="http://localhost:6333",
@@ -73,7 +73,7 @@ class TestQdrantMemoryInit:
         """Test initialization with encryptor."""
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient"):
-                with patch("zetherion_ai.memory.qdrant.GeminiEmbeddings"):
+                with patch("zetherion_ai.memory.qdrant.get_embeddings_client"):
                     memory = QdrantMemory(encryptor=mock_encryptor)
                     assert memory._encryptor == mock_encryptor
 
@@ -92,7 +92,7 @@ class TestQdrantMemoryInitialize:
 
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
-                with patch("zetherion_ai.memory.qdrant.GeminiEmbeddings"):
+                with patch("zetherion_ai.memory.qdrant.get_embeddings_client"):
                     memory = QdrantMemory()
                     await memory.initialize()
 
@@ -114,7 +114,7 @@ class TestQdrantMemoryInitialize:
 
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
-                with patch("zetherion_ai.memory.qdrant.GeminiEmbeddings"):
+                with patch("zetherion_ai.memory.qdrant.get_embeddings_client"):
                     memory = QdrantMemory()
                     await memory.initialize()
 
@@ -134,7 +134,7 @@ class TestQdrantMemoryStoreMessage:
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
                 with patch(
-                    "zetherion_ai.memory.qdrant.GeminiEmbeddings", return_value=mock_embeddings
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
                 ):
                     memory = QdrantMemory()
                     message_id = await memory.store_message(
@@ -159,7 +159,7 @@ class TestQdrantMemoryStoreMessage:
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
                 with patch(
-                    "zetherion_ai.memory.qdrant.GeminiEmbeddings", return_value=mock_embeddings
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
                 ):
                     memory = QdrantMemory(encryptor=mock_encryptor)
                     await memory.store_message(
@@ -180,7 +180,7 @@ class TestQdrantMemoryStoreMessage:
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
                 with patch(
-                    "zetherion_ai.memory.qdrant.GeminiEmbeddings", return_value=mock_embeddings
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
                 ):
                     memory = QdrantMemory()
                     await memory.store_message(
@@ -209,7 +209,7 @@ class TestQdrantMemoryStoreMemory:
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
                 with patch(
-                    "zetherion_ai.memory.qdrant.GeminiEmbeddings", return_value=mock_embeddings
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
                 ):
                     memory = QdrantMemory()
                     memory_id = await memory.store_memory(
@@ -232,7 +232,7 @@ class TestQdrantMemoryStoreMemory:
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
                 with patch(
-                    "zetherion_ai.memory.qdrant.GeminiEmbeddings", return_value=mock_embeddings
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
                 ):
                     memory = QdrantMemory(encryptor=mock_encryptor)
                     await memory.store_memory(
@@ -263,7 +263,7 @@ class TestQdrantMemorySearchConversations:
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
                 with patch(
-                    "zetherion_ai.memory.qdrant.GeminiEmbeddings", return_value=mock_embeddings
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
                 ):
                     memory = QdrantMemory()
                     results = await memory.search_conversations("Hello")
@@ -282,7 +282,7 @@ class TestQdrantMemorySearchConversations:
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
                 with patch(
-                    "zetherion_ai.memory.qdrant.GeminiEmbeddings", return_value=mock_embeddings
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
                 ):
                     memory = QdrantMemory()
                     await memory.search_conversations("test", user_id=12345)
@@ -306,7 +306,7 @@ class TestQdrantMemorySearchConversations:
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
                 with patch(
-                    "zetherion_ai.memory.qdrant.GeminiEmbeddings", return_value=mock_embeddings
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
                 ):
                     memory = QdrantMemory(encryptor=mock_encryptor)
                     await memory.search_conversations("test")
@@ -333,7 +333,7 @@ class TestQdrantMemorySearchMemories:
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
                 with patch(
-                    "zetherion_ai.memory.qdrant.GeminiEmbeddings", return_value=mock_embeddings
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
                 ):
                     memory = QdrantMemory()
                     results = await memory.search_memories("Python")
@@ -351,7 +351,7 @@ class TestQdrantMemorySearchMemories:
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
                 with patch(
-                    "zetherion_ai.memory.qdrant.GeminiEmbeddings", return_value=mock_embeddings
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
                 ):
                     memory = QdrantMemory()
                     await memory.search_memories("test", memory_type="preference")
@@ -379,7 +379,7 @@ class TestQdrantMemoryGetRecentContext:
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
                 with patch(
-                    "zetherion_ai.memory.qdrant.GeminiEmbeddings", return_value=mock_embeddings
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
                 ):
                     memory = QdrantMemory()
                     results = await memory.get_recent_context(
@@ -411,7 +411,7 @@ class TestQdrantMemoryGetRecentContext:
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
                 with patch(
-                    "zetherion_ai.memory.qdrant.GeminiEmbeddings", return_value=mock_embeddings
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
                 ):
                     memory = QdrantMemory(encryptor=mock_encryptor)
                     await memory.get_recent_context(user_id=123, channel_id=456)
@@ -430,7 +430,7 @@ class TestQdrantMemoryClose:
 
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
-                with patch("zetherion_ai.memory.qdrant.GeminiEmbeddings"):
+                with patch("zetherion_ai.memory.qdrant.get_embeddings_client"):
                     memory = QdrantMemory()
                     await memory.close()
 
@@ -444,7 +444,7 @@ class TestQdrantMemoryClose:
 
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
-                with patch("zetherion_ai.memory.qdrant.GeminiEmbeddings"):
+                with patch("zetherion_ai.memory.qdrant.get_embeddings_client"):
                     memory = QdrantMemory()
                     # Should not raise
                     await memory.close()

@@ -11,7 +11,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-      - /home/appuser/.cache
+      - /home/nonroot/.cache
     depends_on:
       qdrant:
         condition: service_healthy
@@ -29,6 +29,13 @@ services:
       - ./logs:/app/logs
     networks:
       - zetherion-ai-net
+    # Distroless healthcheck (no shell available)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     # Resource limits to prevent runaway processes
     deploy:
       resources:
@@ -49,7 +56,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-      - /home/zetherion_ai/.cache
+      - /home/nonroot/.cache
     depends_on:
       qdrant:
         condition: service_healthy
@@ -63,6 +70,13 @@ services:
     # No ports exposed to host - only accessible from bot via internal network
     networks:
       - zetherion-ai-net
+    # Distroless healthcheck (checks if server port is listening)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 8080)); s.close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
     # Resource limits for skills service
     deploy:
       resources:

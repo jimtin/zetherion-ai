@@ -1,0 +1,109 @@
+# Docker Compose configuration for integration tests
+# Uses different ports to avoid conflicts with running development environment
+
+services:
+  zetherion-ai-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zetherion-ai-test-bot
+    restart: "no"  # Don't restart during tests
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/appuser/.cache
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      zetherion-ai-skills:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - SKILLS_SERVICE_URL=http://zetherion-ai-skills:8080
+      - ENVIRONMENT=test
+      - OLLAMA_HOST=ollama
+      - OLLAMA_PORT=11434
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - zetherion-ai-test-net
+
+  zetherion-ai-skills:
+    build:
+      context: .
+      dockerfile: Dockerfile.skills
+    container_name: zetherion-ai-test-skills
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/zetherion_ai/.cache
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - SKILLS_HOST=0.0.0.0
+      - SKILLS_PORT=8080
+    # Expose port for integration test health checks
+    ports:
+      - "18080:8080"
+    networks:
+      - zetherion-ai-test-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  ollama:
+    image: ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed
+    container_name: zetherion-ai-test-ollama
+    restart: "no"
+    # Use different host port for tests (21434 instead of 11434)
+    ports:
+      - "21434:11434"
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/11434' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    volumes:
+      - ollama_models_test:/root/.ollama
+    networks:
+      - zetherion-ai-test-net
+
+  qdrant:
+    image: qdrant/qdrant:latest@sha256:0425e3e03e7fd9b3dc95c4214546afe19de2eb2e28ca621441a56663ac6e1f46
+    container_name: zetherion-ai-test-qdrant
+    restart: "no"
+    # Use different host port for tests (16333 instead of 6333)
+    ports:
+      - "16333:6333"
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - qdrant_storage_test:/qdrant/storage
+    networks:
+      - zetherion-ai-test-net
+
+volumes:
+  qdrant_storage_test:
+  ollama_models_test:
+
+networks:
+  zetherion-ai-test-net:
+    driver: bridge

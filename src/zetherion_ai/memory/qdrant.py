@@ -9,7 +9,7 @@ from qdrant_client.http import models as qdrant_models
 
 from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
-from zetherion_ai.memory.embeddings import EMBEDDING_DIMENSION, GeminiEmbeddings
+from zetherion_ai.memory.embeddings import EMBEDDING_DIMENSION, get_embeddings_client
 from zetherion_ai.security.encryption import FieldEncryptor
 
 log = get_logger("zetherion_ai.memory.qdrant")
@@ -46,7 +46,7 @@ class QdrantMemory:
                 port=settings.qdrant_port,
             )
 
-        self._embeddings = GeminiEmbeddings()
+        self._embeddings = get_embeddings_client()
         self._encryptor = encryptor
         log.info(
             "qdrant_client_initialized",

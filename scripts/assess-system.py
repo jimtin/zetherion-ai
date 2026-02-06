@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """System assessment tool for Ollama model recommendations."""
 
+import json
 import platform
 import subprocess  # nosec B404 - System tools only
 import sys
@@ -13,6 +14,9 @@ def detect_hardware():
         "platform": platform.system(),
         "machine": platform.machine(),
     }
+
+    # Get CPU model name
+    info["cpu_model"] = detect_cpu_model()
 
     try:
         import psutil
@@ -55,6 +59,21 @@ def detect_hardware():
     return info
 
 
+def detect_cpu_model():
+    """Detect CPU model name."""
+    try:
+        import cpuinfo
+
+        cpu_info = cpuinfo.get_cpu_info()
+        return cpu_info.get("brand_raw", "Unknown CPU")
+    except ImportError:
+        # Fallback to platform.processor()
+        processor = platform.processor()
+        if processor:
+            return processor
+        return "Unknown CPU"
+
+
 def detect_gpu():
     """Detect GPU availability and type."""
     # Check for NVIDIA GPU
@@ -71,6 +90,44 @@ def detect_gpu():
                 "type": "nvidia",
                 "name": gpu_info[0].strip(),
                 "vram_mb": int(gpu_info[1].strip().split()[0]) if len(gpu_info) > 1 else 0,
+            }
+    except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
+        pass
+
+    # Check for AMD GPU (ROCm)
+    try:
+        result = subprocess.run(  # nosec B603 B607
+            ["rocm-smi", "--showproductname"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            gpu_name = result.stdout.strip().split("\n")[-1]  # Last line has GPU name
+            # Try to get VRAM
+            vram_mb = 0
+            try:
+                vram_result = subprocess.run(  # nosec B603 B607
+                    ["rocm-smi", "--showmeminfo", "vram"],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                )
+                if vram_result.returncode == 0:
+                    # Parse VRAM from output (format varies)
+                    for line in vram_result.stdout.split("\n"):
+                        if "Total" in line or "VRAM" in line:
+                            parts = line.split()
+                            for i, part in enumerate(parts):
+                                if part.isdigit() and i + 1 < len(parts):
+                                    vram_mb = int(part)
+                                    break
+            except Exception:
+                pass
+            return {
+                "type": "amd",
+                "name": gpu_name,
+                "vram_mb": vram_mb,
             }
     except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
         pass
@@ -268,6 +325,38 @@ def update_env_file(model_info):
     return True
 
 
+def output_json(hardware, model, reason):
+    """Output assessment as JSON for scripting."""
+    output = {
+        "hardware": hardware,
+        "recommendation": {
+            "model": model["name"],
+            "size_gb": model["size_gb"],
+            "ram_required": model["ram_required"],
+            "docker_memory_gb": model["docker_memory_gb"],
+            "description": model["description"],
+            "inference_time": model["inference_time"],
+            "quality": model["quality"],
+            "reason": reason,
+        },
+        "warnings": [],
+    }
+
+    # Add warnings
+    if hardware.get("disk_free_gb", 100) < model["size_gb"] * 2:
+        output["warnings"].append(
+            f"Low disk space. Ensure at least {model['size_gb'] * 2:.1f} GB free."
+        )
+
+    if hardware.get("available_ram_gb", 8) < model["ram_required"]:
+        output["warnings"].append("Low available RAM. Close other applications before running.")
+
+    if hardware.get("ram_gb", 8) < model["ram_required"]:
+        output["warnings"].append("System RAM below recommended. Model may run slowly.")
+
+    print(json.dumps(output, indent=2))
+
+
 def main():
     """Run system assessment."""
     import argparse
@@ -281,6 +370,11 @@ def main():
     parser.add_argument(
         "--output-model", action="store_true", help="Output only the model name (for scripting)"
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output assessment as JSON (for scripting)",
+    )
 
     args = parser.parse_args()
 
@@ -291,6 +385,11 @@ def main():
     if args.output_model:
         # Just output the model name for scripting
         print(model["name"])
+        return 0
+
+    if args.json:
+        # Output as JSON
+        output_json(hardware, model, reason)
         return 0
 
     # Print assessment

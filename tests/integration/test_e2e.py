@@ -35,7 +35,8 @@ class DockerEnvironment:
 
     def __init__(self) -> None:
         """Initialize the Docker environment manager."""
-        self.compose_file = "docker-compose.yml"
+        # Use test-specific compose file with different ports to avoid conflicts
+        self.compose_file = "docker-compose.test.yml"
         self.project_name = "zetherion-ai-test"
         self.ollama_model_pulled = False
 
@@ -86,7 +87,7 @@ class DockerEnvironment:
                         "docker",
                         "inspect",
                         "--format={{.State.Health.Status}}",
-                        "zetherion-ai-qdrant",
+                        "zetherion-ai-test-qdrant",
                     ],
                     capture_output=True,
                     text=True,
@@ -101,7 +102,7 @@ class DockerEnvironment:
                             "docker",
                             "inspect",
                             "--format={{.State.Health.Status}}",
-                            "zetherion-ai-ollama",
+                            "zetherion-ai-test-ollama",
                         ],
                         capture_output=True,
                         text=True,
@@ -116,7 +117,7 @@ class DockerEnvironment:
                                 "docker",
                                 "inspect",
                                 "--format={{.State.Status}}",
-                                "zetherion-ai-bot",
+                                "zetherion-ai-test-bot",
                             ],
                             capture_output=True,
                             text=True,
@@ -177,7 +178,7 @@ class DockerEnvironment:
         print(f"📥 Pulling Ollama model '{model}' (this may take a few minutes)...")
         try:
             result = subprocess.run(
-                ["docker", "exec", "zetherion-ai-ollama", "ollama", "pull", model],
+                ["docker", "exec", "zetherion-ai-test-ollama", "ollama", "pull", model],
                 capture_output=True,
                 text=True,
                 timeout=600,  # 10 minute timeout for model download
@@ -466,7 +467,7 @@ def test_docker_services_running(docker_env: DockerEnvironment) -> None:
             "docker",
             "ps",
             "--filter",
-            "name=zetherion-ai-qdrant",
+            "name=zetherion-ai-test-qdrant",
             "--filter",
             "status=running",
             "--format",
@@ -475,7 +476,7 @@ def test_docker_services_running(docker_env: DockerEnvironment) -> None:
         capture_output=True,
         text=True,
     )
-    assert "zetherion-ai-qdrant" in result.stdout
+    assert "zetherion-ai-test-qdrant" in result.stdout
     print("✅ Qdrant container is running")
 
     # Check Zetherion AI (uses container_name from docker-compose.yml)
@@ -484,7 +485,7 @@ def test_docker_services_running(docker_env: DockerEnvironment) -> None:
             "docker",
             "ps",
             "--filter",
-            "name=zetherion-ai-bot",
+            "name=zetherion-ai-test-bot",
             "--filter",
             "status=running",
             "--format",
@@ -493,7 +494,7 @@ def test_docker_services_running(docker_env: DockerEnvironment) -> None:
         capture_output=True,
         text=True,
     )
-    assert "zetherion-ai-bot" in result.stdout
+    assert "zetherion-ai-test-bot" in result.stdout
     print("✅ Zetherion AI container is running")
 
 
@@ -502,7 +503,7 @@ def test_qdrant_collections_exist(docker_env: DockerEnvironment) -> None:
     """Test that Qdrant collections are created."""
     # Use curl from host machine since Qdrant container doesn't have curl
     result = subprocess.run(
-        ["curl", "-s", "http://localhost:6333/collections"],
+        ["curl", "-s", "http://localhost:16333/collections"],
         capture_output=True,
         text=True,
     )
@@ -565,7 +566,7 @@ def test_skills_service_health(docker_env: DockerEnvironment) -> None:
             "docker",
             "ps",
             "--filter",
-            "name=zetherion-ai-skills",
+            "name=zetherion-ai-test-skills",
             "--filter",
             "status=running",
             "--format",
@@ -574,12 +575,12 @@ def test_skills_service_health(docker_env: DockerEnvironment) -> None:
         capture_output=True,
         text=True,
     )
-    assert "zetherion-ai-skills" in result.stdout
+    assert "zetherion-ai-test-skills" in result.stdout
     print("✅ Skills service container is running")
 
     # Check skills service health endpoint
     result = subprocess.run(
-        ["curl", "-s", "http://localhost:8080/health"],
+        ["curl", "-s", "http://localhost:18080/health"],
         capture_output=True,
         text=True,
     )

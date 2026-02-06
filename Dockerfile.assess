@@ -1,0 +1,52 @@
+# Dockerfile for hardware assessment - Distroless multi-stage build
+# Minimal container for detecting system resources and recommending Ollama models
+# Stage 1: Builder - install dependencies
+# Stage 2: Runtime - distroless Python (no shell, no package manager)
+
+# ============================================================
+# STAGE 1: Builder
+# ============================================================
+# Use Python 3.11 to match distroless runtime (python3-debian12 uses 3.11)
+FROM python:3.11-slim as builder
+
+WORKDIR /app
+
+# Install hardware detection dependencies in user directory
+RUN pip install --user --no-cache-dir --no-warn-script-location \
+    psutil==6.1.1 \
+    py-cpuinfo==9.0.0
+
+# Copy the assessment script
+COPY scripts/assess-system.py /app/assess-system.py
+
+# Verify imports work
+RUN python -c "import psutil; import cpuinfo; print('✓ Hardware detection modules verified')"
+
+# ============================================================
+# STAGE 2: Distroless Runtime
+# ============================================================
+FROM gcr.io/distroless/python3-debian12:nonroot
+
+# Copy Python packages from builder (installed with --user)
+COPY --from=builder /root/.local /root/.local
+
+# Copy assessment script
+COPY --from=builder /app/assess-system.py /app/assess-system.py
+
+# Set working directory
+WORKDIR /app
+
+# Set Python path to include installed packages
+# Even though we run as nonroot, /root/.local is readable
+# Builder and runtime both use Python 3.11
+ENV PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH
+ENV PYTHONPATH=/root/.local/lib/python3.11/site-packages
+ENV PYTHONUNBUFFERED=1
+
+# Distroless runs as nonroot user (uid 65532) by default
+# No USER directive needed - it's built into the image
+
+# Entry point - run the hardware assessment
+# Distroless Python sets ENTRYPOINT to /usr/bin/python3.11
+# So CMD should just be the script path (passed as argument to Python)
+CMD ["/app/assess-system.py"]

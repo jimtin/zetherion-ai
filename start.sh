@@ -1,497 +1,500 @@
 #!/bin/bash
-set -e
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Zetherion AI - Fully Automated Docker Deployment for Unix/Mac/Linux
+# This script sets up and runs Zetherion AI entirely in Docker containers.
+# It handles all prerequisites, configuration, and deployment automatically.
 
-# Helper functions
-print_success() {
-    echo -e "${GREEN}✓${NC} $1"
-}
+set -euo pipefail
 
-print_error() {
-    echo -e "${RED}✗${NC} $1"
-}
+# ============================================================
+# PARSE ARGUMENTS
+# ============================================================
 
-print_warning() {
-    echo -e "${YELLOW}⚠${NC} $1"
-}
+SKIP_HARDWARE_ASSESSMENT=false
+FORCE_REBUILD=false
 
-print_info() {
-    echo -e "${BLUE}ℹ${NC} $1"
-}
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --skip-hardware-assessment)
+            SKIP_HARDWARE_ASSESSMENT=true
+            shift
+            ;;
+        --force-rebuild)
+            FORCE_REBUILD=true
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Zetherion AI - Fully Automated Docker Deployment"
+            echo ""
+            echo "Options:"
+            echo "  --skip-hardware-assessment    Skip hardware assessment and use default Ollama model"
+            echo "  --force-rebuild               Force rebuild of Docker images even if they exist"
+            echo "  -h, --help                    Show this help message"
+            echo ""
+            echo "Examples:"
+            echo "  $0                            Standard deployment with hardware assessment"
+            echo "  $0 --skip-hardware-assessment Deploy without hardware assessment"
+            echo "  $0 --force-rebuild            Force rebuild all Docker images"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use -h or --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
 
 print_header() {
     echo ""
-    echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
-    echo -e "${BLUE}  $1${NC}"
-    echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
+    echo -e "\033[0;34m============================================================\033[0m"
+    echo -e "\033[0;34m  $1\033[0m"
+    echo -e "\033[0;34m============================================================\033[0m"
     echo ""
 }
 
-# Check if command exists
+print_phase() {
+    echo ""
+    echo -e "\033[0;36m[PHASE] $1\033[0m"
+    echo ""
+}
+
+print_success() {
+    echo -e "\033[0;32m[OK] $1\033[0m"
+}
+
+print_failure() {
+    echo -e "\033[0;31m[ERROR] $1\033[0m"
+}
+
+print_warning() {
+    echo -e "\033[0;33m[WARNING] $1\033[0m"
+}
+
+print_info() {
+    echo -e "\033[0;36m[INFO] $1\033[0m"
+}
+
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-print_header "Zetherion AI Startup Script"
+get_disk_free_gb() {
+    df -H . | tail -1 | awk '{print $4}' | sed 's/G//' | cut -d'.' -f1
+}
 
-# 1. Check Python 3.12+
-print_info "Checking Python version..."
-if command_exists python3.12; then
-    PYTHON_CMD="python3.12"
-    print_success "Python 3.12 found"
-elif command_exists python3.13; then
-    PYTHON_CMD="python3.13"
-    print_success "Python 3.13 found"
-elif command_exists python3; then
-    PYTHON_VERSION=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
-    if [[ $(echo "$PYTHON_VERSION >= 3.12" | bc -l) -eq 1 ]]; then
-        PYTHON_CMD="python3"
-        print_success "Python $PYTHON_VERSION found"
-    else
-        print_error "Python 3.12+ required, found $PYTHON_VERSION"
-        print_info "Install with: brew install python@3.12"
-        exit 1
-    fi
-else
-    print_error "Python 3.12+ not found"
-    print_info "Install with: brew install python@3.12"
-    exit 1
+# ============================================================
+# PHASE 1: PREREQUISITES CHECK & AUTO-INSTALL
+# ============================================================
+
+print_header "Zetherion AI - Automated Docker Deployment"
+
+print_phase "Phase 1/7: Checking Prerequisites"
+
+# Detect OS
+OS_TYPE="unknown"
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    OS_TYPE="macos"
+elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    OS_TYPE="linux"
 fi
 
-# 2. Check Docker
-print_info "Checking Docker..."
+print_info "Detected OS: $OS_TYPE"
+
+# Check Docker Desktop
+print_info "Checking Docker Desktop..."
 if ! command_exists docker; then
-    print_error "Docker not found"
-    print_info "Install Docker Desktop from: https://www.docker.com/products/docker-desktop"
-    exit 1
-fi
+    print_warning "Docker Desktop not found"
 
-# Check if Docker daemon is ready, launch if needed
-if ! docker info >/dev/null 2>&1; then
-    # Check if Docker Desktop process is running (might be starting up)
-    if pgrep -x "Docker" > /dev/null; then
-        print_warning "Docker Desktop is starting, waiting for daemon to be ready..."
-    else
-        # Docker not running at all, launch it
-        print_info "Docker Desktop is not running, launching it..."
+    read -p "Install Docker Desktop? (Y/n): " install
+    if [[ "$install" =~ ^[Yy]?$ ]]; then
+        print_info "Installing Docker Desktop..."
 
-        # Verify Docker.app exists
-        if [ ! -d "/Applications/Docker.app" ]; then
-            print_error "Docker Desktop not found at /Applications/Docker.app"
-            print_info "Please install Docker Desktop from: https://www.docker.com/products/docker-desktop"
-            exit 1
-        fi
-
-        # Launch Docker Desktop
-        if open -a Docker 2>/dev/null; then
-            print_success "Docker Desktop launched"
-
-            # Give Docker time to start launching
-            echo "  Waiting for Docker process to initialize..."
-            sleep 5
-
-            # Verify process started
-            if ! pgrep -x "Docker" > /dev/null; then
-                print_error "Docker Desktop failed to start"
-                print_info "Please start Docker Desktop manually and try again"
+        if [[ "$OS_TYPE" == "macos" ]]; then
+            if command_exists brew; then
+                brew install --cask docker
+                print_success "Docker Desktop installed"
+            else
+                print_failure "Homebrew not found. Please install Docker manually from: https://www.docker.com/products/docker-desktop"
                 exit 1
             fi
-
-            # Quick check loop for fast machines (4 attempts with 5s waits)
-            print_info "Docker is initializing, checking daemon..."
-            for attempt in {1..4}; do
-                if docker info >/dev/null 2>&1; then
-                    print_success "Docker daemon is ready"
-                    # Docker started quickly, we're done!
-                    break 2  # Break out of both loops
-                fi
-
-                if [ $attempt -lt 4 ]; then
-                    echo "  Attempt $attempt: Not ready yet, waiting 5 seconds..."
-                    sleep 5
-                else
-                    echo "  Attempt $attempt: Not ready yet, continuing with extended wait..."
-                    sleep 5
-                fi
-            done
-        else
-            print_error "Failed to launch Docker Desktop"
-            print_info "Please start Docker Desktop manually and try again"
+        elif [[ "$OS_TYPE" == "linux" ]]; then
+            print_info "Please install Docker from: https://docs.docker.com/engine/install/"
             exit 1
         fi
 
-        print_info "Docker still initializing (this can take 30-60s on cold start)..."
-    fi
-
-    # Extended wait up to 90 seconds for Docker daemon (for slower machines or cold starts)
-    for i in {1..90}; do
-        if docker info >/dev/null 2>&1; then
-            print_success "Docker daemon is ready"
-            break
-        fi
-
-        # Show progress every 10 seconds
-        if [ $((i % 10)) -eq 0 ]; then
-            echo "  Still waiting... (${i}s)"
-        fi
-
-        sleep 1
-
-        # If we've waited the full 90 seconds, give up
-        if [ $i -eq 90 ]; then
-            echo ""
-            print_error "Docker daemon did not become ready after 90 seconds"
-            print_info "Check Docker Desktop status in menu bar and try again"
-            print_info "You may need to restart Docker Desktop manually"
-            exit 1
-        fi
-    done
-else
-    print_success "Docker is running"
-fi
-
-# 3. Check .env file
-print_info "Checking .env configuration..."
-if [ ! -f .env ]; then
-    print_error ".env file not found"
-    print_info "Copy .env.example to .env and add your API keys"
-    exit 1
-fi
-
-# Check required environment variables
-source .env
-MISSING_VARS=()
-
-if [ -z "$DISCORD_TOKEN" ]; then
-    MISSING_VARS+=("DISCORD_TOKEN")
-fi
-if [ -z "$GEMINI_API_KEY" ]; then
-    MISSING_VARS+=("GEMINI_API_KEY")
-fi
-
-if [ ${#MISSING_VARS[@]} -gt 0 ]; then
-    print_error "Missing required environment variables: ${MISSING_VARS[*]}"
-    print_info "Please add them to your .env file"
-    exit 1
-fi
-print_success ".env file configured"
-
-# 3.5. Router Backend Selection
-if [ -z "$ROUTER_BACKEND" ]; then
-    echo ""
-    echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
-    echo -e "${BLUE}  Router Backend Selection${NC}"
-    echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
-    echo ""
-    echo "Zetherion AI can use two different backends for message routing:"
-    echo ""
-    echo "  1. ${GREEN}Gemini${NC} (Google) - Cloud-based, fast, minimal setup"
-    echo "     • Uses your existing Gemini API key"
-    echo "     • No additional downloads"
-    echo "     • Recommended for cloud-based workflows"
-    echo ""
-    echo "  2. ${GREEN}Ollama${NC} (Local) - Privacy-focused, runs on your machine"
-    echo "     • No data sent to external APIs for routing"
-    echo "     • ~5GB model download (first time only)"
-    echo "     • Recommended for privacy-conscious users"
-    echo ""
-    read -p "Which backend would you like to use? (1=Gemini, 2=Ollama) [1]: " -r
-    echo ""
-
-    case "$REPLY" in
-        2)
-            ROUTER_BACKEND="ollama"
-            print_success "Selected: Ollama (local routing)"
-            ;;
-        1|"")
-            ROUTER_BACKEND="gemini"
-            print_success "Selected: Gemini (cloud routing)"
-            ;;
-        *)
-            print_warning "Invalid selection, defaulting to Gemini"
-            ROUTER_BACKEND="gemini"
-            ;;
-    esac
-
-    # Save to .env
-    echo "ROUTER_BACKEND=$ROUTER_BACKEND" >> .env
-    print_info "Saved preference to .env"
-    echo ""
-fi
-
-# 4. Set up virtual environment
-print_info "Checking virtual environment..."
-if [ ! -d ".venv" ]; then
-    print_warning "Virtual environment not found, creating..."
-    $PYTHON_CMD -m venv .venv
-    print_success "Virtual environment created"
-fi
-
-# Activate virtual environment
-source .venv/bin/activate
-print_success "Virtual environment activated"
-
-# 5. Check/install dependencies
-print_info "Checking dependencies..."
-if ! python -c "import discord" 2>/dev/null; then
-    print_warning "Dependencies not installed, installing..."
-    pip install --upgrade pip
-    pip install -r requirements.txt
-    pip install -e .
-    print_success "Dependencies installed"
-else
-    print_success "Dependencies already installed"
-fi
-
-# 6. Check/start Qdrant container
-print_info "Checking Qdrant vector database..."
-if docker ps -a --format '{{.Names}}' | grep -q "^zetherion_ai-qdrant$"; then
-    if docker ps --format '{{.Names}}' | grep -q "^zetherion_ai-qdrant$"; then
-        print_success "Qdrant container already running"
+        print_warning "Please start Docker Desktop and run this script again"
+        exit 0
     else
-        print_warning "Qdrant container exists but not running, starting..."
-        docker start zetherion_ai-qdrant
-        print_success "Qdrant container started"
-    fi
-else
-    print_warning "Qdrant container not found, creating..."
-    docker run -d \
-        --name zetherion_ai-qdrant \
-        -p 6333:6333 \
-        -v "$(pwd)/qdrant_storage:/qdrant/storage" \
-        qdrant/qdrant:latest
-    print_success "Qdrant container created and started"
-fi
-
-# Wait for Qdrant to be ready
-print_info "Waiting for Qdrant to be ready..."
-MAX_RETRIES=30
-RETRY_COUNT=0
-while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if curl -s http://localhost:6333/healthz >/dev/null 2>&1; then
-        print_success "Qdrant is ready"
-        break
-    fi
-    RETRY_COUNT=$((RETRY_COUNT + 1))
-    if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-        print_error "Qdrant failed to start"
+        print_failure "Docker Desktop is required"
+        print_info "Install from: https://www.docker.com/products/docker-desktop"
         exit 1
     fi
-    sleep 1
-done
-
-# 7. Run system assessment for Ollama (if using Ollama backend)
-if [ "$ROUTER_BACKEND" = "ollama" ]; then
-    print_header "Ollama System Assessment"
-
-    # Check if we should run assessment
-    if [ ! -f ".ollama_assessed" ] || [ -z "$OLLAMA_ROUTER_MODEL" ]; then
-        print_info "Running hardware assessment to recommend optimal model..."
-
-        # Install psutil if needed (for better hardware detection)
-        if ! $PYTHON_CMD -c "import psutil" 2>/dev/null; then
-            print_info "Installing psutil for hardware detection..."
-            pip install -q psutil
-        fi
-
-        # Run assessment
-        $PYTHON_CMD scripts/assess-system.py
-
-        echo ""
-        read -p "Would you like to use the recommended model? (Y/n): " -r
-        echo ""
-        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            print_info "Updating .env with recommended model..."
-            $PYTHON_CMD scripts/assess-system.py --update-env
-
-            # Reload .env to get updated model
-            source .env
-
-            print_success "Configuration updated!"
-        else
-            print_info "Using model from .env: ${OLLAMA_ROUTER_MODEL:-llama3.1:8b}"
-        fi
-
-        # Mark as assessed
-        touch .ollama_assessed
-    else
-        print_info "Using configured model: ${OLLAMA_ROUTER_MODEL:-llama3.1:8b}"
-        print_info "To reassess: rm .ollama_assessed && ./start.sh"
-    fi
 fi
 
-# 8. Check/start Ollama container (if using Ollama backend)
-if [ "$ROUTER_BACKEND" = "ollama" ]; then
-    # Set OLLAMA_HOST to localhost for local development
-    # (In Docker deployment, this would be "ollama" for the service name)
-    if [ -z "$OLLAMA_HOST" ] || [ "$OLLAMA_HOST" = "ollama" ]; then
-        export OLLAMA_HOST="localhost"
-        # Update .env if it has the wrong value
-        if grep -q "^OLLAMA_HOST=" .env 2>/dev/null; then
-            sed -i '' 's/^OLLAMA_HOST=.*/OLLAMA_HOST=localhost/' .env
-        else
-            echo "OLLAMA_HOST=localhost" >> .env
-        fi
-    fi
+print_success "Docker Desktop is installed"
 
-    # Get required Docker memory from .env (set by assess-system.py)
-    OLLAMA_DOCKER_MEMORY="${OLLAMA_DOCKER_MEMORY:-8}"  # Default to 8GB if not set
+# Check if Docker daemon is running
+print_info "Checking Docker daemon..."
+if ! docker ps >/dev/null 2>&1; then
+    print_warning "Docker daemon is not running"
+    print_info "Starting Docker Desktop..."
 
-    # Check Docker memory allocation
-    print_info "Checking Docker memory allocation..."
-    DOCKER_TOTAL_MEMORY=$(docker info 2>/dev/null | grep "Total Memory" | awk '{print $3}')
-    DOCKER_MEMORY_GB=$(echo "$DOCKER_TOTAL_MEMORY" | sed 's/GiB//')
-
-    if [ ! -z "$DOCKER_MEMORY_GB" ]; then
-        REQUIRED_MEMORY=$OLLAMA_DOCKER_MEMORY
-        if (( $(echo "$DOCKER_MEMORY_GB < $REQUIRED_MEMORY" | bc -l) )); then
-            echo ""
-            print_warning "Docker has only ${DOCKER_MEMORY_GB}GB allocated"
-            print_warning "Your selected model requires ${REQUIRED_MEMORY}GB"
-            echo ""
-            echo "What would you like to do?"
-            echo "  1. Automatically increase Docker memory to ${REQUIRED_MEMORY}GB (recommended)"
-            echo "  2. Choose a smaller model that fits current Docker memory"
-            echo "  3. Continue anyway (may fail)"
-            echo ""
-            read -p "Enter choice (1/2/3) [1]: " -r
-            echo ""
-
-            case "${REPLY:-1}" in
-                1)
-                    print_info "Increasing Docker memory to ${REQUIRED_MEMORY}GB..."
-                    echo ""
-                    if ./scripts/increase-docker-memory.sh --yes; then
-                        echo ""
-                        print_success "Docker is ready with ${REQUIRED_MEMORY}GB memory"
-
-                        # Quick sanity check that Docker is still responding
-                        if ! docker info >/dev/null 2>&1; then
-                            print_warning "Docker daemon not responding. Waiting a bit longer..."
-                            sleep 10
-                            if ! docker info >/dev/null 2>&1; then
-                                print_error "Docker daemon still not ready. Please check Docker Desktop."
-                                exit 1
-                            fi
-                        fi
-                    else
-                        echo ""
-                        print_error "Failed to increase Docker memory"
-                        echo "Please either:"
-                        echo "  1. Manually increase Docker memory in Docker Desktop Settings"
-                        echo "  2. Run ./start.sh again and choose a smaller model"
-                        exit 1
-                    fi
-                    ;;
-                2)
-                    print_info "Removing assessment marker to choose a different model..."
-                    rm -f .ollama_assessed
-                    print_info "Please run ./start.sh again to choose a smaller model"
-                    exit 0
-                    ;;
-                3)
-                    print_warning "Continuing with insufficient memory. Model may crash."
-                    ;;
-                *)
-                    print_error "Invalid choice"
-                    exit 1
-                    ;;
-            esac
-        else
-            print_success "Docker memory: ${DOCKER_MEMORY_GB}GB (sufficient for ${REQUIRED_MEMORY}GB requirement)"
-        fi
-    fi
-
-    print_info "Starting Ollama container..."
-
-    if docker ps -a --format '{{.Names}}' | grep -q "^zetherion_ai-ollama$"; then
-        if docker ps --format '{{.Names}}' | grep -q "^zetherion_ai-ollama$"; then
-            print_success "Ollama container already running"
-        else
-            print_warning "Ollama container exists but not running, starting..."
-            docker start zetherion_ai-ollama
-            print_success "Ollama container started"
-        fi
+    if [[ "$OS_TYPE" == "macos" ]]; then
+        open -a Docker
     else
-        print_warning "Ollama container not found, creating..."
-        docker run -d \
-            --name zetherion_ai-ollama \
-            --memory="${OLLAMA_DOCKER_MEMORY}g" \
-            --memory-swap="${OLLAMA_DOCKER_MEMORY}g" \
-            -p 11434:11434 \
-            -v "$(pwd)/ollama_models:/root/.ollama" \
-            ollama/ollama:latest
-        print_success "Ollama container created and started (${OLLAMA_DOCKER_MEMORY}GB memory limit)"
+        print_info "Please start Docker manually"
     fi
 
-    # Wait for Ollama to be ready
-    print_info "Waiting for Ollama to be ready..."
-    MAX_RETRIES=30
-    RETRY_COUNT=0
-    while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-        if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
-            print_success "Ollama is ready"
+    print_info "Waiting for Docker to start (max 60 seconds)..."
+    max_wait=60
+    waited=0
+    while [ $waited -lt $max_wait ]; do
+        sleep 2
+        waited=$((waited + 2))
+        if docker ps >/dev/null 2>&1; then
+            print_success "Docker daemon is now running"
             break
         fi
-        RETRY_COUNT=$((RETRY_COUNT + 1))
-        if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-            print_error "Ollama failed to start"
-            exit 1
-        fi
-        sleep 1
+        echo -n "."
     done
 
-    # Pull model if not already available
-    OLLAMA_MODEL="${OLLAMA_ROUTER_MODEL:-llama3.1:8b}"
-    print_info "Checking if model '$OLLAMA_MODEL' is available..."
+    if [ $waited -ge $max_wait ]; then
+        echo ""
+        print_failure "Docker failed to start within $max_wait seconds"
+        print_info "Please start Docker Desktop manually and try again"
+        exit 1
+    fi
+else
+    print_success "Docker daemon is running"
+fi
 
-    if docker exec zetherion_ai-ollama ollama list | grep -q "$OLLAMA_MODEL"; then
-        print_success "Model '$OLLAMA_MODEL' already available"
+# Check Git
+print_info "Checking Git..."
+if ! command_exists git; then
+    print_warning "Git not found"
+
+    read -p "Install Git? (Y/n): " install
+    if [[ "$install" =~ ^[Yy]?$ ]]; then
+        print_info "Installing Git..."
+
+        if [[ "$OS_TYPE" == "macos" ]]; then
+            if command_exists brew; then
+                brew install git
+                print_success "Git installed"
+            else
+                print_info "Please install Git from: https://git-scm.com/download/mac"
+                exit 1
+            fi
+        elif [[ "$OS_TYPE" == "linux" ]]; then
+            if command_exists apt-get; then
+                sudo apt-get update && sudo apt-get install -y git
+                print_success "Git installed"
+            elif command_exists yum; then
+                sudo yum install -y git
+                print_success "Git installed"
+            else
+                print_info "Please install Git from: https://git-scm.com/download/linux"
+                exit 1
+            fi
+        fi
     else
-        print_warning "Model '$OLLAMA_MODEL' not found, downloading (this may take several minutes)..."
-        print_info "Model size: ~4.7GB - please be patient..."
+        print_warning "Git not installed (optional for now)"
+    fi
+else
+    print_success "Git is installed"
+fi
 
-        if docker exec zetherion_ai-ollama ollama pull "$OLLAMA_MODEL"; then
-            print_success "Model '$OLLAMA_MODEL' downloaded successfully"
+# Check disk space
+free_space=$(get_disk_free_gb)
+print_info "Disk space: ${free_space}GB free"
+if [ "$free_space" -lt 20 ]; then
+    print_warning "Low disk space (less than 20GB free)"
+    print_warning "Ollama models require 5-10GB of space"
+else
+    print_success "Sufficient disk space available"
+fi
+
+print_success "Prerequisites check complete"
+
+# ============================================================
+# PHASE 2: HARDWARE ASSESSMENT
+# ============================================================
+
+hardware_assessment=""
+
+if [ "$SKIP_HARDWARE_ASSESSMENT" = false ]; then
+    print_phase "Phase 2/7: Hardware Assessment"
+
+    print_info "Building hardware assessment container..."
+    if docker build -t zetherion-ai-assess:distroless -f Dockerfile.assess . >/dev/null 2>&1; then
+        print_success "Assessment container built"
+
+        print_info "Assessing system hardware..."
+        assess_output=$(docker run --rm --entrypoint /usr/bin/python3.11 \
+            zetherion-ai-assess:distroless /app/assess-system.py --json 2>&1 || true)
+
+        if [ $? -eq 0 ] && echo "$assess_output" | python3 -m json.tool >/dev/null 2>&1; then
+            hardware_assessment="$assess_output"
+
+            # Display hardware info using python
+            python3 <<EOF
+import json
+data = json.loads('''$hardware_assessment''')
+
+hw = data.get('hardware', {})
+rec = data.get('recommendation', {})
+
+print("")
+print("System Hardware:")
+print(f"  CPU: {hw.get('cpu_model', 'Unknown')}")
+if hw.get('cpu_count'):
+    print(f"  Cores: {hw.get('cpu_count')} ({hw.get('cpu_threads')} threads)")
+if hw.get('ram_gb'):
+    print(f"  RAM: {hw.get('ram_gb')} GB total, {hw.get('available_ram_gb')} GB available")
+print(f"  GPU: {hw.get('gpu', {}).get('name', 'None')}")
+
+print("")
+print("Recommended Ollama Model:")
+print(f"  Model: {rec.get('model')}")
+print(f"  Size: {rec.get('size_gb')} GB download")
+print(f"  Quality: {rec.get('quality')}")
+print(f"  Speed: {rec.get('inference_time')}")
+print(f"  Reason: {rec.get('reason')}")
+
+warnings = data.get('warnings', [])
+if warnings:
+    print("")
+    print("Warnings:")
+    for warning in warnings:
+        print(f"  ⚠ {warning}")
+EOF
+
+            print_success "Hardware assessment complete"
         else
-            print_error "Failed to download model '$OLLAMA_MODEL'"
-            print_info "You can manually pull it later with: docker exec zetherion_ai-ollama ollama pull $OLLAMA_MODEL"
-            print_warning "Continuing anyway - the bot will fall back to Gemini if the model isn't available"
+            print_warning "Hardware assessment failed, using defaults"
+        fi
+    else
+        print_warning "Failed to build assessment container, skipping"
+    fi
+else
+    print_info "Skipping hardware assessment (--skip-hardware-assessment)"
+fi
+
+# ============================================================
+# PHASE 3: CONFIGURATION SETUP
+# ============================================================
+
+print_phase "Phase 3/7: Configuration Setup"
+
+# Check if .env exists
+if [ ! -f ".env" ]; then
+    print_info ".env file not found"
+    print_info "Starting interactive setup..."
+
+    if ! python3 scripts/interactive-setup.py; then
+        print_failure "Interactive setup failed"
+        exit 1
+    fi
+    print_success "Configuration created"
+else
+    print_success ".env file exists"
+
+    # Verify required keys
+    if ! grep -q "^DISCORD_TOKEN=.\\+" .env; then
+        print_failure "DISCORD_TOKEN not set in .env"
+        print_info "Please configure .env or delete it to run setup again"
+        exit 1
+    fi
+
+    if ! grep -q "^GEMINI_API_KEY=.\\+" .env; then
+        print_failure "GEMINI_API_KEY not set in .env"
+        print_info "Please configure .env or delete it to run setup again"
+        exit 1
+    fi
+
+    print_success "Required configuration present"
+fi
+
+# Get router backend from .env
+router_backend="gemini"
+if grep -q "^ROUTER_BACKEND=" .env; then
+    router_backend=$(grep "^ROUTER_BACKEND=" .env | cut -d'=' -f2 | tr -d ' ')
+fi
+
+print_info "Router backend: $router_backend"
+
+# ============================================================
+# PHASE 4: DOCKER BUILD & DEPLOY
+# ============================================================
+
+print_phase "Phase 4/7: Docker Build & Deploy"
+
+# Build images
+if [ "$FORCE_REBUILD" = true ]; then
+    print_info "Force rebuild requested"
+    docker-compose build --no-cache
+else
+    print_info "Building Docker images (if needed)..."
+    docker-compose build
+fi
+
+if [ $? -ne 0 ]; then
+    print_failure "Docker build failed"
+    exit 1
+fi
+
+print_success "Docker images built"
+
+# Start containers
+print_info "Starting containers..."
+docker-compose up -d
+
+if [ $? -ne 0 ]; then
+    print_failure "Failed to start containers"
+    exit 1
+fi
+
+print_success "Containers started"
+
+# Wait for health checks
+print_info "Waiting for services to become healthy..."
+max_wait=120
+waited=0
+services=("zetherion-ai-qdrant" "zetherion-ai-skills" "zetherion-ai-bot")
+
+while [ $waited -lt $max_wait ]; do
+    sleep 5
+    waited=$((waited + 5))
+
+    all_healthy=true
+    for service in "${services[@]}"; do
+        health=$(docker inspect --format='{{.State.Health.Status}}' "$service" 2>&1 || echo "unknown")
+        if [ "$health" != "healthy" ]; then
+            all_healthy=false
+            echo -n "."
+            break
+        fi
+    done
+
+    if [ "$all_healthy" = true ]; then
+        echo ""
+        print_success "All services are healthy"
+        break
+    fi
+done
+
+if [ $waited -ge $max_wait ]; then
+    echo ""
+    print_warning "Services did not become healthy within $max_wait seconds"
+    print_info "Check logs with: docker-compose logs"
+fi
+
+# ============================================================
+# PHASE 5: MODEL DOWNLOAD (if Ollama)
+# ============================================================
+
+if [ "$router_backend" = "ollama" ]; then
+    print_phase "Phase 5/7: Ollama Model Download"
+
+    # Get model name from .env
+    ollama_model="llama3.1:8b"
+    if grep -q "^OLLAMA_ROUTER_MODEL=" .env; then
+        ollama_model=$(grep "^OLLAMA_ROUTER_MODEL=" .env | cut -d'=' -f2 | tr -d ' ')
+    fi
+
+    print_info "Checking if model '$ollama_model' is already downloaded..."
+
+    # Check if model exists
+    if docker exec zetherion-ai-ollama ollama list 2>&1 | grep -q "$ollama_model"; then
+        print_success "Model '$ollama_model' already downloaded"
+    else
+        print_info "Downloading model '$ollama_model'..."
+        print_warning "This may take several minutes (5-10GB download)"
+
+        # Pull model with progress
+        docker exec zetherion-ai-ollama ollama pull "$ollama_model"
+
+        if [ $? -eq 0 ]; then
+            print_success "Model downloaded successfully"
+        else
+            print_failure "Model download failed"
+            print_warning "You can download it later with: docker exec zetherion-ai-ollama ollama pull $ollama_model"
         fi
     fi
 else
-    print_info "Using Gemini backend (ROUTER_BACKEND=${ROUTER_BACKEND:-gemini})"
+    print_info "Skipping model download (using Gemini for routing)"
 fi
 
-# 9. Final checks
-print_header "Starting Zetherion AI Bot"
+# ============================================================
+# PHASE 6: VERIFICATION
+# ============================================================
 
-print_info "Configuration Summary:"
-echo "  • Python: $($PYTHON_CMD --version)"
-echo "  • Discord Token: ${DISCORD_TOKEN:0:20}..."
-echo "  • Gemini API: ${GEMINI_API_KEY:0:20}..."
-echo "  • Anthropic API: ${ANTHROPIC_API_KEY:0:20}..."
-echo "  • OpenAI API: ${OPENAI_API_KEY:0:20}..."
-echo "  • Qdrant: http://localhost:6333"
-echo "  • Router Backend: ${ROUTER_BACKEND:-gemini}"
-if [ "$ROUTER_BACKEND" = "ollama" ]; then
-    echo "  • Ollama: http://localhost:11434 (Model: ${OLLAMA_ROUTER_MODEL:-llama3.1:8b})"
+print_phase "Phase 6/7: Verification"
+
+# Check all containers
+print_info "Checking container status..."
+containers=$(docker ps --format "table {{.Names}}\t{{.Status}}" | grep "zetherion" || true)
+
+if [ -n "$containers" ]; then
+    echo ""
+    echo -e "\033[0;37mRunning Containers:\033[0m"
+    echo "$containers" | while read -r line; do
+        echo "  $line"
+    done
+    echo ""
 fi
-echo "  • File Logging: ${LOG_TO_FILE:-true} (Directory: ${LOG_DIRECTORY:-logs})"
-echo "  • Allowed Users: ${ALLOWED_USER_IDS:-"All users (⚠ not recommended for production)"}"
+
+# Test Qdrant
+print_info "Testing Qdrant connection..."
+if curl -s http://localhost:6333/healthz >/dev/null 2>&1; then
+    print_success "Qdrant is healthy"
+else
+    print_warning "Qdrant health check failed"
+fi
+
+# Test Ollama (if enabled)
+if [ "$router_backend" = "ollama" ]; then
+    print_info "Testing Ollama connection..."
+    if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
+        print_success "Ollama is healthy"
+    else
+        print_warning "Ollama health check failed"
+    fi
+fi
+
+# ============================================================
+# PHASE 7: SUCCESS & NEXT STEPS
+# ============================================================
+
+print_phase "Phase 7/7: Deployment Complete"
+
+echo ""
+echo -e "\033[0;32m============================================================\033[0m"
+echo -e "\033[0;32m  Zetherion AI is now running!\033[0m"
+echo -e "\033[0;32m============================================================\033[0m"
 echo ""
 
-# 9. Start the bot
-print_success "All checks passed! Starting bot..."
+echo -e "\033[0;37mNext Steps:\033[0m"
+echo -e "  \033[0;36m1. View logs:        docker-compose logs -f\033[0m"
+echo -e "  \033[0;36m2. Check status:     ./status.sh\033[0m"
+echo -e "  \033[0;36m3. Stop bot:         ./stop.sh\033[0m"
 echo ""
-echo -e "${GREEN}Press Ctrl+C to stop the bot${NC}"
+echo -e "  \033[0;36m4. Invite bot to Discord:\033[0m"
+echo -e "     \033[0;90mhttps://discord.com/developers/applications\033[0m"
 echo ""
 
-# Run the bot (set PYTHONPATH to include src directory)
-PYTHONPATH="${PWD}/src:${PYTHONPATH}" python -m zetherion_ai
+echo -e "\033[0;37mTroubleshooting:\033[0m"
+echo -e "  \033[0;90m- Check container logs: docker-compose logs <service-name>\033[0m"
+echo -e "  \033[0;90m- Restart services:     docker-compose restart\033[0m"
+echo -e "  \033[0;90m- Full reset:           docker-compose down && ./start.sh\033[0m"
+echo ""
+
+print_success "Deployment successful!"
+echo ""

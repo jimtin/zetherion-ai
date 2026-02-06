@@ -109,7 +109,16 @@ class Settings(BaseSettings):
     ollama_host: str = Field(default="ollama", description="Ollama container host")
     ollama_port: int = Field(default=11434, description="Ollama API port")
     ollama_router_model: str = Field(default="llama3.1:8b", description="Ollama model for routing")
+    ollama_embedding_model: str = Field(
+        default="nomic-embed-text", description="Ollama model for embeddings (768 dimensions)"
+    )
     ollama_timeout: int = Field(default=30, description="Ollama API timeout in seconds")
+
+    # Embeddings Backend Configuration
+    embeddings_backend: str = Field(
+        default="ollama",
+        description="Embeddings backend: 'ollama' (local, default) or 'gemini' (cloud)",
+    )
 
     # Encryption Configuration (Phase 5A)
     encryption_enabled: bool = Field(

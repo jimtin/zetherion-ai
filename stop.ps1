@@ -1,60 +1,45 @@
-# Zetherion AI Stop Script for Windows
-# Run as: powershell -ExecutionPolicy Bypass -File stop.ps1
-
 #Requires -Version 5.1
+
+<#
+.SYNOPSIS
+    Stop Zetherion AI Docker containers
+
+.DESCRIPTION
+    This script stops all Zetherion AI Docker containers gracefully.
+
+.EXAMPLE
+    .\stop.ps1
+    Stop all containers
+#>
 
 $ErrorActionPreference = "Stop"
 
 # Helper functions
-function Write-Success { param([string]$message) Write-Host "[OK] $message" -ForegroundColor Green }
-function Write-Warning-Message { param([string]$message) Write-Host "[WARNING] $message" -ForegroundColor Yellow }
-function Write-Info { param([string]$message) Write-Host "[INFO] $message" -ForegroundColor Cyan }
-
-Write-Host ""
-Write-Host "=================================================" -ForegroundColor Blue
-Write-Host "  Stopping Zetherion AI" -ForegroundColor Blue
-Write-Host "=================================================" -ForegroundColor Blue
-Write-Host ""
-
-# Stop Ollama container
-Write-Info "Stopping Ollama container..."
-$ErrorActionPreference = "SilentlyContinue"
-$ollamaRunning = docker ps --format "{{.Names}}" | Select-String -Pattern "^zetherion_ai-ollama$" -Quiet
-$ErrorActionPreference = "Stop"
-
-if ($ollamaRunning) {
-    docker stop zetherion_ai-ollama
-    Write-Success "Ollama container stopped"
-} else {
-    Write-Warning-Message "Ollama container not running"
+function Write-Success { param([string]$Text) Write-Host "[OK] $Text" -ForegroundColor Green }
+function Write-Warning-Message { param([string]$Text) Write-Host "[WARNING] $Text" -ForegroundColor Yellow }
+function Write-Info-Message { param([string]$Text) Write-Host "[INFO] $Text" -ForegroundColor Cyan }
+function Write-Header {
+    param([string]$Text)
+    Write-Host ""
+    Write-Host "============================================================" -ForegroundColor Blue
+    Write-Host "  $Text" -ForegroundColor Blue
+    Write-Host "============================================================" -ForegroundColor Blue
+    Write-Host ""
 }
 
-# Stop Qdrant container
-Write-Info "Stopping Qdrant container..."
-$ErrorActionPreference = "SilentlyContinue"
-$qdrantRunning = docker ps --format "{{.Names}}" | Select-String -Pattern "^zetherion_ai-qdrant$" -Quiet
-$ErrorActionPreference = "Stop"
+Write-Header "Stopping Zetherion AI"
 
-if ($qdrantRunning) {
-    docker stop zetherion_ai-qdrant
-    Write-Success "Qdrant container stopped"
-} else {
-    Write-Warning-Message "Qdrant container not running"
+Write-Info-Message "Stopping Docker containers..."
+docker-compose down --timeout 30
+
+if ($LASTEXITCODE -eq 0) {
+    Write-Success "All containers stopped"
+    Write-Host ""
+    Write-Info-Message "To start again:  .\start.ps1"
+    Write-Info-Message "To view status:  .\status.ps1"
+    Write-Host ""
 }
-
-# Kill any running bot processes
-Write-Info "Checking for running bot processes..."
-$botProcesses = Get-Process -Name "python" -ErrorAction SilentlyContinue | Where-Object {
-    $_.CommandLine -like "*zetherion_ai*"
+else {
+    Write-Warning-Message "Failed to stop some containers"
+    Write-Info-Message "Check status with: docker-compose ps"
 }
-
-if ($botProcesses) {
-    $botProcesses | Stop-Process -Force
-    Write-Success "Bot processes stopped"
-} else {
-    Write-Warning-Message "No bot processes found"
-}
-
-Write-Host ""
-Write-Success "Zetherion AI stopped successfully"
-Write-Host ""

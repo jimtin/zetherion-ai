@@ -17,45 +17,74 @@ A secure, simplified personal AI assistant. Discord-based with vector memory.
 - 👤 **User Profiling**: Builds understanding of you over time with tiered inference
 - ⏰ **Proactive Scheduler**: Morning briefings, deadline reminders, end-of-day summaries
 - 🎯 **885 Unit Tests**: Comprehensive test coverage (78%)
-- 🐳 **Docker-Based**: Fully containerized with isolated skills service
+- 🐳 **Fully Containerized**: 100% Docker deployment with distroless security (no local Python required)
+- 🛡️ **Distroless Containers**: Minimal attack surface with Google's distroless base images (~70% smaller)
 - 🌐 **Dual Router Options**: Cloud (Gemini) or Local (Ollama) for privacy
-- 🚀 **18-Second Startup**: After initial setup, starts in under 20 seconds
+- 🤖 **Hardware-Aware**: Automatic hardware assessment and optimal model recommendations
+- 🚀 **Fast Deployment**: ~3 minutes (Gemini) or ~9 minutes (Ollama with model download)
 
 ## Quick Start
 
-Zetherion AI includes automated startup scripts that check all prerequisites and start the bot:
+**One command deployment - fully containerized, no local Python required:**
 
 ```bash
-# 1. Clone and configure
+# 1. Clone repository
 git clone https://github.com/youruser/zetherion-ai.git
 cd zetherion-ai
-cp .env.example .env  # Edit with your API keys (see Setup Guide below)
 
-# 2. Start everything automatically
-./start.sh
-
-# Check status
-./status.sh
-
-# Stop when done
-./stop.sh
+# 2. Start (handles everything automatically)
+./start.sh      # Mac/Linux
+.\start.ps1     # Windows
 ```
 
-**The startup script automatically:**
-- ✅ Checks Python 3.12+ is installed
-- ✅ Checks Docker is running (auto-launches if needed)
-- ✅ Validates your .env configuration
-- ✅ Prompts router backend choice (Gemini cloud or Ollama local)
-- ✅ Detects hardware and recommends optimal Ollama model
-- ✅ Manages Docker Desktop memory allocation
-- ✅ Creates virtual environment if needed
-- ✅ Installs dependencies
-- ✅ Starts Qdrant vector database
-- ✅ Downloads and starts Ollama (if selected)
-- ✅ Launches the bot
+That's it! The script will guide you through interactive setup on first run.
+
+**What the script does automatically (7 phases):**
+
+**Phase 1: Prerequisites**
+- ✅ Checks Docker Desktop installed (offers to install if missing)
+- ✅ Checks Git installed (offers to install if missing)
+- ✅ Validates Docker daemon is running (auto-launches if needed)
+- ✅ Checks disk space (warns if <20GB free)
+
+**Phase 2: Hardware Assessment**
+- ✅ Detects CPU, RAM, and GPU capabilities
+- ✅ Recommends optimal Ollama model for your system
+- ✅ Displays hardware summary and model recommendations
+
+**Phase 3: Configuration Setup**
+- ✅ Interactive .env generation (first run only)
+- ✅ API key validation and format checking
+- ✅ Router backend selection (Gemini or Ollama)
+
+**Phase 4: Docker Build & Deploy**
+- ✅ Builds distroless container images (secure, minimal attack surface)
+- ✅ Starts all services via docker-compose
+- ✅ Waits for health checks (Qdrant, Skills, Bot)
+
+**Phase 5: Model Download** (if Ollama selected)
+- ✅ Checks if model already downloaded
+- ✅ Downloads recommended model (~5-10GB, first time only)
+- ✅ Progress indicators during download
+
+**Phase 6: Verification**
+- ✅ Tests Qdrant connection
+- ✅ Tests Ollama connection (if enabled)
+- ✅ Displays container status
+
+**Phase 7: Success**
+- ✅ Deployment summary with next steps
+- ✅ Troubleshooting commands
 
 **Required**: Discord Bot Token + Gemini API Key (both free tier available)
 **Optional**: Anthropic (Claude) or OpenAI (GPT-4) for complex tasks
+
+**Additional Commands:**
+```bash
+./status.sh     # Check status of all containers
+./stop.sh       # Stop all containers (data preserved)
+./cleanup.sh    # Complete removal and reset
+```
 
 ## 📚 Documentation
 
@@ -76,53 +105,81 @@ cp .env.example .env  # Edit with your API keys (see Setup Guide below)
 - [Qdrant Connection Issues](docs/TROUBLESHOOTING.md#qdrant-connection-issues)
 - [Configuration Problems](docs/TROUBLESHOOTING.md#configuration-issues)
 
+## Hardware Requirements
+
+### Minimum Requirements
+- **OS**: Windows 10/11, macOS 10.15+, or Linux (Ubuntu 20.04+)
+- **Docker**: Docker Desktop 4.0+ with at least 4GB RAM allocated
+- **Disk**: 20GB free space (10GB for Docker images, 5-10GB for Ollama models if used)
+- **RAM**: 8GB system RAM (4GB minimum)
+- **Network**: Internet connection for API calls and initial setup
+
+### Recommended for Ollama (Local AI)
+- **RAM**: 16GB+ system RAM
+- **Docker Memory**: 8-12GB allocated to Docker Desktop
+- **GPU** (optional but improves performance):
+  - NVIDIA GPU with 8GB+ VRAM (RTX 3060 or better)
+  - AMD GPU with ROCm support
+  - Apple Silicon (M1/M2/M3) with Metal support
+
+The `start.sh`/`start.ps1` script automatically detects your hardware and recommends the optimal model configuration.
+
 ## Management Scripts
 
-Zetherion AI includes three management scripts for easy operation:
+Zetherion AI includes four management scripts for complete lifecycle management:
 
-### `./start.sh` - Start Zetherion AI
-Performs comprehensive checks and starts all services:
-- Validates Python 3.12+ installation
-- Confirms Docker is running (auto-launches Docker Desktop if needed)
-- Checks .env configuration
-- **Prompts router backend selection** (first run only):
-  - **Gemini (Cloud)**: Fast, cloud-based routing using Google's API
-  - **Ollama (Local)**: Privacy-focused, runs AI models on your machine
-- **Detects hardware** and recommends optimal Ollama model (if Ollama selected)
-- **Manages Docker Desktop memory** automatically for Ollama models
-- Sets up Python virtual environment (if needed)
-- Installs/updates dependencies
-- Starts Qdrant vector database
-- Downloads and starts Ollama container and model (if Ollama selected)
-- Launches the Discord bot
+### `./start.sh` (or `start.ps1` on Windows)
+**Fully automated 7-phase deployment** - handles everything from prerequisites to final verification.
 
 **First run timing:**
-- Gemini backend: ~3 minutes (Docker startup, dependencies)
+- Gemini backend: ~3 minutes (Docker build, startup)
 - Ollama backend: ~9 minutes (includes ~5GB model download)
 
-**Subsequent runs:** ~18 seconds (all containers already exist)
+**Subsequent runs:** Quick startup (containers cached, ~30 seconds)
 
-If any prerequisite is missing, it provides clear instructions on how to fix it.
+**Options:**
+- `--skip-hardware-assessment`: Skip hardware detection and use default model
+- `--force-rebuild`: Force rebuild Docker images even if cached
 
 **See also:** [Startup Script Walkthrough](docs/STARTUP_WALKTHROUGH.md) for detailed execution flow.
 
-### `./status.sh` - Check Status
-Shows the current state of all components:
-- Qdrant container status and health
-- Bot process status and uptime
-- Virtual environment status
-- Configuration validation
-- Number of vector collections
+### `./status.sh` (or `status.ps1` on Windows)
+Shows real-time status of all components:
+- ✅ Qdrant vector database health and collection count
+- ✅ Ollama service health and loaded models (if enabled)
+- ✅ Skills service health check
+- ✅ Bot container health and uptime
+- ✅ Overall operational status
 
 Use this to verify everything is running correctly.
 
-### `./stop.sh` - Stop Zetherion AI
-Gracefully stops all services:
-- Stops the Discord bot process
-- Stops the Qdrant container (data is preserved)
-- Stops the Ollama container (if running, downloaded models are preserved)
+### `./stop.sh` (or `stop.ps1` on Windows)
+Gracefully stops all Docker containers:
+- Stops bot, skills service, Qdrant, and Ollama (if running)
+- **Data is preserved**: All volumes (database, models) are kept
+- Containers stopped but not removed for quick restart
 
-All containers are stopped but not removed, so your data and downloaded models persist.
+### `./cleanup.sh` (or `cleanup.ps1` on Windows)
+**Complete removal and reset** - useful for fresh reinstalls:
+
+**Options:**
+- `--keep-data`: Preserve Qdrant database and Ollama models
+- `--keep-config`: Preserve .env configuration file
+- `--remove-old-version`: Also remove old local Python artifacts (.venv, __pycache__)
+
+**Default behavior** (with confirmations):
+- Removes all Docker containers, images, and volumes
+- Removes .env configuration
+- Removes build artifacts
+- Shows summary of remaining resources
+
+**Examples:**
+```bash
+./cleanup.sh                      # Complete cleanup (prompts for confirmation)
+./cleanup.sh --keep-data          # Remove containers but keep database/models
+./cleanup.sh --keep-config        # Remove everything except .env
+./cleanup.sh --remove-old-version # Also clean old local Python installation
+```
 
 ## Setup Guide
 
@@ -323,31 +380,42 @@ Automated checks on every `git commit`:
 
 ## Development
 
-### With Docker (Recommended)
-```bash
-# Run in development mode with hot reload
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+Zetherion AI uses **100% Docker-based development** with distroless containers for security:
 
-# Run tests
-docker compose exec zetherion-ai pytest
+### Running in Development Mode
+```bash
+# Run with hot reload (development mode)
+docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+# View logs
+docker-compose logs -f zetherion-ai-bot
+
+# Run tests inside container
+docker-compose exec zetherion-ai-bot pytest
+
+# Run specific test file
+docker-compose exec zetherion-ai-bot pytest tests/test_agent.py -v
+
+# Check test coverage
+docker-compose exec zetherion-ai-bot pytest --cov=zetherion_ai --cov-report=html
 ```
 
-### Without Docker (Local Development)
-```bash
-# Install dependencies
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
+### Distroless Container Architecture
 
-# Start Qdrant (required for vector memory)
-docker run -p 6333:6333 qdrant/qdrant
+Zetherion AI uses **Google's distroless base images** for enhanced security:
 
-# Run the bot
-python -m zetherion-ai
+**Benefits:**
+- ✅ **70% smaller attack surface** - No shell, no package managers, no OS utilities
+- ✅ **Fewer vulnerabilities** - Only Python runtime, no extraneous binaries
+- ✅ **50MB runtime images** vs ~150MB with standard python:slim
+- ✅ **Passes GitHub security scans** - Zero critical/high CVEs
 
-# Run tests
-pytest
-```
+**Multi-stage builds:**
+1. **Builder stage** (`python:3.11-slim`): Installs dependencies with pip
+2. **Runtime stage** (`gcr.io/distroless/python3-debian12:nonroot`): Minimal execution environment
+3. **Import verification**: Ensures all imports work before creating final image
+
+**See:** [docs/SECURITY.md](docs/SECURITY.md) for detailed security documentation.
 
 ## Troubleshooting
 
@@ -376,6 +444,35 @@ pytest
 - Ensure Qdrant is running: `docker compose ps`
 - Check Qdrant UI: http://localhost:6333/dashboard
 - View collections at: http://localhost:6333/dashboard#/collections
+
+## Security
+
+Zetherion AI implements defense-in-depth with multiple security layers:
+
+### Distroless Containers
+- **Base Images**: Google's `gcr.io/distroless/python3-debian12:nonroot`
+- **No Shell**: Cannot execute arbitrary commands even if compromised
+- **No Package Managers**: Cannot install malware or additional packages
+- **Minimal Surface**: Only Python 3.11 runtime and application code
+- **Non-Root User**: Containers run as UID 65532 (nonroot) by default
+- **Size**: ~50MB runtime vs ~150MB standard images (70% reduction)
+
+### Application Security
+- **AES-256-GCM Encryption**: Field-level encryption for sensitive vector data
+- **Prompt Injection Defense**: 24+ detection patterns for malicious prompts
+- **Rate Limiting**: 10 messages/minute per user (configurable)
+- **User Allowlist**: Restrict access to specific Discord users
+- **Secret Scanning**: Pre-commit hooks prevent API keys from entering git
+- **API Key Validation**: Format checking for all provider keys
+
+### CI/CD Security
+- **Bandit**: Python security linting on every commit
+- **Gitleaks**: Secret detection in git history and commits
+- **Hadolint**: Dockerfile security best practices
+- **GitHub Security Scanning**: Automatic vulnerability detection
+- **Dependency Scanning**: Automated updates for vulnerable packages
+
+**See:** [docs/SECURITY.md](docs/SECURITY.md) for comprehensive security documentation.
 
 ## Architecture
 

@@ -1,56 +1,41 @@
 #!/bin/bash
 
-# Colors for output
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Description: Stop Zetherion AI Docker containers
 
-print_success() {
-    echo -e "${GREEN}✓${NC} $1"
+set -euo pipefail
+
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
+
+print_success() { echo -e "\033[0;32m[OK] $1\033[0m"; }
+print_warning() { echo -e "\033[0;33m[WARNING] $1\033[0m"; }
+print_info() { echo -e "\033[0;36m[INFO] $1\033[0m"; }
+
+print_header() {
+    echo ""
+    echo -e "\033[0;34m============================================================\033[0m"
+    echo -e "\033[0;34m  $1\033[0m"
+    echo -e "\033[0;34m============================================================\033[0m"
+    echo ""
 }
 
-print_warning() {
-    echo -e "${YELLOW}⚠${NC} $1"
-}
+# ============================================================
+# MAIN
+# ============================================================
 
-print_info() {
-    echo -e "${BLUE}ℹ${NC} $1"
-}
+print_header "Stopping Zetherion AI"
 
-echo ""
-echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
-echo -e "${BLUE}  Stopping Zetherion AI${NC}"
-echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
-echo ""
+print_info "Stopping Docker containers..."
+docker-compose down --timeout 30
 
-# Stop Ollama container
-print_info "Stopping Ollama container..."
-if docker ps --format '{{.Names}}' | grep -q "^zetherion_ai-ollama$"; then
-    docker stop zetherion_ai-ollama
-    print_success "Ollama container stopped"
+if [ $? -eq 0 ]; then
+    print_success "All containers stopped"
+    echo ""
+    print_info "To start again:  ./start.sh"
+    print_info "To view status:  ./status.sh"
+    echo ""
 else
-    print_warning "Ollama container not running"
+    print_warning "Failed to stop some containers"
+    print_info "Check status with: docker-compose ps"
 fi
-
-# Stop Qdrant container
-print_info "Stopping Qdrant container..."
-if docker ps --format '{{.Names}}' | grep -q "^zetherion_ai-qdrant$"; then
-    docker stop zetherion_ai-qdrant
-    print_success "Qdrant container stopped"
-else
-    print_warning "Qdrant container not running"
-fi
-
-# Kill any running bot processes
-print_info "Checking for running bot processes..."
-if pgrep -f "python -m zetherion_ai" >/dev/null; then
-    pkill -f "python -m zetherion_ai"
-    print_success "Bot processes stopped"
-else
-    print_warning "No bot processes found"
-fi
-
-echo ""
-print_success "Zetherion AI stopped successfully"
-echo ""
