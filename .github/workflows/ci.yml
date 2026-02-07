@@ -109,7 +109,7 @@ jobs:
           semgrep scan --config auto --sarif --output semgrep.sarif src/ || true
 
       - name: Upload Semgrep SARIF
-        uses: github/codeql-action/upload-sarif@2588666de8825e1e9dc4e2329a4c985457d55b32  # v3
+        uses: github/codeql-action/upload-sarif@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2  # v3
         if: always()
         with:
           sarif_file: semgrep.sarif
@@ -276,7 +276,7 @@ jobs:
           exit-code: '0'  # Don't fail build; results visible in GitHub Security tab
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@2588666de8825e1e9dc4e2329a4c985457d55b32  # v3
+        uses: github/codeql-action/upload-sarif@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2  # v3
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
