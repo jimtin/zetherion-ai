@@ -6,6 +6,7 @@ selection based on task type, provider capabilities, and availability.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -110,9 +111,9 @@ class InferenceBroker:
         # Cost tracking
         self._cost_tracker: dict[Provider, CostTracker] = {p: CostTracker() for p in Provider}
 
-        # Ollama configuration
-        self._ollama_model = settings.ollama_router_model
-        self._ollama_url = settings.ollama_url
+        # Ollama configuration (uses generation container, not router container)
+        self._ollama_model = settings.ollama_generation_model
+        self._ollama_url = settings.ollama_url  # Generation container URL
         self._ollama_tier = get_ollama_tier(self._ollama_model)
 
         # Initialize provider clients
@@ -382,14 +383,18 @@ class InferenceBroker:
         if system_prompt:
             content = f"{system_prompt}\n\n{prompt}"
 
-        response = self._gemini_client.models.generate_content(
-            model=self._gemini_model,
-            contents=content,
-            config={
-                "temperature": temperature,
-                "max_output_tokens": max_tokens,
-            },
-        )
+        # Wrap synchronous Gemini call in thread to avoid blocking event loop
+        def _sync_generate() -> Any:
+            return self._gemini_client.models.generate_content(  # type: ignore[union-attr]
+                model=self._gemini_model,
+                contents=content,
+                config={
+                    "temperature": temperature,
+                    "max_output_tokens": max_tokens,
+                },
+            )
+
+        response = await asyncio.to_thread(_sync_generate)
 
         # Gemini doesn't provide token counts in the same way
         return InferenceResult(
@@ -569,12 +574,16 @@ class InferenceBroker:
                     response = await client.get(f"{self._ollama_url}/api/tags")
                     return response.status_code == 200
             elif provider == Provider.GEMINI and self._gemini_client:
-                self._gemini_client.models.generate_content(
-                    model=self._gemini_model,
-                    contents="test",
-                    config={"max_output_tokens": 5},
-                )
-                return True
+                # Wrap synchronous Gemini call to avoid blocking
+                def _sync_health_check() -> bool:
+                    self._gemini_client.models.generate_content(  # type: ignore[union-attr]
+                        model=self._gemini_model,
+                        contents="test",
+                        config={"max_output_tokens": 5},
+                    )
+                    return True
+
+                return await asyncio.to_thread(_sync_health_check)
             elif provider == Provider.CLAUDE and self._claude_client:
                 await self._claude_client.messages.create(
                     model=self._claude_model,

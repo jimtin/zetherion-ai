@@ -22,6 +22,12 @@ services:
     environment:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      # Generation container (large model + embeddings)
+      - OLLAMA_HOST=ollama
+      - OLLAMA_PORT=11434
+      # Router container (small, fast model for classification)
+      - OLLAMA_ROUTER_HOST=ollama-router
+      - OLLAMA_ROUTER_PORT=11434
       - SKILLS_SERVICE_URL=http://zetherion-ai-skills:8080
       - ENVIRONMENT=production
     volumes:
@@ -29,9 +35,9 @@ services:
       - ./logs:/app/logs
     networks:
       - zetherion-ai-net
-    # Distroless healthcheck (no shell available)
+    # Distroless healthcheck - must use full Python path
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      test: ["CMD", "/usr/bin/python3.11", "-c", "import sys; sys.exit(0)"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -65,14 +71,20 @@ services:
     environment:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      # Generation container (large model + embeddings)
+      - OLLAMA_HOST=ollama
+      - OLLAMA_PORT=11434
+      # Router container (small, fast model for classification)
+      - OLLAMA_ROUTER_HOST=ollama-router
+      - OLLAMA_ROUTER_PORT=11434
       - SKILLS_HOST=0.0.0.0
       - SKILLS_PORT=8080
     # No ports exposed to host - only accessible from bot via internal network
     networks:
       - zetherion-ai-net
-    # Distroless healthcheck (checks if server port is listening)
+    # Distroless healthcheck - must use full Python path
     healthcheck:
-      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 8080)); s.close()"]
+      test: ["CMD", "/usr/bin/python3.11", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 8080)); s.close()"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -87,6 +99,8 @@ services:
           cpus: '0.25'
           memory: 128M
 
+  # Ollama Generation Container (large model + embeddings)
+  # Handles complex queries and embedding generation
   ollama:
     # Pin image by digest for reproducible builds (Dependabot auto-updates)
     image: ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed
@@ -104,7 +118,7 @@ services:
       - ollama_models:/root/.ollama
     networks:
       - zetherion-ai-net
-    # Resource limits for LLM inference
+    # Resource limits for LLM inference (generation + embeddings)
     deploy:
       resources:
         limits:
@@ -121,6 +135,34 @@ services:
     #         - driver: nvidia
     #           count: 1
     #           capabilities: [gpu]
+
+  # Ollama Router Container (small, fast model for routing)
+  # Dedicated container for message classification - always loaded
+  ollama-router:
+    # Pin image by digest for reproducible builds (Dependabot auto-updates)
+    image: ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed
+    container_name: zetherion-ai-ollama-router
+    restart: unless-stopped
+    # No port exposure to host - only accessible via internal network
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/11434' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s  # Faster startup for small model
+    volumes:
+      - ollama_router_models:/root/.ollama
+    networks:
+      - zetherion-ai-net
+    # Resource limits for router (small model only)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G  # 0.5b model only needs ~500MB
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   qdrant:
     # Pin image by digest for reproducible builds (Dependabot auto-updates)
@@ -157,6 +199,7 @@ services:
 volumes:
   qdrant_storage:
   ollama_models:
+  ollama_router_models:
 
 networks:
   zetherion-ai-net:

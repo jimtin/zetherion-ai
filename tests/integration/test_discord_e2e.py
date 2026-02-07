@@ -4,6 +4,7 @@ These tests send actual messages through Discord and verify bot responses.
 Requires:
 - TEST_DISCORD_BOT_TOKEN environment variable (separate test bot)
 - TEST_DISCORD_CHANNEL_ID environment variable (test channel ID)
+- TEST_DISCORD_TARGET_BOT_ID environment variable (optional, ID of bot to test)
 - Test Discord server set up
 """
 
@@ -141,6 +142,7 @@ class DiscordTestClient:
         """Start the Discord client."""
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.messages = True  # Required to receive message events
         intents.guilds = True
         intents.members = True  # Required to access guild.members
 
@@ -196,23 +198,40 @@ class DiscordTestClient:
         if not self.client or not self.channel:
             return None
 
+        # Check if explicit bot ID is configured
+        explicit_bot_id = os.getenv("TEST_DISCORD_TARGET_BOT_ID")
+        if explicit_bot_id:
+            try:
+                bot_id = int(explicit_bot_id)
+                print(f"Using explicit bot ID from TEST_DISCORD_TARGET_BOT_ID: {bot_id}")
+                return bot_id
+            except ValueError:
+                print(f"Warning: Invalid TEST_DISCORD_TARGET_BOT_ID: {explicit_bot_id}")
+
         # Look for Zetherion AI bot in guild (excluding ourselves, the test bot)
+        # Search for various name patterns
+        bot_name_patterns = ["zetherion", "zeth", "secureclaw"]
+
         if isinstance(self.channel, discord.TextChannel) and self.channel.guild:
             for member in self.channel.guild.members:
-                if (
-                    member.bot
-                    and member.id != self.client.user.id  # type: ignore[union-attr]
-                    and "zetherion_ai" in member.name.lower()
-                ):
-                    print(f"Found Zetherion AI bot: {member.name} (ID: {member.id})")
-                    return member.id
+                if member.bot and member.id != self.client.user.id:  # type: ignore[union-attr]
+                    name_lower = member.name.lower()
+                    if any(pattern in name_lower for pattern in bot_name_patterns):
+                        print(f"Found Zetherion AI bot: {member.name} (ID: {member.id})")
+                        return member.id
+
+            # If no match found, list all bots for debugging
+            print("Available bots in guild:")
+            for member in self.channel.guild.members:
+                if member.bot and member.id != self.client.user.id:  # type: ignore[union-attr]
+                    print(f"  - {member.name} (ID: {member.id})")
 
         return None
 
     async def wait_for_bot_response(
         self,
         after_message: discord.Message,
-        timeout: float = 30.0,
+        timeout: float = 90.0,
         bot_id: int | None = None,
     ) -> discord.Message | None:
         """Wait for bot to respond to a message.
@@ -244,16 +263,38 @@ class DiscordTestClient:
 
         # Wait for bot response
         def check(message: discord.Message) -> bool:
-            return (
+            is_match = (
                 message.channel.id == self.channel_id  # type: ignore[union-attr]
                 and message.author.id == bot_id
                 and message.created_at > after_message.created_at
             )
+            bot_match = message.author.id == bot_id
+            print(
+                f"Check: author={message.author.name}, bot_match={bot_match}, is_match={is_match}"
+            )
+            return is_match
 
         try:
+            print(f"Waiting for response from bot_id={bot_id} in channel={self.channel_id}...")
             response = await self.client.wait_for("message", check=check, timeout=timeout)
+            print(f"Got response: {response.content[:100] if response else 'None'}")
             return response
         except TimeoutError:
+            # Check message history as fallback
+            print("Timeout reached, checking message history...")
+            # History returns newest first, so look for bot response after our message
+            found_our_message = False
+            async for msg in self.channel.history(limit=20):
+                content = msg.content[:50] if msg.content else "[empty]"
+                print(f"  History: {msg.author.name} ({msg.author.id}): {content}...")
+                # Once we find our sent message, any newer bot message is the response
+                if msg.id == after_message.id:
+                    found_our_message = True
+                    continue
+                # This message is newer - check if it's from the bot
+                if not found_our_message and msg.author.id == bot_id:
+                    print("Found response in history (newer than our message)!")
+                    return msg
             return None
 
     async def delete_message(self, message: discord.Message) -> None:

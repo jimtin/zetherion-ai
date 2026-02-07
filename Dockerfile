@@ -5,7 +5,8 @@
 # ============================================================
 # STAGE 1: Builder
 # ============================================================
-FROM python:3.12-slim@sha256:43e4d702bbfe3bd6d5b743dc571b67c19121302eb172951a9b7b0149783a1c21 as builder
+# Use Python 3.11 to match distroless runtime
+FROM python:3.11-slim as builder
 
 WORKDIR /app
 
@@ -30,15 +31,17 @@ RUN python -c "from zetherion_ai.main import run; print('✓ Imports verified')"
 # ============================================================
 FROM gcr.io/distroless/python3-debian12:nonroot
 
-# Copy Python packages from builder (installed with --user)
-COPY --from=builder /root/.local /root/.local
+# Copy Python packages from builder with nonroot ownership (uid 65532)
+COPY --from=builder --chown=65532:65532 /root/.local /home/nonroot/.local
 
-# Copy application source code
-COPY --from=builder /app/src /app/src
+# Copy application source code with nonroot ownership
+COPY --from=builder --chown=65532:65532 /app/src /app/src
 
-# Set Python path
-ENV PYTHONPATH=/app/src
-ENV PATH=/root/.local/bin:$PATH
+# Set Python path for nonroot user
+# Include site-packages explicitly since distroless doesn't auto-discover user packages
+ENV PYTHONPATH=/app/src:/home/nonroot/.local/lib/python3.11/site-packages
+ENV PATH=/home/nonroot/.local/bin:$PATH
+ENV PYTHONUSERBASE=/home/nonroot/.local
 
 # Create data and logs directories
 # Distroless runs as uid 65532 (nonroot) by default
@@ -49,9 +52,10 @@ VOLUME ["/app/data", "/app/logs"]
 # No USER directive needed - it's built into the image
 
 # Healthcheck using Python (no shell/curl in distroless)
-# Checks if we can import the main module
+# Distroless has /usr/bin/python3.11 as entrypoint, so no "python" prefix needed
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD ["python", "-c", "import sys; sys.exit(0)"]
+    CMD ["-c", "import sys; sys.exit(0)"]
 
-# Entry point - must be absolute path for distroless
-CMD ["python", "-m", "zetherion_ai"]
+# Entry point - distroless has /usr/bin/python3.11 as entrypoint
+# So CMD should just be the arguments, not "python"
+CMD ["-m", "zetherion_ai"]

@@ -142,20 +142,106 @@ ROUTER_BACKEND=gemini  # or ollama
 - Offline deployments
 - Powerful hardware (16GB+ RAM or GPU)
 
-### OLLAMA_ROUTER_MODEL
+### Dual Ollama Container Architecture
 
-**Ollama Model Selection** - Which local model to use for routing (only if `ROUTER_BACKEND=ollama`).
+When using `ROUTER_BACKEND=ollama`, Zetherion AI uses **two separate Ollama containers** to eliminate model-swapping delays:
 
-```env
-OLLAMA_ROUTER_MODEL=llama3.1:8b
+```
+┌────────────────────────┐    ┌────────────────────────┐
+│  ollama-router         │    │  ollama                │
+│  ┌──────────────────┐  │    │  ┌──────────────────┐  │
+│  │  qwen2.5:0.5b    │  │    │  │   qwen2.5:7b     │  │
+│  │  Always loaded   │  │    │  │  Always loaded   │  │
+│  └──────────────────┘  │    │  └──────────────────┘  │
+│  Memory: 1GB           │    │  ┌──────────────────┐  │
+│  Purpose: Routing      │    │  │ nomic-embed-text │  │
+└────────────────────────┘    │  └──────────────────┘  │
+                              │  Memory: 8GB           │
+                              │  Purpose: Generation   │
+                              └────────────────────────┘
 ```
 
-**Recommended Models** (by hardware):
+**Why two containers?**
+- Ollama can only keep ONE model loaded at a time per container
+- Single container = 2-10 second delay when swapping between routing and generation models
+- Dual containers = both models always loaded, instant responses
 
-| Hardware | Model | Docker RAM | Quality | Speed |
-|----------|-------|------------|---------|-------|
-| 8GB RAM, CPU | `phi3:mini` | 5GB | Good | Fast |
-| 16GB RAM, CPU | `llama3.1:8b` | 8GB | Excellent | Moderate |
+### OLLAMA_ROUTER_HOST
+
+**Router Container Host** - Dedicated container for fast message classification.
+
+```env
+OLLAMA_ROUTER_HOST=ollama-router  # Docker service name (default)
+# or
+OLLAMA_ROUTER_HOST=localhost  # For local development
+```
+
+**Default**: `ollama-router` (Docker Compose service name)
+
+### OLLAMA_ROUTER_PORT
+
+**Router Container Port** - API port for the router container.
+
+```env
+OLLAMA_ROUTER_PORT=11434
+```
+
+**Default**: `11434` (standard Ollama port)
+
+### OLLAMA_ROUTER_MODEL
+
+**Router Model Selection** - Small, fast model for message classification.
+
+```env
+OLLAMA_ROUTER_MODEL=qwen2.5:0.5b
+```
+
+**Recommended Router Models:**
+
+| Model | Size | Speed | RAM | Best For |
+|-------|------|-------|-----|----------|
+| `qwen2.5:0.5b` | 500MB | Fastest | 1GB | Default, good quality |
+| `llama3.2:1b` | 1.3GB | Fast | 1.5GB | Better quality |
+| `phi3:mini` | 2.3GB | Moderate | 2GB | Best classification |
+
+**Note:** Router models should be small and fast - quality matters less for classification.
+
+### OLLAMA_HOST
+
+**Generation Container Host** - Main container for complex queries and embeddings.
+
+```env
+OLLAMA_HOST=ollama  # Docker service name (default)
+# or
+OLLAMA_HOST=localhost  # For local development
+```
+
+**Default**: `ollama` (Docker Compose service name)
+
+### OLLAMA_PORT
+
+**Generation Container Port** - API port for the generation container.
+
+```env
+OLLAMA_PORT=11434
+```
+
+**Default**: `11434` (standard Ollama port)
+
+### OLLAMA_GENERATION_MODEL
+
+**Generation Model Selection** - Larger, more capable model for complex queries.
+
+```env
+OLLAMA_GENERATION_MODEL=qwen2.5:7b
+```
+
+**Recommended Generation Models** (by hardware):
+
+| Hardware | Model | RAM | Quality | Speed |
+|----------|-------|-----|---------|-------|
+| 8GB RAM, CPU | `qwen2.5:3b` | 4GB | Good | Moderate |
+| 16GB RAM, CPU | `qwen2.5:7b` | 8GB | Excellent | Moderate |
 | 16GB+ RAM, GPU | `qwen2.5:14b` | 12GB | Best | Fast (GPU) |
 | 32GB+ RAM, GPU | `qwen2.5:32b` | 24GB | Maximum | Fast (GPU) |
 
@@ -163,43 +249,54 @@ OLLAMA_ROUTER_MODEL=llama3.1:8b
 
 **See:** [Hardware Recommendations](HARDWARE-RECOMMENDATIONS.md) for detailed comparison.
 
-### OLLAMA_HOST
+### OLLAMA_EMBEDDING_MODEL
 
-**Ollama Service Host** - Where to find Ollama API.
+**Embedding Model Selection** - Model for generating vector embeddings (runs on generation container).
 
 ```env
-OLLAMA_HOST=ollama  # Docker service name (default)
-# or
-OLLAMA_HOST=localhost:11434  # For local development
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
 ```
 
-**Default**: `ollama` (Docker Compose service name)
+**Default**: `nomic-embed-text` (768-dimensional vectors, same as Gemini)
 
-**When to change:**
-- Running Ollama outside Docker
-- Custom Ollama deployment
-- Remote Ollama server
+**Note:** Embeddings run on the generation container alongside the generation model.
 
 ### OLLAMA_DOCKER_MEMORY
 
-**Docker Memory Allocation** - RAM limit for Ollama container (GB).
+**Docker Memory Allocation** - RAM limit for the generation container (GB).
 
 ```env
 OLLAMA_DOCKER_MEMORY=8
 ```
 
-**Recommended by Model:**
-- `phi3:mini`: 5GB
-- `llama3.1:8b`: 8GB
+**Recommended by Generation Model:**
+- `qwen2.5:3b`: 4GB
+- `qwen2.5:7b`: 8GB
 - `qwen2.5:14b`: 12GB
 - `qwen2.5:32b`: 24GB
 
+**Note:** The router container uses 1GB fixed allocation (small model only).
+
+**Total Ollama Memory:**
+- Router container: 1GB (fixed)
+- Generation container: `OLLAMA_DOCKER_MEMORY` value
+- Example: 8GB + 1GB = 9GB total for Ollama
+
 **Auto-set** by startup script based on model selection.
 
-**Manual adjustment** needed if:
-- Out of memory errors
-- Running larger custom models
-- Memory-constrained system
+### OLLAMA_TIMEOUT
+
+**API Timeout** - Request timeout in seconds for Ollama API calls.
+
+```env
+OLLAMA_TIMEOUT=30
+```
+
+**Default**: `30` seconds
+
+**Adjust for:**
+- Slow hardware: Increase to 60-120
+- Fast GPU: Can decrease to 15-20
 
 ## Optional API Keys
 
@@ -627,11 +724,22 @@ LOG_LEVEL=INFO
 ```env
 # Required
 DISCORD_TOKEN=MTQz...
-GEMINI_API_KEY=AIzaSy...  # Still needed for embeddings
+# GEMINI_API_KEY not needed when using local embeddings
 
-# Ollama for routing (local)
+# Ollama for routing (local, dual-container architecture)
 ROUTER_BACKEND=ollama
-OLLAMA_ROUTER_MODEL=qwen2.5:14b
+EMBEDDINGS_BACKEND=ollama  # Use local embeddings too
+
+# Router container (fast classification)
+OLLAMA_ROUTER_HOST=ollama-router
+OLLAMA_ROUTER_PORT=11434
+OLLAMA_ROUTER_MODEL=qwen2.5:0.5b
+
+# Generation container (complex queries + embeddings)
+OLLAMA_HOST=ollama
+OLLAMA_PORT=11434
+OLLAMA_GENERATION_MODEL=qwen2.5:14b
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
 OLLAMA_DOCKER_MEMORY=12
 
 # Security
@@ -645,9 +753,9 @@ LOG_TO_FILE=true
 ```
 
 **Good for:**
-- Privacy requirements
+- Privacy requirements (no data leaves your machine)
 - Offline capability
-- Powerful hardware
+- Powerful hardware (16GB+ RAM)
 
 ### Professional Setup (Best Quality)
 

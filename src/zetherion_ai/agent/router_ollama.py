@@ -2,6 +2,7 @@
 
 import json
 import re
+import time
 
 import httpx
 
@@ -15,6 +16,10 @@ from zetherion_ai.logging import get_logger
 
 log = get_logger("zetherion_ai.agent.router_ollama")
 
+# Keep model loaded for 10 minutes (in seconds)
+# This prevents cold starts between requests
+OLLAMA_KEEP_ALIVE = "10m"
+
 
 class OllamaRouterBackend:
     """Router backend using local Ollama container."""
@@ -22,16 +27,103 @@ class OllamaRouterBackend:
     def __init__(self) -> None:
         """Initialize the Ollama router backend."""
         settings = get_settings()
-        self._url = settings.ollama_url
+        # Use dedicated router container URL (separate from generation)
+        self._url = settings.ollama_router_url
         self._model = settings.ollama_router_model
         self._timeout = settings.ollama_timeout
+        # Use longer timeout for warmup (model loading can take 60-90s)
+        self._warmup_timeout = 120.0
         self._client = httpx.AsyncClient(timeout=self._timeout)
+        self._is_warm = False
         log.info(
             "ollama_router_initialized",
             url=self._url,
             model=self._model,
             timeout=self._timeout,
+            container="ollama-router",
         )
+
+    async def warmup(self) -> bool:
+        """Warm up the model by sending a simple request.
+
+        This pre-loads the model into memory to avoid cold start delays.
+        Should be called during bot initialization.
+
+        Returns:
+            True if warmup succeeded, False otherwise.
+        """
+        if self._is_warm:
+            log.debug("ollama_already_warm", model=self._model)
+            return True
+
+        log.info("ollama_warmup_starting", model=self._model)
+        start_time = time.perf_counter()
+
+        try:
+            # Use a longer timeout for warmup since model loading takes time
+            async with httpx.AsyncClient(timeout=self._warmup_timeout) as client:
+                response = await client.post(
+                    f"{self._url}/api/generate",
+                    json={
+                        "model": self._model,
+                        "prompt": "Hello",
+                        "stream": False,
+                        "keep_alive": OLLAMA_KEEP_ALIVE,
+                        "options": {
+                            "num_predict": 5,  # Minimal output
+                        },
+                    },
+                )
+                response.raise_for_status()
+
+            elapsed = time.perf_counter() - start_time
+            self._is_warm = True
+            log.info(
+                "ollama_warmup_complete",
+                model=self._model,
+                duration_seconds=round(elapsed, 2),
+            )
+            return True
+
+        except Exception as e:
+            elapsed = time.perf_counter() - start_time
+            log.error(
+                "ollama_warmup_failed",
+                model=self._model,
+                error=str(e),
+                duration_seconds=round(elapsed, 2),
+            )
+            return False
+
+    async def keep_warm(self) -> bool:
+        """Send a keep-alive ping to prevent model unloading.
+
+        This should be called periodically (e.g., every 5 minutes)
+        to keep the model in memory.
+
+        Returns:
+            True if ping succeeded, False otherwise.
+        """
+        try:
+            response = await self._client.post(
+                f"{self._url}/api/generate",
+                json={
+                    "model": self._model,
+                    "prompt": "",
+                    "stream": False,
+                    "keep_alive": OLLAMA_KEEP_ALIVE,
+                    "options": {
+                        "num_predict": 1,
+                    },
+                },
+            )
+            response.raise_for_status()
+            log.debug("ollama_keep_warm_ping", model=self._model)
+            return True
+        except Exception as e:
+            log.warning("ollama_keep_warm_failed", model=self._model, error=str(e))
+            self._is_warm = False
+            return False
 
     async def classify(self, message: str) -> RoutingDecision:
         """Classify a message using Ollama.
@@ -54,6 +146,7 @@ class OllamaRouterBackend:
                     "prompt": prompt,
                     "stream": False,
                     "format": "json",  # Request JSON format
+                    "keep_alive": OLLAMA_KEEP_ALIVE,  # Keep model loaded
                     "options": {
                         "temperature": 0.1,  # Low for consistent classification
                         "num_predict": 150,
@@ -216,6 +309,7 @@ class OllamaRouterBackend:
                     "model": self._model,
                     "prompt": message,
                     "stream": False,
+                    "keep_alive": OLLAMA_KEEP_ALIVE,  # Keep model loaded
                     "options": {
                         "temperature": 0.7,
                         "num_predict": 500,

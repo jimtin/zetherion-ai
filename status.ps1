@@ -72,21 +72,22 @@ else {
 
 Write-Host ""
 
-# Check Ollama
-Write-Info-Message "Checking Ollama..."
-$ollamaRunning = docker ps --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-ollama$" -Quiet
+# Check Ollama Router Container (for fast routing)
+Write-Info-Message "Checking Ollama Router Container..."
+$ollamaRouterRunning = docker ps --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-ollama-router$" -Quiet
 
-if ($ollamaRunning) {
+if ($ollamaRouterRunning) {
     try {
-        $response = Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2
-        if ($response.StatusCode -eq 200) {
-            Write-Success "Ollama is running and healthy"
+        # Router container is internal only (no port exposed to host), check via docker exec
+        $routerHealth = docker exec zetherion-ai-ollama-router curl -s http://localhost:11434/api/tags 2>&1
+        if ($routerHealth -match "models") {
+            Write-Success "Ollama Router is running and healthy"
 
             # Get model list
             try {
-                $models = Invoke-RestMethod -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2
+                $models = $routerHealth | ConvertFrom-Json
                 $modelCount = $models.models.Count
-                Write-Host "    Models: $modelCount"
+                Write-Host "    Models: $modelCount (router models)"
                 if ($modelCount -gt 0) {
                     foreach ($model in $models.models) {
                         Write-Host "      - $($model.name)"
@@ -98,21 +99,67 @@ if ($ollamaRunning) {
             }
         }
         else {
-            Write-Warning-Message "Ollama container is running but not responding"
+            Write-Warning-Message "Ollama Router container is running but not responding"
         }
     }
     catch {
-        Write-Warning-Message "Ollama container is running but not responding"
+        Write-Warning-Message "Ollama Router container is running but not responding"
+    }
+}
+else {
+    $ollamaRouterExists = docker ps -a --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-ollama-router$" -Quiet
+
+    if ($ollamaRouterExists) {
+        Write-Warning-Message "Ollama Router container exists but is not running"
+    }
+    else {
+        Write-Info-Message "Ollama Router container not found (optional, used with ROUTER_BACKEND=ollama)"
+    }
+}
+
+Write-Host ""
+
+# Check Ollama Generation Container (for complex queries + embeddings)
+Write-Info-Message "Checking Ollama Generation Container..."
+$ollamaRunning = docker ps --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-ollama$" -Quiet
+
+if ($ollamaRunning) {
+    try {
+        $response = Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2
+        if ($response.StatusCode -eq 200) {
+            Write-Success "Ollama Generation is running and healthy"
+
+            # Get model list
+            try {
+                $models = Invoke-RestMethod -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2
+                $modelCount = $models.models.Count
+                Write-Host "    Models: $modelCount (generation + embedding models)"
+                if ($modelCount -gt 0) {
+                    foreach ($model in $models.models) {
+                        Write-Host "      - $($model.name)"
+                    }
+                }
+            }
+            catch {
+                Write-Host "    Models: Unable to retrieve"
+            }
+        }
+        else {
+            Write-Warning-Message "Ollama Generation container is running but not responding"
+        }
+    }
+    catch {
+        Write-Warning-Message "Ollama Generation container is running but not responding"
     }
 }
 else {
     $ollamaExists = docker ps -a --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-ollama$" -Quiet
 
     if ($ollamaExists) {
-        Write-Warning-Message "Ollama container exists but is not running"
+        Write-Warning-Message "Ollama Generation container exists but is not running"
     }
     else {
-        Write-Info-Message "Ollama container not found (optional)"
+        Write-Info-Message "Ollama Generation container not found (optional, used with ROUTER_BACKEND=ollama)"
     }
 }
 

@@ -105,14 +105,27 @@ class Settings(BaseSettings):
         default="gemini", description="Router backend: 'gemini' or 'ollama'"
     )
 
-    # Ollama Configuration
-    ollama_host: str = Field(default="ollama", description="Ollama container host")
-    ollama_port: int = Field(default=11434, description="Ollama API port")
-    ollama_router_model: str = Field(default="llama3.1:8b", description="Ollama model for routing")
+    # Ollama Configuration (Generation Container)
+    # This container handles generation and embeddings
+    ollama_host: str = Field(default="ollama", description="Ollama generation container host")
+    ollama_port: int = Field(default=11434, description="Ollama generation API port")
+    ollama_generation_model: str = Field(
+        default="qwen2.5:7b", description="Ollama model for generation (larger, capable)"
+    )
     ollama_embedding_model: str = Field(
         default="nomic-embed-text", description="Ollama model for embeddings (768 dimensions)"
     )
     ollama_timeout: int = Field(default=30, description="Ollama API timeout in seconds")
+
+    # Ollama Router Configuration (Dedicated Router Container)
+    # Separate container for fast message classification
+    ollama_router_host: str = Field(
+        default="ollama-router", description="Ollama router container host (dedicated)"
+    )
+    ollama_router_port: int = Field(default=11434, description="Ollama router API port")
+    ollama_router_model: str = Field(
+        default="qwen2.5:0.5b", description="Ollama model for routing (small, fast)"
+    )
 
     # Embeddings Backend Configuration
     embeddings_backend: str = Field(
@@ -238,6 +251,17 @@ class Settings(BaseSettings):
         default=30, description="Timeout in seconds for skills service requests"
     )
 
+    # GitHub Skill Configuration (Phase 7)
+    github_token: SecretStr | None = Field(
+        default=None, description="GitHub personal access token for API access"
+    )
+    github_default_repo: str | None = Field(
+        default=None, description="Default repository in owner/repo format"
+    )
+    github_api_timeout: int = Field(
+        default=30, description="Timeout in seconds for GitHub API requests"
+    )
+
     @field_validator(
         "profile_confidence_threshold",
         "default_formality",
@@ -301,8 +325,13 @@ class Settings(BaseSettings):
 
     @property
     def ollama_url(self) -> str:
-        """Get the full Ollama URL."""
+        """Get the full Ollama URL (generation container)."""
         return f"http://{self.ollama_host}:{self.ollama_port}"
+
+    @property
+    def ollama_router_url(self) -> str:
+        """Get the Ollama router URL (dedicated routing container)."""
+        return f"http://{self.ollama_router_host}:{self.ollama_router_port}"
 
     @property
     def is_development(self) -> bool:

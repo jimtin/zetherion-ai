@@ -20,9 +20,10 @@ class TestOllamaRouterBackend:
         """Create OllamaRouterBackend with mocked HTTP client."""
         monkeypatch.setenv("DISCORD_TOKEN", "test")
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        monkeypatch.setenv("OLLAMA_HOST", "localhost")
-        monkeypatch.setenv("OLLAMA_PORT", "11434")
-        monkeypatch.setenv("OLLAMA_ROUTER_MODEL", "llama3.1:8b")
+        # Router uses dedicated container
+        monkeypatch.setenv("OLLAMA_ROUTER_HOST", "ollama-router")
+        monkeypatch.setenv("OLLAMA_ROUTER_PORT", "11434")
+        monkeypatch.setenv("OLLAMA_ROUTER_MODEL", "qwen2.5:0.5b")
 
         with patch(
             "zetherion_ai.agent.router_ollama.httpx.AsyncClient", return_value=mock_httpx_client
@@ -443,6 +444,7 @@ class TestOllamaRouterBackend:
         mock_response = Mock()
         mock_response.json.return_value = {
             "models": [
+                {"name": "qwen2.5:0.5b"},  # Default router model
                 {"name": "llama3.1:8b"},
                 {"name": "mistral:7b"},
             ]

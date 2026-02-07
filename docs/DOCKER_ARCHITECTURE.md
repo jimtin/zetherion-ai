@@ -28,31 +28,40 @@ On macOS, Docker runs inside a **lightweight virtual machine (VM)** called Docke
 
 **Think of it like this:**
 ```
-┌─────────────────────────────────────┐
-│   Your Mac (Physical Hardware)      │
-│   Total RAM: e.g., 16GB             │
-│                                      │
-│  ┌────────────────────────────────┐ │
-│  │  Docker Desktop VM             │ │
-│  │  Allocated: e.g., 8GB          │ │
-│  │                                │ │
-│  │  ┌──────────────────────────┐ │ │
-│  │  │  Container 1 (Bot)       │ │ │
-│  │  │  Limit: 2GB              │ │ │
-│  │  └──────────────────────────┘ │ │
-│  │                                │ │
-│  │  ┌──────────────────────────┐ │ │
-│  │  │  Container 2 (Ollama)    │ │ │
-│  │  │  Limit: 10GB             │ │ │
-│  │  └──────────────────────────┘ │ │
-│  │                                │ │
-│  │  ┌──────────────────────────┐ │ │
-│  │  │  Container 3 (Qdrant)    │ │ │
-│  │  │  Limit: 1GB              │ │ │
-│  │  └──────────────────────────┘ │ │
-│  └────────────────────────────────┘ │
-└─────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│   Your Mac (Physical Hardware)                    │
+│   Total RAM: e.g., 16GB                           │
+│                                                   │
+│  ┌─────────────────────────────────────────────┐ │
+│  │  Docker Desktop VM                           │ │
+│  │  Allocated: e.g., 12GB                       │ │
+│  │                                              │ │
+│  │  ┌─────────────────────────────────────────┐│ │
+│  │  │  Container 1 (Bot)           Limit: 2GB ││ │
+│  │  └─────────────────────────────────────────┘│ │
+│  │                                              │ │
+│  │  ┌─────────────────────────────────────────┐│ │
+│  │  │  Container 2 (ollama-router) Limit: 1GB ││ │
+│  │  │  [qwen2.5:0.5b - always loaded]         ││ │
+│  │  └─────────────────────────────────────────┘│ │
+│  │                                              │ │
+│  │  ┌─────────────────────────────────────────┐│ │
+│  │  │  Container 3 (ollama)        Limit: 8GB ││ │
+│  │  │  [qwen2.5:7b + nomic-embed-text]        ││ │
+│  │  └─────────────────────────────────────────┘│ │
+│  │                                              │ │
+│  │  ┌─────────────────────────────────────────┐│ │
+│  │  │  Container 4 (Qdrant)        Limit: 1GB ││ │
+│  │  └─────────────────────────────────────────┘│ │
+│  └─────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────┘
 ```
+
+**Note**: When using Ollama backend, Zetherion AI uses **two separate Ollama containers**:
+- **ollama-router**: Dedicated for fast message routing (small model, always loaded)
+- **ollama**: For generation and embeddings (larger model, always loaded)
+
+This dual-container architecture eliminates model-swapping delays (2-10 seconds per swap).
 
 ### Docker Containers
 
@@ -204,35 +213,49 @@ Zetherion AI includes a fully automated pipeline to handle Docker memory require
 
 ### Model Recommendations with Memory Requirements
 
-The system recommends models based on your hardware:
+The system recommends models based on your hardware. When using Ollama, **two containers** are used:
 
+**Router Container (ollama-router)** - Fixed at 1GB:
+| Model         | Size   | Purpose              |
+|---------------|--------|----------------------|
+| qwen2.5:0.5b  | 500MB  | Message routing      |
+| llama3.2:1b   | 1.3GB  | Alternative (better) |
+
+**Generation Container (ollama)** - Variable based on model:
 | Model         | Size  | RAM Req | Docker Memory | Speed (CPU)   | Quality    |
 |---------------|-------|---------|---------------|---------------|------------|
-| phi3:mini     | 2.3GB | 4GB     | 5GB           | ~1s           | Basic      |
-| llama3.1:8b   | 4.7GB | 8GB     | 8GB           | ~2-3s         | Excellent  |
-| qwen2.5:7b    | 4.7GB | 8GB     | 10GB          | ~2-3s         | Best       |
-| mistral:7b    | 4.1GB | 8GB     | 7GB           | ~1-2s         | Very Good  |
+| qwen2.5:3b    | 2.0GB | 4GB     | 4GB           | ~1s           | Good       |
+| qwen2.5:7b    | 4.7GB | 8GB     | 8GB           | ~2-3s         | Excellent  |
+| qwen2.5:14b   | 9.0GB | 12GB    | 12GB          | ~3-4s         | Best       |
+| llama3.1:8b   | 4.7GB | 8GB     | 8GB           | ~2-3s         | Very Good  |
 
-**Docker Memory = Model Size + Overhead**
-- Phi3: 2.3GB + 2GB overhead = 5GB
-- Llama3.1: 4.7GB + 3GB overhead = 8GB
-- Qwen2.5: 4.7GB + 5GB overhead = 10GB (needs more for quality)
-- Mistral: 4.1GB + 3GB overhead = 7GB
+**Total Docker Memory = Router (1GB) + Generation (varies)**
+- Example: qwen2.5:7b → 1GB (router) + 8GB (generation) = 9GB total
+- Example: qwen2.5:14b → 1GB (router) + 12GB (generation) = 13GB total
 
 ### Environment Variables
 
-The system manages these automatically:
+The system manages these automatically for the **dual-container architecture**:
 
 ```bash
-# Set by assess-system.py
-OLLAMA_ROUTER_MODEL=llama3.1:8b
-OLLAMA_DOCKER_MEMORY=8  # in GB
+# Set by assess-system.py for Router Container (ollama-router)
+OLLAMA_ROUTER_HOST=ollama-router
+OLLAMA_ROUTER_PORT=11434
+OLLAMA_ROUTER_MODEL=qwen2.5:0.5b
 
-# Used by start.sh
-REQUIRED_MEMORY=${OLLAMA_DOCKER_MEMORY:-8}
+# Set by assess-system.py for Generation Container (ollama)
+OLLAMA_HOST=ollama
+OLLAMA_PORT=11434
+OLLAMA_GENERATION_MODEL=qwen2.5:7b
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+OLLAMA_DOCKER_MEMORY=8  # in GB (for generation container)
+
+# Used by start.sh (total = router 1GB + generation)
+REQUIRED_MEMORY=$((1 + ${OLLAMA_DOCKER_MEMORY:-8}))  # e.g., 9GB total
 
 # Used by Docker Compose
-OLLAMA_DOCKER_MEMORY=8  # for container limits
+# ollama-router: Fixed 1GB limit
+# ollama: OLLAMA_DOCKER_MEMORY limit
 ```
 
 ### Process Control

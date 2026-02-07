@@ -116,11 +116,15 @@ That's it! The script will guide you through interactive setup on first run.
 
 ### Recommended for Ollama (Local AI)
 - **RAM**: 16GB+ system RAM
-- **Docker Memory**: 8-12GB allocated to Docker Desktop
+- **Docker Memory**: 9-13GB allocated to Docker Desktop (1GB router + 8-12GB generation)
 - **GPU** (optional but improves performance):
   - NVIDIA GPU with 8GB+ VRAM (RTX 3060 or better)
   - AMD GPU with ROCm support
   - Apple Silicon (M1/M2/M3) with Metal support
+
+**Note**: Ollama uses a dual-container architecture for optimal performance:
+- Router container: 1GB (fast model for message classification)
+- Generation container: 8-12GB (capable model for complex queries + embeddings)
 
 The `start.sh`/`start.ps1` script automatically detects your hardware and recommends the optimal model configuration.
 
@@ -502,17 +506,22 @@ Zetherion AI automatically routes messages to the most cost-effective model:
 **Ollama (Local)**
 - ✅ Privacy-focused (no data sent to cloud for routing)
 - ✅ Free inference (runs on your machine)
+- ✅ Dual-container architecture (no model-swapping delays)
 - ✅ Automated memory management (script handles Docker configuration)
-- ⚠️ Longer startup (~9 minutes first time due to ~5GB model download)
-- ⚠️ Requires sufficient RAM (8-16GB recommended)
+- ⚠️ Longer startup (~9 minutes first time due to ~6GB model download)
+- ⚠️ Requires sufficient RAM (12-16GB recommended)
 - Best for: Privacy-conscious users, offline capability
 
+**Dual-Container Architecture (Ollama):**
+Zetherion AI uses **two separate Ollama containers** to eliminate model-swapping delays:
+- **Router container** (1GB): Small, fast model (qwen2.5:0.5b) always loaded for classification
+- **Generation container** (8GB+): Larger model (qwen2.5:7b) always loaded for complex queries
+
 **Model Recommendations (Ollama):**
-The startup script automatically detects your hardware (CPU, RAM, GPU) and recommends:
-- **phi3:mini** (5GB Docker RAM): For systems with 4-8GB RAM
-- **llama3.1:8b** (8GB Docker RAM): Balanced quality/performance
-- **qwen2.5:7b** (10GB Docker RAM): Best quality (recommended for 16GB+ RAM or GPU)
-- **mistral:7b** (7GB Docker RAM): Fastest inference
+The startup script automatically detects your hardware and recommends:
+- **qwen2.5:3b** (5GB total Docker RAM): For systems with 8GB RAM
+- **qwen2.5:7b** (9GB total Docker RAM): Balanced quality/performance (recommended)
+- **qwen2.5:14b** (13GB total Docker RAM): Best quality (for 16GB+ RAM or GPU)
 
 **See also:** [Docker Architecture](docs/DOCKER_ARCHITECTURE.md) for details on memory management.
 

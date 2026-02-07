@@ -1,0 +1,18 @@
+# Gitleaks False Positive Fingerprints
+# These are NOT actual secrets - they are variable names, placeholders, and documentation examples
+
+# memory/phase6-discord-management.md - XSS example in security documentation
+memory/phase6-discord-management.md:env-file-secrets:711
+
+# scripts/test-interactive-setup.sh - Placeholder validation checks
+scripts/test-interactive-setup.sh:env-file-secrets:35
+scripts/test-interactive-setup.sh:env-file-secrets:42
+
+# scripts/interactive-setup.py - f-strings building .env lines with variable substitution
+scripts/interactive-setup.py:env-file-secrets:284
+scripts/interactive-setup.py:env-file-secrets:286
+scripts/interactive-setup.py:env-file-secrets:290
+scripts/interactive-setup.py:env-file-secrets:293
+
+# start.ps1 - PowerShell variable name (not an actual secret value)
+start.ps1:env-file-secrets:315

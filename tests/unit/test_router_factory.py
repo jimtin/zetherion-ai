@@ -10,12 +10,17 @@ from zetherion_ai.agent.router_factory import create_router, create_router_sync
 
 @pytest.fixture
 def mock_settings_ollama():
-    """Create mock settings for Ollama backend."""
+    """Create mock settings for Ollama backend (dual-container architecture)."""
     settings = MagicMock()
     settings.router_backend = "ollama"
-    settings.ollama_url = "http://localhost:11434"
-    settings.ollama_router_model = "llama3.1:8b"
+    # Router container settings (dedicated for routing)
+    settings.ollama_router_url = "http://ollama-router:11434"
+    settings.ollama_router_model = "qwen2.5:0.5b"
     settings.ollama_timeout = 30.0
+    # Generation container settings (for generation + embeddings)
+    settings.ollama_url = "http://ollama:11434"
+    settings.ollama_generation_model = "qwen2.5:7b"
+    # Gemini settings (fallback)
     settings.gemini_api_key = MagicMock()
     settings.gemini_api_key.get_secret_value.return_value = "test-key"
     settings.router_model = "gemini-2.0-flash"
@@ -47,6 +52,7 @@ class TestCreateRouter:
         ):
             mock_backend = MagicMock()
             mock_backend.health_check = AsyncMock(return_value=True)
+            mock_backend.warmup = AsyncMock()  # Mock warmup method
             mock_ollama.return_value = mock_backend
 
             router = await create_router()

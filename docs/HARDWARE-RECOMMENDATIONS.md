@@ -56,10 +56,15 @@ The `start.sh`/`start.ps1` script **automatically detects your hardware** and re
 |-----------|----------------------|
 | **OS** | Windows 10/11, macOS 10.15+, Ubuntu 20.04+, or compatible Linux |
 | **CPU** | Modern x86_64 or ARM64 CPU (4+ cores recommended) |
-| **RAM** | 8GB system RAM |
-| **Docker** | Docker Desktop 4.0+ with 6GB RAM allocated |
-| **Disk** | 20GB free space (10GB for Docker images, 5-10GB for models) |
+| **RAM** | 12GB system RAM |
+| **Docker** | Docker Desktop 4.0+ with 9GB RAM allocated |
+| **Disk** | 25GB free space (10GB for Docker images, 10-15GB for models) |
 | **Network** | Internet connection (for initial model download) |
+
+**Note**: Zetherion AI uses a **dual-container Ollama architecture**:
+- **Router container** (1GB): Fast message classification
+- **Generation container** (8GB+): Complex queries and embeddings
+- This eliminates model-swapping delays (2-10 seconds per swap)
 
 ## Recommended Specifications
 
@@ -252,17 +257,24 @@ sudo systemctl restart docker
 
 ### Memory Requirements by Model
 
-| Model | Docker Memory | System RAM | Notes |
-|-------|---------------|------------|-------|
-| `phi3:mini` | 5GB | 8GB | Minimal setup |
-| `mistral:7b` | 7GB | 10GB | Fast inference |
-| `llama3.1:8b` | 8GB | 12GB | **Recommended default** |
-| `qwen2.5:7b` | 10GB | 14GB | Best quality <10GB |
-| `qwen2.5:14b` | 12GB | 16GB | High quality |
-| `qwen2.5:32b` | 24GB | 32GB | Maximum quality |
-| `llama3.1:70b` | 48GB | 64GB | Research/professional |
+Zetherion AI uses **two Ollama containers** to avoid model-swapping delays:
 
-**Formula**: Docker Memory = Model Size + 2-3GB overhead
+| Component | Memory | Purpose |
+|-----------|--------|---------|
+| **Router Container** | 1GB (fixed) | Fast message classification (qwen2.5:0.5b) |
+| **Generation Container** | Variable | Complex queries + embeddings |
+
+**Generation Container Memory by Model:**
+
+| Model | Generation Memory | Total Docker | System RAM | Notes |
+|-------|-------------------|--------------|------------|-------|
+| `qwen2.5:3b` | 4GB | 5GB | 8GB | Minimal setup |
+| `qwen2.5:7b` | 8GB | 9GB | 12GB | **Recommended default** |
+| `llama3.1:8b` | 8GB | 9GB | 12GB | Alternative default |
+| `qwen2.5:14b` | 12GB | 13GB | 16GB | High quality |
+| `qwen2.5:32b` | 24GB | 25GB | 32GB | Maximum quality |
+
+**Formula**: Total Docker Memory = 1GB (router) + Generation Memory
 
 ## Performance Benchmarks
 

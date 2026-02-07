@@ -1,10 +1,11 @@
 """Message router using Gemini Flash for intent classification."""
 
+import asyncio
 import json
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol
+from typing import Any, Protocol
 
 from google import genai  # type: ignore[attr-defined]
 
@@ -121,14 +122,18 @@ class GeminiRouterBackend:
             RoutingDecision with intent and routing info.
         """
         try:
-            response = self._client.models.generate_content(
-                model=self._model,
-                contents=f"{ROUTER_PROMPT}\n\nUser message: {message}",
-                config={
-                    "temperature": 0.1,  # Low temperature for consistent classification
-                    "max_output_tokens": 150,
-                },
-            )
+            # Wrap synchronous Gemini call to avoid blocking event loop
+            def _sync_classify() -> Any:
+                return self._client.models.generate_content(
+                    model=self._model,
+                    contents=f"{ROUTER_PROMPT}\n\nUser message: {message}",
+                    config={
+                        "temperature": 0.1,  # Low temperature for consistent classification
+                        "max_output_tokens": 150,
+                    },
+                )
+
+            response = await asyncio.to_thread(_sync_classify)
 
             result_text = (response.text or "").strip()
 
@@ -248,14 +253,18 @@ class GeminiRouterBackend:
             Generated response.
         """
         try:
-            response = self._client.models.generate_content(
-                model=self._model,
-                contents=message,
-                config={
-                    "temperature": 0.7,
-                    "max_output_tokens": 500,
-                },
-            )
+            # Wrap synchronous Gemini call to avoid blocking event loop
+            def _sync_generate() -> Any:
+                return self._client.models.generate_content(
+                    model=self._model,
+                    contents=message,
+                    config={
+                        "temperature": 0.7,
+                        "max_output_tokens": 500,
+                    },
+                )
+
+            response = await asyncio.to_thread(_sync_generate)
             return response.text or ""
         except Exception as e:
             log.error("flash_generation_failed", error=str(e))
@@ -268,15 +277,18 @@ class GeminiRouterBackend:
             True if healthy, False otherwise.
         """
         try:
-            # Simple health check - try to generate a short response
-            response = self._client.models.generate_content(
-                model=self._model,
-                contents="test",
-                config={
-                    "temperature": 0.1,
-                    "max_output_tokens": 10,
-                },
-            )
+            # Wrap synchronous Gemini call to avoid blocking event loop
+            def _sync_health_check() -> Any:
+                return self._client.models.generate_content(
+                    model=self._model,
+                    contents="test",
+                    config={
+                        "temperature": 0.1,
+                        "max_output_tokens": 10,
+                    },
+                )
+
+            response = await asyncio.to_thread(_sync_health_check)
             is_healthy = bool(response.text)
             if is_healthy:
                 log.info("gemini_health_check_passed", model=self._model)

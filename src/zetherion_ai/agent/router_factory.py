@@ -8,8 +8,11 @@ from zetherion_ai.logging import get_logger
 log = get_logger("zetherion_ai.agent.router_factory")
 
 
-async def create_router() -> MessageRouter:
+async def create_router(warmup: bool = True) -> MessageRouter:
     """Create a router with the appropriate backend.
+
+    Args:
+        warmup: If True, warm up the Ollama model after creation.
 
     Returns:
         MessageRouter instance with configured backend.
@@ -29,6 +32,11 @@ async def create_router() -> MessageRouter:
                 log.info(
                     "router_backend_selected", backend="ollama", model=settings.ollama_router_model
                 )
+
+                # Warm up the model to avoid cold start delays
+                if warmup:
+                    await ollama_backend.warmup()
+
                 return MessageRouter(ollama_backend)
             else:
                 log.warning(

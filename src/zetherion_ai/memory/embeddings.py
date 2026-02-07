@@ -95,7 +95,9 @@ class GeminiEmbeddings(EmbeddingsClient):
         Returns:
             A list of floats representing the embedding vector.
         """
-        result = self._client.models.embed_content(
+        # Wrap synchronous Gemini call in thread to avoid blocking event loop
+        result = await asyncio.to_thread(
+            self._client.models.embed_content,
             model=self._model,
             contents=text,
         )

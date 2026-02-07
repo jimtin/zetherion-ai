@@ -412,35 +412,94 @@ if ($waited -ge $maxWait) {
 
 if ($routerBackend -eq "ollama") {
     Write-Phase "Phase 5/7: Ollama Model Download"
+    Write-Info-Message "Dual-container architecture: router + generation containers"
 
-    # Get model name from .env
-    $ollamaModel = "llama3.1:8b"  # default
-    $modelLine = $envContent | Select-String -Pattern "^OLLAMA_ROUTER_MODEL="
-    if ($modelLine) {
-        $ollamaModel = ($modelLine -split "=")[1].Trim()
+    # Get router model from .env (small, fast model)
+    $routerModel = "qwen2.5:0.5b"  # default
+    $routerModelLine = $envContent | Select-String -Pattern "^OLLAMA_ROUTER_MODEL="
+    if ($routerModelLine) {
+        $routerModel = ($routerModelLine -split "=")[1].Trim()
     }
 
-    Write-Info-Message "Checking if model '$ollamaModel' is already downloaded..."
+    # Get generation model from .env (larger, capable model)
+    $generationModel = "qwen2.5:7b"  # default
+    $genModelLine = $envContent | Select-String -Pattern "^OLLAMA_GENERATION_MODEL="
+    if ($genModelLine) {
+        $generationModel = ($genModelLine -split "=")[1].Trim()
+    }
 
-    # Check if model exists
-    $modelExists = docker exec zetherion-ai-ollama ollama list 2>&1 | Select-String -Pattern $ollamaModel
+    # Get embedding model from .env
+    $embeddingModel = "nomic-embed-text"  # default
+    $embedModelLine = $envContent | Select-String -Pattern "^OLLAMA_EMBEDDING_MODEL="
+    if ($embedModelLine) {
+        $embeddingModel = ($embedModelLine -split "=")[1].Trim()
+    }
 
-    if ($modelExists) {
-        Write-Success "Model '$ollamaModel' already downloaded"
+    Write-Host ""
+    Write-Info-Message "Router container model: $routerModel (fast classification)"
+    Write-Info-Message "Generation container model: $generationModel (complex queries)"
+    Write-Info-Message "Embedding model: $embeddingModel (vector embeddings)"
+    Write-Host ""
+
+    # Download router model to ollama-router container
+    Write-Info-Message "Checking router model '$routerModel' on ollama-router container..."
+    $routerModelExists = docker exec zetherion-ai-ollama-router ollama list 2>&1 | Select-String -Pattern $routerModel
+
+    if ($routerModelExists) {
+        Write-Success "Router model '$routerModel' already downloaded"
     }
     else {
-        Write-Info-Message "Downloading model '$ollamaModel'..."
-        Write-Warning-Message "This may take several minutes (5-10GB download)"
-
-        # Pull model with progress
-        docker exec zetherion-ai-ollama ollama pull $ollamaModel
+        Write-Info-Message "Downloading router model '$routerModel'..."
+        Write-Warning-Message "This is a small model (~500MB), should be quick"
+        docker exec zetherion-ai-ollama-router ollama pull $routerModel
 
         if ($LASTEXITCODE -eq 0) {
-            Write-Success "Model downloaded successfully"
+            Write-Success "Router model downloaded successfully"
         }
         else {
-            Write-Failure "Model download failed"
-            Write-Warning-Message "You can download it later with: docker exec zetherion-ai-ollama ollama pull $ollamaModel"
+            Write-Failure "Router model download failed"
+            Write-Warning-Message "You can download it later with: docker exec zetherion-ai-ollama-router ollama pull $routerModel"
+        }
+    }
+
+    # Download generation model to ollama container
+    Write-Info-Message "Checking generation model '$generationModel' on ollama container..."
+    $genModelExists = docker exec zetherion-ai-ollama ollama list 2>&1 | Select-String -Pattern $generationModel
+
+    if ($genModelExists) {
+        Write-Success "Generation model '$generationModel' already downloaded"
+    }
+    else {
+        Write-Info-Message "Downloading generation model '$generationModel'..."
+        Write-Warning-Message "This may take several minutes (4-10GB download)"
+        docker exec zetherion-ai-ollama ollama pull $generationModel
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "Generation model downloaded successfully"
+        }
+        else {
+            Write-Failure "Generation model download failed"
+            Write-Warning-Message "You can download it later with: docker exec zetherion-ai-ollama ollama pull $generationModel"
+        }
+    }
+
+    # Download embedding model to ollama container
+    Write-Info-Message "Checking embedding model '$embeddingModel' on ollama container..."
+    $embedModelExists = docker exec zetherion-ai-ollama ollama list 2>&1 | Select-String -Pattern $embeddingModel
+
+    if ($embedModelExists) {
+        Write-Success "Embedding model '$embeddingModel' already downloaded"
+    }
+    else {
+        Write-Info-Message "Downloading embedding model '$embeddingModel'..."
+        docker exec zetherion-ai-ollama ollama pull $embeddingModel
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "Embedding model downloaded successfully"
+        }
+        else {
+            Write-Failure "Embedding model download failed"
+            Write-Warning-Message "You can download it later with: docker exec zetherion-ai-ollama ollama pull $embeddingModel"
         }
     }
 }
@@ -479,17 +538,32 @@ catch {
     Write-Warning-Message "Qdrant health check failed: $_"
 }
 
-# Test Ollama (if enabled)
+# Test Ollama containers (if enabled)
 if ($routerBackend -eq "ollama") {
-    Write-Info-Message "Testing Ollama connection..."
+    Write-Info-Message "Testing Ollama router container..."
     try {
-        $ollamaHealth = Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
-        if ($ollamaHealth.StatusCode -eq 200) {
-            Write-Success "Ollama is healthy"
+        # Router container is internal only (no port exposed to host)
+        $routerHealth = docker exec zetherion-ai-ollama-router curl -s http://localhost:11434/api/tags 2>&1
+        if ($routerHealth -match "models") {
+            Write-Success "Ollama router container is healthy"
+        }
+        else {
+            Write-Warning-Message "Ollama router container health check failed"
         }
     }
     catch {
-        Write-Warning-Message "Ollama health check failed: $_"
+        Write-Warning-Message "Ollama router container health check failed: $_"
+    }
+
+    Write-Info-Message "Testing Ollama generation container..."
+    try {
+        $ollamaHealth = Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+        if ($ollamaHealth.StatusCode -eq 200) {
+            Write-Success "Ollama generation container is healthy"
+        }
+    }
+    catch {
+        Write-Warning-Message "Ollama generation container health check failed: $_"
     }
 }
 

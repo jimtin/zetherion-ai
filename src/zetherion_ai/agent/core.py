@@ -1,6 +1,7 @@
 """Agent core - LLM interaction and response generation with routing."""
 
 import asyncio
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -151,6 +152,36 @@ class Agent:
             inference_broker_enabled=self._inference_broker is not None,
         )
 
+    async def warmup(self) -> bool:
+        """Warm up the router's LLM model to avoid cold start delays.
+
+        Should be called during bot initialization after agent creation.
+
+        Returns:
+            True if warmup succeeded, False otherwise.
+        """
+        # Check if router backend has warmup capability
+        backend = getattr(self._router, "_backend", None)
+        if backend and hasattr(backend, "warmup"):
+            result: bool = await backend.warmup()
+            return result
+        return True
+
+    async def keep_warm(self) -> bool:
+        """Send a keep-alive ping to prevent model unloading.
+
+        Should be called periodically (e.g., every 5 minutes) to keep
+        the Ollama model in memory.
+
+        Returns:
+            True if ping succeeded, False otherwise.
+        """
+        backend = getattr(self._router, "_backend", None)
+        if backend and hasattr(backend, "keep_warm"):
+            result: bool = await backend.keep_warm()
+            return result
+        return True
+
     async def generate_response(
         self,
         user_id: int,
@@ -167,16 +198,22 @@ class Agent:
         Returns:
             The generated response.
         """
+        total_start = time.perf_counter()
+
         # Step 1: Classify the message intent
+        classify_start = time.perf_counter()
         routing = await self._router.classify(message)
+        classify_end = time.perf_counter()
         log.info(
-            "message_routed",
+            "TIMING: message_routed",
             intent=routing.intent.value,
             use_claude=routing.use_claude,
             confidence=routing.confidence,
+            classify_duration_ms=round((classify_end - classify_start) * 1000, 2),
         )
 
         # Step 2: Handle based on intent
+        handle_start = time.perf_counter()
         match routing.intent:
             case MessageIntent.MEMORY_STORE:
                 response = await self._handle_memory_store(message)
@@ -198,7 +235,15 @@ class Agent:
             case _:
                 response = await self._handle_complex_task(user_id, channel_id, message, routing)
 
+        handle_end = time.perf_counter()
+        log.info(
+            "TIMING: intent_handled",
+            intent=routing.intent.value,
+            handle_duration_ms=round((handle_end - handle_start) * 1000, 2),
+        )
+
         # Step 3: Store the exchange in memory
+        store_start = time.perf_counter()
         await self._memory.store_message(
             user_id=user_id,
             channel_id=channel_id,
@@ -206,11 +251,31 @@ class Agent:
             content=message,
             metadata={"intent": routing.intent.value},
         )
+        store_user_end = time.perf_counter()
+        log.info(
+            "TIMING: stored_user_message",
+            duration_ms=round((store_user_end - store_start) * 1000, 2),
+        )
+
         await self._memory.store_message(
             user_id=user_id,
             channel_id=channel_id,
             role="assistant",
             content=response,
+        )
+        store_assistant_end = time.perf_counter()
+        log.info(
+            "TIMING: stored_assistant_message",
+            duration_ms=round((store_assistant_end - store_user_end) * 1000, 2),
+        )
+
+        total_end = time.perf_counter()
+        log.info(
+            "TIMING: generate_response_total",
+            total_duration_ms=round((total_end - total_start) * 1000, 2),
+            classify_ms=round((classify_end - classify_start) * 1000, 2),
+            handle_ms=round((handle_end - handle_start) * 1000, 2),
+            store_ms=round((store_assistant_end - store_start) * 1000, 2),
         )
 
         return response
@@ -409,8 +474,18 @@ class Agent:
         Returns:
             Generated response.
         """
+        task_start = time.perf_counter()
+
         # Fetch context once for reuse across models
+        context_start = time.perf_counter()
         recent_messages, relevant_memories = await self._build_context(user_id, channel_id, message)
+        context_end = time.perf_counter()
+        log.info(
+            "TIMING: context_built",
+            duration_ms=round((context_end - context_start) * 1000, 2),
+            memories_found=len(relevant_memories),
+            messages_found=len(recent_messages),
+        )
 
         # Build system prompt with context
         system_prompt = SYSTEM_PROMPT
@@ -432,11 +507,20 @@ class Agent:
             task_type = self._classify_task_type(message)
             log.debug("task_type_classified", task_type=task_type.value)
 
+            infer_start = time.perf_counter()
             result = await self._inference_broker.infer(
                 prompt=message,
                 task_type=task_type,
                 system_prompt=system_prompt,
                 messages=messages,
+            )
+            infer_end = time.perf_counter()
+            log.info(
+                "TIMING: inference_complete",
+                duration_ms=round((infer_end - infer_start) * 1000, 2),
+                provider=result.provider.value,
+                model=result.model,
+                total_task_ms=round((infer_end - task_start) * 1000, 2),
             )
             return result.content
 

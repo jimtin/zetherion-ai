@@ -96,36 +96,51 @@ class DockerEnvironment:
                 if result.returncode == 0 and "healthy" in result.stdout:
                     print("✅ Qdrant is healthy")
 
-                    # Check if Ollama container is healthy
+                    # Check if Ollama router container is healthy
                     result = subprocess.run(
                         [
                             "docker",
                             "inspect",
                             "--format={{.State.Health.Status}}",
-                            "zetherion-ai-test-ollama",
+                            "zetherion-ai-test-ollama-router",
                         ],
                         capture_output=True,
                         text=True,
                         timeout=5,
                     )
                     if result.returncode == 0 and "healthy" in result.stdout:
-                        print("✅ Ollama is healthy")
+                        print("✅ Ollama Router is healthy")
 
-                        # Check if Zetherion AI container is running
+                        # Check if Ollama generation container is healthy
                         result = subprocess.run(
                             [
                                 "docker",
                                 "inspect",
-                                "--format={{.State.Status}}",
-                                "zetherion-ai-test-bot",
+                                "--format={{.State.Health.Status}}",
+                                "zetherion-ai-test-ollama",
                             ],
                             capture_output=True,
                             text=True,
                             timeout=5,
                         )
-                        if result.returncode == 0 and "running" in result.stdout:
-                            print("✅ Zetherion AI is running")
-                            return True
+                        if result.returncode == 0 and "healthy" in result.stdout:
+                            print("✅ Ollama Generation is healthy")
+
+                            # Check if Zetherion AI container is running
+                            result = subprocess.run(
+                                [
+                                    "docker",
+                                    "inspect",
+                                    "--format={{.State.Status}}",
+                                    "zetherion-ai-test-bot",
+                                ],
+                                capture_output=True,
+                                text=True,
+                                timeout=5,
+                            )
+                            if result.returncode == 0 and "running" in result.stdout:
+                                print("✅ Zetherion AI is running")
+                                return True
 
             except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
                 pass
@@ -163,8 +178,94 @@ class DockerEnvironment:
         )
         return result.stdout
 
-    def pull_ollama_model(self, model: str = "llama3.1:8b") -> bool:
-        """Pull Ollama model if not already pulled.
+    def pull_ollama_models(
+        self,
+        router_model: str = "qwen2.5:0.5b",
+        generation_model: str = "qwen2.5:7b",
+        embedding_model: str = "nomic-embed-text",
+    ) -> bool:
+        """Pull Ollama models for both containers if not already pulled.
+
+        Args:
+            router_model: Model for router container (small, fast).
+            generation_model: Model for generation container (larger, capable).
+            embedding_model: Model for embeddings (runs on generation container).
+
+        Returns:
+            True if all models are available, False otherwise.
+        """
+        if self.ollama_model_pulled:
+            return True
+
+        success = True
+
+        # Pull router model to router container
+        print(f"📥 Pulling router model '{router_model}' to ollama-router container...")
+        try:
+            result = subprocess.run(
+                [
+                    "docker",
+                    "exec",
+                    "zetherion-ai-test-ollama-router",
+                    "ollama",
+                    "pull",
+                    router_model,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,  # 5 minute timeout for small model
+            )
+            if result.returncode == 0:
+                print(f"✅ Router model '{router_model}' pulled successfully")
+            else:
+                print(f"❌ Failed to pull router model: {result.stderr}")
+                success = False
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
+            print(f"❌ Error pulling router model: {e}")
+            success = False
+
+        # Pull generation model to generation container
+        print(f"📥 Pulling generation model '{generation_model}' (this may take a few minutes)...")
+        try:
+            result = subprocess.run(
+                ["docker", "exec", "zetherion-ai-test-ollama", "ollama", "pull", generation_model],
+                capture_output=True,
+                text=True,
+                timeout=600,  # 10 minute timeout for larger model
+            )
+            if result.returncode == 0:
+                print(f"✅ Generation model '{generation_model}' pulled successfully")
+            else:
+                print(f"❌ Failed to pull generation model: {result.stderr}")
+                success = False
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
+            print(f"❌ Error pulling generation model: {e}")
+            success = False
+
+        # Pull embedding model to generation container
+        print(f"📥 Pulling embedding model '{embedding_model}'...")
+        try:
+            result = subprocess.run(
+                ["docker", "exec", "zetherion-ai-test-ollama", "ollama", "pull", embedding_model],
+                capture_output=True,
+                text=True,
+                timeout=300,  # 5 minute timeout for embedding model
+            )
+            if result.returncode == 0:
+                print(f"✅ Embedding model '{embedding_model}' pulled successfully")
+            else:
+                print(f"❌ Failed to pull embedding model: {result.stderr}")
+                success = False
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
+            print(f"❌ Error pulling embedding model: {e}")
+            success = False
+
+        if success:
+            self.ollama_model_pulled = True
+        return success
+
+    def pull_ollama_model(self, model: str = "qwen2.5:7b") -> bool:
+        """Pull Ollama model (backward compatibility wrapper).
 
         Args:
             model: Ollama model name to pull.
@@ -172,27 +273,8 @@ class DockerEnvironment:
         Returns:
             True if model is available, False otherwise.
         """
-        if self.ollama_model_pulled:
-            return True
-
-        print(f"📥 Pulling Ollama model '{model}' (this may take a few minutes)...")
-        try:
-            result = subprocess.run(
-                ["docker", "exec", "zetherion-ai-test-ollama", "ollama", "pull", model],
-                capture_output=True,
-                text=True,
-                timeout=600,  # 10 minute timeout for model download
-            )
-            if result.returncode == 0:
-                print(f"✅ Ollama model '{model}' pulled successfully")
-                self.ollama_model_pulled = True
-                return True
-            else:
-                print(f"❌ Failed to pull Ollama model: {result.stderr}")
-                return False
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
-            print(f"❌ Error pulling Ollama model: {e}")
-            return False
+        # For backward compatibility, pull to generation container
+        return self.pull_ollama_models(generation_model=model)
 
 
 class MockDiscordBot:
@@ -210,6 +292,15 @@ class MockDiscordBot:
 
         # Set router backend environment variable
         os.environ["ROUTER_BACKEND"] = router_backend
+
+        # For Ollama backend, set host-accessible URLs (tests run on host, not in Docker)
+        if router_backend == "ollama":
+            # Router container exposed on port 31434
+            os.environ["OLLAMA_ROUTER_HOST"] = "localhost"
+            os.environ["OLLAMA_ROUTER_PORT"] = "31434"
+            # Generation container exposed on port 21434
+            os.environ["OLLAMA_HOST"] = "localhost"
+            os.environ["OLLAMA_PORT"] = "21434"
 
         # Initialize components
         self.memory = QdrantMemory()
@@ -288,11 +379,26 @@ def router_backend(request: Any, docker_env: DockerEnvironment) -> str:
     """
     backend = request.param
 
-    # If testing Ollama, ensure model is pulled
+    # If testing Ollama, ensure all models are pulled to their respective containers
     if backend == "ollama":
-        model = os.getenv("OLLAMA_ROUTER_MODEL", "llama3.1:8b")
-        if not docker_env.pull_ollama_model(model):
-            pytest.skip(f"Failed to pull Ollama model '{model}'")
+        # Use explicit model names for dual-container architecture
+        # Router: small, fast model (0.5b fits in 1GB container)
+        # Generation: larger, capable model (7b needs 8GB+ container)
+        router_model = "qwen2.5:0.5b"
+        generation_model = "qwen2.5:7b"
+        embedding_model = "nomic-embed-text"
+
+        # Set environment variables for the test to override any .env settings
+        os.environ["OLLAMA_ROUTER_MODEL"] = router_model
+        os.environ["OLLAMA_GENERATION_MODEL"] = generation_model
+        os.environ["OLLAMA_EMBEDDING_MODEL"] = embedding_model
+
+        if not docker_env.pull_ollama_models(
+            router_model=router_model,
+            generation_model=generation_model,
+            embedding_model=embedding_model,
+        ):
+            pytest.skip("Failed to pull Ollama models for dual-container architecture")
 
     return backend
 

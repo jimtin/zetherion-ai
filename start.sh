@@ -402,30 +402,76 @@ fi
 
 if [ "$router_backend" = "ollama" ]; then
     print_phase "Phase 5/7: Ollama Model Download"
+    print_info "Dual-container architecture: router + generation containers"
 
-    # Get model name from .env
-    ollama_model="llama3.1:8b"
+    # Get router model from .env (small, fast model)
+    router_model="qwen2.5:0.5b"
     if grep -q "^OLLAMA_ROUTER_MODEL=" .env; then
-        ollama_model=$(grep "^OLLAMA_ROUTER_MODEL=" .env | cut -d'=' -f2 | tr -d ' ')
+        router_model=$(grep "^OLLAMA_ROUTER_MODEL=" .env | cut -d'=' -f2 | tr -d ' ')
     fi
 
-    print_info "Checking if model '$ollama_model' is already downloaded..."
+    # Get generation model from .env (larger, capable model)
+    generation_model="qwen2.5:7b"
+    if grep -q "^OLLAMA_GENERATION_MODEL=" .env; then
+        generation_model=$(grep "^OLLAMA_GENERATION_MODEL=" .env | cut -d'=' -f2 | tr -d ' ')
+    fi
 
-    # Check if model exists
-    if docker exec zetherion-ai-ollama ollama list 2>&1 | grep -q "$ollama_model"; then
-        print_success "Model '$ollama_model' already downloaded"
+    # Get embedding model from .env
+    embedding_model="nomic-embed-text"
+    if grep -q "^OLLAMA_EMBEDDING_MODEL=" .env; then
+        embedding_model=$(grep "^OLLAMA_EMBEDDING_MODEL=" .env | cut -d'=' -f2 | tr -d ' ')
+    fi
+
+    echo ""
+    print_info "Router container model: $router_model (fast classification)"
+    print_info "Generation container model: $generation_model (complex queries)"
+    print_info "Embedding model: $embedding_model (vector embeddings)"
+    echo ""
+
+    # Download router model to ollama-router container
+    print_info "Checking router model '$router_model' on ollama-router container..."
+    if docker exec zetherion-ai-ollama-router ollama list 2>&1 | grep -q "$router_model"; then
+        print_success "Router model '$router_model' already downloaded"
     else
-        print_info "Downloading model '$ollama_model'..."
-        print_warning "This may take several minutes (5-10GB download)"
-
-        # Pull model with progress
-        docker exec zetherion-ai-ollama ollama pull "$ollama_model"
-
+        print_info "Downloading router model '$router_model'..."
+        print_warning "This is a small model (~500MB), should be quick"
+        docker exec zetherion-ai-ollama-router ollama pull "$router_model"
         if [ $? -eq 0 ]; then
-            print_success "Model downloaded successfully"
+            print_success "Router model downloaded successfully"
         else
-            print_failure "Model download failed"
-            print_warning "You can download it later with: docker exec zetherion-ai-ollama ollama pull $ollama_model"
+            print_failure "Router model download failed"
+            print_warning "You can download it later with: docker exec zetherion-ai-ollama-router ollama pull $router_model"
+        fi
+    fi
+
+    # Download generation model to ollama container
+    print_info "Checking generation model '$generation_model' on ollama container..."
+    if docker exec zetherion-ai-ollama ollama list 2>&1 | grep -q "$generation_model"; then
+        print_success "Generation model '$generation_model' already downloaded"
+    else
+        print_info "Downloading generation model '$generation_model'..."
+        print_warning "This may take several minutes (4-10GB download)"
+        docker exec zetherion-ai-ollama ollama pull "$generation_model"
+        if [ $? -eq 0 ]; then
+            print_success "Generation model downloaded successfully"
+        else
+            print_failure "Generation model download failed"
+            print_warning "You can download it later with: docker exec zetherion-ai-ollama ollama pull $generation_model"
+        fi
+    fi
+
+    # Download embedding model to ollama container
+    print_info "Checking embedding model '$embedding_model' on ollama container..."
+    if docker exec zetherion-ai-ollama ollama list 2>&1 | grep -q "$embedding_model"; then
+        print_success "Embedding model '$embedding_model' already downloaded"
+    else
+        print_info "Downloading embedding model '$embedding_model'..."
+        docker exec zetherion-ai-ollama ollama pull "$embedding_model"
+        if [ $? -eq 0 ]; then
+            print_success "Embedding model downloaded successfully"
+        else
+            print_failure "Embedding model download failed"
+            print_warning "You can download it later with: docker exec zetherion-ai-ollama ollama pull $embedding_model"
         fi
     fi
 else
@@ -459,13 +505,22 @@ else
     print_warning "Qdrant health check failed"
 fi
 
-# Test Ollama (if enabled)
+# Test Ollama containers (if enabled)
 if [ "$router_backend" = "ollama" ]; then
-    print_info "Testing Ollama connection..."
-    if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
-        print_success "Ollama is healthy"
+    print_info "Testing Ollama router container..."
+    # Router container is internal only (no port exposed to host)
+    router_health=$(docker exec zetherion-ai-ollama-router curl -s http://localhost:11434/api/tags 2>&1 || echo "failed")
+    if echo "$router_health" | grep -q "models"; then
+        print_success "Ollama router container is healthy"
     else
-        print_warning "Ollama health check failed"
+        print_warning "Ollama router container health check failed"
+    fi
+
+    print_info "Testing Ollama generation container..."
+    if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
+        print_success "Ollama generation container is healthy"
+    else
+        print_warning "Ollama generation container health check failed"
     fi
 fi
 

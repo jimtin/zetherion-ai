@@ -430,13 +430,13 @@ class TestInferenceBrokerInit:
 
     @patch("zetherion_ai.agent.inference.get_settings")
     def test_ollama_tier_detection(self, mock_get_settings):
-        """InferenceBroker correctly detects Ollama tier."""
+        """InferenceBroker correctly detects Ollama tier based on generation model."""
         mock_settings = MagicMock()
         mock_settings.anthropic_api_key = None
         mock_settings.openai_api_key = None
         mock_settings.gemini_api_key = MagicMock()
         mock_settings.gemini_api_key.get_secret_value.return_value = "AIza-test"
-        mock_settings.ollama_router_model = "llama3.1:70b"  # Medium tier
+        mock_settings.ollama_generation_model = "llama3.1:70b"  # Medium tier (generation model)
         mock_settings.ollama_url = "http://localhost:11434"
         mock_settings.router_model = "gemini-2.0-flash"
         mock_get_settings.return_value = mock_settings

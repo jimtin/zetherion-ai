@@ -1,5 +1,9 @@
 """Discord bot implementation."""
 
+import asyncio
+import contextlib
+import time
+
 import discord
 from discord import app_commands
 
@@ -14,6 +18,9 @@ from zetherion_ai.logging import get_logger
 from zetherion_ai.memory.qdrant import QdrantMemory
 
 log = get_logger("zetherion_ai.discord.bot")
+
+# Keep Ollama model warm every 5 minutes
+KEEP_WARM_INTERVAL_SECONDS = 5 * 60
 
 
 class ZetherionAIBot(discord.Client):
@@ -36,6 +43,7 @@ class ZetherionAIBot(discord.Client):
         self._tree = app_commands.CommandTree(self)
         self._rate_limiter = RateLimiter()
         self._allowlist = UserAllowlist()
+        self._keep_warm_task: asyncio.Task[None] | None = None
 
         self._setup_commands()
 
@@ -76,9 +84,44 @@ class ZetherionAIBot(discord.Client):
         # Initialize agent after bot is ready
         self._agent = Agent(memory=self._memory)
 
+        # Warm up the Ollama model to avoid cold start delays
+        log.info("warming_up_ollama_model")
+        warmup_success = await self._agent.warmup()
+        if warmup_success:
+            log.info("ollama_warmup_successful")
+        else:
+            log.warning("ollama_warmup_failed", note="First request may be slow")
+
+        # Start background task to keep model warm
+        self._keep_warm_task = asyncio.create_task(self._keep_warm_loop())
+        log.info("keep_warm_task_started", interval_seconds=KEEP_WARM_INTERVAL_SECONDS)
+
         # Sync commands
         await self._tree.sync()
         log.info("commands_synced")
+
+    async def _keep_warm_loop(self) -> None:
+        """Background task to periodically keep the Ollama model warm."""
+        await asyncio.sleep(KEEP_WARM_INTERVAL_SECONDS)  # Wait before first ping
+        while True:
+            try:
+                if self._agent:
+                    await self._agent.keep_warm()
+            except Exception as e:
+                log.warning("keep_warm_error", error=str(e))
+            await asyncio.sleep(KEEP_WARM_INTERVAL_SECONDS)
+
+    async def close(self) -> None:
+        """Clean up resources when bot is closing."""
+        # Cancel keep-warm task
+        task = self._keep_warm_task
+        if task is not None and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            log.info("keep_warm_task_stopped")
+
+        await super().close()
 
     async def on_ready(self) -> None:
         """Called when the bot is fully ready."""
@@ -130,8 +173,18 @@ class ZetherionAIBot(discord.Client):
             )
             return
 
-        # Generate response
+        # Generate response with detailed timing
+        total_start = time.perf_counter()
+        log.info("TIMING: message_received", step="start")
+
         async with message.channel.typing():
+            typing_start = time.perf_counter()
+            log.info(
+                "TIMING: typing_context_entered",
+                step="typing_start",
+                elapsed_ms=round((typing_start - total_start) * 1000, 2),
+            )
+
             content = message.content
             # Remove bot mention from content
             if is_mention and self.user:
@@ -151,14 +204,38 @@ class ZetherionAIBot(discord.Client):
                 )
                 return
 
+            generate_start = time.perf_counter()
+            log.info(
+                "TIMING: calling_generate_response",
+                step="generate_start",
+                elapsed_ms=round((generate_start - total_start) * 1000, 2),
+            )
+
             response = await self._agent.generate_response(
                 user_id=message.author.id,
                 channel_id=message.channel.id,
                 message=content,
             )
 
+            generate_end = time.perf_counter()
+            log.info(
+                "TIMING: generate_response_complete",
+                step="generate_end",
+                generate_duration_ms=round((generate_end - generate_start) * 1000, 2),
+                total_elapsed_ms=round((generate_end - total_start) * 1000, 2),
+            )
+
             # Send response, splitting if too long
+            send_start = time.perf_counter()
             await self._send_long_message(message.channel, response)
+            send_end = time.perf_counter()
+
+            log.info(
+                "TIMING: message_sent",
+                step="send_complete",
+                send_duration_ms=round((send_end - send_start) * 1000, 2),
+                total_duration_ms=round((send_end - total_start) * 1000, 2),
+            )
 
     async def _handle_ask(
         self,

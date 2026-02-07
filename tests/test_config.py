@@ -567,16 +567,16 @@ class TestSettingsValidation:
 
 
 class TestOllamaConfiguration:
-    """Tests for Ollama configuration settings."""
+    """Tests for Ollama generation container configuration settings."""
 
-    def test_ollama_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test that Ollama settings have correct defaults."""
+    def test_ollama_generation_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that Ollama generation container settings have correct defaults."""
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         # Explicitly unset to test defaults (avoid .env file interference)
         monkeypatch.delenv("OLLAMA_HOST", raising=False)
         monkeypatch.delenv("OLLAMA_PORT", raising=False)
-        monkeypatch.delenv("OLLAMA_ROUTER_MODEL", raising=False)
+        monkeypatch.delenv("OLLAMA_GENERATION_MODEL", raising=False)
 
         from zetherion_ai.config import get_settings
 
@@ -585,7 +585,7 @@ class TestOllamaConfiguration:
         settings = create_test_settings()
         assert settings.ollama_host == "ollama"
         assert settings.ollama_port == 11434
-        assert settings.ollama_router_model == "llama3.1:8b"
+        assert settings.ollama_generation_model == "qwen2.5:7b"
         assert settings.ollama_timeout == 30
 
     def test_ollama_url_property_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -632,12 +632,12 @@ class TestOllamaConfiguration:
         assert settings.ollama_url == "http://ollama:8080"
 
     def test_ollama_custom_configuration(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test that Ollama configuration can be customized."""
+        """Test that Ollama generation container configuration can be customized."""
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("OLLAMA_HOST", "custom-host")
         monkeypatch.setenv("OLLAMA_PORT", "9999")
-        monkeypatch.setenv("OLLAMA_ROUTER_MODEL", "mistral:7b")
+        monkeypatch.setenv("OLLAMA_GENERATION_MODEL", "llama3.1:8b")
         monkeypatch.setenv("OLLAMA_TIMEOUT", "60")
 
         from zetherion_ai.config import get_settings
@@ -647,7 +647,7 @@ class TestOllamaConfiguration:
         settings = create_test_settings()
         assert settings.ollama_host == "custom-host"
         assert settings.ollama_port == 9999
-        assert settings.ollama_router_model == "mistral:7b"
+        assert settings.ollama_generation_model == "llama3.1:8b"
         assert settings.ollama_timeout == 60
         assert settings.ollama_url == "http://custom-host:9999"
 
@@ -666,6 +666,118 @@ class TestOllamaConfiguration:
 
         errors = exc_info.value.errors()
         assert any(error["loc"][0] == "ollama_port" for error in errors)
+
+
+class TestOllamaRouterContainerConfiguration:
+    """Tests for dedicated Ollama router container configuration settings."""
+
+    def test_ollama_router_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that Ollama router container settings have correct defaults."""
+        monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+        # Explicitly unset to test defaults (avoid .env file interference)
+        monkeypatch.delenv("OLLAMA_ROUTER_HOST", raising=False)
+        monkeypatch.delenv("OLLAMA_ROUTER_PORT", raising=False)
+        monkeypatch.delenv("OLLAMA_ROUTER_MODEL", raising=False)
+
+        from zetherion_ai.config import get_settings
+
+        get_settings.cache_clear()
+
+        settings = create_test_settings()
+        assert settings.ollama_router_host == "ollama-router"
+        assert settings.ollama_router_port == 11434
+        assert settings.ollama_router_model == "qwen2.5:0.5b"
+
+    def test_ollama_router_url_property_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that ollama_router_url is constructed correctly with default values."""
+        monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+        # Explicitly unset to test defaults (avoid .env file interference)
+        monkeypatch.delenv("OLLAMA_ROUTER_HOST", raising=False)
+        monkeypatch.delenv("OLLAMA_ROUTER_PORT", raising=False)
+
+        from zetherion_ai.config import get_settings
+
+        get_settings.cache_clear()
+
+        settings = create_test_settings()
+        assert settings.ollama_router_url == "http://ollama-router:11434"
+
+    def test_ollama_router_url_custom_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that ollama_router_url uses custom host."""
+        monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+        monkeypatch.setenv("OLLAMA_ROUTER_HOST", "localhost")
+
+        from zetherion_ai.config import get_settings
+
+        get_settings.cache_clear()
+
+        settings = create_test_settings()
+        assert settings.ollama_router_url == "http://localhost:11434"
+
+    def test_ollama_router_url_custom_port(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that ollama_router_url uses custom port."""
+        monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+        # Explicitly set host to default (avoid .env file interference)
+        monkeypatch.setenv("OLLAMA_ROUTER_HOST", "ollama-router")
+        monkeypatch.setenv("OLLAMA_ROUTER_PORT", "11435")
+
+        from zetherion_ai.config import get_settings
+
+        get_settings.cache_clear()
+
+        settings = create_test_settings()
+        assert settings.ollama_router_url == "http://ollama-router:11435"
+
+    def test_ollama_router_custom_configuration(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that Ollama router container configuration can be customized."""
+        monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+        monkeypatch.setenv("OLLAMA_ROUTER_HOST", "custom-router-host")
+        monkeypatch.setenv("OLLAMA_ROUTER_PORT", "8888")
+        monkeypatch.setenv("OLLAMA_ROUTER_MODEL", "llama3.2:1b")
+
+        from zetherion_ai.config import get_settings
+
+        get_settings.cache_clear()
+
+        settings = create_test_settings()
+        assert settings.ollama_router_host == "custom-router-host"
+        assert settings.ollama_router_port == 8888
+        assert settings.ollama_router_model == "llama3.2:1b"
+        assert settings.ollama_router_url == "http://custom-router-host:8888"
+
+    def test_dual_container_configuration(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that both router and generation containers can be configured separately."""
+        monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+        # Router container
+        monkeypatch.setenv("OLLAMA_ROUTER_HOST", "router-container")
+        monkeypatch.setenv("OLLAMA_ROUTER_PORT", "11435")
+        monkeypatch.setenv("OLLAMA_ROUTER_MODEL", "qwen2.5:0.5b")
+        # Generation container
+        monkeypatch.setenv("OLLAMA_HOST", "generation-container")
+        monkeypatch.setenv("OLLAMA_PORT", "11434")
+        monkeypatch.setenv("OLLAMA_GENERATION_MODEL", "qwen2.5:7b")
+
+        from zetherion_ai.config import get_settings
+
+        get_settings.cache_clear()
+
+        settings = create_test_settings()
+        # Verify router container settings
+        assert settings.ollama_router_host == "router-container"
+        assert settings.ollama_router_port == 11435
+        assert settings.ollama_router_model == "qwen2.5:0.5b"
+        assert settings.ollama_router_url == "http://router-container:11435"
+        # Verify generation container settings
+        assert settings.ollama_host == "generation-container"
+        assert settings.ollama_port == 11434
+        assert settings.ollama_generation_model == "qwen2.5:7b"
+        assert settings.ollama_url == "http://generation-container:11434"
 
 
 class TestRouterBackendConfiguration:

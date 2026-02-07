@@ -26,6 +26,8 @@ services:
       - ENVIRONMENT=test
       - OLLAMA_HOST=ollama
       - OLLAMA_PORT=11434
+      - OLLAMA_ROUTER_HOST=ollama-router
+      - OLLAMA_ROUTER_PORT=11434
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -64,6 +66,34 @@ services:
       retries: 3
       start_period: 30s
 
+  # Ollama Router Container (small, fast model for routing)
+  ollama-router:
+    image: ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed
+    container_name: zetherion-ai-test-ollama-router
+    restart: "no"
+    # Expose port for integration tests (host needs to reach router)
+    ports:
+      - "31434:11434"
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/11434' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - ollama_router_models_test:/root/.ollama
+    networks:
+      - zetherion-ai-test-net
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # Ollama Generation Container (larger model for complex queries + embeddings)
   ollama:
     image: ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed
     container_name: zetherion-ai-test-ollama
@@ -103,6 +133,7 @@ services:
 volumes:
   qdrant_storage_test:
   ollama_models_test:
+  ollama_router_models_test:
 
 networks:
   zetherion-ai-test-net:

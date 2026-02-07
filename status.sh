@@ -53,17 +53,52 @@ fi
 
 echo ""
 
-# Check Ollama
-print_info "Checking Ollama..."
+# Check Ollama Router Container (for fast routing)
+print_info "Checking Ollama Router Container..."
+ollama_router_running=$(docker ps --format "{{.Names}}" | grep -E "^zetherion-ai-ollama-router$" || true)
+
+if [ -n "$ollama_router_running" ]; then
+    # Router container is internal only (no port exposed to host), check via docker exec
+    router_health=$(docker exec zetherion-ai-ollama-router curl -s http://localhost:11434/api/tags 2>&1 || echo '{"error": "failed"}')
+    if echo "$router_health" | grep -q "models"; then
+        print_success "Ollama Router is running and healthy"
+
+        # Get model list
+        model_count=$(echo "$router_health" | python3 -c "import sys, json; data=json.load(sys.stdin); print(len(data.get('models', [])))" 2>/dev/null || echo "0")
+        echo "    Models: $model_count (router models)"
+
+        if [ "$model_count" != "0" ] && [ "$model_count" != "Unable to retrieve" ]; then
+            models=$(echo "$router_health" | python3 -c "import sys, json; data=json.load(sys.stdin); [print(f'      - {m[\"name\"]}') for m in data.get('models', [])]" 2>/dev/null || true)
+            if [ -n "$models" ]; then
+                echo "$models"
+            fi
+        fi
+    else
+        print_warning "Ollama Router container is running but not responding"
+    fi
+else
+    ollama_router_exists=$(docker ps -a --format "{{.Names}}" | grep -E "^zetherion-ai-ollama-router$" || true)
+
+    if [ -n "$ollama_router_exists" ]; then
+        print_warning "Ollama Router container exists but is not running"
+    else
+        print_info "Ollama Router container not found (optional, used with ROUTER_BACKEND=ollama)"
+    fi
+fi
+
+echo ""
+
+# Check Ollama Generation Container (for complex queries + embeddings)
+print_info "Checking Ollama Generation Container..."
 ollama_running=$(docker ps --format "{{.Names}}" | grep -E "^zetherion-ai-ollama$" || true)
 
 if [ -n "$ollama_running" ]; then
     if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
-        print_success "Ollama is running and healthy"
+        print_success "Ollama Generation is running and healthy"
 
         # Get model list
         model_count=$(curl -s http://localhost:11434/api/tags 2>/dev/null | python3 -c "import sys, json; data=json.load(sys.stdin); print(len(data.get('models', [])))" 2>/dev/null || echo "Unable to retrieve")
-        echo "    Models: $model_count"
+        echo "    Models: $model_count (generation + embedding models)"
 
         if [ "$model_count" != "0" ] && [ "$model_count" != "Unable to retrieve" ]; then
             models=$(curl -s http://localhost:11434/api/tags 2>/dev/null | python3 -c "import sys, json; data=json.load(sys.stdin); [print(f'      - {m[\"name\"]}') for m in data.get('models', [])]" 2>/dev/null || true)
@@ -72,15 +107,15 @@ if [ -n "$ollama_running" ]; then
             fi
         fi
     else
-        print_warning "Ollama container is running but not responding"
+        print_warning "Ollama Generation container is running but not responding"
     fi
 else
     ollama_exists=$(docker ps -a --format "{{.Names}}" | grep -E "^zetherion-ai-ollama$" || true)
 
     if [ -n "$ollama_exists" ]; then
-        print_warning "Ollama container exists but is not running"
+        print_warning "Ollama Generation container exists but is not running"
     else
-        print_info "Ollama container not found (optional)"
+        print_info "Ollama Generation container not found (optional, used with ROUTER_BACKEND=ollama)"
     fi
 fi
 

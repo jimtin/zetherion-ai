@@ -12,10 +12,11 @@ from zetherion_ai.agent.router_ollama import OllamaRouterBackend
 
 @pytest.fixture
 def mock_settings():
-    """Create mock settings."""
+    """Create mock settings for router container."""
     settings = MagicMock()
-    settings.ollama_url = "http://localhost:11434"
-    settings.ollama_router_model = "llama3.1:8b"
+    # Router uses dedicated container URL
+    settings.ollama_router_url = "http://ollama-router:11434"
+    settings.ollama_router_model = "qwen2.5:0.5b"
     settings.ollama_timeout = 30.0
     return settings
 
@@ -24,11 +25,11 @@ class TestOllamaRouterBackendInit:
     """Tests for OllamaRouterBackend initialization."""
 
     def test_init(self, mock_settings):
-        """Test initialization."""
+        """Test initialization with dedicated router container."""
         with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
-            assert backend._url == "http://localhost:11434"
-            assert backend._model == "llama3.1:8b"
+            assert backend._url == "http://ollama-router:11434"
+            assert backend._model == "qwen2.5:0.5b"
             assert backend._timeout == 30.0
 
 
@@ -465,6 +466,7 @@ class TestOllamaRouterBackendHealthCheck:
         mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {
             "models": [
+                {"name": "qwen2.5:0.5b"},  # Default router model
                 {"name": "llama3.1:8b"},
                 {"name": "phi-3"},
             ]
