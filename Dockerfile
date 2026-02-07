@@ -55,9 +55,9 @@ VOLUME ["/app/data", "/app/logs"]
 # No USER directive needed - it's built into the image
 
 # Healthcheck using Python (no shell/curl in distroless)
-# Note: Chainguard image has /usr/bin/python as ENTRYPOINT, so CMD args are passed to it
+# Note: HEALTHCHECK CMD doesn't use ENTRYPOINT, so we must specify full path
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD ["-c", "import sys; sys.exit(0)"]
+    CMD ["/usr/bin/python", "-c", "import sys; sys.exit(0)"]
 
 # Entry point - run the application
 # Note: ENTRYPOINT is /usr/bin/python, so we only need the module args
