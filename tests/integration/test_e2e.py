@@ -180,8 +180,8 @@ class DockerEnvironment:
 
     def pull_ollama_models(
         self,
-        router_model: str = "qwen2.5:0.5b",
-        generation_model: str = "qwen2.5:7b",
+        router_model: str = "llama3.2:1b",
+        generation_model: str = "llama3.1:8b",
         embedding_model: str = "nomic-embed-text",
     ) -> bool:
         """Pull Ollama models for both containers if not already pulled.
@@ -264,7 +264,7 @@ class DockerEnvironment:
             self.ollama_model_pulled = True
         return success
 
-    def pull_ollama_model(self, model: str = "qwen2.5:7b") -> bool:
+    def pull_ollama_model(self, model: str = "llama3.1:8b") -> bool:
         """Pull Ollama model (backward compatibility wrapper).
 
         Args:
@@ -293,14 +293,23 @@ class MockDiscordBot:
         # Set router backend environment variable
         os.environ["ROUTER_BACKEND"] = router_backend
 
-        # For Ollama backend, set host-accessible URLs (tests run on host, not in Docker)
-        if router_backend == "ollama":
-            # Router container exposed on port 31434
-            os.environ["OLLAMA_ROUTER_HOST"] = "localhost"
-            os.environ["OLLAMA_ROUTER_PORT"] = "31434"
-            # Generation container exposed on port 21434
-            os.environ["OLLAMA_HOST"] = "localhost"
-            os.environ["OLLAMA_PORT"] = "21434"
+        # Set Qdrant to use host-accessible URL (tests run on host, not in Docker)
+        os.environ["QDRANT_HOST"] = "localhost"
+        os.environ["QDRANT_PORT"] = "16333"
+
+        # Set Ollama host-accessible URLs (tests run on host, not in Docker)
+        # These are needed for embeddings even when using Gemini router
+        # Router container exposed on port 31434
+        os.environ["OLLAMA_ROUTER_HOST"] = "localhost"
+        os.environ["OLLAMA_ROUTER_PORT"] = "31434"
+        # Generation container exposed on port 21434
+        os.environ["OLLAMA_HOST"] = "localhost"
+        os.environ["OLLAMA_PORT"] = "21434"
+
+        # Clear settings cache to pick up new environment variables
+        from zetherion_ai.config import get_settings
+
+        get_settings.cache_clear()
 
         # Initialize components
         self.memory = QdrantMemory()
@@ -359,6 +368,30 @@ def docker_env() -> Generator[DockerEnvironment, None, None]:
         # Give services a bit more time to fully initialize
         time.sleep(10)
 
+        # Pull embedding model early - needed by both Gemini and Ollama backends
+        # since the default embeddings_backend is 'ollama'
+        print("📥 Pre-pulling embedding model for all tests...")
+        try:
+            result = subprocess.run(
+                [
+                    "docker",
+                    "exec",
+                    "zetherion-ai-test-ollama",
+                    "ollama",
+                    "pull",
+                    "nomic-embed-text",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            if result.returncode == 0:
+                print("✅ Embedding model 'nomic-embed-text' ready")
+            else:
+                print(f"⚠️ Warning: Failed to pull embedding model: {result.stderr}")
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
+            print(f"⚠️ Warning: Error pulling embedding model: {e}")
+
         yield env
 
     finally:
@@ -382,10 +415,10 @@ def router_backend(request: Any, docker_env: DockerEnvironment) -> str:
     # If testing Ollama, ensure all models are pulled to their respective containers
     if backend == "ollama":
         # Use explicit model names for dual-container architecture
-        # Router: small, fast model (0.5b fits in 1GB container)
-        # Generation: larger, capable model (7b needs 8GB+ container)
-        router_model = "qwen2.5:0.5b"
-        generation_model = "qwen2.5:7b"
+        # Router: small, fast model (1b fits in 1GB container)
+        # Generation: larger, capable model (8b needs 8GB+ container)
+        router_model = "llama3.2:1b"
+        generation_model = "llama3.1:8b"
         embedding_model = "nomic-embed-text"
 
         # Set environment variables for the test to override any .env settings
