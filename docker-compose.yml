@@ -9,6 +9,8 @@ services:
     restart: unless-stopped
     # Security: read-only filesystem with writable tmpfs for temp files
     read_only: true
+    security_opt:
+      - no-new-privileges:true
     tmpfs:
       - /tmp
       - /home/nonroot/.cache
@@ -54,6 +56,8 @@ services:
     restart: unless-stopped
     # Security: read-only filesystem with writable tmpfs for temp files
     read_only: true
+    security_opt:
+      - no-new-privileges:true
     tmpfs:
       - /tmp
       - /home/nonroot/.cache
@@ -94,6 +98,8 @@ services:
     image: ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed
     container_name: zetherion-ai-ollama
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "11434:11434"
     healthcheck:
@@ -131,6 +137,8 @@ services:
     image: ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed
     container_name: zetherion-ai-ollama-router
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     # No port exposure to host - only accessible via internal network
     healthcheck:
       test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/11434' || exit 1"]
@@ -157,6 +165,8 @@ services:
     image: qdrant/qdrant:latest@sha256:0425e3e03e7fd9b3dc95c4214546afe19de2eb2e28ca621441a56663ac6e1f46
     container_name: zetherion-ai-qdrant
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "6333:6333"
     healthcheck:

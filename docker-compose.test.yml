@@ -9,6 +9,8 @@ services:
     container_name: zetherion-ai-test-bot
     restart: "no"  # Don't restart during tests
     read_only: true
+    security_opt:
+      - no-new-privileges:true
     tmpfs:
       - /tmp
       - /home/nonroot/.cache
@@ -41,6 +43,8 @@ services:
     container_name: zetherion-ai-test-skills
     restart: "no"
     read_only: true
+    security_opt:
+      - no-new-privileges:true
     tmpfs:
       - /tmp
       - /home/nonroot/.cache
@@ -66,6 +70,8 @@ services:
     image: ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed
     container_name: zetherion-ai-test-ollama-router
     restart: "no"
+    security_opt:
+      - no-new-privileges:true
     # Expose port for integration tests (host needs to reach router)
     ports:
       - "31434:11434"
@@ -93,6 +99,8 @@ services:
     image: ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed
     container_name: zetherion-ai-test-ollama
     restart: "no"
+    security_opt:
+      - no-new-privileges:true
     # Use different host port for tests (21434 instead of 11434)
     ports:
       - "21434:11434"
@@ -111,6 +119,8 @@ services:
     image: qdrant/qdrant:latest@sha256:0425e3e03e7fd9b3dc95c4214546afe19de2eb2e28ca621441a56663ac6e1f46
     container_name: zetherion-ai-test-qdrant
     restart: "no"
+    security_opt:
+      - no-new-privileges:true
     # Use different host port for tests (16333 instead of 6333)
     ports:
       - "16333:6333"
