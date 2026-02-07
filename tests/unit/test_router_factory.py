@@ -15,11 +15,11 @@ def mock_settings_ollama():
     settings.router_backend = "ollama"
     # Router container settings (dedicated for routing)
     settings.ollama_router_url = "http://ollama-router:11434"
-    settings.ollama_router_model = "qwen2.5:0.5b"
+    settings.ollama_router_model = "llama3.2:1b"
     settings.ollama_timeout = 30.0
     # Generation container settings (for generation + embeddings)
     settings.ollama_url = "http://ollama:11434"
-    settings.ollama_generation_model = "qwen2.5:7b"
+    settings.ollama_generation_model = "llama3.1:8b"
     # Gemini settings (fallback)
     settings.gemini_api_key = MagicMock()
     settings.gemini_api_key.get_secret_value.return_value = "test-key"

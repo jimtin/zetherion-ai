@@ -110,7 +110,7 @@ class Settings(BaseSettings):
     ollama_host: str = Field(default="ollama", description="Ollama generation container host")
     ollama_port: int = Field(default=11434, description="Ollama generation API port")
     ollama_generation_model: str = Field(
-        default="qwen2.5:7b", description="Ollama model for generation (larger, capable)"
+        default="llama3.1:8b", description="Ollama model for generation (larger, capable)"
     )
     ollama_embedding_model: str = Field(
         default="nomic-embed-text", description="Ollama model for embeddings (768 dimensions)"
@@ -124,7 +124,7 @@ class Settings(BaseSettings):
     )
     ollama_router_port: int = Field(default=11434, description="Ollama router API port")
     ollama_router_model: str = Field(
-        default="qwen2.5:0.5b", description="Ollama model for routing (small, fast)"
+        default="llama3.2:1b", description="Ollama model for routing (small, fast)"
     )
 
     # Embeddings Backend Configuration

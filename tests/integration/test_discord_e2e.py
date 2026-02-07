@@ -75,7 +75,7 @@ Respond with ONLY a JSON object:
             ollama_response = await client.post(
                 "http://localhost:11434/api/generate",
                 json={
-                    "model": "qwen2.5:7b",
+                    "model": "llama3.1:8b",
                     "prompt": validation_prompt,
                     "stream": False,
                     "format": "json",
