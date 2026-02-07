@@ -55,8 +55,10 @@ VOLUME ["/app/data", "/app/logs"]
 # No USER directive needed - it's built into the image
 
 # Healthcheck using Python (no shell/curl in distroless)
+# Note: Chainguard image has /usr/bin/python as ENTRYPOINT, so CMD args are passed to it
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD ["python", "-c", "import sys; sys.exit(0)"]
+    CMD ["-c", "import sys; sys.exit(0)"]
 
 # Entry point - run the application
-CMD ["python", "-m", "zetherion_ai"]
+# Note: ENTRYPOINT is /usr/bin/python, so we only need the module args
+CMD ["-m", "zetherion_ai"]

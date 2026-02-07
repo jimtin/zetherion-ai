@@ -11,7 +11,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-      - /home/appuser/.cache
+      - /home/nonroot/.cache
     depends_on:
       qdrant:
         condition: service_healthy
@@ -43,7 +43,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-      - /home/zetherion_ai/.cache
+      - /home/nonroot/.cache
     depends_on:
       qdrant:
         condition: service_healthy
@@ -59,12 +59,7 @@ services:
       - "18080:8080"
     networks:
       - zetherion-ai-test-net
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
+    # Use Dockerfile HEALTHCHECK - distroless can only exec via ENTRYPOINT
 
   # Ollama Router Container (small, fast model for routing)
   ollama-router:

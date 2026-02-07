@@ -35,13 +35,7 @@ services:
       - ./logs:/app/logs
     networks:
       - zetherion-ai-net
-    # Distroless healthcheck - must use full Python path
-    healthcheck:
-      test: ["CMD", "/usr/bin/python3.11", "-c", "import sys; sys.exit(0)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+    # Use Dockerfile HEALTHCHECK - distroless can only exec via ENTRYPOINT
     # Resource limits to prevent runaway processes
     deploy:
       resources:
@@ -82,13 +76,7 @@ services:
     # No ports exposed to host - only accessible from bot via internal network
     networks:
       - zetherion-ai-net
-    # Distroless healthcheck - must use full Python path
-    healthcheck:
-      test: ["CMD", "/usr/bin/python3.11", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 8080)); s.close()"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 5s
+    # Use Dockerfile HEALTHCHECK - distroless can only exec via ENTRYPOINT
     # Resource limits for skills service
     deploy:
       resources:
