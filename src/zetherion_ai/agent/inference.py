@@ -23,6 +23,7 @@ from zetherion_ai.agent.providers import (
     get_provider_for_task,
 )
 from zetherion_ai.config import get_settings
+from zetherion_ai.constants import DEFAULT_MAX_TOKENS, HEALTH_CHECK_TIMEOUT
 from zetherion_ai.logging import get_logger
 from zetherion_ai.models.pricing import get_cost
 
@@ -71,8 +72,8 @@ class CostTracker:
 # These are estimates and should be updated periodically
 COST_PER_MILLION_TOKENS: dict[Provider, tuple[float, float]] = {
     Provider.CLAUDE: (3.0, 15.0),  # Claude Sonnet 4.5
-    Provider.OPENAI: (2.5, 10.0),  # GPT-4o
-    Provider.GEMINI: (0.075, 0.30),  # Gemini Flash
+    Provider.OPENAI: (2.5, 10.0),  # GPT-5.2
+    Provider.GEMINI: (0.075, 0.30),  # Gemini 2.5 Flash
     Provider.OLLAMA: (0.0, 0.0),  # Free (local)
 }
 
@@ -147,6 +148,9 @@ class InferenceBroker:
         # For now, assume available - health check will update this
         self._available_providers.add(Provider.OLLAMA)
 
+        # Shared HTTP client for Ollama and health checks
+        self._httpx_client = httpx.AsyncClient(timeout=settings.ollama_timeout)
+
         log.info(
             "inference_broker_initialized",
             available_providers=[p.value for p in self._available_providers],
@@ -160,7 +164,7 @@ class InferenceBroker:
         task_type: TaskType,
         system_prompt: str | None = None,
         messages: list[dict[str, str]] | None = None,
-        max_tokens: int = 2048,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float = 0.7,
     ) -> InferenceResult:
         """Make an inference call with smart provider selection.
@@ -394,16 +398,27 @@ class InferenceBroker:
                 },
             )
 
+        # NOTE: asyncio.to_thread uses the default ThreadPoolExecutor (usually 5 workers).
+        # Under high concurrency, Gemini calls may queue behind each other.
         response = await asyncio.to_thread(_sync_generate)
 
-        # Gemini doesn't provide token counts in the same way
+        # Use actual token counts from Gemini if available
+        usage = getattr(response, "usage_metadata", None)
+        input_tokens = getattr(usage, "prompt_token_count", 0) if usage else 0
+        output_tokens = getattr(usage, "candidates_token_count", 0) if usage else 0
+        # Fall back to heuristic if metadata not available
+        if not input_tokens:
+            input_tokens = len(content.split()) * 2
+        if not output_tokens:
+            output_tokens = len((response.text or "").split()) * 2
+
         return InferenceResult(
             content=response.text or "",
             provider=Provider.GEMINI,
             task_type=task_type,
             model=self._gemini_model,
-            input_tokens=len(content.split()) * 2,  # Rough estimate
-            output_tokens=len((response.text or "").split()) * 2,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
 
     async def _call_ollama(
@@ -416,8 +431,6 @@ class InferenceBroker:
         temperature: float,
     ) -> InferenceResult:
         """Call Ollama API."""
-        settings = get_settings()
-
         # Build messages for chat endpoint
         api_messages: list[dict[str, str]] = []
         if system_prompt:
@@ -426,21 +439,20 @@ class InferenceBroker:
             api_messages.extend(messages)
         api_messages.append({"role": "user", "content": prompt})
 
-        async with httpx.AsyncClient(timeout=settings.ollama_timeout) as client:
-            response = await client.post(
-                f"{self._ollama_url}/api/chat",
-                json={
-                    "model": self._ollama_model,
-                    "messages": api_messages,
-                    "stream": False,
-                    "options": {
-                        "temperature": temperature,
-                        "num_predict": max_tokens,
-                    },
+        response = await self._httpx_client.post(
+            f"{self._ollama_url}/api/chat",
+            json={
+                "model": self._ollama_model,
+                "messages": api_messages,
+                "stream": False,
+                "options": {
+                    "temperature": temperature,
+                    "num_predict": max_tokens,
                 },
-            )
-            response.raise_for_status()
-            data = response.json()
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
 
         content = data.get("message", {}).get("content", "")
 
@@ -482,7 +494,7 @@ class InferenceBroker:
                     )
                 except Exception as e:
                     log.warning("fallback_failed", provider=fallback.value, error=str(e))
-                    remaining.remove(fallback)
+                    remaining.discard(fallback)
 
         # All providers failed
         raise RuntimeError("All providers failed")
@@ -570,37 +582,29 @@ class InferenceBroker:
         """
         try:
             if provider == Provider.OLLAMA:
-                async with httpx.AsyncClient(timeout=5) as client:
-                    response = await client.get(f"{self._ollama_url}/api/tags")
-                    return response.status_code == 200
+                response = await self._httpx_client.get(
+                    f"{self._ollama_url}/api/tags", timeout=HEALTH_CHECK_TIMEOUT
+                )
+                return response.status_code == 200
             elif provider == Provider.GEMINI and self._gemini_client:
-                # Wrap synchronous Gemini call to avoid blocking
+
                 def _sync_health_check() -> bool:
-                    self._gemini_client.models.generate_content(  # type: ignore[union-attr]
-                        model=self._gemini_model,
-                        contents="test",
-                        config={"max_output_tokens": 5},
-                    )
+                    list(self._gemini_client.models.list())  # type: ignore[union-attr]
                     return True
 
                 return await asyncio.to_thread(_sync_health_check)
             elif provider == Provider.CLAUDE and self._claude_client:
-                await self._claude_client.messages.create(
-                    model=self._claude_model,
-                    max_tokens=5,
-                    messages=[{"role": "user", "content": "test"}],
-                )
-                return True
+                return True  # Client initialized = available (no free list endpoint)
             elif provider == Provider.OPENAI and self._openai_client:
-                await self._openai_client.chat.completions.create(
-                    model=self._openai_model,
-                    messages=[{"role": "user", "content": "test"}],
-                    max_tokens=5,
-                )
+                await self._openai_client.models.list()
                 return True
         except Exception as e:
             log.warning("health_check_failed", provider=provider.value, error=str(e))
         return False
+
+    async def close(self) -> None:
+        """Close shared HTTP clients."""
+        await self._httpx_client.aclose()
 
     @property
     def available_providers(self) -> set[Provider]:

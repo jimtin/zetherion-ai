@@ -50,10 +50,11 @@ class TestUserAllowlist:
     """Tests for UserAllowlist."""
 
     def test_empty_allows_all(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test that empty allowlist allows everyone."""
+        """Test that empty allowlist allows everyone when ALLOW_ALL_USERS is true."""
         monkeypatch.setenv("DISCORD_TOKEN", "test")
         monkeypatch.setenv("GEMINI_API_KEY", "test")
         monkeypatch.setenv("ALLOWED_USER_IDS", "")
+        monkeypatch.setenv("ALLOW_ALL_USERS", "true")
 
         # Clear cached settings
         from zetherion_ai.config import get_settings
@@ -386,6 +387,7 @@ class TestUserAllowlistMethods:
         monkeypatch.setenv("DISCORD_TOKEN", "test")
         monkeypatch.setenv("GEMINI_API_KEY", "test")
         monkeypatch.setenv("ALLOWED_USER_IDS", "")
+        monkeypatch.setenv("ALLOW_ALL_USERS", "true")
 
         from zetherion_ai.config import get_settings
 

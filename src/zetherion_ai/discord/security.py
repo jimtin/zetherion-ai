@@ -79,12 +79,20 @@ class UserAllowlist:
         """Initialize the allowlist."""
         settings = get_settings()
         self._allowed_ids: set[int] = set(settings.allowed_user_ids)
-        self._allow_all = len(self._allowed_ids) == 0
+        self._allow_all = len(self._allowed_ids) == 0 and settings.allow_all_users
 
-        if self._allow_all:
+        if len(self._allowed_ids) == 0 and not settings.allow_all_users:
+            log.error(
+                "allowlist_misconfigured",
+                message=(
+                    "No allowed users configured and ALLOW_ALL_USERS is False. "
+                    "All users will be blocked."
+                ),
+            )
+        elif self._allow_all:
             log.warning(
-                "allowlist_empty",
-                message="No allowed users configured, allowing all users",
+                "allowlist_open",
+                message="ALLOW_ALL_USERS is True with no allowlist — all users can interact",
             )
         else:
             log.info("allowlist_configured", count=len(self._allowed_ids))

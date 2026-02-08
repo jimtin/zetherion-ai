@@ -714,7 +714,7 @@ class TestInferenceBrokerHealthCheck:
     @pytest.mark.asyncio
     @patch("zetherion_ai.agent.inference.get_settings")
     async def test_ollama_health_check(self, mock_get_settings):
-        """Verify Ollama health check."""
+        """Verify Ollama health check uses the shared httpx client."""
         mock_settings = MagicMock()
         mock_settings.anthropic_api_key = None
         mock_settings.openai_api_key = None
@@ -725,20 +725,23 @@ class TestInferenceBrokerHealthCheck:
         mock_settings.router_model = "gemini-2.0-flash"
         mock_get_settings.return_value = mock_settings
 
+        mock_httpx_instance = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_httpx_instance.get = AsyncMock(return_value=mock_response)
+
         with (
             patch("zetherion_ai.agent.inference.genai.Client"),
-            patch("zetherion_ai.agent.inference.httpx.AsyncClient") as mock_httpx,
+            patch(
+                "zetherion_ai.agent.inference.httpx.AsyncClient",
+                return_value=mock_httpx_instance,
+            ),
         ):
-            mock_client = AsyncMock()
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_client.get = AsyncMock(return_value=mock_response)
-            mock_httpx.return_value.__aenter__.return_value = mock_client
-
             broker = InferenceBroker()
             is_healthy = await broker.health_check(Provider.OLLAMA)
 
         assert is_healthy is True
+        mock_httpx_instance.get.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("zetherion_ai.agent.inference.get_settings")
@@ -781,3 +784,280 @@ class TestProviderConfig:
         assert config.provider == Provider.CLAUDE
         assert config.rationale == "Best for code"
         assert len(config.fallbacks) == 2
+
+
+class TestInferenceBrokerClose:
+    """Tests for InferenceBroker.close() method."""
+
+    @pytest.mark.asyncio
+    @patch("zetherion_ai.agent.inference.get_settings")
+    async def test_close_calls_httpx_aclose(self, mock_get_settings):
+        """Test that close() calls self._httpx_client.aclose()."""
+        mock_settings = MagicMock()
+        mock_settings.anthropic_api_key = None
+        mock_settings.openai_api_key = None
+        mock_settings.gemini_api_key = MagicMock()
+        mock_settings.gemini_api_key.get_secret_value.return_value = "test"
+        mock_settings.ollama_router_model = "llama3.1:8b"
+        mock_settings.ollama_url = "http://localhost:11434"
+        mock_settings.router_model = "gemini-2.0-flash"
+        mock_get_settings.return_value = mock_settings
+
+        with (
+            patch("zetherion_ai.agent.inference.genai.Client"),
+            patch("zetherion_ai.agent.inference.httpx.AsyncClient") as mock_httpx_cls,
+        ):
+            mock_httpx_instance = AsyncMock()
+            mock_httpx_cls.return_value = mock_httpx_instance
+
+            broker = InferenceBroker()
+            await broker.close()
+
+            mock_httpx_instance.aclose.assert_called_once()
+
+
+class TestHealthCheckNoInference:
+    """Tests verifying health checks don't call inference endpoints."""
+
+    @pytest.mark.asyncio
+    @patch("zetherion_ai.agent.inference.get_settings")
+    async def test_openai_health_check_uses_models_list(self, mock_get_settings):
+        """Verify OpenAI health check uses models.list, not chat completions."""
+        mock_settings = MagicMock()
+        mock_settings.anthropic_api_key = None
+        mock_settings.openai_api_key = MagicMock()
+        mock_settings.openai_api_key.get_secret_value.return_value = "sk-test"
+        mock_settings.gemini_api_key = MagicMock()
+        mock_settings.gemini_api_key.get_secret_value.return_value = "test"
+        mock_settings.ollama_router_model = "llama3.1:8b"
+        mock_settings.ollama_url = "http://localhost:11434"
+        mock_settings.openai_model = "gpt-4o"
+        mock_settings.router_model = "gemini-2.0-flash"
+        mock_get_settings.return_value = mock_settings
+
+        with (
+            patch("zetherion_ai.agent.inference.openai.AsyncOpenAI") as mock_openai_cls,
+            patch("zetherion_ai.agent.inference.genai.Client"),
+        ):
+            mock_openai_client = AsyncMock()
+            mock_openai_client.models.list = AsyncMock(return_value=[])
+            mock_openai_cls.return_value = mock_openai_client
+
+            broker = InferenceBroker()
+            result = await broker.health_check(Provider.OPENAI)
+
+        assert result is True
+        mock_openai_client.models.list.assert_called_once()
+        # Should NOT call chat.completions.create
+        mock_openai_client.chat.completions.create.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("zetherion_ai.agent.inference.get_settings")
+    async def test_gemini_health_check_uses_models_list(self, mock_get_settings):
+        """Verify Gemini health check uses models.list, not generate_content."""
+        mock_settings = MagicMock()
+        mock_settings.anthropic_api_key = None
+        mock_settings.openai_api_key = None
+        mock_settings.gemini_api_key = MagicMock()
+        mock_settings.gemini_api_key.get_secret_value.return_value = "test"
+        mock_settings.ollama_router_model = "llama3.1:8b"
+        mock_settings.ollama_url = "http://localhost:11434"
+        mock_settings.router_model = "gemini-2.0-flash"
+        mock_get_settings.return_value = mock_settings
+
+        with patch("zetherion_ai.agent.inference.genai.Client") as mock_gemini_cls:
+            mock_gemini_client = MagicMock()
+            mock_gemini_client.models.list.return_value = iter([MagicMock()])
+            mock_gemini_cls.return_value = mock_gemini_client
+
+            broker = InferenceBroker()
+            result = await broker.health_check(Provider.GEMINI)
+
+        assert result is True
+        mock_gemini_client.models.list.assert_called()
+        # Should NOT call generate_content
+        mock_gemini_client.models.generate_content.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("zetherion_ai.agent.inference.get_settings")
+    async def test_claude_health_check_just_checks_client_init(self, mock_get_settings):
+        """Verify Claude health check just checks client initialization (no API call)."""
+        mock_settings = MagicMock()
+        mock_settings.anthropic_api_key = MagicMock()
+        mock_settings.anthropic_api_key.get_secret_value.return_value = "sk-ant-test"
+        mock_settings.openai_api_key = None
+        mock_settings.gemini_api_key = MagicMock()
+        mock_settings.gemini_api_key.get_secret_value.return_value = "test"
+        mock_settings.ollama_router_model = "llama3.1:8b"
+        mock_settings.ollama_url = "http://localhost:11434"
+        mock_settings.claude_model = "claude-sonnet"
+        mock_settings.router_model = "gemini-2.0-flash"
+        mock_get_settings.return_value = mock_settings
+
+        with (
+            patch("zetherion_ai.agent.inference.anthropic.AsyncAnthropic") as mock_claude_cls,
+            patch("zetherion_ai.agent.inference.genai.Client"),
+        ):
+            mock_claude_client = AsyncMock()
+            mock_claude_cls.return_value = mock_claude_client
+
+            broker = InferenceBroker()
+            result = await broker.health_check(Provider.CLAUDE)
+
+        assert result is True
+        # Claude health check should NOT call messages.create
+        mock_claude_client.messages.create.assert_not_called()
+
+
+class TestFallbackDiscardNoRaise:
+    """Tests for _try_fallbacks discard behavior."""
+
+    @pytest.mark.asyncio
+    @patch("zetherion_ai.agent.inference.get_settings")
+    async def test_discard_in_fallback_does_not_raise_on_missing_key(self, mock_get_settings):
+        """Test that discard() in fallback chain doesn't raise on missing key.
+
+        When all providers fail, _try_fallbacks calls remaining.discard(fallback)
+        for each. This must not raise KeyError even if the provider was already
+        removed from the set.
+        """
+        mock_settings = MagicMock()
+        mock_settings.anthropic_api_key = MagicMock()
+        mock_settings.anthropic_api_key.get_secret_value.return_value = "sk-test"
+        mock_settings.openai_api_key = MagicMock()
+        mock_settings.openai_api_key.get_secret_value.return_value = "sk-openai"
+        mock_settings.gemini_api_key = MagicMock()
+        mock_settings.gemini_api_key.get_secret_value.return_value = "test"
+        mock_settings.ollama_router_model = "llama3.1:8b"
+        mock_settings.ollama_url = "http://localhost:11434"
+        mock_settings.claude_model = "claude-sonnet"
+        mock_settings.openai_model = "gpt-4o"
+        mock_settings.router_model = "gemini-2.0-flash"
+        mock_get_settings.return_value = mock_settings
+
+        with (
+            patch("zetherion_ai.agent.inference.anthropic.AsyncAnthropic") as mock_claude_cls,
+            patch("zetherion_ai.agent.inference.openai.AsyncOpenAI") as mock_openai_cls,
+            patch("zetherion_ai.agent.inference.genai.Client") as mock_gemini_cls,
+        ):
+            # All providers fail so discard is called on each
+            mock_claude_client = AsyncMock()
+            mock_claude_client.messages.create = AsyncMock(side_effect=Exception("Claude fail"))
+            mock_claude_cls.return_value = mock_claude_client
+
+            mock_openai_client = AsyncMock()
+            mock_openai_client.chat.completions.create = AsyncMock(
+                side_effect=Exception("OpenAI fail")
+            )
+            mock_openai_cls.return_value = mock_openai_client
+
+            # Gemini also fails
+            mock_gemini_client = MagicMock()
+            mock_gemini_client.models.generate_content.side_effect = Exception("Gemini fail")
+            mock_gemini_cls.return_value = mock_gemini_client
+
+            broker = InferenceBroker()
+
+            # Mock Ollama to also fail (uses httpx)
+            broker._httpx_client.post = AsyncMock(side_effect=Exception("Ollama fail"))
+
+            # All providers will fail - _try_fallbacks discards each failed provider
+            # and should not raise KeyError, only RuntimeError at the end
+            with pytest.raises(RuntimeError, match="All providers failed"):
+                await broker._try_fallbacks(
+                    task_type=TaskType.CODE_GENERATION,
+                    prompt="test",
+                    system_prompt=None,
+                    messages=None,
+                    max_tokens=100,
+                    temperature=0.7,
+                    failed_provider=Provider.CLAUDE,
+                )
+
+
+class TestGeminiUsageMetadata:
+    """Tests for Gemini actual usage_metadata token counts."""
+
+    @pytest.mark.asyncio
+    @patch("zetherion_ai.agent.inference.get_settings")
+    async def test_gemini_uses_usage_metadata_when_available(self, mock_get_settings):
+        """Test that Gemini uses actual usage_metadata token counts when available."""
+        mock_settings = MagicMock()
+        mock_settings.anthropic_api_key = None
+        mock_settings.openai_api_key = None
+        mock_settings.gemini_api_key = MagicMock()
+        mock_settings.gemini_api_key.get_secret_value.return_value = "test"
+        mock_settings.ollama_router_model = "llama3.1:8b"
+        mock_settings.ollama_url = "http://localhost:11434"
+        mock_settings.router_model = "gemini-2.0-flash"
+        mock_get_settings.return_value = mock_settings
+
+        with patch("zetherion_ai.agent.inference.genai.Client") as mock_gemini_cls:
+            mock_gemini_client = MagicMock()
+
+            # Create response with actual usage_metadata
+            mock_response = MagicMock()
+            mock_response.text = "Gemini response text"
+            mock_usage = MagicMock()
+            mock_usage.prompt_token_count = 150
+            mock_usage.candidates_token_count = 75
+            mock_response.usage_metadata = mock_usage
+            mock_gemini_client.models.generate_content.return_value = mock_response
+            mock_gemini_cls.return_value = mock_gemini_client
+
+            broker = InferenceBroker()
+            # Remove Ollama to force Gemini selection
+            broker._available_providers.discard(Provider.OLLAMA)
+
+            result = await broker._call_gemini(
+                prompt="Test prompt",
+                task_type=TaskType.SUMMARIZATION,
+                system_prompt=None,
+                messages=None,
+                max_tokens=1024,
+                temperature=0.7,
+            )
+
+        assert result.input_tokens == 150
+        assert result.output_tokens == 75
+        assert result.content == "Gemini response text"
+
+    @pytest.mark.asyncio
+    @patch("zetherion_ai.agent.inference.get_settings")
+    async def test_gemini_falls_back_to_heuristic_without_usage_metadata(self, mock_get_settings):
+        """Test that Gemini falls back to heuristic when usage_metadata is absent."""
+        mock_settings = MagicMock()
+        mock_settings.anthropic_api_key = None
+        mock_settings.openai_api_key = None
+        mock_settings.gemini_api_key = MagicMock()
+        mock_settings.gemini_api_key.get_secret_value.return_value = "test"
+        mock_settings.ollama_router_model = "llama3.1:8b"
+        mock_settings.ollama_url = "http://localhost:11434"
+        mock_settings.router_model = "gemini-2.0-flash"
+        mock_get_settings.return_value = mock_settings
+
+        with patch("zetherion_ai.agent.inference.genai.Client") as mock_gemini_cls:
+            mock_gemini_client = MagicMock()
+
+            # Create response WITHOUT usage_metadata
+            mock_response = MagicMock()
+            mock_response.text = "word1 word2 word3"
+            mock_response.usage_metadata = None
+            mock_gemini_client.models.generate_content.return_value = mock_response
+            mock_gemini_cls.return_value = mock_gemini_client
+
+            broker = InferenceBroker()
+            broker._available_providers.discard(Provider.OLLAMA)
+
+            result = await broker._call_gemini(
+                prompt="hello world",
+                task_type=TaskType.SIMPLE_QA,
+                system_prompt=None,
+                messages=None,
+                max_tokens=1024,
+                temperature=0.7,
+            )
+
+        # Without usage_metadata, should use heuristic: len(words) * 2
+        assert result.input_tokens == len(["hello", "world"]) * 2
+        assert result.output_tokens == len(["word1", "word2", "word3"]) * 2

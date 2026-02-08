@@ -3,12 +3,15 @@
 import asyncio
 import contextlib
 import time
+from uuid import uuid4
 
 import discord
+import structlog
 from discord import app_commands
 
 from zetherion_ai.agent.core import Agent
 from zetherion_ai.config import get_settings
+from zetherion_ai.constants import KEEP_WARM_INTERVAL_SECONDS, MAX_DISCORD_MESSAGE_LENGTH
 from zetherion_ai.discord.security import (
     RateLimiter,
     UserAllowlist,
@@ -16,11 +19,9 @@ from zetherion_ai.discord.security import (
 )
 from zetherion_ai.logging import get_logger
 from zetherion_ai.memory.qdrant import QdrantMemory
+from zetherion_ai.utils import timed_operation
 
 log = get_logger("zetherion_ai.discord.bot")
-
-# Keep Ollama model warm every 5 minutes
-KEEP_WARM_INTERVAL_SECONDS = 5 * 60
 
 
 class ZetherionAIBot(discord.Client):
@@ -44,6 +45,7 @@ class ZetherionAIBot(discord.Client):
         self._rate_limiter = RateLimiter()
         self._allowlist = UserAllowlist()
         self._keep_warm_task: asyncio.Task[None] | None = None
+        self._last_message_time: float = 0.0
 
         self._setup_commands()
 
@@ -71,7 +73,7 @@ class ZetherionAIBot(discord.Client):
         @self._tree.command(name="ping", description="Check if Zetherion AI is online")
         async def ping_command(interaction: discord.Interaction[discord.Client]) -> None:
             await interaction.response.send_message(
-                f"🦀 Pong! Latency: {round(self.latency * 1000)}ms",
+                f"\U0001f980 Pong! Latency: {round(self.latency * 1000)}ms",
                 ephemeral=True,
             )
 
@@ -102,10 +104,11 @@ class ZetherionAIBot(discord.Client):
 
     async def _keep_warm_loop(self) -> None:
         """Background task to periodically keep the Ollama model warm."""
-        await asyncio.sleep(KEEP_WARM_INTERVAL_SECONDS)  # Wait before first ping
+        await asyncio.sleep(KEEP_WARM_INTERVAL_SECONDS)
         while True:
             try:
-                if self._agent:
+                # Only keep warm if there's been recent activity (last 30 min)
+                if self._agent and (time.time() - self._last_message_time < 30 * 60):
                     await self._agent.keep_warm()
             except Exception as e:
                 log.warning("keep_warm_error", error=str(e))
@@ -120,6 +123,14 @@ class ZetherionAIBot(discord.Client):
             with contextlib.suppress(asyncio.CancelledError):
                 await task
             log.info("keep_warm_task_stopped")
+
+        # Clean up agent resources
+        if (
+            self._agent
+            and hasattr(self._agent, "_inference_broker")
+            and self._agent._inference_broker
+        ):
+            await self._agent._inference_broker.close()
 
         await super().close()
 
@@ -148,94 +159,100 @@ class ZetherionAIBot(discord.Client):
         if not (is_dm or is_mention):
             return
 
-        # Check allowlist
-        if not self._allowlist.is_allowed(message.author.id):
-            log.warning("user_not_allowed", user_id=message.author.id)
-            await message.reply(
+        structlog.contextvars.bind_contextvars(request_id=str(uuid4())[:8])
+        self._last_message_time = time.time()
+        try:
+            # Check allowlist
+            if not self._allowlist.is_allowed(message.author.id):
+                log.warning("user_not_allowed", user_id=message.author.id)
+                await message.reply(
+                    "Sorry, you're not authorized to use this bot.",
+                    mention_author=False,
+                )
+                return
+
+            # Check rate limit
+            allowed, warning = self._rate_limiter.check(message.author.id)
+            if not allowed:
+                if warning:
+                    await message.reply(warning, mention_author=False)
+                return
+
+            # Check for prompt injection
+            if detect_prompt_injection(message.content):
+                await message.reply(
+                    "I noticed some unusual patterns in your message. "
+                    "Could you rephrase your question?",
+                    mention_author=False,
+                )
+                return
+
+            # Generate response with timed operations
+            async with timed_operation("message_total", log=log) as _, message.channel.typing():
+                content = message.content
+                # Remove bot mention from content
+                if is_mention and self.user:
+                    content = content.replace(f"<@{self.user.id}>", "").strip()
+
+                if not content:
+                    await message.reply(
+                        "How can I help you?",
+                        mention_author=False,
+                    )
+                    return
+
+                if self._agent is None:
+                    await message.reply(
+                        "I'm still starting up. Please try again in a moment.",
+                        mention_author=False,
+                    )
+                    return
+
+                async with timed_operation("generate_response", log=log):
+                    response = await self._agent.generate_response(
+                        user_id=message.author.id,
+                        channel_id=message.channel.id,
+                        message=content,
+                    )
+
+                # Send response, splitting if too long
+                async with timed_operation("message_sent", log=log):
+                    await self._send_long_message(message.channel, response)
+        finally:
+            structlog.contextvars.clear_contextvars()
+
+    async def _check_security(
+        self,
+        interaction: discord.Interaction[discord.Client],
+        content: str | None = None,
+    ) -> bool:
+        """Run security checks (allowlist, rate limit, injection).
+
+        Returns True if request is allowed, False if blocked (response already sent).
+        """
+        if not self._allowlist.is_allowed(interaction.user.id):
+            await interaction.response.send_message(
                 "Sorry, you're not authorized to use this bot.",
-                mention_author=False,
+                ephemeral=True,
             )
-            return
+            return False
 
-        # Check rate limit
-        allowed, warning = self._rate_limiter.check(message.author.id)
+        allowed, warning = self._rate_limiter.check(interaction.user.id)
         if not allowed:
-            if warning:
-                await message.reply(warning, mention_author=False)
-            return
-
-        # Check for prompt injection
-        if detect_prompt_injection(message.content):
-            await message.reply(
-                "I noticed some unusual patterns in your message. "
-                "Could you rephrase your question?",
-                mention_author=False,
+            await interaction.response.send_message(
+                warning or "Rate limited. Please wait.",
+                ephemeral=True,
             )
-            return
+            return False
 
-        # Generate response with detailed timing
-        total_start = time.perf_counter()
-        log.info("TIMING: message_received", step="start")
-
-        async with message.channel.typing():
-            typing_start = time.perf_counter()
-            log.info(
-                "TIMING: typing_context_entered",
-                step="typing_start",
-                elapsed_ms=round((typing_start - total_start) * 1000, 2),
+        if content and detect_prompt_injection(content):
+            await interaction.response.send_message(
+                "I noticed some unusual patterns in your message. Could you rephrase it?",
+                ephemeral=True,
             )
+            return False
 
-            content = message.content
-            # Remove bot mention from content
-            if is_mention and self.user:
-                content = content.replace(f"<@{self.user.id}>", "").strip()
-
-            if not content:
-                await message.reply(
-                    "How can I help you?",
-                    mention_author=False,
-                )
-                return
-
-            if self._agent is None:
-                await message.reply(
-                    "I'm still starting up. Please try again in a moment.",
-                    mention_author=False,
-                )
-                return
-
-            generate_start = time.perf_counter()
-            log.info(
-                "TIMING: calling_generate_response",
-                step="generate_start",
-                elapsed_ms=round((generate_start - total_start) * 1000, 2),
-            )
-
-            response = await self._agent.generate_response(
-                user_id=message.author.id,
-                channel_id=message.channel.id,
-                message=content,
-            )
-
-            generate_end = time.perf_counter()
-            log.info(
-                "TIMING: generate_response_complete",
-                step="generate_end",
-                generate_duration_ms=round((generate_end - generate_start) * 1000, 2),
-                total_elapsed_ms=round((generate_end - total_start) * 1000, 2),
-            )
-
-            # Send response, splitting if too long
-            send_start = time.perf_counter()
-            await self._send_long_message(message.channel, response)
-            send_end = time.perf_counter()
-
-            log.info(
-                "TIMING: message_sent",
-                step="send_complete",
-                send_duration_ms=round((send_end - send_start) * 1000, 2),
-                total_duration_ms=round((send_end - total_start) * 1000, 2),
-            )
+        return True
 
     async def _handle_ask(
         self,
@@ -243,45 +260,29 @@ class ZetherionAIBot(discord.Client):
         question: str,
     ) -> None:
         """Handle /ask command."""
-        # Check allowlist
-        if not self._allowlist.is_allowed(interaction.user.id):
-            await interaction.response.send_message(
-                "Sorry, you're not authorized to use this bot.",
-                ephemeral=True,
+        structlog.contextvars.bind_contextvars(request_id=str(uuid4())[:8])
+        try:
+            if not await self._check_security(interaction, question):
+                return
+
+            await interaction.response.defer()
+
+            if self._agent is None:
+                await interaction.followup.send(
+                    "I'm still starting up. Please try again in a moment."
+                )
+                return
+
+            response = await self._agent.generate_response(
+                user_id=interaction.user.id,
+                channel_id=interaction.channel_id or 0,
+                message=question,
             )
-            return
 
-        # Check rate limit
-        allowed, warning = self._rate_limiter.check(interaction.user.id)
-        if not allowed:
-            await interaction.response.send_message(
-                warning or "Rate limited. Please wait.",
-                ephemeral=True,
-            )
-            return
-
-        # Check for prompt injection
-        if detect_prompt_injection(question):
-            await interaction.response.send_message(
-                "I noticed some unusual patterns in your question. Could you rephrase it?",
-                ephemeral=True,
-            )
-            return
-
-        await interaction.response.defer()
-
-        if self._agent is None:
-            await interaction.followup.send("I'm still starting up. Please try again in a moment.")
-            return
-
-        response = await self._agent.generate_response(
-            user_id=interaction.user.id,
-            channel_id=interaction.channel_id or 0,
-            message=question,
-        )
-
-        # Send response
-        await interaction.followup.send(response)
+            # Send response
+            await self._send_long_interaction_response(interaction, response)
+        finally:
+            structlog.contextvars.clear_contextvars()
 
     async def _handle_remember(
         self,
@@ -289,21 +290,32 @@ class ZetherionAIBot(discord.Client):
         content: str,
     ) -> None:
         """Handle /remember command."""
-        if not self._allowlist.is_allowed(interaction.user.id):
-            await interaction.response.send_message(
-                "Sorry, you're not authorized to use this bot.",
-                ephemeral=True,
-            )
-            return
+        structlog.contextvars.bind_contextvars(request_id=str(uuid4())[:8])
+        try:
+            if not await self._check_security(interaction, content):
+                return
 
-        await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(ephemeral=True)
 
-        if self._agent is None:
-            await interaction.followup.send("I'm still starting up. Please try again in a moment.")
-            return
+            if self._agent is None:
+                await interaction.followup.send(
+                    "I'm still starting up. Please try again in a moment."
+                )
+                return
 
-        confirmation = await self._agent.store_memory_from_request(content)
-        await interaction.followup.send(confirmation)
+            try:
+                confirmation = await self._agent.store_memory_from_request(
+                    content,
+                    user_id=interaction.user.id,
+                )
+                await interaction.followup.send(confirmation)
+            except Exception as e:
+                log.error("remember_command_error", error=str(e))
+                await interaction.followup.send(
+                    "Sorry, something went wrong while saving that memory. Please try again."
+                )
+        finally:
+            structlog.contextvars.clear_contextvars()
 
     async def _handle_search(
         self,
@@ -311,29 +323,39 @@ class ZetherionAIBot(discord.Client):
         query: str,
     ) -> None:
         """Handle /search command."""
-        if not self._allowlist.is_allowed(interaction.user.id):
-            await interaction.response.send_message(
-                "Sorry, you're not authorized to use this bot.",
-                ephemeral=True,
-            )
-            return
+        structlog.contextvars.bind_contextvars(request_id=str(uuid4())[:8])
+        try:
+            if not await self._check_security(interaction, query):
+                return
 
-        await interaction.response.defer()
+            await interaction.response.defer()
 
-        # Search memories
-        memories = await self._memory.search_memories(query=query, limit=5)
+            try:
+                # Search memories
+                memories = await self._memory.search_memories(
+                    query=query,
+                    limit=5,
+                    user_id=interaction.user.id,
+                )
 
-        if not memories:
-            await interaction.followup.send("No matching memories found.")
-            return
+                if not memories:
+                    await interaction.followup.send("No matching memories found.")
+                    return
 
-        # Format results
-        lines = ["**Search Results:**\n"]
-        for i, mem in enumerate(memories, 1):
-            score_pct = int(mem["score"] * 100)
-            lines.append(f"{i}. [{score_pct}%] {mem['content'][:200]}")
+                # Format results
+                lines = ["**Search Results:**\n"]
+                for i, mem in enumerate(memories, 1):
+                    score_pct = int(mem["score"] * 100)
+                    lines.append(f"{i}. [{score_pct}%] {mem['content'][:200]}")
 
-        await interaction.followup.send("\n".join(lines))
+                await interaction.followup.send("\n".join(lines))
+            except Exception as e:
+                log.error("search_command_error", error=str(e))
+                await interaction.followup.send(
+                    "Sorry, something went wrong while searching. Please try again."
+                )
+        finally:
+            structlog.contextvars.clear_contextvars()
 
     async def _handle_channels(
         self,
@@ -366,14 +388,14 @@ class ZetherionAIBot(discord.Client):
                 continue
 
             if isinstance(channel, discord.TextChannel):
-                can_send = "✓" if permissions.send_messages else "✗"
-                can_read = "✓" if permissions.read_message_history else "✗"
+                can_send = "\u2713" if permissions.send_messages else "\u2717"
+                can_read = "\u2713" if permissions.read_message_history else "\u2717"
                 text_channels.append(f"  #{channel.name} (Send: {can_send}, Read: {can_read})")
             elif isinstance(channel, discord.VoiceChannel):
-                can_connect = "✓" if permissions.connect else "✗"
-                voice_channels.append(f"  🔊 {channel.name} (Connect: {can_connect})")
+                can_connect = "\u2713" if permissions.connect else "\u2717"
+                voice_channels.append(f"  \U0001f50a {channel.name} (Connect: {can_connect})")
             elif isinstance(channel, discord.CategoryChannel):
-                categories.append(f"  📁 {channel.name}")
+                categories.append(f"  \U0001f4c1 {channel.name}")
 
         # Format response
         lines = [
@@ -395,7 +417,7 @@ class ZetherionAIBot(discord.Client):
         response = "\n".join(lines)
 
         # Split if too long (Discord 2000 char limit)
-        if len(response) > 2000:
+        if len(response) > MAX_DISCORD_MESSAGE_LENGTH:
             # Send first batch
             first_batch = text_channels[:20] if len(text_channels) > 0 else []
             await interaction.followup.send(
@@ -412,7 +434,7 @@ class ZetherionAIBot(discord.Client):
         self,
         channel: discord.abc.Messageable,
         content: str,
-        max_length: int = 2000,
+        max_length: int = MAX_DISCORD_MESSAGE_LENGTH,
     ) -> None:
         """Send a message, splitting if it exceeds Discord's limit.
 
@@ -443,3 +465,30 @@ class ZetherionAIBot(discord.Client):
         for part in parts:
             if part:
                 await channel.send(part)
+
+    async def _send_long_interaction_response(
+        self,
+        interaction: discord.Interaction[discord.Client],
+        content: str,
+        max_length: int = MAX_DISCORD_MESSAGE_LENGTH,
+    ) -> None:
+        """Send an interaction followup, splitting if too long."""
+        if len(content) <= max_length:
+            await interaction.followup.send(content)
+            return
+
+        parts = []
+        current = ""
+        for line in content.split("\n"):
+            if len(current) + len(line) + 1 <= max_length:
+                current += line + "\n"
+            else:
+                if current:
+                    parts.append(current.strip())
+                current = line + "\n"
+        if current:
+            parts.append(current.strip())
+
+        for part in parts:
+            if part:
+                await interaction.followup.send(part)

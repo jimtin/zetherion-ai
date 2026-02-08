@@ -1,371 +1,12 @@
 """Tests for Agent core functionality."""
 
-import sys
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
-import httpx
 import pytest
-from anthropic import APIConnectionError, APITimeoutError, RateLimitError
 
-
-def create_mock_request() -> httpx.Request:
-    """Create a mock httpx.Request for error constructors."""
-    return httpx.Request("POST", "https://api.anthropic.com/v1/messages")
-
-
-def create_mock_response(status_code: int = 429) -> httpx.Response:
-    """Create a mock httpx.Response for error constructors."""
-    return httpx.Response(status_code=status_code, request=create_mock_request())
-
-
-# Mock openai module if not installed
-if "openai" not in sys.modules:
-    # Create mock openai module
-    mock_openai = MagicMock()
-
-    class OpenAIConnectionError(Exception):
-        """Mock OpenAI connection error."""
-
-        pass
-
-    class OpenAITimeoutError(Exception):
-        """Mock OpenAI timeout error."""
-
-        pass
-
-    class OpenAIRateLimitError(Exception):
-        """Mock OpenAI rate limit error."""
-
-        pass
-
-    # Add exceptions to mock module
-    mock_openai.APIConnectionError = OpenAIConnectionError
-    mock_openai.APITimeoutError = OpenAITimeoutError
-    mock_openai.RateLimitError = OpenAIRateLimitError
-    mock_openai.AsyncOpenAI = MagicMock
-
-    sys.modules["openai"] = mock_openai
-else:
-    from openai import APIConnectionError as OpenAIConnectionError
-    from openai import APITimeoutError as OpenAITimeoutError
-    from openai import RateLimitError as OpenAIRateLimitError
-
-
-class TestRetryWithExponentialBackoff:
-    """Tests for retry_with_exponential_backoff function."""
-
-    @pytest.mark.asyncio
-    async def test_successful_first_attempt(self):
-        """Test that function succeeds on first attempt without retry."""
-        from zetherion_ai.agent.core import retry_with_exponential_backoff
-
-        async def success_func():
-            return "success"
-
-        result = await retry_with_exponential_backoff(success_func)
-        assert result == "success"
-
-    @pytest.mark.asyncio
-    async def test_retry_on_connection_error(self):
-        """Test retry logic on connection errors."""
-        from zetherion_ai.agent.core import retry_with_exponential_backoff
-
-        call_count = 0
-
-        async def flaky_func():
-            nonlocal call_count
-            call_count += 1
-            if call_count < 3:
-                raise APIConnectionError(message="Connection failed", request=create_mock_request())
-            return "success"
-
-        result = await retry_with_exponential_backoff(flaky_func, max_retries=3)
-        assert result == "success"
-        assert call_count == 3
-
-    @pytest.mark.asyncio
-    async def test_retry_on_timeout_error(self):
-        """Test retry logic on timeout errors."""
-        from zetherion_ai.agent.core import retry_with_exponential_backoff
-
-        call_count = 0
-
-        async def timeout_func():
-            nonlocal call_count
-            call_count += 1
-            if call_count < 2:
-                raise APITimeoutError(request=create_mock_request())
-            return "success"
-
-        result = await retry_with_exponential_backoff(timeout_func, max_retries=3)
-        assert result == "success"
-        assert call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_retry_on_openai_connection_error(self):
-        """Test retry logic on OpenAI connection errors."""
-        from zetherion_ai.agent.core import retry_with_exponential_backoff
-
-        call_count = 0
-
-        async def openai_error_func():
-            nonlocal call_count
-            call_count += 1
-            if call_count < 2:
-                raise OpenAIConnectionError("Connection failed")
-            return "success"
-
-        result = await retry_with_exponential_backoff(openai_error_func, max_retries=3)
-        assert result == "success"
-        assert call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_max_retries_exceeded(self):
-        """Test that exception is raised when max retries exceeded."""
-        from zetherion_ai.agent.core import retry_with_exponential_backoff
-
-        async def always_fail():
-            raise APIConnectionError(message="Always fails", request=create_mock_request())
-
-        with pytest.raises(APIConnectionError):
-            await retry_with_exponential_backoff(always_fail, max_retries=3)
-
-    @pytest.mark.asyncio
-    async def test_rate_limit_retry(self):
-        """Test retry logic handles rate limits with longer backoff."""
-        from zetherion_ai.agent.core import retry_with_exponential_backoff
-
-        call_count = 0
-
-        async def rate_limited_func():
-            nonlocal call_count
-            call_count += 1
-            if call_count < 2:
-                raise RateLimitError("Rate limited", response=create_mock_response(429), body=None)
-            return "success"
-
-        result = await retry_with_exponential_backoff(rate_limited_func, max_retries=3)
-        assert result == "success"
-        assert call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_openai_rate_limit_retry(self):
-        """Test retry logic handles OpenAI rate limits."""
-        from zetherion_ai.agent.core import retry_with_exponential_backoff
-
-        call_count = 0
-
-        async def rate_limited_func():
-            nonlocal call_count
-            call_count += 1
-            if call_count < 2:
-                raise OpenAIRateLimitError("Rate limited")
-            return "success"
-
-        result = await retry_with_exponential_backoff(rate_limited_func, max_retries=3)
-        assert result == "success"
-        assert call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_exponential_backoff_delay(self):
-        """Test that delay increases exponentially."""
-        import asyncio
-
-        from zetherion_ai.agent.core import retry_with_exponential_backoff
-
-        delays = []
-
-        async def track_delay_func():
-            raise APIConnectionError(message="Fail", request=create_mock_request())
-
-        original_sleep = asyncio.sleep
-
-        async def mock_sleep(delay):
-            delays.append(delay)
-            await original_sleep(0)  # Don't actually sleep in tests
-
-        with (  # noqa: SIM117
-            patch("asyncio.sleep", side_effect=mock_sleep),
-            pytest.raises(APIConnectionError),
-        ):
-            await retry_with_exponential_backoff(
-                track_delay_func,
-                max_retries=3,
-                initial_delay=1.0,
-                exponential_base=2.0,
-            )
-
-        # Should have 2 delays (3 attempts = 2 retries)
-        assert len(delays) == 2
-        assert delays[0] == 1.0
-        assert delays[1] == 2.0
-
-    @pytest.mark.asyncio
-    async def test_max_delay_cap(self):
-        """Test that delay is capped at max_delay."""
-        import asyncio
-
-        from zetherion_ai.agent.core import retry_with_exponential_backoff
-
-        delays = []
-
-        async def always_fail():
-            raise APIConnectionError(message="Fail", request=create_mock_request())
-
-        original_sleep = asyncio.sleep
-
-        async def mock_sleep(delay):
-            delays.append(delay)
-            await original_sleep(0)  # Don't actually sleep in tests
-
-        with (  # noqa: SIM117
-            patch("asyncio.sleep", side_effect=mock_sleep),
-            pytest.raises(APIConnectionError),
-        ):
-            await retry_with_exponential_backoff(
-                always_fail,
-                max_retries=5,
-                initial_delay=10.0,
-                max_delay=15.0,
-                exponential_base=2.0,
-            )
-
-        # All delays should be capped at max_delay
-        assert all(delay <= 15.0 for delay in delays)
-
-
-class TestAgentInitialization:
-    """Tests for Agent initialization."""
-
-    @pytest.mark.asyncio
-    async def test_agent_init_with_all_keys(
-        self, mock_qdrant_client, mock_embeddings_client, monkeypatch
-    ):
-        """Test agent initialization with all API keys."""
-        monkeypatch.setenv("DISCORD_TOKEN", "test")
-        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
-        monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
-
-        with (
-            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch(
-                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
-            ),
-            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
-        ):
-            from zetherion_ai.agent.core import Agent
-            from zetherion_ai.memory.qdrant import QdrantMemory
-
-            memory = QdrantMemory()
-            agent = Agent(memory)
-
-            assert agent._has_claude is True
-            assert agent._has_openai is True
-            assert agent._claude_client is not None
-            assert agent._openai_client is not None
-
-    @pytest.mark.asyncio
-    async def test_agent_init_without_anthropic_key(
-        self, mock_qdrant_client, mock_embeddings_client, monkeypatch
-    ):
-        """Test agent initialization without Anthropic API key."""
-        monkeypatch.setenv("DISCORD_TOKEN", "test")
-        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "")  # Empty string to ensure no key
-
-        # Force settings reload after environment change
-        from zetherion_ai.config import get_settings
-
-        get_settings.cache_clear()
-
-        with (
-            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch(
-                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
-            ),
-            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
-            patch("zetherion_ai.agent.router_ollama.httpx.AsyncClient"),
-        ):
-            from zetherion_ai.agent.core import Agent
-            from zetherion_ai.memory.qdrant import QdrantMemory
-
-            memory = QdrantMemory()
-            agent = Agent(memory)
-
-            assert agent._has_claude is False
-            assert agent._has_openai is True
-            assert agent._claude_client is None
-            assert agent._openai_client is not None
-
-    @pytest.mark.asyncio
-    async def test_agent_init_without_openai_key(
-        self, mock_qdrant_client, mock_embeddings_client, monkeypatch
-    ):
-        """Test agent initialization without OpenAI API key."""
-        monkeypatch.setenv("DISCORD_TOKEN", "test")
-        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
-        monkeypatch.setenv("OPENAI_API_KEY", "")  # Empty string to ensure no key
-
-        # Force settings reload after environment change
-        from zetherion_ai.config import get_settings
-
-        get_settings.cache_clear()
-
-        with (
-            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch(
-                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
-            ),
-            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
-            patch("zetherion_ai.agent.router_ollama.httpx.AsyncClient"),
-        ):
-            from zetherion_ai.agent.core import Agent
-            from zetherion_ai.memory.qdrant import QdrantMemory
-
-            memory = QdrantMemory()
-            agent = Agent(memory)
-
-            assert agent._has_claude is True
-            assert agent._has_openai is False
-            assert agent._claude_client is not None
-            assert agent._openai_client is None
-
-    @pytest.mark.asyncio
-    async def test_agent_init_without_any_llm_keys(
-        self, mock_qdrant_client, mock_embeddings_client, monkeypatch
-    ):
-        """Test agent initialization without Claude or OpenAI keys."""
-        monkeypatch.setenv("DISCORD_TOKEN", "test")
-        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "")  # Empty string to ensure no key
-        monkeypatch.setenv("OPENAI_API_KEY", "")  # Empty string to ensure no key
-
-        # Force settings reload after environment change
-        from zetherion_ai.config import get_settings
-
-        get_settings.cache_clear()
-
-        with (
-            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch(
-                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
-            ),
-            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
-            patch("zetherion_ai.agent.router_ollama.httpx.AsyncClient"),
-        ):
-            from zetherion_ai.agent.core import Agent
-            from zetherion_ai.memory.qdrant import QdrantMemory
-
-            memory = QdrantMemory()
-            agent = Agent(memory)
-
-            assert agent._has_claude is False
-            assert agent._has_openai is False
-            assert agent._claude_client is None
-            assert agent._openai_client is None
+from zetherion_ai.agent.inference import InferenceResult
+from zetherion_ai.agent.providers import Provider, TaskType
+from zetherion_ai.agent.router import MessageIntent, RoutingDecision
 
 
 class TestBuildContext:
@@ -376,7 +17,6 @@ class TestBuildContext:
         """Create agent for testing."""
         monkeypatch.setenv("DISCORD_TOKEN", "test")
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
 
         with (
             patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
@@ -394,7 +34,6 @@ class TestBuildContext:
     @pytest.mark.asyncio
     async def test_build_context_parallel_fetch(self, agent):
         """Test that context is fetched in parallel."""
-        # Mock the memory methods
         agent._memory.get_recent_context = AsyncMock(
             return_value=[
                 {"role": "user", "content": "Hello"},
@@ -440,293 +79,8 @@ class TestBuildContext:
         agent._memory.search_memories.assert_called_once_with(
             query="test",
             limit=10,
+            user_id=None,
         )
-
-
-class TestClaudeResponseGeneration:
-    """Tests for Claude response generation."""
-
-    @pytest.fixture
-    def agent_with_claude(
-        self, mock_qdrant_client, mock_embeddings_client, mock_claude_client, monkeypatch
-    ):
-        """Create agent with Claude client."""
-        monkeypatch.setenv("DISCORD_TOKEN", "test")
-        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
-
-        with (
-            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch(
-                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
-            ),
-            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
-            patch(
-                "zetherion_ai.agent.core.anthropic.AsyncAnthropic", return_value=mock_claude_client
-            ),
-        ):
-            from zetherion_ai.agent.core import Agent
-            from zetherion_ai.memory.qdrant import QdrantMemory
-
-            memory = QdrantMemory()
-            agent = Agent(memory)
-            agent._claude_client = mock_claude_client
-            return agent
-
-    @pytest.mark.asyncio
-    async def test_generate_claude_response_success(self, agent_with_claude, mock_claude_client):
-        """Test successful Claude response generation."""
-        recent_messages = [
-            {"role": "user", "content": "Hello"},
-            {"role": "assistant", "content": "Hi!"},
-        ]
-        relevant_memories = [
-            {"content": "User prefers concise responses", "score": 0.85},
-        ]
-
-        response = await agent_with_claude._generate_claude_response(
-            user_id=123,
-            channel_id=456,
-            message="How are you?",
-            recent_messages=recent_messages,
-            relevant_memories=relevant_memories,
-        )
-
-        assert response == "Test response from Claude"
-        mock_claude_client.messages.create.assert_called_once()
-
-        # Verify the call arguments
-        call_args = mock_claude_client.messages.create.call_args
-        assert call_args.kwargs["model"] == "claude-sonnet-4-5-20250929"
-        assert call_args.kwargs["max_tokens"] == 2048
-        assert "Zetherion" in call_args.kwargs["system"]
-        assert "Relevant Memories" in call_args.kwargs["system"]
-
-    @pytest.mark.asyncio
-    async def test_generate_claude_response_without_high_score_memories(
-        self, agent_with_claude, mock_claude_client
-    ):
-        """Test Claude response when memories have low scores."""
-        recent_messages = []
-        relevant_memories = [
-            {"content": "Low score memory", "score": 0.5},  # Below 0.7 threshold
-        ]
-
-        response = await agent_with_claude._generate_claude_response(
-            user_id=123,
-            channel_id=456,
-            message="Test",
-            recent_messages=recent_messages,
-            relevant_memories=relevant_memories,
-        )
-
-        assert response == "Test response from Claude"
-
-        # System prompt should not include memories
-        call_args = mock_claude_client.messages.create.call_args
-        assert "Relevant Memories" not in call_args.kwargs["system"]
-
-    @pytest.mark.asyncio
-    async def test_generate_claude_response_connection_error(
-        self, agent_with_claude, mock_claude_client
-    ):
-        """Test Claude response falls back on connection error."""
-        mock_claude_client.messages.create = AsyncMock(
-            side_effect=APIConnectionError(
-                message="Connection failed", request=create_mock_request()
-            )
-        )
-
-        # Mock the router's simple response
-        agent_with_claude._router.generate_simple_response = AsyncMock(
-            return_value="Fallback response"
-        )
-
-        response = await agent_with_claude._generate_claude_response(
-            user_id=123,
-            channel_id=456,
-            message="Test",
-            recent_messages=[],
-            relevant_memories=[],
-        )
-
-        assert response == "Fallback response"
-        agent_with_claude._router.generate_simple_response.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_generate_claude_response_without_client(self, agent_with_claude):
-        """Test Claude response when client is None."""
-        agent_with_claude._claude_client = None
-        agent_with_claude._router.generate_simple_response = AsyncMock(
-            return_value="Simple response"
-        )
-
-        response = await agent_with_claude._generate_claude_response(
-            user_id=123,
-            channel_id=456,
-            message="Test",
-            recent_messages=[],
-            relevant_memories=[],
-        )
-
-        assert response == "Simple response"
-
-
-class TestOpenAIResponseGeneration:
-    """Tests for OpenAI response generation."""
-
-    @pytest.fixture
-    def agent_with_openai(
-        self, mock_qdrant_client, mock_embeddings_client, mock_openai_client, monkeypatch
-    ):
-        """Create agent with OpenAI client."""
-        monkeypatch.setenv("DISCORD_TOKEN", "test")
-        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
-
-        with (
-            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch(
-                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
-            ),
-            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
-            patch("zetherion_ai.agent.core.openai.AsyncOpenAI", return_value=mock_openai_client),
-        ):
-            from zetherion_ai.agent.core import Agent
-            from zetherion_ai.memory.qdrant import QdrantMemory
-
-            memory = QdrantMemory()
-            agent = Agent(memory)
-            agent._openai_client = mock_openai_client
-            return agent
-
-    @pytest.mark.asyncio
-    async def test_generate_openai_response_success(self, agent_with_openai, mock_openai_client):
-        """Test successful OpenAI response generation."""
-        recent_messages = [
-            {"role": "user", "content": "Hello"},
-            {"role": "assistant", "content": "Hi!"},
-        ]
-        relevant_memories = [
-            {"content": "User likes Python", "score": 0.9},
-        ]
-
-        response = await agent_with_openai._generate_openai_response(
-            user_id=123,
-            channel_id=456,
-            message="Tell me about Python",
-            recent_messages=recent_messages,
-            relevant_memories=relevant_memories,
-        )
-
-        assert response == "Test response from OpenAI"
-        mock_openai_client.chat.completions.create.assert_called_once()
-
-        # Verify the call arguments
-        call_args = mock_openai_client.chat.completions.create.call_args
-        assert call_args.kwargs["model"] == "gpt-4o"
-        assert call_args.kwargs["max_tokens"] == 2048
-
-    @pytest.mark.asyncio
-    async def test_generate_openai_response_connection_error(
-        self, agent_with_openai, mock_openai_client
-    ):
-        """Test OpenAI response falls back on connection error."""
-        mock_openai_client.chat.completions.create = AsyncMock(
-            side_effect=OpenAIConnectionError("Connection failed")
-        )
-
-        agent_with_openai._router.generate_simple_response = AsyncMock(
-            return_value="Fallback response"
-        )
-
-        response = await agent_with_openai._generate_openai_response(
-            user_id=123,
-            channel_id=456,
-            message="Test",
-            recent_messages=[],
-            relevant_memories=[],
-        )
-
-        assert response == "Fallback response"
-
-    @pytest.mark.asyncio
-    async def test_generate_openai_response_without_client(self, agent_with_openai):
-        """Test OpenAI response when client is None."""
-        agent_with_openai._openai_client = None
-        agent_with_openai._router.generate_simple_response = AsyncMock(
-            return_value="Simple response"
-        )
-
-        response = await agent_with_openai._generate_openai_response(
-            user_id=123,
-            channel_id=456,
-            message="Test",
-            recent_messages=[],
-            relevant_memories=[],
-        )
-
-        assert response == "Simple response"
-
-
-class TestFallbackToGeminiFlash:
-    """Tests for fallback to Gemini Flash when Claude/OpenAI unavailable."""
-
-    @pytest.fixture
-    def agent_flash_only(self, mock_qdrant_client, mock_embeddings_client, monkeypatch):
-        """Create agent with only Gemini Flash (no Claude/OpenAI)."""
-        monkeypatch.setenv("DISCORD_TOKEN", "test")
-        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "")  # Empty string to ensure no key
-        monkeypatch.setenv("OPENAI_API_KEY", "")  # Empty string to ensure no key
-        monkeypatch.setenv("INFERENCE_BROKER_ENABLED", "false")  # Disable to avoid network calls
-
-        # Force settings reload
-        from zetherion_ai.config import get_settings
-
-        get_settings.cache_clear()
-
-        with (
-            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
-            patch(
-                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
-            ),
-            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
-            patch("zetherion_ai.agent.router_ollama.httpx.AsyncClient"),
-        ):
-            from zetherion_ai.agent.core import Agent
-            from zetherion_ai.memory.qdrant import QdrantMemory
-
-            memory = QdrantMemory()
-            return Agent(memory)
-
-    @pytest.mark.asyncio
-    async def test_fallback_to_flash_for_complex_task(self, agent_flash_only):
-        """Test that complex tasks fall back to Flash when no other models available."""
-        from zetherion_ai.agent.router import MessageIntent, RoutingDecision
-
-        routing = RoutingDecision(
-            intent=MessageIntent.COMPLEX_TASK,
-            confidence=0.9,
-            reasoning="Code generation task",
-            use_claude=True,
-        )
-
-        agent_flash_only._memory.get_recent_context = AsyncMock(return_value=[])
-        agent_flash_only._memory.search_memories = AsyncMock(return_value=[])
-        agent_flash_only._router.generate_simple_response = AsyncMock(
-            return_value="Flash fallback response"
-        )
-
-        response = await agent_flash_only._handle_complex_task(
-            user_id=123,
-            channel_id=456,
-            message="Write a Python function",
-            routing=routing,
-        )
-
-        assert response == "Flash fallback response"
-        agent_flash_only._router.generate_simple_response.assert_called_once()
 
 
 class TestMemoryHandlers:
@@ -757,13 +111,29 @@ class TestMemoryHandlers:
         agent._router.generate_simple_response = AsyncMock(return_value="Dark mode preference")
         agent._memory.store_memory = AsyncMock()
 
-        response = await agent._handle_memory_store("Remember that I prefer dark mode")
+        response = await agent._handle_memory_store("Remember that I prefer dark mode", user_id=123)
 
         assert "I'll remember" in response
         assert "Dark mode preference" in response
         agent._memory.store_memory.assert_called_once_with(
             content="Dark mode preference",
             memory_type="user_request",
+            user_id=123,
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_memory_store_without_user_id(self, agent):
+        """Test memory storage handler without user_id."""
+        agent._router.generate_simple_response = AsyncMock(return_value="Some fact")
+        agent._memory.store_memory = AsyncMock()
+
+        response = await agent._handle_memory_store("Remember some fact")
+
+        assert "I'll remember" in response
+        agent._memory.store_memory.assert_called_once_with(
+            content="Some fact",
+            memory_type="user_request",
+            user_id=None,
         )
 
     @pytest.mark.asyncio
@@ -838,6 +208,25 @@ class TestMemoryHandlers:
         agent._memory.store_memory.assert_called_once_with(
             content="User's birthday is March 15",
             memory_type="fact",
+            user_id=None,
+        )
+
+    @pytest.mark.asyncio
+    async def test_store_memory_from_request_passes_user_id(self, agent):
+        """Test that store_memory_from_request passes user_id to memory."""
+        agent._memory.store_memory = AsyncMock()
+
+        response = await agent.store_memory_from_request(
+            content="Favorite language is Rust",
+            memory_type="preference",
+            user_id=42,
+        )
+
+        assert "stored that in my memory" in response
+        agent._memory.store_memory.assert_called_once_with(
+            content="Favorite language is Rust",
+            memory_type="preference",
+            user_id=42,
         )
 
 
@@ -898,8 +287,6 @@ class TestGenerateResponse:
         """Create agent for testing."""
         monkeypatch.setenv("DISCORD_TOKEN", "test")
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
-        monkeypatch.setenv("INFERENCE_BROKER_ENABLED", "false")  # Disable to avoid network calls
 
         with (
             patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
@@ -916,10 +303,7 @@ class TestGenerateResponse:
 
     @pytest.mark.asyncio
     async def test_generate_response_simple_query(self, agent):
-        """Test generate_response for simple query."""
-        from zetherion_ai.agent.router import MessageIntent, RoutingDecision
-
-        # Mock routing
+        """Test generate_response for simple query (no message storage)."""
         agent._router.classify = AsyncMock(
             return_value=RoutingDecision(
                 intent=MessageIntent.SIMPLE_QUERY,
@@ -938,14 +322,12 @@ class TestGenerateResponse:
         )
 
         assert response == "Hello!"
-        # Should store both user message and response
-        assert agent._memory.store_message.call_count == 2
+        # SIMPLE_QUERY should NOT store messages
+        agent._memory.store_message.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_generate_response_memory_store(self, agent):
         """Test generate_response for memory store intent."""
-        from zetherion_ai.agent.router import MessageIntent, RoutingDecision
-
         agent._router.classify = AsyncMock(
             return_value=RoutingDecision(
                 intent=MessageIntent.MEMORY_STORE,
@@ -970,8 +352,6 @@ class TestGenerateResponse:
     @pytest.mark.asyncio
     async def test_generate_response_memory_recall(self, agent):
         """Test generate_response for memory recall intent."""
-        from zetherion_ai.agent.router import MessageIntent, RoutingDecision
-
         agent._router.classify = AsyncMock(
             return_value=RoutingDecision(
                 intent=MessageIntent.MEMORY_RECALL,
@@ -1001,9 +381,7 @@ class TestGenerateResponse:
 
     @pytest.mark.asyncio
     async def test_generate_response_system_command(self, agent):
-        """Test generate_response for system command."""
-        from zetherion_ai.agent.router import MessageIntent, RoutingDecision
-
+        """Test generate_response for system command (no message storage)."""
         agent._router.classify = AsyncMock(
             return_value=RoutingDecision(
                 intent=MessageIntent.SYSTEM_COMMAND,
@@ -1022,12 +400,12 @@ class TestGenerateResponse:
 
         assert "Zetherion" in response
         assert "Commands" in response
+        # SYSTEM_COMMAND should NOT store messages
+        agent._memory.store_message.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_generate_response_complex_task_with_claude(self, agent, mock_claude_client):
-        """Test generate_response for complex task routed to Claude."""
-        from zetherion_ai.agent.router import MessageIntent, RoutingDecision
-
+    async def test_generate_response_complex_task_delegates_to_broker(self, agent):
+        """Test generate_response for complex task routes through InferenceBroker."""
         agent._router.classify = AsyncMock(
             return_value=RoutingDecision(
                 intent=MessageIntent.COMPLEX_TASK,
@@ -1036,10 +414,20 @@ class TestGenerateResponse:
                 use_claude=True,
             )
         )
-        agent._claude_client = mock_claude_client
         agent._memory.get_recent_context = AsyncMock(return_value=[])
         agent._memory.search_memories = AsyncMock(return_value=[])
         agent._memory.store_message = AsyncMock()
+
+        # Mock the inference broker
+        mock_result = InferenceResult(
+            content="Generated code response",
+            provider=Provider.CLAUDE,
+            task_type=TaskType.CODE_GENERATION,
+            model="claude-sonnet",
+            input_tokens=50,
+            output_tokens=100,
+        )
+        agent._inference_broker.infer = AsyncMock(return_value=mock_result)
 
         response = await agent.generate_response(
             user_id=123,
@@ -1047,45 +435,18 @@ class TestGenerateResponse:
             message="Write a Python function to sort a list",
         )
 
-        assert response == "Test response from Claude"
-        mock_claude_client.messages.create.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_generate_response_stores_metadata(self, agent):
-        """Test that generate_response stores intent metadata."""
-        from zetherion_ai.agent.router import MessageIntent, RoutingDecision
-
-        agent._router.classify = AsyncMock(
-            return_value=RoutingDecision(
-                intent=MessageIntent.SIMPLE_QUERY,
-                confidence=0.9,
-                reasoning="Greeting",
-                use_claude=False,
-            )
-        )
-        agent._router.generate_simple_response = AsyncMock(return_value="Hi!")
-        agent._memory.store_message = AsyncMock()
-
-        await agent.generate_response(
-            user_id=123,
-            channel_id=456,
-            message="Hello",
-        )
-
-        # Check that first call (user message) includes metadata
-        first_call = agent._memory.store_message.call_args_list[0]
-        assert first_call.kwargs["metadata"]["intent"] == "simple_query"
+        assert response == "Generated code response"
+        agent._inference_broker.infer.assert_called_once()
 
 
-class TestErrorHandling:
-    """Tests for error handling and edge cases."""
+class TestHandleComplexTask:
+    """Tests for _handle_complex_task method."""
 
     @pytest.fixture
     def agent(self, mock_qdrant_client, mock_embeddings_client, monkeypatch):
         """Create agent for testing."""
         monkeypatch.setenv("DISCORD_TOKEN", "test")
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
 
         with (
             patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
@@ -1101,77 +462,284 @@ class TestErrorHandling:
             return Agent(memory)
 
     @pytest.mark.asyncio
-    async def test_claude_api_error_fallback(self, agent, mock_claude_client):
-        """Test that Claude API errors fall back to Flash."""
-        import anthropic
+    async def test_handle_complex_task_delegates_to_inference_broker(self, agent):
+        """Test that _handle_complex_task always delegates to InferenceBroker."""
+        agent._memory.get_recent_context = AsyncMock(return_value=[])
+        agent._memory.search_memories = AsyncMock(return_value=[])
 
-        agent._claude_client = mock_claude_client
-        mock_claude_client.messages.create = AsyncMock(
-            side_effect=anthropic.APIError("API Error", request=create_mock_request(), body=None)
+        mock_result = InferenceResult(
+            content="Broker response",
+            provider=Provider.CLAUDE,
+            task_type=TaskType.CODE_GENERATION,
+            model="claude-sonnet",
+            input_tokens=50,
+            output_tokens=100,
         )
-        agent._router.generate_simple_response = AsyncMock(return_value="Fallback response")
+        agent._inference_broker.infer = AsyncMock(return_value=mock_result)
 
-        response = await agent._generate_claude_response(
+        routing = RoutingDecision(
+            intent=MessageIntent.COMPLEX_TASK,
+            confidence=0.9,
+            reasoning="Code task",
+            use_claude=True,
+        )
+
+        response = await agent._handle_complex_task(
             user_id=123,
             channel_id=456,
-            message="Test",
-            recent_messages=[],
-            relevant_memories=[],
+            message="Write a Python sort function",
+            routing=routing,
         )
 
-        assert response == "Fallback response"
+        assert response == "Broker response"
+        agent._inference_broker.infer.assert_called_once()
+        # Verify the broker was called with correct task type and prompt
+        call_kwargs = agent._inference_broker.infer.call_args[1]
+        assert call_kwargs["prompt"] == "Write a Python sort function"
+        assert call_kwargs["task_type"] == TaskType.CODE_GENERATION
 
     @pytest.mark.asyncio
-    async def test_openai_timeout_error_fallback(self, agent, mock_openai_client):
-        """Test that OpenAI timeout errors fall back to Flash."""
-        agent._openai_client = mock_openai_client
-        mock_openai_client.chat.completions.create = AsyncMock(
-            side_effect=OpenAITimeoutError("Timeout")
+    async def test_handle_complex_task_includes_context_in_system_prompt(self, agent):
+        """Test that context is included in the system prompt for complex tasks."""
+        agent._memory.get_recent_context = AsyncMock(
+            return_value=[
+                {"role": "user", "content": "Previous message"},
+                {"role": "assistant", "content": "Previous response"},
+            ]
         )
-        agent._router.generate_simple_response = AsyncMock(return_value="Fallback response")
+        agent._memory.search_memories = AsyncMock(
+            return_value=[
+                {"content": "User is a Python expert", "score": 0.95},
+            ]
+        )
 
-        response = await agent._generate_openai_response(
+        mock_result = InferenceResult(
+            content="Response with context",
+            provider=Provider.CLAUDE,
+            task_type=TaskType.CONVERSATION,
+            model="claude-sonnet",
+        )
+        agent._inference_broker.infer = AsyncMock(return_value=mock_result)
+
+        routing = RoutingDecision(
+            intent=MessageIntent.COMPLEX_TASK,
+            confidence=0.9,
+            reasoning="General task",
+            use_claude=True,
+        )
+
+        await agent._handle_complex_task(
             user_id=123,
             channel_id=456,
-            message="Test",
-            recent_messages=[],
-            relevant_memories=[],
+            message="Tell me about Python",
+            routing=routing,
         )
 
-        assert response == "Fallback response"
+        call_kwargs = agent._inference_broker.infer.call_args[1]
+        assert "Relevant Memories" in call_kwargs["system_prompt"]
+        assert "Python expert" in call_kwargs["system_prompt"]
+
+
+class TestClassifyTaskType:
+    """Tests for _classify_task_type method."""
+
+    @pytest.fixture
+    def agent(self, mock_qdrant_client, mock_embeddings_client, monkeypatch):
+        """Create agent for testing."""
+        monkeypatch.setenv("DISCORD_TOKEN", "test")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        with (
+            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
+            patch(
+                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
+            ),
+            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
+        ):
+            from zetherion_ai.agent.core import Agent
+            from zetherion_ai.memory.qdrant import QdrantMemory
+
+            memory = QdrantMemory()
+            return Agent(memory)
+
+    def test_classify_code_generation(self, agent):
+        """Test code generation classification."""
+        result = agent._classify_task_type("Write a Python function to parse JSON")
+        assert result == TaskType.CODE_GENERATION
+
+    def test_classify_code_review(self, agent):
+        """Test code review classification."""
+        result = agent._classify_task_type("Review this Python code for bugs")
+        assert result == TaskType.CODE_REVIEW
+
+    def test_classify_code_debugging(self, agent):
+        """Test code debugging classification."""
+        result = agent._classify_task_type("Debug this Python error")
+        assert result == TaskType.CODE_DEBUGGING
+
+    def test_classify_math_analysis(self, agent):
+        """Test math analysis classification."""
+        result = agent._classify_task_type("Calculate the derivative of x^2")
+        assert result == TaskType.MATH_ANALYSIS
+
+    def test_classify_complex_reasoning(self, agent):
+        """Test complex reasoning classification."""
+        result = agent._classify_task_type("Explain in detail why the sky is blue")
+        assert result == TaskType.COMPLEX_REASONING
+
+    def test_classify_creative_writing(self, agent):
+        """Test creative writing classification."""
+        result = agent._classify_task_type("Write a short story about a wizard")
+        assert result == TaskType.CREATIVE_WRITING
+
+    def test_classify_summarization(self, agent):
+        """Test summarization classification."""
+        result = agent._classify_task_type("Summarize this article for me")
+        assert result == TaskType.SUMMARIZATION
+
+    def test_classify_conversation_default(self, agent):
+        """Test default conversation classification."""
+        result = agent._classify_task_type("What is the weather like today?")
+        assert result == TaskType.CONVERSATION
+
+    def test_uses_frozenset_keyword_constants(self):
+        """Test that keyword constants are frozensets (not mutable sets or lists)."""
+        from zetherion_ai.agent.core import (
+            CODE_DEBUG_KEYWORDS,
+            CODE_KEYWORDS,
+            CODE_REVIEW_KEYWORDS,
+            CREATIVE_KEYWORDS,
+            MATH_KEYWORDS,
+            MATH_SPECIFIC_KEYWORDS,
+            SUMMARIZATION_KEYWORDS,
+        )
+
+        assert isinstance(CODE_KEYWORDS, frozenset)
+        assert isinstance(CODE_REVIEW_KEYWORDS, frozenset)
+        assert isinstance(CODE_DEBUG_KEYWORDS, frozenset)
+        assert isinstance(MATH_KEYWORDS, frozenset)
+        assert isinstance(MATH_SPECIFIC_KEYWORDS, frozenset)
+        assert isinstance(CREATIVE_KEYWORDS, frozenset)
+        assert isinstance(SUMMARIZATION_KEYWORDS, frozenset)
+
+
+class TestMessageStorageSkipping:
+    """Tests for message storage being skipped for lightweight intents."""
+
+    @pytest.fixture
+    def agent(self, mock_qdrant_client, mock_embeddings_client, monkeypatch):
+        """Create agent for testing."""
+        monkeypatch.setenv("DISCORD_TOKEN", "test")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        with (
+            patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_qdrant_client),
+            patch(
+                "zetherion_ai.memory.embeddings.genai.Client", return_value=mock_embeddings_client
+            ),
+            patch("zetherion_ai.agent.router.genai.Client", return_value=Mock()),
+        ):
+            from zetherion_ai.agent.core import Agent
+            from zetherion_ai.memory.qdrant import QdrantMemory
+
+            memory = QdrantMemory()
+            return Agent(memory)
 
     @pytest.mark.asyncio
-    async def test_unexpected_error_in_claude(self, agent, mock_claude_client):
-        """Test that unexpected errors in Claude are handled."""
-        agent._claude_client = mock_claude_client
-        mock_claude_client.messages.create = AsyncMock(side_effect=Exception("Unexpected error"))
-        agent._router.generate_simple_response = AsyncMock(return_value="Fallback response")
+    async def test_simple_query_skips_message_storage(self, agent):
+        """Test that message storage is skipped for SIMPLE_QUERY intent."""
+        agent._router.classify = AsyncMock(
+            return_value=RoutingDecision(
+                intent=MessageIntent.SIMPLE_QUERY,
+                confidence=0.95,
+                reasoning="Simple greeting",
+                use_claude=False,
+            )
+        )
+        agent._router.generate_simple_response = AsyncMock(return_value="Hello!")
+        agent._memory.store_message = AsyncMock()
 
-        response = await agent._generate_claude_response(
+        await agent.generate_response(
             user_id=123,
             channel_id=456,
-            message="Test",
-            recent_messages=[],
-            relevant_memories=[],
+            message="Hi there",
         )
 
-        assert response == "Fallback response"
+        agent._memory.store_message.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_unexpected_error_in_openai(self, agent, mock_openai_client):
-        """Test that unexpected errors in OpenAI are handled."""
-        agent._openai_client = mock_openai_client
-        mock_openai_client.chat.completions.create = AsyncMock(
-            side_effect=Exception("Unexpected error")
+    async def test_system_command_skips_message_storage(self, agent):
+        """Test that message storage is skipped for SYSTEM_COMMAND intent."""
+        agent._router.classify = AsyncMock(
+            return_value=RoutingDecision(
+                intent=MessageIntent.SYSTEM_COMMAND,
+                confidence=0.98,
+                reasoning="Help request",
+                use_claude=False,
+            )
         )
-        agent._router.generate_simple_response = AsyncMock(return_value="Fallback response")
+        agent._memory.store_message = AsyncMock()
 
-        response = await agent._generate_openai_response(
+        await agent.generate_response(
             user_id=123,
             channel_id=456,
-            message="Test",
-            recent_messages=[],
-            relevant_memories=[],
+            message="help",
         )
 
-        assert response == "Fallback response"
+        agent._memory.store_message.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_memory_store_intent_does_store_messages(self, agent):
+        """Test that MEMORY_STORE intent does store messages."""
+        agent._router.classify = AsyncMock(
+            return_value=RoutingDecision(
+                intent=MessageIntent.MEMORY_STORE,
+                confidence=0.9,
+                reasoning="User wants to remember",
+                use_claude=False,
+            )
+        )
+        agent._router.generate_simple_response = AsyncMock(return_value="A fact")
+        agent._memory.store_memory = AsyncMock()
+        agent._memory.store_message = AsyncMock()
+
+        await agent.generate_response(
+            user_id=123,
+            channel_id=456,
+            message="Remember that I like cats",
+        )
+
+        # MEMORY_STORE should store messages
+        assert agent._memory.store_message.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_complex_task_does_store_messages(self, agent):
+        """Test that COMPLEX_TASK intent does store messages."""
+        agent._router.classify = AsyncMock(
+            return_value=RoutingDecision(
+                intent=MessageIntent.COMPLEX_TASK,
+                confidence=0.92,
+                reasoning="Complex question",
+                use_claude=True,
+            )
+        )
+        agent._memory.get_recent_context = AsyncMock(return_value=[])
+        agent._memory.search_memories = AsyncMock(return_value=[])
+        agent._memory.store_message = AsyncMock()
+
+        mock_result = InferenceResult(
+            content="Complex response",
+            provider=Provider.CLAUDE,
+            task_type=TaskType.CONVERSATION,
+            model="claude-sonnet",
+        )
+        agent._inference_broker.infer = AsyncMock(return_value=mock_result)
+
+        await agent.generate_response(
+            user_id=123,
+            channel_id=456,
+            message="Explain quantum computing in detail",
+        )
+
+        # COMPLEX_TASK should store messages
+        assert agent._memory.store_message.call_count == 2

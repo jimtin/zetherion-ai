@@ -294,20 +294,25 @@ def generate_env_file(config: dict) -> bool:
         # Router backend
         elif line.startswith("ROUTER_BACKEND="):
             updated_lines.append(f"ROUTER_BACKEND={config['router_backend']}")
-        # Ollama model
+        # Ollama models
         elif line.startswith("OLLAMA_ROUTER_MODEL="):
+            updated_lines.append(line)  # Keep default router model
+        elif line.startswith("OLLAMA_GENERATION_MODEL="):
             if config["router_backend"] == "ollama":
                 updated_lines.append(
-                    f"OLLAMA_ROUTER_MODEL={config.get('ollama_model', 'llama3.1:8b')}"
+                    f"OLLAMA_GENERATION_MODEL={config.get('ollama_model', 'llama3.1:8b')}"
                 )
             else:
-                updated_lines.append(line)  # Keep default
+                updated_lines.append(line)
         # Docker memory
         elif line.startswith("OLLAMA_DOCKER_MEMORY="):
             if config["router_backend"] == "ollama":
                 updated_lines.append(f"OLLAMA_DOCKER_MEMORY={config.get('docker_memory', 8)}")
             else:
                 updated_lines.append(line)  # Keep default
+        # Encryption (mandatory)
+        elif line.startswith("ENCRYPTION_PASSPHRASE="):
+            updated_lines.append(f"ENCRYPTION_PASSPHRASE={config.get('encryption_passphrase', '')}")
         else:
             updated_lines.append(line)
 
@@ -420,8 +425,26 @@ def main() -> int:
         else:
             print_error("Please enter 1 or 2")
 
-    # Step 5: Generate .env file
-    print(f"\n{Colors.BOLD}Step 5: Generating Configuration{Colors.END}")
+    # Step: Encryption Configuration (mandatory)
+    step_num = "5" if config["router_backend"] == "ollama" else "4"
+    print(f"\n{Colors.BOLD}Step {step_num}: Encryption{Colors.END}")
+    print("Zetherion AI requires encryption for all stored data.")
+    print("You must set a passphrase (minimum 16 characters).\n")
+
+    def validate_passphrase(p: str) -> bool:
+        return len(p) >= 16
+
+    config["encryption_passphrase"] = prompt_input(
+        "Enter encryption passphrase (min 16 chars)",
+        required=True,
+        validator=validate_passphrase,
+        mask=True,
+    )
+    print_success("Encryption passphrase set")
+
+    # Generate .env file
+    gen_step = "6" if config["router_backend"] == "ollama" else "5"
+    print(f"\n{Colors.BOLD}Step {gen_step}: Generating Configuration{Colors.END}")
 
     if generate_env_file(config):
         print_success(".env file created successfully!")

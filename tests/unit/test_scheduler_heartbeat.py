@@ -1,11 +1,16 @@
 """Tests for heartbeat scheduler module."""
 
 from datetime import datetime, time, timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from zetherion_ai.scheduler.actions import ScheduledEvent
+from zetherion_ai.scheduler.actions import (
+    ActionExecutor,
+    ActionResult,
+    ScheduledEvent,
+    ScheduledEventStatus,
+)
 from zetherion_ai.scheduler.heartbeat import (
     HeartbeatConfig,
     HeartbeatScheduler,
@@ -320,3 +325,250 @@ class TestHeartbeatScheduler:
 
         # Event should have been processed and removed
         assert str(event.id) not in scheduler._scheduled_events
+
+    @pytest.mark.asyncio
+    async def test_run_heartbeat_rate_limit_tracking(self) -> None:
+        """_run_heartbeat should track rate-limited actions."""
+        mock_client = AsyncMock()
+        mock_executor = AsyncMock(spec=ActionExecutor)
+        mock_executor.execute = AsyncMock(
+            return_value=ActionResult(
+                action=HeartbeatAction(
+                    skill_name="test",
+                    action_type="send_message",
+                    user_id="user1",
+                ),
+                success=False,
+                error="Rate limited: too many messages this hour",
+            )
+        )
+
+        scheduler = HeartbeatScheduler(
+            skills_client=mock_client,
+            action_executor=mock_executor,
+        )
+        scheduler.set_user_ids(["user1"])
+        mock_client.trigger_heartbeat = AsyncMock(
+            return_value=[
+                HeartbeatAction(
+                    skill_name="test",
+                    action_type="send_message",
+                    user_id="user1",
+                    priority=5,
+                ),
+            ]
+        )
+
+        # Mock _is_quiet_hours to return False so heartbeat proceeds
+        with patch.object(scheduler, "_is_quiet_hours", return_value=False):
+            await scheduler._run_heartbeat()
+
+        assert scheduler.stats.rate_limited == 1
+        assert scheduler.stats.total_beats == 1
+
+    @pytest.mark.asyncio
+    async def test_run_heartbeat_failed_action_stats(self) -> None:
+        """_run_heartbeat should track failed actions that are not rate limited."""
+        mock_client = AsyncMock()
+        mock_executor = AsyncMock(spec=ActionExecutor)
+        mock_executor.execute = AsyncMock(
+            return_value=ActionResult(
+                action=HeartbeatAction(
+                    skill_name="test",
+                    action_type="send_message",
+                    user_id="user1",
+                ),
+                success=False,
+                error="Failed to send message",
+            )
+        )
+
+        scheduler = HeartbeatScheduler(
+            skills_client=mock_client,
+            action_executor=mock_executor,
+        )
+        scheduler.set_user_ids(["user1"])
+        mock_client.trigger_heartbeat = AsyncMock(
+            return_value=[
+                HeartbeatAction(
+                    skill_name="test",
+                    action_type="send_message",
+                    user_id="user1",
+                    priority=5,
+                ),
+            ]
+        )
+
+        with patch.object(scheduler, "_is_quiet_hours", return_value=False):
+            await scheduler._run_heartbeat()
+
+        assert scheduler.stats.failed_actions == 1
+        assert scheduler.stats.rate_limited == 0
+
+    @pytest.mark.asyncio
+    async def test_run_heartbeat_quiet_hours_skips_skills(self) -> None:
+        """_run_heartbeat should skip skills heartbeat during quiet hours."""
+        mock_client = AsyncMock()
+        scheduler = HeartbeatScheduler(skills_client=mock_client)
+        scheduler.set_user_ids(["user1"])
+
+        with patch.object(scheduler, "_is_quiet_hours", return_value=True):
+            await scheduler._run_heartbeat()
+
+        # Skills heartbeat should not be called during quiet hours
+        mock_client.trigger_heartbeat.assert_not_called()
+        assert scheduler.stats.total_beats == 1
+
+    @pytest.mark.asyncio
+    async def test_run_heartbeat_no_users_skips(self) -> None:
+        """_run_heartbeat should skip when no users configured."""
+        mock_client = AsyncMock()
+        scheduler = HeartbeatScheduler(skills_client=mock_client)
+        # No users set
+
+        with patch.object(scheduler, "_is_quiet_hours", return_value=False):
+            await scheduler._run_heartbeat()
+
+        mock_client.trigger_heartbeat.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_run_loop_exception_handling(self) -> None:
+        """_run_loop should catch exceptions and record them in stats."""
+        scheduler = HeartbeatScheduler()
+        scheduler._running = True
+
+        call_count = 0
+
+        async def failing_heartbeat() -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("Heartbeat failure")
+            # Stop after second call
+            scheduler._running = False
+
+        with (
+            patch.object(scheduler, "_run_heartbeat", side_effect=failing_heartbeat),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            await scheduler._run_loop()
+
+        assert scheduler.stats.last_error == "Heartbeat failure"
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_stop_cancels_task(self) -> None:
+        """stop should cancel the running task."""
+        scheduler = HeartbeatScheduler()
+
+        # Start the scheduler (creates a background task)
+        await scheduler.start()
+        assert scheduler.is_running is True
+        assert scheduler._task is not None
+
+        # Stop should cancel the task
+        await scheduler.stop()
+        assert scheduler.is_running is False
+        assert scheduler._task is None
+
+    @pytest.mark.asyncio
+    async def test_stop_when_no_task(self) -> None:
+        """stop should handle case when no task is running."""
+        scheduler = HeartbeatScheduler()
+        scheduler._running = True
+        scheduler._task = None
+
+        # Should not raise
+        await scheduler.stop()
+        assert scheduler.is_running is False
+
+    @pytest.mark.asyncio
+    async def test_process_scheduled_events_failed_status(self) -> None:
+        """_process_scheduled_events should set FAILED status on failure."""
+        mock_executor = AsyncMock(spec=ActionExecutor)
+        mock_executor.execute = AsyncMock(
+            return_value=ActionResult(
+                action=HeartbeatAction(
+                    skill_name="task_manager",
+                    action_type="reminder",
+                    user_id="user1",
+                ),
+                success=False,
+                error="Execution failed",
+            )
+        )
+
+        scheduler = HeartbeatScheduler(action_executor=mock_executor)
+
+        event = ScheduledEvent(
+            user_id="user1",
+            skill_name="task_manager",
+            action_type="reminder",
+            trigger_time=datetime.now() - timedelta(minutes=1),
+        )
+        scheduler.schedule_event(event)
+
+        await scheduler._process_scheduled_events()
+
+        # Event should be removed from pending
+        assert str(event.id) not in scheduler._scheduled_events
+        # Event should have FAILED status
+        assert event.status == ScheduledEventStatus.FAILED
+        assert event.error == "Execution failed"
+        assert event.triggered_at is not None
+
+    @pytest.mark.asyncio
+    async def test_process_scheduled_events_completed_status(self) -> None:
+        """_process_scheduled_events should set COMPLETED status on success."""
+        mock_executor = AsyncMock(spec=ActionExecutor)
+        mock_executor.execute = AsyncMock(
+            return_value=ActionResult(
+                action=HeartbeatAction(
+                    skill_name="task_manager",
+                    action_type="reminder",
+                    user_id="user1",
+                ),
+                success=True,
+                message="Done",
+            )
+        )
+
+        scheduler = HeartbeatScheduler(action_executor=mock_executor)
+
+        event = ScheduledEvent(
+            user_id="user1",
+            skill_name="task_manager",
+            action_type="reminder",
+            trigger_time=datetime.now() - timedelta(minutes=1),
+        )
+        scheduler.schedule_event(event)
+
+        await scheduler._process_scheduled_events()
+
+        assert str(event.id) not in scheduler._scheduled_events
+        assert event.status == ScheduledEventStatus.COMPLETED
+        assert event.triggered_at is not None
+
+    @pytest.mark.asyncio
+    async def test_get_skill_actions_client_exception(self) -> None:
+        """_get_skill_actions should return empty list on client error."""
+        mock_client = AsyncMock()
+        mock_client.trigger_heartbeat = AsyncMock(side_effect=Exception("Connection error"))
+
+        scheduler = HeartbeatScheduler(skills_client=mock_client)
+        scheduler.set_user_ids(["user1"])
+
+        actions = await scheduler._get_skill_actions()
+        assert actions == []
+
+    @pytest.mark.asyncio
+    async def test_run_heartbeat_increments_total_beats(self) -> None:
+        """_run_heartbeat should always increment total_beats."""
+        scheduler = HeartbeatScheduler()
+
+        with patch.object(scheduler, "_is_quiet_hours", return_value=True):
+            await scheduler._run_heartbeat()
+            await scheduler._run_heartbeat()
+
+        assert scheduler.stats.total_beats == 2
+        assert scheduler.stats.last_beat is not None

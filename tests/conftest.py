@@ -16,7 +16,7 @@ def setup_test_environment():
     # Set minimal required environment variables for Settings
     os.environ.setdefault("DISCORD_TOKEN", "test-discord-token-placeholder")
     os.environ.setdefault("GEMINI_API_KEY", "test-gemini-key-placeholder")
-    # Encryption passphrase required when encryption_enabled=True (now default)
+    # Encryption passphrase is mandatory (no toggle — hard fail without it)
     os.environ.setdefault("ENCRYPTION_PASSPHRASE", "test-encryption-passphrase-for-unit-tests")
     # Disable InferenceBroker by default to avoid network calls in tests
     os.environ.setdefault("INFERENCE_BROKER_ENABLED", "false")
@@ -47,8 +47,7 @@ def mock_settings():
         qdrant_port=6333,
         environment="test",
         log_level="DEBUG",
-        # Encryption settings (Phase 5A)
-        encryption_enabled=True,
+        # Encryption settings (mandatory — no toggle)
         encryption_passphrase="test-encryption-passphrase-for-mock",
     )
     return settings

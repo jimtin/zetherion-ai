@@ -35,6 +35,8 @@ RUN python -c "from zetherion_ai.main import run; print('✓ Imports verified')"
 # ============================================================
 FROM cgr.dev/chainguard/python:latest
 
+WORKDIR /app
+
 # Copy Python packages from builder with nonroot ownership (uid 65532)
 COPY --from=builder --chown=65532:65532 /home/nonroot/.local /home/nonroot/.local
 

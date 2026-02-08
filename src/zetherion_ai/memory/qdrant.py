@@ -1,6 +1,6 @@
 """Qdrant vector database client for memory storage."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -9,7 +9,7 @@ from qdrant_client.http import models as qdrant_models
 
 from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
-from zetherion_ai.memory.embeddings import EMBEDDING_DIMENSION, get_embeddings_client
+from zetherion_ai.memory.embeddings import get_embedding_dimension, get_embeddings_client
 from zetherion_ai.security.encryption import FieldEncryptor
 
 log = get_logger("zetherion_ai.memory.qdrant")
@@ -33,13 +33,13 @@ class QdrantMemory:
 
         # Configure TLS if enabled
         if settings.qdrant_use_tls:
-            # Use URL-based initialization for HTTPS
-            self._client = AsyncQdrantClient(
-                url=settings.qdrant_url,
-                # For self-signed certs, we can optionally provide the cert path
-                # If not provided, verification is skipped (internal network only)
-                https=True,
-            )
+            kwargs: dict[str, Any] = {
+                "url": settings.qdrant_url,
+                "https": True,
+            }
+            if settings.qdrant_cert_path:
+                kwargs["verify"] = settings.qdrant_cert_path
+            self._client = AsyncQdrantClient(**kwargs)
         else:
             self._client = AsyncQdrantClient(
                 host=settings.qdrant_host,
@@ -70,7 +70,7 @@ class QdrantMemory:
             await self._client.create_collection(
                 collection_name=name,
                 vectors_config=qdrant_models.VectorParams(
-                    size=EMBEDDING_DIMENSION,
+                    size=get_embedding_dimension(),
                     distance=qdrant_models.Distance.COSINE,
                 ),
             )
@@ -104,7 +104,7 @@ class QdrantMemory:
             "channel_id": channel_id,
             "role": role,
             "content": content,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             **(metadata or {}),
         }
 
@@ -137,6 +137,7 @@ class QdrantMemory:
         content: str,
         memory_type: str = "general",
         metadata: dict[str, Any] | None = None,
+        user_id: int | None = None,
     ) -> str:
         """Store a long-term memory.
 
@@ -144,6 +145,7 @@ class QdrantMemory:
             content: Memory content.
             memory_type: Type of memory (preference, fact, decision, etc.).
             metadata: Optional additional metadata.
+            user_id: Optional user ID for user-scoped memories.
 
         Returns:
             The ID of the stored memory.
@@ -154,9 +156,11 @@ class QdrantMemory:
         payload = {
             "content": content,
             "type": memory_type,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             **(metadata or {}),
         }
+        if user_id is not None:
+            payload["user_id"] = user_id
 
         # Encrypt sensitive fields if encryptor is configured
         if self._encryptor is not None:
@@ -237,6 +241,7 @@ class QdrantMemory:
         query: str,
         memory_type: str | None = None,
         limit: int = 10,
+        user_id: int | None = None,
     ) -> list[dict[str, Any]]:
         """Search long-term memories.
 
@@ -244,22 +249,39 @@ class QdrantMemory:
             query: Search query.
             memory_type: Optional filter by memory type.
             limit: Maximum number of results.
+            user_id: Optional filter by user ID.
 
         Returns:
             List of matching memories with scores.
         """
         query_vector = await self._embeddings.embed_query(query)
 
-        filter_conditions = None
+        filter_conditions_list: list[
+            qdrant_models.FieldCondition
+            | qdrant_models.IsEmptyCondition
+            | qdrant_models.IsNullCondition
+            | qdrant_models.HasIdCondition
+            | qdrant_models.HasVectorCondition
+            | qdrant_models.NestedCondition
+            | qdrant_models.Filter
+        ] = []
         if memory_type is not None:
-            filter_conditions = qdrant_models.Filter(
-                must=[
-                    qdrant_models.FieldCondition(
-                        key="type",
-                        match=qdrant_models.MatchValue(value=memory_type),
-                    )
-                ]
+            filter_conditions_list.append(
+                qdrant_models.FieldCondition(
+                    key="type",
+                    match=qdrant_models.MatchValue(value=memory_type),
+                )
             )
+        if user_id is not None:
+            filter_conditions_list.append(
+                qdrant_models.FieldCondition(
+                    key="user_id",
+                    match=qdrant_models.MatchValue(value=user_id),
+                )
+            )
+        filter_conditions = None
+        if filter_conditions_list:
+            filter_conditions = qdrant_models.Filter(must=filter_conditions_list)
 
         results = await self._client.search(  # type: ignore[attr-defined]
             collection_name=LONG_TERM_MEMORY_COLLECTION,
@@ -338,7 +360,7 @@ class QdrantMemory:
     async def ensure_collection(
         self,
         name: str,
-        vector_size: int = EMBEDDING_DIMENSION,
+        vector_size: int | None = None,
     ) -> None:
         """Ensure a collection exists, creating it if necessary.
 
@@ -346,7 +368,7 @@ class QdrantMemory:
 
         Args:
             name: Collection name.
-            vector_size: Size of vectors (default: EMBEDDING_DIMENSION).
+            vector_size: Size of vectors (default: auto-detected from backend).
         """
         collections = await self._client.get_collections()
         collection_names = [c.name for c in collections.collections]
@@ -355,7 +377,7 @@ class QdrantMemory:
             await self._client.create_collection(
                 collection_name=name,
                 vectors_config=qdrant_models.VectorParams(
-                    size=vector_size,
+                    size=vector_size or get_embedding_dimension(),
                     distance=qdrant_models.Distance.COSINE,
                 ),
             )

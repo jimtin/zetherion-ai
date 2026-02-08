@@ -499,5 +499,162 @@ async def test_bot_slash_commands_available(discord_test_client: DiscordTestClie
         pytest.skip(f"Could not fetch commands: {e}")
 
 
+# ---------------------------------------------------------------------------
+# Skill-specific E2E tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.discord_e2e
+@pytest.mark.skipif(SKIP_DISCORD_E2E, reason=SKIP_REASON)
+@pytest.mark.asyncio
+async def test_bot_creates_task(discord_test_client: DiscordTestClient) -> None:
+    """Test bot acknowledges a task creation request."""
+    bot_id = discord_test_client.get_zetherion_ai_bot_id()
+    if not bot_id:
+        pytest.skip("Could not find Zetherion AI bot in channel")
+
+    test_message = await discord_test_client.send_message(
+        f"<@{bot_id}> add a task to review the design docs"
+    )
+    response = None
+
+    try:
+        response = await discord_test_client.wait_for_bot_response(
+            test_message, timeout=45.0, bot_id=bot_id
+        )
+        assert response is not None, "Bot did not respond to task creation"
+        assert len(response.content) > 0, "Bot response was empty"
+        print(f"✅ Bot acknowledged task creation: {response.content[:100]}...")
+    finally:
+        await discord_test_client.delete_message(test_message)
+        if response:
+            await discord_test_client.delete_message(response)
+
+
+@pytest.mark.discord_e2e
+@pytest.mark.skipif(SKIP_DISCORD_E2E, reason=SKIP_REASON)
+@pytest.mark.asyncio
+async def test_bot_lists_tasks(discord_test_client: DiscordTestClient) -> None:
+    """Test bot responds to a task listing request."""
+    bot_id = discord_test_client.get_zetherion_ai_bot_id()
+    if not bot_id:
+        pytest.skip("Could not find Zetherion AI bot in channel")
+
+    test_message = await discord_test_client.send_message(f"<@{bot_id}> show my tasks")
+    response = None
+
+    try:
+        response = await discord_test_client.wait_for_bot_response(
+            test_message, timeout=45.0, bot_id=bot_id
+        )
+        assert response is not None, "Bot did not respond to task listing"
+        assert len(response.content) > 0, "Bot response was empty"
+        print(f"✅ Bot listed tasks: {response.content[:100]}...")
+    finally:
+        await discord_test_client.delete_message(test_message)
+        if response:
+            await discord_test_client.delete_message(response)
+
+
+@pytest.mark.discord_e2e
+@pytest.mark.skipif(SKIP_DISCORD_E2E, reason=SKIP_REASON)
+@pytest.mark.asyncio
+async def test_bot_shows_schedule(discord_test_client: DiscordTestClient) -> None:
+    """Test bot responds to a schedule query."""
+    bot_id = discord_test_client.get_zetherion_ai_bot_id()
+    if not bot_id:
+        pytest.skip("Could not find Zetherion AI bot in channel")
+
+    test_message = await discord_test_client.send_message(
+        f"<@{bot_id}> what's on my schedule today"
+    )
+    response = None
+
+    try:
+        response = await discord_test_client.wait_for_bot_response(
+            test_message, timeout=45.0, bot_id=bot_id
+        )
+        assert response is not None, "Bot did not respond to schedule query"
+        assert len(response.content) > 0, "Bot response was empty"
+        print(f"✅ Bot showed schedule: {response.content[:100]}...")
+    finally:
+        await discord_test_client.delete_message(test_message)
+        if response:
+            await discord_test_client.delete_message(response)
+
+
+@pytest.mark.discord_e2e
+@pytest.mark.skipif(SKIP_DISCORD_E2E, reason=SKIP_REASON)
+@pytest.mark.asyncio
+async def test_bot_profile_query(discord_test_client: DiscordTestClient) -> None:
+    """Test bot responds to a profile query."""
+    bot_id = discord_test_client.get_zetherion_ai_bot_id()
+    if not bot_id:
+        pytest.skip("Could not find Zetherion AI bot in channel")
+
+    test_message = await discord_test_client.send_message(f"<@{bot_id}> what do you know about me")
+    response = None
+
+    try:
+        response = await discord_test_client.wait_for_bot_response(
+            test_message, timeout=45.0, bot_id=bot_id
+        )
+        assert response is not None, "Bot did not respond to profile query"
+        assert len(response.content) > 0, "Bot response was empty"
+        print(f"✅ Bot responded to profile query: {response.content[:100]}...")
+    finally:
+        await discord_test_client.delete_message(test_message)
+        if response:
+            await discord_test_client.delete_message(response)
+
+
+@pytest.mark.discord_e2e
+@pytest.mark.skipif(SKIP_DISCORD_E2E, reason=SKIP_REASON)
+@pytest.mark.asyncio
+async def test_bot_multi_turn(discord_test_client: DiscordTestClient) -> None:
+    """Test bot handles a multi-turn conversation referencing prior info."""
+    bot_id = discord_test_client.get_zetherion_ai_bot_id()
+    if not bot_id:
+        pytest.skip("Could not find Zetherion AI bot in channel")
+
+    messages_to_delete: list[discord.Message] = []
+
+    try:
+        # Turn 1: Tell the bot a name
+        msg1 = await discord_test_client.send_message(
+            f"<@{bot_id}> remember that my name is TestUser42"
+        )
+        messages_to_delete.append(msg1)
+        resp1 = await discord_test_client.wait_for_bot_response(msg1, timeout=30.0, bot_id=bot_id)
+        assert resp1 is not None, "Bot did not respond to turn 1"
+        messages_to_delete.append(resp1)
+        await asyncio.sleep(2)
+
+        # Turn 2: Tell occupation
+        msg2 = await discord_test_client.send_message(
+            f"<@{bot_id}> remember that I work as a software engineer"
+        )
+        messages_to_delete.append(msg2)
+        resp2 = await discord_test_client.wait_for_bot_response(msg2, timeout=30.0, bot_id=bot_id)
+        assert resp2 is not None, "Bot did not respond to turn 2"
+        messages_to_delete.append(resp2)
+        await asyncio.sleep(2)
+
+        # Turn 3: Ask what it knows
+        msg3 = await discord_test_client.send_message(f"<@{bot_id}> what do you know about me?")
+        messages_to_delete.append(msg3)
+        resp3 = await discord_test_client.wait_for_bot_response(msg3, timeout=45.0, bot_id=bot_id)
+        assert resp3 is not None, "Bot did not respond to turn 3"
+        messages_to_delete.append(resp3)
+
+        # The response should reference at least some prior information
+        assert len(resp3.content) > 20, "Multi-turn response too short"
+        print(f"✅ Multi-turn response: {resp3.content[:200]}...")
+
+    finally:
+        for msg in messages_to_delete:
+            await discord_test_client.delete_message(msg)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s", "-m", "discord_e2e"])

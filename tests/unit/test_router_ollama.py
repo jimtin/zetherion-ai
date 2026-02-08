@@ -33,6 +33,92 @@ class TestOllamaRouterBackendInit:
             assert backend._timeout == 30.0
 
 
+class TestOllamaRouterBackendWarmup:
+    """Tests for warmup method."""
+
+    @pytest.mark.asyncio
+    async def test_warmup_success(self, mock_settings):
+        """Test successful warmup loads model and sets _is_warm."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
+            backend = OllamaRouterBackend()
+            assert backend._is_warm is False
+
+        with patch("zetherion_ai.agent.router_ollama.httpx.AsyncClient") as mock_client_cls:
+            mock_ctx_client = AsyncMock()
+            mock_ctx_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_ctx_client)
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await backend.warmup()
+
+        assert result is True
+        assert backend._is_warm is True
+
+    @pytest.mark.asyncio
+    async def test_warmup_already_warm(self, mock_settings):
+        """Test early return when already warm."""
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
+            backend = OllamaRouterBackend()
+            backend._is_warm = True
+
+            result = await backend.warmup()
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_warmup_exception(self, mock_settings):
+        """Test warmup returns False on exception."""
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
+            backend = OllamaRouterBackend()
+
+        with patch("zetherion_ai.agent.router_ollama.httpx.AsyncClient") as mock_client_cls:
+            mock_ctx_client = AsyncMock()
+            mock_ctx_client.post = AsyncMock(side_effect=Exception("Connection refused"))
+            mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_ctx_client)
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            result = await backend.warmup()
+
+        assert result is False
+        assert backend._is_warm is False
+
+
+class TestOllamaRouterBackendKeepWarm:
+    """Tests for keep_warm method."""
+
+    @pytest.mark.asyncio
+    async def test_keep_warm_success(self, mock_settings):
+        """Test successful keep-warm ping."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
+            backend = OllamaRouterBackend()
+            backend._client = MagicMock()
+            backend._client.post = AsyncMock(return_value=mock_response)
+
+            result = await backend.keep_warm()
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_keep_warm_exception(self, mock_settings):
+        """Test keep_warm returns False and resets _is_warm on exception."""
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
+            backend = OllamaRouterBackend()
+            backend._is_warm = True
+            backend._client = MagicMock()
+            backend._client.post = AsyncMock(side_effect=Exception("Connection lost"))
+
+            result = await backend.keep_warm()
+
+        assert result is False
+        assert backend._is_warm is False
+
+
 class TestOllamaRouterBackendClassify:
     """Tests for classify method."""
 
@@ -394,6 +480,61 @@ class TestOllamaRouterBackendClassify:
 
         assert decision.intent == MessageIntent.COMPLEX_TASK
         assert decision.use_claude is True
+
+    @pytest.mark.asyncio
+    async def test_classify_json_decode_error_from_response(self, mock_settings):
+        """Test handling JSONDecodeError raised by response.json() itself."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.side_effect = json.JSONDecodeError("Expecting value", "", 0)
+
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
+            backend = OllamaRouterBackend()
+            backend._client = MagicMock()
+            backend._client.post = AsyncMock(return_value=mock_response)
+
+            decision = await backend.classify("test")
+
+        assert decision.intent == MessageIntent.SIMPLE_QUERY
+        assert decision.confidence == 0.5
+        assert "json decode failed" in decision.reasoning.lower()
+
+    @pytest.mark.asyncio
+    async def test_classify_value_error_fallback(self, mock_settings):
+        """Test that a ValueError from inner parsing falls back to simple_query."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        # Valid JSON but missing the intent field => triggers ValueError
+        mock_response.json.return_value = {
+            "response": json.dumps({"no_intent_key": "oops", "confidence": 0.5})
+        }
+
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
+            backend = OllamaRouterBackend()
+            backend._client = MagicMock()
+            backend._client.post = AsyncMock(return_value=mock_response)
+
+            decision = await backend.classify("test")
+
+        assert decision.intent == MessageIntent.SIMPLE_QUERY
+        assert decision.confidence == 0.5
+        assert "validation failed" in decision.reasoning.lower()
+
+    @pytest.mark.asyncio
+    async def test_classify_generic_exception_fallback(self, mock_settings):
+        """Test that an unexpected Exception falls back to complex_task with Claude."""
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
+            backend = OllamaRouterBackend()
+            backend._client = MagicMock()
+            backend._client.post = AsyncMock(side_effect=OSError("disk error"))
+
+            decision = await backend.classify("test")
+
+        assert decision.intent == MessageIntent.COMPLEX_TASK
+        assert decision.use_claude is True
+        assert "unexpectedly" in decision.reasoning.lower()
 
     @pytest.mark.asyncio
     async def test_classify_complex_task_low_confidence(self, mock_settings):

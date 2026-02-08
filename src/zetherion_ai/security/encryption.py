@@ -30,7 +30,12 @@ class FieldEncryptor:
         sensitive_fields: Set of field names that should be encrypted.
     """
 
-    def __init__(self, key: bytes, sensitive_fields: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        key: bytes,
+        sensitive_fields: set[str] | None = None,
+        strict: bool = False,
+    ) -> None:
         """Initialize the field encryptor.
 
         Args:
@@ -45,9 +50,11 @@ class FieldEncryptor:
 
         self._aesgcm = AESGCM(key)
         self.sensitive_fields = sensitive_fields or {"content"}
+        self._strict = strict
         log.info(
             "field_encryptor_initialized",
             sensitive_fields=list(self.sensitive_fields),
+            strict=strict,
         )
 
     def encrypt_value(self, plaintext: str) -> str:
@@ -131,6 +138,8 @@ class FieldEncryptor:
                 try:
                     result[key] = self.decrypt_value(value)
                 except ValueError:
+                    if self._strict:
+                        raise
                     # If decryption fails, pass through unchanged
                     # (might be unencrypted legacy data)
                     log.warning(

@@ -6,6 +6,8 @@ from zetherion_ai.config import get_settings
 from zetherion_ai.discord.bot import ZetherionAIBot
 from zetherion_ai.logging import get_logger, setup_logging
 from zetherion_ai.memory.qdrant import QdrantMemory
+from zetherion_ai.security.encryption import FieldEncryptor
+from zetherion_ai.security.keys import KeyManager
 
 
 async def main() -> None:
@@ -20,8 +22,19 @@ async def main() -> None:
         qdrant_url=settings.qdrant_url,
     )
 
-    # Initialize memory system
-    memory = QdrantMemory()
+    # Initialize encryption (mandatory — config validation ensures passphrase exists)
+    key_manager = KeyManager(
+        passphrase=settings.encryption_passphrase.get_secret_value(),
+        salt_path=settings.encryption_salt_path,
+    )
+    encryptor = FieldEncryptor(
+        key=key_manager.key,
+        strict=settings.encryption_strict,
+    )
+    log.info("encryption_initialized", strict=settings.encryption_strict)
+
+    # Initialize memory system with encryption
+    memory = QdrantMemory(encryptor=encryptor)
     await memory.initialize()
 
     # Initialize and run the Discord bot

@@ -2,15 +2,10 @@
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
 from typing import Any
+from uuid import uuid4
 
-import anthropic
-import openai
-from anthropic import APIConnectionError, APITimeoutError, RateLimitError
-from openai import APIConnectionError as OpenAIConnectionError
-from openai import APITimeoutError as OpenAITimeoutError
-from openai import RateLimitError as OpenAIRateLimitError
+import structlog
 
 from zetherion_ai.agent.inference import InferenceBroker
 from zetherion_ai.agent.prompts import SYSTEM_PROMPT
@@ -18,84 +13,72 @@ from zetherion_ai.agent.providers import TaskType
 from zetherion_ai.agent.router import MessageIntent, RoutingDecision
 from zetherion_ai.agent.router_factory import create_router_sync
 from zetherion_ai.config import get_settings
+from zetherion_ai.constants import CONTEXT_HISTORY_LIMIT, MEMORY_SCORE_THRESHOLD
 from zetherion_ai.logging import get_logger
 from zetherion_ai.memory.qdrant import QdrantMemory
 from zetherion_ai.skills.base import SkillRequest
 from zetherion_ai.skills.client import SkillsClient, SkillsClientError
+from zetherion_ai.utils import timed_operation
 
 log = get_logger("zetherion_ai.agent.core")
 
-
-async def retry_with_exponential_backoff(
-    func: Callable[[], Awaitable[Any]],
-    max_retries: int = 3,
-    initial_delay: float = 1.0,
-    max_delay: float = 60.0,
-    exponential_base: float = 2.0,
-) -> Any:
-    """Retry a function with exponential backoff.
-
-    Args:
-        func: Async function to retry.
-        max_retries: Maximum number of retry attempts.
-        initial_delay: Initial delay in seconds.
-        max_delay: Maximum delay in seconds.
-        exponential_base: Base for exponential backoff.
-
-    Returns:
-        Result of the function call.
-
-    Raises:
-        The last exception if all retries fail.
-    """
-    delay = initial_delay
-    last_exception: Exception | None = None
-
-    for attempt in range(max_retries):
-        try:
-            return await func()
-        except (
-            APIConnectionError,
-            APITimeoutError,
-            OpenAIConnectionError,
-            OpenAITimeoutError,
-        ) as e:
-            last_exception = e
-            if attempt < max_retries - 1:
-                log.warning(
-                    "api_call_failed_retrying",
-                    attempt=attempt + 1,
-                    max_retries=max_retries,
-                    delay=delay,
-                    error=str(e),
-                )
-                await asyncio.sleep(delay)
-                delay = min(delay * exponential_base, max_delay)
-            else:
-                log.error(
-                    "api_call_failed_max_retries",
-                    max_retries=max_retries,
-                    error=str(e),
-                )
-        except (RateLimitError, OpenAIRateLimitError) as e:
-            last_exception = e
-            # For rate limits, use longer backoff
-            if attempt < max_retries - 1:
-                rate_limit_delay = min(delay * 2, max_delay)
-                log.warning(
-                    "rate_limit_hit_retrying",
-                    attempt=attempt + 1,
-                    max_retries=max_retries,
-                    delay=rate_limit_delay,
-                )
-                await asyncio.sleep(rate_limit_delay)
-                delay = min(delay * exponential_base, max_delay)
-            else:
-                log.error("rate_limit_max_retries", max_retries=max_retries)
-
-    if last_exception:
-        raise last_exception
-    raise RuntimeError("Retry function failed without exception")
+# ---------------------------------------------------------------------------
+# Keyword sets for task-type classification (Phase 3.2)
+# ---------------------------------------------------------------------------
+CODE_KEYWORDS = frozenset(
+    {
+        "code",
+        "script",
+        "function",
+        "class",
+        "debug",
+        "fix",
+        "implement",
+        "python",
+        "javascript",
+        "typescript",
+        "java",
+        "rust",
+        "go",
+        "programming",
+        "algorithm",
+        "api",
+        "database",
+        "sql",
+    }
+)
+CODE_REVIEW_KEYWORDS = frozenset({"review", "audit", "check"})
+CODE_DEBUG_KEYWORDS = frozenset({"debug", "fix", "error", "bug"})
+MATH_KEYWORDS = frozenset(
+    {
+        "math",
+        "calculate",
+        "equation",
+        "prove",
+        "theorem",
+        "logic",
+        "reasoning",
+        "analyze",
+        "why",
+        "how does",
+        "explain in detail",
+    }
+)
+MATH_SPECIFIC_KEYWORDS = frozenset({"math", "calculate", "equation"})
+CREATIVE_KEYWORDS = frozenset(
+    {
+        "write",
+        "story",
+        "poem",
+        "creative",
+        "imagine",
+        "fiction",
+        "narrative",
+        "character",
+        "plot",
+    }
+)
+SUMMARIZATION_KEYWORDS = frozenset({"summarize", "summary", "tldr", "condense"})
 
 
 class Agent:
@@ -107,38 +90,11 @@ class Agent:
         Args:
             memory: The memory system for context retrieval.
         """
-        settings = get_settings()
         self._memory = memory
         self._router = create_router_sync()
 
-        # Initialize Anthropic client for complex tasks
-        self._claude_client: anthropic.AsyncAnthropic | None
-        if settings.anthropic_api_key:
-            self._claude_client = anthropic.AsyncAnthropic(
-                api_key=settings.anthropic_api_key.get_secret_value()
-            )
-            self._claude_model = settings.claude_model
-            self._has_claude = True
-        else:
-            self._claude_client = None
-            self._has_claude = False
-
-        # Initialize OpenAI client as alternative
-        self._openai_client: openai.AsyncOpenAI | None
-        if settings.openai_api_key:
-            self._openai_client = openai.AsyncOpenAI(
-                api_key=settings.openai_api_key.get_secret_value()
-            )
-            self._openai_model = settings.openai_model
-            self._has_openai = True
-        else:
-            self._openai_client = None
-            self._has_openai = False
-
-        # Initialize InferenceBroker for smart multi-provider routing (Phase 5B)
-        self._inference_broker: InferenceBroker | None = None
-        if settings.inference_broker_enabled:
-            self._inference_broker = InferenceBroker()
+        # Initialize InferenceBroker for smart multi-provider routing
+        self._inference_broker = InferenceBroker()
 
         # Initialize Skills Client for skill-based intents (Phase 5G)
         self._skills_client: SkillsClient | None = None
@@ -147,9 +103,7 @@ class Agent:
 
         log.info(
             "agent_initialized",
-            has_claude=self._has_claude,
-            has_openai=self._has_openai,
-            inference_broker_enabled=self._inference_broker is not None,
+            inference_broker_enabled=True,
         )
 
     async def warmup(self) -> bool:
@@ -198,87 +152,85 @@ class Agent:
         Returns:
             The generated response.
         """
+        structlog.contextvars.bind_contextvars(request_id=str(uuid4())[:8])
         total_start = time.perf_counter()
 
-        # Step 1: Classify the message intent
-        classify_start = time.perf_counter()
-        routing = await self._router.classify(message)
-        classify_end = time.perf_counter()
-        log.info(
-            "TIMING: message_routed",
-            intent=routing.intent.value,
-            use_claude=routing.use_claude,
-            confidence=routing.confidence,
-            classify_duration_ms=round((classify_end - classify_start) * 1000, 2),
-        )
+        try:
+            # Step 1: Classify the message intent
+            async with timed_operation("message_routed", log=log) as t:
+                routing = await self._router.classify(message)
+            log.info(
+                "message_routed",
+                intent=routing.intent.value,
+                use_claude=routing.use_claude,
+                confidence=routing.confidence,
+                classify_duration_ms=t["elapsed_ms"],
+            )
 
-        # Step 2: Handle based on intent
-        handle_start = time.perf_counter()
-        match routing.intent:
-            case MessageIntent.MEMORY_STORE:
-                response = await self._handle_memory_store(message)
-            case MessageIntent.MEMORY_RECALL:
-                response = await self._handle_memory_recall(user_id, message)
-            case MessageIntent.SYSTEM_COMMAND:
-                response = await self._handle_system_command(message)
-            case MessageIntent.SIMPLE_QUERY:
-                response = await self._handle_simple_query(message)
-            case MessageIntent.COMPLEX_TASK:
-                response = await self._handle_complex_task(user_id, channel_id, message, routing)
-            # Skill intents (Phase 5G)
-            case MessageIntent.TASK_MANAGEMENT:
-                response = await self._handle_skill_intent(user_id, message, "task_manager")
-            case MessageIntent.CALENDAR_QUERY:
-                response = await self._handle_skill_intent(user_id, message, "calendar")
-            case MessageIntent.PROFILE_QUERY:
-                response = await self._handle_skill_intent(user_id, message, "profile_manager")
-            case _:
-                response = await self._handle_complex_task(user_id, channel_id, message, routing)
+            # Step 2: Handle based on intent
+            async with timed_operation("intent_handled", log=log, intent=routing.intent.value) as t:
+                match routing.intent:
+                    case MessageIntent.MEMORY_STORE:
+                        response = await self._handle_memory_store(message, user_id=user_id)
+                    case MessageIntent.MEMORY_RECALL:
+                        response = await self._handle_memory_recall(user_id, message)
+                    case MessageIntent.SYSTEM_COMMAND:
+                        response = await self._handle_system_command(message)
+                    case MessageIntent.SIMPLE_QUERY:
+                        response = await self._handle_simple_query(message)
+                    case MessageIntent.COMPLEX_TASK:
+                        response = await self._handle_complex_task(
+                            user_id,
+                            channel_id,
+                            message,
+                            routing,
+                        )
+                    # Skill intents (Phase 5G)
+                    case MessageIntent.TASK_MANAGEMENT:
+                        response = await self._handle_skill_intent(user_id, message, "task_manager")
+                    case MessageIntent.CALENDAR_QUERY:
+                        response = await self._handle_skill_intent(user_id, message, "calendar")
+                    case MessageIntent.PROFILE_QUERY:
+                        response = await self._handle_skill_intent(
+                            user_id,
+                            message,
+                            "profile_manager",
+                        )
+                    case _:
+                        response = await self._handle_complex_task(
+                            user_id,
+                            channel_id,
+                            message,
+                            routing,
+                        )
 
-        handle_end = time.perf_counter()
-        log.info(
-            "TIMING: intent_handled",
-            intent=routing.intent.value,
-            handle_duration_ms=round((handle_end - handle_start) * 1000, 2),
-        )
+            # Step 3: Store the exchange in memory (skip for lightweight intents)
+            if routing.intent not in (MessageIntent.SIMPLE_QUERY, MessageIntent.SYSTEM_COMMAND):
+                async with timed_operation("stored_messages", log=log) as t:
+                    await self._memory.store_message(
+                        user_id=user_id,
+                        channel_id=channel_id,
+                        role="user",
+                        content=message,
+                        metadata={"intent": routing.intent.value},
+                    )
+                    await self._memory.store_message(
+                        user_id=user_id,
+                        channel_id=channel_id,
+                        role="assistant",
+                        content=response,
+                    )
 
-        # Step 3: Store the exchange in memory
-        store_start = time.perf_counter()
-        await self._memory.store_message(
-            user_id=user_id,
-            channel_id=channel_id,
-            role="user",
-            content=message,
-            metadata={"intent": routing.intent.value},
-        )
-        store_user_end = time.perf_counter()
-        log.info(
-            "TIMING: stored_user_message",
-            duration_ms=round((store_user_end - store_start) * 1000, 2),
-        )
+            total_end = time.perf_counter()
+            log.info(
+                "TIMING: generate_response_total",
+                total_duration_ms=round((total_end - total_start) * 1000, 2),
+            )
 
-        await self._memory.store_message(
-            user_id=user_id,
-            channel_id=channel_id,
-            role="assistant",
-            content=response,
-        )
-        store_assistant_end = time.perf_counter()
-        log.info(
-            "TIMING: stored_assistant_message",
-            duration_ms=round((store_assistant_end - store_user_end) * 1000, 2),
-        )
+            return response
 
-        total_end = time.perf_counter()
-        log.info(
-            "TIMING: generate_response_total",
-            total_duration_ms=round((total_end - total_start) * 1000, 2),
-            classify_ms=round((classify_end - classify_start) * 1000, 2),
-            handle_ms=round((handle_end - handle_start) * 1000, 2),
-            store_ms=round((store_assistant_end - store_start) * 1000, 2),
-        )
-
-        return response
+        finally:
+            structlog.contextvars.clear_contextvars()
 
     async def _handle_simple_query(self, message: str) -> str:
         """Handle simple queries with Gemini Flash (cheap/fast).
@@ -431,7 +383,8 @@ class Agent:
         channel_id: int,
         message: str,
         memory_limit: int = 5,
-        history_limit: int = 20,
+        history_limit: int = CONTEXT_HISTORY_LIMIT,
+        user_id_filter: int | None = None,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Build context from recent messages and relevant memories.
 
@@ -441,6 +394,7 @@ class Agent:
             message: The user's message.
             memory_limit: Maximum number of memories to retrieve.
             history_limit: Maximum number of recent messages to retrieve.
+            user_id_filter: Optional user ID for scoping memory searches.
 
         Returns:
             Tuple of (recent_messages, relevant_memories).
@@ -452,7 +406,7 @@ class Agent:
                 channel_id=channel_id,
                 limit=history_limit,
             ),
-            self._memory.search_memories(query=message, limit=memory_limit),
+            self._memory.search_memories(query=message, limit=memory_limit, user_id=user_id_filter),
         )
         return recent_messages, relevant_memories
 
@@ -474,15 +428,17 @@ class Agent:
         Returns:
             Generated response.
         """
-        task_start = time.perf_counter()
-
         # Fetch context once for reuse across models
-        context_start = time.perf_counter()
-        recent_messages, relevant_memories = await self._build_context(user_id, channel_id, message)
-        context_end = time.perf_counter()
+        async with timed_operation("context_built", log=log) as ctx_t:
+            recent_messages, relevant_memories = await self._build_context(
+                user_id,
+                channel_id,
+                message,
+                user_id_filter=user_id,
+            )
         log.info(
-            "TIMING: context_built",
-            duration_ms=round((context_end - context_start) * 1000, 2),
+            "context_built",
+            duration_ms=ctx_t["elapsed_ms"],
             memories_found=len(relevant_memories),
             messages_found=len(recent_messages),
         )
@@ -491,53 +447,37 @@ class Agent:
         system_prompt = SYSTEM_PROMPT
         if relevant_memories:
             memory_text = "\n".join(
-                f"- {m['content']}" for m in relevant_memories if m["score"] > 0.7
+                f"- {m['content']}"
+                for m in relevant_memories
+                if m["score"] > MEMORY_SCORE_THRESHOLD
             )
             if memory_text:
                 system_prompt = f"{SYSTEM_PROMPT}\n\n## Relevant Memories\n{memory_text}"
 
         # Format conversation history
         messages = [
-            {"role": msg["role"], "content": msg["content"]} for msg in recent_messages[-10:]
+            {"role": msg["role"], "content": msg["content"]}
+            for msg in recent_messages[-CONTEXT_HISTORY_LIMIT:]
         ]
 
-        # Use InferenceBroker if available (Phase 5B)
-        if self._inference_broker:
-            # Classify task type for optimal provider selection
-            task_type = self._classify_task_type(message)
-            log.debug("task_type_classified", task_type=task_type.value)
+        # Classify task type for optimal provider selection
+        task_type = self._classify_task_type(message)
+        log.debug("task_type_classified", task_type=task_type.value)
 
-            infer_start = time.perf_counter()
+        async with timed_operation("inference_complete", log=log) as infer_t:
             result = await self._inference_broker.infer(
                 prompt=message,
                 task_type=task_type,
                 system_prompt=system_prompt,
                 messages=messages,
             )
-            infer_end = time.perf_counter()
-            log.info(
-                "TIMING: inference_complete",
-                duration_ms=round((infer_end - infer_start) * 1000, 2),
-                provider=result.provider.value,
-                model=result.model,
-                total_task_ms=round((infer_end - task_start) * 1000, 2),
-            )
-            return result.content
-
-        # Fallback to legacy routing (Claude -> OpenAI -> Gemini)
-        if routing.use_claude:
-            if self._has_claude:
-                return await self._generate_claude_response(
-                    user_id, channel_id, message, recent_messages, relevant_memories
-                )
-            elif self._has_openai:
-                return await self._generate_openai_response(
-                    user_id, channel_id, message, recent_messages, relevant_memories
-                )
-
-        # Otherwise use Gemini Flash
-        log.debug("using_flash_for_complex", reason="no_complex_model_available")
-        return await self._router.generate_simple_response(message)
+        log.info(
+            "inference_complete",
+            duration_ms=infer_t["elapsed_ms"],
+            provider=result.provider.value,
+            model=result.model,
+        )
+        return result.content
 
     def _classify_task_type(self, message: str) -> TaskType:
         """Classify the task type from the message content.
@@ -551,243 +491,36 @@ class Agent:
         lower_msg = message.lower()
 
         # Code-related patterns
-        if any(
-            kw in lower_msg
-            for kw in [
-                "code",
-                "script",
-                "function",
-                "class",
-                "debug",
-                "fix",
-                "implement",
-                "python",
-                "javascript",
-                "typescript",
-                "java",
-                "rust",
-                "go",
-                "programming",
-                "algorithm",
-                "api",
-                "database",
-                "sql",
-            ]
-        ):
-            if any(kw in lower_msg for kw in ["review", "audit", "check"]):
+        if any(kw in lower_msg for kw in CODE_KEYWORDS):
+            if any(kw in lower_msg for kw in CODE_REVIEW_KEYWORDS):
                 return TaskType.CODE_REVIEW
-            elif any(kw in lower_msg for kw in ["debug", "fix", "error", "bug"]):
+            elif any(kw in lower_msg for kw in CODE_DEBUG_KEYWORDS):
                 return TaskType.CODE_DEBUGGING
             return TaskType.CODE_GENERATION
 
         # Math/reasoning patterns
-        if any(
-            kw in lower_msg
-            for kw in [
-                "math",
-                "calculate",
-                "equation",
-                "prove",
-                "theorem",
-                "logic",
-                "reasoning",
-                "analyze",
-                "why",
-                "how does",
-                "explain in detail",
-            ]
-        ):
-            if any(kw in lower_msg for kw in ["math", "calculate", "equation"]):
+        if any(kw in lower_msg for kw in MATH_KEYWORDS):
+            if any(kw in lower_msg for kw in MATH_SPECIFIC_KEYWORDS):
                 return TaskType.MATH_ANALYSIS
             return TaskType.COMPLEX_REASONING
 
         # Creative patterns
-        if any(
-            kw in lower_msg
-            for kw in [
-                "write",
-                "story",
-                "poem",
-                "creative",
-                "imagine",
-                "fiction",
-                "narrative",
-                "character",
-                "plot",
-            ]
-        ):
+        if any(kw in lower_msg for kw in CREATIVE_KEYWORDS):
             return TaskType.CREATIVE_WRITING
 
         # Long document patterns
-        if any(
-            kw in lower_msg
-            for kw in [
-                "summarize",
-                "summary",
-                "tldr",
-                "condense",
-            ]
-        ):
+        if any(kw in lower_msg for kw in SUMMARIZATION_KEYWORDS):
             return TaskType.SUMMARIZATION
 
         # Default to conversation for general queries
         return TaskType.CONVERSATION
 
-    async def _generate_openai_response(
-        self,
-        user_id: int,
-        channel_id: int,
-        message: str,
-        recent_messages: list[dict[str, Any]],
-        relevant_memories: list[dict[str, Any]],
-    ) -> str:
-        """Generate a response using OpenAI for complex tasks.
-
-        Args:
-            user_id: Discord user ID.
-            channel_id: Discord channel ID.
-            message: The user's message.
-            recent_messages: Recent conversation history.
-            relevant_memories: Relevant memories from search.
-
-        Returns:
-            Generated response.
-        """
-        if not self._openai_client:
-            return await self._router.generate_simple_response(message)
-
-        # Build context from provided data
-        context_parts = []
-        if relevant_memories:
-            memory_text = "\n".join(
-                f"- {m['content']}" for m in relevant_memories if m["score"] > 0.7
-            )
-            if memory_text:
-                context_parts.append(f"## Relevant Memories\n{memory_text}")
-
-        messages = []
-        # System prompt
-        system_content = SYSTEM_PROMPT
-        if context_parts:
-            system_content = f"{SYSTEM_PROMPT}\n\n" + "\n\n".join(context_parts)
-
-        messages.append({"role": "system", "content": system_content})
-
-        # History
-        for msg in recent_messages[-10:]:
-            messages.append({"role": msg["role"], "content": msg["content"]})
-
-        messages.append({"role": "user", "content": message})
-
-        try:
-            # Use retry logic for API calls
-            async def make_request() -> Any:
-                return await self._openai_client.chat.completions.create(  # type: ignore[union-attr]
-                    model=self._openai_model,
-                    messages=messages,  # type: ignore[arg-type]
-                    max_tokens=2048,
-                )
-
-            response = await retry_with_exponential_backoff(make_request)
-            return response.choices[0].message.content or ""
-        except (OpenAIConnectionError, OpenAITimeoutError, OpenAIRateLimitError) as e:
-            log.error("openai_connection_error", error=str(e), error_type=type(e).__name__)
-            return await self._router.generate_simple_response(message)
-        except Exception as e:
-            log.error("openai_api_error", error=str(e), error_type=type(e).__name__)
-            return await self._router.generate_simple_response(message)
-
-    async def _generate_claude_response(
-        self,
-        user_id: int,
-        channel_id: int,
-        message: str,
-        recent_messages: list[dict[str, Any]],
-        relevant_memories: list[dict[str, Any]],
-    ) -> str:
-        """Generate a response using Claude for complex tasks.
-
-        Args:
-            user_id: Discord user ID.
-            channel_id: Discord channel ID.
-            message: The user's message.
-            recent_messages: Recent conversation history.
-            relevant_memories: Relevant memories from search.
-
-        Returns:
-            Generated response.
-        """
-        if not self._claude_client:
-            return await self._router.generate_simple_response(message)
-
-        # Build context from provided data
-        context_parts = []
-
-        if relevant_memories:
-            memory_text = "\n".join(
-                f"- {m['content']}" for m in relevant_memories if m["score"] > 0.7
-            )
-            if memory_text:
-                context_parts.append(f"## Relevant Memories\n{memory_text}")
-
-        # Build message history for Claude
-        messages = []
-        for msg in recent_messages[-10:]:
-            messages.append(
-                {
-                    "role": msg["role"],
-                    "content": msg["content"],
-                }
-            )
-        messages.append(
-            {
-                "role": "user",
-                "content": message,
-            }
-        )
-
-        # Build system prompt with context
-        system = SYSTEM_PROMPT
-        if context_parts:
-            system = f"{SYSTEM_PROMPT}\n\n" + "\n\n".join(context_parts)
-
-        try:
-            # Use retry logic for API calls
-            async def make_request() -> Any:
-                return await self._claude_client.messages.create(  # type: ignore[union-attr]
-                    model=self._claude_model,
-                    max_tokens=2048,
-                    system=system,
-                    messages=messages,  # type: ignore[arg-type]
-                )
-
-            response = await retry_with_exponential_backoff(make_request)
-
-            log.debug(
-                "claude_response_generated",
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens,
-            )
-
-            return response.content[0].text  # type: ignore[no-any-return]
-
-        except (APIConnectionError, APITimeoutError, RateLimitError) as e:
-            log.error("claude_connection_error", error=str(e), error_type=type(e).__name__)
-            # Fallback to Flash
-            return await self._router.generate_simple_response(message)
-        except anthropic.APIError as e:
-            log.error("claude_api_error", error=str(e), error_type=type(e).__name__)
-            # Fallback to Flash
-            return await self._router.generate_simple_response(message)
-        except Exception as e:
-            log.error("claude_unexpected_error", error=str(e), error_type=type(e).__name__)
-            return await self._router.generate_simple_response(message)
-
-    async def _handle_memory_store(self, message: str) -> str:
+    async def _handle_memory_store(self, message: str, *, user_id: int | None = None) -> str:
         """Handle memory storage requests.
 
         Args:
             message: The message containing what to remember.
+            user_id: Optional user ID for scoping the memory.
 
         Returns:
             Confirmation message.
@@ -811,6 +544,7 @@ Respond with ONLY the fact/preference to remember, nothing else."""
         await self._memory.store_memory(
             content=extracted.strip(),
             memory_type="user_request",
+            user_id=user_id,
         )
 
         return f"Got it! I'll remember: {extracted.strip()}"
@@ -828,7 +562,7 @@ Respond with ONLY the fact/preference to remember, nothing else."""
         log.debug("handling_memory_recall")
 
         # Search memories
-        memories = await self._memory.search_memories(query=query, limit=5)
+        memories = await self._memory.search_memories(query=query, limit=5, user_id=user_id)
         conversations = await self._memory.search_conversations(
             query=query, user_id=user_id, limit=5
         )
@@ -883,7 +617,8 @@ Summarize what I know about this in a helpful, conversational way."""
         lower_msg = message.lower().strip()
 
         if "help" in lower_msg or "what can you do" in lower_msg:
-            return """Hi! I'm Zetherion, your personal AI assistant. Here's what I can do:
+            return (
+                """Hi! I'm Zetherion, your personal AI assistant. Here's what I can do:
 
 **Chat & Questions**
 - Ask me anything - simple questions use fast responses, complex tasks get deeper analysis
@@ -899,7 +634,8 @@ Summarize what I know about this in a helpful, conversational way."""
 - `/ping` - Check if I'm online
 
 I route messages intelligently - simple queries are fast and free, """
-            """complex tasks use more capable models."""
+                """complex tasks use more capable models."""
+            )
 
         return "I'm not sure what you're asking. Try saying 'help' to see what I can do!"
 
@@ -907,12 +643,14 @@ I route messages intelligently - simple queries are fast and free, """
         self,
         content: str,
         memory_type: str = "general",
+        user_id: int | None = None,
     ) -> str:
         """Store a memory based on explicit user request.
 
         Args:
             content: The memory content to store.
             memory_type: Type of memory.
+            user_id: Optional user ID for scoping the memory.
 
         Returns:
             Confirmation message.
@@ -920,5 +658,6 @@ I route messages intelligently - simple queries are fast and free, """
         await self._memory.store_memory(
             content=content,
             memory_type=memory_type,
+            user_id=user_id,
         )
         return f"I've stored that in my memory: {content}"

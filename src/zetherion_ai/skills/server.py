@@ -335,12 +335,16 @@ def main() -> None:
     host = os.environ.get("SKILLS_HOST", "0.0.0.0")  # nosec B104 - Docker container
     port = int(os.environ.get("SKILLS_PORT", "8080"))
 
-    # Create registry
+    # Create registry and register built-in skills
     registry = SkillRegistry()
 
-    # TODO: Register built-in skills here
-    # from zetherion_ai.skills.task_manager import TaskManagerSkill
-    # registry.register(TaskManagerSkill())
+    from zetherion_ai.skills.calendar import CalendarSkill
+    from zetherion_ai.skills.profile_skill import ProfileSkill
+    from zetherion_ai.skills.task_manager import TaskManagerSkill
+
+    registry.register(TaskManagerSkill())
+    registry.register(CalendarSkill())
+    registry.register(ProfileSkill())
 
     # Initialize all skills
     async def init_and_run() -> None:

@@ -439,3 +439,168 @@ class TestSkillsClientExceptions:
         """SkillsAuthError should inherit from SkillsClientError."""
         error = SkillsAuthError("auth failed")
         assert isinstance(error, SkillsClientError)
+
+
+class TestSkillsClientAuthErrors:
+    """Tests for 401 response handling across all client methods."""
+
+    @pytest.mark.asyncio
+    async def test_trigger_heartbeat_auth_error(self) -> None:
+        """trigger_heartbeat() should raise SkillsAuthError on 401."""
+        client = SkillsClient()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.post = AsyncMock(return_value=mock_response)
+            mock_get.return_value = mock_http_client
+
+            with pytest.raises(SkillsAuthError, match="Authentication failed"):
+                await client.trigger_heartbeat(["user1"])
+
+    @pytest.mark.asyncio
+    async def test_list_skills_auth_error(self) -> None:
+        """list_skills() should raise SkillsAuthError on 401."""
+        client = SkillsClient()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.get = AsyncMock(return_value=mock_response)
+            mock_get.return_value = mock_http_client
+
+            with pytest.raises(SkillsAuthError, match="Authentication failed"):
+                await client.list_skills()
+
+    @pytest.mark.asyncio
+    async def test_get_skill_auth_error(self) -> None:
+        """get_skill() should raise SkillsAuthError on 401."""
+        client = SkillsClient()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.get = AsyncMock(return_value=mock_response)
+            mock_get.return_value = mock_http_client
+
+            with pytest.raises(SkillsAuthError, match="Authentication failed"):
+                await client.get_skill("calendar")
+
+    @pytest.mark.asyncio
+    async def test_get_status_auth_error(self) -> None:
+        """get_status() should raise SkillsAuthError on 401."""
+        client = SkillsClient()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.get = AsyncMock(return_value=mock_response)
+            mock_get.return_value = mock_http_client
+
+            with pytest.raises(SkillsAuthError, match="Authentication failed"):
+                await client.get_status()
+
+    @pytest.mark.asyncio
+    async def test_get_prompt_fragments_auth_error(self) -> None:
+        """get_prompt_fragments() should raise SkillsAuthError on 401."""
+        client = SkillsClient()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.get = AsyncMock(return_value=mock_response)
+            mock_get.return_value = mock_http_client
+
+            with pytest.raises(SkillsAuthError, match="Authentication failed"):
+                await client.get_prompt_fragments("user1")
+
+
+class TestSkillsClientConnectionErrors:
+    """Tests for connection error handling across client methods."""
+
+    @pytest.mark.asyncio
+    async def test_list_skills_connection_error(self) -> None:
+        """list_skills() should raise SkillsConnectionError on ConnectError."""
+        client = SkillsClient()
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+            mock_get.return_value = mock_http_client
+
+            with pytest.raises(SkillsConnectionError, match="Unable to connect"):
+                await client.list_skills()
+
+    @pytest.mark.asyncio
+    async def test_get_skill_connection_error(self) -> None:
+        """get_skill() should raise SkillsConnectionError on ConnectError."""
+        client = SkillsClient()
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+            mock_get.return_value = mock_http_client
+
+            with pytest.raises(SkillsConnectionError, match="Unable to connect"):
+                await client.get_skill("calendar")
+
+    @pytest.mark.asyncio
+    async def test_get_status_connection_error(self) -> None:
+        """get_status() should raise SkillsConnectionError on ConnectError."""
+        client = SkillsClient()
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+            mock_get.return_value = mock_http_client
+
+            with pytest.raises(SkillsConnectionError, match="Unable to connect"):
+                await client.get_status()
+
+    @pytest.mark.asyncio
+    async def test_get_prompt_fragments_connection_error(self) -> None:
+        """get_prompt_fragments() should raise SkillsConnectionError on ConnectError."""
+        client = SkillsClient()
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+            mock_get.return_value = mock_http_client
+
+            with pytest.raises(SkillsConnectionError, match="Unable to connect"):
+                await client.get_prompt_fragments("user1")
+
+
+class TestSkillsClientRecreation:
+    """Tests for client recreation after close."""
+
+    @pytest.mark.asyncio
+    async def test_get_client_after_close(self) -> None:
+        """_get_client() should create a new client after close."""
+        client = SkillsClient()
+
+        # Create the initial HTTP client
+        first_http_client = await client._get_client()
+        assert first_http_client is not None
+
+        # Close and verify it is cleared
+        await client.close()
+        assert client._client is None
+
+        # Get a new client - should create a fresh one
+        second_http_client = await client._get_client()
+        assert second_http_client is not None
+        assert second_http_client is not first_http_client
+
+        # Clean up
+        await client.close()

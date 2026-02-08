@@ -366,3 +366,374 @@ class TestActionExecutor:
         assert result.success is True
         assert "❓" in sender.sent_messages[0][1]
         assert "timezone" in sender.sent_messages[0][1]
+
+    @pytest.mark.asyncio
+    async def test_morning_briefing_count_zero(self) -> None:
+        """_handle_morning_briefing should say calendar is clear for count=0."""
+        sender = MockMessageSender()
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="calendar",
+            action_type="morning_briefing",
+            user_id="user123",
+            data={"events": [], "count": 0},
+        )
+        result = await executor.execute(action)
+        assert result.success is True
+        assert "clear" in sender.sent_messages[0][1].lower()
+
+    @pytest.mark.asyncio
+    async def test_morning_briefing_count_one(self) -> None:
+        """_handle_morning_briefing should mention single event title for count=1."""
+        sender = MockMessageSender()
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="calendar",
+            action_type="morning_briefing",
+            user_id="user123",
+            data={
+                "events": [{"title": "Team Standup"}],
+                "count": 1,
+            },
+        )
+        result = await executor.execute(action)
+        assert result.success is True
+        msg = sender.sent_messages[0][1]
+        assert "1 event" in msg
+        assert "Team Standup" in msg
+
+    @pytest.mark.asyncio
+    async def test_morning_briefing_count_multiple(self) -> None:
+        """_handle_morning_briefing should show count for multiple events."""
+        sender = MockMessageSender()
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="calendar",
+            action_type="morning_briefing",
+            user_id="user123",
+            data={
+                "events": [{"title": "E1"}, {"title": "E2"}, {"title": "E3"}],
+                "count": 3,
+            },
+        )
+        result = await executor.execute(action)
+        assert result.success is True
+        msg = sender.sent_messages[0][1]
+        assert "3" in msg
+        assert "events" in msg.lower()
+
+    @pytest.mark.asyncio
+    async def test_morning_briefing_count_one_empty_events_list(self) -> None:
+        """_handle_morning_briefing with count=1 but empty events list uses fallback."""
+        sender = MockMessageSender()
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="calendar",
+            action_type="morning_briefing",
+            user_id="user123",
+            data={"events": [], "count": 1},
+        )
+        result = await executor.execute(action)
+        assert result.success is True
+        msg = sender.sent_messages[0][1]
+        assert "1 event" in msg
+        # Should fall back to 'Event' when list is empty
+        assert "Event" in msg
+
+    @pytest.mark.asyncio
+    async def test_deadline_reminder_count_multiple(self) -> None:
+        """_handle_deadline_reminder should use generic message for count > 1."""
+        sender = MockMessageSender()
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="task_manager",
+            action_type="deadline_reminder",
+            user_id="user123",
+            data={
+                "tasks": [{"title": "T1"}, {"title": "T2"}],
+                "count": 2,
+            },
+        )
+        result = await executor.execute(action)
+        assert result.success is True
+        msg = sender.sent_messages[0][1]
+        assert "2" in msg
+        assert "due within 24 hours" in msg
+
+    @pytest.mark.asyncio
+    async def test_deadline_reminder_count_one_empty_tasks(self) -> None:
+        """_handle_deadline_reminder with count=1 but no tasks uses fallback title."""
+        sender = MockMessageSender()
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="task_manager",
+            action_type="deadline_reminder",
+            user_id="user123",
+            data={"tasks": [], "count": 1},
+        )
+        result = await executor.execute(action)
+        assert result.success is True
+        msg = sender.sent_messages[0][1]
+        assert "Task" in msg
+        assert "due within 24 hours" in msg
+
+    @pytest.mark.asyncio
+    async def test_end_of_day_count_zero(self) -> None:
+        """_handle_end_of_day should say calendar is clear for count=0."""
+        sender = MockMessageSender()
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="calendar",
+            action_type="end_of_day",
+            user_id="user123",
+            data={"tomorrow_events": [], "count": 0},
+        )
+        result = await executor.execute(action)
+        assert result.success is True
+        msg = sender.sent_messages[0][1]
+        assert "clear" in msg.lower()
+
+    @pytest.mark.asyncio
+    async def test_end_of_day_count_multiple(self) -> None:
+        """_handle_end_of_day should show count of tomorrow's events."""
+        sender = MockMessageSender()
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="calendar",
+            action_type="end_of_day",
+            user_id="user123",
+            data={
+                "tomorrow_events": [{"title": "E1"}, {"title": "E2"}],
+                "count": 2,
+            },
+        )
+        result = await executor.execute(action)
+        assert result.success is True
+        msg = sender.sent_messages[0][1]
+        assert "2" in msg
+        assert "event(s)" in msg
+
+    @pytest.mark.asyncio
+    async def test_decay_check_empty_data(self) -> None:
+        """_handle_decay_check should handle empty categories."""
+        sender = MockMessageSender()
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="profile_manager",
+            action_type="decay_check",
+            user_id="user123",
+            data={"stale_count": 0, "categories": []},
+        )
+        result = await executor.execute(action)
+        assert result.success is True
+        msg = sender.sent_messages[0][1]
+        # When categories is empty, should fall back to "profile"
+        assert "profile" in msg.lower()
+
+    @pytest.mark.asyncio
+    async def test_decay_check_with_categories(self) -> None:
+        """_handle_decay_check should list categories."""
+        sender = MockMessageSender()
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="profile_manager",
+            action_type="decay_check",
+            user_id="user123",
+            data={
+                "stale_count": 5,
+                "categories": ["preferences", "work", "personal"],
+            },
+        )
+        result = await executor.execute(action)
+        assert result.success is True
+        msg = sender.sent_messages[0][1]
+        assert "preferences" in msg
+        assert "5 entries" in msg
+
+    @pytest.mark.asyncio
+    async def test_handle_schedule_empty_data(self) -> None:
+        """_handle_schedule should succeed even with empty data."""
+        executor = ActionExecutor()
+
+        action = HeartbeatAction(
+            skill_name="test",
+            action_type="schedule",
+            user_id="user123",
+            data={},
+        )
+        result = await executor.execute(action)
+        assert result.success is True
+        assert "scheduled" in result.message.lower()
+
+    @pytest.mark.asyncio
+    async def test_handle_send_message_empty_message(self) -> None:
+        """_handle_send_message should fail when message is empty."""
+        sender = MockMessageSender()
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="test",
+            action_type="send_message",
+            user_id="user123",
+            data={"message": ""},
+        )
+        result = await executor.execute(action)
+        assert result.success is False
+        assert "No message" in result.error
+
+    @pytest.mark.asyncio
+    async def test_handle_send_message_no_message_key(self) -> None:
+        """_handle_send_message should fail when message key is missing."""
+        sender = MockMessageSender()
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="test",
+            action_type="send_message",
+            user_id="user123",
+            data={},
+        )
+        result = await executor.execute(action)
+        assert result.success is False
+        assert "No message" in result.error
+
+    @pytest.mark.asyncio
+    async def test_send_message_failure(self) -> None:
+        """_handle_send_message should report failure when sender fails."""
+        sender = MockMessageSender(should_succeed=False)
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="test",
+            action_type="send_message",
+            user_id="user123",
+            data={"message": "Hello!"},
+        )
+        result = await executor.execute(action)
+        assert result.success is False
+        assert "Failed to send" in result.error
+
+    @pytest.mark.asyncio
+    async def test_stale_task_check(self) -> None:
+        """_handle_stale_task_check should send stale task notification."""
+        sender = MockMessageSender()
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="task_manager",
+            action_type="stale_task_check",
+            user_id="user123",
+            data={
+                "tasks": [{"title": "Old task"}],
+                "count": 3,
+            },
+        )
+        result = await executor.execute(action)
+        assert result.success is True
+        msg = sender.sent_messages[0][1]
+        assert "3" in msg
+        assert "7+ days" in msg
+
+    @pytest.mark.asyncio
+    async def test_deadline_reminder_failure(self) -> None:
+        """_handle_deadline_reminder should report failure when send fails."""
+        sender = MockMessageSender(should_succeed=False)
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="task_manager",
+            action_type="deadline_reminder",
+            user_id="user123",
+            data={"tasks": [{"title": "T1"}], "count": 1},
+        )
+        result = await executor.execute(action)
+        assert result.success is False
+        assert "Failed to send" in result.error
+
+    @pytest.mark.asyncio
+    async def test_overdue_alert_failure(self) -> None:
+        """_handle_overdue_alert should report failure when send fails."""
+        sender = MockMessageSender(should_succeed=False)
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="task_manager",
+            action_type="overdue_alert",
+            user_id="user123",
+            data={"count": 1},
+        )
+        result = await executor.execute(action)
+        assert result.success is False
+        assert "Failed to send" in result.error
+
+    @pytest.mark.asyncio
+    async def test_end_of_day_failure(self) -> None:
+        """_handle_end_of_day should report failure when send fails."""
+        sender = MockMessageSender(should_succeed=False)
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="calendar",
+            action_type="end_of_day",
+            user_id="user123",
+            data={"tomorrow_events": [], "count": 0},
+        )
+        result = await executor.execute(action)
+        assert result.success is False
+        assert "Failed to send" in result.error
+
+    @pytest.mark.asyncio
+    async def test_send_dm_exception_handling(self) -> None:
+        """_send_dm should handle exceptions from message sender."""
+        sender = MockMessageSender()
+
+        async def failing_send(user_id: str, message: str) -> bool:
+            raise ConnectionError("Network error")
+
+        sender.send_dm = failing_send
+        executor = ActionExecutor(message_sender=sender)
+
+        result = await executor._send_dm("user123", "test")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_message_recording_on_success(self) -> None:
+        """execute should record message on successful send for rate limiting."""
+        sender = MockMessageSender(should_succeed=True)
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="test",
+            action_type="send_message",
+            user_id="user123",
+            data={"message": "Hello!"},
+        )
+
+        await executor.execute(action)
+        assert len(executor._message_counts.get("user123", [])) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_message_recording_on_failure(self) -> None:
+        """execute should not record message on failed send."""
+        sender = MockMessageSender(should_succeed=False)
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="test",
+            action_type="send_message",
+            user_id="user123",
+            data={"message": "Hello!"},
+        )
+
+        await executor.execute(action)
+        assert len(executor._message_counts.get("user123", [])) == 0

@@ -41,10 +41,25 @@ class DockerEnvironment:
         self.ollama_model_pulled = False
 
     def start(self) -> None:
-        """Start the Docker Compose environment."""
-        print("🐳 Starting Docker Compose environment...")
+        """Start the Docker Compose environment with fresh images."""
+        print("🐳 Tearing down any stale test environment...")
         subprocess.run(
-            ["docker", "compose", "-f", self.compose_file, "-p", self.project_name, "up", "-d"],
+            ["docker", "compose", "-f", self.compose_file, "-p", self.project_name, "down", "-v"],
+            capture_output=True,
+        )
+        print("🐳 Building and starting Docker Compose environment...")
+        subprocess.run(
+            [
+                "docker",
+                "compose",
+                "-f",
+                self.compose_file,
+                "-p",
+                self.project_name,
+                "up",
+                "-d",
+                "--build",
+            ],
             check=True,
             capture_output=True,
         )
@@ -355,10 +370,12 @@ def docker_env() -> Generator[DockerEnvironment, None, None]:
         pytest.skip(f"Missing required environment variables: {', '.join(missing_vars)}")
 
     env = DockerEnvironment()
+    managed_externally = os.getenv("DOCKER_MANAGED_EXTERNALLY", "").lower() == "true"
 
     try:
-        # Start environment
-        env.start()
+        if not managed_externally:
+            # Start environment (tears down stale, rebuilds, starts fresh)
+            env.start()
 
         # Wait for services to be healthy
         if not env.wait_for_healthy():
@@ -395,8 +412,8 @@ def docker_env() -> Generator[DockerEnvironment, None, None]:
         yield env
 
     finally:
-        # Always clean up
-        env.stop()
+        if not managed_externally:
+            env.stop()
 
 
 @pytest.fixture(scope="module", params=["gemini", "ollama"])

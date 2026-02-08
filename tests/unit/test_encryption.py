@@ -193,6 +193,101 @@ class TestFieldEncryptor:
         assert encryptor.is_encrypted("not base64!!!") is False
 
 
+class TestFieldEncryptorStrictMode:
+    """Tests for FieldEncryptor strict mode behavior."""
+
+    @pytest.fixture
+    def key(self) -> bytes:
+        """Generate a random 256-bit key for testing."""
+        return os.urandom(32)
+
+    def test_constructor_accepts_strict_parameter(self, key: bytes) -> None:
+        """Test that FieldEncryptor accepts the strict parameter."""
+        encryptor = FieldEncryptor(key, strict=True)
+        assert encryptor._strict is True
+
+    def test_constructor_strict_defaults_to_false(self, key: bytes) -> None:
+        """Test that strict defaults to False when not specified."""
+        encryptor = FieldEncryptor(key)
+        assert encryptor._strict is False
+
+    def test_strict_false_passes_through_bad_data(self, key: bytes) -> None:
+        """Test that strict=False passes through unchanged on bad data."""
+        encryptor = FieldEncryptor(key, strict=False)
+        payload = {
+            "content": "not-valid-encrypted-data",
+            "user_id": 123,
+        }
+
+        result = encryptor.decrypt_payload(payload)
+
+        # Bad data should be passed through unchanged
+        assert result["content"] == "not-valid-encrypted-data"
+        assert result["user_id"] == 123
+
+    def test_strict_true_raises_on_bad_data(self, key: bytes) -> None:
+        """Test that strict=True raises ValueError on bad data."""
+        encryptor = FieldEncryptor(key, strict=True)
+        payload = {
+            "content": "not-valid-encrypted-data",
+            "user_id": 123,
+        }
+
+        with pytest.raises(ValueError, match="Decryption failed"):
+            encryptor.decrypt_payload(payload)
+
+    def test_strict_true_decrypts_valid_data_normally(self, key: bytes) -> None:
+        """Test that strict=True still decrypts valid data correctly."""
+        encryptor = FieldEncryptor(key, strict=True)
+        original_payload = {
+            "content": "This is valid data",
+            "user_id": 123,
+        }
+
+        encrypted = encryptor.encrypt_payload(original_payload)
+        decrypted = encryptor.decrypt_payload(encrypted)
+
+        assert decrypted["content"] == "This is valid data"
+        assert decrypted["user_id"] == 123
+
+    def test_strict_false_decrypts_valid_data_normally(self, key: bytes) -> None:
+        """Test that strict=False still decrypts valid data correctly."""
+        encryptor = FieldEncryptor(key, strict=False)
+        original_payload = {
+            "content": "This is valid data",
+            "user_id": 123,
+        }
+
+        encrypted = encryptor.encrypt_payload(original_payload)
+        decrypted = encryptor.decrypt_payload(encrypted)
+
+        assert decrypted["content"] == "This is valid data"
+        assert decrypted["user_id"] == 123
+
+    def test_strict_true_raises_on_wrong_key_data(self, key: bytes) -> None:
+        """Test strict=True raises when data was encrypted with a different key."""
+        encryptor1 = FieldEncryptor(key, strict=False)
+        encryptor2 = FieldEncryptor(os.urandom(32), strict=True)
+
+        payload = {"content": "Encrypted with key 1"}
+        encrypted = encryptor1.encrypt_payload(payload)
+
+        with pytest.raises(ValueError, match="Decryption failed"):
+            encryptor2.decrypt_payload(encrypted)
+
+    def test_strict_false_passes_through_wrong_key_data(self, key: bytes) -> None:
+        """Test strict=False passes through data encrypted with a different key."""
+        encryptor1 = FieldEncryptor(key, strict=False)
+        encryptor2 = FieldEncryptor(os.urandom(32), strict=False)
+
+        payload = {"content": "Encrypted with key 1"}
+        encrypted = encryptor1.encrypt_payload(payload)
+
+        result = encryptor2.decrypt_payload(encrypted)
+        # Should pass through the encrypted value unchanged (not raise)
+        assert result["content"] == encrypted["content"]
+
+
 class TestKeyManager:
     """Tests for KeyManager class."""
 

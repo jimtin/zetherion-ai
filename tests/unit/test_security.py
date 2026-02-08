@@ -123,10 +123,11 @@ class TestRateLimiter:
 class TestUserAllowlist:
     """Tests for UserAllowlist."""
 
-    def test_empty_allowlist_allows_all(self):
-        """Test empty allowlist allows all users."""
+    def test_empty_allowlist_with_allow_all_true_allows_all(self):
+        """Test empty allowlist with allow_all_users=True allows all users."""
         with patch("zetherion_ai.discord.security.get_settings") as mock_settings:
             mock_settings.return_value.allowed_user_ids = []
+            mock_settings.return_value.allow_all_users = True
 
             allowlist = UserAllowlist()
 
@@ -137,6 +138,7 @@ class TestUserAllowlist:
         """Test configured allowlist restricts users."""
         with patch("zetherion_ai.discord.security.get_settings") as mock_settings:
             mock_settings.return_value.allowed_user_ids = [123, 456]
+            mock_settings.return_value.allow_all_users = False
 
             allowlist = UserAllowlist()
 
@@ -148,6 +150,7 @@ class TestUserAllowlist:
         """Test adding a user to allowlist."""
         with patch("zetherion_ai.discord.security.get_settings") as mock_settings:
             mock_settings.return_value.allowed_user_ids = [123]
+            mock_settings.return_value.allow_all_users = False
 
             allowlist = UserAllowlist()
             assert allowlist.is_allowed(456) is False
@@ -159,6 +162,7 @@ class TestUserAllowlist:
         """Test removing a user from allowlist."""
         with patch("zetherion_ai.discord.security.get_settings") as mock_settings:
             mock_settings.return_value.allowed_user_ids = [123, 456]
+            mock_settings.return_value.allow_all_users = False
 
             allowlist = UserAllowlist()
             assert allowlist.is_allowed(456) is True
@@ -170,6 +174,7 @@ class TestUserAllowlist:
         """Test adding user to empty list disables allow_all."""
         with patch("zetherion_ai.discord.security.get_settings") as mock_settings:
             mock_settings.return_value.allowed_user_ids = []
+            mock_settings.return_value.allow_all_users = True
 
             allowlist = UserAllowlist()
             assert allowlist._allow_all is True
@@ -177,6 +182,63 @@ class TestUserAllowlist:
             allowlist.add(123)
             assert allowlist._allow_all is False
             assert allowlist.is_allowed(999) is False
+
+    def test_empty_allowlist_with_allow_all_false_blocks_all(self):
+        """Test empty allowlist with allow_all_users=False blocks all users."""
+        with patch("zetherion_ai.discord.security.get_settings") as mock_settings:
+            mock_settings.return_value.allowed_user_ids = []
+            mock_settings.return_value.allow_all_users = False
+
+            allowlist = UserAllowlist()
+
+            assert allowlist.is_allowed(123456) is False
+            assert allowlist.is_allowed(999999) is False
+            assert allowlist._allow_all is False
+
+    def test_allow_all_true_with_empty_allowlist_allows_everyone(self):
+        """Test ALLOW_ALL_USERS=true with empty allowlist allows all users."""
+        with patch("zetherion_ai.discord.security.get_settings") as mock_settings:
+            mock_settings.return_value.allowed_user_ids = []
+            mock_settings.return_value.allow_all_users = True
+
+            allowlist = UserAllowlist()
+
+            assert allowlist.is_allowed(111) is True
+            assert allowlist.is_allowed(222) is True
+            assert allowlist.is_allowed(999999) is True
+            assert allowlist._allow_all is True
+
+    def test_configured_allowlist_works_regardless_of_allow_all_false(self):
+        """Test existing allowlist works when allow_all_users is False."""
+        with patch("zetherion_ai.discord.security.get_settings") as mock_settings:
+            mock_settings.return_value.allowed_user_ids = [100, 200]
+            mock_settings.return_value.allow_all_users = False
+
+            allowlist = UserAllowlist()
+
+            assert allowlist.is_allowed(100) is True
+            assert allowlist.is_allowed(200) is True
+            assert allowlist.is_allowed(300) is False
+            assert allowlist._allow_all is False
+
+    def test_configured_allowlist_works_regardless_of_allow_all_true(self):
+        """Test existing allowlist restricts even when allow_all_users is True.
+
+        When an explicit allowlist is configured, allow_all is not activated
+        because the condition requires both empty allowlist AND allow_all_users.
+        """
+        with patch("zetherion_ai.discord.security.get_settings") as mock_settings:
+            mock_settings.return_value.allowed_user_ids = [100, 200]
+            mock_settings.return_value.allow_all_users = True
+
+            allowlist = UserAllowlist()
+
+            # With an explicit allowlist, _allow_all is False because
+            # len(self._allowed_ids) == 0 is not satisfied
+            assert allowlist.is_allowed(100) is True
+            assert allowlist.is_allowed(200) is True
+            assert allowlist.is_allowed(300) is False
+            assert allowlist._allow_all is False
 
 
 class TestDetectPromptInjection:

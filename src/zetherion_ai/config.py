@@ -28,6 +28,9 @@ class Settings(BaseSettings):
         alias="ALLOWED_USER_IDS",
         description="Discord user IDs allowed to interact (comma-separated)",
     )
+    allow_all_users: bool = Field(
+        default=False, description="Explicitly allow all users when no allowlist is configured"
+    )
 
     @property
     def allowed_user_ids(self) -> list[int]:
@@ -91,7 +94,7 @@ class Settings(BaseSettings):
         default="claude-sonnet-4-5-20250929", description="Claude model to use for complex tasks"
     )
     openai_model: str = Field(
-        default="gpt-4o",  # or gpt-4o-2024-11-20 for specific version
+        default="gpt-5.2",  # or gpt-5.2-2026-01-15 for specific version
         description="OpenAI model to use for complex tasks",
     )
     router_model: str = Field(
@@ -130,18 +133,24 @@ class Settings(BaseSettings):
     # Embeddings Backend Configuration
     embeddings_backend: str = Field(
         default="ollama",
-        description="Embeddings backend: 'ollama' (local, default) or 'gemini' (cloud)",
+        description="Embeddings backend: ollama (default), gemini, or openai",
+    )
+    openai_embedding_model: str = Field(
+        default="text-embedding-3-large", description="OpenAI embedding model"
+    )
+    openai_embedding_dimensions: int = Field(
+        default=3072, description="Embedding dimensions for OpenAI model"
     )
 
     # Encryption Configuration (Phase 5A)
-    encryption_enabled: bool = Field(
-        default=True, description="Enable field-level encryption for sensitive data"
-    )
-    encryption_passphrase: SecretStr | None = Field(
-        default=None, description="Master passphrase for encryption key derivation (min 16 chars)"
+    encryption_passphrase: SecretStr = Field(
+        description="Master passphrase for encryption key derivation (min 16 chars, required)"
     )
     encryption_salt_path: str = Field(
         default="data/salt.bin", description="Path to store the encryption salt file"
+    )
+    encryption_strict: bool = Field(
+        default=False, description="Raise errors on decryption failure instead of passing through"
     )
 
     # InferenceBroker Configuration (Phase 5B)
@@ -285,6 +294,15 @@ class Settings(BaseSettings):
             raise ValueError(f"router_backend must be one of {valid_backends}, got: {v}")
         return v
 
+    @field_validator("embeddings_backend")
+    @classmethod
+    def validate_embeddings_backend(cls, v: str) -> str:
+        """Validate embeddings backend choice."""
+        valid_backends = ["ollama", "gemini", "openai"]
+        if v not in valid_backends:
+            raise ValueError(f"embeddings_backend must be one of {valid_backends}, got: {v}")
+        return v
+
     @field_validator("anthropic_tier", "openai_tier", "google_tier")
     @classmethod
     def validate_tier(cls, v: str) -> str:
@@ -313,14 +331,13 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_encryption_config(self) -> Self:
         """Validate encryption configuration consistency."""
-        if self.encryption_enabled:
-            if self.encryption_passphrase is None:
-                raise ValueError(
-                    "encryption_passphrase is required when encryption_enabled is True"
-                )
-            passphrase = self.encryption_passphrase.get_secret_value()
-            if len(passphrase) < 16:
-                raise ValueError("encryption_passphrase must be at least 16 characters")
+        passphrase = self.encryption_passphrase.get_secret_value()
+        if not passphrase:
+            raise ValueError(
+                "ENCRYPTION_PASSPHRASE is required — the bot cannot start without encryption"
+            )
+        if len(passphrase) < 16:
+            raise ValueError("encryption_passphrase must be at least 16 characters")
         return self
 
     @property

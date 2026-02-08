@@ -381,6 +381,7 @@ class TestZetherionAIBot:
     async def test_remember_command_success(self, bot):
         """Test /remember command stores memory."""
         bot._allowlist.is_allowed = Mock(return_value=True)
+        bot._rate_limiter.check = Mock(return_value=(True, None))
 
         interaction = Mock()
         interaction.user = Mock(id=456)
@@ -389,10 +390,13 @@ class TestZetherionAIBot:
         interaction.followup = Mock()
         interaction.followup.send = AsyncMock()
 
-        await bot._handle_remember(interaction, "I prefer dark mode")
+        with patch("zetherion_ai.discord.bot.detect_prompt_injection", return_value=False):
+            await bot._handle_remember(interaction, "I prefer dark mode")
 
         interaction.response.defer.assert_called_once_with(ephemeral=True)
-        bot._agent.store_memory_from_request.assert_called_once_with("I prefer dark mode")
+        bot._agent.store_memory_from_request.assert_called_once_with(
+            "I prefer dark mode", user_id=456
+        )
         interaction.followup.send.assert_called_once_with("Memory stored")
 
     @pytest.mark.asyncio
@@ -414,6 +418,7 @@ class TestZetherionAIBot:
     async def test_search_command_finds_memories(self, bot, mock_memory):
         """Test /search command returns matching memories."""
         bot._allowlist.is_allowed = Mock(return_value=True)
+        bot._rate_limiter.check = Mock(return_value=(True, None))
         mock_memory.search_memories = AsyncMock(
             return_value=[
                 {"content": "User prefers dark mode", "score": 0.95},
@@ -428,10 +433,13 @@ class TestZetherionAIBot:
         interaction.followup = Mock()
         interaction.followup.send = AsyncMock()
 
-        await bot._handle_search(interaction, "preferences")
+        with patch("zetherion_ai.discord.bot.detect_prompt_injection", return_value=False):
+            await bot._handle_search(interaction, "preferences")
 
         interaction.response.defer.assert_called_once()
-        mock_memory.search_memories.assert_called_once_with(query="preferences", limit=5)
+        mock_memory.search_memories.assert_called_once_with(
+            query="preferences", limit=5, user_id=456
+        )
         interaction.followup.send.assert_called_once()
 
         sent_message = interaction.followup.send.call_args[0][0]
@@ -443,6 +451,7 @@ class TestZetherionAIBot:
     async def test_search_command_no_results(self, bot, mock_memory):
         """Test /search command when no memories found."""
         bot._allowlist.is_allowed = Mock(return_value=True)
+        bot._rate_limiter.check = Mock(return_value=(True, None))
         mock_memory.search_memories = AsyncMock(return_value=[])
 
         interaction = Mock()
@@ -452,7 +461,8 @@ class TestZetherionAIBot:
         interaction.followup = Mock()
         interaction.followup.send = AsyncMock()
 
-        await bot._handle_search(interaction, "nonexistent")
+        with patch("zetherion_ai.discord.bot.detect_prompt_injection", return_value=False):
+            await bot._handle_search(interaction, "nonexistent")
 
         interaction.followup.send.assert_called_once()
         assert "No matching memories" in interaction.followup.send.call_args[0][0]

@@ -1,10 +1,18 @@
-"""Unit tests for the Gemini embeddings module."""
+"""Unit tests for the embeddings module."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from zetherion_ai.memory.embeddings import EMBEDDING_DIMENSION, GeminiEmbeddings
+from zetherion_ai.memory.embeddings import (
+    EMBEDDING_DIMENSION,
+    EMBEDDING_DIMENSIONS,
+    GeminiEmbeddings,
+    OllamaEmbeddings,
+    OpenAIEmbeddings,
+    get_embedding_dimension,
+    get_embeddings_client,
+)
 
 
 @pytest.fixture
@@ -252,3 +260,240 @@ class TestEmbeddingDimension:
                 result = await embeddings.embed_text("test")
 
         assert len(result) == EMBEDDING_DIMENSION
+
+
+class TestOpenAIEmbeddingsInit:
+    """Tests for OpenAIEmbeddings initialization."""
+
+    def test_init_sets_correct_model(self):
+        """Test initialization sets the configured model."""
+        mock_settings = MagicMock()
+        mock_settings.openai_api_key = MagicMock()
+        mock_settings.openai_api_key.get_secret_value.return_value = "test-openai-key"
+        mock_settings.openai_embedding_model = "text-embedding-3-large"
+        mock_settings.openai_embedding_dimensions = 3072
+
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.openai.AsyncOpenAI"):
+                embeddings = OpenAIEmbeddings()
+                assert embeddings._model == "text-embedding-3-large"
+
+    def test_init_sets_correct_dimensions(self):
+        """Test initialization sets the configured dimensions (3072)."""
+        mock_settings = MagicMock()
+        mock_settings.openai_api_key = MagicMock()
+        mock_settings.openai_api_key.get_secret_value.return_value = "test-openai-key"
+        mock_settings.openai_embedding_model = "text-embedding-3-large"
+        mock_settings.openai_embedding_dimensions = 3072
+
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.openai.AsyncOpenAI"):
+                embeddings = OpenAIEmbeddings()
+                assert embeddings._dimensions == 3072
+
+    def test_init_raises_without_api_key(self):
+        """Test initialization raises ValueError when OpenAI API key is missing."""
+        mock_settings = MagicMock()
+        mock_settings.openai_api_key = None
+
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with pytest.raises(ValueError, match="OpenAI API key required"):
+                OpenAIEmbeddings()
+
+
+class TestOpenAIEmbeddingsEmbedText:
+    """Tests for OpenAIEmbeddings.embed_text method."""
+
+    @pytest.mark.asyncio
+    async def test_embed_text_calls_api_correctly(self):
+        """Test that embed_text calls the OpenAI API with correct parameters."""
+        mock_settings = MagicMock()
+        mock_settings.openai_api_key = MagicMock()
+        mock_settings.openai_api_key.get_secret_value.return_value = "test-openai-key"
+        mock_settings.openai_embedding_model = "text-embedding-3-large"
+        mock_settings.openai_embedding_dimensions = 3072
+
+        mock_embedding = MagicMock()
+        mock_embedding.embedding = [0.1] * 3072
+        mock_response = MagicMock()
+        mock_response.data = [mock_embedding]
+
+        mock_async_client = AsyncMock()
+        mock_async_client.embeddings.create = AsyncMock(return_value=mock_response)
+
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch(
+                "zetherion_ai.memory.embeddings.openai.AsyncOpenAI",
+                return_value=mock_async_client,
+            ):
+                embeddings = OpenAIEmbeddings()
+                result = await embeddings.embed_text("Hello, world!")
+
+        assert len(result) == 3072
+        mock_async_client.embeddings.create.assert_called_once_with(
+            model="text-embedding-3-large",
+            input="Hello, world!",
+            dimensions=3072,
+        )
+
+    @pytest.mark.asyncio
+    async def test_embed_text_returns_list_of_floats(self):
+        """Test that embed_text returns a list of floats."""
+        mock_settings = MagicMock()
+        mock_settings.openai_api_key = MagicMock()
+        mock_settings.openai_api_key.get_secret_value.return_value = "test-openai-key"
+        mock_settings.openai_embedding_model = "text-embedding-3-large"
+        mock_settings.openai_embedding_dimensions = 3072
+
+        expected_values = [0.1 * i for i in range(3072)]
+        mock_embedding = MagicMock()
+        mock_embedding.embedding = expected_values
+        mock_response = MagicMock()
+        mock_response.data = [mock_embedding]
+
+        mock_async_client = AsyncMock()
+        mock_async_client.embeddings.create = AsyncMock(return_value=mock_response)
+
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch(
+                "zetherion_ai.memory.embeddings.openai.AsyncOpenAI",
+                return_value=mock_async_client,
+            ):
+                embeddings = OpenAIEmbeddings()
+                result = await embeddings.embed_text("test")
+
+        assert result == expected_values
+
+
+class TestOpenAIEmbeddingsClose:
+    """Tests for OpenAIEmbeddings.close method."""
+
+    @pytest.mark.asyncio
+    async def test_close_calls_client_close(self):
+        """Test that close() calls the underlying client's close method."""
+        mock_settings = MagicMock()
+        mock_settings.openai_api_key = MagicMock()
+        mock_settings.openai_api_key.get_secret_value.return_value = "test-openai-key"
+        mock_settings.openai_embedding_model = "text-embedding-3-large"
+        mock_settings.openai_embedding_dimensions = 3072
+
+        mock_async_client = AsyncMock()
+
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch(
+                "zetherion_ai.memory.embeddings.openai.AsyncOpenAI",
+                return_value=mock_async_client,
+            ):
+                embeddings = OpenAIEmbeddings()
+                await embeddings.close()
+
+        mock_async_client.close.assert_called_once()
+
+
+class TestOllamaEmbeddingsClose:
+    """Tests for OllamaEmbeddings.close method."""
+
+    @pytest.mark.asyncio
+    async def test_close_calls_client_aclose(self):
+        """Test that close() calls self._client.aclose()."""
+        mock_settings = MagicMock()
+        mock_settings.ollama_host = "localhost"
+        mock_settings.ollama_port = 11434
+        mock_settings.ollama_embedding_model = "nomic-embed-text"
+        mock_settings.ollama_timeout = 30
+
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.httpx.AsyncClient") as mock_httpx:
+                mock_http_client = AsyncMock()
+                mock_httpx.return_value = mock_http_client
+
+                embeddings = OllamaEmbeddings()
+                await embeddings.close()
+
+        mock_http_client.aclose.assert_called_once()
+
+
+class TestGetEmbeddingDimension:
+    """Tests for the get_embedding_dimension() function."""
+
+    def test_returns_768_for_ollama(self):
+        """Test that ollama backend returns 768 dimensions."""
+        mock_settings = MagicMock()
+        mock_settings.embeddings_backend = "ollama"
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            assert get_embedding_dimension() == 768
+
+    def test_returns_768_for_gemini(self):
+        """Test that gemini backend returns 768 dimensions."""
+        mock_settings = MagicMock()
+        mock_settings.embeddings_backend = "gemini"
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            assert get_embedding_dimension() == 768
+
+    def test_returns_3072_for_openai(self):
+        """Test that openai backend returns 3072 dimensions."""
+        mock_settings = MagicMock()
+        mock_settings.embeddings_backend = "openai"
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            assert get_embedding_dimension() == 3072
+
+    def test_returns_default_768_for_unknown_backend(self):
+        """Test that unknown backend falls back to 768 dimensions."""
+        mock_settings = MagicMock()
+        mock_settings.embeddings_backend = "unknown"
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            assert get_embedding_dimension() == 768
+
+    def test_embedding_dimensions_dict_has_all_backends(self):
+        """Test that EMBEDDING_DIMENSIONS dict contains all supported backends."""
+        assert "ollama" in EMBEDDING_DIMENSIONS
+        assert "gemini" in EMBEDDING_DIMENSIONS
+        assert "openai" in EMBEDDING_DIMENSIONS
+        assert EMBEDDING_DIMENSIONS["ollama"] == 768
+        assert EMBEDDING_DIMENSIONS["gemini"] == 768
+        assert EMBEDDING_DIMENSIONS["openai"] == 3072
+
+
+class TestGetEmbeddingsClientFactory:
+    """Tests for the get_embeddings_client() factory function."""
+
+    def test_returns_openai_for_openai_backend(self):
+        """Test that factory returns OpenAIEmbeddings for 'openai' backend."""
+        mock_settings = MagicMock()
+        mock_settings.embeddings_backend = "openai"
+        mock_settings.openai_api_key = MagicMock()
+        mock_settings.openai_api_key.get_secret_value.return_value = "test-key"
+        mock_settings.openai_embedding_model = "text-embedding-3-large"
+        mock_settings.openai_embedding_dimensions = 3072
+
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.openai.AsyncOpenAI"):
+                client = get_embeddings_client()
+                assert isinstance(client, OpenAIEmbeddings)
+
+    def test_returns_gemini_for_gemini_backend(self):
+        """Test that factory returns GeminiEmbeddings for 'gemini' backend."""
+        mock_settings = MagicMock()
+        mock_settings.embeddings_backend = "gemini"
+        mock_settings.gemini_api_key = MagicMock()
+        mock_settings.gemini_api_key.get_secret_value.return_value = "test-key"
+        mock_settings.embedding_model = "text-embedding-004"
+
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.genai.Client"):
+                client = get_embeddings_client()
+                assert isinstance(client, GeminiEmbeddings)
+
+    def test_returns_ollama_for_ollama_backend(self):
+        """Test that factory returns OllamaEmbeddings for 'ollama' backend."""
+        mock_settings = MagicMock()
+        mock_settings.embeddings_backend = "ollama"
+        mock_settings.ollama_host = "localhost"
+        mock_settings.ollama_port = 11434
+        mock_settings.ollama_embedding_model = "nomic-embed-text"
+        mock_settings.ollama_timeout = 30
+
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.httpx.AsyncClient"):
+                client = get_embeddings_client()
+                assert isinstance(client, OllamaEmbeddings)
