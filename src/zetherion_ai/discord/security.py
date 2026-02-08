@@ -5,7 +5,6 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
 
 log = get_logger("zetherion_ai.discord.security")
@@ -70,64 +69,6 @@ class RateLimiter:
         # Record this message
         state.message_timestamps.append(now)
         return True, None
-
-
-class UserAllowlist:
-    """Manage allowed Discord users."""
-
-    def __init__(self) -> None:
-        """Initialize the allowlist."""
-        settings = get_settings()
-        self._allowed_ids: set[int] = set(settings.allowed_user_ids)
-        self._allow_all = len(self._allowed_ids) == 0 and settings.allow_all_users
-
-        if len(self._allowed_ids) == 0 and not settings.allow_all_users:
-            log.error(
-                "allowlist_misconfigured",
-                message=(
-                    "No allowed users configured and ALLOW_ALL_USERS is False. "
-                    "All users will be blocked."
-                ),
-            )
-        elif self._allow_all:
-            log.warning(
-                "allowlist_open",
-                message="ALLOW_ALL_USERS is True with no allowlist — all users can interact",
-            )
-        else:
-            log.info("allowlist_configured", count=len(self._allowed_ids))
-
-    def is_allowed(self, user_id: int) -> bool:
-        """Check if a user is allowed.
-
-        Args:
-            user_id: The Discord user ID.
-
-        Returns:
-            True if allowed, False otherwise.
-        """
-        if self._allow_all:
-            return True
-        return user_id in self._allowed_ids
-
-    def add(self, user_id: int) -> None:
-        """Add a user to the allowlist.
-
-        Args:
-            user_id: The Discord user ID to add.
-        """
-        self._allowed_ids.add(user_id)
-        self._allow_all = False
-        log.info("user_added_to_allowlist", user_id=user_id)
-
-    def remove(self, user_id: int) -> None:
-        """Remove a user from the allowlist.
-
-        Args:
-            user_id: The Discord user ID to remove.
-        """
-        self._allowed_ids.discard(user_id)
-        log.info("user_removed_from_allowlist", user_id=user_id)
 
 
 def detect_prompt_injection(content: str) -> bool:

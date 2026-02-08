@@ -16,3 +16,14 @@ scripts/interactive-setup.py:env-file-secrets:293
 
 # start.ps1 - PowerShell variable name (not an actual secret value)
 start.ps1:env-file-secrets:315
+
+# docker-compose.test.yml - Local test POSTGRES_DSN with placeholder password
+docker-compose.test.yml:password-in-url:35
+docker-compose.test.yml:password-in-url:65
+
+# docker-compose.yml - Local dev POSTGRES_DSN with placeholder password
+docker-compose.yml:password-in-url:36
+docker-compose.yml:password-in-url:83
+
+# src/zetherion_ai/config.py - Default POSTGRES_DSN with placeholder password
+src/zetherion_ai/config.py:password-in-url:43

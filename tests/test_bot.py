@@ -19,13 +19,12 @@ class TestZetherionAIBot:
     @pytest.fixture
     def bot(self, mock_memory):
         """Create ZetherionAIBot instance with mocked dependencies."""
-        with (
-            patch("zetherion_ai.discord.bot.RateLimiter"),
-            patch("zetherion_ai.discord.bot.UserAllowlist"),
-        ):
+        with patch("zetherion_ai.discord.bot.RateLimiter"):
             from zetherion_ai.discord.bot import ZetherionAIBot
 
-            bot = ZetherionAIBot(memory=mock_memory)
+            mock_user_manager = AsyncMock()
+            mock_user_manager.is_allowed = AsyncMock(return_value=True)
+            bot = ZetherionAIBot(memory=mock_memory, user_manager=mock_user_manager)
             bot._agent = AsyncMock()
             bot._agent.generate_response = AsyncMock(return_value="Test response")
             bot._agent.store_memory_from_request = AsyncMock(return_value="Memory stored")
@@ -48,10 +47,7 @@ class TestZetherionAIBot:
 
     def test_bot_initialization(self, mock_memory):
         """Test bot initializes with correct intents and components."""
-        with (
-            patch("zetherion_ai.discord.bot.RateLimiter"),
-            patch("zetherion_ai.discord.bot.UserAllowlist"),
-        ):
+        with patch("zetherion_ai.discord.bot.RateLimiter"):
             from zetherion_ai.discord.bot import ZetherionAIBot
 
             bot = ZetherionAIBot(memory=mock_memory)
@@ -60,7 +56,7 @@ class TestZetherionAIBot:
             assert bot._agent is None  # Not initialized until setup_hook
             assert bot._tree is not None
             assert bot._rate_limiter is not None
-            assert bot._allowlist is not None
+            assert bot._user_manager is None
 
     @pytest.mark.asyncio
     async def test_setup_hook(self, bot, mock_memory):
@@ -115,7 +111,7 @@ class TestZetherionAIBot:
         bot._connection.user = Mock(id=123)
         message = Mock()
         message.author = Mock(bot=False, id=456)
-        message.channel = Mock(spec=[])  # Not a DMChannel
+        message.channel = Mock(spec=[], id=789)  # Not a DMChannel
         message.mentions = []
 
         await bot.on_message(message)
@@ -126,7 +122,7 @@ class TestZetherionAIBot:
     async def test_on_message_responds_to_dm(self, bot):
         """Test bot responds to DM messages."""
         bot._connection.user = Mock(id=123)
-        bot._allowlist.is_allowed = Mock(return_value=True)
+        bot._user_manager.is_allowed = AsyncMock(return_value=True)
         bot._rate_limiter.check = Mock(return_value=(True, None))
 
         message = Mock()
@@ -146,13 +142,13 @@ class TestZetherionAIBot:
             await bot.on_message(message)
 
         bot._agent.generate_response.assert_called_once()
-        message.channel.send.assert_called_once_with("Test response")
+        message.reply.assert_called_once_with("Test response", mention_author=True)
 
     @pytest.mark.asyncio
     async def test_on_message_responds_to_mention(self, bot):
         """Test bot responds when mentioned."""
         bot._connection.user = Mock(id=123)
-        bot._allowlist.is_allowed = Mock(return_value=True)
+        bot._user_manager.is_allowed = AsyncMock(return_value=True)
         bot._rate_limiter.check = Mock(return_value=(True, None))
 
         message = Mock()
@@ -178,7 +174,7 @@ class TestZetherionAIBot:
     async def test_on_message_blocks_unauthorized_user(self, bot):
         """Test bot blocks users not on allowlist."""
         bot._connection.user = Mock(id=123)
-        bot._allowlist.is_allowed = Mock(return_value=False)
+        bot._user_manager.is_allowed = AsyncMock(return_value=False)
 
         message = Mock()
         message.author = Mock(bot=False, id=456)
@@ -197,7 +193,7 @@ class TestZetherionAIBot:
     async def test_on_message_enforces_rate_limit(self, bot):
         """Test bot enforces rate limiting."""
         bot._connection.user = Mock(id=123)
-        bot._allowlist.is_allowed = Mock(return_value=True)
+        bot._user_manager.is_allowed = AsyncMock(return_value=True)
         bot._rate_limiter.check = Mock(return_value=(False, "Rate limited"))
 
         message = Mock()
@@ -209,14 +205,14 @@ class TestZetherionAIBot:
 
         await bot.on_message(message)
 
-        message.reply.assert_called_once_with("Rate limited", mention_author=False)
+        message.reply.assert_called_once_with("Rate limited", mention_author=True)
         bot._agent.generate_response.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_on_message_detects_prompt_injection(self, bot):
         """Test bot detects and blocks prompt injection attempts."""
         bot._connection.user = Mock(id=123)
-        bot._allowlist.is_allowed = Mock(return_value=True)
+        bot._user_manager.is_allowed = AsyncMock(return_value=True)
         bot._rate_limiter.check = Mock(return_value=(True, None))
 
         message = Mock()
@@ -237,12 +233,12 @@ class TestZetherionAIBot:
     async def test_on_message_handles_empty_content_after_mention_removal(self, bot):
         """Test bot handles empty content after removing mention."""
         bot._connection.user = Mock(id=123)
-        bot._allowlist.is_allowed = Mock(return_value=True)
+        bot._user_manager.is_allowed = AsyncMock(return_value=True)
         bot._rate_limiter.check = Mock(return_value=(True, None))
 
         message = Mock()
         message.author = Mock(bot=False, id=456)
-        message.channel = Mock(spec=[])
+        message.channel = Mock(spec=[], id=789)
         message.mentions = [bot.user]
         message.content = f"<@{bot.user.id}>"  # Only mention, no content
         message.reply = AsyncMock()
@@ -264,7 +260,7 @@ class TestZetherionAIBot:
         """Test bot handles case when agent isn't initialized yet."""
         bot._connection.user = Mock(id=123)
         bot._agent = None  # Agent not ready
-        bot._allowlist.is_allowed = Mock(return_value=True)
+        bot._user_manager.is_allowed = AsyncMock(return_value=True)
         bot._rate_limiter.check = Mock(return_value=(True, None))
 
         message = Mock()
@@ -288,7 +284,7 @@ class TestZetherionAIBot:
     @pytest.mark.asyncio
     async def test_ask_command_success(self, bot):
         """Test /ask command with valid input."""
-        bot._allowlist.is_allowed = Mock(return_value=True)
+        bot._user_manager.is_allowed = AsyncMock(return_value=True)
         bot._rate_limiter.check = Mock(return_value=(True, None))
 
         interaction = Mock()
@@ -310,7 +306,7 @@ class TestZetherionAIBot:
     @pytest.mark.asyncio
     async def test_ask_command_unauthorized(self, bot):
         """Test /ask command blocks unauthorized users."""
-        bot._allowlist.is_allowed = Mock(return_value=False)
+        bot._user_manager.is_allowed = AsyncMock(return_value=False)
 
         interaction = Mock()
         interaction.user = Mock(id=456)
@@ -327,7 +323,7 @@ class TestZetherionAIBot:
     @pytest.mark.asyncio
     async def test_ask_command_rate_limited(self, bot):
         """Test /ask command enforces rate limiting."""
-        bot._allowlist.is_allowed = Mock(return_value=True)
+        bot._user_manager.is_allowed = AsyncMock(return_value=True)
         bot._rate_limiter.check = Mock(return_value=(False, "Rate limited"))
 
         interaction = Mock()
@@ -343,7 +339,7 @@ class TestZetherionAIBot:
     @pytest.mark.asyncio
     async def test_ask_command_prompt_injection(self, bot):
         """Test /ask command detects prompt injection."""
-        bot._allowlist.is_allowed = Mock(return_value=True)
+        bot._user_manager.is_allowed = AsyncMock(return_value=True)
         bot._rate_limiter.check = Mock(return_value=(True, None))
 
         interaction = Mock()
@@ -361,7 +357,7 @@ class TestZetherionAIBot:
     async def test_ask_command_agent_not_ready(self, bot):
         """Test /ask command when agent isn't ready."""
         bot._agent = None
-        bot._allowlist.is_allowed = Mock(return_value=True)
+        bot._user_manager.is_allowed = AsyncMock(return_value=True)
         bot._rate_limiter.check = Mock(return_value=(True, None))
 
         interaction = Mock()
@@ -380,7 +376,7 @@ class TestZetherionAIBot:
     @pytest.mark.asyncio
     async def test_remember_command_success(self, bot):
         """Test /remember command stores memory."""
-        bot._allowlist.is_allowed = Mock(return_value=True)
+        bot._user_manager.is_allowed = AsyncMock(return_value=True)
         bot._rate_limiter.check = Mock(return_value=(True, None))
 
         interaction = Mock()
@@ -402,7 +398,7 @@ class TestZetherionAIBot:
     @pytest.mark.asyncio
     async def test_remember_command_unauthorized(self, bot):
         """Test /remember command blocks unauthorized users."""
-        bot._allowlist.is_allowed = Mock(return_value=False)
+        bot._user_manager.is_allowed = AsyncMock(return_value=False)
 
         interaction = Mock()
         interaction.user = Mock(id=456)
@@ -417,7 +413,7 @@ class TestZetherionAIBot:
     @pytest.mark.asyncio
     async def test_search_command_finds_memories(self, bot, mock_memory):
         """Test /search command returns matching memories."""
-        bot._allowlist.is_allowed = Mock(return_value=True)
+        bot._user_manager.is_allowed = AsyncMock(return_value=True)
         bot._rate_limiter.check = Mock(return_value=(True, None))
         mock_memory.search_memories = AsyncMock(
             return_value=[
@@ -450,7 +446,7 @@ class TestZetherionAIBot:
     @pytest.mark.asyncio
     async def test_search_command_no_results(self, bot, mock_memory):
         """Test /search command when no memories found."""
-        bot._allowlist.is_allowed = Mock(return_value=True)
+        bot._user_manager.is_allowed = AsyncMock(return_value=True)
         bot._rate_limiter.check = Mock(return_value=(True, None))
         mock_memory.search_memories = AsyncMock(return_value=[])
 

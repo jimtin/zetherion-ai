@@ -19,6 +19,8 @@ services:
         condition: service_healthy
       zetherion-ai-skills:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -30,6 +32,7 @@ services:
       - OLLAMA_PORT=11434
       - OLLAMA_ROUTER_HOST=ollama-router
       - OLLAMA_ROUTER_PORT=11434
+      - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - ALLOW_ALL_USERS=true
     volumes:
       - ./data:/app/data
@@ -52,11 +55,14 @@ services:
     depends_on:
       qdrant:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     env_file:
       - .env
     environment:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - SKILLS_HOST=0.0.0.0
       - SKILLS_PORT=8080
     # Expose port for integration test health checks
@@ -116,6 +122,29 @@ services:
     networks:
       - zetherion-ai-test-net
 
+  postgres:
+    image: postgres:17-alpine
+    container_name: zetherion-ai-test-postgres
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_DB: zetherion
+      POSTGRES_USER: zetherion
+      POSTGRES_PASSWORD: password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zetherion"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "15432:5432"
+    volumes:
+      - postgres_data_test:/var/lib/postgresql/data
+    networks:
+      - zetherion-ai-test-net
+
   qdrant:
     image: qdrant/qdrant:latest@sha256:0425e3e03e7fd9b3dc95c4214546afe19de2eb2e28ca621441a56663ac6e1f46
     container_name: zetherion-ai-test-qdrant
@@ -140,6 +169,7 @@ volumes:
   qdrant_storage_test:
   ollama_models_test:
   ollama_router_models_test:
+  postgres_data_test:
 
 networks:
   zetherion-ai-test-net:

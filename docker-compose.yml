@@ -19,6 +19,8 @@ services:
         condition: service_healthy
       zetherion-ai-skills:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -31,6 +33,7 @@ services:
       - OLLAMA_ROUTER_HOST=ollama-router
       - OLLAMA_ROUTER_PORT=11434
       - SKILLS_SERVICE_URL=http://zetherion-ai-skills:8080
+      - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - ENVIRONMENT=production
     volumes:
       - ./data:/app/data
@@ -64,6 +67,8 @@ services:
     depends_on:
       qdrant:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -75,6 +80,7 @@ services:
       # Router container (small, fast model for classification)
       - OLLAMA_ROUTER_HOST=ollama-router
       - OLLAMA_ROUTER_PORT=11434
+      - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - SKILLS_HOST=0.0.0.0
       - SKILLS_PORT=8080
     # No ports exposed to host - only accessible from bot via internal network
@@ -160,6 +166,35 @@ services:
           cpus: '0.5'
           memory: 512M
 
+  postgres:
+    image: postgres:17-alpine
+    container_name: zetherion-ai-postgres
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_DB: zetherion
+      POSTGRES_USER: zetherion
+      POSTGRES_PASSWORD: password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zetherion"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - zetherion-ai-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 64M
+
   qdrant:
     # Pin image by digest for reproducible builds (Dependabot auto-updates)
     image: qdrant/qdrant:latest@sha256:0425e3e03e7fd9b3dc95c4214546afe19de2eb2e28ca621441a56663ac6e1f46
@@ -198,6 +233,7 @@ volumes:
   qdrant_storage:
   ollama_models:
   ollama_router_models:
+  postgres_data:
 
 networks:
   zetherion-ai-net:

@@ -1,10 +1,7 @@
 """Tests for security utilities."""
 
-import pytest
-
 from zetherion_ai.discord.security import (
     RateLimiter,
-    UserAllowlist,
     detect_prompt_injection,
 )
 
@@ -44,40 +41,6 @@ class TestRateLimiter:
         # User 456 should still be allowed
         allowed2, _ = limiter.check(user_id=456)
         assert allowed2 is True
-
-
-class TestUserAllowlist:
-    """Tests for UserAllowlist."""
-
-    def test_empty_allows_all(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test that empty allowlist allows everyone when ALLOW_ALL_USERS is true."""
-        monkeypatch.setenv("DISCORD_TOKEN", "test")
-        monkeypatch.setenv("GEMINI_API_KEY", "test")
-        monkeypatch.setenv("ALLOWED_USER_IDS", "")
-        monkeypatch.setenv("ALLOW_ALL_USERS", "true")
-
-        # Clear cached settings
-        from zetherion_ai.config import get_settings
-
-        get_settings.cache_clear()
-
-        allowlist = UserAllowlist()
-        assert allowlist.is_allowed(12345) is True
-
-    def test_allowlist_filters(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test that configured allowlist filters users."""
-        monkeypatch.setenv("DISCORD_TOKEN", "test")
-        monkeypatch.setenv("GEMINI_API_KEY", "test")
-        monkeypatch.setenv("ALLOWED_USER_IDS", "123,456")
-
-        from zetherion_ai.config import get_settings
-
-        get_settings.cache_clear()
-
-        allowlist = UserAllowlist()
-        assert allowlist.is_allowed(123) is True
-        assert allowlist.is_allowed(456) is True
-        assert allowlist.is_allowed(789) is False
 
 
 class TestPromptInjection:
@@ -345,64 +308,6 @@ class TestPromptInjection:
         ]
         for text in normal:
             assert detect_prompt_injection(text) is False
-
-
-class TestUserAllowlistMethods:
-    """Tests for UserAllowlist add/remove functionality."""
-
-    def test_add_user_to_allowlist(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test adding a user to the allowlist."""
-        monkeypatch.setenv("DISCORD_TOKEN", "test")
-        monkeypatch.setenv("GEMINI_API_KEY", "test")
-        monkeypatch.setenv("ALLOWED_USER_IDS", "123")
-
-        from zetherion_ai.config import get_settings
-
-        get_settings.cache_clear()
-
-        allowlist = UserAllowlist()
-        assert allowlist.is_allowed(456) is False
-
-        allowlist.add(456)
-        assert allowlist.is_allowed(456) is True
-
-    def test_remove_user_from_allowlist(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test removing a user from the allowlist."""
-        monkeypatch.setenv("DISCORD_TOKEN", "test")
-        monkeypatch.setenv("GEMINI_API_KEY", "test")
-        monkeypatch.setenv("ALLOWED_USER_IDS", "123,456")
-
-        from zetherion_ai.config import get_settings
-
-        get_settings.cache_clear()
-
-        allowlist = UserAllowlist()
-        assert allowlist.is_allowed(456) is True
-
-        allowlist.remove(456)
-        assert allowlist.is_allowed(456) is False
-
-    def test_add_disables_allow_all(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test that adding a user disables allow_all mode."""
-        monkeypatch.setenv("DISCORD_TOKEN", "test")
-        monkeypatch.setenv("GEMINI_API_KEY", "test")
-        monkeypatch.setenv("ALLOWED_USER_IDS", "")
-        monkeypatch.setenv("ALLOW_ALL_USERS", "true")
-
-        from zetherion_ai.config import get_settings
-
-        get_settings.cache_clear()
-
-        allowlist = UserAllowlist()
-        # Initially allows all
-        assert allowlist.is_allowed(999) is True
-
-        # Add a user
-        allowlist.add(123)
-
-        # Now should only allow 123
-        assert allowlist.is_allowed(123) is True
-        assert allowlist.is_allowed(999) is False
 
 
 class TestRateLimiterAdvanced:

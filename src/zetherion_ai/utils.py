@@ -38,4 +38,4 @@ async def timed_operation(
     finally:
         result["elapsed_ms"] = round((time.perf_counter() - start) * 1000, 2)
         if log:
-            log.info(f"TIMING: {name}", duration_ms=result["elapsed_ms"], **extra)
+            log.info(name, duration_ms=result["elapsed_ms"], **extra)

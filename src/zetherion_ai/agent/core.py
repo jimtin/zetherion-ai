@@ -3,16 +3,13 @@
 import asyncio
 import time
 from typing import Any
-from uuid import uuid4
-
-import structlog
 
 from zetherion_ai.agent.inference import InferenceBroker
 from zetherion_ai.agent.prompts import SYSTEM_PROMPT
 from zetherion_ai.agent.providers import TaskType
 from zetherion_ai.agent.router import MessageIntent, RoutingDecision
 from zetherion_ai.agent.router_factory import create_router_sync
-from zetherion_ai.config import get_settings
+from zetherion_ai.config import get_dynamic, get_settings
 from zetherion_ai.constants import CONTEXT_HISTORY_LIMIT, MEMORY_SCORE_THRESHOLD
 from zetherion_ai.logging import get_logger
 from zetherion_ai.memory.qdrant import QdrantMemory
@@ -152,85 +149,89 @@ class Agent:
         Returns:
             The generated response.
         """
-        structlog.contextvars.bind_contextvars(request_id=str(uuid4())[:8])
         total_start = time.perf_counter()
 
-        try:
-            # Step 1: Classify the message intent
-            async with timed_operation("message_routed", log=log) as t:
-                routing = await self._router.classify(message)
-            log.info(
-                "message_routed",
-                intent=routing.intent.value,
-                use_claude=routing.use_claude,
-                confidence=routing.confidence,
-                classify_duration_ms=t["elapsed_ms"],
-            )
+        # Step 1: Classify the message intent
+        async with timed_operation("message_routing") as t:
+            routing = await self._router.classify(message)
+        log.info(
+            "message_routed",
+            intent=routing.intent.value,
+            use_claude=routing.use_claude,
+            confidence=routing.confidence,
+            duration_ms=t["elapsed_ms"],
+        )
 
-            # Step 2: Handle based on intent
-            async with timed_operation("intent_handled", log=log, intent=routing.intent.value) as t:
-                match routing.intent:
-                    case MessageIntent.MEMORY_STORE:
-                        response = await self._handle_memory_store(message, user_id=user_id)
-                    case MessageIntent.MEMORY_RECALL:
-                        response = await self._handle_memory_recall(user_id, message)
-                    case MessageIntent.SYSTEM_COMMAND:
-                        response = await self._handle_system_command(message)
-                    case MessageIntent.SIMPLE_QUERY:
-                        response = await self._handle_simple_query(message)
-                    case MessageIntent.COMPLEX_TASK:
-                        response = await self._handle_complex_task(
-                            user_id,
-                            channel_id,
-                            message,
-                            routing,
-                        )
-                    # Skill intents (Phase 5G)
-                    case MessageIntent.TASK_MANAGEMENT:
-                        response = await self._handle_skill_intent(user_id, message, "task_manager")
-                    case MessageIntent.CALENDAR_QUERY:
-                        response = await self._handle_skill_intent(user_id, message, "calendar")
-                    case MessageIntent.PROFILE_QUERY:
-                        response = await self._handle_skill_intent(
-                            user_id,
-                            message,
-                            "profile_manager",
-                        )
-                    case _:
-                        response = await self._handle_complex_task(
-                            user_id,
-                            channel_id,
-                            message,
-                            routing,
-                        )
-
-            # Step 3: Store the exchange in memory (skip for lightweight intents)
-            if routing.intent not in (MessageIntent.SIMPLE_QUERY, MessageIntent.SYSTEM_COMMAND):
-                async with timed_operation("stored_messages", log=log) as t:
-                    await self._memory.store_message(
-                        user_id=user_id,
-                        channel_id=channel_id,
-                        role="user",
-                        content=message,
-                        metadata={"intent": routing.intent.value},
+        # Step 2: Handle based on intent
+        async with timed_operation("intent_handling") as t:
+            match routing.intent:
+                case MessageIntent.MEMORY_STORE:
+                    response = await self._handle_memory_store(message, user_id=user_id)
+                case MessageIntent.MEMORY_RECALL:
+                    response = await self._handle_memory_recall(user_id, message)
+                case MessageIntent.SYSTEM_COMMAND:
+                    response = await self._handle_system_command(message)
+                case MessageIntent.SIMPLE_QUERY:
+                    response = await self._handle_simple_query(message)
+                case MessageIntent.COMPLEX_TASK:
+                    response = await self._handle_complex_task(
+                        user_id,
+                        channel_id,
+                        message,
+                        routing,
                     )
-                    await self._memory.store_message(
-                        user_id=user_id,
-                        channel_id=channel_id,
-                        role="assistant",
-                        content=response,
+                # Skill intents (Phase 5G)
+                case MessageIntent.TASK_MANAGEMENT:
+                    response = await self._handle_skill_intent(user_id, message, "task_manager")
+                case MessageIntent.CALENDAR_QUERY:
+                    response = await self._handle_skill_intent(user_id, message, "calendar")
+                case MessageIntent.PROFILE_QUERY:
+                    response = await self._handle_skill_intent(
+                        user_id,
+                        message,
+                        "profile_manager",
                     )
+                case _:
+                    response = await self._handle_complex_task(
+                        user_id,
+                        channel_id,
+                        message,
+                        routing,
+                    )
+        log.info(
+            "intent_handled",
+            intent=routing.intent.value,
+            duration_ms=t["elapsed_ms"],
+            response_length=len(response),
+        )
 
-            total_end = time.perf_counter()
-            log.info(
-                "TIMING: generate_response_total",
-                total_duration_ms=round((total_end - total_start) * 1000, 2),
-            )
+        # Step 3: Store the exchange in memory (skip for lightweight intents)
+        if routing.intent not in (MessageIntent.SIMPLE_QUERY, MessageIntent.SYSTEM_COMMAND):
+            async with timed_operation("memory_storage") as t:
+                await self._memory.store_message(
+                    user_id=user_id,
+                    channel_id=channel_id,
+                    role="user",
+                    content=message,
+                    metadata={"intent": routing.intent.value},
+                )
+                await self._memory.store_message(
+                    user_id=user_id,
+                    channel_id=channel_id,
+                    role="assistant",
+                    content=response,
+                )
+            log.debug("messages_stored", duration_ms=t["elapsed_ms"])
 
-            return response
+        total_end = time.perf_counter()
+        log.info(
+            "generate_response_complete",
+            intent=routing.intent.value,
+            total_duration_ms=round((total_end - total_start) * 1000, 2),
+            message_length=len(message),
+        )
 
-        finally:
-            structlog.contextvars.clear_contextvars()
+        return response
 
     async def _handle_simple_query(self, message: str) -> str:
         """Handle simple queries with Gemini Flash (cheap/fast).
@@ -317,7 +318,13 @@ class Agent:
             response = await client.handle_request(request)
 
             if response.success:
-                return response.message or "Done!"
+                result_msg = response.message or "Done!"
+                log.debug(
+                    "skill_execution_success",
+                    skill=skill_name,
+                    response_length=len(result_msg),
+                )
+                return result_msg
             else:
                 log.warning(
                     "skill_request_failed",
@@ -429,7 +436,7 @@ class Agent:
             Generated response.
         """
         # Fetch context once for reuse across models
-        async with timed_operation("context_built", log=log) as ctx_t:
+        async with timed_operation("context_retrieval") as ctx_t:
             recent_messages, relevant_memories = await self._build_context(
                 user_id,
                 channel_id,
@@ -445,11 +452,12 @@ class Agent:
 
         # Build system prompt with context
         system_prompt = SYSTEM_PROMPT
+        score_threshold = get_dynamic("tuning", "memory_score_threshold", MEMORY_SCORE_THRESHOLD)
+        context_limit = get_dynamic("tuning", "context_history_limit", CONTEXT_HISTORY_LIMIT)
+
         if relevant_memories:
             memory_text = "\n".join(
-                f"- {m['content']}"
-                for m in relevant_memories
-                if m["score"] > MEMORY_SCORE_THRESHOLD
+                f"- {m['content']}" for m in relevant_memories if m["score"] > score_threshold
             )
             if memory_text:
                 system_prompt = f"{SYSTEM_PROMPT}\n\n## Relevant Memories\n{memory_text}"
@@ -457,14 +465,14 @@ class Agent:
         # Format conversation history
         messages = [
             {"role": msg["role"], "content": msg["content"]}
-            for msg in recent_messages[-CONTEXT_HISTORY_LIMIT:]
+            for msg in recent_messages[-context_limit:]
         ]
 
         # Classify task type for optimal provider selection
         task_type = self._classify_task_type(message)
         log.debug("task_type_classified", task_type=task_type.value)
 
-        async with timed_operation("inference_complete", log=log) as infer_t:
+        async with timed_operation("inference") as infer_t:
             result = await self._inference_broker.infer(
                 prompt=message,
                 task_type=task_type,

@@ -234,6 +234,12 @@ class QdrantMemory:
                     **payload,
                 }
             )
+
+        log.debug(
+            "conversation_search_complete",
+            result_count=len(output),
+            top_score=round(output[0]["score"], 3) if output else None,
+        )
         return output
 
     async def search_memories(
@@ -303,6 +309,12 @@ class QdrantMemory:
                     **payload,
                 }
             )
+
+        log.debug(
+            "memory_search_complete",
+            result_count=len(output),
+            top_score=round(output[0]["score"], 3) if output else None,
+        )
         return output
 
     async def get_recent_context(

@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, time
 from typing import TYPE_CHECKING, Any
 
+from zetherion_ai.config import get_dynamic
 from zetherion_ai.logging import get_logger
 from zetherion_ai.scheduler.actions import ActionExecutor, ActionResult, ScheduledEvent
 from zetherion_ai.skills.base import HeartbeatAction
@@ -174,8 +175,12 @@ class HeartbeatScheduler:
     def _is_quiet_hours(self) -> bool:
         """Check if current time is within quiet hours."""
         now = datetime.now().time()
-        start = self._config.quiet_start
-        end = self._config.quiet_end
+        quiet_start_hour = get_dynamic("scheduler", "quiet_start", None)
+        quiet_end_hour = get_dynamic("scheduler", "quiet_end", None)
+        start = (
+            time(quiet_start_hour, 0) if quiet_start_hour is not None else self._config.quiet_start
+        )
+        end = time(quiet_end_hour, 0) if quiet_end_hour is not None else self._config.quiet_end
 
         # Handle overnight quiet hours (e.g., 22:00 - 07:00)
         if start > end:
@@ -213,8 +218,9 @@ class HeartbeatScheduler:
                 log.error("heartbeat_error", error=str(e))
                 self._stats.last_error = str(e)
 
-            # Wait for next interval
-            await asyncio.sleep(self._config.interval_seconds)
+            # Wait for next interval (dynamic override if available)
+            interval = get_dynamic("scheduler", "interval_seconds", self._config.interval_seconds)
+            await asyncio.sleep(interval)
 
     async def _run_heartbeat(self) -> None:
         """Run a single heartbeat cycle."""

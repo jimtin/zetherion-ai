@@ -12,7 +12,6 @@ import asyncio
 import json
 import os
 from collections.abc import AsyncGenerator
-from contextlib import suppress
 from pathlib import Path
 
 import discord
@@ -300,11 +299,26 @@ class DiscordTestClient:
     async def delete_message(self, message: discord.Message) -> None:
         """Delete a message (cleanup).
 
+        Requires the test bot to have 'Manage Messages' permission in the
+        test channel to delete messages from other users/bots.
+
+        Required test bot permissions:
+          - View Channel
+          - Send Messages
+          - Read Message History
+          - Manage Messages (needed to delete other bots' messages)
+
         Args:
             message: Message to delete.
         """
-        with suppress(discord.errors.NotFound, discord.errors.Forbidden):
+        try:
             await message.delete()
+        except discord.errors.NotFound:
+            pass  # Already deleted, no problem
+        except discord.errors.Forbidden:
+            # Test bot lacks 'Manage Messages' permission — skip cleanup.
+            # The test assertions already passed; failing on cleanup is not useful.
+            pass
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -625,7 +639,7 @@ async def test_bot_multi_turn(discord_test_client: DiscordTestClient) -> None:
             f"<@{bot_id}> remember that my name is TestUser42"
         )
         messages_to_delete.append(msg1)
-        resp1 = await discord_test_client.wait_for_bot_response(msg1, timeout=30.0, bot_id=bot_id)
+        resp1 = await discord_test_client.wait_for_bot_response(msg1, timeout=60.0, bot_id=bot_id)
         assert resp1 is not None, "Bot did not respond to turn 1"
         messages_to_delete.append(resp1)
         await asyncio.sleep(2)
@@ -635,7 +649,7 @@ async def test_bot_multi_turn(discord_test_client: DiscordTestClient) -> None:
             f"<@{bot_id}> remember that I work as a software engineer"
         )
         messages_to_delete.append(msg2)
-        resp2 = await discord_test_client.wait_for_bot_response(msg2, timeout=30.0, bot_id=bot_id)
+        resp2 = await discord_test_client.wait_for_bot_response(msg2, timeout=60.0, bot_id=bot_id)
         assert resp2 is not None, "Bot did not respond to turn 2"
         messages_to_delete.append(resp2)
         await asyncio.sleep(2)

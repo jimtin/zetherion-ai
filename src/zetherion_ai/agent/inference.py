@@ -22,7 +22,7 @@ from zetherion_ai.agent.providers import (
     get_ollama_tier,
     get_provider_for_task,
 )
-from zetherion_ai.config import get_settings
+from zetherion_ai.config import get_dynamic, get_settings
 from zetherion_ai.constants import DEFAULT_MAX_TOKENS, HEALTH_CHECK_TIMEOUT
 from zetherion_ai.logging import get_logger
 from zetherion_ai.models.pricing import get_cost
@@ -315,8 +315,9 @@ class InferenceBroker:
                 api_messages.append({"role": msg["role"], "content": msg["content"]})
         api_messages.append({"role": "user", "content": prompt})
 
+        model = get_dynamic("models", "claude_model", self._claude_model)
         response = await self._claude_client.messages.create(
-            model=self._claude_model,
+            model=model,
             max_tokens=max_tokens,
             system=system_prompt or "",
             messages=api_messages,  # type: ignore[arg-type]
@@ -326,7 +327,7 @@ class InferenceBroker:
             content=response.content[0].text,  # type: ignore[union-attr]
             provider=Provider.CLAUDE,
             task_type=task_type,
-            model=self._claude_model,
+            model=model,
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
         )
@@ -353,8 +354,9 @@ class InferenceBroker:
                 api_messages.append({"role": msg["role"], "content": msg["content"]})
         api_messages.append({"role": "user", "content": prompt})
 
+        model = get_dynamic("models", "openai_model", self._openai_model)
         response = await self._openai_client.chat.completions.create(
-            model=self._openai_model,
+            model=model,
             messages=api_messages,  # type: ignore[arg-type]
             max_tokens=max_tokens,
             temperature=temperature,
@@ -364,7 +366,7 @@ class InferenceBroker:
             content=response.choices[0].message.content or "",
             provider=Provider.OPENAI,
             task_type=task_type,
-            model=self._openai_model,
+            model=model,
             input_tokens=response.usage.prompt_tokens if response.usage else 0,
             output_tokens=response.usage.completion_tokens if response.usage else 0,
         )
@@ -388,9 +390,11 @@ class InferenceBroker:
             content = f"{system_prompt}\n\n{prompt}"
 
         # Wrap synchronous Gemini call in thread to avoid blocking event loop
+        gemini_model = get_dynamic("models", "router_model", self._gemini_model)
+
         def _sync_generate() -> Any:
             return self._gemini_client.models.generate_content(  # type: ignore[union-attr]
-                model=self._gemini_model,
+                model=gemini_model,
                 contents=content,
                 config={
                     "temperature": temperature,
@@ -416,7 +420,7 @@ class InferenceBroker:
             content=response.text or "",
             provider=Provider.GEMINI,
             task_type=task_type,
-            model=self._gemini_model,
+            model=gemini_model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )
@@ -439,10 +443,11 @@ class InferenceBroker:
             api_messages.extend(messages)
         api_messages.append({"role": "user", "content": prompt})
 
+        ollama_model = get_dynamic("models", "ollama_generation_model", self._ollama_model)
         response = await self._httpx_client.post(
             f"{self._ollama_url}/api/chat",
             json={
-                "model": self._ollama_model,
+                "model": ollama_model,
                 "messages": api_messages,
                 "stream": False,
                 "options": {
@@ -460,7 +465,7 @@ class InferenceBroker:
             content=content,
             provider=Provider.OLLAMA,
             task_type=task_type,
-            model=self._ollama_model,
+            model=ollama_model,
             input_tokens=data.get("prompt_eval_count", 0),
             output_tokens=data.get("eval_count", 0),
         )

@@ -21,10 +21,22 @@ from zetherion_ai.skills.registry import SkillRegistry
 log = get_logger("zetherion_ai.skills.server")
 
 
+def _serialise_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Convert a DB record dict so it is JSON-serialisable (datetime → str)."""
+    out: dict[str, Any] = {}
+    for k, v in record.items():
+        if hasattr(v, "isoformat"):
+            out[k] = v.isoformat()
+        else:
+            out[k] = v
+    return out
+
+
 class SkillsServer:
     """REST API server for skills service.
 
-    Provides endpoints for the bot to interact with skills.
+    Provides endpoints for the bot to interact with skills,
+    plus user management and runtime settings CRUD.
     """
 
     def __init__(
@@ -33,6 +45,8 @@ class SkillsServer:
         api_secret: str | None = None,
         host: str = "0.0.0.0",  # nosec B104 - Intentional for Docker container
         port: int = 8080,
+        user_manager: Any | None = None,
+        settings_manager: Any | None = None,
     ):
         """Initialize the skills server.
 
@@ -41,11 +55,15 @@ class SkillsServer:
             api_secret: Optional shared secret for authentication.
             host: Host to bind to.
             port: Port to listen on.
+            user_manager: Optional UserManager for RBAC API.
+            settings_manager: Optional SettingsManager for settings API.
         """
         self._registry = registry
         self._api_secret = api_secret
         self._host = host
         self._port = port
+        self._user_manager = user_manager
+        self._settings_manager = settings_manager
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
 
@@ -245,6 +263,128 @@ class SkillsServer:
             }
         )
 
+    # ------------------------------------------------------------------
+    # User management API
+    # ------------------------------------------------------------------
+
+    async def handle_list_users(self, request: web.Request) -> web.Response:
+        """GET /users — list users, optionally filtered by role."""
+        if self._user_manager is None:
+            return web.json_response({"error": "User management not configured"}, status=501)
+        role = request.query.get("role")
+        users = await self._user_manager.list_users(role_filter=role)
+        return web.json_response({"users": [_serialise_record(u) for u in users]})
+
+    async def handle_add_user(self, request: web.Request) -> web.Response:
+        """POST /users — add a user."""
+        if self._user_manager is None:
+            return web.json_response({"error": "User management not configured"}, status=501)
+        data = await request.json()
+        success = await self._user_manager.add_user(
+            user_id=int(data["user_id"]),
+            role=data.get("role", "user"),
+            added_by=int(data["added_by"]),
+        )
+        if success:
+            return web.json_response({"ok": True}, status=201)
+        return web.json_response(
+            {"ok": False, "error": "Permission denied or invalid role"}, status=403
+        )
+
+    async def handle_delete_user(self, request: web.Request) -> web.Response:
+        """DELETE /users/{user_id} — remove a user."""
+        if self._user_manager is None:
+            return web.json_response({"error": "User management not configured"}, status=501)
+        user_id = int(request.match_info["user_id"])
+        removed_by = int(request.query.get("removed_by", "0"))
+        success = await self._user_manager.remove_user(user_id=user_id, removed_by=removed_by)
+        if success:
+            return web.json_response({"ok": True})
+        return web.json_response(
+            {"ok": False, "error": "Permission denied or user not found"}, status=403
+        )
+
+    async def handle_patch_user_role(self, request: web.Request) -> web.Response:
+        """PATCH /users/{user_id}/role — change a user's role."""
+        if self._user_manager is None:
+            return web.json_response({"error": "User management not configured"}, status=501)
+        user_id = int(request.match_info["user_id"])
+        data = await request.json()
+        success = await self._user_manager.set_role(
+            user_id=user_id,
+            new_role=data["role"],
+            changed_by=int(data["changed_by"]),
+        )
+        if success:
+            return web.json_response({"ok": True})
+        return web.json_response(
+            {"ok": False, "error": "Permission denied or invalid role"}, status=403
+        )
+
+    async def handle_audit_log(self, request: web.Request) -> web.Response:
+        """GET /users/audit — recent audit log entries."""
+        if self._user_manager is None:
+            return web.json_response({"error": "User management not configured"}, status=501)
+        limit = int(request.query.get("limit", "50"))
+        entries = await self._user_manager.get_audit_log(limit=limit)
+        return web.json_response({"entries": [_serialise_record(e) for e in entries]})
+
+    # ------------------------------------------------------------------
+    # Settings API
+    # ------------------------------------------------------------------
+
+    async def handle_list_settings(self, request: web.Request) -> web.Response:
+        """GET /settings — list all settings."""
+        if self._settings_manager is None:
+            return web.json_response({"error": "Settings not configured"}, status=501)
+        namespace = request.query.get("namespace")
+        settings = await self._settings_manager.get_all(namespace=namespace)
+        return web.json_response({"settings": settings})
+
+    async def handle_get_setting(self, request: web.Request) -> web.Response:
+        """GET /settings/{namespace}/{key} — get a specific setting."""
+        if self._settings_manager is None:
+            return web.json_response({"error": "Settings not configured"}, status=501)
+        namespace = request.match_info["namespace"]
+        key = request.match_info["key"]
+        value = self._settings_manager.get(namespace, key)
+        return web.json_response({"namespace": namespace, "key": key, "value": value})
+
+    async def handle_put_setting(self, request: web.Request) -> web.Response:
+        """PUT /settings/{namespace}/{key} — update a setting."""
+        if self._settings_manager is None:
+            return web.json_response({"error": "Settings not configured"}, status=501)
+        namespace = request.match_info["namespace"]
+        key = request.match_info["key"]
+        data = await request.json()
+        try:
+            await self._settings_manager.set(
+                namespace=namespace,
+                key=key,
+                value=data["value"],
+                changed_by=int(data.get("changed_by", 0)),
+                data_type=data.get("data_type", "string"),
+            )
+            return web.json_response({"ok": True})
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
+
+    async def handle_delete_setting(self, request: web.Request) -> web.Response:
+        """DELETE /settings/{namespace}/{key} — remove a setting override."""
+        if self._settings_manager is None:
+            return web.json_response({"error": "Settings not configured"}, status=501)
+        namespace = request.match_info["namespace"]
+        key = request.match_info["key"]
+        deleted_by = int(request.query.get("deleted_by", "0"))
+        deleted = await self._settings_manager.delete(
+            namespace=namespace, key=key, deleted_by=deleted_by
+        )
+        return web.json_response({"ok": True, "existed": deleted})
+
+    # ------------------------------------------------------------------
+    # Application factory
+    # ------------------------------------------------------------------
+
     def create_app(self) -> web.Application:
         """Create the aiohttp application.
 
@@ -253,7 +393,7 @@ class SkillsServer:
         """
         app = web.Application(middlewares=[self.auth_middleware])
 
-        # Add routes
+        # Core routes
         app.router.add_get("/health", self.handle_health)
         app.router.add_post("/handle", self.handle_request)
         app.router.add_post("/heartbeat", self.handle_heartbeat)
@@ -262,6 +402,19 @@ class SkillsServer:
         app.router.add_get("/status", self.handle_status)
         app.router.add_get("/prompt-fragments", self.handle_prompt_fragments)
         app.router.add_get("/intents", self.handle_intents)
+
+        # User management routes
+        app.router.add_get("/users", self.handle_list_users)
+        app.router.add_post("/users", self.handle_add_user)
+        app.router.add_delete("/users/{user_id}", self.handle_delete_user)
+        app.router.add_patch("/users/{user_id}/role", self.handle_patch_user_role)
+        app.router.add_get("/users/audit", self.handle_audit_log)
+
+        # Settings routes
+        app.router.add_get("/settings", self.handle_list_settings)
+        app.router.add_get("/settings/{namespace}/{key}", self.handle_get_setting)
+        app.router.add_put("/settings/{namespace}/{key}", self.handle_put_setting)
+        app.router.add_delete("/settings/{namespace}/{key}", self.handle_delete_setting)
 
         self._app = app
         return app

@@ -358,3 +358,276 @@ class TestSkillsServerLifecycle:
         # Should not raise
         await server.stop()
         assert server._runner is None
+
+
+class TestUserManagementEndpoints:
+    """Tests for user management API endpoints (/users/*)."""
+
+    @pytest.fixture
+    def user_manager(self):
+        """Create a mock user manager."""
+        return AsyncMock()
+
+    @pytest.fixture
+    def server_with_user_manager(self, mock_registry, user_manager):
+        """Create a SkillsServer with a mock user manager."""
+        return SkillsServer(registry=mock_registry, user_manager=user_manager)
+
+    @pytest.fixture
+    async def client_with_users(self, server_with_user_manager):
+        """Create a test client for user management endpoints."""
+        app = server_with_user_manager.create_app()
+        async with TestClient(TestServer(app)) as test_client:
+            yield test_client
+
+    async def test_list_users(self, client_with_users, user_manager):
+        """GET /users should return the list of users."""
+        user_manager.list_users.return_value = [
+            {"discord_user_id": 123, "role": "user"},
+        ]
+
+        resp = await client_with_users.get("/users")
+        assert resp.status == 200
+
+        data = await resp.json()
+        assert "users" in data
+        assert len(data["users"]) == 1
+        assert data["users"][0]["discord_user_id"] == 123
+        assert data["users"][0]["role"] == "user"
+        user_manager.list_users.assert_awaited_once_with(role_filter=None)
+
+    async def test_list_users_with_role_filter(self, client_with_users, user_manager):
+        """GET /users?role=admin should pass role filter to user manager."""
+        user_manager.list_users.return_value = [
+            {"discord_user_id": 456, "role": "admin"},
+        ]
+
+        resp = await client_with_users.get("/users", params={"role": "admin"})
+        assert resp.status == 200
+
+        data = await resp.json()
+        assert len(data["users"]) == 1
+        assert data["users"][0]["role"] == "admin"
+        user_manager.list_users.assert_awaited_once_with(role_filter="admin")
+
+    async def test_add_user_success(self, client_with_users, user_manager):
+        """POST /users should return 201 when add_user succeeds."""
+        user_manager.add_user.return_value = True
+
+        resp = await client_with_users.post(
+            "/users",
+            json={"user_id": 789, "role": "user", "added_by": 1},
+        )
+        assert resp.status == 201
+
+        data = await resp.json()
+        assert data["ok"] is True
+        user_manager.add_user.assert_awaited_once_with(user_id=789, role="user", added_by=1)
+
+    async def test_add_user_failure(self, client_with_users, user_manager):
+        """POST /users should return 403 when add_user returns False."""
+        user_manager.add_user.return_value = False
+
+        resp = await client_with_users.post(
+            "/users",
+            json={"user_id": 789, "role": "admin", "added_by": 1},
+        )
+        assert resp.status == 403
+
+        data = await resp.json()
+        assert data["ok"] is False
+        assert "error" in data
+
+    async def test_delete_user_success(self, client_with_users, user_manager):
+        """DELETE /users/{user_id}?removed_by= should return 200 on success."""
+        user_manager.remove_user.return_value = True
+
+        resp = await client_with_users.delete("/users/123", params={"removed_by": "1"})
+        assert resp.status == 200
+
+        data = await resp.json()
+        assert data["ok"] is True
+        user_manager.remove_user.assert_awaited_once_with(user_id=123, removed_by=1)
+
+    async def test_delete_user_failure(self, client_with_users, user_manager):
+        """DELETE /users/{user_id} should return 403 when remove_user fails."""
+        user_manager.remove_user.return_value = False
+
+        resp = await client_with_users.delete("/users/123")
+        assert resp.status == 403
+
+        data = await resp.json()
+        assert data["ok"] is False
+        assert "error" in data
+
+    async def test_patch_user_role_success(self, client_with_users, user_manager):
+        """PATCH /users/{user_id}/role should return 200 on success."""
+        user_manager.set_role.return_value = True
+
+        resp = await client_with_users.patch(
+            "/users/123/role",
+            json={"role": "admin", "changed_by": 1},
+        )
+        assert resp.status == 200
+
+        data = await resp.json()
+        assert data["ok"] is True
+        user_manager.set_role.assert_awaited_once_with(user_id=123, new_role="admin", changed_by=1)
+
+    async def test_patch_user_role_failure(self, client_with_users, user_manager):
+        """PATCH /users/{user_id}/role should return 403 when set_role fails."""
+        user_manager.set_role.return_value = False
+
+        resp = await client_with_users.patch(
+            "/users/123/role",
+            json={"role": "admin", "changed_by": 1},
+        )
+        assert resp.status == 403
+
+        data = await resp.json()
+        assert data["ok"] is False
+        assert "error" in data
+
+    async def test_audit_log(self, client_with_users, user_manager):
+        """GET /users/audit should return audit log entries."""
+        user_manager.get_audit_log.return_value = [
+            {"action": "add_user", "actor": 1, "target": 123},
+            {"action": "set_role", "actor": 1, "target": 456},
+        ]
+
+        resp = await client_with_users.get("/users/audit", params={"limit": "10"})
+        assert resp.status == 200
+
+        data = await resp.json()
+        assert "entries" in data
+        assert len(data["entries"]) == 2
+        assert data["entries"][0]["action"] == "add_user"
+        user_manager.get_audit_log.assert_awaited_once_with(limit=10)
+
+    async def test_list_users_returns_501_when_manager_is_none(self, mock_registry):
+        """GET /users should return 501 when user_manager is None."""
+        server = SkillsServer(registry=mock_registry, user_manager=None)
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/users")
+            assert resp.status == 501
+
+            data = await resp.json()
+            assert "error" in data
+
+
+class TestSettingsEndpoints:
+    """Tests for settings API endpoints (/settings/*)."""
+
+    @pytest.fixture
+    def settings_manager(self):
+        """Create a mock settings manager."""
+        return AsyncMock()
+
+    @pytest.fixture
+    def server_with_settings(self, mock_registry, settings_manager):
+        """Create a SkillsServer with a mock settings manager."""
+        return SkillsServer(registry=mock_registry, settings_manager=settings_manager)
+
+    @pytest.fixture
+    async def client_with_settings(self, server_with_settings):
+        """Create a test client for settings endpoints."""
+        app = server_with_settings.create_app()
+        async with TestClient(TestServer(app)) as test_client:
+            yield test_client
+
+    async def test_list_settings(self, client_with_settings, settings_manager):
+        """GET /settings should return all settings."""
+        settings_manager.get_all.return_value = {"models": {"key": "val"}}
+
+        resp = await client_with_settings.get("/settings")
+        assert resp.status == 200
+
+        data = await resp.json()
+        assert "settings" in data
+        assert data["settings"] == {"models": {"key": "val"}}
+        settings_manager.get_all.assert_awaited_once_with(namespace=None)
+
+    async def test_list_settings_with_namespace_filter(
+        self, client_with_settings, settings_manager
+    ):
+        """GET /settings?namespace=models should pass namespace filter."""
+        settings_manager.get_all.return_value = {"models": {"key": "val"}}
+
+        resp = await client_with_settings.get("/settings", params={"namespace": "models"})
+        assert resp.status == 200
+
+        data = await resp.json()
+        assert data["settings"] == {"models": {"key": "val"}}
+        settings_manager.get_all.assert_awaited_once_with(namespace="models")
+
+    async def test_get_setting(self, client_with_settings, settings_manager):
+        """GET /settings/{namespace}/{key} should return the setting value."""
+        # settings_manager.get() is called synchronously in the handler
+        settings_manager.get = MagicMock(return_value="value")
+
+        resp = await client_with_settings.get("/settings/models/key")
+        assert resp.status == 200
+
+        data = await resp.json()
+        assert data["namespace"] == "models"
+        assert data["key"] == "key"
+        assert data["value"] == "value"
+        settings_manager.get.assert_called_once_with("models", "key")
+
+    async def test_put_setting_success(self, client_with_settings, settings_manager):
+        """PUT /settings/{namespace}/{key} should return 200 on success."""
+        resp = await client_with_settings.put(
+            "/settings/models/key",
+            json={"value": "new_value", "changed_by": 1, "data_type": "string"},
+        )
+        assert resp.status == 200
+
+        data = await resp.json()
+        assert data["ok"] is True
+        settings_manager.set.assert_awaited_once_with(
+            namespace="models",
+            key="key",
+            value="new_value",
+            changed_by=1,
+            data_type="string",
+        )
+
+    async def test_put_setting_value_error(self, client_with_settings, settings_manager):
+        """PUT /settings/{namespace}/{key} should return 400 on ValueError."""
+        settings_manager.set.side_effect = ValueError("Invalid data type")
+
+        resp = await client_with_settings.put(
+            "/settings/models/key",
+            json={"value": "bad", "changed_by": 1, "data_type": "invalid"},
+        )
+        assert resp.status == 400
+
+        data = await resp.json()
+        assert "error" in data
+        assert "Invalid data type" in data["error"]
+
+    async def test_delete_setting_success(self, client_with_settings, settings_manager):
+        """DELETE /settings/{namespace}/{key} should return 200 on success."""
+        settings_manager.delete.return_value = True
+
+        resp = await client_with_settings.delete("/settings/models/key", params={"deleted_by": "1"})
+        assert resp.status == 200
+
+        data = await resp.json()
+        assert data["ok"] is True
+        assert data["existed"] is True
+        settings_manager.delete.assert_awaited_once_with(
+            namespace="models", key="key", deleted_by=1
+        )
+
+    async def test_list_settings_returns_501_when_manager_is_none(self, mock_registry):
+        """GET /settings should return 501 when settings_manager is None."""
+        server = SkillsServer(registry=mock_registry, settings_manager=None)
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/settings")
+            assert resp.status == 501
+
+            data = await resp.json()
+            assert "error" in data

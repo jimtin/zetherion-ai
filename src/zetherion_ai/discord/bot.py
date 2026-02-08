@@ -14,12 +14,11 @@ from zetherion_ai.config import get_settings
 from zetherion_ai.constants import KEEP_WARM_INTERVAL_SECONDS, MAX_DISCORD_MESSAGE_LENGTH
 from zetherion_ai.discord.security import (
     RateLimiter,
-    UserAllowlist,
     detect_prompt_injection,
 )
+from zetherion_ai.discord.user_manager import ROLE_HIERARCHY, UserManager
 from zetherion_ai.logging import get_logger
 from zetherion_ai.memory.qdrant import QdrantMemory
-from zetherion_ai.utils import timed_operation
 
 log = get_logger("zetherion_ai.discord.bot")
 
@@ -27,11 +26,18 @@ log = get_logger("zetherion_ai.discord.bot")
 class ZetherionAIBot(discord.Client):
     """Zetherion AI Discord bot."""
 
-    def __init__(self, memory: QdrantMemory) -> None:
+    def __init__(
+        self,
+        memory: QdrantMemory,
+        user_manager: UserManager | None = None,
+        settings_manager: object | None = None,
+    ) -> None:
         """Initialize the bot.
 
         Args:
             memory: The memory system.
+            user_manager: Optional UserManager for RBAC.
+            settings_manager: Optional SettingsManager for runtime config.
         """
         intents = discord.Intents.default()
         intents.message_content = True
@@ -43,7 +49,8 @@ class ZetherionAIBot(discord.Client):
         self._agent: Agent | None = None
         self._tree = app_commands.CommandTree(self)
         self._rate_limiter = RateLimiter()
-        self._allowlist = UserAllowlist()
+        self._user_manager = user_manager
+        self._settings_manager = settings_manager
         self._keep_warm_task: asyncio.Task[None] | None = None
         self._last_message_time: float = 0.0
 
@@ -80,6 +87,77 @@ class ZetherionAIBot(discord.Client):
         @self._tree.command(name="channels", description="List channels Zetherion AI can access")
         async def channels_command(interaction: discord.Interaction[discord.Client]) -> None:
             await self._handle_channels(interaction)
+
+        # RBAC management commands (admin+ only)
+        @self._tree.command(name="allow", description="Add a user to the allowlist")
+        @app_commands.describe(user="User to allow", role="Role to assign (default: user)")
+        async def allow_command(
+            interaction: discord.Interaction[discord.Client],
+            user: discord.User,
+            role: str = "user",
+        ) -> None:
+            await self._handle_allow(interaction, user, role)
+
+        @self._tree.command(name="deny", description="Remove a user from the allowlist")
+        @app_commands.describe(user="User to remove")
+        async def deny_command(
+            interaction: discord.Interaction[discord.Client],
+            user: discord.User,
+        ) -> None:
+            await self._handle_deny(interaction, user)
+
+        @self._tree.command(name="role", description="Change a user's role")
+        @app_commands.describe(user="Target user", role="New role")
+        async def role_command(
+            interaction: discord.Interaction[discord.Client],
+            user: discord.User,
+            role: str,
+        ) -> None:
+            await self._handle_role(interaction, user, role)
+
+        @self._tree.command(name="allowlist", description="List allowed users")
+        @app_commands.describe(role="Filter by role (optional)")
+        async def allowlist_command(
+            interaction: discord.Interaction[discord.Client],
+            role: str | None = None,
+        ) -> None:
+            await self._handle_allowlist(interaction, role)
+
+        @self._tree.command(name="audit", description="View recent audit log")
+        @app_commands.describe(limit="Number of entries (default: 20)")
+        async def audit_command(
+            interaction: discord.Interaction[discord.Client],
+            limit: int = 20,
+        ) -> None:
+            await self._handle_audit(interaction, limit)
+
+        # Runtime configuration commands (admin+ only)
+        @self._tree.command(name="config_list", description="List runtime settings")
+        @app_commands.describe(namespace="Filter by namespace (optional)")
+        async def config_list_command(
+            interaction: discord.Interaction[discord.Client],
+            namespace: str | None = None,
+        ) -> None:
+            await self._handle_config_list(interaction, namespace)
+
+        @self._tree.command(name="config_set", description="Update a runtime setting")
+        @app_commands.describe(namespace="Setting namespace", key="Setting key", value="New value")
+        async def config_set_command(
+            interaction: discord.Interaction[discord.Client],
+            namespace: str,
+            key: str,
+            value: str,
+        ) -> None:
+            await self._handle_config_set(interaction, namespace, key, value)
+
+        @self._tree.command(name="config_reset", description="Reset a setting to default")
+        @app_commands.describe(namespace="Setting namespace", key="Setting key")
+        async def config_reset_command(
+            interaction: discord.Interaction[discord.Client],
+            namespace: str,
+            key: str,
+        ) -> None:
+            await self._handle_config_reset(interaction, namespace, key)
 
     async def setup_hook(self) -> None:
         """Called when the bot is ready to set up."""
@@ -159,15 +237,19 @@ class ZetherionAIBot(discord.Client):
         if not (is_dm or is_mention):
             return
 
-        structlog.contextvars.bind_contextvars(request_id=str(uuid4())[:8])
+        structlog.contextvars.bind_contextvars(
+            request_id=str(uuid4())[:12],
+            user_id=message.author.id,
+            channel_id=message.channel.id,
+        )
         self._last_message_time = time.time()
         try:
             # Check allowlist
-            if not self._allowlist.is_allowed(message.author.id):
-                log.warning("user_not_allowed", user_id=message.author.id)
+            if self._user_manager and not await self._user_manager.is_allowed(message.author.id):
+                log.warning("user_not_allowed")
                 await message.reply(
                     "Sorry, you're not authorized to use this bot.",
-                    mention_author=False,
+                    mention_author=True,
                 )
                 return
 
@@ -175,7 +257,7 @@ class ZetherionAIBot(discord.Client):
             allowed, warning = self._rate_limiter.check(message.author.id)
             if not allowed:
                 if warning:
-                    await message.reply(warning, mention_author=False)
+                    await message.reply(warning, mention_author=True)
                 return
 
             # Check for prompt injection
@@ -183,12 +265,12 @@ class ZetherionAIBot(discord.Client):
                 await message.reply(
                     "I noticed some unusual patterns in your message. "
                     "Could you rephrase your question?",
-                    mention_author=False,
+                    mention_author=True,
                 )
                 return
 
             # Generate response with timed operations
-            async with timed_operation("message_total", log=log) as _, message.channel.typing():
+            async with message.channel.typing():
                 content = message.content
                 # Remove bot mention from content
                 if is_mention and self.user:
@@ -197,27 +279,36 @@ class ZetherionAIBot(discord.Client):
                 if not content:
                     await message.reply(
                         "How can I help you?",
-                        mention_author=False,
+                        mention_author=True,
                     )
                     return
 
                 if self._agent is None:
                     await message.reply(
                         "I'm still starting up. Please try again in a moment.",
-                        mention_author=False,
+                        mention_author=True,
                     )
                     return
 
-                async with timed_operation("generate_response", log=log):
+                try:
                     response = await self._agent.generate_response(
                         user_id=message.author.id,
                         channel_id=message.channel.id,
                         message=content,
                     )
+                except Exception:
+                    log.exception(
+                        "response_generation_failed",
+                        message_length=len(content),
+                    )
+                    await message.reply(
+                        "I ran into an issue processing your message. Please try again.",
+                        mention_author=True,
+                    )
+                    return
 
-                # Send response, splitting if too long
-                async with timed_operation("message_sent", log=log):
-                    await self._send_long_message(message.channel, response)
+                # Send response as a threaded reply
+                await self._send_long_reply(message, response)
         finally:
             structlog.contextvars.clear_contextvars()
 
@@ -230,7 +321,7 @@ class ZetherionAIBot(discord.Client):
 
         Returns True if request is allowed, False if blocked (response already sent).
         """
-        if not self._allowlist.is_allowed(interaction.user.id):
+        if self._user_manager and not await self._user_manager.is_allowed(interaction.user.id):
             await interaction.response.send_message(
                 "Sorry, you're not authorized to use this bot.",
                 ephemeral=True,
@@ -260,7 +351,11 @@ class ZetherionAIBot(discord.Client):
         question: str,
     ) -> None:
         """Handle /ask command."""
-        structlog.contextvars.bind_contextvars(request_id=str(uuid4())[:8])
+        structlog.contextvars.bind_contextvars(
+            request_id=str(uuid4())[:12],
+            user_id=interaction.user.id,
+            channel_id=interaction.channel_id or 0,
+        )
         try:
             if not await self._check_security(interaction, question):
                 return
@@ -290,7 +385,11 @@ class ZetherionAIBot(discord.Client):
         content: str,
     ) -> None:
         """Handle /remember command."""
-        structlog.contextvars.bind_contextvars(request_id=str(uuid4())[:8])
+        structlog.contextvars.bind_contextvars(
+            request_id=str(uuid4())[:12],
+            user_id=interaction.user.id,
+            channel_id=interaction.channel_id or 0,
+        )
         try:
             if not await self._check_security(interaction, content):
                 return
@@ -323,7 +422,11 @@ class ZetherionAIBot(discord.Client):
         query: str,
     ) -> None:
         """Handle /search command."""
-        structlog.contextvars.bind_contextvars(request_id=str(uuid4())[:8])
+        structlog.contextvars.bind_contextvars(
+            request_id=str(uuid4())[:12],
+            user_id=interaction.user.id,
+            channel_id=interaction.channel_id or 0,
+        )
         try:
             if not await self._check_security(interaction, query):
                 return
@@ -362,7 +465,7 @@ class ZetherionAIBot(discord.Client):
         interaction: discord.Interaction[discord.Client],
     ) -> None:
         """Handle /channels command - list accessible channels."""
-        if not self._allowlist.is_allowed(interaction.user.id):
+        if self._user_manager and not await self._user_manager.is_allowed(interaction.user.id):
             await interaction.response.send_message(
                 "Sorry, you're not authorized to use this bot.",
                 ephemeral=True,
@@ -466,6 +569,49 @@ class ZetherionAIBot(discord.Client):
             if part:
                 await channel.send(part)
 
+    async def _send_long_reply(
+        self,
+        message: discord.Message,
+        content: str,
+        mention_author: bool = True,
+        max_length: int = MAX_DISCORD_MESSAGE_LENGTH,
+    ) -> None:
+        """Send a reply to a message, splitting if it exceeds Discord's limit.
+
+        First chunk is sent as a reply; subsequent chunks as channel messages.
+
+        Args:
+            message: The message to reply to.
+            content: The reply content.
+            mention_author: Whether to mention the author in the reply.
+            max_length: Maximum message length.
+        """
+        if len(content) <= max_length:
+            await message.reply(content, mention_author=mention_author)
+            return
+
+        # Split on paragraph boundaries if possible
+        parts: list[str] = []
+        current = ""
+
+        for line in content.split("\n"):
+            if len(current) + len(line) + 1 <= max_length:
+                current += line + "\n"
+            else:
+                if current:
+                    parts.append(current.strip())
+                current = line + "\n"
+
+        if current:
+            parts.append(current.strip())
+
+        for i, part in enumerate(parts):
+            if part:
+                if i == 0:
+                    await message.reply(part, mention_author=mention_author)
+                else:
+                    await message.channel.send(part)
+
     async def _send_long_interaction_response(
         self,
         interaction: discord.Interaction[discord.Client],
@@ -492,3 +638,250 @@ class ZetherionAIBot(discord.Client):
         for part in parts:
             if part:
                 await interaction.followup.send(part)
+
+    # ------------------------------------------------------------------
+    # Admin permission helper
+    # ------------------------------------------------------------------
+
+    async def _require_admin(
+        self,
+        interaction: discord.Interaction[discord.Client],
+    ) -> bool:
+        """Check the caller has admin+ role. Sends ephemeral error if not.
+
+        Returns True if the caller is admin or owner.
+        """
+        if self._user_manager is None:
+            await interaction.response.send_message(
+                "User management is not configured.", ephemeral=True
+            )
+            return False
+
+        caller_role = await self._user_manager.get_role(interaction.user.id)
+        if caller_role is None or ROLE_HIERARCHY.get(caller_role, 0) < ROLE_HIERARCHY["admin"]:
+            await interaction.response.send_message(
+                "You need admin or owner privileges to use this command.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    # ------------------------------------------------------------------
+    # RBAC command handlers
+    # ------------------------------------------------------------------
+
+    async def _handle_allow(
+        self,
+        interaction: discord.Interaction[discord.Client],
+        user: discord.User,
+        role: str,
+    ) -> None:
+        """Handle /allow command."""
+        if not await self._require_admin(interaction):
+            return
+
+        assert self._user_manager is not None  # guarded by _require_admin
+        await interaction.response.defer(ephemeral=True)
+
+        success = await self._user_manager.add_user(
+            user_id=user.id, role=role, added_by=interaction.user.id
+        )
+        if success:
+            await interaction.followup.send(f"Added {user.mention} with role **{role}**.")
+        else:
+            await interaction.followup.send(
+                f"Could not add {user.mention}. Check role validity and your permissions."
+            )
+
+    async def _handle_deny(
+        self,
+        interaction: discord.Interaction[discord.Client],
+        user: discord.User,
+    ) -> None:
+        """Handle /deny command."""
+        if not await self._require_admin(interaction):
+            return
+
+        assert self._user_manager is not None
+        await interaction.response.defer(ephemeral=True)
+
+        success = await self._user_manager.remove_user(
+            user_id=user.id, removed_by=interaction.user.id
+        )
+        if success:
+            await interaction.followup.send(f"Removed {user.mention} from the allowlist.")
+        else:
+            await interaction.followup.send(
+                f"Could not remove {user.mention}. They may be an owner or not in the list."
+            )
+
+    async def _handle_role(
+        self,
+        interaction: discord.Interaction[discord.Client],
+        user: discord.User,
+        role: str,
+    ) -> None:
+        """Handle /role command."""
+        if not await self._require_admin(interaction):
+            return
+
+        assert self._user_manager is not None
+        await interaction.response.defer(ephemeral=True)
+
+        success = await self._user_manager.set_role(
+            user_id=user.id, new_role=role, changed_by=interaction.user.id
+        )
+        if success:
+            await interaction.followup.send(f"Changed {user.mention}'s role to **{role}**.")
+        else:
+            await interaction.followup.send(
+                f"Could not change {user.mention}'s role. "
+                "Check role validity and your permissions."
+            )
+
+    async def _handle_allowlist(
+        self,
+        interaction: discord.Interaction[discord.Client],
+        role: str | None = None,
+    ) -> None:
+        """Handle /allowlist command."""
+        if not await self._require_admin(interaction):
+            return
+
+        assert self._user_manager is not None
+        await interaction.response.defer(ephemeral=True)
+
+        users = await self._user_manager.list_users(role_filter=role)
+        if not users:
+            await interaction.followup.send("No users found.")
+            return
+
+        lines = ["**Allowed Users:**\n"]
+        for u in users:
+            uid = u["discord_user_id"]
+            lines.append(f"- <@{uid}> — **{u['role']}** (added {u['created_at']:%Y-%m-%d})")
+
+        await self._send_long_interaction_response(interaction, "\n".join(lines))
+
+    async def _handle_audit(
+        self,
+        interaction: discord.Interaction[discord.Client],
+        limit: int = 20,
+    ) -> None:
+        """Handle /audit command."""
+        if not await self._require_admin(interaction):
+            return
+
+        assert self._user_manager is not None
+        await interaction.response.defer(ephemeral=True)
+
+        entries = await self._user_manager.get_audit_log(limit=limit)
+        if not entries:
+            await interaction.followup.send("No audit log entries.")
+            return
+
+        lines = [f"**Audit Log** (last {len(entries)} entries):\n"]
+        for e in entries:
+            ts = e["created_at"]
+            lines.append(
+                f"- `{ts:%Y-%m-%d %H:%M}` **{e['action']}** "
+                f"target=<@{e['target_user_id']}> by=<@{e['performed_by']}>"
+            )
+
+        await self._send_long_interaction_response(interaction, "\n".join(lines))
+
+    # ------------------------------------------------------------------
+    # Settings command handlers
+    # ------------------------------------------------------------------
+
+    async def _handle_config_list(
+        self,
+        interaction: discord.Interaction[discord.Client],
+        namespace: str | None = None,
+    ) -> None:
+        """Handle /config_list command."""
+        if not await self._require_admin(interaction):
+            return
+
+        if self._settings_manager is None:
+            await interaction.response.send_message(
+                "Settings manager is not configured.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        settings = await self._settings_manager.get_all(namespace=namespace)  # type: ignore[attr-defined]
+        if not settings:
+            await interaction.followup.send(
+                f"No settings found{f' in namespace **{namespace}**' if namespace else ''}."
+            )
+            return
+
+        lines = ["**Runtime Settings:**\n"]
+        for ns, entries in sorted(settings.items()):
+            lines.append(f"**[{ns}]**")
+            for k, v in sorted(entries.items()):
+                lines.append(f"  `{k}` = `{v}`")
+
+        await self._send_long_interaction_response(interaction, "\n".join(lines))
+
+    async def _handle_config_set(
+        self,
+        interaction: discord.Interaction[discord.Client],
+        namespace: str,
+        key: str,
+        value: str,
+    ) -> None:
+        """Handle /config_set command."""
+        if not await self._require_admin(interaction):
+            return
+
+        if self._settings_manager is None:
+            await interaction.response.send_message(
+                "Settings manager is not configured.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            await self._settings_manager.set(  # type: ignore[attr-defined]
+                namespace=namespace,
+                key=key,
+                value=value,
+                changed_by=interaction.user.id,
+            )
+            await interaction.followup.send(f"Set **{namespace}.{key}** = `{value}`")
+        except ValueError as e:
+            await interaction.followup.send(f"Invalid setting: {e}")
+
+    async def _handle_config_reset(
+        self,
+        interaction: discord.Interaction[discord.Client],
+        namespace: str,
+        key: str,
+    ) -> None:
+        """Handle /config_reset command."""
+        if not await self._require_admin(interaction):
+            return
+
+        if self._settings_manager is None:
+            await interaction.response.send_message(
+                "Settings manager is not configured.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        deleted = await self._settings_manager.delete(  # type: ignore[attr-defined]
+            namespace=namespace,
+            key=key,
+            deleted_by=interaction.user.id,
+        )
+        if deleted:
+            await interaction.followup.send(f"Reset **{namespace}.{key}** to default.")
+        else:
+            await interaction.followup.send(
+                f"Setting **{namespace}.{key}** was not found in the database."
+            )

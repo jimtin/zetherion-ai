@@ -72,19 +72,20 @@ DOCKER_STARTED_BY_US=true
 # Wait for ALL services to be healthy
 echo "Waiting for services..."
 for i in $(seq 1 60); do
+    postgres=$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-postgres" 2>/dev/null || echo "missing")
     qdrant=$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-qdrant" 2>/dev/null || echo "missing")
     ollama=$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-ollama" 2>/dev/null || echo "missing")
     ollama_router=$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-ollama-router" 2>/dev/null || echo "missing")
     skills=$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-skills" 2>/dev/null || echo "missing")
     bot=$(docker inspect --format='{{.State.Status}}' "${PROJECT}-bot" 2>/dev/null || echo "missing")
 
-    if [ "$qdrant" = "healthy" ] && [ "$ollama" = "healthy" ] && [ "$ollama_router" = "healthy" ] && [ "$skills" = "healthy" ] && [ "$bot" = "running" ]; then
-        echo "All services ready (qdrant=$qdrant, ollama=$ollama, ollama-router=$ollama_router, skills=$skills, bot=$bot)."
+    if [ "$postgres" = "healthy" ] && [ "$qdrant" = "healthy" ] && [ "$ollama" = "healthy" ] && [ "$ollama_router" = "healthy" ] && [ "$skills" = "healthy" ] && [ "$bot" = "running" ]; then
+        echo "All services ready (postgres=$postgres, qdrant=$qdrant, ollama=$ollama, ollama-router=$ollama_router, skills=$skills, bot=$bot)."
         break
     fi
     if [ "$i" -eq 60 ]; then
         echo "ERROR: Services failed to become healthy within 5 minutes."
-        echo "  qdrant=$qdrant ollama=$ollama ollama-router=$ollama_router skills=$skills bot=$bot"
+        echo "  postgres=$postgres qdrant=$qdrant ollama=$ollama ollama-router=$ollama_router skills=$skills bot=$bot"
         docker compose -f "$COMPOSE_FILE" -p "$PROJECT" logs --tail=30
         exit 1
     fi

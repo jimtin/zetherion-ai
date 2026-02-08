@@ -44,7 +44,7 @@ class TestTimedOperation:
 
         mock_log.info.assert_called_once()
         call_args = mock_log.info.call_args
-        assert call_args[0][0] == "TIMING: my_operation"
+        assert call_args[0][0] == "my_operation"
         assert "duration_ms" in call_args[1]
         assert call_args[1]["duration_ms"] == timing["elapsed_ms"]
 

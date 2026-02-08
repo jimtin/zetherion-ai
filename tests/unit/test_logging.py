@@ -148,7 +148,8 @@ class TestSetupLogging:
             with patch("zetherion_ai.logging.structlog.processors.JSONRenderer") as mock_renderer:
                 setup_logging()
 
-        mock_renderer.assert_called_once()
+        # Called twice: once for console formatter (prod mode) and once for json_formatter
+        assert mock_renderer.call_count == 2
 
 
 class TestSetupLoggingFileHandler:
@@ -165,6 +166,7 @@ class TestSetupLoggingFileHandler:
         mock_settings.log_file_max_bytes = 10485760
         mock_settings.log_file_backup_count = 5
         mock_settings.is_development = False
+        mock_settings.log_error_file_enabled = False
 
         with patch("zetherion_ai.logging.get_settings", return_value=mock_settings):
             setup_logging()
@@ -185,6 +187,7 @@ class TestSetupLoggingFileHandler:
         mock_settings.log_file_max_bytes = 1048576
         mock_settings.log_file_backup_count = 3
         mock_settings.is_development = True
+        mock_settings.log_error_file_enabled = False
 
         with patch("zetherion_ai.logging.get_settings", return_value=mock_settings):
             setup_logging()
@@ -204,6 +207,7 @@ class TestSetupLoggingFileHandler:
         mock_settings.log_file_max_bytes = 10485760
         mock_settings.log_file_backup_count = 5
         mock_settings.is_development = False
+        mock_settings.log_error_file_enabled = False
 
         assert not log_dir.exists()
 
@@ -239,6 +243,7 @@ class TestSetupLoggingFileHandler:
         mock_settings.log_file_max_bytes = 10485760
         mock_settings.log_file_backup_count = 5
         mock_settings.is_development = False
+        mock_settings.log_error_file_enabled = False
 
         with patch("zetherion_ai.logging.get_settings", return_value=mock_settings):
             with patch(
@@ -263,6 +268,48 @@ class TestSetupLoggingFileHandler:
 
         file_handlers = [h for h in logging.root.handlers if isinstance(h, RotatingFileHandler)]
         assert len(file_handlers) == 0
+
+    def test_setup_logging_creates_error_file_handler(self, tmp_path):
+        """Test that error file handler is created at WARNING level."""
+        log_dir = tmp_path / "logs"
+        mock_settings = MagicMock()
+        mock_settings.log_level = "INFO"
+        mock_settings.log_to_file = True
+        mock_settings.log_directory = str(log_dir)
+        mock_settings.log_file_path = str(log_dir / "zetherion_ai.log")
+        mock_settings.error_log_file_path = str(log_dir / "zetherion_ai_error.log")
+        mock_settings.log_file_max_bytes = 10485760
+        mock_settings.log_file_backup_count = 5
+        mock_settings.is_development = False
+        mock_settings.log_error_file_enabled = True
+
+        with patch("zetherion_ai.logging.get_settings", return_value=mock_settings):
+            setup_logging()
+
+        file_handlers = [h for h in logging.root.handlers if isinstance(h, RotatingFileHandler)]
+        assert len(file_handlers) == 2
+        # One at standard level, one at WARNING
+        warning_handlers = [h for h in file_handlers if h.level == logging.WARNING]
+        assert len(warning_handlers) == 1
+
+    def test_setup_logging_no_error_file_when_disabled(self, tmp_path):
+        """Test that error file handler is not created when disabled."""
+        log_dir = tmp_path / "logs"
+        mock_settings = MagicMock()
+        mock_settings.log_level = "INFO"
+        mock_settings.log_to_file = True
+        mock_settings.log_directory = str(log_dir)
+        mock_settings.log_file_path = str(log_dir / "zetherion_ai.log")
+        mock_settings.log_file_max_bytes = 10485760
+        mock_settings.log_file_backup_count = 5
+        mock_settings.is_development = False
+        mock_settings.log_error_file_enabled = False
+
+        with patch("zetherion_ai.logging.get_settings", return_value=mock_settings):
+            setup_logging()
+
+        file_handlers = [h for h in logging.root.handlers if isinstance(h, RotatingFileHandler)]
+        assert len(file_handlers) == 1
 
 
 class TestGetLogger:

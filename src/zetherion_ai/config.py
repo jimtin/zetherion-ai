@@ -1,7 +1,12 @@
 """Configuration management for Zetherion AI."""
 
+from __future__ import annotations
+
 from functools import lru_cache
-from typing import Self
+from typing import TYPE_CHECKING, Any, Self
+
+if TYPE_CHECKING:
+    from zetherion_ai.settings_manager import SettingsManager
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -30,6 +35,13 @@ class Settings(BaseSettings):
     )
     allow_all_users: bool = Field(
         default=False, description="Explicitly allow all users when no allowlist is configured"
+    )
+    owner_user_id: int | None = Field(default=None, description="Bootstrap owner Discord user ID")
+
+    # PostgreSQL (for RBAC and dynamic settings)
+    postgres_dsn: str = Field(
+        default="postgresql://zetherion:password@postgres:5432/zetherion",
+        description="PostgreSQL connection string",
     )
 
     @property
@@ -69,10 +81,15 @@ class Settings(BaseSettings):
     log_to_file: bool = Field(default=True, description="Enable file-based logging")
     log_directory: str = Field(default="logs", description="Directory for log files")
     log_file_max_bytes: int = Field(
-        default=10485760,  # 10MB
+        default=52428800,  # 50MB
         description="Max size per log file before rotation",
     )
-    log_file_backup_count: int = Field(default=5, description="Number of rotated log files to keep")
+    log_file_backup_count: int = Field(
+        default=10, description="Number of rotated log files to keep"
+    )
+    log_error_file_enabled: bool = Field(
+        default=True, description="Enable separate error log file (WARNING+)"
+    )
 
     # Testing Configuration
     allow_bot_messages: bool = Field(
@@ -83,6 +100,11 @@ class Settings(BaseSettings):
     def log_file_path(self) -> str:
         """Get the full log file path."""
         return f"{self.log_directory}/zetherion_ai.log"
+
+    @property
+    def error_log_file_path(self) -> str:
+        """Get the error log file path."""
+        return f"{self.log_directory}/zetherion_ai_error.log"
 
     # Model Configuration
     # Updated: 2026-02-05
@@ -366,3 +388,36 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()  # type: ignore[call-arg]  # Pydantic loads from env vars
+
+
+# ---------------------------------------------------------------------------
+# Dynamic settings support (Workstream 4)
+# ---------------------------------------------------------------------------
+
+_settings_manager: SettingsManager | None = None
+
+
+def set_settings_manager(mgr: SettingsManager) -> None:
+    """Register the runtime settings manager for dynamic config."""
+    global _settings_manager
+    _settings_manager = mgr
+
+
+def get_dynamic(namespace: str, key: str, default: Any = None) -> Any:
+    """Get a setting with cascade: DB override -> .env -> default.
+
+    Synchronous. Never blocks on DB (reads from in-memory cache).
+
+    Args:
+        namespace: Setting namespace (e.g. "models", "tuning").
+        key: Setting key (e.g. "claude_model").
+        default: Fallback if not found in DB or .env.
+
+    Returns:
+        The setting value.
+    """
+    if _settings_manager is not None:
+        val = _settings_manager.get(namespace, key)
+        if val is not None:
+            return val
+    return default

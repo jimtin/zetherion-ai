@@ -84,14 +84,29 @@ def setup_logging() -> None:
     console_handler.setFormatter(console_formatter)
 
     # File: always JSON for easy parsing
+    json_formatter = structlog.stdlib.ProcessorFormatter(
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            structlog.processors.JSONRenderer(),
+        ]
+    )
     if file_handler:
-        file_formatter = structlog.stdlib.ProcessorFormatter(
-            processors=[
-                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-                structlog.processors.JSONRenderer(),
-            ]
-        )
-        file_handler.setFormatter(file_formatter)
+        file_handler.setFormatter(json_formatter)
+
+    # Error log file (WARNING+) for focused analysis
+    if settings.log_to_file and settings.log_error_file_enabled:
+        try:
+            error_file_handler = RotatingFileHandler(
+                filename=settings.error_log_file_path,
+                maxBytes=settings.log_file_max_bytes,
+                backupCount=settings.log_file_backup_count,
+                encoding="utf-8",
+            )
+            error_file_handler.setLevel(logging.WARNING)
+            error_file_handler.setFormatter(json_formatter)
+            logging.root.addHandler(error_file_handler)
+        except Exception as e:
+            print(f"Warning: Could not setup error file logging: {e}", file=sys.stderr)
 
     # Reduce noise from third-party packages
     logging.getLogger("discord").setLevel(logging.WARNING)
