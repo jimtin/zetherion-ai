@@ -19,16 +19,17 @@ import httpx
 import pytest
 import pytest_asyncio
 
-# Load environment variables from .env file
-try:
-    from dotenv import load_dotenv
 
-    # Load from project root .env file
-    env_path = Path(__file__).parent.parent.parent / ".env"
-    load_dotenv(dotenv_path=env_path)
-except ImportError:
-    # python-dotenv not installed, rely on environment variables being set
-    pass
+def _load_env() -> None:
+    """Load environment variables from .env file (called lazily, not at import)."""
+    try:
+        from dotenv import load_dotenv
+
+        env_path = Path(__file__).parent.parent.parent / ".env"
+        load_dotenv(dotenv_path=env_path)
+    except ImportError:
+        pass
+
 
 # Skip if test Discord credentials not provided
 SKIP_DISCORD_E2E = not all(
@@ -328,6 +329,7 @@ async def discord_test_client() -> AsyncGenerator[DiscordTestClient, None]:
     Yields:
         Initialized DiscordTestClient.
     """
+    _load_env()
     if SKIP_DISCORD_E2E:
         pytest.skip(SKIP_REASON)
 
