@@ -69,6 +69,149 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_created_at
     ON audit_log (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_settings_namespace
     ON settings (namespace);
+
+-- Phase 9: Personal understanding tables
+CREATE TABLE IF NOT EXISTS personal_profile (
+    user_id             BIGINT       PRIMARY KEY,
+    display_name        TEXT,
+    timezone            TEXT         NOT NULL DEFAULT 'UTC',
+    locale              TEXT         NOT NULL DEFAULT 'en',
+    working_hours       JSONB,
+    communication_style JSONB,
+    goals               JSONB        DEFAULT '[]'::jsonb,
+    preferences         JSONB        DEFAULT '{}'::jsonb,
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS personal_contacts (
+    id                  SERIAL       PRIMARY KEY,
+    user_id             BIGINT       NOT NULL,
+    contact_email       TEXT,
+    contact_name        TEXT,
+    relationship        TEXT         NOT NULL DEFAULT 'other',
+    importance          FLOAT        NOT NULL DEFAULT 0.5,
+    company             TEXT,
+    notes               TEXT,
+    last_interaction    TIMESTAMPTZ,
+    interaction_count   INT          NOT NULL DEFAULT 0,
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (user_id, contact_email)
+);
+
+CREATE TABLE IF NOT EXISTS personal_policies (
+    id                  SERIAL       PRIMARY KEY,
+    user_id             BIGINT       NOT NULL,
+    domain              TEXT         NOT NULL,
+    action              TEXT         NOT NULL,
+    mode                TEXT         NOT NULL DEFAULT 'ask',
+    conditions          JSONB,
+    trust_score         FLOAT        NOT NULL DEFAULT 0.0,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (user_id, domain, action)
+);
+
+CREATE TABLE IF NOT EXISTS personal_learnings (
+    id                  SERIAL       PRIMARY KEY,
+    user_id             BIGINT       NOT NULL,
+    category            TEXT         NOT NULL,
+    content             TEXT         NOT NULL,
+    confidence          FLOAT        NOT NULL,
+    source              TEXT         NOT NULL,
+    confirmed           BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_personal_contacts_user_id
+    ON personal_contacts (user_id);
+CREATE INDEX IF NOT EXISTS idx_personal_policies_user_id
+    ON personal_policies (user_id);
+CREATE INDEX IF NOT EXISTS idx_personal_learnings_user_id
+    ON personal_learnings (user_id);
+CREATE INDEX IF NOT EXISTS idx_personal_learnings_category
+    ON personal_learnings (user_id, category);
+
+-- Phase 8: Gmail integration tables
+CREATE TABLE IF NOT EXISTS gmail_accounts (
+    id               SERIAL       PRIMARY KEY,
+    user_id          BIGINT       NOT NULL,
+    email            TEXT         NOT NULL,
+    access_token     TEXT         NOT NULL,
+    refresh_token    TEXT         NOT NULL,
+    token_expiry     TIMESTAMPTZ,
+    scopes           TEXT[],
+    is_primary       BOOLEAN      DEFAULT FALSE,
+    last_sync        TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (user_id, email)
+);
+
+CREATE TABLE IF NOT EXISTS gmail_sync_state (
+    account_id       INT          REFERENCES gmail_accounts(id) ON DELETE CASCADE,
+    history_id       TEXT,
+    last_full_sync   TIMESTAMPTZ,
+    last_partial_sync TIMESTAMPTZ,
+    PRIMARY KEY (account_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_gmail_accounts_user_id
+    ON gmail_accounts (user_id);
+
+CREATE TABLE IF NOT EXISTS gmail_emails (
+    id               SERIAL       PRIMARY KEY,
+    account_id       INT          NOT NULL,
+    gmail_id         TEXT         NOT NULL,
+    thread_id        TEXT,
+    subject          TEXT,
+    from_email       TEXT,
+    to_emails        TEXT[],
+    received_at      TIMESTAMPTZ,
+    classification   TEXT,
+    priority_score   FLOAT,
+    is_read          BOOLEAN      DEFAULT FALSE,
+    is_processed     BOOLEAN      DEFAULT FALSE,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (account_id, gmail_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_gmail_emails_account_id
+    ON gmail_emails (account_id);
+CREATE INDEX IF NOT EXISTS idx_gmail_emails_unprocessed
+    ON gmail_emails (account_id, is_processed) WHERE NOT is_processed;
+
+CREATE TABLE IF NOT EXISTS gmail_drafts (
+    id               SERIAL PRIMARY KEY,
+    email_id         INT REFERENCES gmail_emails(id),
+    account_id       INT REFERENCES gmail_accounts(id),
+    draft_text       TEXT NOT NULL,
+    reply_type       TEXT,
+    confidence       FLOAT NOT NULL,
+    status           TEXT DEFAULT 'pending',
+    sent_at          TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS gmail_type_trust (
+    user_id          BIGINT NOT NULL,
+    reply_type       TEXT NOT NULL,
+    score            FLOAT DEFAULT 0.0,
+    approvals        INT DEFAULT 0,
+    rejections       INT DEFAULT 0,
+    edits            INT DEFAULT 0,
+    total_interactions INT DEFAULT 0,
+    PRIMARY KEY (user_id, reply_type)
+);
+
+CREATE TABLE IF NOT EXISTS gmail_contact_trust (
+    user_id          BIGINT NOT NULL,
+    contact_email    TEXT NOT NULL,
+    score            FLOAT DEFAULT 0.0,
+    approvals        INT DEFAULT 0,
+    rejections       INT DEFAULT 0,
+    edits            INT DEFAULT 0,
+    total_interactions INT DEFAULT 0,
+    PRIMARY KEY (user_id, contact_email)
+);
 """
 
 

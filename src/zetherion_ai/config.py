@@ -282,6 +282,18 @@ class Settings(BaseSettings):
         default=30, description="Timeout in seconds for skills service requests"
     )
 
+    # Gmail Integration Configuration (Phase 8)
+    google_client_id: str | None = Field(
+        default=None, description="Google OAuth2 client ID for Gmail integration"
+    )
+    google_client_secret: SecretStr | None = Field(
+        default=None, description="Google OAuth2 client secret"
+    )
+    google_redirect_uri: str = Field(
+        default="http://localhost:8080/gmail/callback",
+        description="OAuth2 callback URL for Gmail",
+    )
+
     # GitHub Skill Configuration (Phase 7)
     github_token: SecretStr | None = Field(
         default=None, description="GitHub personal access token for API access"

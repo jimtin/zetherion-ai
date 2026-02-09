@@ -43,6 +43,10 @@ class MessageIntent(Enum):
     TASK_MANAGEMENT = "task_management"  # Task creation, updates, listing
     CALENDAR_QUERY = "calendar_query"  # Calendar/schedule queries
     PROFILE_QUERY = "profile_query"  # Profile viewing/updating
+    # Phase 9 intents
+    PERSONAL_MODEL = "personal_model"  # Personal understanding queries
+    # Phase 8 intents
+    EMAIL_MANAGEMENT = "email_management"  # Email checking, drafts, digests
 
 
 @dataclass
@@ -96,6 +100,16 @@ ROUTER_PROMPT = """You are a message router. Classify the user's message into on
 8. PROFILE_QUERY - Viewing, updating, or managing what the bot knows about the user
    Examples: "What do you know about me?", "Update my timezone to EST", "Forget my location", \
 "Show my profile", "Export my data", "What's your confidence in my preferences?"
+
+9. PERSONAL_MODEL - Deep personal understanding queries, contact management, and policy control
+   Examples: "Show my contacts", "Who are my important contacts?", "My timezone is PST", \
+"Forget that I like coffee", "Show my policies", "Export my personal data", \
+"What have you learned about me?"
+
+10. EMAIL_MANAGEMENT - Email checking, reading, drafts, digests, Gmail management
+   Examples: "Check my emails", "Any urgent emails?", "Show unread emails", \
+"Review my drafts", "Give me a morning digest", "Weekly email summary", \
+"Search emails from Alice", "Gmail status", "How many emails today?"
 
 Respond with ONLY a JSON object:
 {"intent": "INTENT_NAME", "confidence": 0.0-1.0, "reasoning": "brief reason"}

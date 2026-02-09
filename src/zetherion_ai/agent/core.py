@@ -191,6 +191,18 @@ class Agent:
                         message,
                         "profile_manager",
                     )
+                case MessageIntent.PERSONAL_MODEL:
+                    response = await self._handle_skill_intent(
+                        user_id,
+                        message,
+                        "personal_model",
+                    )
+                case MessageIntent.EMAIL_MANAGEMENT:
+                    response = await self._handle_skill_intent(
+                        user_id,
+                        message,
+                        "gmail",
+                    )
                 case _:
                     response = await self._handle_complex_task(
                         user_id,
@@ -302,6 +314,8 @@ class Agent:
             "task_manager": self._parse_task_intent(message),
             "calendar": self._parse_calendar_intent(message),
             "profile_manager": self._parse_profile_intent(message),
+            "personal_model": self._parse_personal_model_intent(message),
+            "gmail": self._parse_email_intent(message),
         }
 
         intent = intent_map.get(skill_name, "unknown")
@@ -383,6 +397,46 @@ class Agent:
         elif any(w in msg_lower for w in ["what", "show", "know", "about me"]):
             return "profile_summary"
         return "profile_summary"
+
+    def _parse_personal_model_intent(self, message: str) -> str:
+        """Parse specific personal model intent from message."""
+        msg_lower = message.lower()
+        if any(w in msg_lower for w in ["contact", "contacts", "who do i know"]):
+            return "personal_contacts"
+        elif any(w in msg_lower for w in ["forget", "delete learning", "remove learning"]):
+            return "personal_forget"
+        elif any(w in msg_lower for w in ["export", "download", "gdpr"]):
+            return "personal_export"
+        elif any(w in msg_lower for w in ["policy", "policies", "trust score"]):
+            return "personal_policies"
+        elif any(
+            w in msg_lower
+            for w in ["timezone", "locale", "my name is", "call me", "set my", "add goal"]
+        ):
+            return "personal_update"
+        elif any(
+            w in msg_lower
+            for w in ["know about me", "learned", "summary", "what do you know", "show me"]
+        ):
+            return "personal_summary"
+        return "personal_summary"
+
+    def _parse_email_intent(self, message: str) -> str:
+        """Parse specific email/Gmail intent from message."""
+        msg_lower = message.lower()
+        if any(w in msg_lower for w in ["draft", "drafts", "review draft", "pending draft"]):
+            return "email_drafts"
+        elif any(w in msg_lower for w in ["digest", "briefing", "summary", "weekly"]):
+            return "email_digest"
+        elif any(w in msg_lower for w in ["status", "connected", "account"]):
+            return "email_status"
+        elif any(w in msg_lower for w in ["search", "find email", "look for"]):
+            return "email_search"
+        elif any(w in msg_lower for w in ["calendar", "events today", "schedule"]):
+            return "email_calendar"
+        elif any(w in msg_lower for w in ["unread", "new email", "urgent"]):
+            return "email_unread"
+        return "email_check"
 
     async def _build_context(
         self,
