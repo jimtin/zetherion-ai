@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import asyncpg  # type: ignore[import-not-found]
+import asyncpg  # type: ignore[import-not-found,import-untyped]
 
 from zetherion_ai.logging import get_logger
 from zetherion_ai.personal.models import (
