@@ -142,8 +142,7 @@ class TestSkillsServerEndpoints:
         assert resp.status == 500
 
         data = await resp.json()
-        assert "error" in data
-        assert "skill exploded" in data["error"]
+        assert data["error"] == "Internal server error"
 
     async def test_heartbeat_success(self, client, mock_registry):
         """POST /heartbeat should return 200 with actions list."""
@@ -176,7 +175,7 @@ class TestSkillsServerEndpoints:
         assert resp.status == 500
 
         data = await resp.json()
-        assert "heartbeat boom" in data["error"]
+        assert data["error"] == "Internal server error"
 
     async def test_list_skills(self, client, mock_registry):
         """GET /skills should return 200 with skills list."""

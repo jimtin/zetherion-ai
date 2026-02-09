@@ -262,15 +262,7 @@ class QdrantMemory:
         """
         query_vector = await self._embeddings.embed_query(query)
 
-        filter_conditions_list: list[
-            qdrant_models.FieldCondition
-            | qdrant_models.IsEmptyCondition
-            | qdrant_models.IsNullCondition
-            | qdrant_models.HasIdCondition
-            | qdrant_models.HasVectorCondition
-            | qdrant_models.NestedCondition
-            | qdrant_models.Filter
-        ] = []
+        filter_conditions_list: list[qdrant_models.Condition] = []
         if memory_type is not None:
             filter_conditions_list.append(
                 qdrant_models.FieldCondition(

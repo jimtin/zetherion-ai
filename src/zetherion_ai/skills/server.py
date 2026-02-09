@@ -9,6 +9,7 @@ This server runs in its own Docker container and provides:
 """
 
 import asyncio
+import hmac
 import os
 from typing import Any
 
@@ -82,7 +83,7 @@ class SkillsServer:
             return True
 
         provided = request.headers.get("X-API-Secret")
-        return provided == self._api_secret
+        return provided is not None and hmac.compare_digest(provided, self._api_secret)
 
     @web.middleware
     async def auth_middleware(
@@ -147,10 +148,10 @@ class SkillsServer:
 
             return web.json_response(response.to_dict())
 
-        except Exception as e:
-            log.error("handle_request_error", error=str(e))
+        except Exception:
+            log.exception("handle_request_error")
             return web.json_response(
-                {"error": str(e)},
+                {"error": "Internal server error"},
                 status=500,
             )
 
@@ -175,10 +176,10 @@ class SkillsServer:
                 }
             )
 
-        except Exception as e:
-            log.error("heartbeat_error", error=str(e))
+        except Exception:
+            log.exception("heartbeat_error")
             return web.json_response(
-                {"error": str(e)},
+                {"error": "Internal server error"},
                 status=500,
             )
 

@@ -8,6 +8,16 @@ the async server via asyncio.run.
 from unittest.mock import MagicMock, patch
 
 
+def _close_coro_in_asyncio_run(mock_asyncio_run: MagicMock) -> None:
+    """Ensure patched asyncio.run closes the coroutine argument to avoid warnings."""
+
+    def _runner(coro):
+        coro.close()
+        return None
+
+    mock_asyncio_run.side_effect = _runner
+
+
 class TestSkillsServerMain:
     """Tests for the skills server main() function."""
 
@@ -25,6 +35,7 @@ class TestSkillsServerMain:
 
         mock_registry = MagicMock()
         mock_registry_cls.return_value = mock_registry
+        _close_coro_in_asyncio_run(mock_asyncio_run)
 
         main()
 
@@ -45,6 +56,7 @@ class TestSkillsServerMain:
 
         mock_registry = MagicMock()
         mock_registry_cls.return_value = mock_registry
+        _close_coro_in_asyncio_run(mock_asyncio_run)
 
         main()
 
@@ -67,6 +79,7 @@ class TestSkillsServerMain:
 
         mock_registry = MagicMock()
         mock_registry_cls.return_value = mock_registry
+        _close_coro_in_asyncio_run(mock_asyncio_run)
 
         main()
 
@@ -88,6 +101,7 @@ class TestSkillsServerMain:
 
         mock_registry = MagicMock()
         mock_registry_cls.return_value = mock_registry
+        _close_coro_in_asyncio_run(mock_asyncio_run)
 
         main()
 
@@ -108,6 +122,7 @@ class TestSkillsServerMain:
 
         mock_registry = MagicMock()
         mock_registry_cls.return_value = mock_registry
+        _close_coro_in_asyncio_run(mock_asyncio_run)
 
         main()
 
@@ -130,6 +145,7 @@ class TestSkillsServerMain:
 
         mock_registry = MagicMock()
         mock_registry_cls.return_value = mock_registry
+        _close_coro_in_asyncio_run(mock_asyncio_run)
 
         main()
 
@@ -153,6 +169,7 @@ class TestSkillsServerMain:
 
         mock_registry = MagicMock()
         mock_registry_cls.return_value = mock_registry
+        _close_coro_in_asyncio_run(mock_asyncio_run)
 
         main()
 
