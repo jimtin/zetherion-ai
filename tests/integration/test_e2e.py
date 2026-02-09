@@ -15,16 +15,17 @@ from typing import Any
 import pytest
 import pytest_asyncio
 
-# Load environment variables from .env file
-try:
-    from dotenv import load_dotenv
 
-    # Load from project root .env file
-    env_path = Path(__file__).parent.parent.parent / ".env"
-    load_dotenv(dotenv_path=env_path)
-except ImportError:
-    # python-dotenv not installed, rely on environment variables being set
-    pass
+def _load_env() -> None:
+    """Load environment variables from .env file (called lazily, not at import)."""
+    try:
+        from dotenv import load_dotenv
+
+        env_path = Path(__file__).parent.parent.parent / ".env"
+        load_dotenv(dotenv_path=env_path)
+    except ImportError:
+        pass
+
 
 # Check if we should run integration tests
 SKIP_INTEGRATION = os.getenv("SKIP_INTEGRATION_TESTS", "false").lower() == "true"
@@ -334,6 +335,7 @@ class MockDiscordBot:
 @pytest.fixture(scope="module")
 def docker_env() -> Generator[DockerEnvironment, None, None]:
     """Pytest fixture to manage Docker environment."""
+    _load_env()
     if SKIP_INTEGRATION:
         pytest.skip("Integration tests disabled (SKIP_INTEGRATION_TESTS=true)")
 
