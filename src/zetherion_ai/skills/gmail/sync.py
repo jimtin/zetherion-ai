@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-import asyncpg  # type: ignore[import-not-found]
+import asyncpg  # type: ignore[import-not-found,import-untyped]
 
 from zetherion_ai.logging import get_logger
 from zetherion_ai.skills.gmail.accounts import GmailAccount, GmailAccountManager

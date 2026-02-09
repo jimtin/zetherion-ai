@@ -243,7 +243,7 @@ class TestModelConfigurationDefaults:
         get_settings.cache_clear()
 
         settings = create_test_settings()
-        assert settings.openai_model == "gpt-4o"
+        assert settings.openai_model == "gpt-5.2"
 
     def test_router_model_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that router_model has correct default."""
@@ -858,8 +858,8 @@ class TestLoggingConfiguration:
         settings = create_test_settings()
         assert settings.log_to_file is True
         assert settings.log_directory == "logs"
-        assert settings.log_file_max_bytes == 10485760  # 10MB
-        assert settings.log_file_backup_count == 5
+        assert settings.log_file_max_bytes == 52428800  # 50MB
+        assert settings.log_file_backup_count == 10
 
     def test_log_file_path_property(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that log_file_path property is constructed correctly."""

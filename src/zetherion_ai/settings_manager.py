@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 from zetherion_ai.logging import get_logger
 
 if TYPE_CHECKING:
-    import asyncpg  # type: ignore[import-not-found]
+    import asyncpg  # type: ignore[import-not-found,import-untyped]
 
 log = get_logger("zetherion_ai.settings_manager")
 
