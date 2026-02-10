@@ -32,13 +32,12 @@ paths = [
     '''ollama_models/''',
     # Ignore test files (contain fake tokens)
     '''tests/.*\.py$''',
-    # Ignore documentation with examples
-    '''docs/implementation_plan\.md''',
-    '''docs/SECURITY\.md''',  # Contains example patterns for secret detection
+    # Ignore documentation with examples (all doc subdirectories)
+    '''docs/''',
+    # Ignore mkdocs build output
+    '''site/''',
     # Ignore wiki directory (copy of docs with example secrets)
     '''wiki/''',
-    # Ignore GitHub secrets configuration guide (contains example tokens/keys)
-    '''GITHUB_SECRETS\.md''',
     # Ignore GitHub workflows (contain test placeholder secrets)
     '''\.github/workflows/''',
     # Ignore Windows deployment setup script (contains variable names for user input)

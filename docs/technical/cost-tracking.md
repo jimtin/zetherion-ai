@@ -1,33 +1,21 @@
-# Cost Tracking Guide
-
-Monitor, budget, and optimize your LLM API spending with Zetherion AI's built-in cost tracking system.
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Configuration](#configuration)
-- [Understanding Costs](#understanding-costs)
-- [Budget Management](#budget-management)
-- [Cost Reports](#cost-reports)
-- [Optimization Strategies](#optimization-strategies)
-- [Troubleshooting](#troubleshooting)
+# Cost Tracking
 
 ## Overview
 
-The cost tracking system monitors every API call to LLM providers and:
+Monitor, budget, and optimize your LLM API spending with Zetherion AI's built-in cost tracking system. The system monitors every API call to LLM providers and provides:
 
-- **Tracks spending** in real-time per provider and task type
-- **Enforces budgets** with configurable daily and monthly limits
-- **Sends alerts** before you exceed thresholds
-- **Generates reports** for spending analysis
-- **Stores history** in SQLite for querying
+- **Real-time spending tracking** per provider and task type
+- **Budget enforcement** with configurable daily and monthly limits
+- **Threshold alerts** before you exceed budgets
+- **Spending reports** for daily and monthly analysis
+- **History storage** in SQLite for querying and export
 
 ### How It Works
 
 ```
-API Request → InferenceBroker → Cost Calculation → Budget Check → Storage
-                                      ↓
-                              Alert if threshold reached
+API Request -> InferenceBroker -> Cost Calculation -> Budget Check -> Storage
+                                        |
+                                Alert if threshold reached
 ```
 
 ## Configuration
@@ -66,32 +54,29 @@ DAILY_SUMMARY_ENABLED=true
 DAILY_SUMMARY_HOUR=20
 ```
 
-## Understanding Costs
-
-### Provider Pricing
+## Provider Pricing
 
 | Provider | Model | Input (per 1M tokens) | Output (per 1M tokens) |
 |----------|-------|----------------------|------------------------|
 | **Anthropic** | Claude Sonnet 4.5 | $3.00 | $15.00 |
 | **Anthropic** | Claude Haiku 4.5 | $0.25 | $1.25 |
-| **OpenAI** | GPT-4o | $2.50 | $10.00 |
-| **OpenAI** | GPT-4o-mini | $0.15 | $0.60 |
-| **Google** | Gemini Flash | Free tier | Free tier |
-| **Ollama** | Local models | $0.00 | $0.00 |
+| **OpenAI** | GPT-5.2 | $2.50 | $10.00 |
+| **Google** | Gemini 2.5 Flash | Free tier | Free tier |
+| **Ollama** | Local models (Llama, etc.) | $0.00 | $0.00 |
 
 *Prices as of February 2026. Check provider websites for current rates.*
 
 ### Token Estimation
 
 Approximate token counts:
-- **1 word** ≈ 1.3 tokens
-- **100 words** ≈ 130 tokens
-- **1 page of text** ≈ 500-700 tokens
+- **1 word** -- approximately 1.3 tokens
+- **100 words** -- approximately 130 tokens
+- **1 page of text** -- approximately 500-700 tokens
 
 ### Typical Query Costs
 
-| Query Type | Input Tokens | Output Tokens | Estimated Cost (Claude) |
-|------------|-------------|---------------|------------------------|
+| Query Type | Input Tokens | Output Tokens | Estimated Cost (Claude Sonnet 4.5) |
+|------------|-------------|---------------|-------------------------------------|
 | Simple question | ~50 | ~100 | $0.0016 |
 | Code review | ~500 | ~300 | $0.006 |
 | Complex analysis | ~1000 | ~500 | $0.01 |
@@ -103,11 +88,11 @@ The system tracks costs by task type:
 
 | Task Type | Typical Provider | Avg Cost/Query |
 |-----------|------------------|----------------|
-| Simple Query | Gemini Flash | $0.00 (free) |
-| Memory Search | Gemini Flash | $0.00 (free) |
-| Complex Reasoning | Claude Sonnet | $0.005 |
-| Code Generation | Claude Sonnet | $0.008 |
-| Creative Writing | GPT-4o | $0.006 |
+| Simple Query | Gemini 2.5 Flash | $0.00 (free) |
+| Memory Search | Gemini 2.5 Flash | $0.00 (free) |
+| Complex Reasoning | Claude Sonnet 4.5 | $0.005 |
+| Code Generation | Claude Sonnet 4.5 | $0.008 |
+| Creative Writing | GPT-5.2 | $0.006 |
 
 ## Budget Management
 
@@ -134,15 +119,15 @@ Monthly budgets reset on the 1st of each month.
 ### Budget Notifications
 
 ```
-⚠️ Budget Warning (80% reached)
+Budget Warning (80% reached)
 
 Daily Spending: $4.00 / $5.00 (80%)
 Monthly Spending: $35.00 / $50.00 (70%)
 
 Top spending:
-- Claude Sonnet: $2.50 (62%)
-- GPT-4o: $1.20 (30%)
-- Gemini Flash: $0.00 (0%)
+- Claude Sonnet 4.5: $2.50 (62%)
+- GPT-5.2: $1.20 (30%)
+- Gemini 2.5 Flash: $0.00 (0%)
 
 Remaining today: $1.00
 ```
@@ -164,15 +149,15 @@ When budgets are exceeded:
 Automatically sent at configured hour (default: 8 PM):
 
 ```
-📊 Daily Cost Summary (Feb 7, 2026)
+Daily Cost Summary (Feb 10, 2026)
 
 Total Spent Today: $3.45
 
 By Provider:
-  Claude Sonnet: $2.10 (61%)
-  GPT-4o: $1.05 (30%)
-  Gemini Flash: $0.00 (0%)
-  Ollama: $0.00 (0%)
+  Claude Sonnet 4.5: $2.10 (61%)
+  GPT-5.2: $1.05 (30%)
+  Gemini 2.5 Flash: $0.00 (0%)
+  Ollama (Llama): $0.00 (0%)
 
 By Task Type:
   Complex Reasoning: $1.50 (43%)
@@ -194,15 +179,15 @@ Budget Status:
 Sent on the 1st of each month:
 
 ```
-📊 Monthly Cost Summary (January 2026)
+Monthly Cost Summary (January 2026)
 
 Total Spent: $42.50
 
 By Provider:
-  Claude Sonnet: $28.00 (66%)
-  GPT-4o: $12.50 (29%)
-  Gemini Flash: $0.00 (0%)
-  Ollama: $0.00 (0%)
+  Claude Sonnet 4.5: $28.00 (66%)
+  GPT-5.2: $12.50 (29%)
+  Gemini 2.5 Flash: $0.00 (0%)
+  Ollama (Llama): $0.00 (0%)
 
 Daily Average: $1.37
 Peak Day: Jan 15 ($4.80)
@@ -243,7 +228,7 @@ docker exec zetherion-ai-bot sqlite3 -header -csv /app/data/costs.db "
 
 ### 1. Use Free Tiers Effectively
 
-**Gemini Flash Free Tier:**
+**Gemini 2.5 Flash Free Tier:**
 - 15 requests/minute
 - 1,500 requests/day
 - Use for routing, simple queries, embeddings
@@ -270,7 +255,7 @@ MEMORY_SEARCH_LIMIT=3  # Default: 5
 
 ### 3. Use Ollama for Routing
 
-Local routing = zero API costs:
+Local routing with Llama models means zero API costs:
 
 ```env
 ROUTER_BACKEND=ollama
@@ -283,9 +268,9 @@ OLLAMA_ROUTER_MODEL=llama3.1:8b
 
 | Need | Expensive | Cost-Effective |
 |------|-----------|----------------|
-| Simple Q&A | Claude Sonnet | Gemini Flash |
-| Code Review | GPT-4o | Claude Haiku |
-| Summarization | Claude Sonnet | GPT-4o-mini |
+| Simple Q&A | Claude Sonnet 4.5 | Gemini 2.5 Flash |
+| Code Review | GPT-5.2 | Claude Haiku 4.5 |
+| Summarization | Claude Sonnet 4.5 | Claude Haiku 4.5 |
 
 ### 5. Rate Limiting
 
@@ -321,11 +306,34 @@ DAILY_BUDGET_USD=3.00
 
 | Strategy | Monthly Cost | Quality | Privacy |
 |----------|-------------|---------|---------|
-| All Cloud (Claude + GPT-4o) | $50-100 | Best | Low |
-| Gemini Only | $0 (free tier) | Good | Low |
-| Ollama Only | $0 (electricity) | Good | High |
-| Hybrid (Gemini + Claude) | $20-40 | Very Good | Medium |
-| Hybrid (Ollama + Claude) | $15-30 | Very Good | High |
+| All Cloud (Claude Sonnet 4.5 + GPT-5.2) | $50-100 | Best | Low |
+| Gemini 2.5 Flash Only | $0 (free tier) | Good | Low |
+| Ollama Only (Llama models) | $0 (electricity) | Good | High |
+| Hybrid (Gemini 2.5 Flash + Claude Sonnet 4.5) | $20-40 | Very Good | Medium |
+| Hybrid (Ollama Llama + Claude Sonnet 4.5) | $15-30 | Very Good | High |
+
+## Database Schema
+
+The cost database uses SQLite with this schema:
+
+```sql
+CREATE TABLE usage_records (
+    id INTEGER PRIMARY KEY,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    task_type TEXT,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    cost_usd REAL,
+    latency_ms INTEGER,
+    success BOOLEAN,
+    error_message TEXT
+);
+
+CREATE INDEX idx_timestamp ON usage_records(timestamp);
+CREATE INDEX idx_provider ON usage_records(provider);
+```
 
 ## Troubleshooting
 
@@ -395,37 +403,12 @@ docker-compose restart zetherion-ai-bot
 docker cp zetherion-ai-bot:/app/data/costs.db ./costs_backup.db
 ```
 
-## Database Schema
+## Related Docs
 
-The cost database uses SQLite with this schema:
-
-```sql
-CREATE TABLE usage_records (
-    id INTEGER PRIMARY KEY,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-    provider TEXT NOT NULL,
-    model TEXT NOT NULL,
-    task_type TEXT,
-    input_tokens INTEGER,
-    output_tokens INTEGER,
-    cost_usd REAL,
-    latency_ms INTEGER,
-    success BOOLEAN,
-    error_message TEXT
-);
-
-CREATE INDEX idx_timestamp ON usage_records(timestamp);
-CREATE INDEX idx_provider ON usage_records(provider);
-```
-
-## Additional Resources
-
-- [Features Overview](FEATURES.md) - All Phase 5+ features
-- [Configuration Reference](CONFIGURATION.md) - All settings
-- [InferenceBroker](FEATURES.md#inferencebroker-multi-provider-routing) - Provider routing
-- [Hardware Recommendations](HARDWARE-RECOMMENDATIONS.md) - Ollama setup for $0 routing
+- [configuration.md](configuration.md) -- All environment variables and settings
+- [architecture.md](architecture.md) -- System architecture and service topology
 
 ---
 
-**Last Updated:** 2026-02-07
-**Version:** 3.0.0 (Cost Tracking)
+**Last Updated:** 2026-02-10
+**Version:** 4.0.0 (Cost Tracking)

@@ -1,88 +1,113 @@
-# Zetherion AI
+# Zetherion AI Documentation
 
-Secure personal AI assistant with encrypted memory, multi-provider LLM routing, and privacy-first design.
+Zetherion AI is a privacy-first personal AI assistant featuring encrypted memory, smart LLM routing, Gmail integration, and deep personal understanding. It runs as a Discord bot backed by 6 Docker services, designed to learn your preferences and adapt over time while keeping your data secure.
 
-## Features
+---
 
-- **Encrypted Memory** - AES-256-GCM encryption for all stored data with PBKDF2 key derivation
-- **Multi-Provider Routing** - Intelligent routing across Claude, OpenAI, Gemini, and Ollama
-- **Vector Memory** - Long-term context using Qdrant with semantic search
-- **Security-First** - Rate limiting, prompt injection detection, secrets management
-- **Self-Hosted** - Run entirely on your own infrastructure with Ollama
-- **Cost Tracking** - Monitor and budget API spending with alerts
-- **User Profiles** - Learn preferences and adapt responses
-- **Skills Framework** - Extensible task management, calendar, and more
+## Feature Matrix
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| Smart LLM Routing | Routes queries to optimal provider (Claude/OpenAI/Gemini/Ollama) based on task type | Production |
+| Encrypted Memory | AES-256-GCM field-level encryption with PBKDF2 key derivation | Production |
+| Gmail Integration | Check email, auto-draft replies, digests, progressive trust system | Production |
+| GitHub Integration | Manage issues, PRs, repo status through natural language | Production |
+| Personal Understanding | Learns preferences, builds contact graph, adapts communication | Production |
+| Observation Pipeline | Tiered extraction of facts, preferences, and context from conversations | Production |
+| InferenceBroker | Multi-provider routing with fallback chains and cost awareness | Production |
+| Cost Tracking | Per-request logging, budget alerts, daily/monthly reporting | Production |
+| Skills Framework | Extensible skills: task management, calendar, profile management | Production |
+| Heartbeat Scheduler | Proactive reminders, morning briefings, deadline alerts | Production |
+| User Profiles | 8-category learning with confidence scoring and privacy controls | Production |
+| Distroless Containers | Google's distroless base images, non-root, read-only filesystem | Production |
+
+---
 
 ## Quick Start
 
 ```bash
-# Clone the repository
 git clone https://github.com/jimtin/zetherion-ai.git
 cd zetherion-ai
-
-# One-command deployment (interactive setup)
-./start.sh  # or start.ps1 on Windows
+./start.sh
 ```
 
-See the [Installation Guide](INSTALLATION.md) for detailed platform-specific instructions.
+See [Getting Started](user/getting-started.md) for detailed setup instructions.
 
-## Documentation
+---
 
-### Getting Started
+## Documentation Sections
 
-| Section | Description |
-|---------|-------------|
-| [Installation](INSTALLATION.md) | Platform-specific setup guide |
-| [Configuration](CONFIGURATION.md) | All environment variables |
-| [Hardware Recommendations](HARDWARE-RECOMMENDATIONS.md) | Optimize for your system |
-| [Windows Deployment](WINDOWS_DEPLOYMENT.md) | Windows-specific guide |
+### For Users
 
-### User Guides
+If you are using Zetherion AI and want to know what it can do:
 
-| Section | Description |
-|---------|-------------|
-| [Commands](COMMANDS.md) | Discord slash commands reference |
-| [FAQ](FAQ.md) | Frequently asked questions |
-| [Troubleshooting](TROUBLESHOOTING.md) | Common issues and solutions |
+| Guide | Description |
+|-------|-------------|
+| [Getting Started](user/getting-started.md) | Prerequisites, setup, first interaction |
+| [Commands](user/commands.md) | Complete Discord command reference |
+| [Gmail](user/gmail.md) | Email checking, drafts, digests, trust system |
+| [GitHub](user/github-integration.md) | Repository management, issues, PRs |
+| [Tasks & Calendar](user/tasks-and-calendar.md) | Task management and scheduling |
+| [Memory & Profiles](user/memory-and-profiles.md) | How the bot learns and remembers |
+| [FAQ](user/faq.md) | Frequently asked questions |
+| [Troubleshooting](user/troubleshooting.md) | Common issues and solutions |
 
-### Advanced Features
+### For Technical Users
 
-| Section | Description |
-|---------|-------------|
-| [Features Overview](FEATURES.md) | Phase 5+ features guide |
-| [Skills Framework](SKILLS.md) | Task management and extensibility |
-| [Cost Tracking](COST_TRACKING.md) | Budget management and optimization |
-| [Profile System](PROFILES.md) | User preference learning |
+If you want to understand the internals:
 
-### Architecture & Security
+| Guide | Description |
+|-------|-------------|
+| [Architecture](technical/architecture.md) | System design and component interaction |
+| [Docker & Services](technical/docker.md) | 6-service container architecture |
+| [Security](technical/security.md) | Encryption, access control, container hardening |
+| [Configuration](technical/configuration.md) | All 70+ environment variables |
+| [Skills Framework](technical/skills-framework.md) | Skill lifecycle, permissions, registry |
+| [Gmail Architecture](technical/gmail-architecture.md) | Trust system, OAuth, reply pipeline |
+| [Observation Pipeline](technical/observation-pipeline.md) | Tiered fact extraction |
+| [Personal Understanding](technical/personal-understanding.md) | PostgreSQL personal model |
+| [Cost Tracking](technical/cost-tracking.md) | Budget management and reporting |
+| [API Reference](technical/api-reference.md) | Skills REST API endpoints |
 
-| Section | Description |
-|---------|-------------|
-| [Architecture](ARCHITECTURE.md) | System design and components |
-| [Docker Architecture](DOCKER_ARCHITECTURE.md) | Container setup and networking |
-| [Security](SECURITY.md) | Security controls and best practices |
+### For Developers
 
-### Development
+If you want to contribute or extend:
 
-| Section | Description |
-|---------|-------------|
-| [Testing](TESTING.md) | Test suite and coverage |
-| [Testing & Deployment](TESTING-DEPLOYMENT.md) | Comprehensive deployment validation |
-| [CI/CD](CI_CD.md) | Continuous integration pipeline |
-| [GitHub Secrets](GITHUB_SECRETS.md) | CI/CD secrets configuration |
-| [Changelog](CHANGELOG.md) | Version history |
-| [Contributing](CONTRIBUTING.md) | Contribution guidelines |
-| [Development](DEVELOPMENT.md) | Developer documentation |
+| Guide | Description |
+|-------|-------------|
+| [Setup & Contributing](development/setup.md) | Development environment and guidelines |
+| [Testing](development/testing.md) | 3,000+ tests across 89 files |
+| [CI/CD Pipeline](development/ci-cd.md) | 10-job CI pipeline and 7-step pre-push |
+| [GitHub Secrets](development/github-secrets.md) | CI/CD secrets configuration |
+| [Adding a Skill](development/adding-a-skill.md) | Tutorial: create a custom skill |
+| [Changelog](development/changelog.md) | Release history |
 
-## Project Status
+### Project
 
-- Test Coverage: **78%** (885 unit + 14 integration + 4 E2E tests)
-- Current Version: 3.0.0 (Fully Automated Docker Deployment)
-- Features: Phase 5+ complete (encryption, cost tracking, profiles, skills)
+| Guide | Description |
+|-------|-------------|
+| [Roadmap](project/roadmap.md) | Completed phases and future plans |
+| [Design Decisions](project/design-decisions.md) | Architecture decision records |
+
+---
+
+## Project Stats
+
+| Metric | Value |
+|--------|-------|
+| Tests | 3,000+ |
+| Test Coverage | 93%+ |
+| Test Files | 89 |
+| Source Files | 91 |
+| Docker Services | 6 |
+| Configuration Fields | 70+ |
+| CI/CD Jobs | 10 |
+| Skills | 7 (task, calendar, profile, gmail, github, personal model, observation) |
+
+---
 
 ## Links
 
 - [GitHub Repository](https://github.com/jimtin/zetherion-ai)
 - [Report Issues](https://github.com/jimtin/zetherion-ai/issues)
-- [Wiki](https://github.com/jimtin/zetherion-ai/wiki)
 - [Discussions](https://github.com/jimtin/zetherion-ai/discussions)

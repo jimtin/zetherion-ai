@@ -1,5 +1,5 @@
 site_name: Zetherion AI
-site_description: Secure personal AI assistant with encrypted memory and multi-provider LLM routing
+site_description: Privacy-first personal AI assistant with encrypted memory, smart LLM routing, and Gmail integration
 site_url: https://jimtin.github.io/zetherion-ai
 repo_url: https://github.com/jimtin/zetherion-ai
 repo_name: jimtin/zetherion-ai
@@ -24,6 +24,8 @@ theme:
   features:
     - navigation.instant
     - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.sections
     - navigation.expand
     - navigation.top
@@ -46,21 +48,42 @@ markdown_extensions:
   - pymdownx.details
   - toc:
       permalink: true
+  - attr_list
+  - def_list
+  - tables
 
 nav:
   - Home: index.md
-  - Getting Started:
-      - Quick Start: STARTUP_WALKTHROUGH.md
-      - Commands: COMMANDS.md
-      - FAQ: FAQ.md
-  - Architecture:
-      - Overview: ARCHITECTURE.md
-      - Docker: DOCKER_ARCHITECTURE.md
-      - Security: SECURITY.md
+  - User Guide:
+      - Getting Started: user/getting-started.md
+      - Commands: user/commands.md
+      - Gmail: user/gmail.md
+      - GitHub: user/github-integration.md
+      - Tasks & Calendar: user/tasks-and-calendar.md
+      - Memory & Profiles: user/memory-and-profiles.md
+      - FAQ: user/faq.md
+      - Troubleshooting: user/troubleshooting.md
+  - Technical:
+      - Architecture: technical/architecture.md
+      - Docker & Services: technical/docker.md
+      - Security: technical/security.md
+      - Configuration: technical/configuration.md
+      - Skills Framework: technical/skills-framework.md
+      - Gmail Architecture: technical/gmail-architecture.md
+      - Observation Pipeline: technical/observation-pipeline.md
+      - Personal Understanding: technical/personal-understanding.md
+      - Cost Tracking: technical/cost-tracking.md
+      - API Reference: technical/api-reference.md
   - Development:
-      - Testing: TESTING.md
-      - CI/CD: CI_CD.md
-      - Troubleshooting: TROUBLESHOOTING.md
+      - Setup & Contributing: development/setup.md
+      - Testing: development/testing.md
+      - CI/CD Pipeline: development/ci-cd.md
+      - GitHub Secrets: development/github-secrets.md
+      - Adding a Skill: development/adding-a-skill.md
+      - Changelog: development/changelog.md
+  - Project:
+      - Roadmap: project/roadmap.md
+      - Design Decisions: project/design-decisions.md
 
 extra:
   social:

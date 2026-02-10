@@ -25,37 +25,46 @@ jobs:
 
       - name: Sync documentation files
         run: |
-          # Copy docs to wiki
-          cp docs/TROUBLESHOOTING.md wiki/Troubleshooting.md
-          cp docs/FAQ.md wiki/FAQ.md
-          cp docs/COMMANDS.md wiki/Commands.md
+          # User-facing docs
+          cp docs/user/troubleshooting.md wiki/Troubleshooting.md
+          cp docs/user/faq.md wiki/FAQ.md
+          cp docs/user/commands.md wiki/Commands.md
+          cp docs/user/getting-started.md wiki/Getting-Started.md
+          cp docs/user/gmail.md wiki/Gmail.md
+          cp docs/user/github-integration.md wiki/GitHub-Integration.md
+          cp docs/user/tasks-and-calendar.md wiki/Tasks-and-Calendar.md
+          cp docs/user/memory-and-profiles.md wiki/Memory-and-Profiles.md
 
-          # Create Home page from README
-          cp README.md wiki/Home.md
+          # Technical docs
+          cp docs/technical/architecture.md wiki/Architecture.md
+          cp docs/technical/configuration.md wiki/Configuration.md
+          cp docs/technical/security.md wiki/Security.md
 
-          # Or create custom wiki home page:
+          # Create wiki home page
           cat > wiki/Home.md << 'EOF'
           # Zetherion AI Wiki
 
-          Welcome to the Zetherion AI documentation wiki!
+          Welcome to the Zetherion AI documentation wiki.
 
-          ## Getting Started
-          - [Setup Guide](https://github.com/${{ github.repository }}#setup-guide)
-          - [Quick Start](https://github.com/${{ github.repository }}#quick-start)
-
-          ## Documentation
-          - [Command Reference](Commands) - All Discord commands for testing
-          - [Troubleshooting Guide](Troubleshooting) - Common issues and solutions
+          ## User Guide
+          - [Getting Started](Getting-Started) - Installation and first run
+          - [Commands](Commands) - All Discord commands
+          - [Gmail](Gmail) - Email integration guide
+          - [GitHub Integration](GitHub-Integration) - Repository management
+          - [Tasks and Calendar](Tasks-and-Calendar) - Task management
+          - [Memory and Profiles](Memory-and-Profiles) - How the bot learns
           - [FAQ](FAQ) - Frequently asked questions
+          - [Troubleshooting](Troubleshooting) - Common issues and solutions
 
-          ## Quick Links
-          - [Test Commands](Commands#testing-checklist)
-          - [Discord Setup](Troubleshooting#discord-errors)
-          - [Configuration Issues](Troubleshooting#configuration-issues)
+          ## Technical
+          - [Architecture](Architecture) - System architecture
+          - [Configuration](Configuration) - Environment variables reference
+          - [Security](Security) - Security model
 
-          ## Support
+          ## Links
+          - [Full Documentation](https://jimtin.github.io/zetherion-ai)
           - [GitHub Issues](https://github.com/${{ github.repository }}/issues)
-          - [Discussions](https://github.com/${{ github.repository }}/discussions)
+          - [GitHub Discussions](https://github.com/${{ github.repository }}/discussions)
           EOF
 
       - name: Commit and push changes to wiki
