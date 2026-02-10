@@ -2,94 +2,110 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://jimtin.github.io/zetherion-ai/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/ARCHITECTURE/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/development/adding-a-skill/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/CHANGELOG/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/development/changelog/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/CI_CD/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/development/ci-cd/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/COMMANDS/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/development/github-secrets/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/CONFIGURATION/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/development/setup/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/CONTRIBUTING/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/development/testing/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/COST_TRACKING/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/project/design-decisions/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/DEVELOPMENT/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/project/roadmap/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/DOCKER_ARCHITECTURE/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/technical/api-reference/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/FAQ/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/technical/architecture/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/FEATURES/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/technical/configuration/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/GITHUB_SECRETS/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/technical/cost-tracking/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/HARDWARE-RECOMMENDATIONS/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/technical/docker/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/INSTALLATION/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/technical/gmail-architecture/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/PROFILES/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/technical/observation-pipeline/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/SECURITY/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/technical/personal-understanding/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/SKILLS/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/technical/security/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/STARTUP_WALKTHROUGH/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/technical/skills-framework/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/TESTING-DEPLOYMENT/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/user/commands/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/TESTING/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/user/faq/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/TROUBLESHOOTING/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/user/getting-started/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
     <url>
-         <loc>https://jimtin.github.io/zetherion-ai/WINDOWS_DEPLOYMENT/</loc>
-         <lastmod>2026-02-07</lastmod>
+         <loc>https://jimtin.github.io/zetherion-ai/user/github-integration/</loc>
+         <lastmod>2026-02-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jimtin.github.io/zetherion-ai/user/gmail/</loc>
+         <lastmod>2026-02-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jimtin.github.io/zetherion-ai/user/memory-and-profiles/</loc>
+         <lastmod>2026-02-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jimtin.github.io/zetherion-ai/user/tasks-and-calendar/</loc>
+         <lastmod>2026-02-10</lastmod>
+    </url>
+    <url>
+         <loc>https://jimtin.github.io/zetherion-ai/user/troubleshooting/</loc>
+         <lastmod>2026-02-10</lastmod>
     </url>
 </urlset>
