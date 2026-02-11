@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
 from zetherion_ai import __version__
+from zetherion_ai.health.storage import UpdateRecord, UpdateStatus
 from zetherion_ai.skills.base import (
     HeartbeatAction,
     SkillRequest,
@@ -621,7 +623,13 @@ class TestHandleRollback:
     @pytest.mark.asyncio
     async def test_no_git_sha_returns_error(self) -> None:
         skill = _make_skill(with_storage=True)
-        record = {"git_sha": ""}
+        record = UpdateRecord(
+            timestamp=datetime.now(),
+            version="0.1.0",
+            previous_version="0.0.9",
+            git_sha="",
+            status=UpdateStatus.SUCCESS,
+        )
         skill._storage.get_update_history.return_value = [record]
         req = _make_request("rollback_update")
 
@@ -634,7 +642,13 @@ class TestHandleRollback:
     async def test_successful_rollback(self) -> None:
         skill = _make_skill(with_storage=True)
         sha = "abc123def456789000"
-        record = {"git_sha": sha}
+        record = UpdateRecord(
+            timestamp=datetime.now(),
+            version="0.1.0",
+            previous_version="0.0.9",
+            git_sha=sha,
+            status=UpdateStatus.SUCCESS,
+        )
         skill._storage.get_update_history.return_value = [record]
         skill._manager.rollback.return_value = True
         req = _make_request("rollback_update")
@@ -650,7 +664,13 @@ class TestHandleRollback:
     async def test_failed_rollback(self) -> None:
         skill = _make_skill(with_storage=True)
         sha = "abc123def456789000"
-        record = {"git_sha": sha}
+        record = UpdateRecord(
+            timestamp=datetime.now(),
+            version="0.1.0",
+            previous_version="0.0.9",
+            git_sha=sha,
+            status=UpdateStatus.SUCCESS,
+        )
         skill._storage.get_update_history.return_value = [record]
         skill._manager.rollback.return_value = False
         req = _make_request("rollback_update")
