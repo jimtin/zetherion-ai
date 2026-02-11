@@ -735,8 +735,7 @@ class ZetherionAIBot(discord.Client):
             await interaction.followup.send(f"Changed {user.mention}'s role to **{role}**.")
         else:
             await interaction.followup.send(
-                f"Could not change {user.mention}'s role. "
-                "Check role validity and your permissions."
+                f"Could not change {user.mention}'s role. Check role validity and your permissions."
             )
 
     async def _handle_allowlist(

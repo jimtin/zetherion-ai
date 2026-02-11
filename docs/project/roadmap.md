@@ -8,7 +8,7 @@ Current status and future plans for Zetherion AI.
 
 | Phase | Feature | Status |
 |-------|---------|--------|
-| 1 | Discord bot with dual LLM backends (Gemini + Ollama) | Complete |
+| 1 | Core agent with Discord as first input interface and dual LLM backends (Gemini + Ollama) | Complete |
 | 2 | Message routing with intent classification | Complete |
 | 3 | Qdrant vector memory with semantic search | Complete |
 | 4 | Security controls (rate limiting, allowlist, prompt injection) | Complete |
@@ -79,7 +79,7 @@ The following areas are under consideration for future development. These are id
 
 ### Multi-Tenant API
 
-- REST API for external integrations beyond Discord
+- Public REST API for additional input sources and third-party integrations
 - Multi-user authentication and authorization
 - API rate limiting and usage tracking per tenant
 

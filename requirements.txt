@@ -14,3 +14,4 @@ httpx==0.28.1
 cachetools==5.5.0  # TTL cache for profile system (Phase 5C)
 aiohttp==3.13.3  # Skills service REST API (Phase 5D)
 asyncpg==0.31.0  # PostgreSQL async driver for RBAC and settings
+bcrypt==4.3.0  # API key hashing for telemetry receiver (Phase 10C)

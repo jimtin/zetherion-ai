@@ -106,7 +106,7 @@ Use distroless base images (Chainguard Python) for the bot and skills service co
 
 ### Context
 
-Ollama supports only one loaded model at a time efficiently. The system needs two models: a small router model (llama3.2:1b) for fast intent classification and a larger generation model (llama3.1:8b) for responses. Model swapping between requests causes delays.
+Ollama supports only one loaded model at a time efficiently. The system needs two models: a small router model (llama3.2:3b) for fast intent classification and a larger generation model (llama3.1:8b) for responses. Model swapping between requests causes delays.
 
 ### Decision
 
@@ -123,10 +123,10 @@ Run two separate Ollama containers, each dedicated to one model.
 ### Consequences
 
 - `zetherion-ai-ollama`: Generation model (llama3.1:8b) on port 11434
-- `zetherion-ai-ollama-router`: Router model (llama3.2:1b) on port 11435
+- `zetherion-ai-ollama-router`: Router model (llama3.2:3b) on port 11435
 - Each container has dedicated memory limits
 - Zero model-swap latency
-- Total memory: ~6GB for both (4.7GB generation + 1.3GB router)
+- Total memory: ~6.7GB for both (4.7GB generation + 2.0GB router)
 
 ---
 

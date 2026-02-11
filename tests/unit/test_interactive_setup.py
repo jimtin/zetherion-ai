@@ -42,7 +42,7 @@ def env_example_content() -> str:
         "ANTHROPIC_API_KEY=\n"
         "OPENAI_API_KEY=\n"
         "ROUTER_BACKEND=gemini\n"
-        "OLLAMA_ROUTER_MODEL=llama3.2:1b\n"
+        "OLLAMA_ROUTER_MODEL=llama3.2:3b\n"
         "OLLAMA_GENERATION_MODEL=llama3.1:8b\n"
         "OLLAMA_DOCKER_MEMORY=8\n"
         "ENCRYPTION_PASSPHRASE=\n"
@@ -115,7 +115,7 @@ class TestGenerateEnvFile:
 
         env_content = (tmp_path / ".env").read_text()
         # The router model line should be unchanged from the example
-        assert "OLLAMA_ROUTER_MODEL=llama3.2:1b" in env_content
+        assert "OLLAMA_ROUTER_MODEL=llama3.2:3b" in env_content
 
     def test_generation_model_unchanged_when_gemini_backend(
         self, tmp_path, setup_module, env_example_content, monkeypatch

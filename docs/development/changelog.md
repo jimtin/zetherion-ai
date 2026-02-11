@@ -148,7 +148,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Test suite**: Expanded to **3,000+ tests** (93%+ coverage) across **89 test files** covering **91 source files**
 - **Docker services**: Expanded to **6 services** (bot, skills, qdrant, postgres, ollama, ollama-router)
-- **Ollama models**: Updated from Qwen to Meta Llama (llama3.2:1b for router, llama3.1:8b for generation)
+- **Ollama models**: Updated from Qwen to Meta Llama (llama3.2:3b for router, llama3.1:8b for generation)
 - **Default cloud models**: claude-sonnet-4-5-20250929, gpt-5.2, gemini-2.5-flash
 - **Project renamed** from `secureclaw` to `zetherion-ai`; all imports updated to `zetherion_ai`
 - Docker container names now use hyphens (`zetherion-ai-*`)
@@ -175,7 +175,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Discord bot with dual LLM backends (Gemini + Ollama)
 - Message routing with intent classification
 - Claude / OpenAI integration for complex tasks (claude-sonnet-4-5-20250929, gpt-5.2)
-- Gemini / Ollama integration for simple queries (gemini-2.5-flash, llama3.2:1b)
+- Gemini / Ollama integration for simple queries (gemini-2.5-flash, llama3.2:3b)
 - Qdrant vector database for long-term memory
 - Google Gemini embeddings for semantic search
 - Docker containerization with Compose orchestration
@@ -290,7 +290,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | qdrant | qdrant/qdrant | Vector memory storage |
 | postgres | PostgreSQL 17 Alpine | Personal understanding data |
 | ollama | ollama/ollama | Generation model (llama3.1:8b) |
-| ollama-router | ollama/ollama | Router model (llama3.2:1b) |
+| ollama-router | ollama/ollama | Router model (llama3.2:3b) |
 
 ---
 

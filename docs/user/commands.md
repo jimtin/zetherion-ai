@@ -1,6 +1,6 @@
 # Commands Reference
 
-Complete reference for all Zetherion AI Discord commands, including slash commands, natural language interactions, Gmail integration, GitHub integration, task management, profile management, and cost tracking.
+Complete reference for all Zetherion AI commands. Discord is the first supported input interface, but the underlying skills and agent core are source-agnostic. This reference covers slash commands, natural language interactions, Gmail integration, GitHub integration, task management, profile management, and cost tracking.
 
 ---
 
@@ -46,9 +46,10 @@ Ask Zetherion AI a question or request help with a task. The bot analyzes intent
 ```
 
 **Routing behavior:**
-- Simple questions are handled by Gemini 2.5 Flash (fast, low cost)
-- Complex tasks are routed to Claude Sonnet 4.5 or GPT-5.2 (slower, higher quality)
-- Routing is performed by a local Llama 3.2 1B model; generation for local fallback uses Llama 3.1 8B
+
+- The router classifies your query by intent and complexity, then dispatches to the provider you've configured for that task type
+- You choose between local inference (Ollama) and cloud providers (Gemini, Claude, OpenAI) -- see the LLM Provider Configuration section in the README
+- Routing classification can use Gemini Flash (cloud) or Ollama Llama 3.2 1B (local), depending on your setup
 - The bot searches recent conversation history and relevant memories to provide context
 
 **Expected response time:**
@@ -142,7 +143,7 @@ Natural language commands work via Direct Messages (no prefix needed) or via @me
 
 The bot automatically detects the complexity of your question and routes it to the appropriate model.
 
-**Simple questions** are handled by Gemini 2.5 Flash (fast, free or low cost):
+**Simple questions** are routed to your configured fast provider (e.g. Gemini Flash or Ollama):
 ```
 Hello!
 What's 2 + 2?
@@ -150,7 +151,7 @@ Good morning
 Thanks for your help!
 ```
 
-**Complex questions** are routed to Claude Sonnet 4.5 or GPT-5.2 (slower, higher quality):
+**Complex questions** are routed to your configured reasoning provider (e.g. Claude, GPT, or local Ollama):
 ```
 Write a Python function to validate email addresses
 Explain how transformers work in detail
@@ -159,10 +160,11 @@ Debug this code: [code snippet]
 ```
 
 **Routing logic:**
-- The Llama 3.2 1B router model analyzes your message
-- If complexity confidence exceeds 70%, the query is routed to Claude Sonnet 4.5 or GPT-5.2
-- Otherwise, Gemini 2.5 Flash handles it directly
-- For local inference fallback, Llama 3.1 8B is used for generation
+
+- The router classifies your message by intent and complexity (using Gemini Flash or local Llama 3.2 1B, depending on your configuration)
+- If the query is classified as complex, it is dispatched to your configured reasoning provider
+- Simple queries go to your configured fast provider
+- You control which providers handle which task types -- see the LLM Provider Configuration section in the README
 
 ---
 

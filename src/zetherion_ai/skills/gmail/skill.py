@@ -391,9 +391,7 @@ class GmailSkill(Skill):
 
         lines = [f"Found {len(matched)} email(s) matching '{query}':"]
         for e in matched[:5]:
-            lines.append(
-                f"  - {e.message.subject or '(no subject)'}" f" from {e.message.from_email}"
-            )
+            lines.append(f"  - {e.message.subject or '(no subject)'} from {e.message.from_email}")
 
         return SkillResponse(
             request_id=request.id,

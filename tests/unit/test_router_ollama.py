@@ -16,7 +16,7 @@ def mock_settings():
     settings = MagicMock()
     # Router uses dedicated container URL
     settings.ollama_router_url = "http://ollama-router:11434"
-    settings.ollama_router_model = "llama3.2:1b"
+    settings.ollama_router_model = "llama3.2:3b"
     settings.ollama_timeout = 30.0
     return settings
 
@@ -29,7 +29,7 @@ class TestOllamaRouterBackendInit:
         with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             assert backend._url == "http://ollama-router:11434"
-            assert backend._model == "llama3.2:1b"
+            assert backend._model == "llama3.2:3b"
             assert backend._timeout == 30.0
 
 
@@ -607,7 +607,7 @@ class TestOllamaRouterBackendHealthCheck:
         mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {
             "models": [
-                {"name": "llama3.2:1b"},  # Default router model
+                {"name": "llama3.2:3b"},  # Default router model
                 {"name": "llama3.1:8b"},
                 {"name": "phi-3"},
             ]

@@ -214,15 +214,15 @@ class QdrantMemory:
                 ]
             )
 
-        results = await self._client.search(  # type: ignore[attr-defined]
+        response = await self._client.query_points(
             collection_name=CONVERSATIONS_COLLECTION,
-            query_vector=query_vector,
+            query=query_vector,
             query_filter=filter_conditions,
             limit=limit,
         )
 
         output = []
-        for hit in results:
+        for hit in response.points:
             payload = hit.payload or {}
             # Decrypt sensitive fields if encryptor is configured
             if self._encryptor is not None:
@@ -281,15 +281,15 @@ class QdrantMemory:
         if filter_conditions_list:
             filter_conditions = qdrant_models.Filter(must=filter_conditions_list)
 
-        results = await self._client.search(  # type: ignore[attr-defined]
+        response = await self._client.query_points(
             collection_name=LONG_TERM_MEMORY_COLLECTION,
-            query_vector=query_vector,
+            query=query_vector,
             query_filter=filter_conditions,
             limit=limit,
         )
 
         output = []
-        for hit in results:
+        for hit in response.points:
             payload = hit.payload or {}
             # Decrypt sensitive fields if encryptor is configured
             if self._encryptor is not None:

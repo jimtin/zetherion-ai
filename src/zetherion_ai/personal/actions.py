@@ -126,8 +126,7 @@ class ActionController:
                     trust_score=trust,
                     should_execute=True,
                     reason=(
-                        f"Auto-execute (draft mode, trust={trust:.2f}"
-                        f" >= {AUTO_TRUST_THRESHOLD})"
+                        f"Auto-execute (draft mode, trust={trust:.2f} >= {AUTO_TRUST_THRESHOLD})"
                     ),
                 )
             return ActionDecision(

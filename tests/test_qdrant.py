@@ -88,7 +88,9 @@ class TestQdrantMemory:
         mock_hit.score = 0.95
         mock_hit.payload = {"content": "Hello", "role": "user"}
 
-        mock_qdrant_client.search.return_value = [mock_hit]
+        mock_response = Mock()
+        mock_response.points = [mock_hit]
+        mock_qdrant_client.query_points.return_value = mock_response
 
         results = await memory_client.search_conversations(
             query="Hello",
@@ -101,7 +103,7 @@ class TestQdrantMemory:
         assert results[0]["score"] == 0.95
         assert results[0]["content"] == "Hello"
 
-        mock_qdrant_client.search.assert_called_once()
+        mock_qdrant_client.query_points.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_search_memories(self, memory_client, mock_qdrant_client):
@@ -111,7 +113,9 @@ class TestQdrantMemory:
         mock_hit.score = 0.88
         mock_hit.payload = {"content": "Dark mode preference", "type": "preference"}
 
-        mock_qdrant_client.search.return_value = [mock_hit]
+        mock_response = Mock()
+        mock_response.points = [mock_hit]
+        mock_qdrant_client.query_points.return_value = mock_response
 
         results = await memory_client.search_memories(
             query="preferences",

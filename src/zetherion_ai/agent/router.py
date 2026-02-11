@@ -47,6 +47,10 @@ class MessageIntent(Enum):
     PERSONAL_MODEL = "personal_model"  # Personal understanding queries
     # Phase 8 intents
     EMAIL_MANAGEMENT = "email_management"  # Email checking, drafts, digests
+    # Phase 10B intents
+    SYSTEM_HEALTH = "system_health"  # Health status, reports, system metrics
+    # Phase 10A intents
+    UPDATE_MANAGEMENT = "update_management"  # Version checks, updates, rollback
 
 
 @dataclass
@@ -110,6 +114,13 @@ ROUTER_PROMPT = """You are a message router. Classify the user's message into on
    Examples: "Check my emails", "Any urgent emails?", "Show unread emails", \
 "Review my drafts", "Give me a morning digest", "Weekly email summary", \
 "Search emails from Alice", "Gmail status", "How many emails today?"
+
+11. SYSTEM_HEALTH - System health status, performance reports, diagnostics
+   Examples: "How's your health?", "System status", "Health report", \
+"Are you feeling okay?", "Run diagnostics", "Show system metrics"
+12. UPDATE_MANAGEMENT - Version checking, applying updates, rollback
+   Examples: "Check for updates", "What version are you?", \
+"Apply the latest update", "Rollback to previous version"
 
 Respond with ONLY a JSON object:
 {"intent": "INTENT_NAME", "confidence": 0.0-1.0, "reasoning": "brief reason"}

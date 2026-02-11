@@ -26,6 +26,7 @@ wheels/
 
 # Virtual environments
 .venv/
+.venv.bak/
 venv/
 ENV/
 
@@ -65,6 +66,9 @@ htmlcov/
 .coverage.*
 coverage.xml
 docs/implementation_plan.md
+
+# Benchmark results (large JSON files)
+benchmarks/results/*.json
 
 # Gitleaks
 gitleaks-report.json

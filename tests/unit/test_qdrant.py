@@ -259,7 +259,9 @@ class TestQdrantMemorySearchConversations:
             "user_id": 12345,
             "role": "user",
         }
-        mock_client.search = AsyncMock(return_value=[mock_hit])
+        mock_response = MagicMock()
+        mock_response.points = [mock_hit]
+        mock_client.query_points = AsyncMock(return_value=mock_response)
 
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
@@ -278,7 +280,9 @@ class TestQdrantMemorySearchConversations:
     async def test_search_conversations_with_user_filter(self, mock_settings, mock_embeddings):
         """Test conversation search with user filter."""
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(return_value=[])
+        mock_response = MagicMock()
+        mock_response.points = []
+        mock_client.query_points = AsyncMock(return_value=mock_response)
 
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
@@ -289,7 +293,7 @@ class TestQdrantMemorySearchConversations:
                     await memory.search_conversations("test", user_id=12345)
 
         # Verify filter was passed
-        call_args = mock_client.search.call_args
+        call_args = mock_client.query_points.call_args
         assert call_args[1]["query_filter"] is not None
 
     @pytest.mark.asyncio
@@ -302,7 +306,9 @@ class TestQdrantMemorySearchConversations:
         mock_hit.id = "test-id"
         mock_hit.score = 0.9
         mock_hit.payload = {"content": "encrypted", "_encrypted": True}
-        mock_client.search = AsyncMock(return_value=[mock_hit])
+        mock_response = MagicMock()
+        mock_response.points = [mock_hit]
+        mock_client.query_points = AsyncMock(return_value=mock_response)
 
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
@@ -329,7 +335,9 @@ class TestQdrantMemorySearchMemories:
             "content": "User likes Python",
             "type": "preference",
         }
-        mock_client.search = AsyncMock(return_value=[mock_hit])
+        mock_response = MagicMock()
+        mock_response.points = [mock_hit]
+        mock_client.query_points = AsyncMock(return_value=mock_response)
 
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
@@ -347,7 +355,9 @@ class TestQdrantMemorySearchMemories:
     async def test_search_memories_with_type_filter(self, mock_settings, mock_embeddings):
         """Test memory search with type filter."""
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(return_value=[])
+        mock_response = MagicMock()
+        mock_response.points = []
+        mock_client.query_points = AsyncMock(return_value=mock_response)
 
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
@@ -358,7 +368,7 @@ class TestQdrantMemorySearchMemories:
                     await memory.search_memories("test", memory_type="preference")
 
         # Verify filter was passed
-        call_args = mock_client.search.call_args
+        call_args = mock_client.query_points.call_args
         assert call_args[1]["query_filter"] is not None
 
 
@@ -512,7 +522,9 @@ class TestSearchMemoriesUserId:
     ):
         """Test that search_memories adds FieldCondition filter for user_id when provided."""
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(return_value=[])
+        mock_response = MagicMock()
+        mock_response.points = []
+        mock_client.query_points = AsyncMock(return_value=mock_response)
 
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
@@ -522,7 +534,7 @@ class TestSearchMemoriesUserId:
                     memory = QdrantMemory()
                     await memory.search_memories("test query", user_id=12345)
 
-        call_args = mock_client.search.call_args
+        call_args = mock_client.query_points.call_args
         query_filter = call_args[1]["query_filter"]
         assert query_filter is not None
         # Should have a user_id FieldCondition in the must list
@@ -535,7 +547,9 @@ class TestSearchMemoriesUserId:
     ):
         """Test that search_memories does NOT filter by user_id when not provided."""
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(return_value=[])
+        mock_response = MagicMock()
+        mock_response.points = []
+        mock_client.query_points = AsyncMock(return_value=mock_response)
 
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
@@ -545,7 +559,7 @@ class TestSearchMemoriesUserId:
                     memory = QdrantMemory()
                     await memory.search_memories("test query")
 
-        call_args = mock_client.search.call_args
+        call_args = mock_client.query_points.call_args
         query_filter = call_args[1]["query_filter"]
         # No filter at all when neither memory_type nor user_id provided
         assert query_filter is None
@@ -554,7 +568,9 @@ class TestSearchMemoriesUserId:
     async def test_search_memories_user_id_with_type_filter(self, mock_settings, mock_embeddings):
         """Test that search_memories combines user_id and memory_type filters."""
         mock_client = AsyncMock()
-        mock_client.search = AsyncMock(return_value=[])
+        mock_response = MagicMock()
+        mock_response.points = []
+        mock_client.query_points = AsyncMock(return_value=mock_response)
 
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
@@ -566,7 +582,7 @@ class TestSearchMemoriesUserId:
                         "test query", memory_type="preference", user_id=99999
                     )
 
-        call_args = mock_client.search.call_args
+        call_args = mock_client.query_points.call_args
         query_filter = call_args[1]["query_filter"]
         assert query_filter is not None
         field_keys = [cond.key for cond in query_filter.must]
@@ -677,7 +693,9 @@ class TestSearchMemoriesDecryption:
         mock_hit.id = "memory-id"
         mock_hit.score = 0.9
         mock_hit.payload = {"content": "encrypted data", "_encrypted": True}
-        mock_client.search = AsyncMock(return_value=[mock_hit])
+        mock_response = MagicMock()
+        mock_response.points = [mock_hit]
+        mock_client.query_points = AsyncMock(return_value=mock_response)
 
         with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
             with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):

@@ -482,8 +482,6 @@ def main() -> None:
     """Main entry point for the skills service."""
     from zetherion_ai.config import get_settings
 
-    get_settings()
-
     # Get configuration from environment
     api_secret = os.environ.get("SKILLS_API_SECRET")
     host = os.environ.get("SKILLS_HOST", "0.0.0.0")  # nosec B104 - Docker container
@@ -493,12 +491,29 @@ def main() -> None:
     registry = SkillRegistry()
 
     from zetherion_ai.skills.calendar import CalendarSkill
+    from zetherion_ai.skills.health_analyzer import HealthAnalyzerSkill
     from zetherion_ai.skills.profile_skill import ProfileSkill
     from zetherion_ai.skills.task_manager import TaskManagerSkill
+    from zetherion_ai.skills.update_checker import UpdateCheckerSkill
 
+    settings = get_settings()
     registry.register(TaskManagerSkill())
     registry.register(CalendarSkill())
     registry.register(ProfileSkill())
+    registry.register(HealthAnalyzerSkill())
+    registry.register(
+        UpdateCheckerSkill(
+            github_repo=settings.auto_update_repo,
+            auto_apply=not settings.update_require_approval,
+            enabled=settings.auto_update_enabled,
+        )
+    )
+
+    # Conditional: Fleet Insights (central instance only)
+    if settings.telemetry_central_mode:
+        from zetherion_ai.skills.fleet_insights import FleetInsightsSkill
+
+        registry.register(FleetInsightsSkill())
 
     # Initialize all skills
     async def init_and_run() -> None:

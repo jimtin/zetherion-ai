@@ -13,6 +13,7 @@ useDefault = true
 paths = [
     '''\.git/''',
     '''\.venv/''',
+    '''\.venv\.bak/''',
     '''venv/''',
     '''node_modules/''',
     '''__pycache__/''',

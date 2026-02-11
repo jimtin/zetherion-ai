@@ -15,9 +15,9 @@ Zetherion AI runs as 6 Docker services connected via an internal bridge network 
 | qdrant | qdrant/qdrant (pinned digest) | 6333 (host) | Vector database | 256M - 2G | 0.25 - 2.0 |
 | postgres | postgres:17-alpine | 5432 (internal) | Relational database | 64M - 256M | 0.25 - 1.0 |
 | ollama | ollama/ollama (pinned digest) | 11434 (host) | LLM generation + embeddings | 2G - 8G | 1.0 - 4.0 |
-| ollama-router | ollama/ollama (pinned digest) | none | Query classification | 512M - 1G | 0.5 - 2.0 |
+| ollama-router | ollama/ollama (pinned digest) | none | Query classification | 1.5G - 3G | 0.5 - 2.0 |
 
-**Total resource envelope:** 3.5G - 14.25G memory, 2.75 - 12.0 CPU cores.
+**Total resource envelope:** 4.5G - 16.25G memory, 2.75 - 12.0 CPU cores.
 
 ---
 
@@ -111,8 +111,8 @@ Dedicated lightweight Ollama container for fast query classification. Keeps a sm
 - **Ports**: None exposed to host. Internal network access only.
 - **Volume**: `ollama_router_models:/root/.ollama` -- Separate persistent volume from the generation container. Each container manages its own model cache independently.
 - **Health Check**: TCP connection test to port 11434 every 30 seconds, 10-second timeout, 3 retries, 30-second startup period. Faster startup than the generation container due to the smaller model.
-- **Resources**: 512M reserved, 1G limit. 0.5 CPU reserved, 2.0 CPU limit.
-- **Model**: `llama3.2:1b` -- Tiny classification model (1 billion parameters). Fast enough for real-time query routing on CPU.
+- **Resources**: 1.5G reserved, 3G limit. 0.5 CPU reserved, 2.0 CPU limit.
+- **Model**: `llama3.2:3b` -- Small classification model (3 billion parameters). Fast enough for real-time query routing on CPU.
 
 ---
 
@@ -161,7 +161,7 @@ All other services (bot, skills, postgres, ollama-router) are accessible only fr
 |--------|------|---------|---------|
 | `qdrant_storage` | Named | qdrant | Vector embeddings, indexes, and collection metadata |
 | `ollama_models` | Named | ollama | Generation model weights (llama3.1:8b, nomic-embed-text) |
-| `ollama_router_models` | Named | ollama-router | Router model weights (llama3.2:1b) |
+| `ollama_router_models` | Named | ollama-router | Router model weights (llama3.2:3b) |
 | `postgres_data` | Named | postgres | Relational data (users, settings, profiles, Gmail, GitHub) |
 | `./data` | Bind mount | bot | Encryption salt file, SQLite cost database, local state |
 | `./logs` | Bind mount | bot | Structured JSON application logs with rotation |
@@ -238,7 +238,7 @@ In a single-container setup, every routing request would trigger a model swap fr
 
 **The Two-Container Solution**
 
-- **ollama-router** keeps `llama3.2:1b` (1B parameters) loaded at all times. This model is small enough to classify queries in under 500ms on CPU, and the container only needs 512M-1G of memory.
+- **ollama-router** keeps `llama3.2:3b` (3B parameters) loaded at all times. This model is small enough to classify queries in under 500ms on CPU, and the container only needs 1.5G-3G of memory.
 - **ollama** keeps `llama3.1:8b` (8B parameters) and `nomic-embed-text` loaded for generation and embedding tasks. This container has a larger resource allocation (2G-8G memory) to accommodate the bigger model.
 
 Each container maintains its own model cache via separate named volumes (`ollama_models` and `ollama_router_models`), ensuring that model downloads are independent and persistent.
@@ -320,7 +320,7 @@ docker exec zetherion-ai-ollama ollama pull llama3.1:8b
 docker exec zetherion-ai-ollama ollama pull nomic-embed-text
 
 # Pull the router model into the router container
-docker exec zetherion-ai-ollama-router ollama pull llama3.2:1b
+docker exec zetherion-ai-ollama-router ollama pull llama3.2:3b
 
 # List models in each container
 docker exec zetherion-ai-ollama ollama list

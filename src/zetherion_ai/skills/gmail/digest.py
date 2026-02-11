@@ -231,8 +231,7 @@ class DigestGenerator:
             )
             for thread in neglected[:5]:
                 neglect_section.items.append(
-                    f"'{thread['subject']}' from {thread['from_email']}"
-                    f" ({thread['days_old']}d ago)"
+                    f"'{thread['subject']}' from {thread['from_email']} ({thread['days_old']}d ago)"
                 )
             digest.sections.append(neglect_section)
 
@@ -322,8 +321,7 @@ class DigestGenerator:
             )
             for thread in neglected:
                 neglect_section.items.append(
-                    f"'{thread['subject']}' from {thread['from_email']}"
-                    f" ({thread['days_old']}d ago)"
+                    f"'{thread['subject']}' from {thread['from_email']} ({thread['days_old']}d ago)"
                 )
             digest.sections.append(neglect_section)
 

@@ -53,7 +53,9 @@ def _build_memory() -> QdrantMemory:
         with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient") as mock_client:
             client = AsyncMock()
             client.upsert = AsyncMock()
-            client.search = AsyncMock(return_value=[])
+            _empty_response = MagicMock()
+            _empty_response.points = []
+            client.query_points = AsyncMock(return_value=_empty_response)
             client.scroll = AsyncMock(return_value=([], None))
             client.get_collections = AsyncMock(return_value=MagicMock(collections=[]))
             mock_client.return_value = client
@@ -240,7 +242,9 @@ async def test_load_profile_round_trip(builder, mock_memory):
             "decay_rate": 0.01,
         },
     }
-    mock_memory._test_client.search = AsyncMock(return_value=[hit])
+    mock_resp = MagicMock()
+    mock_resp.points = [hit]
+    mock_memory._test_client.query_points = AsyncMock(return_value=mock_resp)
 
     entries = await builder._load_profile("user-1")
 
@@ -281,7 +285,9 @@ async def test_employment_profile_persistence(builder, mock_memory):
         "type": "employment_profile",
         "metadata": profile_dict,
     }
-    mock_memory._test_client.search = AsyncMock(return_value=[hit])
+    mock_resp = MagicMock()
+    mock_resp.points = [hit]
+    mock_memory._test_client.query_points = AsyncMock(return_value=mock_resp)
 
     # Clear the cache so it actually loads from "Qdrant"
     builder._cache.invalidate("user-1")

@@ -15,12 +15,14 @@ For the overall system architecture, see [`../technical/architecture.md`](../tec
 | Git | 2.30+ | Conventional Commits enforced |
 | Code Editor | -- | VSCode recommended (config included) |
 
-**API keys needed** (at minimum):
+**API keys needed:**
 
-- Discord Bot Token (required)
-- Gemini API Key (required, free tier available)
+- Discord Bot Token (required -- first supported input interface)
+- Gemini API Key (optional, free tier available -- enables cloud routing and simple queries)
 - Anthropic API Key (optional, for Claude `claude-sonnet-4-5-20250929`)
 - OpenAI API Key (optional, for `gpt-5.2`)
+
+All cloud LLM providers are optional. Ollama provides fully local inference out of the box.
 
 ---
 
@@ -184,7 +186,7 @@ scripts/                            # Utility scripts
 | Complex generation | `claude-sonnet-4-5-20250929` | Anthropic |
 | Complex generation | `gpt-5.2` | OpenAI |
 | Router / simple queries | `gemini-2.5-flash` | Google |
-| Local router | `llama3.2:1b` | Ollama |
+| Local router | `llama3.2:3b` | Ollama |
 | Local generation | `llama3.1:8b` | Ollama |
 
 ### Docker Services
@@ -193,7 +195,7 @@ The production `docker-compose.yml` defines 6 services:
 
 | Service | Purpose |
 |---------|---------|
-| `zetherion-ai-bot` | Main Discord bot container |
+| `zetherion-ai-bot` | Agent core -- input gateway, security, routing, inference |
 | `zetherion-ai-skills` | Skills REST API server |
 | `ollama` | Local LLM inference (generation) |
 | `ollama-router` | Local LLM inference (routing) |
@@ -458,7 +460,7 @@ pytest tests/ -l               # Show local variables on failure
 ```bash
 docker exec zetherion-ai-ollama ollama list
 docker exec zetherion-ai-ollama ollama pull llama3.1:8b
-docker exec zetherion-ai-ollama-router ollama pull llama3.2:1b
+docker exec zetherion-ai-ollama-router ollama pull llama3.2:3b
 ```
 
 ---

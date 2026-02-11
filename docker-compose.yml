@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   zetherion-ai-bot:
     build:
@@ -51,6 +49,32 @@ services:
           cpus: '0.5'
           memory: 512M
 
+  # Traefik reverse proxy for zero-downtime blue-green deployments (Phase 10A)
+  traefik:
+    image: traefik:v3.3
+    container_name: zetherion-ai-traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.skills.address=:8080"
+      - "--api.insecure=false"
+      - "--log.level=WARN"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - zetherion-ai-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 32M
+
   zetherion-ai-skills:
     build:
       context: .
@@ -83,6 +107,14 @@ services:
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - SKILLS_HOST=0.0.0.0
       - SKILLS_PORT=8080
+    # Traefik labels for zero-downtime blue-green deployments
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.skills.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.skills.entrypoints=skills"
+      - "traefik.http.services.skills.loadbalancer.server.port=8080"
+      - "traefik.http.services.skills.loadbalancer.healthcheck.path=/health"
+      - "traefik.http.services.skills.loadbalancer.healthcheck.interval=5s"
     # No ports exposed to host - only accessible from bot via internal network
     networks:
       - zetherion-ai-net
@@ -156,15 +188,15 @@ services:
       - ollama_router_models:/root/.ollama
     networks:
       - zetherion-ai-net
-    # Resource limits for router (small model only)
+    # Resource limits for router (3b model needs ~2.5GB + inference overhead)
     deploy:
       resources:
         limits:
           cpus: '2.0'
-          memory: 1G  # 0.5b model only needs ~500MB
+          memory: 3G
         reservations:
           cpus: '0.5'
-          memory: 512M
+          memory: 1536M
 
   postgres:
     image: postgres:17-alpine

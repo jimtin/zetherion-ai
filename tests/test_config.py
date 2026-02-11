@@ -687,7 +687,7 @@ class TestOllamaRouterContainerConfiguration:
         settings = create_test_settings()
         assert settings.ollama_router_host == "ollama-router"
         assert settings.ollama_router_port == 11434
-        assert settings.ollama_router_model == "llama3.2:1b"
+        assert settings.ollama_router_model == "llama3.2:3b"
 
     def test_ollama_router_url_property_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test that ollama_router_url is constructed correctly with default values."""
@@ -738,7 +738,7 @@ class TestOllamaRouterContainerConfiguration:
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("OLLAMA_ROUTER_HOST", "custom-router-host")
         monkeypatch.setenv("OLLAMA_ROUTER_PORT", "8888")
-        monkeypatch.setenv("OLLAMA_ROUTER_MODEL", "llama3.2:1b")
+        monkeypatch.setenv("OLLAMA_ROUTER_MODEL", "llama3.2:3b")
 
         from zetherion_ai.config import get_settings
 
@@ -747,7 +747,7 @@ class TestOllamaRouterContainerConfiguration:
         settings = create_test_settings()
         assert settings.ollama_router_host == "custom-router-host"
         assert settings.ollama_router_port == 8888
-        assert settings.ollama_router_model == "llama3.2:1b"
+        assert settings.ollama_router_model == "llama3.2:3b"
         assert settings.ollama_router_url == "http://custom-router-host:8888"
 
     def test_dual_container_configuration(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -757,7 +757,7 @@ class TestOllamaRouterContainerConfiguration:
         # Router container
         monkeypatch.setenv("OLLAMA_ROUTER_HOST", "router-container")
         monkeypatch.setenv("OLLAMA_ROUTER_PORT", "11435")
-        monkeypatch.setenv("OLLAMA_ROUTER_MODEL", "llama3.2:1b")
+        monkeypatch.setenv("OLLAMA_ROUTER_MODEL", "llama3.2:3b")
         # Generation container
         monkeypatch.setenv("OLLAMA_HOST", "generation-container")
         monkeypatch.setenv("OLLAMA_PORT", "11434")
@@ -771,7 +771,7 @@ class TestOllamaRouterContainerConfiguration:
         # Verify router container settings
         assert settings.ollama_router_host == "router-container"
         assert settings.ollama_router_port == 11435
-        assert settings.ollama_router_model == "llama3.2:1b"
+        assert settings.ollama_router_model == "llama3.2:3b"
         assert settings.ollama_router_url == "http://router-container:11435"
         # Verify generation container settings
         assert settings.ollama_host == "generation-container"

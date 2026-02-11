@@ -825,7 +825,7 @@ The router prompt is built in `src/zetherion_ai/agent/prompts.py`. Add your inte
 # "Current temperature in New York" -> weather_current
 ```
 
-The exact location and format depends on how the router prompt is structured. The key requirement is that the router model (`gemini-2.5-flash` or `llama3.2:1b`) sees enough examples to reliably classify weather-related messages to your intents.
+The exact location and format depends on how the router prompt is structured. The key requirement is that the router model (`gemini-2.5-flash` or `llama3.2:3b`) sees enough examples to reliably classify weather-related messages to your intents.
 
 ---
 

@@ -321,7 +321,7 @@ If you run integration tests locally:
 | Anthropic Claude | claude-sonnet-4-5-20250929 | 5-10 requests/test run | ~$0.10-0.50/run |
 | OpenAI | gpt-5.2 | 5-10 requests/test run | ~$0.05-0.30/run |
 | Discord API | -- | Unlimited | **Free** |
-| Ollama (local) | llama3.2:1b, llama3.1:8b | Unlimited | **Free** (runs locally) |
+| Ollama (local) | llama3.2:3b, llama3.1:8b | Unlimited | **Free** (runs locally) |
 
 **Typical cost:** $0-1/month for occasional local testing.
 

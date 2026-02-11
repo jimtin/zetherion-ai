@@ -51,6 +51,9 @@ python -m pytest \
     tests/integration/test_skills_e2e.py \
     tests/integration/test_user_isolation.py \
     tests/integration/test_encryption_at_rest.py \
+    tests/integration/test_health_skill_http.py \
+    tests/integration/test_update_skill_http.py \
+    tests/integration/test_telemetry_http.py \
     -m integration --tb=short -q
 
 # ── Step 4: Start Docker ──────────────────────────────────────────
@@ -95,7 +98,7 @@ done
 # ── Step 5: Pull Ollama models ────────────────────────────────────
 echo ""
 echo "[5/7] Pulling Ollama models..."
-docker exec "${PROJECT}-ollama-router" ollama pull llama3.2:1b >/dev/null 2>&1
+docker exec "${PROJECT}-ollama-router" ollama pull llama3.2:3b >/dev/null 2>&1
 docker exec "${PROJECT}-ollama" ollama pull nomic-embed-text >/dev/null 2>&1
 docker exec "${PROJECT}-ollama" ollama pull llama3.1:8b >/dev/null 2>&1
 echo "Models ready."
@@ -107,8 +110,12 @@ sleep 5
 # DOCKER_MANAGED_EXTERNALLY prevents test_e2e.py from tearing down
 # the environment — the pre-push script owns the lifecycle.
 echo ""
-echo "[6/7] Docker E2E tests (test_e2e.py)..."
-DOCKER_MANAGED_EXTERNALLY=true python -m pytest tests/integration/test_e2e.py \
+echo "[6/7] Docker E2E tests..."
+DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
+    tests/integration/test_e2e.py \
+    tests/integration/test_health_e2e.py \
+    tests/integration/test_update_e2e.py \
+    tests/integration/test_telemetry_e2e.py \
     -m integration -v --tb=short -s
 
 # ── Step 7: Discord E2E tests ────────────────────────────────────

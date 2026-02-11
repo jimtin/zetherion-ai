@@ -186,9 +186,7 @@ class PersonalModelSkill(Skill):
                 parts.append(f"Goals: {', '.join(profile.goals)}")
             if profile.communication_style:
                 cs = profile.communication_style
-                parts.append(
-                    f"Style: formality={cs.formality:.1f}," f" verbosity={cs.verbosity:.1f}"
-                )
+                parts.append(f"Style: formality={cs.formality:.1f}, verbosity={cs.verbosity:.1f}")
         else:
             parts.append("I don't have a profile for you yet.")
 
@@ -196,16 +194,14 @@ class PersonalModelSkill(Skill):
             parts.append(f"\n**Contacts** ({len(contacts)}):")
             for c in contacts:
                 name = c.contact_name or c.contact_email or "unknown"
-                parts.append(
-                    f"  - {name} ({c.relationship.value}," f" importance={c.importance:.1f})"
-                )
+                parts.append(f"  - {name} ({c.relationship.value}, importance={c.importance:.1f})")
 
         if learnings:
             confirmed = sum(1 for lr in learnings if lr.confirmed)
-            parts.append(f"\n**Learnings**: {len(learnings)} total" f" ({confirmed} confirmed)")
+            parts.append(f"\n**Learnings**: {len(learnings)} total ({confirmed} confirmed)")
             for lr in learnings[:5]:
                 marker = "+" if lr.confirmed else "?"
-                parts.append(f"  [{marker}] {lr.content}" f" (confidence={lr.confidence:.1f})")
+                parts.append(f"  [{marker}] {lr.content} (confidence={lr.confidence:.1f})")
 
         if policies:
             parts.append(f"\n**Policies**: {len(policies)} configured")
@@ -315,7 +311,7 @@ class PersonalModelSkill(Skill):
             count = await self._storage.delete_learnings_by_category(user_id, category)
             return SkillResponse(
                 request_id=request.id,
-                message=(f"Forgotten! Deleted {count} learning(s)" f" in category '{category}'."),
+                message=(f"Forgotten! Deleted {count} learning(s) in category '{category}'."),
                 data={"deleted": True, "count": count, "category": category},
             )
 
@@ -446,9 +442,7 @@ class PersonalModelSkill(Skill):
         policy_data = []
         for p in policies:
             parts.append(
-                f"  - {p.domain.value}/{p.action}:"
-                f" mode={p.mode.value},"
-                f" trust={p.trust_score:.2f}"
+                f"  - {p.domain.value}/{p.action}: mode={p.mode.value}, trust={p.trust_score:.2f}"
             )
             policy_data.append(
                 {

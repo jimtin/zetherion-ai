@@ -72,7 +72,7 @@ These settings control the dedicated lightweight Ollama container used for fast 
 |----------|---------|-------------|
 | `OLLAMA_ROUTER_HOST` | `ollama-router` | Router container hostname (Docker service name) |
 | `OLLAMA_ROUTER_PORT` | `11434` | Router container API port |
-| `OLLAMA_ROUTER_MODEL` | `llama3.2:1b` | Small, fast model for query classification |
+| `OLLAMA_ROUTER_MODEL` | `llama3.2:3b` | Small, fast model for query classification |
 
 ## Embeddings Configuration
 

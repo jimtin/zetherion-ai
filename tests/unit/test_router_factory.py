@@ -15,7 +15,7 @@ def mock_settings_ollama():
     settings.router_backend = "ollama"
     # Router container settings (dedicated for routing)
     settings.ollama_router_url = "http://ollama-router:11434"
-    settings.ollama_router_model = "llama3.2:1b"
+    settings.ollama_router_model = "llama3.2:3b"
     settings.ollama_timeout = 30.0
     # Generation container settings (for generation + embeddings)
     settings.ollama_url = "http://ollama:11434"

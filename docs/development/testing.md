@@ -530,7 +530,7 @@ pytest tests/unit/test_inference_broker.py::test_broker_retries_on_failure -s -v
 ### Test Design
 
 - **One assertion per concept.** A test can have multiple `assert` statements, but they should all verify a single logical behavior.
-- **Mock external services.** LLM APIs (`claude-sonnet-4-5-20250929`, `gpt-5.2`, `gemini-2.5-flash`), Discord, Qdrant, PostgreSQL, and Ollama (`llama3.2:1b`, `llama3.1:8b`) should all be mocked in unit tests.
+- **Mock external services.** LLM APIs (`claude-sonnet-4-5-20250929`, `gpt-5.2`, `gemini-2.5-flash`), Discord, Qdrant, PostgreSQL, and Ollama (`llama3.2:3b`, `llama3.1:8b`) should all be mocked in unit tests.
 - **Do not test implementation details.** Test the public interface, not internal method calls.
 - **Clean up resources.** Use `yield` fixtures to guarantee teardown, especially for async clients and temporary files.
 - **Keep tests deterministic.** Avoid random data, time-dependent assertions, or network calls in unit tests.

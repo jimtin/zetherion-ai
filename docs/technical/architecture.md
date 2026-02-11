@@ -2,7 +2,7 @@
 
 ## Overview
 
-Zetherion AI is a Discord-based personal AI assistant built on a microservice architecture with 6 Docker services. The system provides multi-provider LLM routing, AES-256-GCM encrypted semantic memory, Gmail integration, GitHub management, and deep personal understanding through passive observation and explicit learning.
+Zetherion AI is a source-agnostic personal AI assistant built on a microservice architecture with 6 Docker services. The system accepts input from any source (Discord is the first interface, with REST API, email sync, and webhooks also available) and provides user-controlled multi-provider LLM routing, AES-256-GCM encrypted semantic memory, Gmail integration, GitHub management, and deep personal understanding through passive observation, proactive prompting, and explicit learning.
 
 The codebase comprises 91 source files with 3,000+ tests across 89 test files, maintaining 93%+ code coverage. The architecture prioritizes security, modularity, and cost-efficient inference by routing queries to the most appropriate LLM provider based on complexity, privacy requirements, and task type.
 
@@ -20,7 +20,8 @@ The codebase comprises 91 source files with 3,000+ tests across 89 test files, m
 ## Architecture Diagram
 
 ```
-Discord User
+Any Input Source
+(Discord / REST API / Email / Webhooks)
     |
     v
 +---[Bot Service]---+
@@ -33,7 +34,7 @@ Discord User
 |   - Providers     |     |-> Claude Sonnet 4.5      (complex reasoning)
 |   - Context       |     |-> GPT-5.2               (alternative complex)
 |                   |     |-> Ollama llama3.1:8b     (local/private)
-|                   |     |-> Ollama llama3.2:1b     (router classification)
+|                   |     |-> Ollama llama3.2:3b     (router classification)
 +--------+----------+
          |
     +----+----+
@@ -60,11 +61,11 @@ Discord User
 
 ### Bot Service
 
-The Bot Service is the primary entry point for all user interactions. It connects to Discord via the gateway protocol using `discord.py` and orchestrates the entire request lifecycle.
+The Bot Service is the primary entry point for user interactions. Discord is the first supported interface, but the service orchestrates the entire request lifecycle independently of the input source. The agent core, security layer, router, and inference broker all operate on messages regardless of origin.
 
 **Core Responsibilities:**
 
-- **Discord Gateway** -- Maintains a persistent WebSocket connection to Discord. Handles direct messages, @mentions, and slash commands. Automatically splits responses exceeding Discord's 2,000-character limit.
+- **Input Gateway** -- Currently connects to Discord via the gateway protocol using `discord.py`. Handles direct messages, @mentions, and slash commands. The architecture supports additional input sources (REST API, email, webhooks) through the same agent pipeline.
 
 - **Security Layer** -- Three-stage defense applied to every incoming message before any processing occurs:
   - *User Allowlist*: Only pre-authorized Discord user IDs may interact with the bot. Supports RBAC with owner, admin, and user roles stored in PostgreSQL.
@@ -73,7 +74,7 @@ The Bot Service is the primary entry point for all user interactions. It connect
 
 - **Agent Core** -- Manages the full conversation flow: context assembly, provider selection, response generation, and post-response observation. Handles retry logic with exponential backoff (max 3 retries) for transient API failures.
 
-- **Router** -- Classifies each incoming query by intent and complexity. The router can operate through multiple backends: Gemini Flash (cloud, fast), Ollama llama3.2:1b (local, dedicated container), or local regex fallback. Classification categories include `simple_query`, `complex_task`, `memory_store`, `memory_recall`, `task_management`, and others.
+- **Router** -- Classifies each incoming query by intent and complexity. The router can operate through multiple backends: Gemini Flash (cloud, fast), Ollama llama3.2:3b (local, dedicated container), or local regex fallback. Classification categories include `simple_query`, `complex_task`, `memory_store`, `memory_recall`, `task_management`, and others.
 
 - **InferenceBroker** -- Multi-provider routing engine with fallback chains and cost tracking. Selects the optimal LLM provider based on task type, privacy requirements, cost constraints, and availability. Tracks per-request costs in a local SQLite database.
 
@@ -85,7 +86,7 @@ The Bot Service is the primary entry point for all user interactions. It connect
 | Anthropic Claude | claude-sonnet-4-5-20250929 (Sonnet 4.5) | Complex reasoning, code, analysis |
 | OpenAI | gpt-5.2 | Alternative complex tasks |
 | Ollama (local) | llama3.1:8b | Privacy-sensitive operations |
-| Ollama (local) | llama3.2:1b | Fast query classification (router) |
+| Ollama (local) | llama3.2:3b | Fast query classification (router) |
 
 **Embedding Providers:**
 
@@ -150,33 +151,33 @@ A dedicated Ollama container for privacy-sensitive LLM operations and local embe
 
 A separate, lightweight Ollama container dedicated exclusively to fast query classification.
 
-- **Default Model**: llama3.2:1b (1 billion parameters). Small enough to classify queries in under 500ms on CPU.
+- **Default Model**: llama3.2:3b (3 billion parameters). Small enough to classify queries in under 500ms on CPU.
 - **Purpose**: Eliminates the 2-10 second model-swapping delay that would occur if routing and generation shared a single Ollama instance. Each container keeps exactly one model loaded in memory at all times.
 - **Classification Output**: Returns structured JSON with intent category, confidence score, and provider recommendation.
-- **Resource Allocation**: 512M-1G memory, 0.5-2 CPU cores. Minimal footprint due to the small model size.
+- **Resource Allocation**: 1.5G-3G memory, 0.5-2 CPU cores. Minimal footprint due to the small model size.
 - **Network**: Internal only, no port exposed to host.
 
 ---
 
 ## Request Flow
 
-A complete request lifecycle from Discord message to response:
+A complete request lifecycle from incoming message to response:
 
-1. **Discord message received** -- The Bot Service receives a message event via the Discord gateway WebSocket connection.
+1. **Message received** -- The Bot Service receives a message from an input source (currently Discord via the gateway WebSocket, but the pipeline is source-agnostic).
 
 2. **Security checks** -- Three sequential checks are applied:
    - Rate limit verification (reject if user has exceeded their message quota).
    - Allowlist check (reject if the user's Discord ID is not authorized).
    - Prompt injection scan (reject if the message matches any of the 17 injection detection patterns).
 
-3. **Router classification** -- The message is sent to the router for intent classification. The router attempts Gemini Flash first, falls back to Ollama llama3.2:1b, and finally to local regex patterns if both external calls fail.
+3. **Router classification** -- The message is sent to the router for intent classification. The router attempts Gemini Flash first, falls back to Ollama llama3.2:3b, and finally to local regex patterns if both external calls fail.
 
 4. **Skill dispatch** -- If the router identifies a skill-related intent (e.g., `task_management`, `email_read`, `github_action`), the Bot Service forwards the request to the Skills Service via an internal HTTP call to `http://zetherion-ai-skills:8080`.
 
-5. **Provider selection** -- The InferenceBroker selects the optimal LLM provider based on the routing classification:
-   - Simple queries route to Gemini 2.5 Flash (fast, low cost).
-   - Complex reasoning routes to Claude Sonnet 4.5 (highest quality).
-   - Privacy-sensitive queries route to Ollama llama3.1:8b (local inference).
+5. **Provider selection** -- The InferenceBroker selects an LLM provider based on the routing classification and user configuration. You control which providers handle which task types:
+   - Simple queries can route to Gemini 2.5 Flash or Ollama (your choice).
+   - Complex reasoning can route to Claude Sonnet 4.5, GPT-5.2, or local Ollama (your choice).
+   - Privacy-sensitive queries can be restricted to Ollama llama3.1:8b (local inference, never leaves your machine).
    - Fallback chains ensure a response even if the primary provider is unavailable.
 
 6. **Context assembly** -- The system builds a rich context window by combining:
@@ -189,7 +190,7 @@ A complete request lifecycle from Discord message to response:
 
 8. **Observation pipeline** -- After generating the response, a passive observation step extracts learnings from the conversation (e.g., "user mentioned they prefer Python over JavaScript") and stores them in PostgreSQL for future context enrichment.
 
-9. **Response delivery** -- The response is sent back to Discord. Messages exceeding 2,000 characters are automatically split across multiple messages.
+9. **Response delivery** -- The response is sent back to the originating input source. For Discord, messages exceeding 2,000 characters are automatically split across multiple messages.
 
 10. **Cost tracking** -- The token usage and estimated cost for the request are recorded in a local SQLite database (`costs.db`) for monitoring and budget management.
 

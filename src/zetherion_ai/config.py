@@ -149,7 +149,7 @@ class Settings(BaseSettings):
     )
     ollama_router_port: int = Field(default=11434, description="Ollama router API port")
     ollama_router_model: str = Field(
-        default="llama3.2:1b", description="Ollama model for routing (small, fast)"
+        default="llama3.2:3b", description="Ollama model for routing (small, fast)"
     )
 
     # Embeddings Backend Configuration
@@ -305,6 +305,44 @@ class Settings(BaseSettings):
         default=30, description="Timeout in seconds for GitHub API requests"
     )
 
+    # Health Monitoring Configuration (Phase 10B)
+    health_analysis_enabled: bool = Field(
+        default=True, description="Enable health analysis and metrics collection"
+    )
+    self_healing_enabled: bool = Field(
+        default=True, description="Enable automatic self-healing actions"
+    )
+
+    # Auto-Update Configuration (Phase 10A)
+    auto_update_enabled: bool = Field(default=False, description="Enable automatic update checking")
+    auto_update_repo: str = Field(
+        default="", description="GitHub repo for update checks (owner/repo)"
+    )
+    update_require_approval: bool = Field(
+        default=True, description="Require owner approval before applying updates"
+    )
+
+    # Telemetry Configuration (Phase 10C)
+    telemetry_sharing_enabled: bool = Field(
+        default=False, description="Enable telemetry sharing with central instance"
+    )
+    telemetry_consent_categories: str = Field(
+        default="", description="Comma-separated telemetry categories to share"
+    )
+    telemetry_central_url: str = Field(
+        default="", description="URL of the central telemetry receiver"
+    )
+    telemetry_api_key: str = Field(default="", description="API key issued by central instance")
+    telemetry_central_mode: bool = Field(
+        default=False, description="Enable central telemetry receiver mode"
+    )
+    telemetry_instance_id: str = Field(
+        default="", description="Unique instance ID for telemetry (auto-generated)"
+    )
+    telemetry_report_interval: int = Field(
+        default=86400, description="Seconds between telemetry reports (default 24h)"
+    )
+
     @field_validator(
         "profile_confidence_threshold",
         "default_formality",
@@ -413,6 +451,11 @@ def set_settings_manager(mgr: SettingsManager) -> None:
     """Register the runtime settings manager for dynamic config."""
     global _settings_manager
     _settings_manager = mgr
+
+
+def get_settings_manager() -> SettingsManager | None:
+    """Get the registered settings manager (or None if not yet registered)."""
+    return _settings_manager
 
 
 def get_dynamic(namespace: str, key: str, default: Any = None) -> Any:

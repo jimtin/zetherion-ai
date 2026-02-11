@@ -305,8 +305,7 @@ class Agent:
         client = await self._get_skills_client()
         if not client:
             return (
-                "I'm having trouble connecting to my skills service. "
-                "Please try again in a moment."
+                "I'm having trouble connecting to my skills service. Please try again in a moment."
             )
 
         # Determine intent based on skill name

@@ -52,7 +52,9 @@ def _build_memory(user_id: int | None = None) -> QdrantMemory:
         with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient") as mock_client:
             client = AsyncMock()
             client.upsert = AsyncMock()
-            client.search = AsyncMock(return_value=[])
+            _empty_response = MagicMock()
+            _empty_response.points = []
+            client.query_points = AsyncMock(return_value=_empty_response)
             client.scroll = AsyncMock(return_value=([], None))
             client.get_collections = AsyncMock(return_value=MagicMock(collections=[]))
             mock_client.return_value = client
@@ -116,17 +118,17 @@ async def test_search_memories_user_1_filter():
     mem = _build_memory()
 
     # Seed mock search results for user 1
-    mem._test_client.search = AsyncMock(
-        return_value=[
-            _make_hit("p1", {"content": "jazz", "user_id": USER_1_ID, "type": "preference"}),
-        ]
-    )
+    mock_resp = MagicMock()
+    mock_resp.points = [
+        _make_hit("p1", {"content": "jazz", "user_id": USER_1_ID, "type": "preference"}),
+    ]
+    mem._test_client.query_points = AsyncMock(return_value=mock_resp)
 
     results = await mem.search_memories("music", user_id=USER_1_ID)
 
     # Verify search was called with the correct filter
-    mem._test_client.search.assert_called_once()
-    call_kwargs = mem._test_client.search.call_args
+    mem._test_client.query_points.assert_called_once()
+    call_kwargs = mem._test_client.query_points.call_args
     query_filter = call_kwargs.kwargs.get("query_filter") or call_kwargs[1].get("query_filter")
 
     assert query_filter is not None
@@ -151,15 +153,15 @@ async def test_search_memories_user_2_filter():
     """Searching as user_2 should pass a FieldCondition filter for user_2."""
     mem = _build_memory()
 
-    mem._test_client.search = AsyncMock(
-        return_value=[
-            _make_hit("p2", {"content": "rock", "user_id": USER_2_ID, "type": "preference"}),
-        ]
-    )
+    mock_resp = MagicMock()
+    mock_resp.points = [
+        _make_hit("p2", {"content": "rock", "user_id": USER_2_ID, "type": "preference"}),
+    ]
+    mem._test_client.query_points = AsyncMock(return_value=mock_resp)
 
     results = await mem.search_memories("music", user_id=USER_2_ID)
 
-    call_kwargs = mem._test_client.search.call_args
+    call_kwargs = mem._test_client.query_points.call_args
     query_filter = call_kwargs.kwargs.get("query_filter") or call_kwargs[1].get("query_filter")
 
     assert query_filter is not None
@@ -180,11 +182,13 @@ async def test_search_memories_without_user_id_no_user_filter():
     """Searching without user_id should not apply any user filter."""
     mem = _build_memory()
 
-    mem._test_client.search = AsyncMock(return_value=[])
+    mock_resp = MagicMock()
+    mock_resp.points = []
+    mem._test_client.query_points = AsyncMock(return_value=mock_resp)
 
     await mem.search_memories("anything")
 
-    call_kwargs = mem._test_client.search.call_args
+    call_kwargs = mem._test_client.query_points.call_args
     query_filter = call_kwargs.kwargs.get("query_filter") or call_kwargs[1].get("query_filter")
 
     assert query_filter is None
@@ -195,15 +199,15 @@ async def test_search_conversations_user_filter():
     """search_conversations should apply user_id filter when provided."""
     mem = _build_memory()
 
-    mem._test_client.search = AsyncMock(
-        return_value=[
-            _make_hit("c1", {"content": "hello", "user_id": USER_1_ID, "role": "user"}),
-        ]
-    )
+    mock_resp = MagicMock()
+    mock_resp.points = [
+        _make_hit("c1", {"content": "hello", "user_id": USER_1_ID, "role": "user"}),
+    ]
+    mem._test_client.query_points = AsyncMock(return_value=mock_resp)
 
     results = await mem.search_conversations("hello", user_id=USER_1_ID)
 
-    call_kwargs = mem._test_client.search.call_args
+    call_kwargs = mem._test_client.query_points.call_args
     query_filter = call_kwargs.kwargs.get("query_filter") or call_kwargs[1].get("query_filter")
 
     assert query_filter is not None
@@ -224,11 +228,13 @@ async def test_search_conversations_no_user_filter():
     """search_conversations without user_id should not apply user filter."""
     mem = _build_memory()
 
-    mem._test_client.search = AsyncMock(return_value=[])
+    mock_resp = MagicMock()
+    mock_resp.points = []
+    mem._test_client.query_points = AsyncMock(return_value=mock_resp)
 
     await mem.search_conversations("hello")
 
-    call_kwargs = mem._test_client.search.call_args
+    call_kwargs = mem._test_client.query_points.call_args
     query_filter = call_kwargs.kwargs.get("query_filter") or call_kwargs[1].get("query_filter")
 
     assert query_filter is None
@@ -254,16 +260,16 @@ async def test_user_isolation_across_stores_and_searches():
     assert second_points[0].payload["user_id"] == USER_2_ID
 
     # Search as user 1
-    mem._test_client.search = AsyncMock(
-        return_value=[
-            _make_hit("p1", {"content": "User 1 fact", "user_id": USER_1_ID, "type": "fact"}),
-        ]
-    )
+    mock_resp_1 = MagicMock()
+    mock_resp_1.points = [
+        _make_hit("p1", {"content": "User 1 fact", "user_id": USER_1_ID, "type": "fact"}),
+    ]
+    mem._test_client.query_points = AsyncMock(return_value=mock_resp_1)
     results_1 = await mem.search_memories("fact", user_id=USER_1_ID)
 
-    filter_1 = mem._test_client.search.call_args.kwargs.get(
+    filter_1 = mem._test_client.query_points.call_args.kwargs.get(
         "query_filter"
-    ) or mem._test_client.search.call_args[1].get("query_filter")
+    ) or mem._test_client.query_points.call_args[1].get("query_filter")
     user_cond_1 = [
         c
         for c in filter_1.must
@@ -273,16 +279,16 @@ async def test_user_isolation_across_stores_and_searches():
     assert results_1[0]["content"] == "User 1 fact"
 
     # Search as user 2
-    mem._test_client.search = AsyncMock(
-        return_value=[
-            _make_hit("p2", {"content": "User 2 fact", "user_id": USER_2_ID, "type": "fact"}),
-        ]
-    )
+    mock_resp_2 = MagicMock()
+    mock_resp_2.points = [
+        _make_hit("p2", {"content": "User 2 fact", "user_id": USER_2_ID, "type": "fact"}),
+    ]
+    mem._test_client.query_points = AsyncMock(return_value=mock_resp_2)
     results_2 = await mem.search_memories("fact", user_id=USER_2_ID)
 
-    filter_2 = mem._test_client.search.call_args.kwargs.get(
+    filter_2 = mem._test_client.query_points.call_args.kwargs.get(
         "query_filter"
-    ) or mem._test_client.search.call_args[1].get("query_filter")
+    ) or mem._test_client.query_points.call_args[1].get("query_filter")
     user_cond_2 = [
         c
         for c in filter_2.must

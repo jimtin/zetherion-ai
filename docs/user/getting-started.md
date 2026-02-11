@@ -1,8 +1,9 @@
 # Getting Started
 
 This guide walks you through everything you need to install, configure, and run
-Zetherion AI as your personal Discord assistant. Most users are up and running
-in under ten minutes.
+Zetherion AI as your personal AI assistant. Discord is the first supported input
+interface, but the system is designed to accept input from any source. Most users
+are up and running in under ten minutes.
 
 ---
 
@@ -12,7 +13,7 @@ in under ten minutes.
 |---|---|
 | Docker Desktop 4.0+ | Required. Zetherion AI runs as 6 Docker services. |
 | Discord bot token | Required. Free to create in the Discord Developer Portal. |
-| Gemini API key | Required. Free tier from Google AI Studio (1,500 requests/day). |
+| Gemini API key | Optional. Free tier from Google AI Studio (1,500 requests/day). Enables cloud routing and simple queries. |
 | Anthropic API key | Optional. Enables Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`). |
 | OpenAI API key | Optional. Enables GPT-5.2. |
 | Python 3.12+ | Required on the host for the setup script. |
@@ -93,7 +94,7 @@ The setup script handles the entire installation process:
    - **Gemini** (cloud) -- fast setup, roughly 3 minutes. Uses `gemini-2.5-flash`
      for intent routing. No extra hardware needed.
    - **Ollama** (local) -- private, roughly 9 minutes. Downloads and runs
-     `llama3.2:1b` for routing and `llama3.1:8b` for local generation. All
+     `llama3.2:3b` for routing and `llama3.1:8b` for local generation. All
      inference stays on your machine.
 4. **Builds and starts all 6 Docker services**: `bot`, `skills`, `qdrant`,
    `postgres`, `ollama`, and `ollama-router`.
