@@ -1988,12 +1988,12 @@
 <td>ollama/ollama (pinned digest)</td>
 <td>none</td>
 <td>Query classification</td>
-<td>512M - 1G</td>
+<td>1.5G - 3G</td>
 <td>0.5 - 2.0</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Total resource envelope:</strong> 3.5G - 14.25G memory, 2.75 - 12.0 CPU cores.</p>
+<p><strong>Total resource envelope:</strong> 4.5G - 16.25G memory, 2.75 - 12.0 CPU cores.</p>
 <hr />
 <h2 id="service-details">Service Details<a class="headerlink" href="#service-details" title="Permanent link">&para;</a></h2>
 <h3 id="bot-service-zetherion-ai-bot">Bot Service (zetherion-ai-bot)<a class="headerlink" href="#bot-service-zetherion-ai-bot" title="Permanent link">&para;</a></h3>
@@ -2078,8 +2078,8 @@
 <li><strong>Ports</strong>: None exposed to host. Internal network access only.</li>
 <li><strong>Volume</strong>: <code>ollama_router_models:/root/.ollama</code> -- Separate persistent volume from the generation container. Each container manages its own model cache independently.</li>
 <li><strong>Health Check</strong>: TCP connection test to port 11434 every 30 seconds, 10-second timeout, 3 retries, 30-second startup period. Faster startup than the generation container due to the smaller model.</li>
-<li><strong>Resources</strong>: 512M reserved, 1G limit. 0.5 CPU reserved, 2.0 CPU limit.</li>
-<li><strong>Model</strong>: <code>llama3.2:1b</code> -- Tiny classification model (1 billion parameters). Fast enough for real-time query routing on CPU.</li>
+<li><strong>Resources</strong>: 1.5G reserved, 3G limit. 0.5 CPU reserved, 2.0 CPU limit.</li>
+<li><strong>Model</strong>: <code>llama3.2:3b</code> -- Small classification model (3 billion parameters). Fast enough for real-time query routing on CPU.</li>
 </ul>
 <hr />
 <h2 id="network-architecture">Network Architecture<a class="headerlink" href="#network-architecture" title="Permanent link">&para;</a></h2>
@@ -2140,7 +2140,7 @@
 <td><code>ollama_router_models</code></td>
 <td>Named</td>
 <td>ollama-router</td>
-<td>Router model weights (llama3.2:1b)</td>
+<td>Router model weights (llama3.2:3b)</td>
 </tr>
 <tr>
 <td><code>postgres_data</code></td>
@@ -2269,7 +2269,7 @@
 <p>In a single-container setup, every routing request would trigger a model swap from the generation model to the router model, and every generation request would trigger a swap back. This adds 4-20 seconds of latency to every interaction.</p>
 <p><strong>The Two-Container Solution</strong></p>
 <ul>
-<li><strong>ollama-router</strong> keeps <code>llama3.2:1b</code> (1B parameters) loaded at all times. This model is small enough to classify queries in under 500ms on CPU, and the container only needs 512M-1G of memory.</li>
+<li><strong>ollama-router</strong> keeps <code>llama3.2:3b</code> (3B parameters) loaded at all times. This model is small enough to classify queries in under 500ms on CPU, and the container only needs 1.5G-3G of memory.</li>
 <li><strong>ollama</strong> keeps <code>llama3.1:8b</code> (8B parameters) and <code>nomic-embed-text</code> loaded for generation and embedding tasks. This container has a larger resource allocation (2G-8G memory) to accommodate the bigger model.</li>
 </ul>
 <p>Each container maintains its own model cache via separate named volumes (<code>ollama_models</code> and <code>ollama_router_models</code>), ensuring that model downloads are independent and persistent.</p>
@@ -2332,7 +2332,7 @@
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-ollama<span class="w"> </span>ollama<span class="w"> </span>pull<span class="w"> </span>nomic-embed-text
 <a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
 <a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="c1"># Pull the router model into the router container</span>
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-ollama-router<span class="w"> </span>ollama<span class="w"> </span>pull<span class="w"> </span>llama3.2:1b
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-ollama-router<span class="w"> </span>ollama<span class="w"> </span>pull<span class="w"> </span>llama3.2:3b
 <a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>
 <a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="c1"># List models in each container</span>
 <a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-ollama<span class="w"> </span>ollama<span class="w"> </span>list

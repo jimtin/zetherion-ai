@@ -1852,7 +1852,7 @@
 
 <h1 id="system-architecture">System Architecture<a class="headerlink" href="#system-architecture" title="Permanent link">&para;</a></h1>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>Zetherion AI is a Discord-based personal AI assistant built on a microservice architecture with 6 Docker services. The system provides multi-provider LLM routing, AES-256-GCM encrypted semantic memory, Gmail integration, GitHub management, and deep personal understanding through passive observation and explicit learning.</p>
+<p>Zetherion AI is a source-agnostic personal AI assistant built on a microservice architecture with 6 Docker services. The system accepts input from any source (Discord is the first interface, with REST API, email sync, and webhooks also available) and provides user-controlled multi-provider LLM routing, AES-256-GCM encrypted semantic memory, Gmail integration, GitHub management, and deep personal understanding through passive observation, proactive prompting, and explicit learning.</p>
 <p>The codebase comprises 91 source files with 3,000+ tests across 89 test files, maintaining 93%+ code coverage. The architecture prioritizes security, modularity, and cost-efficient inference by routing queries to the most appropriate LLM provider based on complexity, privacy requirements, and task type.</p>
 <h3 id="key-design-principles">Key Design Principles<a class="headerlink" href="#key-design-principles" title="Permanent link">&para;</a></h3>
 <ol>
@@ -1865,47 +1865,48 @@
 </ol>
 <hr />
 <h2 id="architecture-diagram">Architecture Diagram<a class="headerlink" href="#architecture-diagram" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Discord User
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    |
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    v
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>+---[Bot Service]---+
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>|  Security Layer   |---&gt; Prompt Injection Detection (17 regex patterns)
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>|  (rate limit,     |---&gt; User Allowlist / RBAC
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>|   auth)           |
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>|                   |
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>|  Agent Core       |---&gt; InferenceBroker
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>|   - Router        |     |-&gt; Gemini 2.5 Flash      (simple/routing)
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>|   - Providers     |     |-&gt; Claude Sonnet 4.5      (complex reasoning)
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>|   - Context       |     |-&gt; GPT-5.2               (alternative complex)
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>|                   |     |-&gt; Ollama llama3.1:8b     (local/private)
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>|                   |     |-&gt; Ollama llama3.2:1b     (router classification)
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>+--------+----------+
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>         |
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    +----+----+
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    |         |
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    v         v
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>+-------+  +--------+
-<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>|Skills |  |Memory  |
-<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>|Service|  |Layer   |
-<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>+---+---+  +---+----+
-<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>    |          |
-<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>    v          v
-<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>+-------+  +-------+  +----------+
-<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>|Gmail  |  |Qdrant |  |PostgreSQL|
-<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>|GitHub |  |(vectors|  |(users,   |
-<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>|Tasks  |  | memory)|  | contacts,|
-<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>|Calendar| |        |  | policies)|
-<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>|Profile|  +-------+  +----------+
-<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>+-------+
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Any Input Source
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>(Discord / REST API / Email / Webhooks)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    |
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    v
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>+---[Bot Service]---+
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>|  Security Layer   |---&gt; Prompt Injection Detection (17 regex patterns)
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>|  (rate limit,     |---&gt; User Allowlist / RBAC
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>|   auth)           |
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>|                   |
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>|  Agent Core       |---&gt; InferenceBroker
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>|   - Router        |     |-&gt; Gemini 2.5 Flash      (simple/routing)
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>|   - Providers     |     |-&gt; Claude Sonnet 4.5      (complex reasoning)
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>|   - Context       |     |-&gt; GPT-5.2               (alternative complex)
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>|                   |     |-&gt; Ollama llama3.1:8b     (local/private)
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>|                   |     |-&gt; Ollama llama3.2:3b     (router classification)
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>+--------+----------+
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>         |
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    +----+----+
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    |         |
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>    v         v
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>+-------+  +--------+
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>|Skills |  |Memory  |
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>|Service|  |Layer   |
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>+---+---+  +---+----+
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>    |          |
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>    v          v
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>+-------+  +-------+  +----------+
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>|Gmail  |  |Qdrant |  |PostgreSQL|
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>|GitHub |  |(vectors|  |(users,   |
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>|Tasks  |  | memory)|  | contacts,|
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>|Calendar| |        |  | policies)|
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>|Profile|  +-------+  +----------+
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>+-------+
 </code></pre></div>
 <hr />
 <h2 id="service-architecture">Service Architecture<a class="headerlink" href="#service-architecture" title="Permanent link">&para;</a></h2>
 <h3 id="bot-service">Bot Service<a class="headerlink" href="#bot-service" title="Permanent link">&para;</a></h3>
-<p>The Bot Service is the primary entry point for all user interactions. It connects to Discord via the gateway protocol using <code>discord.py</code> and orchestrates the entire request lifecycle.</p>
+<p>The Bot Service is the primary entry point for user interactions. Discord is the first supported interface, but the service orchestrates the entire request lifecycle independently of the input source. The agent core, security layer, router, and inference broker all operate on messages regardless of origin.</p>
 <p><strong>Core Responsibilities:</strong></p>
 <ul>
 <li>
-<p><strong>Discord Gateway</strong> -- Maintains a persistent WebSocket connection to Discord. Handles direct messages, @mentions, and slash commands. Automatically splits responses exceeding Discord's 2,000-character limit.</p>
+<p><strong>Input Gateway</strong> -- Currently connects to Discord via the gateway protocol using <code>discord.py</code>. Handles direct messages, @mentions, and slash commands. The architecture supports additional input sources (REST API, email, webhooks) through the same agent pipeline.</p>
 </li>
 <li>
 <p><strong>Security Layer</strong> -- Three-stage defense applied to every incoming message before any processing occurs:</p>
@@ -1919,7 +1920,7 @@
 <p><strong>Agent Core</strong> -- Manages the full conversation flow: context assembly, provider selection, response generation, and post-response observation. Handles retry logic with exponential backoff (max 3 retries) for transient API failures.</p>
 </li>
 <li>
-<p><strong>Router</strong> -- Classifies each incoming query by intent and complexity. The router can operate through multiple backends: Gemini Flash (cloud, fast), Ollama llama3.2:1b (local, dedicated container), or local regex fallback. Classification categories include <code>simple_query</code>, <code>complex_task</code>, <code>memory_store</code>, <code>memory_recall</code>, <code>task_management</code>, and others.</p>
+<p><strong>Router</strong> -- Classifies each incoming query by intent and complexity. The router can operate through multiple backends: Gemini Flash (cloud, fast), Ollama llama3.2:3b (local, dedicated container), or local regex fallback. Classification categories include <code>simple_query</code>, <code>complex_task</code>, <code>memory_store</code>, <code>memory_recall</code>, <code>task_management</code>, and others.</p>
 </li>
 <li>
 <p><strong>InferenceBroker</strong> -- Multi-provider routing engine with fallback chains and cost tracking. Selects the optimal LLM provider based on task type, privacy requirements, cost constraints, and availability. Tracks per-request costs in a local SQLite database.</p>
@@ -1957,7 +1958,7 @@
 </tr>
 <tr>
 <td>Ollama (local)</td>
-<td>llama3.2:1b</td>
+<td>llama3.2:3b</td>
 <td>Fast query classification (router)</td>
 </tr>
 </tbody>
@@ -2045,18 +2046,18 @@
 <h3 id="ollama-router">Ollama Router<a class="headerlink" href="#ollama-router" title="Permanent link">&para;</a></h3>
 <p>A separate, lightweight Ollama container dedicated exclusively to fast query classification.</p>
 <ul>
-<li><strong>Default Model</strong>: llama3.2:1b (1 billion parameters). Small enough to classify queries in under 500ms on CPU.</li>
+<li><strong>Default Model</strong>: llama3.2:3b (3 billion parameters). Small enough to classify queries in under 500ms on CPU.</li>
 <li><strong>Purpose</strong>: Eliminates the 2-10 second model-swapping delay that would occur if routing and generation shared a single Ollama instance. Each container keeps exactly one model loaded in memory at all times.</li>
 <li><strong>Classification Output</strong>: Returns structured JSON with intent category, confidence score, and provider recommendation.</li>
-<li><strong>Resource Allocation</strong>: 512M-1G memory, 0.5-2 CPU cores. Minimal footprint due to the small model size.</li>
+<li><strong>Resource Allocation</strong>: 1.5G-3G memory, 0.5-2 CPU cores. Minimal footprint due to the small model size.</li>
 <li><strong>Network</strong>: Internal only, no port exposed to host.</li>
 </ul>
 <hr />
 <h2 id="request-flow">Request Flow<a class="headerlink" href="#request-flow" title="Permanent link">&para;</a></h2>
-<p>A complete request lifecycle from Discord message to response:</p>
+<p>A complete request lifecycle from incoming message to response:</p>
 <ol>
 <li>
-<p><strong>Discord message received</strong> -- The Bot Service receives a message event via the Discord gateway WebSocket connection.</p>
+<p><strong>Message received</strong> -- The Bot Service receives a message from an input source (currently Discord via the gateway WebSocket, but the pipeline is source-agnostic).</p>
 </li>
 <li>
 <p><strong>Security checks</strong> -- Three sequential checks are applied:</p>
@@ -2067,17 +2068,17 @@
 <p>Prompt injection scan (reject if the message matches any of the 17 injection detection patterns).</p>
 </li>
 <li>
-<p><strong>Router classification</strong> -- The message is sent to the router for intent classification. The router attempts Gemini Flash first, falls back to Ollama llama3.2:1b, and finally to local regex patterns if both external calls fail.</p>
+<p><strong>Router classification</strong> -- The message is sent to the router for intent classification. The router attempts Gemini Flash first, falls back to Ollama llama3.2:3b, and finally to local regex patterns if both external calls fail.</p>
 </li>
 <li>
 <p><strong>Skill dispatch</strong> -- If the router identifies a skill-related intent (e.g., <code>task_management</code>, <code>email_read</code>, <code>github_action</code>), the Bot Service forwards the request to the Skills Service via an internal HTTP call to <code>http://zetherion-ai-skills:8080</code>.</p>
 </li>
 <li>
-<p><strong>Provider selection</strong> -- The InferenceBroker selects the optimal LLM provider based on the routing classification:</p>
+<p><strong>Provider selection</strong> -- The InferenceBroker selects an LLM provider based on the routing classification and user configuration. You control which providers handle which task types:</p>
 </li>
-<li>Simple queries route to Gemini 2.5 Flash (fast, low cost).</li>
-<li>Complex reasoning routes to Claude Sonnet 4.5 (highest quality).</li>
-<li>Privacy-sensitive queries route to Ollama llama3.1:8b (local inference).</li>
+<li>Simple queries can route to Gemini 2.5 Flash or Ollama (your choice).</li>
+<li>Complex reasoning can route to Claude Sonnet 4.5, GPT-5.2, or local Ollama (your choice).</li>
+<li>Privacy-sensitive queries can be restricted to Ollama llama3.1:8b (local inference, never leaves your machine).</li>
 <li>
 <p>Fallback chains ensure a response even if the primary provider is unavailable.</p>
 </li>
@@ -2097,7 +2098,7 @@
 <p><strong>Observation pipeline</strong> -- After generating the response, a passive observation step extracts learnings from the conversation (e.g., "user mentioned they prefer Python over JavaScript") and stores them in PostgreSQL for future context enrichment.</p>
 </li>
 <li>
-<p><strong>Response delivery</strong> -- The response is sent back to Discord. Messages exceeding 2,000 characters are automatically split across multiple messages.</p>
+<p><strong>Response delivery</strong> -- The response is sent back to the originating input source. For Discord, messages exceeding 2,000 characters are automatically split across multiple messages.</p>
 </li>
 <li>
 <p><strong>Cost tracking</strong> -- The token usage and estimated cost for the request are recorded in a local SQLite database (<code>costs.db</code>) for monitoring and budget management.</p>

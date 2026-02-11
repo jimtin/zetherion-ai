@@ -2520,13 +2520,14 @@
 </tr>
 </tbody>
 </table>
-<p><strong>API keys needed</strong> (at minimum):</p>
+<p><strong>API keys needed:</strong></p>
 <ul>
-<li>Discord Bot Token (required)</li>
-<li>Gemini API Key (required, free tier available)</li>
+<li>Discord Bot Token (required -- first supported input interface)</li>
+<li>Gemini API Key (optional, free tier available -- enables cloud routing and simple queries)</li>
 <li>Anthropic API Key (optional, for Claude <code>claude-sonnet-4-5-20250929</code>)</li>
 <li>OpenAI API Key (optional, for <code>gpt-5.2</code>)</li>
 </ul>
+<p>All cloud LLM providers are optional. Ollama provides fully local inference out of the box.</p>
 <hr />
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <h3 id="macos-linux">macOS / Linux<a class="headerlink" href="#macos-linux" title="Permanent link">&para;</a></h3>
@@ -2685,7 +2686,7 @@
 </tr>
 <tr>
 <td>Local router</td>
-<td><code>llama3.2:1b</code></td>
+<td><code>llama3.2:3b</code></td>
 <td>Ollama</td>
 </tr>
 <tr>
@@ -2707,7 +2708,7 @@
 <tbody>
 <tr>
 <td><code>zetherion-ai-bot</code></td>
-<td>Main Discord bot container</td>
+<td>Agent core -- input gateway, security, routing, inference</td>
 </tr>
 <tr>
 <td><code>zetherion-ai-skills</code></td>
@@ -3007,7 +3008,7 @@
 <p><strong>Ollama model issues</strong>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-ollama<span class="w"> </span>ollama<span class="w"> </span>list
 <a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-ollama<span class="w"> </span>ollama<span class="w"> </span>pull<span class="w"> </span>llama3.1:8b
-<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-ollama-router<span class="w"> </span>ollama<span class="w"> </span>pull<span class="w"> </span>llama3.2:1b
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-ollama-router<span class="w"> </span>ollama<span class="w"> </span>pull<span class="w"> </span>llama3.2:3b
 </code></pre></div>
 <hr />
 <h2 id="commit-messages">Commit Messages<a class="headerlink" href="#commit-messages" title="Permanent link">&para;</a></h2>

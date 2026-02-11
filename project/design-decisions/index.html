@@ -2574,7 +2574,7 @@
 <p><strong>Date:</strong> 2026-02-07
 <strong>Status:</strong> Accepted</p>
 <h3 id="context_3">Context<a class="headerlink" href="#context_3" title="Permanent link">&para;</a></h3>
-<p>Ollama supports only one loaded model at a time efficiently. The system needs two models: a small router model (llama3.2:1b) for fast intent classification and a larger generation model (llama3.1:8b) for responses. Model swapping between requests causes delays.</p>
+<p>Ollama supports only one loaded model at a time efficiently. The system needs two models: a small router model (llama3.2:3b) for fast intent classification and a larger generation model (llama3.1:8b) for responses. Model swapping between requests causes delays.</p>
 <h3 id="decision_3">Decision<a class="headerlink" href="#decision_3" title="Permanent link">&para;</a></h3>
 <p>Run two separate Ollama containers, each dedicated to one model.</p>
 <h3 id="alternatives-considered_3">Alternatives Considered<a class="headerlink" href="#alternatives-considered_3" title="Permanent link">&para;</a></h3>
@@ -2607,10 +2607,10 @@
 <h3 id="consequences_3">Consequences<a class="headerlink" href="#consequences_3" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>zetherion-ai-ollama</code>: Generation model (llama3.1:8b) on port 11434</li>
-<li><code>zetherion-ai-ollama-router</code>: Router model (llama3.2:1b) on port 11435</li>
+<li><code>zetherion-ai-ollama-router</code>: Router model (llama3.2:3b) on port 11435</li>
 <li>Each container has dedicated memory limits</li>
 <li>Zero model-swap latency</li>
-<li>Total memory: ~6GB for both (4.7GB generation + 1.3GB router)</li>
+<li>Total memory: ~6.7GB for both (4.7GB generation + 2.0GB router)</li>
 </ul>
 <hr />
 <h2 id="adr-005-skills-framework-with-rest-api">ADR-005: Skills Framework with REST API<a class="headerlink" href="#adr-005-skills-framework-with-rest-api" title="Permanent link">&para;</a></h2>
