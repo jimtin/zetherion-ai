@@ -2937,7 +2937,7 @@
 <h3 id="test-design">Test Design<a class="headerlink" href="#test-design" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>One assertion per concept.</strong> A test can have multiple <code>assert</code> statements, but they should all verify a single logical behavior.</li>
-<li><strong>Mock external services.</strong> LLM APIs (<code>claude-sonnet-4-5-20250929</code>, <code>gpt-5.2</code>, <code>gemini-2.5-flash</code>), Discord, Qdrant, PostgreSQL, and Ollama (<code>llama3.2:1b</code>, <code>llama3.1:8b</code>) should all be mocked in unit tests.</li>
+<li><strong>Mock external services.</strong> LLM APIs (<code>claude-sonnet-4-5-20250929</code>, <code>gpt-5.2</code>, <code>gemini-2.5-flash</code>), Discord, Qdrant, PostgreSQL, and Ollama (<code>llama3.2:3b</code>, <code>llama3.1:8b</code>) should all be mocked in unit tests.</li>
 <li><strong>Do not test implementation details.</strong> Test the public interface, not internal method calls.</li>
 <li><strong>Clean up resources.</strong> Use <code>yield</code> fixtures to guarantee teardown, especially for async clients and temporary files.</li>
 <li><strong>Keep tests deterministic.</strong> Avoid random data, time-dependent assertions, or network calls in unit tests.</li>

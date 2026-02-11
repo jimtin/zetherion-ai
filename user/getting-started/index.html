@@ -1908,8 +1908,9 @@
 
 <h1 id="getting-started">Getting Started<a class="headerlink" href="#getting-started" title="Permanent link">&para;</a></h1>
 <p>This guide walks you through everything you need to install, configure, and run
-Zetherion AI as your personal Discord assistant. Most users are up and running
-in under ten minutes.</p>
+Zetherion AI as your personal AI assistant. Discord is the first supported input
+interface, but the system is designed to accept input from any source. Most users
+are up and running in under ten minutes.</p>
 <hr />
 <h2 id="what-you-need">What You Need<a class="headerlink" href="#what-you-need" title="Permanent link">&para;</a></h2>
 <table>
@@ -1930,7 +1931,7 @@ in under ten minutes.</p>
 </tr>
 <tr>
 <td>Gemini API key</td>
-<td>Required. Free tier from Google AI Studio (1,500 requests/day).</td>
+<td>Optional. Free tier from Google AI Studio (1,500 requests/day). Enables cloud routing and simple queries.</td>
 </tr>
 <tr>
 <td>Anthropic API key</td>
@@ -2016,7 +2017,7 @@ in under ten minutes.</p>
 <li><strong>Gemini</strong> (cloud) -- fast setup, roughly 3 minutes. Uses <code>gemini-2.5-flash</code>
      for intent routing. No extra hardware needed.</li>
 <li><strong>Ollama</strong> (local) -- private, roughly 9 minutes. Downloads and runs
-     <code>llama3.2:1b</code> for routing and <code>llama3.1:8b</code> for local generation. All
+     <code>llama3.2:3b</code> for routing and <code>llama3.1:8b</code> for local generation. All
      inference stays on your machine.</li>
 <li><strong>Builds and starts all 6 Docker services</strong>: <code>bot</code>, <code>skills</code>, <code>qdrant</code>,
    <code>postgres</code>, <code>ollama</code>, and <code>ollama-router</code>.</li>

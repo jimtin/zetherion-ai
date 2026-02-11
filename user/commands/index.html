@@ -2005,7 +2005,7 @@
 
 
 <h1 id="commands-reference">Commands Reference<a class="headerlink" href="#commands-reference" title="Permanent link">&para;</a></h1>
-<p>Complete reference for all Zetherion AI Discord commands, including slash commands, natural language interactions, Gmail integration, GitHub integration, task management, profile management, and cost tracking.</p>
+<p>Complete reference for all Zetherion AI commands. Discord is the first supported input interface, but the underlying skills and agent core are source-agnostic. This reference covers slash commands, natural language interactions, Gmail integration, GitHub integration, task management, profile management, and cost tracking.</p>
 <hr />
 <h2 id="quick-reference">Quick Reference<a class="headerlink" href="#quick-reference" title="Permanent link">&para;</a></h2>
 <table>
@@ -2107,11 +2107,13 @@
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>/ask Write a function to reverse a string
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>/ask Help me debug this error: TypeError...
 </code></pre></div></p>
-<p><strong>Routing behavior:</strong>
-- Simple questions are handled by Gemini 2.5 Flash (fast, low cost)
-- Complex tasks are routed to Claude Sonnet 4.5 or GPT-5.2 (slower, higher quality)
-- Routing is performed by a local Llama 3.2 1B model; generation for local fallback uses Llama 3.1 8B
-- The bot searches recent conversation history and relevant memories to provide context</p>
+<p><strong>Routing behavior:</strong></p>
+<ul>
+<li>The router classifies your query by intent and complexity, then dispatches to the provider you've configured for that task type</li>
+<li>You choose between local inference (Ollama) and cloud providers (Gemini, Claude, OpenAI) -- see the LLM Provider Configuration section in the README</li>
+<li>Routing classification can use Gemini Flash (cloud) or Ollama Llama 3.2 1B (local), depending on your setup</li>
+<li>The bot searches recent conversation history and relevant memories to provide context</li>
+</ul>
 <p><strong>Expected response time:</strong>
 - Simple queries: 1--3 seconds
 - Complex tasks: 5--15 seconds</p>
@@ -2168,23 +2170,25 @@
 <hr />
 <h3 id="asking-questions">Asking Questions<a class="headerlink" href="#asking-questions" title="Permanent link">&para;</a></h3>
 <p>The bot automatically detects the complexity of your question and routes it to the appropriate model.</p>
-<p><strong>Simple questions</strong> are handled by Gemini 2.5 Flash (fast, free or low cost):
+<p><strong>Simple questions</strong> are routed to your configured fast provider (e.g. Gemini Flash or Ollama):
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>Hello!
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>What&#39;s 2 + 2?
 <a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>Good morning
 <a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>Thanks for your help!
 </code></pre></div></p>
-<p><strong>Complex questions</strong> are routed to Claude Sonnet 4.5 or GPT-5.2 (slower, higher quality):
+<p><strong>Complex questions</strong> are routed to your configured reasoning provider (e.g. Claude, GPT, or local Ollama):
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>Write a Python function to validate email addresses
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>Explain how transformers work in detail
 <a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>Help me design a REST API for a blog
 <a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>Debug this code: [code snippet]
 </code></pre></div></p>
-<p><strong>Routing logic:</strong>
-- The Llama 3.2 1B router model analyzes your message
-- If complexity confidence exceeds 70%, the query is routed to Claude Sonnet 4.5 or GPT-5.2
-- Otherwise, Gemini 2.5 Flash handles it directly
-- For local inference fallback, Llama 3.1 8B is used for generation</p>
+<p><strong>Routing logic:</strong></p>
+<ul>
+<li>The router classifies your message by intent and complexity (using Gemini Flash or local Llama 3.2 1B, depending on your configuration)</li>
+<li>If the query is classified as complex, it is dispatched to your configured reasoning provider</li>
+<li>Simple queries go to your configured fast provider</li>
+<li>You control which providers handle which task types -- see the LLM Provider Configuration section in the README</li>
+</ul>
 <hr />
 <h3 id="memory-commands">Memory Commands<a class="headerlink" href="#memory-commands" title="Permanent link">&para;</a></h3>
 <p><strong>Store a memory:</strong>
