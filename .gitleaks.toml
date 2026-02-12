@@ -41,6 +41,8 @@ paths = [
     '''wiki/''',
     # Ignore GitHub workflows (contain test placeholder secrets)
     '''\.github/workflows/''',
+    # Ignore test Docker Compose (contains hardcoded test-only credentials)
+    '''docker-compose\.test\.yml''',
     # Ignore Windows deployment setup script (contains variable names for user input)
     '''setup-windows-deployment\.ps1''',
 ]
@@ -61,6 +63,9 @@ regexes = [
     '''\.get_secret_value\(\)''',
     # Variable assignments to settings objects
     '''=settings\.(discord_token|gemini_api_key|anthropic_api_key|openai_api_key)''',
+    # Test Docker Compose hardcoded credentials (not real secrets)
+    '''test-jwt-secret-for-integration-tests-only''',
+    '''postgresql://zetherion:password@''',
 ]
 
 # Stopwords - ignore commits containing these (e.g., "test" commits)

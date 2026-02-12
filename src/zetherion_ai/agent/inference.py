@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 import anthropic
 import httpx
 import openai
-from google import genai
+from google import genai  # type: ignore[attr-defined]
 
 from zetherion_ai.agent.providers import (
     Provider,
