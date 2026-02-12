@@ -51,7 +51,7 @@ class UpdateCheckerSkill(Skill):
         auto_apply: bool = False,
         enabled: bool = True,
         updater_url: str = "",
-        updater_secret: str = "",
+        updater_secret: str = "",  # noqa: S107  # nosec B107 — not a real password
     ) -> None:
         super().__init__(memory)
         self._db_pool = db_pool
