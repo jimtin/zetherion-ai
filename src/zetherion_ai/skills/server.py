@@ -510,6 +510,8 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             github_repo=settings.auto_update_repo,
             auto_apply=not settings.update_require_approval,
             enabled=settings.auto_update_enabled,
+            updater_url=settings.updater_service_url,
+            updater_secret=settings.updater_secret,
         )
     )
 

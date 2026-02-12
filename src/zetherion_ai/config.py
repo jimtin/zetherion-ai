@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     log_error_file_enabled: bool = Field(
         default=True, description="Enable separate error log file (WARNING+)"
     )
+    log_file_prefix: str = Field(
+        default="zetherion_ai", description="Prefix for log file names (set per container)"
+    )
 
     # Testing Configuration
     allow_bot_messages: bool = Field(
@@ -105,12 +108,12 @@ class Settings(BaseSettings):
     @property
     def log_file_path(self) -> str:
         """Get the full log file path."""
-        return f"{self.log_directory}/zetherion_ai.log"
+        return f"{self.log_directory}/{self.log_file_prefix}.log"
 
     @property
     def error_log_file_path(self) -> str:
         """Get the error log file path."""
-        return f"{self.log_directory}/zetherion_ai_error.log"
+        return f"{self.log_directory}/{self.log_file_prefix}_error.log"
 
     # Model Configuration
     # Updated: 2026-02-05
@@ -336,6 +339,10 @@ class Settings(BaseSettings):
     )
     update_require_approval: bool = Field(
         default=True, description="Require owner approval before applying updates"
+    )
+    updater_service_url: str = Field(default="", description="URL of the updater sidecar service")
+    updater_secret: str = Field(
+        default="", description="Shared secret for updater sidecar authentication"
     )
 
     # Telemetry Configuration (Phase 10C)

@@ -74,6 +74,8 @@ def _make_skill(
         github_repo=github_repo,
         auto_apply=auto_apply,
         db_pool=db_pool,
+        updater_url="http://test-updater:9090",
+        updater_secret="test-secret",
     )
 
     if with_manager:
@@ -161,6 +163,8 @@ class TestInitialize:
             enabled=True,
             github_repo="owner/repo",
             github_token="tok123",
+            updater_url="http://updater:9090",
+            updater_secret="s3cret",
         )
 
         with (
@@ -183,6 +187,8 @@ class TestInitialize:
             github_repo="owner/repo",
             storage=storage_instance,
             github_token="tok123",
+            updater_url="http://updater:9090",
+            updater_secret="s3cret",
         )
 
     @pytest.mark.asyncio

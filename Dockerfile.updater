@@ -1,0 +1,38 @@
+# ============================================================
+# Updater Sidecar — lightweight container for auto-updates
+# ============================================================
+# NOT distroless: needs shell, git, docker CLI for update ops.
+# Based on docker:27-cli (alpine, ~60MB).
+# Security: no-new-privileges, restricted to update ops only.
+# ============================================================
+
+FROM docker:27-cli
+
+# Install git, python3, and curl for health checks
+RUN apk add --no-cache \
+    git \
+    python3 \
+    py3-pip \
+    curl
+
+# Install Docker Compose v2 plugin
+COPY --from=docker/compose:2.32.4 /usr/local/bin/docker-compose \
+     /usr/local/lib/docker/cli-plugins/docker-compose
+
+WORKDIR /app
+
+# Copy only the updater sidecar code
+COPY updater_sidecar/ /app/updater_sidecar/
+
+# Install Python dependencies (minimal: aiohttp for HTTP server, httpx for health checks)
+RUN pip3 install --no-cache-dir --break-system-packages \
+    aiohttp \
+    httpx
+
+# Health check via curl to the sidecar's own /health endpoint
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["curl", "-sf", "http://localhost:9090/health"]
+
+EXPOSE 9090
+
+CMD ["python3", "-m", "updater_sidecar"]

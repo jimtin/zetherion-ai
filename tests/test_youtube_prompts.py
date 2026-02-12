@@ -176,9 +176,9 @@ class TestUserPromptsFormattable:
         assert isinstance(result, str)
         # The formatted result should no longer contain any unfilled placeholders.
         remaining = _extract_field_names(result)
-        assert (
-            remaining == set()
-        ), f"{name} still has unfilled placeholders after formatting: {remaining}"
+        assert remaining == set(), (
+            f"{name} still has unfilled placeholders after formatting: {remaining}"
+        )
 
     @pytest.mark.parametrize(
         "name,template,placeholders",
@@ -192,9 +192,9 @@ class TestUserPromptsFormattable:
         result = template.format(**kwargs)
         assert isinstance(result, str)
         remaining = _extract_field_names(result)
-        assert (
-            remaining == set()
-        ), f"{name} still has unfilled placeholders after formatting: {remaining}"
+        assert remaining == set(), (
+            f"{name} still has unfilled placeholders after formatting: {remaining}"
+        )
 
 
 # ---------------------------------------------------------------------------
