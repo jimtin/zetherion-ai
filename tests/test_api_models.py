@@ -112,22 +112,16 @@ class TestChatModels:
             ChatRequest(message="")
 
     def test_chat_message(self):
-        m = ChatMessage(
-            message_id="m1", role="user", content="hi", created_at=_NOW
-        )
+        m = ChatMessage(message_id="m1", role="user", content="hi", created_at=_NOW)
         assert m.role == "user"
 
     def test_chat_response(self):
-        r = ChatResponse(
-            message_id="m1", content="reply", created_at=_NOW
-        )
+        r = ChatResponse(message_id="m1", content="reply", created_at=_NOW)
         assert r.role == "assistant"
         assert r.model is None
 
     def test_chat_history_response(self):
-        msg = ChatMessage(
-            message_id="m1", role="user", content="hi", created_at=_NOW
-        )
+        msg = ChatMessage(message_id="m1", role="user", content="hi", created_at=_NOW)
         h = ChatHistoryResponse(session_id="s1", messages=[msg])
         assert len(h.messages) == 1
 

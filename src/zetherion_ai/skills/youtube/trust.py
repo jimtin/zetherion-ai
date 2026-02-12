@@ -187,6 +187,6 @@ class TrustModel:
     def from_channel(cls, channel: dict[str, object]) -> TrustModel:
         """Construct a TrustModel from a youtube_channels row."""
         return cls(
-            level=int(channel.get("trust_level", 0)),  # type: ignore[arg-type]
+            level=int(channel.get("trust_level", 0)),  # type: ignore[call-overload]
             stats=channel.get("trust_stats") or {"total": 0, "approved": 0, "rejected": 0},  # type: ignore[arg-type]
         )

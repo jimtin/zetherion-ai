@@ -90,9 +90,9 @@ class TestDefaultRoutes:
     def test_all_item_types_have_route(self):
         """Every ItemType member must appear in DEFAULT_ROUTES."""
         for item_type in ItemType:
-            assert (
-                item_type in DEFAULT_ROUTES
-            ), f"ItemType.{item_type.name} missing from DEFAULT_ROUTES"
+            assert item_type in DEFAULT_ROUTES, (
+                f"ItemType.{item_type.name} missing from DEFAULT_ROUTES"
+            )
 
     def test_routes_only_contain_valid_item_types(self):
         """DEFAULT_ROUTES keys must all be valid ItemType members."""
@@ -103,9 +103,9 @@ class TestDefaultRoutes:
         """Each route value must be a (ActionTarget, DefaultMode) pair."""
         for item_type, route in DEFAULT_ROUTES.items():
             target, mode = route
-            assert isinstance(
-                target, ActionTarget
-            ), f"Route for {item_type}: target is not ActionTarget"
+            assert isinstance(target, ActionTarget), (
+                f"Route for {item_type}: target is not ActionTarget"
+            )
             assert isinstance(mode, DefaultMode), f"Route for {item_type}: mode is not DefaultMode"
 
     def test_task_route(self):

@@ -205,6 +205,12 @@ class YouTubeStorage:
         self._pool: asyncpg.Pool | None = pool
         self._memory = memory
 
+    @property
+    def _db(self) -> asyncpg.Pool:
+        """Return the connection pool, raising if not yet initialised."""
+        assert self._pool is not None, "Storage not initialized — call initialize() first"
+        return self._pool
+
     async def initialize(self) -> None:
         """Create connection pool (if needed) and tables."""
         if self._pool is None:
@@ -212,7 +218,7 @@ class YouTubeStorage:
                 raise RuntimeError("Cannot initialize without dsn or pool")
             self._pool = await asyncpg.create_pool(dsn=self._dsn)
             log.info("youtube_storage_pool_created")
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             await conn.execute(_SCHEMA_SQL)
         log.info("youtube_storage_initialized")
 
@@ -227,7 +233,7 @@ class YouTubeStorage:
         channel_name: str = "",
         config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(
                 """INSERT INTO youtube_channels
                        (tenant_id, channel_youtube_id, channel_name, config)
@@ -244,16 +250,14 @@ class YouTubeStorage:
         return dict(row) if row else {}
 
     async def get_channel(self, channel_id: UUID) -> dict[str, Any] | None:
-        async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT * FROM youtube_channels WHERE id = $1", channel_id
-            )
+        async with self._db.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM youtube_channels WHERE id = $1", channel_id)
         return dict(row) if row else None
 
     async def get_channel_by_youtube_id(
         self, tenant_id: UUID, channel_youtube_id: str
     ) -> dict[str, Any] | None:
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(
                 """SELECT * FROM youtube_channels
                    WHERE tenant_id = $1 AND channel_youtube_id = $2""",
@@ -263,7 +267,7 @@ class YouTubeStorage:
         return dict(row) if row else None
 
     async def list_channels(self, tenant_id: UUID) -> list[dict[str, Any]]:
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT * FROM youtube_channels
                    WHERE tenant_id = $1 ORDER BY created_at""",
@@ -271,9 +275,7 @@ class YouTubeStorage:
             )
         return [dict(r) for r in rows]
 
-    async def update_channel(
-        self, channel_id: UUID, **kwargs: Any
-    ) -> dict[str, Any] | None:
+    async def update_channel(self, channel_id: UUID, **kwargs: Any) -> dict[str, Any] | None:
         sets: list[str] = []
         args: list[Any] = []
         i = 2  # $1 = channel_id
@@ -297,8 +299,8 @@ class YouTubeStorage:
         if not sets:
             return await self.get_channel(channel_id)
         sets.append("updated_at = now()")
-        sql = f"UPDATE youtube_channels SET {', '.join(sets)} WHERE id = $1 RETURNING *"
-        async with self._pool.acquire() as conn:
+        sql = f"UPDATE youtube_channels SET {', '.join(sets)} WHERE id = $1 RETURNING *"  # nosec B608
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(sql, channel_id, *args)
         return dict(row) if row else None
 
@@ -306,9 +308,7 @@ class YouTubeStorage:
     # Videos
     # ------------------------------------------------------------------
 
-    async def upsert_videos(
-        self, channel_id: UUID, videos: list[dict[str, Any]]
-    ) -> int:
+    async def upsert_videos(self, channel_id: UUID, videos: list[dict[str, Any]]) -> int:
         """Upsert a batch of videos.  Returns count of rows affected."""
         if not videos:
             return 0
@@ -321,7 +321,7 @@ class YouTubeStorage:
                                tags = EXCLUDED.tags,
                                stats = EXCLUDED.stats,
                                published_at = EXCLUDED.published_at"""
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             count = 0
             for v in videos:
                 await conn.execute(
@@ -337,10 +337,8 @@ class YouTubeStorage:
                 count += 1
         return count
 
-    async def get_videos(
-        self, channel_id: UUID, *, limit: int = 100
-    ) -> list[dict[str, Any]]:
-        async with self._pool.acquire() as conn:
+    async def get_videos(self, channel_id: UUID, *, limit: int = 100) -> list[dict[str, Any]]:
+        async with self._db.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT * FROM youtube_videos
                    WHERE channel_id = $1
@@ -354,7 +352,7 @@ class YouTubeStorage:
     async def get_video_by_youtube_id(
         self, channel_id: UUID, video_youtube_id: str
     ) -> dict[str, Any] | None:
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(
                 """SELECT * FROM youtube_videos
                    WHERE channel_id = $1 AND video_youtube_id = $2""",
@@ -367,9 +365,7 @@ class YouTubeStorage:
     # Comments
     # ------------------------------------------------------------------
 
-    async def upsert_comments(
-        self, channel_id: UUID, comments: list[dict[str, Any]]
-    ) -> int:
+    async def upsert_comments(self, channel_id: UUID, comments: list[dict[str, Any]]) -> int:
         if not comments:
             return 0
         sql = """INSERT INTO youtube_comments
@@ -379,15 +375,13 @@ class YouTubeStorage:
                  ON CONFLICT (channel_id, comment_youtube_id)
                  DO UPDATE SET text = EXCLUDED.text,
                                like_count = EXCLUDED.like_count"""
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             count = 0
             for c in comments:
                 # Resolve video_id from YouTube video ID if provided
                 video_id = c.get("video_id")
                 if video_id is None and c.get("video_youtube_id"):
-                    vid = await self.get_video_by_youtube_id(
-                        channel_id, c["video_youtube_id"]
-                    )
+                    vid = await self.get_video_by_youtube_id(channel_id, c["video_youtube_id"])
                     if vid:
                         video_id = vid["id"]
                 await conn.execute(
@@ -421,14 +415,14 @@ class YouTubeStorage:
                      WHERE channel_id = $1
                      ORDER BY ingested_at DESC LIMIT $2"""
             args = [channel_id, limit]
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             rows = await conn.fetch(sql, *args)
         return [dict(r) for r in rows]
 
     async def get_unanalyzed_comments(
         self, channel_id: UUID, *, limit: int = 500
     ) -> list[dict[str, Any]]:
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT * FROM youtube_comments
                    WHERE channel_id = $1 AND sentiment IS NULL
@@ -445,7 +439,7 @@ class YouTubeStorage:
         category: str,
         topics: list[str],
     ) -> None:
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             await conn.execute(
                 """UPDATE youtube_comments
                    SET sentiment = $2, category = $3, topics = $4::jsonb
@@ -456,10 +450,8 @@ class YouTubeStorage:
                 _json_str(topics),
             )
 
-    async def count_comments_since(
-        self, channel_id: UUID, since: str
-    ) -> int:
-        async with self._pool.acquire() as conn:
+    async def count_comments_since(self, channel_id: UUID, since: str) -> int:
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(
                 """SELECT count(*) as cnt FROM youtube_comments
                    WHERE channel_id = $1 AND ingested_at > $2::timestamptz""",
@@ -472,10 +464,8 @@ class YouTubeStorage:
     # Stats
     # ------------------------------------------------------------------
 
-    async def insert_stats(
-        self, channel_id: UUID, snapshot: dict[str, Any]
-    ) -> dict[str, Any]:
-        async with self._pool.acquire() as conn:
+    async def insert_stats(self, channel_id: UUID, snapshot: dict[str, Any]) -> dict[str, Any]:
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(
                 """INSERT INTO youtube_channel_stats (channel_id, snapshot)
                    VALUES ($1, $2::jsonb)
@@ -485,10 +475,8 @@ class YouTubeStorage:
             )
         return dict(row) if row else {}
 
-    async def get_latest_stats(
-        self, channel_id: UUID
-    ) -> dict[str, Any] | None:
-        async with self._pool.acquire() as conn:
+    async def get_latest_stats(self, channel_id: UUID) -> dict[str, Any] | None:
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(
                 """SELECT * FROM youtube_channel_stats
                    WHERE channel_id = $1 ORDER BY recorded_at DESC LIMIT 1""",
@@ -507,7 +495,7 @@ class YouTubeStorage:
         report: dict[str, Any],
         model_used: str = "",
     ) -> dict[str, Any]:
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(
                 """INSERT INTO youtube_intelligence_reports
                        (channel_id, report_type, report, model_used)
@@ -520,10 +508,8 @@ class YouTubeStorage:
             )
         return dict(row) if row else {}
 
-    async def get_latest_report(
-        self, channel_id: UUID
-    ) -> dict[str, Any] | None:
-        async with self._pool.acquire() as conn:
+    async def get_latest_report(self, channel_id: UUID) -> dict[str, Any] | None:
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(
                 """SELECT * FROM youtube_intelligence_reports
                    WHERE channel_id = $1 ORDER BY generated_at DESC LIMIT 1""",
@@ -534,7 +520,7 @@ class YouTubeStorage:
     async def get_report_history(
         self, channel_id: UUID, *, limit: int = 10
     ) -> list[dict[str, Any]]:
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT * FROM youtube_intelligence_reports
                    WHERE channel_id = $1 ORDER BY generated_at DESC LIMIT $2""",
@@ -548,7 +534,7 @@ class YouTubeStorage:
     # ------------------------------------------------------------------
 
     async def save_reply_draft(self, draft: dict[str, Any]) -> dict[str, Any]:
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(
                 """INSERT INTO youtube_reply_drafts
                        (channel_id, comment_id, video_id, original_comment,
@@ -585,31 +571,29 @@ class YouTubeStorage:
                      WHERE channel_id = $1
                      ORDER BY created_at DESC LIMIT $2"""
             args = [channel_id, limit]
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             rows = await conn.fetch(sql, *args)
         return [dict(r) for r in rows]
 
-    async def update_reply_status(
-        self, reply_id: UUID, status: str
-    ) -> dict[str, Any] | None:
+    async def update_reply_status(self, reply_id: UUID, status: str) -> dict[str, Any] | None:
         ts_field = ""
         if status == "approved" or status == "rejected":
             ts_field = ", reviewed_at = now()"
         elif status == "posted":
             ts_field = ", posted_at = now()"
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(
                 f"""UPDATE youtube_reply_drafts
                     SET status = $2{ts_field}
                     WHERE id = $1
-                    RETURNING *""",
+                    RETURNING *""",  # nosec B608
                 reply_id,
                 status,
             )
         return dict(row) if row else None
 
     async def count_replies_today(self, channel_id: UUID) -> int:
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(
                 """SELECT count(*) as cnt FROM youtube_reply_drafts
                    WHERE channel_id = $1
@@ -623,10 +607,8 @@ class YouTubeStorage:
     # Tag recommendations
     # ------------------------------------------------------------------
 
-    async def save_tag_recommendation(
-        self, rec: dict[str, Any]
-    ) -> dict[str, Any]:
-        async with self._pool.acquire() as conn:
+    async def save_tag_recommendation(self, rec: dict[str, Any]) -> dict[str, Any]:
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(
                 """INSERT INTO youtube_tag_recommendations
                        (channel_id, video_id, current_tags, suggested_tags, reason)
@@ -657,7 +639,7 @@ class YouTubeStorage:
                      WHERE channel_id = $1
                      ORDER BY created_at DESC LIMIT $2"""
             args = [channel_id, limit]
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             rows = await conn.fetch(sql, *args)
         return [dict(r) for r in rows]
 
@@ -673,7 +655,7 @@ class YouTubeStorage:
         model_used: str = "",
         valid_until: str | None = None,
     ) -> dict[str, Any]:
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(
                 """INSERT INTO youtube_strategy_documents
                        (channel_id, strategy_type, strategy, model_used, valid_until)
@@ -687,10 +669,8 @@ class YouTubeStorage:
             )
         return dict(row) if row else {}
 
-    async def get_latest_strategy(
-        self, channel_id: UUID
-    ) -> dict[str, Any] | None:
-        async with self._pool.acquire() as conn:
+    async def get_latest_strategy(self, channel_id: UUID) -> dict[str, Any] | None:
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(
                 """SELECT * FROM youtube_strategy_documents
                    WHERE channel_id = $1 ORDER BY generated_at DESC LIMIT 1""",
@@ -701,7 +681,7 @@ class YouTubeStorage:
     async def get_strategy_history(
         self, channel_id: UUID, *, limit: int = 10
     ) -> list[dict[str, Any]]:
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT * FROM youtube_strategy_documents
                    WHERE channel_id = $1 ORDER BY generated_at DESC LIMIT $2""",
@@ -715,7 +695,7 @@ class YouTubeStorage:
     # ------------------------------------------------------------------
 
     async def save_assumption(self, a: dict[str, Any]) -> dict[str, Any]:
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(
                 """INSERT INTO youtube_assumptions
                        (channel_id, category, statement, evidence, confidence,
@@ -746,21 +726,19 @@ class YouTubeStorage:
             sql = """SELECT * FROM youtube_assumptions
                      WHERE channel_id = $1 ORDER BY confidence DESC"""
             args = [channel_id]
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             rows = await conn.fetch(sql, *args)
         return [dict(r) for r in rows]
 
     async def get_assumption(self, assumption_id: UUID) -> dict[str, Any] | None:
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM youtube_assumptions WHERE id = $1",
                 assumption_id,
             )
         return dict(row) if row else None
 
-    async def update_assumption(
-        self, assumption_id: UUID, **kwargs: Any
-    ) -> dict[str, Any] | None:
+    async def update_assumption(self, assumption_id: UUID, **kwargs: Any) -> dict[str, Any] | None:
         sets: list[str] = []
         args: list[Any] = []
         i = 2
@@ -790,14 +768,14 @@ class YouTubeStorage:
                 i += 1
         if not sets:
             return await self.get_assumption(assumption_id)
-        sql = f"UPDATE youtube_assumptions SET {', '.join(sets)} WHERE id = $1 RETURNING *"
-        async with self._pool.acquire() as conn:
+        sql = f"UPDATE youtube_assumptions SET {', '.join(sets)} WHERE id = $1 RETURNING *"  # nosec B608
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(sql, assumption_id, *args)
         return dict(row) if row else None
 
     async def get_stale_assumptions(self) -> list[dict[str, Any]]:
         """Return all assumptions past their next_validation date."""
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT a.*, c.tenant_id
                    FROM youtube_assumptions a
@@ -819,7 +797,7 @@ class YouTubeStorage:
         content: str,
         doc_type: str = "",
     ) -> dict[str, Any]:
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             row = await conn.fetchrow(
                 """INSERT INTO youtube_channel_documents
                        (channel_id, title, content, doc_type)
@@ -832,10 +810,8 @@ class YouTubeStorage:
             )
         return dict(row) if row else {}
 
-    async def get_documents(
-        self, channel_id: UUID
-    ) -> list[dict[str, Any]]:
-        async with self._pool.acquire() as conn:
+    async def get_documents(self, channel_id: UUID) -> list[dict[str, Any]]:
+        async with self._db.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT * FROM youtube_channel_documents
                    WHERE channel_id = $1 ORDER BY created_at DESC""",
@@ -849,7 +825,7 @@ class YouTubeStorage:
 
     async def get_channels_due_for_analysis(self) -> list[dict[str, Any]]:
         """Return channels where interval has elapsed since last analysis."""
-        async with self._pool.acquire() as conn:
+        async with self._db.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT c.*
                    FROM youtube_channels c
@@ -871,6 +847,7 @@ class YouTubeStorage:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _json_str(obj: Any) -> str:
     """Serialize *obj* to a JSON string for asyncpg JSONB parameters."""

@@ -272,7 +272,7 @@ class TenantManager:
 
         row = await self._fetchrow(
             f"""
-            UPDATE tenants SET {', '.join(sets)}
+            UPDATE tenants SET {", ".join(sets)}
             WHERE tenant_id = ${idx}::uuid
             RETURNING tenant_id, name, domain, is_active, rate_limit_rpm,
                       config, created_at, updated_at

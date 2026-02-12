@@ -530,9 +530,7 @@ class TestOllamaRouterBackend:
         monkeypatch.setenv("DISCORD_TOKEN", "test")
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
-        mock_httpx_client.post = AsyncMock(
-            side_effect=httpx.TimeoutException("Timeout")
-        )
+        mock_httpx_client.post = AsyncMock(side_effect=httpx.TimeoutException("Timeout"))
 
         decision = await router_backend.classify("test")
 
