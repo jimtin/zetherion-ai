@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -52,9 +52,7 @@ class UpdateResult:
     steps_completed: list[str] = field(default_factory=list)
     error: str | None = None
     duration_seconds: float = 0.0
-    started_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    started_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     completed_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -95,9 +93,7 @@ class HistoryEntry:
     tag: str
     version: str
     result: UpdateResult
-    timestamp: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
         return {

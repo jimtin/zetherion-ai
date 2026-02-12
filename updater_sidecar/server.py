@@ -7,6 +7,7 @@ Docker network.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -38,15 +39,12 @@ def create_app(
     # Store executor and config in app state
     app["executor"] = executor or UpdateExecutor(
         project_dir=os.environ.get("PROJECT_DIR", "/project"),
-        compose_file=os.environ.get(
-            "COMPOSE_FILE", "/project/docker-compose.yml"
-        ),
-        health_urls=_parse_health_urls(
-            os.environ.get("HEALTH_URLS", "")
-        ),
+        compose_file=os.environ.get("COMPOSE_FILE", "/project/docker-compose.yml"),
+        health_urls=_parse_health_urls(os.environ.get("HEALTH_URLS", "")),
     )
     app["secret"] = secret or ""
-    app["history"]: deque[HistoryEntry] = deque(maxlen=MAX_HISTORY)
+    history: deque[HistoryEntry] = deque(maxlen=MAX_HISTORY)
+    app["history"] = history
     app["start_time"] = time.monotonic()
 
     # Register routes
@@ -129,17 +127,13 @@ async def handle_apply(request: web.Request) -> web.Response:
     executor: UpdateExecutor = request.app["executor"]
 
     if executor.is_busy:
-        return web.json_response(
-            {"error": "Update already in progress"}, status=409
-        )
+        return web.json_response({"error": "Update already in progress"}, status=409)
 
     try:
         data = await request.json()
         update_req = UpdateRequest.from_dict(data)
     except (ValueError, Exception) as exc:
-        return web.json_response(
-            {"error": f"Invalid request: {exc}"}, status=400
-        )
+        return web.json_response({"error": f"Invalid request: {exc}"}, status=400)
 
     log.info("Starting update to %s (v%s)", update_req.tag, update_req.version)
     result = await executor.apply_update(update_req.tag, update_req.version)
@@ -166,17 +160,13 @@ async def handle_rollback(request: web.Request) -> web.Response:
     executor: UpdateExecutor = request.app["executor"]
 
     if executor.is_busy:
-        return web.json_response(
-            {"error": "Operation already in progress"}, status=409
-        )
+        return web.json_response({"error": "Operation already in progress"}, status=409)
 
     try:
         data = await request.json()
         rollback_req = RollbackRequest.from_dict(data)
     except (ValueError, Exception) as exc:
-        return web.json_response(
-            {"error": f"Invalid request: {exc}"}, status=400
-        )
+        return web.json_response({"error": f"Invalid request: {exc}"}, status=400)
 
     log.info("Starting rollback to %s", rollback_req.previous_sha[:12])
     result = await executor.rollback(rollback_req.previous_sha)
@@ -201,9 +191,7 @@ async def handle_history(request: web.Request) -> web.Response:
         return web.json_response({"error": "Unauthorized"}, status=401)
 
     history: deque[HistoryEntry] = request.app["history"]
-    return web.json_response(
-        {"entries": [entry.to_dict() for entry in history]}
-    )
+    return web.json_response({"entries": [entry.to_dict() for entry in history]})
 
 
 async def handle_diagnostics(request: web.Request) -> web.Response:
@@ -217,13 +205,11 @@ async def handle_diagnostics(request: web.Request) -> web.Response:
 
 
 async def run_server(
-    host: str = "0.0.0.0",  # noqa: S104 — internal Docker network only
+    host: str = "0.0.0.0",  # noqa: S104  # nosec B104
     port: int = 9090,
 ) -> None:
     """Start the updater sidecar server."""
-    secret_path = os.environ.get(
-        "UPDATER_SECRET_PATH", "/app/data/.updater-secret"
-    )
+    secret_path = os.environ.get("UPDATER_SECRET_PATH", "/app/data/.updater-secret")
     secret = get_or_create_secret(secret_path)
 
     app = create_app(secret=secret)
@@ -243,7 +229,3 @@ async def run_server(
         pass
     finally:
         await runner.cleanup()
-
-
-# Need asyncio for run_server
-import asyncio  # noqa: E402
