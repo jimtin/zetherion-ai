@@ -641,9 +641,7 @@ async def test_list_replies_with_status_filter(yt_client):
         headers={"X-API-Key": api_key},
     )
     assert resp.status == 200
-    storage.get_reply_drafts.assert_called_once_with(
-        CHANNEL_UUID, status="pending", limit=10
-    )
+    storage.get_reply_drafts.assert_called_once_with(CHANNEL_UUID, status="pending", limit=10)
 
 
 @pytest.mark.integration
@@ -816,9 +814,7 @@ async def test_list_assumptions(yt_client):
 async def test_update_assumption_confirm(yt_client):
     """PATCH .../assumptions/{id} with action=confirm confirms it."""
     client, _, storage, _, api_key = yt_client
-    with patch(
-        "zetherion_ai.skills.youtube.assumptions.AssumptionTracker"
-    ) as mock_tracker:
+    with patch("zetherion_ai.skills.youtube.assumptions.AssumptionTracker") as mock_tracker:
         tracker_instance = AsyncMock()
         tracker_instance.confirm = AsyncMock(
             return_value=_make_assumption(assumption_id=ASSUMPTION_ID)
@@ -838,9 +834,7 @@ async def test_update_assumption_confirm(yt_client):
 async def test_update_assumption_invalidate(yt_client):
     """PATCH .../assumptions/{id} with action=invalidate invalidates it."""
     client, _, storage, _, api_key = yt_client
-    with patch(
-        "zetherion_ai.skills.youtube.assumptions.AssumptionTracker"
-    ) as mock_tracker:
+    with patch("zetherion_ai.skills.youtube.assumptions.AssumptionTracker") as mock_tracker:
         tracker_instance = AsyncMock()
         tracker_instance.invalidate = AsyncMock(
             return_value=_make_assumption(assumption_id=ASSUMPTION_ID)
@@ -874,9 +868,7 @@ async def test_update_assumption_invalid_action(yt_client):
 async def test_update_assumption_not_found(yt_client):
     """PATCH .../assumptions/{id} when assumption missing returns 404."""
     client, _, storage, _, api_key = yt_client
-    with patch(
-        "zetherion_ai.skills.youtube.assumptions.AssumptionTracker"
-    ) as mock_tracker:
+    with patch("zetherion_ai.skills.youtube.assumptions.AssumptionTracker") as mock_tracker:
         tracker_instance = AsyncMock()
         tracker_instance.confirm = AsyncMock(return_value=None)
         mock_tracker.return_value = tracker_instance
@@ -909,9 +901,7 @@ async def test_validate_assumptions(yt_client):
     stale["channel_id"] = CHANNEL_ID
     storage.get_stale_assumptions = AsyncMock(return_value=[stale])
 
-    with patch(
-        "zetherion_ai.skills.youtube.assumptions.AssumptionTracker"
-    ) as mock_tracker:
+    with patch("zetherion_ai.skills.youtube.assumptions.AssumptionTracker") as mock_tracker:
         tracker_instance = AsyncMock()
         tracker_instance.get_stale = AsyncMock(return_value=[stale])
         mock_tracker.return_value = tracker_instance
@@ -1027,9 +1017,7 @@ async def test_channel_not_owned_returns_not_found(yt_client):
     """Accessing a channel owned by another tenant returns 404."""
     client, _, storage, _, api_key = yt_client
     # Channel belongs to a different tenant
-    storage.get_channel = AsyncMock(
-        return_value=_make_channel(tenant_id=OTHER_TENANT_ID)
-    )
+    storage.get_channel = AsyncMock(return_value=_make_channel(tenant_id=OTHER_TENANT_ID))
     resp = await client.get(
         f"/api/v1/youtube/channels/{CHANNEL_ID}/intelligence",
         headers={"X-API-Key": api_key},
@@ -1043,9 +1031,7 @@ async def test_channel_not_owned_returns_not_found(yt_client):
 async def test_push_videos_wrong_tenant(yt_client):
     """POST .../videos for a channel not owned by tenant returns 404."""
     client, _, storage, _, api_key = yt_client
-    storage.get_channel = AsyncMock(
-        return_value=_make_channel(tenant_id=OTHER_TENANT_ID)
-    )
+    storage.get_channel = AsyncMock(return_value=_make_channel(tenant_id=OTHER_TENANT_ID))
     resp = await client.post(
         f"/api/v1/youtube/channels/{CHANNEL_ID}/videos",
         json={"videos": [{"id": "v1"}]},
@@ -1058,9 +1044,7 @@ async def test_push_videos_wrong_tenant(yt_client):
 async def test_push_comments_wrong_tenant(yt_client):
     """POST .../comments for a channel not owned by tenant returns 404."""
     client, _, storage, _, api_key = yt_client
-    storage.get_channel = AsyncMock(
-        return_value=_make_channel(tenant_id=OTHER_TENANT_ID)
-    )
+    storage.get_channel = AsyncMock(return_value=_make_channel(tenant_id=OTHER_TENANT_ID))
     resp = await client.post(
         f"/api/v1/youtube/channels/{CHANNEL_ID}/comments",
         json={"comments": [{"text": "hi"}]},
@@ -1073,9 +1057,7 @@ async def test_push_comments_wrong_tenant(yt_client):
 async def test_push_stats_wrong_tenant(yt_client):
     """POST .../stats for a channel not owned by tenant returns 404."""
     client, _, storage, _, api_key = yt_client
-    storage.get_channel = AsyncMock(
-        return_value=_make_channel(tenant_id=OTHER_TENANT_ID)
-    )
+    storage.get_channel = AsyncMock(return_value=_make_channel(tenant_id=OTHER_TENANT_ID))
     resp = await client.post(
         f"/api/v1/youtube/channels/{CHANNEL_ID}/stats",
         json={"snapshot": {}},
@@ -1088,9 +1070,7 @@ async def test_push_stats_wrong_tenant(yt_client):
 async def test_push_document_wrong_tenant(yt_client):
     """POST .../documents for a channel not owned by tenant returns 404."""
     client, _, storage, _, api_key = yt_client
-    storage.get_channel = AsyncMock(
-        return_value=_make_channel(tenant_id=OTHER_TENANT_ID)
-    )
+    storage.get_channel = AsyncMock(return_value=_make_channel(tenant_id=OTHER_TENANT_ID))
     resp = await client.post(
         f"/api/v1/youtube/channels/{CHANNEL_ID}/documents",
         json={"title": "x", "content": "body"},
@@ -1103,9 +1083,7 @@ async def test_push_document_wrong_tenant(yt_client):
 async def test_trigger_analysis_wrong_tenant(yt_client):
     """POST .../intelligence/analyze for wrong tenant returns 404."""
     client, _, storage, _, api_key = yt_client
-    storage.get_channel = AsyncMock(
-        return_value=_make_channel(tenant_id=OTHER_TENANT_ID)
-    )
+    storage.get_channel = AsyncMock(return_value=_make_channel(tenant_id=OTHER_TENANT_ID))
     resp = await client.post(
         f"/api/v1/youtube/channels/{CHANNEL_ID}/intelligence/analyze",
         headers={"X-API-Key": api_key},
@@ -1117,9 +1095,7 @@ async def test_trigger_analysis_wrong_tenant(yt_client):
 async def test_management_wrong_tenant(yt_client):
     """GET .../management for wrong tenant returns 404."""
     client, _, storage, _, api_key = yt_client
-    storage.get_channel = AsyncMock(
-        return_value=_make_channel(tenant_id=OTHER_TENANT_ID)
-    )
+    storage.get_channel = AsyncMock(return_value=_make_channel(tenant_id=OTHER_TENANT_ID))
     resp = await client.get(
         f"/api/v1/youtube/channels/{CHANNEL_ID}/management",
         headers={"X-API-Key": api_key},
@@ -1131,9 +1107,7 @@ async def test_management_wrong_tenant(yt_client):
 async def test_strategy_wrong_tenant(yt_client):
     """GET .../strategy for wrong tenant returns 404."""
     client, _, storage, _, api_key = yt_client
-    storage.get_channel = AsyncMock(
-        return_value=_make_channel(tenant_id=OTHER_TENANT_ID)
-    )
+    storage.get_channel = AsyncMock(return_value=_make_channel(tenant_id=OTHER_TENANT_ID))
     resp = await client.get(
         f"/api/v1/youtube/channels/{CHANNEL_ID}/strategy",
         headers={"X-API-Key": api_key},
@@ -1145,9 +1119,7 @@ async def test_strategy_wrong_tenant(yt_client):
 async def test_assumptions_wrong_tenant(yt_client):
     """GET .../assumptions for wrong tenant returns 404."""
     client, _, storage, _, api_key = yt_client
-    storage.get_channel = AsyncMock(
-        return_value=_make_channel(tenant_id=OTHER_TENANT_ID)
-    )
+    storage.get_channel = AsyncMock(return_value=_make_channel(tenant_id=OTHER_TENANT_ID))
     resp = await client.get(
         f"/api/v1/youtube/channels/{CHANNEL_ID}/assumptions",
         headers={"X-API-Key": api_key},

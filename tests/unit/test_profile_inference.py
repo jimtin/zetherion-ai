@@ -496,7 +496,7 @@ class TestTier2InferenceWithBroker:
         broker = MagicMock()
         result = MagicMock()
         result.content = (
-            '{"updates": [{"field": "work_pattern",' ' "value": "morning", "confidence": 0.7}]}'
+            '{"updates": [{"field": "work_pattern", "value": "morning", "confidence": 0.7}]}'
         )
         broker.infer = AsyncMock(return_value=result)
         return broker

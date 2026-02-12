@@ -137,9 +137,7 @@ def _extract_field_names(template: str) -> set[str]:
     """Return the set of field names from a format string (single-brace only)."""
     formatter = string.Formatter()
     return {
-        field_name
-        for _, field_name, _, _ in formatter.parse(template)
-        if field_name is not None
+        field_name for _, field_name, _, _ in formatter.parse(template) if field_name is not None
     }
 
 
@@ -231,9 +229,7 @@ class TestStaticSystemPrompts:
     )
     def test_no_single_brace_placeholders(self, name: str, value: str) -> None:
         matches = _SINGLE_BRACE_RE.findall(value)
-        assert matches == [], (
-            f"{name} contains unexpected single-brace placeholders: {matches}"
-        )
+        assert matches == [], f"{name} contains unexpected single-brace placeholders: {matches}"
 
 
 # ---------------------------------------------------------------------------

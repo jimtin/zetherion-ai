@@ -23,6 +23,7 @@ from zetherion_ai.skills.youtube.models import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_storage() -> AsyncMock:
     """Return an AsyncMock that mimics YouTubeStorage."""
     storage = AsyncMock()
@@ -108,9 +109,7 @@ class TestAddConfirmed:
         tracker = AssumptionTracker(storage)
 
         before = datetime.utcnow()
-        await tracker.add_confirmed(
-            channel_id=uuid4(), category="tone", statement="Friendly"
-        )
+        await tracker.add_confirmed(channel_id=uuid4(), category="tone", statement="Friendly")
         after = datetime.utcnow()
 
         payload = storage.save_assumption.call_args[0][0]
@@ -123,9 +122,7 @@ class TestAddConfirmed:
         tracker = AssumptionTracker(storage)
 
         before = datetime.utcnow()
-        await tracker.add_confirmed(
-            channel_id=uuid4(), category="tone", statement="Friendly"
-        )
+        await tracker.add_confirmed(channel_id=uuid4(), category="tone", statement="Friendly")
 
         payload = storage.save_assumption.call_args[0][0]
         next_val = datetime.fromisoformat(payload["next_validation"])
@@ -138,9 +135,7 @@ class TestAddConfirmed:
         storage = _make_storage()
         tracker = AssumptionTracker(storage)
 
-        await tracker.add_confirmed(
-            channel_id=uuid4(), category="content", statement="Tutorials"
-        )
+        await tracker.add_confirmed(channel_id=uuid4(), category="content", statement="Tutorials")
 
         payload = storage.save_assumption.call_args[0][0]
         assert payload["evidence"] == []
@@ -194,9 +189,7 @@ class TestAddInferred:
         storage = _make_storage()
         tracker = AssumptionTracker(storage)
 
-        await tracker.add_inferred(
-            channel_id=uuid4(), category="topic", statement="Cooking"
-        )
+        await tracker.add_inferred(channel_id=uuid4(), category="topic", statement="Cooking")
 
         payload = storage.save_assumption.call_args[0][0]
         assert payload["confirmed_at"] is None
@@ -207,9 +200,7 @@ class TestAddInferred:
         tracker = AssumptionTracker(storage)
 
         before = datetime.utcnow()
-        await tracker.add_inferred(
-            channel_id=uuid4(), category="topic", statement="Cooking"
-        )
+        await tracker.add_inferred(channel_id=uuid4(), category="topic", statement="Cooking")
 
         payload = storage.save_assumption.call_args[0][0]
         next_val = datetime.fromisoformat(payload["next_validation"])
@@ -221,9 +212,7 @@ class TestAddInferred:
         storage = _make_storage()
         tracker = AssumptionTracker(storage)
 
-        await tracker.add_inferred(
-            channel_id=uuid4(), category="audience", statement="Young"
-        )
+        await tracker.add_inferred(channel_id=uuid4(), category="audience", statement="Young")
 
         payload = storage.save_assumption.call_args[0][0]
         assert payload["confidence"] == 0.5
@@ -233,9 +222,7 @@ class TestAddInferred:
         storage = _make_storage()
         tracker = AssumptionTracker(storage)
 
-        await tracker.add_inferred(
-            channel_id=uuid4(), category="audience", statement="Young"
-        )
+        await tracker.add_inferred(channel_id=uuid4(), category="audience", statement="Young")
 
         payload = storage.save_assumption.call_args[0][0]
         assert payload["evidence"] == []
@@ -340,9 +327,7 @@ class TestGetHighConfidence:
     @pytest.mark.asyncio
     async def test_includes_confirmed_regardless_of_confidence(self) -> None:
         storage = _make_storage()
-        confirmed_low = _make_assumption(
-            source=AssumptionSource.CONFIRMED.value, confidence=0.3
-        )
+        confirmed_low = _make_assumption(source=AssumptionSource.CONFIRMED.value, confidence=0.3)
         storage.get_assumptions.return_value = [confirmed_low]
         tracker = AssumptionTracker(storage)
 
@@ -352,9 +337,7 @@ class TestGetHighConfidence:
     @pytest.mark.asyncio
     async def test_includes_inferred_above_threshold(self) -> None:
         storage = _make_storage()
-        high = _make_assumption(
-            source=AssumptionSource.INFERRED.value, confidence=0.8
-        )
+        high = _make_assumption(source=AssumptionSource.INFERRED.value, confidence=0.8)
         storage.get_assumptions.return_value = [high]
         tracker = AssumptionTracker(storage)
 
@@ -364,9 +347,7 @@ class TestGetHighConfidence:
     @pytest.mark.asyncio
     async def test_excludes_inferred_below_threshold(self) -> None:
         storage = _make_storage()
-        low = _make_assumption(
-            source=AssumptionSource.INFERRED.value, confidence=0.5
-        )
+        low = _make_assumption(source=AssumptionSource.INFERRED.value, confidence=0.5)
         storage.get_assumptions.return_value = [low]
         tracker = AssumptionTracker(storage)
 
@@ -376,9 +357,7 @@ class TestGetHighConfidence:
     @pytest.mark.asyncio
     async def test_custom_threshold(self) -> None:
         storage = _make_storage()
-        mid = _make_assumption(
-            source=AssumptionSource.INFERRED.value, confidence=0.5
-        )
+        mid = _make_assumption(source=AssumptionSource.INFERRED.value, confidence=0.5)
         storage.get_assumptions.return_value = [mid]
         tracker = AssumptionTracker(storage)
 
@@ -388,20 +367,15 @@ class TestGetHighConfidence:
     @pytest.mark.asyncio
     async def test_mixed_sources_filtered_correctly(self) -> None:
         storage = _make_storage()
-        confirmed = _make_assumption(
-            source=AssumptionSource.CONFIRMED.value, confidence=0.2
-        )
-        high_inferred = _make_assumption(
-            source=AssumptionSource.INFERRED.value, confidence=0.9
-        )
-        low_inferred = _make_assumption(
-            source=AssumptionSource.INFERRED.value, confidence=0.3
-        )
-        needs_review = _make_assumption(
-            source=AssumptionSource.NEEDS_REVIEW.value, confidence=0.8
-        )
+        confirmed = _make_assumption(source=AssumptionSource.CONFIRMED.value, confidence=0.2)
+        high_inferred = _make_assumption(source=AssumptionSource.INFERRED.value, confidence=0.9)
+        low_inferred = _make_assumption(source=AssumptionSource.INFERRED.value, confidence=0.3)
+        needs_review = _make_assumption(source=AssumptionSource.NEEDS_REVIEW.value, confidence=0.8)
         storage.get_assumptions.return_value = [
-            confirmed, high_inferred, low_inferred, needs_review,
+            confirmed,
+            high_inferred,
+            low_inferred,
+            needs_review,
         ]
         tracker = AssumptionTracker(storage)
 
@@ -737,9 +711,7 @@ class TestGetMissingCategories:
 
         # All categories except PERFORMANCE should be returned
         expected = sorted(
-            c.value
-            for c in AssumptionCategory
-            if c != AssumptionCategory.PERFORMANCE
+            c.value for c in AssumptionCategory if c != AssumptionCategory.PERFORMANCE
         )
         assert missing == expected
 
@@ -775,9 +747,7 @@ class TestGetMissingCategories:
     @pytest.mark.asyncio
     async def test_returns_empty_when_all_covered(self) -> None:
         storage = _make_storage()
-        required = [
-            c for c in AssumptionCategory if c != AssumptionCategory.PERFORMANCE
-        ]
+        required = [c for c in AssumptionCategory if c != AssumptionCategory.PERFORMANCE]
         storage.get_assumptions.return_value = [
             _make_assumption(category=c.value) for c in required
         ]

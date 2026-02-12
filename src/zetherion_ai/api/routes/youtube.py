@@ -29,6 +29,7 @@ log = get_logger("zetherion_ai.api.routes.youtube")
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_storage(request: web.Request) -> Any:
     """Retrieve the YouTubeStorage from the app."""
     storage = request.app.get("youtube_storage")
@@ -66,9 +67,7 @@ def _channel_id(request: web.Request) -> UUID:
         ) from err
 
 
-async def _verify_channel_ownership(
-    request: web.Request, channel_id: UUID
-) -> dict[str, Any]:
+async def _verify_channel_ownership(request: web.Request, channel_id: UUID) -> dict[str, Any]:
     """Load a channel and verify it belongs to the authenticated tenant."""
     storage = _get_storage(request)
     channel = await storage.get_channel(channel_id)
@@ -82,7 +81,7 @@ async def _verify_channel_ownership(
             text=json.dumps({"error": "Channel not found"}),
             content_type="application/json",
         )
-    return channel
+    return channel  # type: ignore[no-any-return]
 
 
 def _serialise(row: dict[str, Any]) -> dict[str, Any]:
@@ -101,6 +100,7 @@ def _serialise(row: dict[str, Any]) -> dict[str, Any]:
 # Channels
 # ---------------------------------------------------------------------------
 
+
 async def handle_register_channel(request: web.Request) -> web.Response:
     """POST /api/v1/youtube/channels — register a YouTube channel."""
     storage = _get_storage(request)
@@ -108,9 +108,7 @@ async def handle_register_channel(request: web.Request) -> web.Response:
 
     channel_youtube_id = data.get("channel_youtube_id")
     if not channel_youtube_id:
-        return web.json_response(
-            {"error": "channel_youtube_id required"}, status=400
-        )
+        return web.json_response({"error": "channel_youtube_id required"}, status=400)
 
     row = await storage.create_channel(
         tenant_id=_tenant_id(request),
@@ -131,6 +129,7 @@ async def handle_list_channels(request: web.Request) -> web.Response:
 # ---------------------------------------------------------------------------
 # Data ingestion
 # ---------------------------------------------------------------------------
+
 
 async def handle_push_videos(request: web.Request) -> web.Response:
     """POST /api/v1/youtube/channels/{channel_id}/videos — push video batch."""
@@ -196,6 +195,7 @@ async def handle_push_document(request: web.Request) -> web.Response:
 # Intelligence
 # ---------------------------------------------------------------------------
 
+
 async def handle_trigger_analysis(request: web.Request) -> web.Response:
     """POST /api/v1/youtube/channels/{channel_id}/intelligence/analyze"""
     skill = _get_skill(request, "intelligence")
@@ -234,6 +234,7 @@ async def handle_intelligence_history(request: web.Request) -> web.Response:
 # ---------------------------------------------------------------------------
 # Management
 # ---------------------------------------------------------------------------
+
 
 async def handle_get_management_state(request: web.Request) -> web.Response:
     """GET /api/v1/youtube/channels/{channel_id}/management"""
@@ -337,6 +338,7 @@ async def handle_channel_health(request: web.Request) -> web.Response:
 # Strategy
 # ---------------------------------------------------------------------------
 
+
 async def handle_generate_strategy(request: web.Request) -> web.Response:
     """POST /api/v1/youtube/channels/{channel_id}/strategy/generate"""
     skill = _get_skill(request, "strategy")
@@ -373,6 +375,7 @@ async def handle_strategy_history(request: web.Request) -> web.Response:
 # ---------------------------------------------------------------------------
 # Assumptions
 # ---------------------------------------------------------------------------
+
 
 async def handle_list_assumptions(request: web.Request) -> web.Response:
     """GET /api/v1/youtube/channels/{channel_id}/assumptions"""
@@ -440,6 +443,7 @@ async def handle_validate_assumptions(request: web.Request) -> web.Response:
 # Route registration helper
 # ---------------------------------------------------------------------------
 
+
 def register_youtube_routes(app: web.Application) -> None:
     """Register all YouTube API routes on the aiohttp application."""
     prefix = "/api/v1/youtube"
@@ -465,9 +469,7 @@ def register_youtube_routes(app: web.Application) -> None:
     app.router.add_get(chid + "/management", handle_get_management_state)
     app.router.add_post(chid + "/management/configure", handle_configure_management)
     app.router.add_get(chid + "/management/replies", handle_list_replies)
-    app.router.add_patch(
-        chid + "/management/replies/{reply_id}", handle_update_reply
-    )
+    app.router.add_patch(chid + "/management/replies/{reply_id}", handle_update_reply)
     app.router.add_get(chid + "/management/tags", handle_get_tags)
     app.router.add_get(chid + "/management/health", handle_channel_health)
 
@@ -478,9 +480,7 @@ def register_youtube_routes(app: web.Application) -> None:
 
     # Assumptions
     app.router.add_get(chid + "/assumptions", handle_list_assumptions)
-    app.router.add_patch(
-        chid + "/assumptions/{assumption_id}", handle_update_assumption
-    )
+    app.router.add_patch(chid + "/assumptions/{assumption_id}", handle_update_assumption)
     app.router.add_post(chid + "/assumptions/validate", handle_validate_assumptions)
 
     log.info("youtube_routes_registered", prefix=prefix)

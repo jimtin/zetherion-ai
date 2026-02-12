@@ -48,9 +48,7 @@ def _make_storage() -> AsyncMock:
             "trust_stats": {"total": 0, "approved": 0, "rejected": 0},
         }
     )
-    storage.get_latest_report = AsyncMock(
-        return_value={"report": {"summary": "all good"}}
-    )
+    storage.get_latest_report = AsyncMock(return_value={"report": {"summary": "all good"}})
     storage.get_reply_drafts = AsyncMock(
         return_value=[
             {"status": "posted"},
@@ -59,9 +57,7 @@ def _make_storage() -> AsyncMock:
         ]
     )
     storage.get_documents = AsyncMock(
-        return_value=[
-            {"title": "Brand Guide", "doc_type": "brand_guide", "content": "Be cool."}
-        ]
+        return_value=[{"title": "Brand Guide", "doc_type": "brand_guide", "content": "Be cool."}]
     )
     storage.get_latest_strategy = AsyncMock(
         return_value={
@@ -119,9 +115,7 @@ def _make_broker(content: str | None = None) -> AsyncMock:
             },
         }
     )
-    broker.infer = AsyncMock(
-        return_value=_FakeInferenceResult(content=result_content)
-    )
+    broker.infer = AsyncMock(return_value=_FakeInferenceResult(content=result_content))
     return broker
 
 
@@ -409,9 +403,7 @@ class TestHandleStrategyHistory:
         skill = await _init_skill(storage=storage)
         req = _req(intent="yt_strategy_history", limit=5)
         await skill.handle(req)
-        storage.get_strategy_history.assert_awaited_once_with(
-            _CHANNEL_ID, limit=5
-        )
+        storage.get_strategy_history.assert_awaited_once_with(_CHANNEL_ID, limit=5)
 
     @pytest.mark.asyncio
     async def test_history_default_limit(self) -> None:
@@ -420,9 +412,7 @@ class TestHandleStrategyHistory:
         skill = await _init_skill(storage=storage)
         req = _req(intent="yt_strategy_history")
         await skill.handle(req)
-        storage.get_strategy_history.assert_awaited_once_with(
-            _CHANNEL_ID, limit=10
-        )
+        storage.get_strategy_history.assert_awaited_once_with(_CHANNEL_ID, limit=10)
 
 
 # ---------------------------------------------------------------------------
@@ -564,9 +554,7 @@ class TestGatherContext:
         storage = _make_storage()
         long_content = "x" * 5000
         storage.get_documents = AsyncMock(
-            return_value=[
-                {"title": "Big Doc", "doc_type": "guide", "content": long_content}
-            ]
+            return_value=[{"title": "Big Doc", "doc_type": "guide", "content": long_content}]
         )
         skill = await _init_skill(storage=storage)
 

@@ -134,7 +134,7 @@ class YouTubeIntelligenceSkill(Skill):
                 f"Handler not implemented: {handler_name}",
             )
         try:
-            return await handler(request)
+            return await handler(request)  # type: ignore[no-any-return]
         except Exception as e:
             log.error("intelligence_handle_error", error=str(e))
             return SkillResponse.error_response(request.id, f"Intelligence error: {e}")
@@ -261,9 +261,7 @@ class YouTubeIntelligenceSkill(Skill):
         )
 
         # 6. Update last_analysis_at on the channel
-        await self._storage.update_channel(
-            channel_id, last_analysis_at=datetime.utcnow()
-        )
+        await self._storage.update_channel(channel_id, last_analysis_at=datetime.utcnow())
 
         # 7. Infer new assumptions from the report
         if self._assumptions:
@@ -289,10 +287,7 @@ class YouTubeIntelligenceSkill(Skill):
         for batch_start in range(0, len(unanalyzed), _COMMENT_BATCH_SIZE):
             batch = unanalyzed[batch_start : batch_start + _COMMENT_BATCH_SIZE]
             batch_json = json.dumps(
-                [
-                    {"comment_id": str(c["id"]), "text": c["text"]}
-                    for c in batch
-                ],
+                [{"comment_id": str(c["id"]), "text": c["text"]} for c in batch],
                 default=str,
             )
 
@@ -325,9 +320,7 @@ class YouTubeIntelligenceSkill(Skill):
         return all_analyses
 
     @staticmethod
-    def _parse_batch_response(
-        raw: str, batch: list[dict[str, Any]]
-    ) -> list[CommentAnalysis]:
+    def _parse_batch_response(raw: str, batch: list[dict[str, Any]]) -> list[CommentAnalysis]:
         """Parse the LLM JSON array response into CommentAnalysis objects."""
         # Strip markdown fences if present
         cleaned = raw.strip()
@@ -376,9 +369,7 @@ class YouTubeIntelligenceSkill(Skill):
     # Step 2: content performance (computation)
     # ------------------------------------------------------------------
 
-    async def _compute_performance(
-        self, channel_id: UUID
-    ) -> list[dict[str, Any]]:
+    async def _compute_performance(self, channel_id: UUID) -> list[dict[str, Any]]:
         """Rank videos by engagement and return performance data."""
         assert self._storage is not None
 
@@ -421,9 +412,7 @@ class YouTubeIntelligenceSkill(Skill):
     # Step 3: aggregate comment data
     # ------------------------------------------------------------------
 
-    async def _aggregate_comments(
-        self, channel_id: UUID
-    ) -> dict[str, Any]:
+    async def _aggregate_comments(self, channel_id: UUID) -> dict[str, Any]:
         """Build an aggregated summary of all analyzed comments."""
         assert self._storage is not None
 
@@ -476,16 +465,17 @@ class YouTubeIntelligenceSkill(Skill):
         sentiment_str = ", ".join(
             f"{k}: {v}" for k, v in comment_summary.get("sentiments", {}).items()
         )
-        topics_str = ", ".join(
-            f"{t} ({n})" for t, n in comment_summary.get("top_topics", [])[:10]
-        )
+        topics_str = ", ".join(f"{t} ({n})" for t, n in comment_summary.get("top_topics", [])[:10])
         perf_str = json.dumps(video_performance[:20], indent=2, default=str)
         stats_str = json.dumps(channel_stats, indent=2, default=str)
-        assumptions_str = "\n".join(
-            f"- [{a.get('category', '')}] {a.get('statement', '')}"
-            f" (confidence: {a.get('confidence', 0):.1f})"
-            for a in assumptions
-        ) or "None yet."
+        assumptions_str = (
+            "\n".join(
+                f"- [{a.get('category', '')}] {a.get('statement', '')}"
+                f" (confidence: {a.get('confidence', 0):.1f})"
+                for a in assumptions
+            )
+            or "None yet."
+        )
 
         user_prompt = AUDIENCE_SYNTHESIS_USER.format(
             channel_name=channel_name,
@@ -526,7 +516,7 @@ class YouTubeIntelligenceSkill(Skill):
                 cleaned = cleaned.rstrip()[:-3]
 
         try:
-            return json.loads(cleaned)
+            return json.loads(cleaned)  # type: ignore[no-any-return]
         except json.JSONDecodeError:
             log.warning("synthesis_json_invalid", raw=raw[:300])
             return {"raw_response": raw}
@@ -583,9 +573,7 @@ class YouTubeIntelligenceSkill(Skill):
     # Step 7: infer assumptions from the report
     # ------------------------------------------------------------------
 
-    async def _infer_assumptions(
-        self, channel_id: UUID, report: dict[str, Any]
-    ) -> None:
+    async def _infer_assumptions(self, channel_id: UUID, report: dict[str, Any]) -> None:
         """Extract high-confidence inferences from a report and store them."""
         assert self._assumptions is not None
 
@@ -702,6 +690,7 @@ class YouTubeIntelligenceSkill(Skill):
 # ---------------------------------------------------------------------------
 # Module-level helpers
 # ---------------------------------------------------------------------------
+
 
 def _serialise_report(row: dict[str, Any]) -> dict[str, Any]:
     """Convert a DB report row into an API-friendly dict."""

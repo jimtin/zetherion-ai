@@ -99,9 +99,9 @@ def test_update_checker_registered(api_secret: str | None) -> None:
         if isinstance(skill_list, list):
             all_skill_names.extend(skill_list)
 
-    assert (
-        "update_checker" in all_skill_names
-    ), f"update_checker not found in status skills: {by_status}"
+    assert "update_checker" in all_skill_names, (
+        f"update_checker not found in status skills: {by_status}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -163,9 +163,9 @@ def test_check_update_intent(api_secret: str | None) -> None:
     # Both are valid in the Docker test environment.
     message = body.get("message", "").lower()
     if body.get("success"):
-        assert (
-            "up to date" in message or "update available" in message
-        ), f"Unexpected check_update message: {message}"
+        assert "up to date" in message or "update available" in message, (
+            f"Unexpected check_update message: {message}"
+        )
     else:
         # Not configured is acceptable in test environment
         assert "not configured" in message or "error" in body, f"Unexpected error response: {body}"
@@ -196,9 +196,9 @@ def test_apply_update_no_pending(api_secret: str | None) -> None:
     # When there is nothing to apply the skill says "No update available",
     # returns an error if the manager is not configured, or simply returns
     # success=False with no message.
-    assert (
-        "no update" in message or "not configured" in message or body.get("success") is False
-    ), f"Expected 'no update', 'not configured', or success=False, got: {body}"
+    assert "no update" in message or "not configured" in message or body.get("success") is False, (
+        f"Expected 'no update', 'not configured', or success=False, got: {body}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -252,12 +252,12 @@ def test_update_intents_present(api_secret: str | None) -> None:
 
     intents = resp.json().get("intents", {})
     for intent in ("check_update", "apply_update", "rollback_update", "update_status"):
-        assert (
-            intent in intents
-        ), f"Intent '{intent}' not found in /intents response: {list(intents.keys())}"
-        assert (
-            intents[intent] == "update_checker"
-        ), f"Intent '{intent}' mapped to '{intents[intent]}', expected 'update_checker'"
+        assert intent in intents, (
+            f"Intent '{intent}' not found in /intents response: {list(intents.keys())}"
+        )
+        assert intents[intent] == "update_checker", (
+            f"Intent '{intent}' mapped to '{intents[intent]}', expected 'update_checker'"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -283,9 +283,9 @@ def test_heartbeat_update_check(api_secret: str | None) -> None:
 
     body = resp.json()
     assert "actions" in body, f"Missing 'actions' key in heartbeat response: {body}"
-    assert isinstance(
-        body["actions"], list
-    ), f"Expected 'actions' to be a list, got: {type(body['actions'])}"
+    assert isinstance(body["actions"], list), (
+        f"Expected 'actions' to be a list, got: {type(body['actions'])}"
+    )
 
 
 # ---------------------------------------------------------------------------

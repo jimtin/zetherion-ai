@@ -118,16 +118,14 @@ class YouTubeStrategySkill(Skill):
     async def handle(self, request: SkillRequest) -> SkillResponse:
         handler_name = INTENT_HANDLERS.get(request.intent)
         if not handler_name:
-            return SkillResponse.error_response(
-                request.id, f"Unknown intent: {request.intent}"
-            )
+            return SkillResponse.error_response(request.id, f"Unknown intent: {request.intent}")
         handler = getattr(self, handler_name, None)
         if not handler:
             return SkillResponse.error_response(
                 request.id, f"Handler not implemented: {handler_name}"
             )
         try:
-            return await handler(request)
+            return await handler(request)  # type: ignore[no-any-return]
         except Exception as e:
             log.error("strategy_handle_error", error=str(e))
             return SkillResponse.error_response(request.id, f"Strategy error: {e}")
@@ -214,9 +212,7 @@ class YouTubeStrategySkill(Skill):
         strategy_body = await self._synthesise_strategy(context)
 
         # 3. Persist
-        valid_until = (
-            datetime.utcnow() + timedelta(days=_STRATEGY_TTL_DAYS)
-        ).isoformat()
+        valid_until = (datetime.utcnow() + timedelta(days=_STRATEGY_TTL_DAYS)).isoformat()
 
         saved = await self._storage.save_strategy(
             channel_id=channel_id,
@@ -256,11 +252,14 @@ class YouTubeStrategySkill(Skill):
 
         # Client documents
         docs = await self._storage.get_documents(channel_id)
-        doc_summaries = "\n\n".join(
-            f"### {d.get('title', 'Document')} ({d.get('doc_type', '')})\n"
-            f"{d.get('content', '')[:2000]}"
-            for d in docs
-        ) or "No client documents uploaded."
+        doc_summaries = (
+            "\n\n".join(
+                f"### {d.get('title', 'Document')} ({d.get('doc_type', '')})\n"
+                f"{d.get('content', '')[:2000]}"
+                for d in docs
+            )
+            or "No client documents uploaded."
+        )
 
         # Assumptions
         assumptions = await self._assumptions.get_high_confidence(channel_id)
@@ -298,11 +297,14 @@ class YouTubeStrategySkill(Skill):
         previous = context["previous_strategy"]
         documents = context["documents"]
 
-        assumptions_str = "\n".join(
-            f"- [{a.get('category', '')}] {a.get('statement', '')}"
-            f" (confidence: {a.get('confidence', 0):.1f})"
-            for a in assumptions
-        ) or "None confirmed yet."
+        assumptions_str = (
+            "\n".join(
+                f"- [{a.get('category', '')}] {a.get('statement', '')}"
+                f" (confidence: {a.get('confidence', 0):.1f})"
+                for a in assumptions
+            )
+            or "None confirmed yet."
+        )
 
         user_prompt = STRATEGY_GENERATION_USER.format(
             intelligence_report=json.dumps(intelligence, indent=2, default=str),
@@ -330,9 +332,7 @@ class YouTubeStrategySkill(Skill):
     # Infer assumptions from strategy
     # ------------------------------------------------------------------
 
-    async def _infer_assumptions(
-        self, channel_id: UUID, strategy: dict[str, Any]
-    ) -> None:
+    async def _infer_assumptions(self, channel_id: UUID, strategy: dict[str, Any]) -> None:
         """Extract assumptions from a generated strategy."""
         assert self._assumptions is not None
 
@@ -411,19 +411,19 @@ class YouTubeStrategySkill(Skill):
                         and isinstance(valid_until, datetime)
                         and valid_until < datetime.utcnow()
                     ):
-                            actions.append(
-                                HeartbeatAction(
-                                    skill_name=self.name,
-                                    action_type="strategy_stale",
-                                    user_id=uid,
-                                    data={
-                                        "channel_id": str(channel_id),
-                                        "channel_name": ch.get("channel_name", ""),
-                                        "valid_until": valid_until.isoformat(),
-                                    },
-                                    priority=2,
-                                )
+                        actions.append(
+                            HeartbeatAction(
+                                skill_name=self.name,
+                                action_type="strategy_stale",
+                                user_id=uid,
+                                data={
+                                    "channel_id": str(channel_id),
+                                    "channel_name": ch.get("channel_name", ""),
+                                    "valid_until": valid_until.isoformat(),
+                                },
+                                priority=2,
                             )
+                        )
         except Exception:
             log.exception("strategy_heartbeat_failed")
 
@@ -476,7 +476,7 @@ def _parse_json(raw: str) -> dict[str, Any]:
         if cleaned.rstrip().endswith("```"):
             cleaned = cleaned.rstrip()[:-3]
     try:
-        return json.loads(cleaned)
+        return json.loads(cleaned)  # type: ignore[no-any-return]
     except json.JSONDecodeError:
         log.warning("strategy_json_parse_failed", raw=raw[:300])
         return {"raw_response": raw}

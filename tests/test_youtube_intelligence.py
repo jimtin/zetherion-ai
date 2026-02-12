@@ -236,7 +236,8 @@ class TestHandleDispatch:
         request = _make_request(intent="yt_get_intelligence", channel_id=CHANNEL_ID)
 
         with patch.object(
-            skill, "_handle_get_intelligence",
+            skill,
+            "_handle_get_intelligence",
             new_callable=AsyncMock,
         ) as mock_handler:
             mock_handler.return_value = SkillResponse(request_id=request.id, success=True)
@@ -252,7 +253,8 @@ class TestHandleDispatch:
         request = _make_request(intent="yt_intelligence_history", channel_id=CHANNEL_ID)
 
         with patch.object(
-            skill, "_handle_intelligence_history",
+            skill,
+            "_handle_intelligence_history",
             new_callable=AsyncMock,
         ) as mock_handler:
             mock_handler.return_value = SkillResponse(request_id=request.id, success=True)
@@ -480,24 +482,26 @@ class TestClassifyComments:
         ]
         storage.get_unanalyzed_comments.return_value = comments
 
-        broker_response = json.dumps([
-            {
-                "comment_id": str(comments[0]["id"]),
-                "sentiment": "positive",
-                "category": "feedback",
-                "topics": ["quality"],
-                "is_question": False,
-                "entities": [],
-            },
-            {
-                "comment_id": str(comments[1]["id"]),
-                "sentiment": "negative",
-                "category": "complaint",
-                "topics": ["content"],
-                "is_question": False,
-                "entities": [],
-            },
-        ])
+        broker_response = json.dumps(
+            [
+                {
+                    "comment_id": str(comments[0]["id"]),
+                    "sentiment": "positive",
+                    "category": "feedback",
+                    "topics": ["quality"],
+                    "is_question": False,
+                    "entities": [],
+                },
+                {
+                    "comment_id": str(comments[1]["id"]),
+                    "sentiment": "negative",
+                    "category": "complaint",
+                    "topics": ["content"],
+                    "is_question": False,
+                    "entities": [],
+                },
+            ]
+        )
         broker.infer.return_value = MagicMock(content=broker_response)
 
         skill = await _init_skill(storage=storage, broker=broker)
@@ -573,9 +577,7 @@ class TestClassifyComments:
             "category": "feedback",
             "topics": [],
         }
-        broker.infer.return_value = MagicMock(
-            content=json.dumps([analysis_item])
-        )
+        broker.infer.return_value = MagicMock(content=json.dumps([analysis_item]))
         storage.update_comment_analysis.side_effect = RuntimeError("DB error")
 
         skill = await _init_skill(storage=storage, broker=broker)
@@ -714,14 +716,18 @@ class TestParseBatchResponse:
     def test_parse_valid_json_array(self) -> None:
         """Should parse a valid JSON array into CommentAnalysis objects."""
         batch = [{"id": "c1", "text": "hello"}]
-        raw = json.dumps([{
-            "comment_id": "c1",
-            "sentiment": "positive",
-            "category": "feedback",
-            "topics": ["AI"],
-            "is_question": False,
-            "entities": ["GPT"],
-        }])
+        raw = json.dumps(
+            [
+                {
+                    "comment_id": "c1",
+                    "sentiment": "positive",
+                    "category": "feedback",
+                    "topics": ["AI"],
+                    "is_question": False,
+                    "entities": ["GPT"],
+                }
+            ]
+        )
 
         result = YouTubeIntelligenceSkill._parse_batch_response(raw, batch)
 
@@ -735,10 +741,16 @@ class TestParseBatchResponse:
     def test_parse_json_with_markdown_fences(self) -> None:
         """Should strip markdown ```json fences before parsing."""
         batch = [{"id": "c2", "text": "test"}]
-        inner = json.dumps([{
-            "comment_id": "c2", "sentiment": "neutral",
-            "category": "question", "topics": [],
-        }])
+        inner = json.dumps(
+            [
+                {
+                    "comment_id": "c2",
+                    "sentiment": "neutral",
+                    "category": "question",
+                    "topics": [],
+                }
+            ]
+        )
         raw = f"```json\n{inner}\n```"
 
         result = YouTubeIntelligenceSkill._parse_batch_response(raw, batch)
@@ -750,10 +762,16 @@ class TestParseBatchResponse:
     def test_parse_json_with_bare_backtick_fences(self) -> None:
         """Should strip bare ``` fences too."""
         batch = [{"id": "c3", "text": "test"}]
-        inner = json.dumps([{
-            "comment_id": "c3", "sentiment": "positive",
-            "category": "feedback", "topics": [],
-        }])
+        inner = json.dumps(
+            [
+                {
+                    "comment_id": "c3",
+                    "sentiment": "positive",
+                    "category": "feedback",
+                    "topics": [],
+                }
+            ]
+        )
         raw = f"```\n{inner}\n```"
 
         result = YouTubeIntelligenceSkill._parse_batch_response(raw, batch)
@@ -778,10 +796,14 @@ class TestParseBatchResponse:
     def test_parse_single_object_wrapped_in_list(self) -> None:
         """Should handle a single JSON object (not an array) by wrapping it."""
         batch = [{"id": "c4", "text": "only one"}]
-        raw = json.dumps({
-            "comment_id": "c4", "sentiment": "negative",
-            "category": "complaint", "topics": ["bugs"],
-        })
+        raw = json.dumps(
+            {
+                "comment_id": "c4",
+                "sentiment": "negative",
+                "category": "complaint",
+                "topics": ["bugs"],
+            }
+        )
 
         result = YouTubeIntelligenceSkill._parse_batch_response(raw, batch)
 
@@ -792,12 +814,16 @@ class TestParseBatchResponse:
     def test_parse_truncates_topics_to_three(self) -> None:
         """Should keep only the first 3 topics."""
         batch = [{"id": "c5", "text": "verbose"}]
-        raw = json.dumps([{
-            "comment_id": "c5",
-            "sentiment": "neutral",
-            "category": "feedback",
-            "topics": ["a", "b", "c", "d", "e"],
-        }])
+        raw = json.dumps(
+            [
+                {
+                    "comment_id": "c5",
+                    "sentiment": "neutral",
+                    "category": "feedback",
+                    "topics": ["a", "b", "c", "d", "e"],
+                }
+            ]
+        )
 
         result = YouTubeIntelligenceSkill._parse_batch_response(raw, batch)
 
@@ -848,7 +874,10 @@ class TestFallbackReport:
         channel_stats = {"subscriberCount": 5000, "viewCount": 100000, "videoCount": 50}
 
         report = YouTubeIntelligenceSkill._fallback_report(
-            "TestChannel", comment_summary, video_performance, channel_stats,
+            "TestChannel",
+            comment_summary,
+            video_performance,
+            channel_stats,
         )
 
         # Top-level keys
@@ -887,7 +916,10 @@ class TestFallbackReport:
         }
 
         report = YouTubeIntelligenceSkill._fallback_report(
-            "EmptyChannel", comment_summary, [], {},
+            "EmptyChannel",
+            comment_summary,
+            [],
+            {},
         )
 
         assert report["audience"]["sentiment"]["positive"] == 0.0
@@ -900,12 +932,18 @@ class TestFallbackReport:
         """Should not include underperforming when <= 5 videos."""
         videos = [{"title": f"Vid {i}", "engagement_rate": 0.01} for i in range(3)]
         comment_summary = {
-            "total": 10, "sentiments": {},
-            "top_topics": [], "questions": [], "complaints": [],
+            "total": 10,
+            "sentiments": {},
+            "top_topics": [],
+            "questions": [],
+            "complaints": [],
         }
 
         report = YouTubeIntelligenceSkill._fallback_report(
-            "SmallChannel", comment_summary, videos, {},
+            "SmallChannel",
+            comment_summary,
+            videos,
+            {},
         )
 
         assert len(report["content_performance"]["top_performing"]) == 3
@@ -1073,12 +1111,14 @@ class TestRunAnalysis:
         storage.save_report.return_value = saved_report
 
         # Broker returns valid synthesis JSON
-        synthesis_json = json.dumps({
-            "overview": {"channel_name": "Test"},
-            "content_performance": {"top_performing": []},
-            "audience": {"sentiment": {"positive": 0.8, "neutral": 0.1, "negative": 0.1}},
-            "recommendations": [],
-        })
+        synthesis_json = json.dumps(
+            {
+                "overview": {"channel_name": "Test"},
+                "content_performance": {"top_performing": []},
+                "audience": {"sentiment": {"positive": 0.8, "neutral": 0.1, "negative": 0.1}},
+                "recommendations": [],
+            }
+        )
         broker.infer.return_value = MagicMock(content=synthesis_json)
 
         skill = await _init_skill(storage=storage, broker=broker)
@@ -1242,9 +1282,7 @@ class TestHandlerNotImplemented:
         request = _make_request(intent="yt_analyze_channel", channel_id=CHANNEL_ID)
 
         # Patch the handler method to None so getattr returns None
-        with patch.object(
-            YouTubeIntelligenceSkill, "_handle_analyze", new=None
-        ):
+        with patch.object(YouTubeIntelligenceSkill, "_handle_analyze", new=None):
             response = await skill.handle(request)
 
         assert response.success is False

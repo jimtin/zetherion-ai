@@ -53,9 +53,7 @@ class AssumptionTracker:
                 "confidence": 1.0,
                 "source": AssumptionSource.CONFIRMED.value,
                 "confirmed_at": now.isoformat(),
-                "next_validation": (
-                    now + timedelta(days=_CONFIRMED_VALIDATION_DAYS)
-                ).isoformat(),
+                "next_validation": (now + timedelta(days=_CONFIRMED_VALIDATION_DAYS)).isoformat(),
             }
         )
 
@@ -78,9 +76,7 @@ class AssumptionTracker:
                 "confidence": confidence,
                 "source": AssumptionSource.INFERRED.value,
                 "confirmed_at": None,
-                "next_validation": (
-                    now + timedelta(days=_DEFAULT_VALIDATION_DAYS)
-                ).isoformat(),
+                "next_validation": (now + timedelta(days=_DEFAULT_VALIDATION_DAYS)).isoformat(),
             }
         )
 
@@ -88,20 +84,14 @@ class AssumptionTracker:
     # Read
     # ------------------------------------------------------------------
 
-    async def get_all(
-        self, channel_id: UUID, *, active_only: bool = True
-    ) -> list[dict[str, Any]]:
+    async def get_all(self, channel_id: UUID, *, active_only: bool = True) -> list[dict[str, Any]]:
         """Return all assumptions for a channel.
 
         If *active_only*, excludes invalidated ones.
         """
         rows = await self._storage.get_assumptions(channel_id)
         if active_only:
-            rows = [
-                r
-                for r in rows
-                if r.get("source") != AssumptionSource.INVALIDATED.value
-            ]
+            rows = [r for r in rows if r.get("source") != AssumptionSource.INVALIDATED.value]
         return rows
 
     async def get_confirmed(self, channel_id: UUID) -> list[dict[str, Any]]:
@@ -133,14 +123,10 @@ class AssumptionTracker:
             source=AssumptionSource.CONFIRMED.value,
             confidence=1.0,
             confirmed_at=now.isoformat(),
-            next_validation=(
-                now + timedelta(days=_CONFIRMED_VALIDATION_DAYS)
-            ).isoformat(),
+            next_validation=(now + timedelta(days=_CONFIRMED_VALIDATION_DAYS)).isoformat(),
         )
 
-    async def invalidate(
-        self, assumption_id: UUID, reason: str = ""
-    ) -> dict[str, Any] | None:
+    async def invalidate(self, assumption_id: UUID, reason: str = "") -> dict[str, Any] | None:
         """Mark an assumption as invalidated."""
         updates: dict[str, Any] = {
             "source": AssumptionSource.INVALIDATED.value,
@@ -155,9 +141,7 @@ class AssumptionTracker:
                 updates["evidence"] = evidence
         return await self._storage.update_assumption(assumption_id, **updates)
 
-    async def mark_needs_review(
-        self, assumption_id: UUID
-    ) -> dict[str, Any] | None:
+    async def mark_needs_review(self, assumption_id: UUID) -> dict[str, Any] | None:
         return await self._storage.update_assumption(
             assumption_id,
             source=AssumptionSource.NEEDS_REVIEW.value,
@@ -193,9 +177,7 @@ class AssumptionTracker:
         confirmed = await self.get_confirmed(channel_id)
         return any(a.get("category") == category for a in confirmed)
 
-    async def get_missing_categories(
-        self, channel_id: UUID
-    ) -> list[str]:
+    async def get_missing_categories(self, channel_id: UUID) -> list[str]:
         """Return onboarding categories that still need confirmed assumptions."""
         required = {c.value for c in AssumptionCategory if c != AssumptionCategory.PERFORMANCE}
         confirmed = await self.get_confirmed(channel_id)

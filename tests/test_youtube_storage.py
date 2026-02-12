@@ -139,9 +139,7 @@ class TestInitialize:
 
             await s.initialize()
 
-            mock_asyncpg.create_pool.assert_awaited_once_with(
-                dsn="postgresql://localhost/test"
-            )
+            mock_asyncpg.create_pool.assert_awaited_once_with(dsn="postgresql://localhost/test")
             assert s._pool is pool
             conn.execute.assert_awaited_once_with(_SCHEMA_SQL)
 
@@ -232,9 +230,7 @@ class TestCreateChannel:
         assert json.loads(args[4]) == {}
 
     @pytest.mark.asyncio
-    async def test_create_channel_returns_empty_dict_on_none_row(
-        self, mock_pool, tenant_id
-    ):
+    async def test_create_channel_returns_empty_dict_on_none_row(self, mock_pool, tenant_id):
         """create_channel() returns empty dict when fetchrow returns None."""
         pool, conn = mock_pool
         s = YouTubeStorage(pool=pool)
@@ -447,9 +443,7 @@ class TestUpsertComments:
         assert second_args[8] is None  # no parent_comment_id
 
     @pytest.mark.asyncio
-    async def test_upsert_comments_resolves_video_youtube_id(
-        self, mock_pool, channel_id, video_id
-    ):
+    async def test_upsert_comments_resolves_video_youtube_id(self, mock_pool, channel_id, video_id):
         """upsert_comments() resolves video_youtube_id to video_id via lookup."""
         pool, conn = mock_pool
         s = YouTubeStorage(pool=pool)
@@ -493,9 +487,7 @@ class TestUpsertComments:
         conn.execute.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_upsert_comments_video_youtube_id_not_found(
-        self, mock_pool, channel_id
-    ):
+    async def test_upsert_comments_video_youtube_id_not_found(self, mock_pool, channel_id):
         """upsert_comments() sets video_id to None when video_youtube_id lookup fails."""
         pool, conn = mock_pool
         s = YouTubeStorage(pool=pool)
@@ -661,9 +653,7 @@ class TestReports:
         s = YouTubeStorage(pool=pool)
         conn.fetchrow.return_value = None
 
-        result = await s.save_report(
-            channel_id=channel_id, report_type="full", report={}
-        )
+        result = await s.save_report(channel_id=channel_id, report_type="full", report={})
 
         assert result == {}
 
@@ -982,9 +972,7 @@ class TestStrategy:
         assert args[5] is None  # default valid_until
 
     @pytest.mark.asyncio
-    async def test_save_strategy_returns_empty_dict_on_none(
-        self, mock_pool, channel_id
-    ):
+    async def test_save_strategy_returns_empty_dict_on_none(self, mock_pool, channel_id):
         """save_strategy() returns empty dict when fetchrow returns None."""
         pool, conn = mock_pool
         s = YouTubeStorage(pool=pool)
@@ -1636,9 +1624,7 @@ class TestAssumptions:
         row = {"id": assumption_id, "confidence": 0.9}
         conn.fetchrow.return_value = row
 
-        result = await s.update_assumption(
-            assumption_id, confidence=0.9, source="confirmed"
-        )
+        result = await s.update_assumption(assumption_id, confidence=0.9, source="confirmed")
 
         assert result == dict(row)
         args = conn.fetchrow.call_args[0]

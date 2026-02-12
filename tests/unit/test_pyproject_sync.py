@@ -104,9 +104,9 @@ class TestPyprojectSync:
         pyproject_names = _parse_pyproject_dependencies(_PYPROJECT_TOML)
 
         missing = req_names - pyproject_names
-        assert (
-            not missing
-        ), f"Packages in requirements.txt but missing from pyproject.toml: {sorted(missing)}"
+        assert not missing, (
+            f"Packages in requirements.txt but missing from pyproject.toml: {sorted(missing)}"
+        )
 
     def test_requirements_is_non_empty(self) -> None:
         """requirements.txt should have at least one dependency."""
