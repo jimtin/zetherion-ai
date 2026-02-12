@@ -611,9 +611,7 @@ class TestOllamaRouterBackendCascade:
         with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
-            backend._client.post = AsyncMock(
-                side_effect=httpx.TimeoutException("Timeout")
-            )
+            backend._client.post = AsyncMock(side_effect=httpx.TimeoutException("Timeout"))
 
             decision = await backend.classify("test")
 
@@ -628,9 +626,7 @@ class TestOllamaRouterBackendCascade:
         with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
             backend = OllamaRouterBackend()
             backend._client = MagicMock()
-            backend._client.post = AsyncMock(
-                side_effect=RuntimeError("Unexpected error")
-            )
+            backend._client.post = AsyncMock(side_effect=RuntimeError("Unexpected error"))
 
             decision = await backend.classify("test")
 

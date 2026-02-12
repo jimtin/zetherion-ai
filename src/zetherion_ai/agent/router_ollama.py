@@ -131,9 +131,7 @@ class OllamaRouterBackend:
             self._is_warm = False
             return False
 
-    async def _attempt_classify(
-        self, url: str, model: str, message: str
-    ) -> RoutingDecision:
+    async def _attempt_classify(self, url: str, model: str, message: str) -> RoutingDecision:
         """Attempt to classify a message using a specific Ollama model.
 
         Args:
@@ -245,9 +243,7 @@ class OllamaRouterBackend:
         # Try fallback (larger generation model)
         try:
             log.info("trying_fallback_router", model=self._fallback_model)
-            return await self._attempt_classify(
-                self._fallback_url, self._fallback_model, message
-            )
+            return await self._attempt_classify(self._fallback_url, self._fallback_model, message)
         except httpx.TimeoutException as e:
             log.warning("fallback_router_timeout", error=str(e), message=message[:50])
             return RoutingDecision(

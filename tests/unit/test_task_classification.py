@@ -171,9 +171,9 @@ class TestClassifyTaskType:
         non_code_creative = CREATIVE_KEYWORDS - CODE_KEYWORDS
         for kw in non_code_creative:
             result = agent._classify_task_type(f"I want {kw}")
-            assert (
-                result == TaskType.CREATIVE_WRITING
-            ), f"Keyword '{kw}' did not trigger CREATIVE_WRITING"
+            assert result == TaskType.CREATIVE_WRITING, (
+                f"Keyword '{kw}' did not trigger CREATIVE_WRITING"
+            )
 
     def test_each_summarization_keyword_triggers_summarization(self, agent) -> None:
         """Every keyword in SUMMARIZATION_KEYWORDS should trigger SUMMARIZATION."""

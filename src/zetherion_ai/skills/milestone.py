@@ -409,7 +409,7 @@ class MilestoneSkill(Skill):
         self._milestones_cache.setdefault(milestone.user_id, {})[milestone.id] = milestone
         if self._memory:
             search_text = (
-                f"milestone {milestone.category} " f"{milestone.title} {milestone.description}"
+                f"milestone {milestone.category} {milestone.title} {milestone.description}"
             )
             await self._memory.store_with_payload(
                 collection_name=MILESTONES_COLLECTION,

@@ -156,16 +156,14 @@ class YouTubeManagementSkill(Skill):
     async def handle(self, request: SkillRequest) -> SkillResponse:
         handler_name = INTENT_HANDLERS.get(request.intent)
         if not handler_name:
-            return SkillResponse.error_response(
-                request.id, f"Unknown intent: {request.intent}"
-            )
+            return SkillResponse.error_response(request.id, f"Unknown intent: {request.intent}")
         handler = getattr(self, handler_name, None)
         if not handler:
             return SkillResponse.error_response(
                 request.id, f"Handler not implemented: {handler_name}"
             )
         try:
-            return await handler(request)
+            return await handler(request)  # type: ignore[no-any-return]
         except Exception as e:
             log.error("management_handle_error", error=str(e))
             return SkillResponse.error_response(request.id, f"Management error: {e}")
@@ -283,9 +281,7 @@ class YouTubeManagementSkill(Skill):
         # If no action, return list of pending replies
         if not action or not reply_id_raw:
             status_filter = request.context.get("status", "pending")
-            drafts = await self._storage.get_reply_drafts(
-                channel_id, status=status_filter
-            )
+            drafts = await self._storage.get_reply_drafts(channel_id, status=status_filter)
             return SkillResponse(
                 request_id=request.id,
                 success=True,
@@ -314,9 +310,7 @@ class YouTubeManagementSkill(Skill):
         elif action == "posted":
             new_status = ReplyStatus.POSTED.value
         else:
-            return SkillResponse.error_response(
-                request.id, f"Unknown action: {action}"
-            )
+            return SkillResponse.error_response(request.id, f"Unknown action: {action}")
 
         updated = await self._storage.update_reply_status(reply_id, new_status)
 
@@ -490,9 +484,7 @@ class YouTubeManagementSkill(Skill):
     # Management state
     # ------------------------------------------------------------------
 
-    async def get_management_state(
-        self, channel_id: UUID
-    ) -> ManagementState | None:
+    async def get_management_state(self, channel_id: UUID) -> ManagementState | None:
         """Build the current management state for a channel."""
         assert self._storage is not None
 
@@ -541,11 +533,7 @@ class YouTubeManagementSkill(Skill):
         if self._assumptions:
             assumptions = await self._assumptions.get_high_confidence(channel_id)
 
-        top_topics = [
-            a.get("statement", "")
-            for a in assumptions
-            if a.get("category") == "topic"
-        ]
+        top_topics = [a.get("statement", "") for a in assumptions if a.get("category") == "topic"]
 
         # Check if a strategy exists for keyword targets
         strategy_row = await self._storage.get_latest_strategy(channel_id)
@@ -685,9 +673,7 @@ class YouTubeManagementSkill(Skill):
                 try:
                     drafts = await self.generate_reply_drafts(channel_id, ch)
                     if drafts:
-                        auto_count = sum(
-                            1 for d in drafts if d.get("auto_approved")
-                        )
+                        auto_count = sum(1 for d in drafts if d.get("auto_approved"))
                         actions.append(
                             HeartbeatAction(
                                 skill_name=self.name,
@@ -703,9 +689,7 @@ class YouTubeManagementSkill(Skill):
                             )
                         )
                 except Exception:
-                    log.exception(
-                        "heartbeat_reply_gen_failed", channel_id=str(channel_id)
-                    )
+                    log.exception("heartbeat_reply_gen_failed", channel_id=str(channel_id))
         except Exception:
             log.exception("management_heartbeat_failed")
 

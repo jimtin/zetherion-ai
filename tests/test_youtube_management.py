@@ -41,6 +41,7 @@ from zetherion_ai.skills.youtube.models import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FakeInferenceResult:
     """Minimal stand-in for InferenceResult used in mock returns."""
@@ -113,6 +114,7 @@ def _make_request(
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def storage() -> AsyncMock:
     """Return a fully-stubbed AsyncMock for YouTubeStorage."""
@@ -142,9 +144,7 @@ def storage() -> AsyncMock:
 def broker() -> AsyncMock:
     """Return a stubbed InferenceBroker."""
     b = AsyncMock()
-    b.infer = AsyncMock(
-        return_value=FakeInferenceResult(content="Mock reply text")
-    )
+    b.infer = AsyncMock(return_value=FakeInferenceResult(content="Mock reply text"))
     return b
 
 
@@ -156,9 +156,7 @@ def skill(storage: AsyncMock, broker: AsyncMock) -> YouTubeManagementSkill:
 
 
 @pytest.fixture()
-def initialized_skill(
-    storage: AsyncMock, broker: AsyncMock
-) -> YouTubeManagementSkill:
+def initialized_skill(storage: AsyncMock, broker: AsyncMock) -> YouTubeManagementSkill:
     """Return a skill that has already been initialized (status=READY)."""
     s = YouTubeManagementSkill(memory=None, storage=storage, broker=broker)
     # Manually set internal state as if initialize() succeeded.
@@ -407,10 +405,12 @@ class TestHandleConfigure:
 
         # Broker returns follow-up questions as JSON
         broker.infer.return_value = FakeInferenceResult(
-            content=json.dumps([
-                {"category": "audience", "question": "Who watches your videos?"},
-                {"category": "schedule", "question": "How often do you upload?"},
-            ])
+            content=json.dumps(
+                [
+                    {"category": "audience", "question": "Who watches your videos?"},
+                    {"category": "schedule", "question": "How often do you upload?"},
+                ]
+            )
         )
 
         req = _make_request(
@@ -461,9 +461,7 @@ class TestHandleConfigure:
         )
         resp = await initialized_skill.handle(req)
         assert resp.success is True
-        storage.update_channel.assert_any_await(
-            channel_id, config={"auto_reply": True}
-        )
+        storage.update_channel.assert_any_await(channel_id, config={"auto_reply": True})
 
     @pytest.mark.asyncio
     async def test_missing_channel_returns_error(
@@ -849,9 +847,7 @@ class TestGenerateReplyDrafts:
     ) -> None:
         """At GUIDED level, thank_you and faq should be auto-approved."""
         channel_id = uuid4()
-        channel = _make_channel(
-            channel_id, trust_level=TrustLevel.GUIDED.value
-        )
+        channel = _make_channel(channel_id, trust_level=TrustLevel.GUIDED.value)
         storage.get_comments.return_value = [
             _make_comment(
                 category=ReplyCategory.THANK_YOU.value,
@@ -873,9 +869,7 @@ class TestGenerateReplyDrafts:
     ) -> None:
         """At SUPERVISED level, nothing should be auto-approved."""
         channel_id = uuid4()
-        channel = _make_channel(
-            channel_id, trust_level=TrustLevel.SUPERVISED.value
-        )
+        channel = _make_channel(channel_id, trust_level=TrustLevel.SUPERVISED.value)
         storage.get_comments.return_value = [
             _make_comment(
                 category=ReplyCategory.THANK_YOU.value,
@@ -1004,10 +998,12 @@ class TestGenerateTagRecommendation:
         storage.get_latest_strategy.return_value = None
 
         broker.infer.return_value = FakeInferenceResult(
-            content=json.dumps({
-                "suggested_tags": ["python tips", "programming", "tutorial"],
-                "reason": "Better SEO coverage",
-            })
+            content=json.dumps(
+                {
+                    "suggested_tags": ["python tips", "programming", "tutorial"],
+                    "reason": "Better SEO coverage",
+                }
+            )
         )
 
         result = await initialized_skill._generate_tag_recommendation(channel_id, "vid_py")
@@ -1085,18 +1081,14 @@ class TestRunHealthAudit:
         channel_id = uuid4()
         channel = _make_channel(channel_id, config={"description": "My channel"})
 
-        storage.get_latest_stats.return_value = {
-            "snapshot": {"subscriberCount": 1000}
-        }
+        storage.get_latest_stats.return_value = {"snapshot": {"subscriberCount": 1000}}
         storage.get_videos.return_value = [{"id": uuid4(), "title": "v1"}]
         storage.get_documents.return_value = []
 
         issues = [
             {"type": "missing_playlists", "severity": "medium", "suggestion": "Create playlists"},
         ]
-        broker.infer.return_value = FakeInferenceResult(
-            content=json.dumps({"issues": issues})
-        )
+        broker.infer.return_value = FakeInferenceResult(content=json.dumps({"issues": issues}))
 
         result = await initialized_skill._run_health_audit(channel_id, channel)
         assert len(result) == 1
@@ -1200,9 +1192,7 @@ class TestOnHeartbeat:
     ) -> None:
         channel_id = uuid4()
         tenant_id = uuid4()
-        channel = _make_channel(
-            channel_id, onboarding_complete=True, tenant_id=tenant_id
-        )
+        channel = _make_channel(channel_id, onboarding_complete=True, tenant_id=tenant_id)
         storage.get_channels_due_for_analysis.return_value = [channel]
 
         # Make generate_reply_drafts produce one draft
@@ -1302,9 +1292,7 @@ class TestOnHeartbeat:
 
 
 class TestGetSystemPromptFragment:
-    def test_returns_fragment_when_ready(
-        self, initialized_skill: YouTubeManagementSkill
-    ) -> None:
+    def test_returns_fragment_when_ready(self, initialized_skill: YouTubeManagementSkill) -> None:
         fragment = initialized_skill.get_system_prompt_fragment("user1")
         assert fragment is not None
         assert "YouTube Management" in fragment
@@ -1390,9 +1378,7 @@ class TestHandleManage:
     """Tests for the yt_manage_channel intent."""
 
     @pytest.mark.asyncio
-    async def test_missing_channel_id(
-        self, initialized_skill: YouTubeManagementSkill
-    ) -> None:
+    async def test_missing_channel_id(self, initialized_skill: YouTubeManagementSkill) -> None:
         req = _make_request(intent="yt_manage_channel", context={})
         resp = await initialized_skill.handle(req)
         assert resp.success is False
@@ -1442,9 +1428,7 @@ class TestHandleTagRecommendations:
     """Tests for the yt_get_tag_recommendations intent handler."""
 
     @pytest.mark.asyncio
-    async def test_missing_channel_id(
-        self, initialized_skill: YouTubeManagementSkill
-    ) -> None:
+    async def test_missing_channel_id(self, initialized_skill: YouTubeManagementSkill) -> None:
         req = _make_request(intent="yt_get_tag_recommendations", context={})
         resp = await initialized_skill.handle(req)
         assert resp.success is False
@@ -1701,9 +1685,7 @@ class TestGenerateFollowupQuestionsFailure:
         self, initialized_skill: YouTubeManagementSkill, broker: AsyncMock
     ) -> None:
         """Should return empty list when parsed result is not a list (line 661)."""
-        broker.infer.return_value = FakeInferenceResult(
-            content='{"not": "a list"}'
-        )
+        broker.infer.return_value = FakeInferenceResult(content='{"not": "a list"}')
 
         result = await initialized_skill._generate_followup_questions(
             answers_so_far={"topics": "cooking"},
