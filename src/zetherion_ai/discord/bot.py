@@ -20,6 +20,8 @@ from zetherion_ai.discord.security import (
 from zetherion_ai.discord.user_manager import ROLE_HIERARCHY, UserManager
 from zetherion_ai.logging import get_logger
 from zetherion_ai.memory.qdrant import QdrantMemory
+from zetherion_ai.queue.manager import QueueManager
+from zetherion_ai.queue.models import QueuePriority, QueueTaskType
 
 log = get_logger("zetherion_ai.discord.bot")
 
@@ -32,6 +34,7 @@ class ZetherionAIBot(discord.Client):
         memory: QdrantMemory,
         user_manager: UserManager | None = None,
         settings_manager: object | None = None,
+        queue_manager: QueueManager | None = None,
     ) -> None:
         """Initialize the bot.
 
@@ -39,6 +42,7 @@ class ZetherionAIBot(discord.Client):
             memory: The memory system.
             user_manager: Optional UserManager for RBAC.
             settings_manager: Optional SettingsManager for runtime config.
+            queue_manager: Optional QueueManager for priority message queue.
         """
         intents = discord.Intents.default()
         intents.message_content = True
@@ -52,6 +56,7 @@ class ZetherionAIBot(discord.Client):
         self._rate_limiter = RateLimiter()
         self._user_manager = user_manager
         self._settings_manager = settings_manager
+        self._queue_manager = queue_manager
         self._keep_warm_task: asyncio.Task[None] | None = None
         self._last_message_time: float = 0.0
 
@@ -177,6 +182,13 @@ class ZetherionAIBot(discord.Client):
         self._keep_warm_task = asyncio.create_task(self._keep_warm_loop())
         log.info("keep_warm_task_started", interval_seconds=KEEP_WARM_INTERVAL_SECONDS)
 
+        # Wire queue processors with bot/agent, then start workers
+        if self._queue_manager is not None:
+            self._queue_manager._processors._bot = self
+            self._queue_manager._processors._agent = self._agent
+            await self._queue_manager.start()
+            log.info("queue_manager_started")
+
         # Sync commands
         await self._tree.sync()
         log.info("commands_synced")
@@ -195,6 +207,11 @@ class ZetherionAIBot(discord.Client):
 
     async def close(self) -> None:
         """Clean up resources when bot is closing."""
+        # Drain queue workers (graceful shutdown)
+        if self._queue_manager is not None:
+            await self._queue_manager.stop()
+            log.info("queue_manager_stopped")
+
         # Cancel keep-warm task
         task = self._keep_warm_task
         if task is not None and not task.done():
@@ -277,48 +294,88 @@ class ZetherionAIBot(discord.Client):
                 )
                 return
 
-            # Generate response with timed operations
-            async with message.channel.typing():
-                content = message.content
-                # Remove bot mention from content
-                if is_mention and self.user:
-                    content = content.replace(f"<@{self.user.id}>", "").strip()
+            # Prepare clean content
+            content = message.content
+            if is_mention and self.user:
+                content = content.replace(f"<@{self.user.id}>", "").strip()
 
-                if not content:
-                    await message.reply(
-                        "How can I help you?",
-                        mention_author=True,
-                    )
-                    return
+            if not content:
+                await message.reply(
+                    "How can I help you?",
+                    mention_author=True,
+                )
+                return
 
-                if self._agent is None:
-                    await message.reply(
-                        "I'm still starting up. Please try again in a moment.",
-                        mention_author=True,
-                    )
-                    return
-
-                try:
-                    response = await self._agent.generate_response(
-                        user_id=message.author.id,
-                        channel_id=message.channel.id,
-                        message=content,
-                    )
-                except Exception:
-                    log.exception(
-                        "response_generation_failed",
-                        message_length=len(content),
-                    )
-                    await message.reply(
-                        "I ran into an issue processing your message. Please try again.",
-                        mention_author=True,
-                    )
-                    return
-
-                # Send response as a threaded reply
-                await self._send_long_reply(message, response)
+            # Route through queue if enabled, otherwise process inline
+            if self._queue_manager is not None and self._queue_manager.is_running:
+                await self._enqueue_message(message, content, is_mention)
+            else:
+                await self._process_message_inline(message, content)
         finally:
             structlog.contextvars.clear_contextvars()
+
+    async def _enqueue_message(
+        self,
+        message: discord.Message,
+        content: str,
+        is_mention: bool,
+    ) -> None:
+        """Enqueue a message for async processing via the priority queue."""
+        assert self._queue_manager is not None  # caller checks
+
+        try:
+            await self._queue_manager.enqueue(
+                task_type=QueueTaskType.DISCORD_MESSAGE,
+                user_id=message.author.id,
+                channel_id=message.channel.id,
+                payload={
+                    "channel_id": message.channel.id,
+                    "message_id": message.id,
+                    "content": content,
+                    "user_id": message.author.id,
+                    "is_mention": is_mention,
+                },
+                priority=QueuePriority.INTERACTIVE,
+            )
+            # Show typing indicator while the queue worker processes
+            await message.channel.typing()
+        except Exception:
+            log.exception("enqueue_failed")
+            # Fall back to inline processing
+            await self._process_message_inline(message, content)
+
+    async def _process_message_inline(
+        self,
+        message: discord.Message,
+        content: str,
+    ) -> None:
+        """Process a message directly (fallback when queue is disabled)."""
+        async with message.channel.typing():
+            if self._agent is None:
+                await message.reply(
+                    "I'm still starting up. Please try again in a moment.",
+                    mention_author=True,
+                )
+                return
+
+            try:
+                response = await self._agent.generate_response(
+                    user_id=message.author.id,
+                    channel_id=message.channel.id,
+                    message=content,
+                )
+            except Exception:
+                log.exception(
+                    "response_generation_failed",
+                    message_length=len(content),
+                )
+                await message.reply(
+                    "I ran into an issue processing your message. Please try again.",
+                    mention_author=True,
+                )
+                return
+
+            await self._send_long_reply(message, response)
 
     async def _handle_dev_event(self, message: discord.Message) -> None:
         """Handle a dev-agent webhook message by routing to the dev_watcher skill.

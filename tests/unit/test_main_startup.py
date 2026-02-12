@@ -235,9 +235,9 @@ class TestMainStartup:
 
         await main()
 
-        mock_bot_cls.assert_called_once_with(
-            memory=mock_memory,
-            user_manager=mock_user_mgr,
-            settings_manager=mock_settings_mgr,
-        )
+        mock_bot_cls.assert_called_once()
+        call_kwargs = mock_bot_cls.call_args.kwargs
+        assert call_kwargs["memory"] is mock_memory
+        assert call_kwargs["user_manager"] is mock_user_mgr
+        assert call_kwargs["settings_manager"] is mock_settings_mgr
         mock_bot.start.assert_awaited_once_with("fake-token")
