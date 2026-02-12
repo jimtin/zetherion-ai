@@ -458,7 +458,7 @@ class YouTubeStorage:
                 channel_id,
                 since,
             )
-        return row["cnt"] if row else 0
+        return int(row["cnt"]) if row else 0
 
     # ------------------------------------------------------------------
     # Stats
@@ -601,7 +601,7 @@ class YouTubeStorage:
                      AND posted_at >= CURRENT_DATE""",
                 channel_id,
             )
-        return row["cnt"] if row else 0
+        return int(row["cnt"]) if row else 0
 
     # ------------------------------------------------------------------
     # Tag recommendations
