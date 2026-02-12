@@ -51,6 +51,9 @@ class MessageIntent(Enum):
     SYSTEM_HEALTH = "system_health"  # Health status, reports, system metrics
     # Phase 10A intents
     UPDATE_MANAGEMENT = "update_management"  # Version checks, updates, rollback
+    # Dev watcher intents
+    DEV_WATCHER = "dev_watcher"  # Development activity, journal, ideas
+    MILESTONE_MANAGEMENT = "milestone_management"  # Milestones, social posts, promotion
 
 
 @dataclass
@@ -121,6 +124,14 @@ ROUTER_PROMPT = """You are a message router. Classify the user's message into on
 12. UPDATE_MANAGEMENT - Version checking, applying updates, rollback
    Examples: "Check for updates", "What version are you?", \
 "Apply the latest update", "Rollback to previous version"
+
+13. DEV_WATCHER - Development activity, what to work on next, dev ideas, progress
+   Examples: "What should I work on next?", "What dev ideas have I had?", \
+"What did I code this week?", "Show my dev journal", "Dev status"
+
+14. MILESTONE_MANAGEMENT - Development milestones, social media drafts, promotion posts
+   Examples: "Show my milestones", "Any milestone drafts?", "Approve the LinkedIn post", \
+"What milestones have I hit?", "Generate posts for the latest milestone", "Show promo drafts"
 
 Respond with ONLY a JSON object:
 {"intent": "INTENT_NAME", "confidence": 0.0-1.0, "reasoning": "brief reason"}

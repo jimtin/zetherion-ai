@@ -33,12 +33,50 @@ services:
       - OLLAMA_ROUTER_HOST=ollama-router
       - OLLAMA_ROUTER_PORT=11434
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
+      - DISCORD_TOKEN=${DISCORD_TOKEN_TEST}
       - ALLOW_ALL_USERS=true
+      - ALLOWED_USER_IDS=1468994603633086485
+      - OWNER_USER_ID=1468994603633086485
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
     networks:
       - zetherion-ai-test-net
+
+  # Public API server for integration tests
+  zetherion-ai-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: zetherion-ai-test-api
+    restart: "no"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+      - /home/nonroot/.cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
+      - API_HOST=0.0.0.0
+      - API_PORT=8443
+      - API_JWT_SECRET=test-jwt-secret-for-integration-tests-only
+      - OLLAMA_HOST=ollama
+      - OLLAMA_PORT=11434
+      - OLLAMA_ROUTER_HOST=ollama-router
+      - OLLAMA_ROUTER_PORT=11434
+      - ENVIRONMENT=test
+    # Expose port for integration test health checks
+    ports:
+      - "28443:8443"
+    networks:
+      - zetherion-ai-test-net
+    # Use Dockerfile HEALTHCHECK - distroless can only exec via ENTRYPOINT
 
   zetherion-ai-skills:
     build:
@@ -84,10 +122,10 @@ services:
       - "31434:11434"
     healthcheck:
       test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/11434' || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     volumes:
       - ollama_router_models_test:/root/.ollama
     networks:
@@ -113,14 +151,23 @@ services:
       - "21434:11434"
     healthcheck:
       test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/11434' || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     volumes:
       - ollama_models_test:/root/.ollama
     networks:
       - zetherion-ai-test-net
+    # Match production resource limits (4 CPUs, 8GB)
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
 
   postgres:
     image: postgres:17-alpine

@@ -37,6 +37,12 @@ class TestMessageIntent:
             "TASK_MANAGEMENT",
             "CALENDAR_QUERY",
             "PROFILE_QUERY",
+            "PERSONAL_MODEL",
+            "EMAIL_MANAGEMENT",
+            "SYSTEM_HEALTH",
+            "UPDATE_MANAGEMENT",
+            "DEV_WATCHER",
+            "MILESTONE_MANAGEMENT",
         ]
         for intent in expected:
             assert hasattr(MessageIntent, intent)
@@ -52,6 +58,8 @@ class TestMessageIntent:
         assert MessageIntent.TASK_MANAGEMENT.value == "task_management"
         assert MessageIntent.CALENDAR_QUERY.value == "calendar_query"
         assert MessageIntent.PROFILE_QUERY.value == "profile_query"
+        assert MessageIntent.DEV_WATCHER.value == "dev_watcher"
+        assert MessageIntent.MILESTONE_MANAGEMENT.value == "milestone_management"
 
 
 class TestRoutingDecision:

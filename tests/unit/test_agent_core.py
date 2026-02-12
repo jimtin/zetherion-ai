@@ -3,6 +3,8 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
 from zetherion_ai.agent.core import Agent
 from zetherion_ai.agent.router import MessageIntent, RoutingDecision
 from zetherion_ai.skills.base import SkillResponse
@@ -611,3 +613,103 @@ class TestGenerateResponseSkillIntents:
 
         assert result == "Help text"
         mock_memory.store_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_generate_response_dev_watcher_intent(self):
+        """DEV_WATCHER routes to _handle_skill_intent(dev_watcher)."""
+        agent = _make_agent()
+        agent._router.classify = AsyncMock(return_value=_routing(MessageIntent.DEV_WATCHER))
+        agent._handle_skill_intent = AsyncMock(return_value="dev status response")
+
+        await agent.generate_response(user_id=123, channel_id=456, message="dev status")
+
+        agent._handle_skill_intent.assert_called_once()
+        call_args = agent._handle_skill_intent.call_args
+        assert call_args[0][2] == "dev_watcher"
+
+    @pytest.mark.asyncio
+    async def test_generate_response_milestone_intent(self):
+        """MILESTONE_MANAGEMENT routes to _handle_skill_intent(milestone_tracker)."""
+        agent = _make_agent()
+        agent._router.classify = AsyncMock(
+            return_value=_routing(MessageIntent.MILESTONE_MANAGEMENT)
+        )
+        agent._handle_skill_intent = AsyncMock(return_value="milestone response")
+
+        await agent.generate_response(user_id=123, channel_id=456, message="show milestones")
+
+        agent._handle_skill_intent.assert_called_once()
+        call_args = agent._handle_skill_intent.call_args
+        assert call_args[0][2] == "milestone_tracker"
+
+
+# ===========================================================================
+# _parse_dev_watcher_intent
+# ===========================================================================
+
+
+class TestParseDevWatcherIntent:
+    """Tests for Agent._parse_dev_watcher_intent."""
+
+    def test_next_keywords(self):
+        agent = _make_agent()
+        assert agent._parse_dev_watcher_intent("what should i work on next") == "dev_next"
+        assert agent._parse_dev_watcher_intent("what to do") == "dev_next"
+
+    def test_ideas_keywords(self):
+        agent = _make_agent()
+        assert agent._parse_dev_watcher_intent("show my ideas") == "dev_ideas"
+        assert agent._parse_dev_watcher_intent("what idea did I have") == "dev_ideas"
+
+    def test_journal_keywords(self):
+        agent = _make_agent()
+        assert agent._parse_dev_watcher_intent("show my journal") == "dev_journal"
+        assert agent._parse_dev_watcher_intent("what did I do this week") == "dev_journal"
+        assert agent._parse_dev_watcher_intent("what did I do today") == "dev_journal"
+        assert agent._parse_dev_watcher_intent("what did I do yesterday") == "dev_journal"
+
+    def test_summary_keywords(self):
+        agent = _make_agent()
+        assert agent._parse_dev_watcher_intent("give me a dev summary") == "dev_summary"
+        assert agent._parse_dev_watcher_intent("dev overview") == "dev_summary"
+        assert agent._parse_dev_watcher_intent("weekly recap") == "dev_summary"
+
+    def test_default_fallback(self):
+        agent = _make_agent()
+        assert agent._parse_dev_watcher_intent("random text") == "dev_status"
+
+
+# ===========================================================================
+# _parse_milestone_intent
+# ===========================================================================
+
+
+class TestParseMilestoneIntent:
+    """Tests for Agent._parse_milestone_intent."""
+
+    def test_drafts_keywords(self):
+        agent = _make_agent()
+        assert agent._parse_milestone_intent("show me the drafts") == "milestone_drafts"
+        assert agent._parse_milestone_intent("promo posts") == "milestone_drafts"
+        assert agent._parse_milestone_intent("show draft content") == "milestone_drafts"
+
+    def test_approve_keywords(self):
+        agent = _make_agent()
+        assert agent._parse_milestone_intent("approve this draft") == "milestone_approve"
+        assert agent._parse_milestone_intent("publish the post") == "milestone_approve"
+        assert agent._parse_milestone_intent("accept the tweet") == "milestone_approve"
+
+    def test_reject_keywords(self):
+        agent = _make_agent()
+        assert agent._parse_milestone_intent("reject this draft") == "milestone_reject"
+        assert agent._parse_milestone_intent("dismiss it") == "milestone_reject"
+        assert agent._parse_milestone_intent("skip this one") == "milestone_reject"
+
+    def test_settings_keywords(self):
+        agent = _make_agent()
+        assert agent._parse_milestone_intent("milestone settings") == "milestone_settings"
+        assert agent._parse_milestone_intent("change threshold config") == "milestone_settings"
+
+    def test_default_fallback(self):
+        agent = _make_agent()
+        assert agent._parse_milestone_intent("show milestones") == "milestone_list"

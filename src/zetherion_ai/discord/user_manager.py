@@ -558,11 +558,20 @@ class UserManager:
     # ------------------------------------------------------------------
 
     async def _ensure_schema(self) -> None:
-        """Run the DDL statements to create tables and indexes if absent."""
+        """Run the DDL statements to create tables and indexes if absent.
+
+        Handles the PostgreSQL race condition where concurrent processes both
+        try to ``CREATE TABLE IF NOT EXISTS`` at the same time, resulting in a
+        ``UniqueViolationError`` on ``pg_type_typname_nsp_index``.  This is
+        harmless — the table was successfully created by the other process.
+        """
         try:
             async with self._pool.acquire() as conn:  # type: ignore[union-attr]
                 await conn.execute(_SCHEMA_SQL)
             log.info("schema_ensured")
+        except asyncpg.UniqueViolationError:
+            # Another process already created the schema concurrently — safe to proceed.
+            log.info("schema_ensured", note="concurrent creation resolved")
         except asyncpg.PostgresError as exc:
             log.error("schema_creation_failed", error=str(exc))
             raise

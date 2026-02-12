@@ -96,6 +96,12 @@ class Settings(BaseSettings):
         default=False, description="Allow messages from other bots (for E2E testing only)"
     )
 
+    # Dev Agent Configuration
+    dev_agent_webhook_name: str = Field(
+        default="zetherion-dev-agent",
+        description="Webhook username for the local dev agent",
+    )
+
     @property
     def log_file_path(self) -> str:
         """Get the full log file path."""
@@ -303,6 +309,16 @@ class Settings(BaseSettings):
     )
     github_api_timeout: int = Field(
         default=30, description="Timeout in seconds for GitHub API requests"
+    )
+
+    # Public API Configuration (Phase 11)
+    api_host: str = Field(
+        default="0.0.0.0",  # nosec B104 - Intentional for Docker container
+        description="Public API server bind host",
+    )
+    api_port: int = Field(default=8443, description="Public API server port")
+    api_jwt_secret: SecretStr | None = Field(
+        default=None, description="JWT signing secret for session tokens"
     )
 
     # Health Monitoring Configuration (Phase 10B)

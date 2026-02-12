@@ -23,6 +23,9 @@ class ItemType(StrEnum):
     MEETING = "meeting"
     REMINDER = "reminder"
     ACTION_ITEM = "action_item"
+    DEV_IDEA = "dev_idea"
+    DEV_PROGRESS = "dev_progress"
+    MILESTONE = "milestone"
 
 
 class ExtractionTier(int):

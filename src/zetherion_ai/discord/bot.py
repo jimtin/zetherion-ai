@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import time
+from typing import Any
 from uuid import uuid4
 
 import discord
@@ -226,6 +227,13 @@ class ZetherionAIBot(discord.Client):
         if message.author == self.user:
             return
 
+        # Handle dev-agent webhook messages (before the general bot filter)
+        if message.webhook_id is not None:
+            settings = get_settings()
+            if message.author.name == settings.dev_agent_webhook_name:
+                await self._handle_dev_event(message)
+            return  # All other webhooks are ignored
+
         # Ignore messages from bots (unless explicitly allowed for testing)
         if message.author.bot and not get_settings().allow_bot_messages:
             return
@@ -311,6 +319,66 @@ class ZetherionAIBot(discord.Client):
                 await self._send_long_reply(message, response)
         finally:
             structlog.contextvars.clear_contextvars()
+
+    async def _handle_dev_event(self, message: discord.Message) -> None:
+        """Handle a dev-agent webhook message by routing to the dev_watcher skill.
+
+        Parses embed fields from the webhook and sends ingestion requests
+        to the agent. No reply is sent back (passive ingestion).
+        """
+        if self._agent is None:
+            log.debug("dev_event_ignored_agent_not_ready")
+            return
+
+        for embed in message.embeds:
+            event_type = embed.title or "unknown"
+            description = embed.description or ""
+
+            # Extract structured fields from embed
+            fields: dict[str, str] = {}
+            for ef in embed.fields:
+                name = ef.name or ""
+                value = ef.value or ""
+                fields[name] = value
+
+            # Map event type to skill intent
+            intent_map = {
+                "commit": "dev_ingest_commit",
+                "annotation": "dev_ingest_annotation",
+                "session": "dev_ingest_session",
+                "tag": "dev_ingest_tag",
+            }
+            intent = intent_map.get(event_type, "dev_ingest_commit")
+
+            # Build context from embed fields
+            context: dict[str, Any] = {
+                "skill_name": "dev_watcher",
+                **fields,
+            }
+
+            # Route through skills client if available
+            try:
+                from zetherion_ai.skills.base import SkillRequest
+
+                client = await self._agent._get_skills_client()
+                if client:
+                    request = SkillRequest(
+                        user_id=str(message.author.id),
+                        intent=intent,
+                        message=description,
+                        context=context,
+                    )
+                    response = await client.handle_request(request)
+                    log.info(
+                        "dev_event_ingested",
+                        event_type=event_type,
+                        success=response.success,
+                        project=fields.get("project", ""),
+                    )
+                else:
+                    log.warning("dev_event_skipped_no_skills_client")
+            except Exception:
+                log.exception("dev_event_ingestion_failed", event_type=event_type)
 
     async def _check_security(
         self,

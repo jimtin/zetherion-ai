@@ -15,6 +15,10 @@ from typing import Any
 import pytest
 import pytest_asyncio
 
+# Use module-scoped event loop so module-scoped async fixtures (mock_bot)
+# share the same loop across all tests in this module.
+pytestmark = pytest.mark.asyncio(loop_scope="module")
+
 
 def _load_env() -> None:
     """Load environment variables from .env file (called lazily, not at import)."""
@@ -358,8 +362,8 @@ def docker_env() -> Generator[DockerEnvironment, None, None]:
             logs = env.get_logs("zetherion_ai")
             pytest.fail(f"Services failed to become healthy.\n\nLogs:\n{logs}")
 
-        # Give services a bit more time to fully initialize
-        time.sleep(10)
+        # Brief pause for services to fully initialize
+        time.sleep(2)
 
         # Pull embedding model early - needed by both Gemini and Ollama backends
         # since the default embeddings_backend is 'ollama'
@@ -429,22 +433,19 @@ def router_backend(request: Any, docker_env: DockerEnvironment) -> str:
     return backend
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def mock_bot(
     docker_env: DockerEnvironment, router_backend: str
 ) -> AsyncGenerator[MockDiscordBot, None]:
-    """Pytest fixture for mock Discord bot.
+    """Pytest fixture for mock Discord bot (module-scoped to avoid re-init per test).
 
     Args:
         docker_env: Docker environment fixture (ensures Docker is running first).
         router_backend: Router backend to use ('gemini' or 'ollama').
 
     Yields:
-        Initialized MockDiscordBot instance.
+        Initialized MockDiscordBot instance shared across tests in the module.
     """
-    # Give Docker services a moment to be fully ready
-    await asyncio.sleep(2)
-
     bot = MockDiscordBot(router_backend=router_backend)
     await bot.initialize()
     print(f"🤖 Testing with {router_backend.upper()} router backend")
@@ -452,7 +453,6 @@ async def mock_bot(
     await bot.cleanup()
 
 
-@pytest.mark.asyncio
 @pytest.mark.integration
 async def test_router_backend(mock_bot: MockDiscordBot) -> None:
     """Test that the router backend is working correctly."""
@@ -477,7 +477,6 @@ async def test_router_backend(mock_bot: MockDiscordBot) -> None:
     print(f"✅ {backend.upper()} router test passed: {preview}...")
 
 
-@pytest.mark.asyncio
 @pytest.mark.integration
 async def test_simple_question(mock_bot: MockDiscordBot) -> None:
     """Test simple question handling."""
@@ -490,7 +489,6 @@ async def test_simple_question(mock_bot: MockDiscordBot) -> None:
     print(f"✅ Simple question test passed ({mock_bot.router_backend.upper()}): {preview}...")
 
 
-@pytest.mark.asyncio
 @pytest.mark.integration
 async def test_memory_store_and_recall(mock_bot: MockDiscordBot) -> None:
     """Test memory storage and recall."""
@@ -499,8 +497,8 @@ async def test_memory_store_and_recall(mock_bot: MockDiscordBot) -> None:
     assert "remember" in store_response.lower() or "blue" in store_response.lower()
     print(f"✅ Memory stored: {store_response}")
 
-    # Wait a moment for memory to be indexed
-    await asyncio.sleep(3)
+    # Brief pause for memory indexing
+    await asyncio.sleep(1)
 
     # Recall the memory
     recall_response = await mock_bot.simulate_message("What is my favorite color?")
@@ -515,7 +513,6 @@ async def test_memory_store_and_recall(mock_bot: MockDiscordBot) -> None:
         print(f"⚠️ Memory recall uncertain (may need longer indexing time): {recall_response}")
 
 
-@pytest.mark.asyncio
 @pytest.mark.integration
 async def test_complex_task(mock_bot: MockDiscordBot) -> None:
     """Test complex task handling."""
@@ -564,7 +561,6 @@ async def test_complex_task(mock_bot: MockDiscordBot) -> None:
     print(f"✅ Complex task test passed: {preview}...")
 
 
-@pytest.mark.asyncio
 @pytest.mark.integration
 async def test_conversation_context(mock_bot: MockDiscordBot) -> None:
     """Test conversation context retention."""
@@ -572,7 +568,7 @@ async def test_conversation_context(mock_bot: MockDiscordBot) -> None:
     response1 = await mock_bot.simulate_message("My name is TestUser")
     print(f"Message 1: {response1}")
 
-    await asyncio.sleep(1)
+    await asyncio.sleep(0.5)
 
     # Second message referencing first
     response2 = await mock_bot.simulate_message("What did I just tell you?")
@@ -588,7 +584,6 @@ async def test_conversation_context(mock_bot: MockDiscordBot) -> None:
         print(f"⚠️ Context retention (recalled different context): {preview}...")
 
 
-@pytest.mark.asyncio
 @pytest.mark.integration
 async def test_help_command(mock_bot: MockDiscordBot) -> None:
     """Test help command."""
@@ -659,7 +654,6 @@ def test_qdrant_collections_exist(docker_env: DockerEnvironment) -> None:
 # Phase 5 Integration Tests
 
 
-@pytest.mark.asyncio
 @pytest.mark.integration
 async def test_task_management_skill(mock_bot: MockDiscordBot) -> None:
     """Test task management skill (Phase 5E)."""
@@ -673,7 +667,6 @@ async def test_task_management_skill(mock_bot: MockDiscordBot) -> None:
     print(f"✅ Task management test: {preview}...")
 
 
-@pytest.mark.asyncio
 @pytest.mark.integration
 async def test_calendar_query_skill(mock_bot: MockDiscordBot) -> None:
     """Test calendar query skill (Phase 5E)."""
@@ -687,7 +680,6 @@ async def test_calendar_query_skill(mock_bot: MockDiscordBot) -> None:
     print(f"✅ Calendar query test: {preview}...")
 
 
-@pytest.mark.asyncio
 @pytest.mark.integration
 async def test_profile_query_skill(mock_bot: MockDiscordBot) -> None:
     """Test profile query skill (Phase 5E)."""
@@ -733,7 +725,6 @@ def test_skills_service_health(docker_env: DockerEnvironment) -> None:
     print("✅ Skills service health check passed")
 
 
-@pytest.mark.asyncio
 @pytest.mark.integration
 async def test_router_skill_intents(mock_bot: MockDiscordBot) -> None:
     """Test router correctly classifies skill intents (Phase 5G)."""
@@ -760,7 +751,6 @@ async def test_router_skill_intents(mock_bot: MockDiscordBot) -> None:
     print("✅ Router skill intent classification test passed")
 
 
-@pytest.mark.asyncio
 @pytest.mark.integration
 async def test_encryption_in_memory_storage(mock_bot: MockDiscordBot) -> None:
     """Test that encryption is working for memory storage (Phase 5A)."""
@@ -770,8 +760,8 @@ async def test_encryption_in_memory_storage(mock_bot: MockDiscordBot) -> None:
     )
     assert response is not None
 
-    # Wait for memory indexing
-    await asyncio.sleep(2)
+    # Brief pause for memory indexing
+    await asyncio.sleep(1)
 
     # Recall should work (encryption is transparent)
     recall = await mock_bot.simulate_message("What's my API key?")

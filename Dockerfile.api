@@ -1,0 +1,73 @@
+# Public API service Dockerfile - Chainguard multi-stage build
+# Hardened container for running the multi-tenant public API (port 8443)
+# Stage 1: Builder - install dependencies
+# Stage 2: Runtime - Chainguard distroless Python (no shell, no package manager)
+#
+# Security: Chainguard images have zero known CVEs vs 19+ in Debian-based distroless
+
+# ============================================================
+# STAGE 1: Builder
+# ============================================================
+FROM cgr.dev/chainguard/python:latest-dev AS builder
+
+WORKDIR /app
+
+# Install dependencies in user directory (will be copied to runtime)
+# aiohttp is needed for the API server
+# PYO3_USE_ABI3_FORWARD_COMPATIBILITY allows pydantic-core to build on Python 3.14
+COPY requirements.txt ./
+ENV PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
+RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.txt aiohttp
+
+# Copy source code for import verification
+COPY src ./src
+
+# Set Python path for import verification
+ENV PYTHONPATH=/app/src
+
+# Verify all critical imports work before building runtime image
+RUN python -c "from zetherion_ai.api.server import PublicAPIServer; print('✓ Public API server imports verified')" && \
+    python -c "from zetherion_ai.api.tenant import TenantManager; print('✓ TenantManager imports verified')" && \
+    python -c "from zetherion_ai.api.auth import generate_api_key, create_session_token; print('✓ Auth imports verified')" && \
+    python -c "import aiohttp; print('✓ aiohttp verified')"
+
+# ============================================================
+# STAGE 2: Chainguard Distroless Runtime
+# ============================================================
+FROM cgr.dev/chainguard/python:latest
+
+WORKDIR /app
+
+# Copy Python packages from builder with nonroot ownership (uid 65532)
+COPY --from=builder --chown=65532:65532 /home/nonroot/.local /home/nonroot/.local
+
+# Copy application source code with nonroot ownership
+COPY --from=builder --chown=65532:65532 /app/src /app/src
+
+# Set Python path for nonroot user
+# Chainguard uses Python 3.14
+ENV PYTHONPATH=/app/src:/home/nonroot/.local/lib/python3.14/site-packages
+ENV PATH=/home/nonroot/.local/bin:$PATH
+ENV PYTHONUSERBASE=/home/nonroot/.local
+
+# Set default configuration for API service
+ENV API_HOST=0.0.0.0
+ENV API_PORT=8443
+
+# Create data directory
+VOLUME ["/app/data"]
+
+# Expose the public API port
+EXPOSE 8443
+
+# Chainguard runs as nonroot user (uid 65532) by default
+# No USER directive needed - it's built into the image
+
+# Healthcheck using Python (no shell/curl in distroless)
+# Note: HEALTHCHECK CMD doesn't use ENTRYPOINT, so we must specify full path
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD ["/usr/bin/python", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 8443)); s.close()"]
+
+# Run the public API server
+# Note: ENTRYPOINT is /usr/bin/python, so we only need the module args
+CMD ["-m", "zetherion_ai.api.server"]

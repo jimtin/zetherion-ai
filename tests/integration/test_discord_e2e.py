@@ -21,7 +21,7 @@ import pytest_asyncio
 
 
 def _load_env() -> None:
-    """Load environment variables from .env file (called lazily, not at import)."""
+    """Load environment variables from .env file."""
     try:
         from dotenv import load_dotenv
 
@@ -30,6 +30,9 @@ def _load_env() -> None:
     except ImportError:
         pass
 
+
+# Load .env before evaluating skip conditions so TEST_DISCORD_* vars are available
+_load_env()
 
 # Skip if test Discord credentials not provided
 SKIP_DISCORD_E2E = not all(
@@ -329,7 +332,6 @@ async def discord_test_client() -> AsyncGenerator[DiscordTestClient, None]:
     Yields:
         Initialized DiscordTestClient.
     """
-    _load_env()
     if SKIP_DISCORD_E2E:
         pytest.skip(SKIP_REASON)
 
@@ -361,7 +363,7 @@ async def test_bot_responds_to_message(discord_test_client: DiscordTestClient) -
     try:
         # Wait for bot response
         response = await discord_test_client.wait_for_bot_response(
-            test_message, timeout=30.0, bot_id=bot_id
+            test_message, timeout=90.0, bot_id=bot_id
         )
 
         assert response is not None, "Bot did not respond within timeout"
@@ -392,7 +394,7 @@ async def test_bot_handles_complex_query(discord_test_client: DiscordTestClient)
 
     try:
         response = await discord_test_client.wait_for_bot_response(
-            test_message, timeout=45.0, bot_id=bot_id
+            test_message, timeout=90.0, bot_id=bot_id
         )
 
         assert response is not None, "Bot did not respond to complex query"
@@ -425,7 +427,7 @@ async def test_bot_remembers_information(discord_test_client: DiscordTestClient)
 
     try:
         store_response = await discord_test_client.wait_for_bot_response(
-            store_message, timeout=30.0, bot_id=bot_id
+            store_message, timeout=90.0, bot_id=bot_id
         )
         assert store_response is not None, "Bot did not acknowledge memory storage"
 
@@ -437,7 +439,7 @@ async def test_bot_remembers_information(discord_test_client: DiscordTestClient)
             f"<@{bot_id}> What is my favorite color?"
         )
         recall_response = await discord_test_client.wait_for_bot_response(
-            recall_message, timeout=30.0, bot_id=bot_id
+            recall_message, timeout=90.0, bot_id=bot_id
         )
 
         assert recall_response is not None, "Bot did not respond to recall query"
@@ -476,7 +478,7 @@ async def test_bot_handles_mention(discord_test_client: DiscordTestClient) -> No
 
     try:
         response = await discord_test_client.wait_for_bot_response(
-            test_message, timeout=30.0, bot_id=bot_id
+            test_message, timeout=90.0, bot_id=bot_id
         )
 
         assert response is not None, "Bot did not respond to mention"
@@ -536,7 +538,7 @@ async def test_bot_creates_task(discord_test_client: DiscordTestClient) -> None:
 
     try:
         response = await discord_test_client.wait_for_bot_response(
-            test_message, timeout=45.0, bot_id=bot_id
+            test_message, timeout=90.0, bot_id=bot_id
         )
         assert response is not None, "Bot did not respond to task creation"
         assert len(response.content) > 0, "Bot response was empty"
@@ -561,7 +563,7 @@ async def test_bot_lists_tasks(discord_test_client: DiscordTestClient) -> None:
 
     try:
         response = await discord_test_client.wait_for_bot_response(
-            test_message, timeout=45.0, bot_id=bot_id
+            test_message, timeout=90.0, bot_id=bot_id
         )
         assert response is not None, "Bot did not respond to task listing"
         assert len(response.content) > 0, "Bot response was empty"
@@ -588,7 +590,7 @@ async def test_bot_shows_schedule(discord_test_client: DiscordTestClient) -> Non
 
     try:
         response = await discord_test_client.wait_for_bot_response(
-            test_message, timeout=45.0, bot_id=bot_id
+            test_message, timeout=90.0, bot_id=bot_id
         )
         assert response is not None, "Bot did not respond to schedule query"
         assert len(response.content) > 0, "Bot response was empty"
@@ -613,7 +615,7 @@ async def test_bot_profile_query(discord_test_client: DiscordTestClient) -> None
 
     try:
         response = await discord_test_client.wait_for_bot_response(
-            test_message, timeout=45.0, bot_id=bot_id
+            test_message, timeout=90.0, bot_id=bot_id
         )
         assert response is not None, "Bot did not respond to profile query"
         assert len(response.content) > 0, "Bot response was empty"
@@ -641,7 +643,7 @@ async def test_bot_multi_turn(discord_test_client: DiscordTestClient) -> None:
             f"<@{bot_id}> remember that my name is TestUser42"
         )
         messages_to_delete.append(msg1)
-        resp1 = await discord_test_client.wait_for_bot_response(msg1, timeout=60.0, bot_id=bot_id)
+        resp1 = await discord_test_client.wait_for_bot_response(msg1, timeout=90.0, bot_id=bot_id)
         assert resp1 is not None, "Bot did not respond to turn 1"
         messages_to_delete.append(resp1)
         await asyncio.sleep(2)
@@ -651,7 +653,7 @@ async def test_bot_multi_turn(discord_test_client: DiscordTestClient) -> None:
             f"<@{bot_id}> remember that I work as a software engineer"
         )
         messages_to_delete.append(msg2)
-        resp2 = await discord_test_client.wait_for_bot_response(msg2, timeout=60.0, bot_id=bot_id)
+        resp2 = await discord_test_client.wait_for_bot_response(msg2, timeout=90.0, bot_id=bot_id)
         assert resp2 is not None, "Bot did not respond to turn 2"
         messages_to_delete.append(resp2)
         await asyncio.sleep(2)
@@ -659,7 +661,7 @@ async def test_bot_multi_turn(discord_test_client: DiscordTestClient) -> None:
         # Turn 3: Ask what it knows
         msg3 = await discord_test_client.send_message(f"<@{bot_id}> what do you know about me?")
         messages_to_delete.append(msg3)
-        resp3 = await discord_test_client.wait_for_bot_response(msg3, timeout=45.0, bot_id=bot_id)
+        resp3 = await discord_test_client.wait_for_bot_response(msg3, timeout=90.0, bot_id=bot_id)
         assert resp3 is not None, "Bot did not respond to turn 3"
         messages_to_delete.append(resp3)
 

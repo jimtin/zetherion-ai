@@ -17,13 +17,26 @@ scripts/interactive-setup.py:env-file-secrets:293
 # start.ps1 - PowerShell variable name (not an actual secret value)
 start.ps1:env-file-secrets:315
 
-# docker-compose.test.yml - Local test POSTGRES_DSN with placeholder password
+# docker-compose.test.yml - Local test POSTGRES_DSN with placeholder password + test JWT secret
 docker-compose.test.yml:password-in-url:35
-docker-compose.test.yml:password-in-url:65
+docker-compose.test.yml:password-in-url:62
+docker-compose.test.yml:password-in-url:63
+docker-compose.test.yml:env-file-secrets:65
+docker-compose.test.yml:password-in-url:99
+docker-compose.test.yml:password-in-url:100
 
-# docker-compose.yml - Local dev POSTGRES_DSN with placeholder password
+# docker-compose.yml - Local dev POSTGRES_DSN with placeholder password + TUNNEL_ env var
+docker-compose.yml:password-in-url:34
 docker-compose.yml:password-in-url:36
+docker-compose.yml:password-in-url:72
 docker-compose.yml:password-in-url:83
+docker-compose.yml:password-in-url:175
+docker-compose.yml:env-file-secrets:105
 
 # src/zetherion_ai/config.py - Default POSTGRES_DSN with placeholder password
 src/zetherion_ai/config.py:password-in-url:43
+
+# scripts/benchmark-router.py - api_key parameter names (not actual secrets)
+scripts/benchmark-router.py:env-file-secrets:696
+scripts/benchmark-router.py:env-file-secrets:748
+scripts/benchmark-router.py:env-file-secrets:801

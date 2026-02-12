@@ -203,6 +203,18 @@ class Agent:
                         message,
                         "gmail",
                     )
+                case MessageIntent.DEV_WATCHER:
+                    response = await self._handle_skill_intent(
+                        user_id,
+                        message,
+                        "dev_watcher",
+                    )
+                case MessageIntent.MILESTONE_MANAGEMENT:
+                    response = await self._handle_skill_intent(
+                        user_id,
+                        message,
+                        "milestone_tracker",
+                    )
                 case _:
                     response = await self._handle_complex_task(
                         user_id,
@@ -315,6 +327,8 @@ class Agent:
             "profile_manager": self._parse_profile_intent(message),
             "personal_model": self._parse_personal_model_intent(message),
             "gmail": self._parse_email_intent(message),
+            "dev_watcher": self._parse_dev_watcher_intent(message),
+            "milestone_tracker": self._parse_milestone_intent(message),
         }
 
         intent = intent_map.get(skill_name, "unknown")
@@ -436,6 +450,32 @@ class Agent:
         elif any(w in msg_lower for w in ["unread", "new email", "urgent"]):
             return "email_unread"
         return "email_check"
+
+    def _parse_dev_watcher_intent(self, message: str) -> str:
+        """Parse specific dev watcher intent from message."""
+        msg_lower = message.lower()
+        if any(w in msg_lower for w in ["next", "should i work", "what to do"]):
+            return "dev_next"
+        elif any(w in msg_lower for w in ["idea", "ideas"]):
+            return "dev_ideas"
+        elif any(w in msg_lower for w in ["journal", "log", "this week", "today", "yesterday"]):
+            return "dev_journal"
+        elif any(w in msg_lower for w in ["summary", "overview", "recap"]):
+            return "dev_summary"
+        return "dev_status"
+
+    def _parse_milestone_intent(self, message: str) -> str:
+        """Parse specific milestone intent from message."""
+        msg_lower = message.lower()
+        if any(w in msg_lower for w in ["approve", "publish", "accept"]):
+            return "milestone_approve"
+        elif any(w in msg_lower for w in ["reject", "dismiss", "skip"]):
+            return "milestone_reject"
+        elif any(w in msg_lower for w in ["draft", "drafts", "promo", "post"]):
+            return "milestone_drafts"
+        elif any(w in msg_lower for w in ["setting", "config", "threshold"]):
+            return "milestone_settings"
+        return "milestone_list"
 
     async def _build_context(
         self,
