@@ -55,6 +55,10 @@ class MessageIntent(Enum):
     # Dev watcher intents
     DEV_WATCHER = "dev_watcher"  # Development activity, journal, ideas
     MILESTONE_MANAGEMENT = "milestone_management"  # Milestones, social posts, promotion
+    # YouTube skill intents (Phase 12)
+    YOUTUBE_INTELLIGENCE = "youtube_intelligence"  # Channel analysis, reports
+    YOUTUBE_MANAGEMENT = "youtube_management"  # Auto-replies, tags, health
+    YOUTUBE_STRATEGY = "youtube_strategy"  # Growth strategy, content plans
 
 
 @dataclass
@@ -133,6 +137,18 @@ ROUTER_PROMPT = """You are a message router. Classify the user's message into on
 14. MILESTONE_MANAGEMENT - Development milestones, social media drafts, promotion posts
    Examples: "Show my milestones", "Any milestone drafts?", "Approve the LinkedIn post", \
 "What milestones have I hit?", "Generate posts for the latest milestone", "Show promo drafts"
+
+15. YOUTUBE_INTELLIGENCE - YouTube channel analysis, comment insights, audience reports
+   Examples: "Analyze my YouTube channel", "What are viewers saying?", "Show channel report", \
+"YouTube audience insights", "Channel intelligence", "Comment analysis"
+
+16. YOUTUBE_MANAGEMENT - YouTube auto-replies, tag suggestions, channel health
+   Examples: "Generate replies for comments", "Review YouTube replies", "Tag suggestions", \
+"Channel health audit", "Setup YouTube channel", "YouTube onboarding"
+
+17. YOUTUBE_STRATEGY - YouTube growth strategy, content planning, SEO recommendations
+   Examples: "Generate YouTube strategy", "Content plan for my channel", "YouTube growth plan", \
+"SEO recommendations", "What should I post next?"
 
 Respond with ONLY a JSON object:
 {"intent": "INTENT_NAME", "confidence": 0.0-1.0, "reasoning": "brief reason"}
