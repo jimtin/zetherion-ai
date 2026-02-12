@@ -443,7 +443,7 @@ class SkillsServer:
             log.info("skills_server_stopped")
 
 
-async def run_server(
+async def run_server(  # pragma: no cover — starts infinite loop
     registry: SkillRegistry,
     api_secret: str | None = None,
     host: str = "0.0.0.0",  # nosec B104 - Intentional for Docker container
@@ -478,7 +478,7 @@ async def run_server(
         await server.stop()
 
 
-def main() -> None:
+def main() -> None:  # pragma: no cover — CLI entry-point
     """Main entry point for the skills service."""
     from zetherion_ai.config import get_settings
 
@@ -513,6 +513,26 @@ def main() -> None:
         )
     )
 
+    # Conditional: YouTube Skills (require Postgres + InferenceBroker)
+    _yt_storage = None
+    if settings.postgres_dsn:
+        try:
+            from zetherion_ai.agent.inference import InferenceBroker
+            from zetherion_ai.skills.youtube.intelligence import YouTubeIntelligenceSkill
+            from zetherion_ai.skills.youtube.management import YouTubeManagementSkill
+            from zetherion_ai.skills.youtube.storage import YouTubeStorage
+            from zetherion_ai.skills.youtube.strategy import YouTubeStrategySkill
+
+            _yt_broker = InferenceBroker()
+            _yt_storage = YouTubeStorage(dsn=settings.postgres_dsn)
+            # Pool is created async in init_and_run; skills call storage after initialize_all
+            registry.register(YouTubeIntelligenceSkill(storage=_yt_storage, broker=_yt_broker))
+            registry.register(YouTubeManagementSkill(storage=_yt_storage, broker=_yt_broker))
+            registry.register(YouTubeStrategySkill(storage=_yt_storage, broker=_yt_broker))
+            log.info("youtube_skills_registered")
+        except Exception as e:
+            log.warning("youtube_skills_registration_failed", error=str(e))
+
     # Conditional: Client Provisioning (requires Postgres for TenantManager)
     _tenant_manager = None
     if settings.postgres_dsn:
@@ -530,6 +550,8 @@ def main() -> None:
 
     # Initialize all skills
     async def init_and_run() -> None:
+        if _yt_storage is not None:
+            await _yt_storage.initialize()
         if _tenant_manager is not None:
             await _tenant_manager.initialize()
         await registry.initialize_all()
