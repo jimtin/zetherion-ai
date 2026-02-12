@@ -212,6 +212,51 @@ CREATE TABLE IF NOT EXISTS gmail_contact_trust (
     total_interactions INT DEFAULT 0,
     PRIMARY KEY (user_id, contact_email)
 );
+
+-- Phase 13: Encrypted secrets storage
+CREATE TABLE IF NOT EXISTS secrets (
+    name         VARCHAR(100) PRIMARY KEY,
+    value        TEXT         NOT NULL,
+    description  TEXT,
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_by   BIGINT
+);
+
+-- Phase 13: Priority message queue
+CREATE TABLE IF NOT EXISTS message_queue (
+    id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    priority        SMALLINT     NOT NULL DEFAULT 0 CHECK (priority BETWEEN 0 AND 3),
+    status          VARCHAR(20)  NOT NULL DEFAULT 'queued',
+    task_type       VARCHAR(50)  NOT NULL,
+    user_id         BIGINT       NOT NULL,
+    channel_id      BIGINT,
+    payload         JSONB        NOT NULL,
+    attempt_count   SMALLINT     NOT NULL DEFAULT 0,
+    max_attempts    SMALLINT     NOT NULL DEFAULT 3,
+    last_error      TEXT,
+    worker_id       TEXT,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    scheduled_for   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    started_at      TIMESTAMPTZ,
+    completed_at    TIMESTAMPTZ,
+    correlation_id  TEXT,
+    parent_id       UUID REFERENCES message_queue(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mq_dequeue
+    ON message_queue (priority ASC, scheduled_for ASC)
+    WHERE status = 'queued';
+CREATE INDEX IF NOT EXISTS idx_mq_status
+    ON message_queue (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mq_user
+    ON message_queue (user_id, status);
+CREATE INDEX IF NOT EXISTS idx_mq_correlation
+    ON message_queue (correlation_id)
+    WHERE correlation_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_mq_stale
+    ON message_queue (status, started_at)
+    WHERE status = 'processing';
 """
 
 

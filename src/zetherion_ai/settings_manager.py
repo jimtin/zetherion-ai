@@ -41,6 +41,8 @@ VALID_NAMESPACES: frozenset[str] = frozenset(
         "scheduler",
         "tuning",
         "logging",
+        "security",
+        "queue",
     }
 )
 

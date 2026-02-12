@@ -957,7 +957,7 @@ class TestUpdateManagerInit:
 
     def test_current_version_returns_package_version(self) -> None:
         mgr = _make_manager()
-        assert mgr.current_version == "0.3.0"
+        assert mgr.current_version == "0.4.0"
 
     def test_constructor_stores_attributes(self) -> None:
         storage = AsyncMock()

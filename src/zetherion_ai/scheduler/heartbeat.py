@@ -19,6 +19,7 @@ from zetherion_ai.scheduler.actions import ActionExecutor, ActionResult, Schedul
 from zetherion_ai.skills.base import HeartbeatAction
 
 if TYPE_CHECKING:
+    from zetherion_ai.queue.manager import QueueManager
     from zetherion_ai.skills.client import SkillsClient
 
 log = get_logger("zetherion_ai.scheduler.heartbeat")
@@ -86,6 +87,7 @@ class HeartbeatScheduler:
         skills_client: "SkillsClient | None" = None,
         action_executor: ActionExecutor | None = None,
         config: HeartbeatConfig | None = None,
+        queue_manager: "QueueManager | None" = None,
     ):
         """Initialize the heartbeat scheduler.
 
@@ -93,10 +95,12 @@ class HeartbeatScheduler:
             skills_client: Client for calling skills service.
             action_executor: Executor for actions.
             config: Scheduler configuration.
+            queue_manager: Optional QueueManager for enqueuing actions.
         """
         self._skills_client = skills_client
         self._action_executor = action_executor or ActionExecutor()
         self._config = config or HeartbeatConfig()
+        self._queue_manager = queue_manager
         self._stats = HeartbeatStats()
         self._running = False
         self._task: asyncio.Task[None] | None = None
@@ -287,11 +291,44 @@ class HeartbeatScheduler:
             return []
 
     async def _execute_actions(self, actions: list[HeartbeatAction]) -> list[ActionResult]:
-        """Execute a list of actions."""
+        """Execute a list of actions (via queue if available, else direct)."""
+        # If queue is available and running, enqueue at P2 priority
+        if self._queue_manager is not None and self._queue_manager.is_running:
+            return await self._enqueue_actions(actions)
+
+        # Direct execution fallback
         results = []
         for action in actions:
             result = await self._action_executor.execute(action)
             results.append(result)
+        return results
+
+    async def _enqueue_actions(self, actions: list[HeartbeatAction]) -> list[ActionResult]:
+        """Enqueue heartbeat actions into the priority queue."""
+        from zetherion_ai.queue.models import QueuePriority, QueueTaskType
+
+        assert self._queue_manager is not None
+        results: list[ActionResult] = []
+        for action in actions:
+            try:
+                await self._queue_manager.enqueue(
+                    task_type=QueueTaskType.HEARTBEAT_ACTION,
+                    user_id=int(action.user_id) if action.user_id.isdigit() else 0,
+                    payload={
+                        "skill_name": action.skill_name,
+                        "action_type": action.action_type,
+                        "user_id": action.user_id,
+                        "data": action.data,
+                        "priority": action.priority,
+                    },
+                    priority=QueuePriority.SCHEDULED,
+                )
+                results.append(ActionResult(action=action, success=True, message="Enqueued"))
+            except Exception as exc:
+                log.warning("heartbeat_enqueue_failed", error=str(exc))
+                # Fall back to direct execution for this action
+                result = await self._action_executor.execute(action)
+                results.append(result)
         return results
 
     async def _process_scheduled_events(self) -> None:
