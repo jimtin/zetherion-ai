@@ -64,6 +64,7 @@ git-hook-logs/
 htmlcov/
 .coverage
 .coverage.*
+.coverage\ *
 coverage.xml
 docs/implementation_plan.md
 
