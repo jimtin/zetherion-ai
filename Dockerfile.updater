@@ -9,6 +9,7 @@
 FROM docker:27-cli
 
 # Install git, python3, and curl for health checks
+# hadolint ignore=DL3018
 RUN apk add --no-cache \
     git \
     python3 \
@@ -25,6 +26,7 @@ WORKDIR /app
 COPY updater_sidecar/ /app/updater_sidecar/
 
 # Install Python dependencies (minimal: aiohttp for HTTP server, httpx for health checks)
+# hadolint ignore=DL3013
 RUN pip3 install --no-cache-dir --break-system-packages \
     aiohttp \
     httpx
