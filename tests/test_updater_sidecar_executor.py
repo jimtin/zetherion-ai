@@ -362,7 +362,6 @@ class TestRollback:
         assert ex.current_operation is None
 
     async def test_concurrent_rollback_returns_failed(self) -> None:
-
         ex = _make_executor(health_urls={})
 
         slow_started = asyncio.Event()
