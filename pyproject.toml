@@ -1,6 +1,6 @@
 [project]
 name = "zetherion-ai"
-version = "0.1.0"
+version = "0.3.0"
 description = "Secure personal AI assistant with encrypted memory and multi-provider LLM routing"
 readme = "README.md"
 license = { text = "MIT" }

@@ -25,6 +25,7 @@ from zetherion_ai.api.routes.sessions import (
     handle_delete_session,
     handle_get_session,
 )
+from zetherion_ai.api.routes.youtube import register_youtube_routes
 from zetherion_ai.api.tenant import TenantManager
 from zetherion_ai.logging import get_logger
 
@@ -43,6 +44,8 @@ class PublicAPIServer:
         port: int = 8443,
         allowed_origins: list[str] | None = None,
         inference_broker: Any = None,
+        youtube_storage: Any = None,
+        youtube_skills: dict[str, Any] | None = None,
     ) -> None:
         self._tenant_manager = tenant_manager
         self._jwt_secret = jwt_secret
@@ -50,6 +53,8 @@ class PublicAPIServer:
         self._port = port
         self._allowed_origins = allowed_origins
         self._inference_broker = inference_broker
+        self._youtube_storage = youtube_storage
+        self._youtube_skills = youtube_skills or {}
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
         self._rate_limiter = RateLimiter()
@@ -78,6 +83,12 @@ class PublicAPIServer:
         if self._inference_broker is not None:
             app["inference_broker"] = self._inference_broker
 
+        # YouTube skill state (accessed by route handlers)
+        if self._youtube_storage is not None:
+            app["youtube_storage"] = self._youtube_storage
+        for skill_key, skill_obj in self._youtube_skills.items():
+            app[f"youtube_{skill_key}"] = skill_obj
+
         # Health
         app.router.add_get("/api/v1/health", handle_health)
 
@@ -90,6 +101,10 @@ class PublicAPIServer:
         app.router.add_post("/api/v1/chat", handle_chat)
         app.router.add_post("/api/v1/chat/stream", handle_chat_stream)
         app.router.add_get("/api/v1/chat/history", handle_chat_history)
+
+        # YouTube (API key auth)
+        if self._youtube_storage is not None:
+            register_youtube_routes(app)
 
         self._app = app
         return app
@@ -123,6 +138,8 @@ async def run_server(
     jwt_secret: str,
     host: str = "0.0.0.0",  # nosec B104 - Intentional for Docker container
     port: int = 8443,
+    youtube_storage: Any = None,
+    youtube_skills: dict[str, Any] | None = None,
 ) -> None:
     """Run the public API server (main entry point for Docker container)."""
     server = PublicAPIServer(
@@ -130,6 +147,8 @@ async def run_server(
         jwt_secret=jwt_secret,
         host=host,
         port=port,
+        youtube_storage=youtube_storage,
+        youtube_skills=youtube_skills,
     )
     await server.start()
 
@@ -162,7 +181,47 @@ def main() -> None:
 
     async def init_and_run() -> None:
         await tenant_manager.initialize()
-        await run_server(tenant_manager, jwt_secret, host, port)
+
+        # Initialize YouTube storage and skills if Postgres is available
+        yt_storage = None
+        yt_skills: dict[str, Any] = {}
+        if settings.postgres_dsn:
+            try:
+                from zetherion_ai.agent.inference import InferenceBroker
+                from zetherion_ai.skills.youtube.intelligence import YouTubeIntelligenceSkill
+                from zetherion_ai.skills.youtube.management import YouTubeManagementSkill
+                from zetherion_ai.skills.youtube.storage import YouTubeStorage
+                from zetherion_ai.skills.youtube.strategy import YouTubeStrategySkill
+
+                yt_storage = YouTubeStorage(dsn=settings.postgres_dsn)
+                await yt_storage.initialize()
+
+                yt_broker = InferenceBroker()
+                intel_skill = YouTubeIntelligenceSkill(storage=yt_storage, broker=yt_broker)
+                mgmt_skill = YouTubeManagementSkill(storage=yt_storage, broker=yt_broker)
+                strat_skill = YouTubeStrategySkill(storage=yt_storage, broker=yt_broker)
+
+                await intel_skill.safe_initialize()
+                await mgmt_skill.safe_initialize()
+                await strat_skill.safe_initialize()
+
+                yt_skills = {
+                    "intelligence": intel_skill,
+                    "management": mgmt_skill,
+                    "strategy": strat_skill,
+                }
+                log.info("youtube_api_skills_initialized")
+            except Exception as e:
+                log.warning("youtube_api_init_failed", error=str(e))
+
+        await run_server(
+            tenant_manager,
+            jwt_secret,
+            host,
+            port,
+            youtube_storage=yt_storage,
+            youtube_skills=yt_skills,
+        )
 
     try:
         asyncio.run(init_and_run())

@@ -215,6 +215,25 @@ class Agent:
                         message,
                         "milestone_tracker",
                     )
+                # YouTube skill intents (Phase 12)
+                case MessageIntent.YOUTUBE_INTELLIGENCE:
+                    response = await self._handle_skill_intent(
+                        user_id,
+                        message,
+                        "youtube_intelligence",
+                    )
+                case MessageIntent.YOUTUBE_MANAGEMENT:
+                    response = await self._handle_skill_intent(
+                        user_id,
+                        message,
+                        "youtube_management",
+                    )
+                case MessageIntent.YOUTUBE_STRATEGY:
+                    response = await self._handle_skill_intent(
+                        user_id,
+                        message,
+                        "youtube_strategy",
+                    )
                 case _:
                     response = await self._handle_complex_task(
                         user_id,
@@ -329,6 +348,9 @@ class Agent:
             "gmail": self._parse_email_intent(message),
             "dev_watcher": self._parse_dev_watcher_intent(message),
             "milestone_tracker": self._parse_milestone_intent(message),
+            "youtube_intelligence": self._parse_youtube_intent(message, "intelligence"),
+            "youtube_management": self._parse_youtube_intent(message, "management"),
+            "youtube_strategy": self._parse_youtube_intent(message, "strategy"),
         }
 
         intent = intent_map.get(skill_name, "unknown")
@@ -476,6 +498,35 @@ class Agent:
         elif any(w in msg_lower for w in ["setting", "config", "threshold"]):
             return "milestone_settings"
         return "milestone_list"
+
+    def _parse_youtube_intent(self, message: str, skill: str) -> str:
+        """Parse specific YouTube skill intent from message."""
+        msg_lower = message.lower()
+        if skill == "intelligence":
+            if any(w in msg_lower for w in ["analyze", "analysis", "report"]):
+                return "yt_analyze_channel"
+            elif any(w in msg_lower for w in ["history", "past reports"]):
+                return "yt_intelligence_history"
+            return "yt_get_intelligence"
+        elif skill == "management":
+            if any(w in msg_lower for w in ["reply", "replies", "comment"]):
+                return "yt_review_replies"
+            elif any(w in msg_lower for w in ["tag", "tags", "seo"]):
+                return "yt_get_tag_recommendations"
+            elif any(w in msg_lower for w in ["health", "audit"]):
+                return "yt_channel_health"
+            elif any(w in msg_lower for w in ["setup", "onboard", "configure"]):
+                return "yt_configure_management"
+            elif any(w in msg_lower for w in ["state", "status"]):
+                return "yt_get_management_state"
+            return "yt_manage_channel"
+        elif skill == "strategy":
+            if any(w in msg_lower for w in ["generate", "create", "new"]):
+                return "yt_generate_strategy"
+            elif any(w in msg_lower for w in ["history", "past"]):
+                return "yt_strategy_history"
+            return "yt_get_strategy"
+        return "unknown"
 
     async def _build_context(
         self,
