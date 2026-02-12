@@ -137,7 +137,7 @@ class UpdateManager:
         github_repo: str,
         storage: HealthStorage | None = None,
         updater_url: str = "",
-        updater_secret: str = "",
+        updater_secret: str = "",  # noqa: S107  # nosec B107 — not a real password
         health_url: str = "http://localhost:8080/health",
         github_token: str | None = None,
     ) -> None:
