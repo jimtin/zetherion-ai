@@ -33,6 +33,12 @@ class NotificationType(Enum):
     DISCOVERY_ERROR = "discovery_error"
     SYSTEM_ERROR = "system_error"
 
+    # Client intelligence notifications
+    CLIENT_ESCALATION_ALERT = "client_escalation_alert"
+    CLIENT_SENTIMENT_DROP = "client_sentiment_drop"
+    CLIENT_PORTFOLIO_SUMMARY = "client_portfolio_summary"
+    CLIENT_CROSS_TENANT_INSIGHTS = "client_cross_tenant_insights"
+
 
 class NotificationPriority(Enum):
     """Priority levels for notifications."""

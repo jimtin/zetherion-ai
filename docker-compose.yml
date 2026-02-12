@@ -49,6 +49,74 @@ services:
           cpus: '0.5'
           memory: 512M
 
+  # Public API server for multi-tenant client websites (Phase 11)
+  zetherion-ai-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: zetherion-ai-api
+    restart: unless-stopped
+    # Security: read-only filesystem with writable tmpfs for temp files
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+      - /home/nonroot/.cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
+      - API_HOST=0.0.0.0
+      - API_PORT=8443
+      # LLM providers for chat inference
+      - OLLAMA_HOST=ollama
+      - OLLAMA_PORT=11434
+      - OLLAMA_ROUTER_HOST=ollama-router
+      - OLLAMA_ROUTER_PORT=11434
+      - ENVIRONMENT=production
+    # No port exposed to host — accessed via Cloudflare Tunnel
+    networks:
+      - zetherion-ai-net
+    # Use Dockerfile HEALTHCHECK - distroless can only exec via ENTRYPOINT
+    # Resource limits for API service
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  # Cloudflare Tunnel — exposes the API to the internet without opening ports
+  # Requires a Cloudflare Tunnel token (create at https://one.dash.cloudflare.com)
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: zetherion-ai-cloudflared
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      zetherion-ai-api:
+        condition: service_healthy
+    networks:
+      - zetherion-ai-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 32M
+
   # Traefik reverse proxy for zero-downtime blue-green deployments (Phase 10A)
   traefik:
     image: traefik:v3.3

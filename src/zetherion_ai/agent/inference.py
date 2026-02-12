@@ -7,14 +7,16 @@ selection based on task type, provider capabilities, and availability.
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import time
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import anthropic
 import httpx
 import openai
-from google import genai  # type: ignore[attr-defined]
+from google import genai
 
 from zetherion_ai.agent.providers import (
     Provider,
@@ -45,6 +47,20 @@ class InferenceResult:
     input_tokens: int = 0
     output_tokens: int = 0
     latency_ms: float = 0.0
+    estimated_cost_usd: float = 0.0
+
+
+@dataclass
+class StreamChunk:
+    """A single chunk from a streaming inference call."""
+
+    content: str
+    done: bool = False
+    # Populated only on the final (done=True) chunk:
+    model: str = ""
+    provider: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
     estimated_cost_usd: float = 0.0
 
 
@@ -250,6 +266,299 @@ class InferenceBroker:
         )
 
         return result
+
+    async def infer_stream(
+        self,
+        prompt: str,
+        task_type: TaskType,
+        system_prompt: str | None = None,
+        messages: list[dict[str, str]] | None = None,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        temperature: float = 0.7,
+    ) -> AsyncGenerator[StreamChunk, None]:
+        """Stream an inference call, yielding text chunks as they arrive.
+
+        Yields StreamChunk objects with ``done=False`` for each text fragment,
+        followed by a single ``done=True`` chunk carrying metadata (model,
+        tokens, cost).
+
+        Native streaming is used for Claude, OpenAI, and Ollama.
+        Gemini falls back to simulated streaming (full response, then chunked).
+        """
+        start_time = time.time()
+
+        provider = get_provider_for_task(
+            task_type=task_type,
+            ollama_model=self._ollama_model,
+            available_providers=self._available_providers,
+        )
+
+        full_content: list[str] = []
+        input_tokens = 0
+        output_tokens = 0
+        model = ""
+
+        try:
+            async for chunk in self._stream_provider(
+                provider=provider,
+                prompt=prompt,
+                task_type=task_type,
+                system_prompt=system_prompt,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            ):
+                if chunk.done:
+                    model = chunk.model
+                    input_tokens = chunk.input_tokens
+                    output_tokens = chunk.output_tokens
+                else:
+                    full_content.append(chunk.content)
+                    yield chunk
+        except Exception as e:
+            log.warning(
+                "stream_provider_failed",
+                provider=provider.value,
+                error=str(e),
+            )
+            # Fall back to non-streaming with simulated chunks
+            result = await self._try_fallbacks(
+                task_type=task_type,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                failed_provider=provider,
+            )
+            model = result.model
+            input_tokens = result.input_tokens
+            output_tokens = result.output_tokens
+            provider = result.provider
+            for word in result.content.split(" "):
+                token = word + " "
+                full_content.append(token)
+                yield StreamChunk(content=token)
+
+        latency_ms = (time.time() - start_time) * 1000
+        cost_usd, cost_estimated = self._estimate_cost(
+            provider=provider,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+
+        # Track cost
+        content_str = "".join(full_content)
+        result_obj = InferenceResult(
+            content=content_str,
+            provider=provider,
+            task_type=task_type,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            latency_ms=latency_ms,
+            estimated_cost_usd=cost_usd,
+        )
+        self._track_cost(result_obj, cost_estimated=cost_estimated)
+
+        # Final metadata chunk
+        yield StreamChunk(
+            content="",
+            done=True,
+            model=model,
+            provider=provider.value,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            estimated_cost_usd=cost_usd,
+        )
+
+    async def _stream_provider(
+        self,
+        provider: Provider,
+        prompt: str,
+        task_type: TaskType,
+        system_prompt: str | None,
+        messages: list[dict[str, str]] | None,
+        max_tokens: int,
+        temperature: float,
+    ) -> AsyncGenerator[StreamChunk, None]:
+        """Dispatch to the provider-specific streaming method."""
+        match provider:
+            case Provider.CLAUDE:
+                async for chunk in self._stream_claude(
+                    prompt, task_type, system_prompt, messages, max_tokens, temperature
+                ):
+                    yield chunk
+            case Provider.OPENAI:
+                async for chunk in self._stream_openai(
+                    prompt, task_type, system_prompt, messages, max_tokens, temperature
+                ):
+                    yield chunk
+            case Provider.OLLAMA:
+                async for chunk in self._stream_ollama(
+                    prompt, task_type, system_prompt, messages, max_tokens, temperature
+                ):
+                    yield chunk
+            case Provider.GEMINI:
+                # Gemini doesn't support async streaming — simulate it
+                result = await self._call_gemini(
+                    prompt, task_type, system_prompt, messages, max_tokens, temperature
+                )
+                words = result.content.split(" ")
+                for i, word in enumerate(words):
+                    token = (" " if i > 0 else "") + word
+                    yield StreamChunk(content=token)
+                yield StreamChunk(
+                    content="",
+                    done=True,
+                    model=result.model,
+                    input_tokens=result.input_tokens,
+                    output_tokens=result.output_tokens,
+                )
+            case _:
+                raise ValueError(f"Unknown provider: {provider}")
+
+    async def _stream_claude(
+        self,
+        prompt: str,
+        task_type: TaskType,
+        system_prompt: str | None,
+        messages: list[dict[str, str]] | None,
+        max_tokens: int,
+        temperature: float,
+    ) -> AsyncGenerator[StreamChunk, None]:
+        """Stream from Claude API."""
+        if not self._claude_client:
+            raise RuntimeError("Claude client not initialized")
+
+        api_messages: list[dict[str, Any]] = []
+        if messages:
+            for msg in messages:
+                api_messages.append({"role": msg["role"], "content": msg["content"]})
+        api_messages.append({"role": "user", "content": prompt})
+
+        model = get_dynamic("models", "claude_model", self._claude_model)
+
+        async with self._claude_client.messages.stream(
+            model=model,
+            max_tokens=max_tokens,
+            system=system_prompt or "",
+            messages=api_messages,  # type: ignore[arg-type]
+        ) as stream:
+            async for text in stream.text_stream:
+                yield StreamChunk(content=text)
+
+            final = await stream.get_final_message()
+            yield StreamChunk(
+                content="",
+                done=True,
+                model=model,
+                input_tokens=final.usage.input_tokens,
+                output_tokens=final.usage.output_tokens,
+            )
+
+    async def _stream_openai(
+        self,
+        prompt: str,
+        task_type: TaskType,
+        system_prompt: str | None,
+        messages: list[dict[str, str]] | None,
+        max_tokens: int,
+        temperature: float,
+    ) -> AsyncGenerator[StreamChunk, None]:
+        """Stream from OpenAI API."""
+        if not self._openai_client:
+            raise RuntimeError("OpenAI client not initialized")
+
+        api_messages: list[dict[str, Any]] = []
+        if system_prompt:
+            api_messages.append({"role": "system", "content": system_prompt})
+        if messages:
+            for msg in messages:
+                api_messages.append({"role": msg["role"], "content": msg["content"]})
+        api_messages.append({"role": "user", "content": prompt})
+
+        model = get_dynamic("models", "openai_model", self._openai_model)
+        stream = await self._openai_client.chat.completions.create(  # type: ignore[call-overload]
+            model=model,
+            messages=api_messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+
+        input_tokens = 0
+        output_tokens = 0
+        async for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield StreamChunk(content=chunk.choices[0].delta.content)
+            if chunk.usage:
+                input_tokens = chunk.usage.prompt_tokens or 0
+                output_tokens = chunk.usage.completion_tokens or 0
+
+        yield StreamChunk(
+            content="",
+            done=True,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+
+    async def _stream_ollama(
+        self,
+        prompt: str,
+        task_type: TaskType,
+        system_prompt: str | None,
+        messages: list[dict[str, str]] | None,
+        max_tokens: int,
+        temperature: float,
+    ) -> AsyncGenerator[StreamChunk, None]:
+        """Stream from Ollama API."""
+        api_messages: list[dict[str, str]] = []
+        if system_prompt:
+            api_messages.append({"role": "system", "content": system_prompt})
+        if messages:
+            api_messages.extend(messages)
+        api_messages.append({"role": "user", "content": prompt})
+
+        ollama_model = get_dynamic("models", "ollama_generation_model", self._ollama_model)
+
+        async with self._httpx_client.stream(
+            "POST",
+            f"{self._ollama_url}/api/chat",
+            json={
+                "model": ollama_model,
+                "messages": api_messages,
+                "stream": True,
+                "options": {
+                    "temperature": temperature,
+                    "num_predict": max_tokens,
+                },
+            },
+        ) as response:
+            response.raise_for_status()
+            input_tokens = 0
+            output_tokens = 0
+            async for line in response.aiter_lines():
+                if not line.strip():
+                    continue
+                data = _json.loads(line)
+                content = data.get("message", {}).get("content", "")
+                if content:
+                    yield StreamChunk(content=content)
+                if data.get("done"):
+                    input_tokens = data.get("prompt_eval_count", 0)
+                    output_tokens = data.get("eval_count", 0)
+
+        yield StreamChunk(
+            content="",
+            done=True,
+            model=ollama_model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
 
     async def _call_provider(
         self,

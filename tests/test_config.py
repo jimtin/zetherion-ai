@@ -237,6 +237,7 @@ class TestModelConfigurationDefaults:
         """Test that openai_model has correct default."""
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+        monkeypatch.delenv("OPENAI_MODEL", raising=False)
 
         from zetherion_ai.config import get_settings
 
@@ -850,6 +851,10 @@ class TestLoggingConfiguration:
         """Test that logging settings have correct defaults."""
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+        monkeypatch.delenv("LOG_TO_FILE", raising=False)
+        monkeypatch.delenv("LOG_DIRECTORY", raising=False)
+        monkeypatch.delenv("LOG_FILE_MAX_BYTES", raising=False)
+        monkeypatch.delenv("LOG_FILE_BACKUP_COUNT", raising=False)
 
         from zetherion_ai.config import get_settings
 

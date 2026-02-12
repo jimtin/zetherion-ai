@@ -149,9 +149,15 @@ def mock_discord_interaction():
     return interaction
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def clear_settings_cache():
-    """Clear settings cache before each test."""
+    """Clear settings cache before each test module.
+
+    Module scope is sufficient because:
+    - Only test_config.py mutates settings (and manages its own cache_clear calls)
+    - All other tests use mock_settings or don't touch the settings cache
+    - The session-scoped setup_test_environment already does the initial clear
+    """
     from zetherion_ai.config import get_settings
 
     get_settings.cache_clear()

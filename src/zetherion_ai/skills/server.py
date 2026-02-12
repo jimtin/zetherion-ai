@@ -491,7 +491,9 @@ def main() -> None:
     registry = SkillRegistry()
 
     from zetherion_ai.skills.calendar import CalendarSkill
+    from zetherion_ai.skills.dev_watcher import DevWatcherSkill
     from zetherion_ai.skills.health_analyzer import HealthAnalyzerSkill
+    from zetherion_ai.skills.milestone import MilestoneSkill
     from zetherion_ai.skills.profile_skill import ProfileSkill
     from zetherion_ai.skills.task_manager import TaskManagerSkill
     from zetherion_ai.skills.update_checker import UpdateCheckerSkill
@@ -501,6 +503,8 @@ def main() -> None:
     registry.register(CalendarSkill())
     registry.register(ProfileSkill())
     registry.register(HealthAnalyzerSkill())
+    registry.register(DevWatcherSkill())
+    registry.register(MilestoneSkill())
     registry.register(
         UpdateCheckerSkill(
             github_repo=settings.auto_update_repo,
@@ -508,6 +512,15 @@ def main() -> None:
             enabled=settings.auto_update_enabled,
         )
     )
+
+    # Conditional: Client Provisioning (requires Postgres for TenantManager)
+    _tenant_manager = None
+    if settings.postgres_dsn:
+        from zetherion_ai.api.tenant import TenantManager
+        from zetherion_ai.skills.client_provisioning import ClientProvisioningSkill
+
+        _tenant_manager = TenantManager(dsn=settings.postgres_dsn)
+        registry.register(ClientProvisioningSkill(tenant_manager=_tenant_manager))
 
     # Conditional: Fleet Insights (central instance only)
     if settings.telemetry_central_mode:
@@ -517,6 +530,8 @@ def main() -> None:
 
     # Initialize all skills
     async def init_and_run() -> None:
+        if _tenant_manager is not None:
+            await _tenant_manager.initialize()
         await registry.initialize_all()
         await run_server(registry, api_secret, host, port)
 

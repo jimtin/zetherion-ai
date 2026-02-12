@@ -1,0 +1,11 @@
+# Exclude everything by default — only include what Docker needs
+*
+
+# Include source and dependencies
+!requirements.txt
+!src/
+
+# Exclude Python caches from included dirs
+**/__pycache__
+**/*.pyc
+**/*.pyo

@@ -62,6 +62,7 @@ def mock_message():
     message.reply = AsyncMock()
     message.mentions = []
     message.content = "Test message"
+    message.webhook_id = None
     return message
 
 
@@ -1130,3 +1131,255 @@ class TestSettingsCommands:
 
         sent = mock_interaction.followup.send.call_args[0][0]
         assert "not found" in sent
+
+
+class TestHandleDevEvent:
+    """Test _handle_dev_event webhook handler."""
+
+    @pytest.mark.asyncio
+    async def test_ignores_when_agent_not_ready(self, bot, mock_message):
+        """Webhook is silently ignored when agent is None."""
+        bot._agent = None
+        mock_message.embeds = []
+
+        await bot._handle_dev_event(mock_message)
+        # No crash, no reply
+        mock_message.reply.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_processes_commit_embed(self, bot, mock_agent, mock_message):
+        """Commit embed is routed as dev_ingest_commit."""
+        bot._agent = mock_agent
+
+        embed = MagicMock(spec=discord.Embed)
+        embed.title = "commit"
+        embed.description = "feat: add new feature"
+        field1 = MagicMock()
+        field1.name = "project"
+        field1.value = "zetherion-ai"
+        field2 = MagicMock()
+        field2.name = "sha"
+        field2.value = "abc1234"
+        embed.fields = [field1, field2]
+        mock_message.embeds = [embed]
+        mock_message.author.id = 12345
+
+        mock_client = AsyncMock()
+        mock_client.handle_request = AsyncMock(return_value=MagicMock(success=True))
+        mock_agent._get_skills_client = AsyncMock(return_value=mock_client)
+
+        await bot._handle_dev_event(mock_message)
+
+        mock_client.handle_request.assert_called_once()
+        req = mock_client.handle_request.call_args[0][0]
+        assert req.intent == "dev_ingest_commit"
+        assert req.message == "feat: add new feature"
+        assert req.context["project"] == "zetherion-ai"
+        assert req.context["sha"] == "abc1234"
+        assert req.context["skill_name"] == "dev_watcher"
+
+    @pytest.mark.asyncio
+    async def test_processes_annotation_embed(self, bot, mock_agent, mock_message):
+        """Annotation embed is routed as dev_ingest_annotation."""
+        bot._agent = mock_agent
+
+        embed = MagicMock(spec=discord.Embed)
+        embed.title = "annotation"
+        embed.description = "TODO: fix this bug"
+        field1 = MagicMock()
+        field1.name = "annotation_type"
+        field1.value = "TODO"
+        embed.fields = [field1]
+        mock_message.embeds = [embed]
+
+        mock_client = AsyncMock()
+        mock_client.handle_request = AsyncMock(return_value=MagicMock(success=True))
+        mock_agent._get_skills_client = AsyncMock(return_value=mock_client)
+
+        await bot._handle_dev_event(mock_message)
+
+        req = mock_client.handle_request.call_args[0][0]
+        assert req.intent == "dev_ingest_annotation"
+
+    @pytest.mark.asyncio
+    async def test_processes_session_embed(self, bot, mock_agent, mock_message):
+        """Session embed is routed as dev_ingest_session."""
+        bot._agent = mock_agent
+
+        embed = MagicMock(spec=discord.Embed)
+        embed.title = "session"
+        embed.description = "Worked on tests"
+        embed.fields = []
+        mock_message.embeds = [embed]
+
+        mock_client = AsyncMock()
+        mock_client.handle_request = AsyncMock(return_value=MagicMock(success=True))
+        mock_agent._get_skills_client = AsyncMock(return_value=mock_client)
+
+        await bot._handle_dev_event(mock_message)
+
+        req = mock_client.handle_request.call_args[0][0]
+        assert req.intent == "dev_ingest_session"
+
+    @pytest.mark.asyncio
+    async def test_processes_tag_embed(self, bot, mock_agent, mock_message):
+        """Tag embed is routed as dev_ingest_tag."""
+        bot._agent = mock_agent
+
+        embed = MagicMock(spec=discord.Embed)
+        embed.title = "tag"
+        embed.description = "New tag: v1.0.0"
+        tag_field = MagicMock()
+        tag_field.name = "tag_name"
+        tag_field.value = "v1.0.0"
+        embed.fields = [tag_field]
+        mock_message.embeds = [embed]
+
+        mock_client = AsyncMock()
+        mock_client.handle_request = AsyncMock(return_value=MagicMock(success=True))
+        mock_agent._get_skills_client = AsyncMock(return_value=mock_client)
+
+        await bot._handle_dev_event(mock_message)
+
+        req = mock_client.handle_request.call_args[0][0]
+        assert req.intent == "dev_ingest_tag"
+
+    @pytest.mark.asyncio
+    async def test_unknown_event_type_defaults_to_commit(self, bot, mock_agent, mock_message):
+        """Unknown embed title defaults to dev_ingest_commit."""
+        bot._agent = mock_agent
+
+        embed = MagicMock(spec=discord.Embed)
+        embed.title = "something_else"
+        embed.description = "some event"
+        embed.fields = []
+        mock_message.embeds = [embed]
+
+        mock_client = AsyncMock()
+        mock_client.handle_request = AsyncMock(return_value=MagicMock(success=True))
+        mock_agent._get_skills_client = AsyncMock(return_value=mock_client)
+
+        await bot._handle_dev_event(mock_message)
+
+        req = mock_client.handle_request.call_args[0][0]
+        assert req.intent == "dev_ingest_commit"
+
+    @pytest.mark.asyncio
+    async def test_multiple_embeds_processed(self, bot, mock_agent, mock_message):
+        """Multiple embeds in one message each get processed."""
+        bot._agent = mock_agent
+
+        embed1 = MagicMock(spec=discord.Embed)
+        embed1.title = "commit"
+        embed1.description = "first commit"
+        embed1.fields = []
+
+        embed2 = MagicMock(spec=discord.Embed)
+        embed2.title = "tag"
+        embed2.description = "new tag"
+        embed2.fields = []
+
+        mock_message.embeds = [embed1, embed2]
+
+        mock_client = AsyncMock()
+        mock_client.handle_request = AsyncMock(return_value=MagicMock(success=True))
+        mock_agent._get_skills_client = AsyncMock(return_value=mock_client)
+
+        await bot._handle_dev_event(mock_message)
+
+        assert mock_client.handle_request.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_skills_client_none_logs_warning(self, bot, mock_agent, mock_message):
+        """When skills client is None, a warning is logged but no crash."""
+        bot._agent = mock_agent
+
+        embed = MagicMock(spec=discord.Embed)
+        embed.title = "commit"
+        embed.description = "test"
+        embed.fields = []
+        mock_message.embeds = [embed]
+
+        mock_agent._get_skills_client = AsyncMock(return_value=None)
+
+        await bot._handle_dev_event(mock_message)
+        # No crash — the warning is logged internally
+
+    @pytest.mark.asyncio
+    async def test_skills_client_error_caught(self, bot, mock_agent, mock_message):
+        """Exceptions from the skills client are caught silently."""
+        bot._agent = mock_agent
+
+        embed = MagicMock(spec=discord.Embed)
+        embed.title = "commit"
+        embed.description = "test"
+        embed.fields = []
+        mock_message.embeds = [embed]
+
+        mock_client = AsyncMock()
+        mock_client.handle_request = AsyncMock(side_effect=RuntimeError("connection refused"))
+        mock_agent._get_skills_client = AsyncMock(return_value=mock_client)
+
+        # Should not raise
+        await bot._handle_dev_event(mock_message)
+
+    @pytest.mark.asyncio
+    async def test_no_embeds_is_noop(self, bot, mock_agent, mock_message):
+        """Empty embeds list means nothing is processed."""
+        bot._agent = mock_agent
+        mock_message.embeds = []
+
+        await bot._handle_dev_event(mock_message)
+        # No crash, no calls
+
+
+class TestWebhookDetection:
+    """Test webhook message detection in on_message."""
+
+    @pytest.mark.asyncio
+    async def test_webhook_with_dev_agent_name_calls_handle(self, bot, mock_message):
+        """Webhook message from dev agent triggers _handle_dev_event."""
+        mock_message.webhook_id = 111222333
+        mock_message.author.name = "zetherion-dev-agent"
+        mock_message.embeds = []
+        bot._agent = AsyncMock()
+
+        with patch.object(bot, "_handle_dev_event", new_callable=AsyncMock) as mock_handler:
+            with patch("zetherion_ai.discord.bot.get_settings") as mock_settings:
+                mock_settings.return_value = MagicMock(
+                    dev_agent_webhook_name="zetherion-dev-agent",
+                    allow_bot_messages=False,
+                )
+                await bot.on_message(mock_message)
+
+            mock_handler.assert_called_once_with(mock_message)
+
+    @pytest.mark.asyncio
+    async def test_webhook_with_other_name_ignored(self, bot, mock_message):
+        """Webhook from non-dev-agent name is silently ignored."""
+        mock_message.webhook_id = 111222333
+        mock_message.author.name = "some-other-webhook"
+
+        with patch("zetherion_ai.discord.bot.get_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(
+                dev_agent_webhook_name="zetherion-dev-agent",
+                allow_bot_messages=False,
+            )
+            await bot.on_message(mock_message)
+
+        # Should not call generate_response — the message is dropped
+        if bot._agent:
+            bot._agent.generate_response.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_non_webhook_processed_normally(self, bot, mock_message, mock_agent):
+        """Non-webhook messages continue through normal processing."""
+        bot._agent = mock_agent
+        mock_message.webhook_id = None
+        mock_message.author.bot = False
+
+        # Should not trigger webhook handler
+        with patch.object(bot, "_handle_dev_event", new_callable=AsyncMock) as mock_handler:
+            await bot.on_message(mock_message)
+
+            mock_handler.assert_not_called()

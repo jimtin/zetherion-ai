@@ -177,6 +177,8 @@ class TestEnums:
         assert ActionTarget.CONTACT_GRAPH == "contact_graph"
         assert ActionTarget.MEMORY == "memory"
         assert ActionTarget.NOTIFICATION == "notification"
+        assert ActionTarget.DEV_JOURNAL == "dev_journal"
+        assert ActionTarget.MILESTONE_TRACKER == "milestone_tracker"
 
     def test_default_mode_values(self):
         """Verify DefaultMode string values."""

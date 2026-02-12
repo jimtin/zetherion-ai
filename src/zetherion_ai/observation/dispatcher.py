@@ -30,6 +30,8 @@ class ActionTarget(StrEnum):
     CONTACT_GRAPH = "contact_graph"
     MEMORY = "memory"
     NOTIFICATION = "notification"
+    DEV_JOURNAL = "dev_journal"
+    MILESTONE_TRACKER = "milestone_tracker"
 
 
 class DefaultMode(StrEnum):
@@ -51,6 +53,9 @@ DEFAULT_ROUTES: dict[ItemType, tuple[ActionTarget, DefaultMode]] = {
     ItemType.MEETING: (ActionTarget.CALENDAR, DefaultMode.ASK),
     ItemType.REMINDER: (ActionTarget.CALENDAR, DefaultMode.DRAFT),
     ItemType.ACTION_ITEM: (ActionTarget.TASK_MANAGER, DefaultMode.DRAFT),
+    ItemType.DEV_IDEA: (ActionTarget.DEV_JOURNAL, DefaultMode.AUTO),
+    ItemType.DEV_PROGRESS: (ActionTarget.DEV_JOURNAL, DefaultMode.AUTO),
+    ItemType.MILESTONE: (ActionTarget.MILESTONE_TRACKER, DefaultMode.DRAFT),
 }
 
 # Minimum confidence to dispatch (below this, items are logged but not acted on)
