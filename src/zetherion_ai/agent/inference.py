@@ -24,7 +24,7 @@ from zetherion_ai.agent.providers import (
     get_ollama_tier,
     get_provider_for_task,
 )
-from zetherion_ai.config import get_dynamic, get_settings
+from zetherion_ai.config import get_dynamic, get_secret, get_settings
 from zetherion_ai.constants import DEFAULT_MAX_TOKENS, HEALTH_CHECK_TIMEOUT
 from zetherion_ai.logging import get_logger
 from zetherion_ai.models.pricing import get_cost
@@ -138,25 +138,29 @@ class InferenceBroker:
         self._openai_client: openai.AsyncOpenAI | None = None
         self._gemini_client: genai.Client | None = None
 
+        # Track current API keys for lazy hot-reload
+        self._current_anthropic_key: str | None = None
+        self._current_openai_key: str | None = None
+        self._current_gemini_key: str | None = None
+
         # Claude
         if settings.anthropic_api_key:
-            self._claude_client = anthropic.AsyncAnthropic(
-                api_key=settings.anthropic_api_key.get_secret_value()
-            )
+            self._current_anthropic_key = settings.anthropic_api_key.get_secret_value()
+            self._claude_client = anthropic.AsyncAnthropic(api_key=self._current_anthropic_key)
             self._claude_model = settings.claude_model
             self._available_providers.add(Provider.CLAUDE)
 
         # OpenAI
         if settings.openai_api_key:
-            self._openai_client = openai.AsyncOpenAI(
-                api_key=settings.openai_api_key.get_secret_value()
-            )
+            self._current_openai_key = settings.openai_api_key.get_secret_value()
+            self._openai_client = openai.AsyncOpenAI(api_key=self._current_openai_key)
             self._openai_model = settings.openai_model
             self._available_providers.add(Provider.OPENAI)
 
         # Gemini (always available if we have the API key)
         if settings.gemini_api_key:
-            self._gemini_client = genai.Client(api_key=settings.gemini_api_key.get_secret_value())
+            self._current_gemini_key = settings.gemini_api_key.get_secret_value()
+            self._gemini_client = genai.Client(api_key=self._current_gemini_key)
             self._gemini_model = settings.router_model
             self._available_providers.add(Provider.GEMINI)
 
@@ -173,6 +177,33 @@ class InferenceBroker:
             ollama_model=self._ollama_model,
             ollama_tier=self._ollama_tier.value,
         )
+
+    def _check_api_key_updates(self) -> None:
+        """Lazy-check for rotated API keys via SecretResolver.
+
+        Reads from the in-memory cache (dict lookup) so this is effectively
+        free to call on every ``infer()``.
+        """
+        new_key = get_secret("anthropic_api_key")
+        if new_key and new_key != self._current_anthropic_key:
+            self._claude_client = anthropic.AsyncAnthropic(api_key=new_key)
+            self._current_anthropic_key = new_key
+            self._available_providers.add(Provider.CLAUDE)
+            log.info("anthropic_client_reinitialized")
+
+        new_key = get_secret("openai_api_key")
+        if new_key and new_key != self._current_openai_key:
+            self._openai_client = openai.AsyncOpenAI(api_key=new_key)
+            self._current_openai_key = new_key
+            self._available_providers.add(Provider.OPENAI)
+            log.info("openai_client_reinitialized")
+
+        new_key = get_secret("gemini_api_key")
+        if new_key and new_key != self._current_gemini_key:
+            self._gemini_client = genai.Client(api_key=new_key)
+            self._current_gemini_key = new_key
+            self._available_providers.add(Provider.GEMINI)
+            log.info("gemini_client_reinitialized")
 
     async def infer(
         self,
@@ -196,6 +227,9 @@ class InferenceBroker:
         Returns:
             InferenceResult with the response and metadata.
         """
+        # Lazy-check for rotated API keys (dict lookup, ~0 cost)
+        self._check_api_key_updates()
+
         start_time = time.time()
 
         # Get the optimal provider for this task

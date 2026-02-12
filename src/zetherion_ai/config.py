@@ -6,6 +6,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
+    from zetherion_ai.security.secret_resolver import SecretResolver
     from zetherion_ai.settings_manager import SettingsManager
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -366,6 +367,43 @@ class Settings(BaseSettings):
         default=86400, description="Seconds between telemetry reports (default 24h)"
     )
 
+    # Security Pipeline Configuration (Phase 13)
+    security_tier2_enabled: bool = Field(
+        default=True, description="Enable AI-based Tier 2 security analysis on all messages"
+    )
+    security_block_threshold: float = Field(
+        default=0.6, description="Threat score threshold for blocking messages (0.0-1.0)"
+    )
+    security_flag_threshold: float = Field(
+        default=0.3, description="Threat score threshold for flagging messages (0.0-1.0)"
+    )
+    security_bypass_enabled: bool = Field(
+        default=False,
+        description="Disable all security checks (testing only, logged as security event)",
+    )
+    security_notify_owner: bool = Field(
+        default=True, description="DM the bot owner when messages are flagged"
+    )
+
+    # Queue Configuration (Phase 13)
+    queue_enabled: bool = Field(default=True, description="Enable priority message queue")
+    queue_interactive_workers: int = Field(
+        default=3, description="Interactive queue workers (P0/P1)"
+    )
+    queue_background_workers: int = Field(default=2, description="Background queue workers (P2/P3)")
+    queue_poll_interval_ms: int = Field(
+        default=100, description="Interactive worker poll interval (ms)"
+    )
+    queue_background_poll_ms: int = Field(
+        default=1000, description="Background worker poll interval (ms)"
+    )
+    queue_stale_timeout_seconds: int = Field(
+        default=300, description="Stale processing timeout (seconds)"
+    )
+    queue_max_retry_attempts: int = Field(
+        default=3, description="Max retry attempts before dead letter"
+    )
+
     @field_validator(
         "profile_confidence_threshold",
         "default_formality",
@@ -498,4 +536,39 @@ def get_dynamic(namespace: str, key: str, default: Any = None) -> Any:
         val = _settings_manager.get(namespace, key)
         if val is not None:
             return val
+    return default
+
+
+# ---------------------------------------------------------------------------
+# Secret resolver support (Phase 13)
+# ---------------------------------------------------------------------------
+
+_secret_resolver: SecretResolver | None = None
+
+
+def set_secret_resolver(resolver: SecretResolver) -> None:
+    """Register the secret resolver for encrypted secret retrieval."""
+    global _secret_resolver
+    _secret_resolver = resolver
+
+
+def get_secret_resolver() -> SecretResolver | None:
+    """Get the registered secret resolver (or None if not yet registered)."""
+    return _secret_resolver
+
+
+def get_secret(name: str, default: str | None = None) -> str | None:
+    """Get a secret with cascade: DB (encrypted) -> .env -> default.
+
+    Synchronous. Never blocks on DB (reads from in-memory cache).
+
+    Args:
+        name: Secret name (e.g. ``"anthropic_api_key"``).
+        default: Fallback if not found in DB or .env.
+
+    Returns:
+        The secret value.
+    """
+    if _secret_resolver is not None:
+        return _secret_resolver.get_secret(name, default)
     return default
