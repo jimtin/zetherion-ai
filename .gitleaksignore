@@ -40,3 +40,15 @@ src/zetherion_ai/config.py:password-in-url:43
 scripts/benchmark-router.py:env-file-secrets:696
 scripts/benchmark-router.py:env-file-secrets:748
 scripts/benchmark-router.py:env-file-secrets:801
+
+# docker-compose.yml - TUNNEL_ env var reference (not an actual secret)
+docker-compose.yml:env-file-secrets:119
+
+# updater_sidecar/auth.py - variable names containing "secret" (not actual secrets)
+updater_sidecar/auth.py:env-file-secrets:28
+updater_sidecar/auth.py:env-file-secrets:34
+
+# updater_sidecar/server.py - variable names containing "secret" (not actual secrets)
+updater_sidecar/server.py:env-file-secrets:90
+updater_sidecar/server.py:env-file-secrets:94
+updater_sidecar/server.py:env-file-secrets:213

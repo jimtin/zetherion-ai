@@ -13,7 +13,7 @@ from pathlib import Path
 
 log = logging.getLogger("updater_sidecar.auth")
 
-DEFAULT_SECRET_PATH = "/app/data/.updater-secret"
+DEFAULT_SECRET_PATH = "/app/data/.updater-secret"  # nosec B105
 
 
 def get_or_create_secret(secret_path: str = DEFAULT_SECRET_PATH) -> str:
@@ -38,9 +38,7 @@ def get_or_create_secret(secret_path: str = DEFAULT_SECRET_PATH) -> str:
     return secret
 
 
-def validate_secret(
-    request_secret: str | None, expected_secret: str
-) -> bool:
+def validate_secret(request_secret: str | None, expected_secret: str) -> bool:
     """Validate that the request secret matches the expected secret.
 
     Uses constant-time comparison to prevent timing attacks.

@@ -35,9 +35,7 @@ async def check_service_health(
             async with httpx.AsyncClient(timeout=cfg.timeout_seconds) as client:
                 resp = await client.get(url)
             if resp.status_code == 200:
-                log.info(
-                    "Health check passed: %s (attempt %d)", url, attempt + 1
-                )
+                log.info("Health check passed: %s (attempt %d)", url, attempt + 1)
                 return True
             log.warning(
                 "Health check returned %d: %s (attempt %d)",

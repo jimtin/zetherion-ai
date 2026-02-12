@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from updater_sidecar.health_checker import HealthCheckConfig, check_service_health
 from updater_sidecar.models import UpdateResult
@@ -138,8 +138,7 @@ class UpdateExecutor:
             for service in APP_SERVICES:
                 self._current_operation = f"Restarting {service}"
                 ok = await self._run_cmd(
-                    f"docker compose -f {self._compose_file} "
-                    f"up -d --no-deps {service}",
+                    f"docker compose -f {self._compose_file} " f"up -d --no-deps {service}",
                     timeout=120,
                 )
                 if ok is None:
@@ -173,7 +172,7 @@ class UpdateExecutor:
         finally:
             elapsed = time.monotonic() - start
             result.duration_seconds = round(elapsed, 2)
-            result.completed_at = datetime.now(timezone.utc).isoformat()
+            result.completed_at = datetime.now(UTC).isoformat()
             self._state = "idle"
             self._current_operation = None
 
@@ -197,7 +196,7 @@ class UpdateExecutor:
         finally:
             elapsed = time.monotonic() - start
             result.duration_seconds = round(elapsed, 2)
-            result.completed_at = datetime.now(timezone.utc).isoformat()
+            result.completed_at = datetime.now(UTC).isoformat()
             self._state = "idle"
             self._current_operation = None
 
@@ -233,8 +232,7 @@ class UpdateExecutor:
         # Restart all in order
         for service in APP_SERVICES:
             ok = await self._run_cmd(
-                f"docker compose -f {self._compose_file} "
-                f"up -d --no-deps {service}",
+                f"docker compose -f {self._compose_file} " f"up -d --no-deps {service}",
                 timeout=120,
             )
             if ok is None:
@@ -253,26 +251,25 @@ class UpdateExecutor:
         log.info("Rollback to %s completed successfully", previous_sha[:12])
         return True
 
-    async def get_diagnostics(self) -> dict:
+    async def get_diagnostics(self) -> dict[str, object]:
         """Gather container-level diagnostics."""
-        diagnostics: dict = {}
+        diagnostics: dict[str, object] = {}
 
         # Git status
         sha = await self._run_cmd("git rev-parse HEAD")
         diagnostics["git_sha"] = sha.strip() if sha else "unknown"
 
-        branch = await self._run_cmd("git describe --tags --exact-match 2>/dev/null || git branch --show-current")
+        git_ref_cmd = (
+            "git describe --tags --exact-match 2>/dev/null" " || git branch --show-current"
+        )
+        branch = await self._run_cmd(git_ref_cmd)
         diagnostics["git_ref"] = branch.strip() if branch else "unknown"
 
         status = await self._run_cmd("git status --porcelain")
         diagnostics["git_clean"] = status is not None and status.strip() == ""
 
         # Docker containers
-        ps_output = await self._run_cmd(
-            "docker compose -f {file} ps --format json".format(
-                file=self._compose_file
-            )
-        )
+        ps_output = await self._run_cmd(f"docker compose -f {self._compose_file} ps --format json")
         diagnostics["containers_raw"] = ps_output.strip() if ps_output else "unavailable"
 
         # Disk space
@@ -281,9 +278,7 @@ class UpdateExecutor:
 
         return diagnostics
 
-    async def _run_cmd(
-        self, cmd: str, timeout: int = 120
-    ) -> str | None:
+    async def _run_cmd(self, cmd: str, timeout: int = 120) -> str | None:
         """Run a shell command and return stdout, or None on failure."""
         try:
             proc = await asyncio.create_subprocess_shell(
@@ -292,9 +287,7 @@ class UpdateExecutor:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self._project_dir,
             )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout
-            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
 
             if proc.returncode != 0:
                 log.warning(
