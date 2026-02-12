@@ -52,6 +52,8 @@ async def registry_with_update() -> SkillRegistry:
     skill = UpdateCheckerSkill(
         github_repo="owner/repo",
         enabled=True,
+        updater_url="http://test-updater:9090",
+        updater_secret="test-secret",
     )
     reg.register(skill)
     await reg.initialize_all()

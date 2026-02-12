@@ -173,9 +173,9 @@ def test_health_analyzer_registered(api_secret: str | None) -> None:
     for names in body.get("by_status", {}).values():
         all_skill_names.extend(names)
 
-    assert (
-        "health_analyzer" in all_skill_names
-    ), f"health_analyzer not found in registered skills: {body}"
+    assert "health_analyzer" in all_skill_names, (
+        f"health_analyzer not found in registered skills: {body}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -284,9 +284,9 @@ async def test_health_report_intent(
     else:
         # Storage may not be initialised in the test environment; accept
         # a graceful error response.
-        assert (
-            "storage" in msg.lower() or "not available" in msg.lower() or msg == ""
-        ), f"Unexpected error from health_report: {body}"
+        assert "storage" in msg.lower() or "not available" in msg.lower() or msg == "", (
+            f"Unexpected error from health_report: {body}"
+        )
 
 
 # ---------------------------------------------------------------------------

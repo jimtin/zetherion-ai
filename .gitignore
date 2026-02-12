@@ -70,6 +70,9 @@ docs/implementation_plan.md
 # Benchmark results (large JSON files)
 benchmarks/results/*.json
 
+# Windows deployment config (local only, never push)
+config/windows-remote.yml
+
 # Gitleaks
 gitleaks-report.json
 .gitleaks/

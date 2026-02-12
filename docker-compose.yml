@@ -33,9 +33,15 @@ services:
       - SKILLS_SERVICE_URL=http://zetherion-ai-skills:8080
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - ENVIRONMENT=production
+      - LOG_FILE_PREFIX=bot
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - zetherion-ai-net
     # Use Dockerfile HEALTHCHECK - distroless can only exec via ENTRYPOINT
@@ -78,6 +84,14 @@ services:
       - OLLAMA_ROUTER_HOST=ollama-router
       - OLLAMA_ROUTER_PORT=11434
       - ENVIRONMENT=production
+      - LOG_FILE_PREFIX=api
+    volumes:
+      - ./logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     # No port exposed to host — accessed via Cloudflare Tunnel
     networks:
       - zetherion-ai-net
@@ -175,6 +189,16 @@ services:
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - SKILLS_HOST=0.0.0.0
       - SKILLS_PORT=8080
+      - UPDATER_SERVICE_URL=http://zetherion-ai-updater:9090
+      - LOG_FILE_PREFIX=skills
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     # Traefik labels for zero-downtime blue-green deployments
     labels:
       - "traefik.enable=true"
@@ -328,6 +352,46 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
+
+  # Updater Sidecar — handles git pull, docker build, rolling restarts
+  # This is the ONLY container with Docker socket write access
+  zetherion-ai-updater:
+    build:
+      context: .
+      dockerfile: Dockerfile.updater
+    container_name: zetherion-ai-updater
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - COMPOSE_FILE=/project/docker-compose.yml
+      - PROJECT_DIR=/project
+      - HEALTH_URLS=http://zetherion-ai-skills:8080/health,http://zetherion-ai-api:8443/health
+      - UPDATER_SECRET_PATH=/app/data/.updater-secret
+    volumes:
+      # Docker socket — READ/WRITE (required for build + restart)
+      - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock
+      # Project directory — for git operations and docker compose context
+      - .:/project
+      # Shared data volume — for auto-generated secret
+      - ./data:/app/data
+      # Persistent logs
+      - ./logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - zetherion-ai-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 64M
 
 volumes:
   qdrant_storage:

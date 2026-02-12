@@ -1017,9 +1017,9 @@ class TestIntentHandlers:
         """Every handler name in INTENT_HANDLERS should be a method on the skill."""
         skill = YouTubeStrategySkill()
         for intent, handler_name in INTENT_HANDLERS.items():
-            assert hasattr(
-                skill, handler_name
-            ), f"Handler {handler_name!r} for intent {intent!r} not found"
+            assert hasattr(skill, handler_name), (
+                f"Handler {handler_name!r} for intent {intent!r} not found"
+            )
 
     def test_handler_count(self) -> None:
         assert len(INTENT_HANDLERS) == 3

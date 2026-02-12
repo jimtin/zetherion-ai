@@ -1,8 +1,7 @@
 """Update manager for auto-update pipeline.
 
-Handles checking for new GitHub releases, applying updates via
-git pull + docker compose build, and rolling back on failure.
-All subprocess calls are confined to this module.
+Handles checking for new GitHub releases and delegating update
+application to the updater sidecar container via HTTP.
 """
 
 from __future__ import annotations
@@ -125,27 +124,27 @@ def is_newer(candidate: str, current: str) -> bool:
 
 
 class UpdateManager:
-    """Manages the update lifecycle.
+    """Manages the update lifecycle via the updater sidecar.
 
     Typical flow:
     1. ``check_for_update()`` — query GitHub for the latest release
-    2. ``apply_update(release)`` — git pull, build, restart, validate
-    3. If validation fails → ``rollback(previous_sha)``
+    2. ``apply_update(release)`` — delegate to updater sidecar via HTTP
+    3. Sidecar handles git pull, build, restart, health check, rollback
     """
 
     def __init__(
         self,
         github_repo: str,
         storage: HealthStorage | None = None,
-        compose_file: str = "docker-compose.yml",
-        project_dir: str = ".",
+        updater_url: str = "",
+        updater_secret: str = "",
         health_url: str = "http://localhost:8080/health",
         github_token: str | None = None,
     ) -> None:
         self._repo = github_repo
         self._storage = storage
-        self._compose_file = compose_file
-        self._project_dir = project_dir
+        self._updater_url = updater_url.rstrip("/")
+        self._updater_secret = updater_secret
         self._health_url = health_url
         self._github_token = github_token
 
@@ -216,13 +215,14 @@ class UpdateManager:
             return None
 
     # ------------------------------------------------------------------
-    # Apply update
+    # Apply update via sidecar
     # ------------------------------------------------------------------
 
     async def apply_update(self, release: ReleaseInfo) -> UpdateResult:
-        """Apply an update: git pull → docker build → restart → validate.
+        """Apply an update by delegating to the updater sidecar.
 
-        Returns an ``UpdateResult`` with the outcome.
+        The sidecar handles: git fetch → checkout → docker build →
+        rolling restart → health validation → rollback on failure.
         """
         result = UpdateResult(
             status=UpdateStatus.DOWNLOADING,
@@ -230,98 +230,69 @@ class UpdateManager:
             target_version=release.version,
         )
 
-        # Record the current git SHA for rollback
-        sha = await self._run_cmd("git rev-parse HEAD")
-        result.previous_git_sha = sha.strip() if sha else None
-
         # Record update attempt in storage
         await self._record_update(result)
 
-        # Step 1: git fetch + checkout tag
-        result.status = UpdateStatus.DOWNLOADING
-        ok = await self._run_cmd(f"git fetch origin tag {release.tag}")
-        if ok is None:
+        if not self._updater_url:
             result.status = UpdateStatus.FAILED
-            result.error = "git fetch failed"
+            result.error = "No updater sidecar URL configured"
             result.completed_at = datetime.now().isoformat()
             await self._record_update(result)
             return result
-        result.steps_completed.append("git_fetch")
 
-        ok = await self._run_cmd(f"git checkout {release.tag}")
-        if ok is None:
+        try:
+            headers: dict[str, str] = {}
+            if self._updater_secret:
+                headers["X-Updater-Secret"] = self._updater_secret
+
+            async with httpx.AsyncClient(timeout=900) as client:
+                resp = await client.post(
+                    f"{self._updater_url}/update/apply",
+                    json={
+                        "tag": release.tag,
+                        "version": release.version,
+                    },
+                    headers=headers,
+                )
+
+            if resp.status_code == 409:
+                result.status = UpdateStatus.FAILED
+                result.error = "Update already in progress"
+                result.completed_at = datetime.now().isoformat()
+                await self._record_update(result)
+                return result
+
+            data = resp.json()
+            result.previous_git_sha = data.get("previous_sha")
+            result.new_git_sha = data.get("new_sha")
+            result.steps_completed = data.get("steps_completed", [])
+
+            sidecar_status = data.get("status", "failed")
+            if sidecar_status == "success":
+                result.status = UpdateStatus.SUCCESS
+                result.health_check_passed = True
+            elif sidecar_status == "rolled_back":
+                result.status = UpdateStatus.ROLLED_BACK
+                result.error = data.get("error", "health check failed")
+                result.health_check_passed = False
+            else:
+                result.status = UpdateStatus.FAILED
+                result.error = data.get("error", "unknown error")
+
+        except httpx.RequestError as exc:
             result.status = UpdateStatus.FAILED
-            result.error = "git checkout failed"
-            result.completed_at = datetime.now().isoformat()
-            await self._record_update(result)
-            return result
-        result.steps_completed.append("git_checkout")
+            result.error = f"Cannot reach updater sidecar: {exc}"
 
-        # Step 2: docker compose build
-        result.status = UpdateStatus.BUILDING
-        ok = await self._run_cmd(
-            f"docker compose -f {self._compose_file} build",
-            timeout=600,
-        )
-        if ok is None:
-            result.status = UpdateStatus.FAILED
-            result.error = "docker build failed"
-            result.completed_at = datetime.now().isoformat()
-            await self._record_update(result)
-            return result
-        result.steps_completed.append("docker_build")
-
-        # Record new git SHA
-        new_sha = await self._run_cmd("git rev-parse HEAD")
-        result.new_git_sha = new_sha.strip() if new_sha else None
-
-        # Step 3: restart services
-        result.status = UpdateStatus.RESTARTING
-        ok = await self._run_cmd(
-            f"docker compose -f {self._compose_file} up -d --no-deps bot",
-            timeout=120,
-        )
-        if ok is None:
-            result.status = UpdateStatus.FAILED
-            result.error = "service restart failed"
-            result.completed_at = datetime.now().isoformat()
-            await self._record_update(result)
-            return result
-        result.steps_completed.append("service_restart")
-
-        # Step 4: validate health
-        result.status = UpdateStatus.VALIDATING
-        healthy = await self._validate_health(retries=6, delay=10)
-        result.health_check_passed = healthy
-
-        if not healthy:
-            log.warning(
-                "updater_health_check_failed",
-                version=release.version,
-            )
-            # Rollback
-            rollback_ok = await self.rollback(result.previous_git_sha or "")
-            result.status = UpdateStatus.ROLLED_BACK if rollback_ok else UpdateStatus.FAILED
-            result.error = "health check failed after update"
-            result.completed_at = datetime.now().isoformat()
-            await self._record_update(result)
-            return result
-
-        result.status = UpdateStatus.SUCCESS
         result.completed_at = datetime.now().isoformat()
-        log.info(
-            "updater_success",
-            version=release.version,
-        )
         await self._record_update(result)
         return result
 
     # ------------------------------------------------------------------
-    # Rollback
+    # Rollback via sidecar
     # ------------------------------------------------------------------
 
     async def rollback(self, previous_sha: str) -> bool:
-        """Rollback to a previous git SHA.
+        """Rollback to a previous git SHA via the updater sidecar.
 
         Returns True if rollback succeeded.
         """
@@ -329,31 +300,38 @@ class UpdateManager:
             log.error("updater_rollback_no_sha")
             return False
 
+        if not self._updater_url:
+            log.error("updater_rollback_no_url")
+            return False
+
         log.info("updater_rolling_back", sha=previous_sha[:12])
 
-        ok = await self._run_cmd(f"git checkout {previous_sha}")
-        if ok is None:
-            log.error("updater_rollback_checkout_failed")
+        try:
+            headers: dict[str, str] = {}
+            if self._updater_secret:
+                headers["X-Updater-Secret"] = self._updater_secret
+
+            async with httpx.AsyncClient(timeout=900) as client:
+                resp = await client.post(
+                    f"{self._updater_url}/update/rollback",
+                    json={"previous_sha": previous_sha},
+                    headers=headers,
+                )
+
+            data = resp.json()
+            if data.get("status") == "success":
+                log.info("updater_rollback_complete")
+                return True
+
+            log.error(
+                "updater_rollback_failed",
+                error=data.get("error", "unknown"),
+            )
             return False
 
-        ok = await self._run_cmd(
-            f"docker compose -f {self._compose_file} build",
-            timeout=600,
-        )
-        if ok is None:
-            log.error("updater_rollback_build_failed")
+        except httpx.RequestError as exc:
+            log.error("updater_rollback_error", error=str(exc))
             return False
-
-        ok = await self._run_cmd(
-            f"docker compose -f {self._compose_file} up -d --no-deps bot",
-            timeout=120,
-        )
-        if ok is None:
-            log.error("updater_rollback_restart_failed")
-            return False
-
-        log.info("updater_rollback_complete")
-        return True
 
     # ------------------------------------------------------------------
     # Health validation
@@ -378,39 +356,6 @@ class UpdateManager:
                 await asyncio.sleep(delay)
 
         return False
-
-    # ------------------------------------------------------------------
-    # Subprocess helper
-    # ------------------------------------------------------------------
-
-    async def _run_cmd(self, cmd: str, timeout: int = 120) -> str | None:
-        """Run a shell command and return stdout, or None on failure."""
-        try:
-            proc = await asyncio.create_subprocess_shell(
-                cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=self._project_dir,
-            )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-
-            if proc.returncode != 0:
-                log.warning(
-                    "updater_cmd_failed",
-                    cmd=cmd,
-                    returncode=proc.returncode,
-                    stderr=stderr.decode()[:500],
-                )
-                return None
-
-            return stdout.decode()
-
-        except TimeoutError:
-            log.warning("updater_cmd_timeout", cmd=cmd, timeout=timeout)
-            return None
-        except Exception as exc:
-            log.warning("updater_cmd_error", cmd=cmd, error=str(exc))
-            return None
 
     # ------------------------------------------------------------------
     # Storage

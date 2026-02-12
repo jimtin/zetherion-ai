@@ -50,6 +50,8 @@ class UpdateCheckerSkill(Skill):
         github_token: str | None = None,
         auto_apply: bool = False,
         enabled: bool = True,
+        updater_url: str = "",
+        updater_secret: str = "",
     ) -> None:
         super().__init__(memory)
         self._db_pool = db_pool
@@ -57,6 +59,8 @@ class UpdateCheckerSkill(Skill):
         self._github_token = github_token
         self._auto_apply = auto_apply
         self._enabled = enabled
+        self._updater_url = updater_url
+        self._updater_secret = updater_secret
 
         # Lazily initialised
         self._manager: UpdateManager | None = None
@@ -110,6 +114,8 @@ class UpdateCheckerSkill(Skill):
             github_repo=self._github_repo,
             storage=self._storage,
             github_token=self._github_token,
+            updater_url=self._updater_url,
+            updater_secret=self._updater_secret,
         )
 
         log.info("update_checker_initialized", repo=self._github_repo)

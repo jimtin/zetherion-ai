@@ -1,0 +1,16 @@
+# Windows Remote Deployment Configuration
+# Copy this to windows-remote.yml and fill in your values.
+# DO NOT commit windows-remote.yml to git!
+
+windows:
+  host: ""                        # e.g., <WINDOWS_HOST_IP> or windows-pc.local
+  ssh_port: 22
+  ssh_user: ""                    # e.g., james
+  ssh_key_path: ""                # e.g., ~/.ssh/zetherion_windows
+  deployment_path: "C:\\ZetherionAI"
+
+docker:
+  # Docker socket path override for Windows (set in .env on Windows machine)
+  # Linux/macOS: /var/run/docker.sock (default)
+  # Windows:     //./pipe/docker_engine
+  socket_path: "//./pipe/docker_engine"

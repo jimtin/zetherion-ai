@@ -46,8 +46,8 @@ def _make_manager(
     return UpdateManager(
         github_repo="owner/repo",
         storage=storage,
-        compose_file="docker-compose.yml",
-        project_dir="/tmp/project",
+        updater_url="http://test-updater:9090",
+        updater_secret="test-secret",
         health_url="http://localhost:8080/health",
         github_token=github_token,
     )
@@ -347,44 +347,39 @@ class TestCheckForUpdate:
 
 
 class TestApplyUpdate:
-    """Tests for UpdateManager.apply_update()."""
+    """Tests for UpdateManager.apply_update() — delegates to updater sidecar via HTTP."""
 
-    def _patch_run_cmd(self, side_effects: list[str | None]):
-        """Return a patch context manager for _run_cmd with ordered returns.
+    def _mock_sidecar_post(self, status_code: int = 200, json_data: dict | None = None):
+        """Return a patch that mocks httpx.AsyncClient for the sidecar POST."""
+        resp = MagicMock()
+        resp.status_code = status_code
+        resp.json.return_value = json_data or {}
 
-        Each element in *side_effects* corresponds to one sequential call.
-        Use a string for success and None for failure.
-        """
-        return patch.object(
-            UpdateManager,
-            "_run_cmd",
-            new_callable=AsyncMock,
-            side_effect=side_effects,
-        )
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        return mock_client
 
     async def test_successful_update(self) -> None:
         mgr = _make_manager()
         release = _make_release()
 
-        # Calls in apply_update:
-        # 1. git rev-parse HEAD (initial SHA)
-        # 2. git fetch origin tag v99.0.0
-        # 3. git checkout v99.0.0
-        # 4. docker compose build
-        # 5. git rev-parse HEAD (new SHA)
-        # 6. docker compose up -d --no-deps bot
-        run_cmd_results = [
-            "abc123\n",  # initial SHA
-            "ok\n",  # git fetch
-            "ok\n",  # git checkout
-            "ok\n",  # docker build
-            "def456\n",  # new SHA
-            "ok\n",  # service restart
-        ]
+        sidecar_response = {
+            "status": "success",
+            "previous_sha": "abc123",
+            "new_sha": "def456",
+            "steps_completed": [
+                "git_fetch",
+                "git_checkout",
+                "docker_build",
+                "service_restart",
+            ],
+        }
+        mock_client = self._mock_sidecar_post(200, sidecar_response)
 
         with (
-            self._patch_run_cmd(run_cmd_results),
-            patch.object(mgr, "_validate_health", new_callable=AsyncMock, return_value=True),
+            patch("httpx.AsyncClient", return_value=mock_client),
             patch.object(mgr, "_record_update", new_callable=AsyncMock),
         ):
             result = await mgr.apply_update(release)
@@ -403,13 +398,16 @@ class TestApplyUpdate:
         mgr = _make_manager()
         release = _make_release()
 
-        run_cmd_results = [
-            "abc123\n",  # initial SHA
-            None,  # git fetch FAILS
-        ]
+        sidecar_response = {
+            "status": "failed",
+            "error": "git fetch failed",
+            "previous_sha": "abc123",
+            "steps_completed": [],
+        }
+        mock_client = self._mock_sidecar_post(200, sidecar_response)
 
         with (
-            self._patch_run_cmd(run_cmd_results),
+            patch("httpx.AsyncClient", return_value=mock_client),
             patch.object(mgr, "_record_update", new_callable=AsyncMock),
         ):
             result = await mgr.apply_update(release)
@@ -422,14 +420,16 @@ class TestApplyUpdate:
         mgr = _make_manager()
         release = _make_release()
 
-        run_cmd_results = [
-            "abc123\n",  # initial SHA
-            "ok\n",  # git fetch
-            None,  # git checkout FAILS
-        ]
+        sidecar_response = {
+            "status": "failed",
+            "error": "git checkout failed",
+            "previous_sha": "abc123",
+            "steps_completed": ["git_fetch"],
+        }
+        mock_client = self._mock_sidecar_post(200, sidecar_response)
 
         with (
-            self._patch_run_cmd(run_cmd_results),
+            patch("httpx.AsyncClient", return_value=mock_client),
             patch.object(mgr, "_record_update", new_callable=AsyncMock),
         ):
             result = await mgr.apply_update(release)
@@ -443,15 +443,16 @@ class TestApplyUpdate:
         mgr = _make_manager()
         release = _make_release()
 
-        run_cmd_results = [
-            "abc123\n",  # initial SHA
-            "ok\n",  # git fetch
-            "ok\n",  # git checkout
-            None,  # docker build FAILS
-        ]
+        sidecar_response = {
+            "status": "failed",
+            "error": "docker build failed",
+            "previous_sha": "abc123",
+            "steps_completed": ["git_fetch", "git_checkout"],
+        }
+        mock_client = self._mock_sidecar_post(200, sidecar_response)
 
         with (
-            self._patch_run_cmd(run_cmd_results),
+            patch("httpx.AsyncClient", return_value=mock_client),
             patch.object(mgr, "_record_update", new_callable=AsyncMock),
         ):
             result = await mgr.apply_update(release)
@@ -464,17 +465,17 @@ class TestApplyUpdate:
         mgr = _make_manager()
         release = _make_release()
 
-        run_cmd_results = [
-            "abc123\n",  # initial SHA
-            "ok\n",  # git fetch
-            "ok\n",  # git checkout
-            "ok\n",  # docker build
-            "def456\n",  # new SHA
-            None,  # service restart FAILS
-        ]
+        sidecar_response = {
+            "status": "failed",
+            "error": "service restart failed",
+            "previous_sha": "abc123",
+            "new_sha": "def456",
+            "steps_completed": ["git_fetch", "git_checkout", "docker_build"],
+        }
+        mock_client = self._mock_sidecar_post(200, sidecar_response)
 
         with (
-            self._patch_run_cmd(run_cmd_results),
+            patch("httpx.AsyncClient", return_value=mock_client),
             patch.object(mgr, "_record_update", new_callable=AsyncMock),
         ):
             result = await mgr.apply_update(release)
@@ -487,21 +488,22 @@ class TestApplyUpdate:
         mgr = _make_manager()
         release = _make_release()
 
-        run_cmd_results = [
-            "abc123\n",  # initial SHA
-            "ok\n",  # git fetch
-            "ok\n",  # git checkout
-            "ok\n",  # docker build
-            "def456\n",  # new SHA
-            "ok\n",  # service restart
-        ]
-
-        mock_rollback = AsyncMock(return_value=True)
+        sidecar_response = {
+            "status": "rolled_back",
+            "error": "health check failed after update",
+            "previous_sha": "abc123",
+            "new_sha": "def456",
+            "steps_completed": [
+                "git_fetch",
+                "git_checkout",
+                "docker_build",
+                "service_restart",
+            ],
+        }
+        mock_client = self._mock_sidecar_post(200, sidecar_response)
 
         with (
-            self._patch_run_cmd(run_cmd_results),
-            patch.object(mgr, "_validate_health", new_callable=AsyncMock, return_value=False),
-            patch.object(mgr, "rollback", mock_rollback),
+            patch("httpx.AsyncClient", return_value=mock_client),
             patch.object(mgr, "_record_update", new_callable=AsyncMock),
         ):
             result = await mgr.apply_update(release)
@@ -509,25 +511,28 @@ class TestApplyUpdate:
         assert result.status == UpdateStatus.ROLLED_BACK
         assert result.error == "health check failed after update"
         assert result.health_check_passed is False
-        mock_rollback.assert_awaited_once_with("abc123")
 
     async def test_health_check_fails_rollback_also_fails(self) -> None:
         mgr = _make_manager()
         release = _make_release()
 
-        run_cmd_results = [
-            "abc123\n",
-            "ok\n",
-            "ok\n",
-            "ok\n",
-            "def456\n",
-            "ok\n",
-        ]
+        # The sidecar tried to rollback but it also failed — reported as "failed"
+        sidecar_response = {
+            "status": "failed",
+            "error": "health check failed after update",
+            "previous_sha": "abc123",
+            "new_sha": "def456",
+            "steps_completed": [
+                "git_fetch",
+                "git_checkout",
+                "docker_build",
+                "service_restart",
+            ],
+        }
+        mock_client = self._mock_sidecar_post(200, sidecar_response)
 
         with (
-            self._patch_run_cmd(run_cmd_results),
-            patch.object(mgr, "_validate_health", new_callable=AsyncMock, return_value=False),
-            patch.object(mgr, "rollback", new_callable=AsyncMock, return_value=False),
+            patch("httpx.AsyncClient", return_value=mock_client),
             patch.object(mgr, "_record_update", new_callable=AsyncMock),
         ):
             result = await mgr.apply_update(release)
@@ -535,24 +540,125 @@ class TestApplyUpdate:
         assert result.status == UpdateStatus.FAILED
         assert result.error == "health check failed after update"
 
-    async def test_initial_sha_is_none_when_cmd_fails(self) -> None:
+    async def test_initial_sha_is_none_when_sidecar_omits_it(self) -> None:
         mgr = _make_manager()
         release = _make_release()
 
-        # git rev-parse HEAD returns None, then git fetch also fails
-        run_cmd_results = [
-            None,  # initial SHA fails
-            None,  # git fetch fails
-        ]
+        sidecar_response = {
+            "status": "failed",
+            "error": "git fetch failed",
+            "steps_completed": [],
+        }
+        mock_client = self._mock_sidecar_post(200, sidecar_response)
 
         with (
-            self._patch_run_cmd(run_cmd_results),
+            patch("httpx.AsyncClient", return_value=mock_client),
             patch.object(mgr, "_record_update", new_callable=AsyncMock),
         ):
             result = await mgr.apply_update(release)
 
         assert result.previous_git_sha is None
         assert result.status == UpdateStatus.FAILED
+
+    async def test_conflict_409_update_already_in_progress(self) -> None:
+        mgr = _make_manager()
+        release = _make_release()
+
+        mock_client = self._mock_sidecar_post(409, {"error": "update in progress"})
+
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch.object(mgr, "_record_update", new_callable=AsyncMock),
+        ):
+            result = await mgr.apply_update(release)
+
+        assert result.status == UpdateStatus.FAILED
+        assert result.error == "Update already in progress"
+
+    async def test_no_updater_url_returns_failed(self) -> None:
+        mgr = UpdateManager(
+            github_repo="owner/repo",
+            updater_url="",
+            updater_secret="",
+            health_url="http://localhost:8080/health",
+        )
+        release = _make_release()
+
+        with patch.object(mgr, "_record_update", new_callable=AsyncMock):
+            result = await mgr.apply_update(release)
+
+        assert result.status == UpdateStatus.FAILED
+        assert result.error == "No updater sidecar URL configured"
+
+    async def test_network_error_reaching_sidecar(self) -> None:
+        mgr = _make_manager()
+        release = _make_release()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(
+            side_effect=httpx.ConnectError("connection refused"),
+        )
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch.object(mgr, "_record_update", new_callable=AsyncMock),
+        ):
+            result = await mgr.apply_update(release)
+
+        assert result.status == UpdateStatus.FAILED
+        assert "Cannot reach updater sidecar" in result.error
+
+    async def test_updater_secret_sent_in_header(self) -> None:
+        mgr = _make_manager()
+        release = _make_release()
+
+        sidecar_response = {
+            "status": "success",
+            "previous_sha": "abc",
+            "new_sha": "def",
+            "steps_completed": [],
+        }
+        mock_client = self._mock_sidecar_post(200, sidecar_response)
+
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch.object(mgr, "_record_update", new_callable=AsyncMock),
+        ):
+            await mgr.apply_update(release)
+
+        # Verify the updater secret was sent in the header
+        call_kwargs = mock_client.post.call_args
+        headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers", {})
+        assert headers.get("X-Updater-Secret") == "test-secret"
+
+    async def test_no_secret_omits_header(self) -> None:
+        mgr = UpdateManager(
+            github_repo="owner/repo",
+            updater_url="http://test-updater:9090",
+            updater_secret="",
+            health_url="http://localhost:8080/health",
+        )
+        release = _make_release()
+
+        sidecar_response = {
+            "status": "success",
+            "previous_sha": "abc",
+            "new_sha": "def",
+            "steps_completed": [],
+        }
+        mock_client = self._mock_sidecar_post(200, sidecar_response)
+
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch.object(mgr, "_record_update", new_callable=AsyncMock),
+        ):
+            await mgr.apply_update(release)
+
+        call_kwargs = mock_client.post.call_args
+        headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers", {})
+        assert "X-Updater-Secret" not in headers
 
 
 # ---------------------------------------------------------------------------
@@ -561,20 +667,25 @@ class TestApplyUpdate:
 
 
 class TestRollback:
-    """Tests for UpdateManager.rollback()."""
+    """Tests for UpdateManager.rollback() — delegates to updater sidecar via HTTP."""
 
-    def _patch_run_cmd(self, side_effects: list[str | None]):
-        return patch.object(
-            UpdateManager,
-            "_run_cmd",
-            new_callable=AsyncMock,
-            side_effect=side_effects,
-        )
+    def _mock_sidecar_post(self, status_code: int = 200, json_data: dict | None = None):
+        """Return a mock httpx.AsyncClient for the sidecar POST."""
+        resp = MagicMock()
+        resp.status_code = status_code
+        resp.json.return_value = json_data or {}
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        return mock_client
 
     async def test_successful_rollback(self) -> None:
         mgr = _make_manager()
 
-        with self._patch_run_cmd(["ok\n", "ok\n", "ok\n"]):
+        mock_client = self._mock_sidecar_post(200, {"status": "success"})
+        with patch("httpx.AsyncClient", return_value=mock_client):
             result = await mgr.rollback("abc123")
 
         assert result is True
@@ -584,29 +695,66 @@ class TestRollback:
         result = await mgr.rollback("")
         assert result is False
 
-    async def test_checkout_fails(self) -> None:
+    async def test_sidecar_returns_failure(self) -> None:
         mgr = _make_manager()
 
-        with self._patch_run_cmd([None]):
+        mock_client = self._mock_sidecar_post(200, {"status": "failed", "error": "checkout failed"})
+        with patch("httpx.AsyncClient", return_value=mock_client):
             result = await mgr.rollback("abc123")
 
         assert result is False
 
-    async def test_build_fails(self) -> None:
+    async def test_network_error(self) -> None:
         mgr = _make_manager()
 
-        with self._patch_run_cmd(["ok\n", None]):
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(
+            side_effect=httpx.ConnectError("connection refused"),
+        )
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
             result = await mgr.rollback("abc123")
 
         assert result is False
 
-    async def test_restart_fails(self) -> None:
+    async def test_no_updater_url_returns_false(self) -> None:
+        mgr = UpdateManager(
+            github_repo="owner/repo",
+            updater_url="",
+            updater_secret="",
+            health_url="http://localhost:8080/health",
+        )
+        result = await mgr.rollback("abc123")
+        assert result is False
+
+    async def test_updater_secret_sent_in_header(self) -> None:
         mgr = _make_manager()
 
-        with self._patch_run_cmd(["ok\n", "ok\n", None]):
-            result = await mgr.rollback("abc123")
+        mock_client = self._mock_sidecar_post(200, {"status": "success"})
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            await mgr.rollback("abc123")
 
-        assert result is False
+        call_kwargs = mock_client.post.call_args
+        headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers", {})
+        assert headers.get("X-Updater-Secret") == "test-secret"
+
+    async def test_no_secret_omits_header(self) -> None:
+        mgr = UpdateManager(
+            github_repo="owner/repo",
+            updater_url="http://test-updater:9090",
+            updater_secret="",
+            health_url="http://localhost:8080/health",
+        )
+
+        mock_client = self._mock_sidecar_post(200, {"status": "success"})
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            await mgr.rollback("abc123")
+
+        call_kwargs = mock_client.post.call_args
+        headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers", {})
+        assert "X-Updater-Secret" not in headers
 
 
 # ---------------------------------------------------------------------------
@@ -728,76 +876,6 @@ class TestValidateHealth:
 
 
 # ---------------------------------------------------------------------------
-# TestRunCmd
-# ---------------------------------------------------------------------------
-
-
-class TestRunCmd:
-    """Tests for UpdateManager._run_cmd()."""
-
-    async def test_successful_command(self) -> None:
-        mgr = _make_manager()
-
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"output data\n", b""))
-        mock_proc.returncode = 0
-
-        with patch("asyncio.create_subprocess_shell", return_value=mock_proc):
-            result = await mgr._run_cmd("echo hello")
-
-        assert result == "output data\n"
-
-    async def test_failed_command_nonzero_exit(self) -> None:
-        mgr = _make_manager()
-
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"", b"error msg"))
-        mock_proc.returncode = 1
-
-        with patch("asyncio.create_subprocess_shell", return_value=mock_proc):
-            result = await mgr._run_cmd("false")
-
-        assert result is None
-
-    async def test_timeout(self) -> None:
-        mgr = _make_manager()
-
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"", b""))
-
-        with patch("asyncio.create_subprocess_shell", return_value=mock_proc):
-            with patch("asyncio.wait_for", side_effect=TimeoutError):
-                result = await mgr._run_cmd("sleep 999", timeout=1)
-
-        assert result is None
-
-    async def test_generic_exception(self) -> None:
-        mgr = _make_manager()
-
-        with patch(
-            "asyncio.create_subprocess_shell",
-            side_effect=OSError("no such file"),
-        ):
-            result = await mgr._run_cmd("bad_command")
-
-        assert result is None
-
-    async def test_cwd_passed_to_subprocess(self) -> None:
-        mgr = _make_manager()
-
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"ok\n", b""))
-        mock_proc.returncode = 0
-
-        with patch("asyncio.create_subprocess_shell", return_value=mock_proc) as mock_create:
-            await mgr._run_cmd("pwd")
-
-        mock_create.assert_awaited_once()
-        call_kwargs = mock_create.call_args
-        assert call_kwargs.kwargs.get("cwd") == "/tmp/project"
-
-
-# ---------------------------------------------------------------------------
 # TestRecordUpdate
 # ---------------------------------------------------------------------------
 
@@ -806,9 +884,6 @@ class TestRecordUpdate:
     """Tests for UpdateManager._record_update()."""
 
     async def test_record_saved_to_storage(self) -> None:
-        from zetherion_ai.health.storage import UpdateRecord
-        from zetherion_ai.health.storage import UpdateStatus as StorageUpdateStatus
-
         storage = AsyncMock()
         storage.save_update_record = AsyncMock()
         mgr = _make_manager(storage=storage)
@@ -821,26 +896,7 @@ class TestRecordUpdate:
             new_git_sha="def456",
         )
 
-        # The real StorageUpdateStatus lacks IN_PROGRESS, which the
-        # status_map default evaluates eagerly. Patch it in so the
-        # method can complete successfully.
-        mock_storage_module = MagicMock()
-        mock_storage_module.UpdateRecord = UpdateRecord
-        mock_storage_module.UpdateStatus = StorageUpdateStatus
-
-        # Add the missing IN_PROGRESS attribute
-        patched_status = MagicMock(wraps=StorageUpdateStatus)
-        patched_status.SUCCESS = StorageUpdateStatus.SUCCESS
-        patched_status.FAILED = StorageUpdateStatus.FAILED
-        patched_status.ROLLED_BACK = StorageUpdateStatus.ROLLED_BACK
-        patched_status.IN_PROGRESS = StorageUpdateStatus.CHECKING  # stand-in
-        mock_storage_module.UpdateStatus = patched_status
-
-        with patch.dict(
-            "sys.modules",
-            {"zetherion_ai.health.storage": mock_storage_module},
-        ):
-            await mgr._record_update(result)
+        await mgr._record_update(result)
 
         storage.save_update_record.assert_awaited_once()
         saved_record = storage.save_update_record.call_args[0][0]
@@ -908,16 +964,16 @@ class TestUpdateManagerInit:
         mgr = UpdateManager(
             github_repo="owner/repo",
             storage=storage,
-            compose_file="custom-compose.yml",
-            project_dir="/opt/app",
+            updater_url="http://updater:9090",
+            updater_secret="s3cret",
             health_url="http://localhost:9090/health",
             github_token="ghp_token",
         )
 
         assert mgr._repo == "owner/repo"
         assert mgr._storage is storage
-        assert mgr._compose_file == "custom-compose.yml"
-        assert mgr._project_dir == "/opt/app"
+        assert mgr._updater_url == "http://updater:9090"
+        assert mgr._updater_secret == "s3cret"
         assert mgr._health_url == "http://localhost:9090/health"
         assert mgr._github_token == "ghp_token"
 
@@ -925,8 +981,8 @@ class TestUpdateManagerInit:
         mgr = UpdateManager(github_repo="owner/repo")
 
         assert mgr._storage is None
-        assert mgr._compose_file == "docker-compose.yml"
-        assert mgr._project_dir == "."
+        assert mgr._updater_url == ""
+        assert mgr._updater_secret == ""
         assert mgr._health_url == "http://localhost:8080/health"
         assert mgr._github_token is None
 

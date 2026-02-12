@@ -553,9 +553,9 @@ async def test_complex_task(mock_bot: MockDiscordBot) -> None:
 
     # Pass if it has keywords OR if it's a substantive non-error response
     # OR if the backend timed out (known Docker resource limitation)
-    assert (
-        has_keywords or (is_not_error and len(response) > 100) or is_timeout_fallback
-    ), f"Expected detailed response about async/sync, got: {response[:200]}"
+    assert has_keywords or (is_not_error and len(response) > 100) or is_timeout_fallback, (
+        f"Expected detailed response about async/sync, got: {response[:200]}"
+    )
 
     preview: str = response[0:100] if len(response) > 100 else response  # type: ignore[index]
     print(f"✅ Complex task test passed: {preview}...")
