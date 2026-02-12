@@ -614,7 +614,7 @@ class YouTubeManagementSkill(Skill):
 
         if isinstance(parsed, list):
             return parsed
-        return parsed.get("issues", [parsed]) if parsed else []
+        return list(parsed.get("issues", [parsed])) if parsed else []
 
     # ------------------------------------------------------------------
     # Onboarding follow-up questions
