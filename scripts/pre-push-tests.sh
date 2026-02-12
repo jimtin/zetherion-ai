@@ -5,8 +5,9 @@
 # Pipeline structure:
 #   Phase A (concurrent):
 #     Background — Docker teardown, build, health wait, model pulls + warm-up
-#     Foreground — Ruff lint, unit tests (parallel + 90% coverage gate),
-#                  in-process integration tests
+#     Foreground — Static checks (ruff, bandit, gitleaks, hadolint, licenses,
+#                  Python 3.13 compat), then unit tests + mypy + pip-audit in
+#                  parallel (90% coverage gate), then in-process integration tests
 #   Phase B (concurrent, requires Docker):
 #     All Docker E2E test files run in parallel once Docker is ready.
 set -euo pipefail
@@ -15,10 +16,24 @@ set -euo pipefail
 # even when invoked by pre-commit (which doesn't inherit the venv)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
-if [ -f "$REPO_DIR/.venv/bin/activate" ]; then
+if [ -f "$REPO_DIR/venv/bin/activate" ]; then
+    # shellcheck source=/dev/null
+    source "$REPO_DIR/venv/bin/activate"
+elif [ -f "$REPO_DIR/.venv/bin/activate" ]; then
     # shellcheck source=/dev/null
     source "$REPO_DIR/.venv/bin/activate"
 fi
+
+# ── Tool version pins (must match CI and requirements-dev.txt) ────────
+EXPECTED_RUFF="0.8.4"
+
+# ── All Python source directories to check ────────────────────────────
+# CI pre-commit scans ALL files, so we must include updater_sidecar/ too
+SRC_DIRS="src/ tests/ updater_sidecar/"
+LINT_DIRS="src/ updater_sidecar/"
+
+# License allowlist (must match CI — see .github/workflows/ci.yml)
+LICENSE_ALLOWLIST="MIT License;MIT;BSD License;BSD-2-Clause;BSD-3-Clause;Apache Software License;Apache License 2.0;Apache-2.0;ISC License;ISC;Python Software Foundation License;PSF-2.0;Mozilla Public License 2.0 (MPL 2.0);MPL-2.0;Artistic License;Public Domain;The Unlicense;Unlicense;CC0-1.0;0BSD;Zlib;UNKNOWN"
 
 COMPOSE_FILE="docker-compose.test.yml"
 PROJECT="zetherion-ai-test"
@@ -38,7 +53,12 @@ cleanup() {
         kill "$DOCKER_PID" 2>/dev/null || true
         wait "$DOCKER_PID" 2>/dev/null || true
     fi
-    # Kill any background E2E test processes
+    # Kill any background test processes (mypy, pip-audit, E2E)
+    for pid in "${BG_PIDS[@]:-}"; do
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+        fi
+    done
     for pid in "${E2E_PIDS[@]:-}"; do
         if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
             kill "$pid" 2>/dev/null || true
@@ -52,7 +72,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Array to track background E2E test PIDs
+# Arrays to track background PIDs
+declare -a BG_PIDS=()
 declare -a E2E_PIDS=()
 
 # ── Background Docker Preparation ──────────────────────────────────
@@ -153,25 +174,122 @@ start_docker_background &
 DOCKER_PID=$!
 DOCKER_STARTED_BY_US=true
 
-# ── Step 1: Ruff lint ──────────────────────────────────────────────
+# ── Step 1: Static analysis (fast, sequential) ───────────────────
+# Catches: ruff lint+format, bandit, gitleaks, hadolint, licenses,
+#          Python 3.13 syntax compat — all checks CI would run.
 echo ""
-echo "[$(ts)] [1/4] Ruff lint check..."
-ruff check src/ tests/
-echo "[$(ts)] [1/4] Ruff lint passed."
+echo "[$(ts)] [1/5] Static analysis..."
 
-# ── Step 2: Unit tests + 90% coverage gate (parallel) ─────────────
+# 1a. Ruff version check — prevents version-drift formatting failures
+ACTUAL_RUFF=$(ruff version 2>/dev/null | awk '{print $2}' || echo "unknown")
+if [ "$ACTUAL_RUFF" != "$EXPECTED_RUFF" ]; then
+    echo "ERROR: ruff version mismatch: local=$ACTUAL_RUFF, expected=$EXPECTED_RUFF"
+    echo "  Fix: pip install ruff==$EXPECTED_RUFF (see requirements-dev.txt)"
+    exit 1
+fi
+
+# 1b. Ruff lint (includes updater_sidecar/)
+ruff check $SRC_DIRS
+
+# 1c. Ruff format check
+ruff format --check $SRC_DIRS
+
+# 1d. Bandit security scan (src/ + updater_sidecar/, tests/scripts excluded via pyproject.toml)
+bandit -c pyproject.toml -r $LINT_DIRS -q
+
+# 1e. Gitleaks secret scanning
+if command -v gitleaks >/dev/null 2>&1; then
+    gitleaks detect --no-git --redact --config=.gitleaks.toml
+else
+    echo "  [skip] gitleaks not installed (install: brew install gitleaks)"
+fi
+
+# 1f. Hadolint Dockerfile linting
+if docker image inspect ghcr.io/hadolint/hadolint:latest >/dev/null 2>&1 || docker info >/dev/null 2>&1; then
+    docker run --rm -v "$(pwd):/work" -w /work ghcr.io/hadolint/hadolint:latest \
+        hadolint --ignore DL3007 --ignore DL3008 --ignore DL3009 \
+        Dockerfile Dockerfile.updater
+else
+    echo "  [skip] hadolint requires Docker (Docker not available yet)"
+fi
+
+# 1g. License compliance check
+if command -v pip-licenses >/dev/null 2>&1; then
+    pip-licenses --allow-only="$LICENSE_ALLOWLIST" --partial-match
+else
+    echo "  [skip] pip-licenses not installed (pip install pip-licenses)"
+fi
+
+# 1h. Python 3.13 syntax compatibility (if python3.13 is available)
+if command -v python3.13 >/dev/null 2>&1; then
+    python3.13 -m compileall -q src/ updater_sidecar/
+else
+    echo "  [skip] python3.13 not available for syntax compat check"
+fi
+
+echo "[$(ts)] [1/5] Static analysis passed."
+
+# ── Step 2: Unit tests + mypy + pip-audit (parallel) ─────────────
+# Unit tests (~90s), mypy (~93s), pip-audit (~14s) run concurrently.
+# Wall time ≈ max(unit_tests, mypy) ≈ 93s.
 echo ""
-echo "[$(ts)] [2/4] Unit tests + coverage gate (>=90%, parallel)..."
+echo "[$(ts)] [2/5] Unit tests + mypy + pip-audit (parallel)..."
+
+MYPY_LOG="$(mktemp)"
+PIPAUDIT_LOG="$(mktemp)"
+
+# Start mypy in background
+mypy src/zetherion_ai/ updater_sidecar/ --config-file=pyproject.toml > "$MYPY_LOG" 2>&1 &
+BG_PIDS+=($!)
+MYPY_PID=$!
+
+# Start pip-audit in background
+if command -v pip-audit >/dev/null 2>&1; then
+    pip-audit -r requirements.txt --strict --desc on > "$PIPAUDIT_LOG" 2>&1 &
+    BG_PIDS+=($!)
+    PIPAUDIT_PID=$!
+else
+    echo "  [skip] pip-audit not installed (pip install pip-audit)"
+    PIPAUDIT_PID=""
+fi
+
+# Run unit tests in foreground (so output streams live)
 python -m pytest tests/ \
     -m "not integration and not discord_e2e" \
     -n 8 \
     --timeout=30 \
     --tb=short -q
-echo "[$(ts)] [2/4] Unit tests passed (>=90% coverage verified)."
+
+# Wait for mypy
+if ! wait "$MYPY_PID"; then
+    echo ""
+    echo "mypy FAILED:"
+    cat "$MYPY_LOG"
+    rm -f "$MYPY_LOG" "$PIPAUDIT_LOG"
+    exit 1
+fi
+echo "[$(ts)]   mypy passed."
+
+# Wait for pip-audit
+if [ -n "$PIPAUDIT_PID" ]; then
+    if ! wait "$PIPAUDIT_PID"; then
+        echo ""
+        echo "pip-audit FAILED:"
+        cat "$PIPAUDIT_LOG"
+        rm -f "$MYPY_LOG" "$PIPAUDIT_LOG"
+        exit 1
+    fi
+    echo "[$(ts)]   pip-audit passed."
+fi
+
+rm -f "$MYPY_LOG" "$PIPAUDIT_LOG"
+BG_PIDS=()
+
+echo "[$(ts)] [2/5] Unit tests + mypy + pip-audit passed."
 
 # ── Step 3: In-process integration tests (no Docker) ──────────────
 echo ""
-echo "[$(ts)] [3/4] In-process integration tests..."
+echo "[$(ts)] [3/5] In-process integration tests..."
 python -m pytest \
     tests/integration/test_skills_http.py \
     tests/integration/test_heartbeat_cycle.py \
@@ -185,7 +303,7 @@ python -m pytest \
     tests/integration/test_telemetry_http.py \
     tests/integration/test_api_http.py \
     -m integration --timeout=60 --tb=short -q --no-cov
-echo "[$(ts)] [3/4] Integration tests passed."
+echo "[$(ts)] [3/5] Integration tests passed."
 
 # ═══════════════════════════════════════════════════════════════════
 # Phase B: Wait for Docker, run ALL E2E tests concurrently
@@ -206,7 +324,7 @@ echo "[$(ts)] Docker environment confirmed ready."
 
 # ── Step 4: All Docker E2E tests (concurrent) ─────────────────────
 echo ""
-echo "[$(ts)] [4/4] Docker E2E + Discord E2E tests (concurrent)..."
+echo "[$(ts)] [4/5] Docker E2E + Discord E2E tests (concurrent)..."
 
 # Create temp files for each parallel test output
 E2E_LOG_A="$(mktemp)"    # test_e2e.py (the big one)
@@ -280,12 +398,13 @@ rm -f "$E2E_LOG_A" "$E2E_LOG_B" "$E2E_LOG_C"
 
 if [ "$E2E_FAILED" = true ]; then
     echo ""
-    echo "[$(ts)] [4/4] E2E tests FAILED — see output above."
+    echo "[$(ts)] [4/5] E2E tests FAILED — see output above."
     exit 1
 fi
 
-echo "[$(ts)] [4/4] All E2E tests passed."
+echo "[$(ts)] [4/5] All E2E tests passed."
 
+# ── Step 5: Summary ──────────────────────────────────────────────
 echo ""
 echo "========================================"
 echo "  All tests passed. Push allowed."

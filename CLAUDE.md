@@ -8,8 +8,8 @@ The push pipeline is:
 
 **Phase A** (Docker builds in background while fast tests run in foreground):
 
-1. **Ruff lint** — `ruff check src/ tests/`
-2. **Unit tests + 90% coverage gate** — `pytest tests/ -m "not integration and not discord_e2e" -n 8` (parallel, fails if coverage <90%)
+1. **Static analysis** (~4s) — ruff version check, `ruff check` + `ruff format --check` on `src/ tests/ updater_sidecar/`, bandit security scan, gitleaks secret scan, hadolint Dockerfile lint, pip-licenses compliance, Python 3.13 syntax compat
+2. **Unit tests + mypy + pip-audit** (parallel, ~93s wall) — `pytest tests/ -m "not integration and not discord_e2e" -n 8` (parallel, fails if coverage <90%), mypy type checking on `src/zetherion_ai/ updater_sidecar/`, pip-audit dependency vulnerability scan — all run concurrently
 3. **In-process integration tests** — all `tests/integration/test_*_http.py` etc. with `--no-cov`
 
 **Phase B** (all E2E tests run concurrently once Docker is ready):
@@ -32,6 +32,18 @@ If any step fails, fix the code and re-run from step 1. Docker is torn down auto
 - Docker Desktop must be running before pushing (the script checks for this).
 - If the git hook is missing, reinstall it: `cp scripts/pre-push-tests.sh .git/hooks/pre-push && chmod +x .git/hooks/pre-push` (or create a wrapper that calls `exec ./scripts/pre-push-tests.sh`).
 
+## Tool Version Pins
+
+The pre-push script enforces ruff version parity with CI. All dev tool versions are pinned in `requirements-dev.txt`:
+
+- `ruff==0.8.4` — must match `.pre-commit-config.yaml` rev and CI `ci.yml`
+- `mypy==1.13.0`
+- `bandit[toml]==1.7.7` — must match `.pre-commit-config.yaml` rev
+- `pip-audit==2.10.0`
+- `pip-licenses==5.5.1`
+
+When updating any tool version, update ALL three locations (requirements-dev.txt, .pre-commit-config.yaml, .github/workflows/ci.yml) together.
+
 ## Running Tests Manually
 
 ```bash
@@ -48,6 +60,7 @@ pytest tests/integration/test_skills_http.py tests/integration/test_heartbeat_cy
 ## Project Structure
 
 - **Source code**: `src/zetherion_ai/`
+- **Updater sidecar**: `updater_sidecar/` (separate package, NOT under src/)
 - **Unit tests**: `tests/`
 - **Integration tests**: `tests/integration/`
 - **Docker test config**: `docker-compose.test.yml`
