@@ -24,6 +24,10 @@ class TestOllamaRouterBackend:
         monkeypatch.setenv("OLLAMA_ROUTER_HOST", "ollama-router")
         monkeypatch.setenv("OLLAMA_ROUTER_PORT", "11434")
         monkeypatch.setenv("OLLAMA_ROUTER_MODEL", "llama3.2:3b")
+        # Fallback to generation container
+        monkeypatch.setenv("OLLAMA_HOST", "ollama")
+        monkeypatch.setenv("OLLAMA_PORT", "11434")
+        monkeypatch.setenv("OLLAMA_GENERATION_MODEL", "llama3.1:8b")
 
         with patch(
             "zetherion_ai.agent.router_ollama.httpx.AsyncClient", return_value=mock_httpx_client
@@ -226,7 +230,7 @@ class TestOllamaRouterBackend:
 
         assert decision.intent.value == "simple_query"
         assert decision.confidence == 0.5
-        assert "timeout" in decision.reasoning.lower()
+        assert "timed out" in decision.reasoning.lower()
         assert decision.use_claude is False
 
     @pytest.mark.asyncio
@@ -243,7 +247,7 @@ class TestOllamaRouterBackend:
 
         assert decision.intent.value == "simple_query"
         assert decision.confidence == 0.5
-        assert "connection" in decision.reasoning.lower()
+        assert "unreachable" in decision.reasoning.lower()
         assert decision.use_claude is False
 
     @pytest.mark.asyncio
@@ -490,6 +494,71 @@ class TestOllamaRouterBackend:
         is_healthy = await router_backend.health_check()
 
         assert is_healthy is False
+
+    @pytest.mark.asyncio
+    async def test_cascade_primary_fails_fallback_succeeds(
+        self, router_backend, mock_httpx_client, monkeypatch
+    ):
+        """Test that when primary model fails, fallback model is tried."""
+        monkeypatch.setenv("DISCORD_TOKEN", "test")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        fallback_response = Mock()
+        fallback_response.json.return_value = {
+            "response": '{"intent": "task_management", "confidence": 0.88, "reasoning": "fallback classified"}'  # noqa: E501
+        }
+        fallback_response.raise_for_status = Mock()
+
+        mock_httpx_client.post = AsyncMock(
+            side_effect=[
+                httpx.TimeoutException("Primary timed out"),
+                fallback_response,
+            ]
+        )
+
+        decision = await router_backend.classify("Add a task to review docs")
+
+        assert decision.intent.value == "task_management"
+        assert decision.confidence == 0.88
+        assert mock_httpx_client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_cascade_both_fail_returns_fallback(
+        self, router_backend, mock_httpx_client, monkeypatch
+    ):
+        """Test that when both models fail, hardcoded fallback is returned."""
+        monkeypatch.setenv("DISCORD_TOKEN", "test")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        mock_httpx_client.post = AsyncMock(
+            side_effect=httpx.TimeoutException("Timeout")
+        )
+
+        decision = await router_backend.classify("test")
+
+        assert decision.intent.value == "simple_query"
+        assert decision.confidence == 0.5
+        assert mock_httpx_client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_cascade_primary_succeeds_no_fallback_call(
+        self, router_backend, mock_httpx_client, monkeypatch
+    ):
+        """Test that when primary succeeds, fallback is not called."""
+        monkeypatch.setenv("DISCORD_TOKEN", "test")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "response": '{"intent": "simple_query", "confidence": 0.95, "reasoning": "greeting"}'
+        }
+        mock_response.raise_for_status = Mock()
+        mock_httpx_client.post = AsyncMock(return_value=mock_response)
+
+        decision = await router_backend.classify("Hello!")
+
+        assert decision.intent.value == "simple_query"
+        assert mock_httpx_client.post.call_count == 1
 
     @pytest.mark.asyncio
     async def test_close_client(self, router_backend, mock_httpx_client):

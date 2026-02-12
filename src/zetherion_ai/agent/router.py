@@ -9,6 +9,7 @@ from typing import Any, Protocol
 
 from google import genai  # type: ignore[attr-defined]
 
+from zetherion_ai.agent.prompts import SYSTEM_PROMPT
 from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
 
@@ -293,7 +294,7 @@ class GeminiRouterBackend:
             def _sync_generate() -> Any:
                 return self._client.models.generate_content(
                     model=self._model,
-                    contents=message,
+                    contents=f"{SYSTEM_PROMPT}\n\nUser: {message}",
                     config={
                         "temperature": 0.7,
                         "max_output_tokens": 500,
