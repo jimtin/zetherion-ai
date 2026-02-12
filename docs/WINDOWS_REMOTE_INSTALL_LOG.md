@@ -1,7 +1,7 @@
 # Windows Remote Installation Log
 
 **Date**: 2026-02-10
-**Source Machine**: macOS (<WINDOWS_HOST_IP_OLD>)
+**Source Machine**: macOS (<SOURCE_HOST_IP>)
 **Target Machine**: Windows 11 - "Computer-of-awesome" (<WINDOWS_HOST_IP>)
 **Windows User**: james
 **Method**: SSH remoting from macOS to Windows PowerShell
