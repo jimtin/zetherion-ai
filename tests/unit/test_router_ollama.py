@@ -18,6 +18,9 @@ def mock_settings():
     settings.ollama_router_url = "http://ollama-router:11434"
     settings.ollama_router_model = "llama3.2:3b"
     settings.ollama_timeout = 30.0
+    # Fallback to generation container
+    settings.ollama_url = "http://ollama:11434"
+    settings.ollama_generation_model = "llama3.1:8b"
     return settings
 
 
@@ -31,6 +34,8 @@ class TestOllamaRouterBackendInit:
             assert backend._url == "http://ollama-router:11434"
             assert backend._model == "llama3.2:3b"
             assert backend._timeout == 30.0
+            assert backend._fallback_url == "http://ollama:11434"
+            assert backend._fallback_model == "llama3.1:8b"
 
 
 class TestOllamaRouterBackendWarmup:
@@ -361,7 +366,7 @@ class TestOllamaRouterBackendClassify:
 
         assert decision.intent == MessageIntent.SIMPLE_QUERY
         assert decision.confidence == 0.5
-        assert "timeout" in decision.reasoning.lower()
+        assert "timed out" in decision.reasoning.lower()
 
     @pytest.mark.asyncio
     async def test_classify_connection_error(self, mock_settings):
@@ -375,7 +380,7 @@ class TestOllamaRouterBackendClassify:
 
         assert decision.intent == MessageIntent.SIMPLE_QUERY
         assert decision.confidence == 0.5
-        assert "connection failed" in decision.reasoning.lower()
+        assert "unreachable" in decision.reasoning.lower()
 
     @pytest.mark.asyncio
     async def test_classify_invalid_json(self, mock_settings):
@@ -498,7 +503,7 @@ class TestOllamaRouterBackendClassify:
 
         assert decision.intent == MessageIntent.SIMPLE_QUERY
         assert decision.confidence == 0.5
-        assert "json decode failed" in decision.reasoning.lower()
+        assert "failed parsing" in decision.reasoning.lower()
 
     @pytest.mark.asyncio
     async def test_classify_value_error_fallback(self, mock_settings):
@@ -520,7 +525,7 @@ class TestOllamaRouterBackendClassify:
 
         assert decision.intent == MessageIntent.SIMPLE_QUERY
         assert decision.confidence == 0.5
-        assert "validation failed" in decision.reasoning.lower()
+        assert "failed parsing" in decision.reasoning.lower()
 
     @pytest.mark.asyncio
     async def test_classify_generic_exception_fallback(self, mock_settings):
@@ -534,7 +539,7 @@ class TestOllamaRouterBackendClassify:
 
         assert decision.intent == MessageIntent.COMPLEX_TASK
         assert decision.use_claude is True
-        assert "unexpectedly" in decision.reasoning.lower()
+        assert "failed" in decision.reasoning.lower()
 
     @pytest.mark.asyncio
     async def test_classify_complex_task_low_confidence(self, mock_settings):
@@ -561,6 +566,141 @@ class TestOllamaRouterBackendClassify:
 
         assert decision.intent == MessageIntent.COMPLEX_TASK
         assert decision.use_claude is False
+
+
+class TestOllamaRouterBackendCascade:
+    """Tests for the primary -> fallback cascade in classify."""
+
+    @pytest.mark.asyncio
+    async def test_cascade_primary_fails_fallback_succeeds(self, mock_settings):
+        """Test that when primary fails, fallback model succeeds."""
+        fallback_response = MagicMock()
+        fallback_response.status_code = 200
+        fallback_response.raise_for_status = MagicMock()
+        fallback_response.json.return_value = {
+            "response": json.dumps(
+                {
+                    "intent": "task_management",
+                    "confidence": 0.9,
+                    "reasoning": "Fallback classified correctly",
+                }
+            )
+        }
+
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
+            backend = OllamaRouterBackend()
+            backend._client = MagicMock()
+            # First call (primary) fails, second call (fallback) succeeds
+            backend._client.post = AsyncMock(
+                side_effect=[
+                    httpx.TimeoutException("Primary timed out"),
+                    fallback_response,
+                ]
+            )
+
+            decision = await backend.classify("Add a task to review docs")
+
+        assert decision.intent == MessageIntent.TASK_MANAGEMENT
+        assert decision.confidence == 0.9
+        assert decision.reasoning == "Fallback classified correctly"
+        assert backend._client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_cascade_primary_fails_fallback_fails_timeout(self, mock_settings):
+        """Test that when both models timeout, returns simple query fallback."""
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
+            backend = OllamaRouterBackend()
+            backend._client = MagicMock()
+            backend._client.post = AsyncMock(
+                side_effect=httpx.TimeoutException("Timeout")
+            )
+
+            decision = await backend.classify("test")
+
+        assert decision.intent == MessageIntent.SIMPLE_QUERY
+        assert decision.confidence == 0.5
+        assert "timed out" in decision.reasoning.lower()
+        assert backend._client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_cascade_primary_fails_fallback_fails_generic(self, mock_settings):
+        """Test that when both models fail with generic error, returns complex task."""
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
+            backend = OllamaRouterBackend()
+            backend._client = MagicMock()
+            backend._client.post = AsyncMock(
+                side_effect=RuntimeError("Unexpected error")
+            )
+
+            decision = await backend.classify("test")
+
+        assert decision.intent == MessageIntent.COMPLEX_TASK
+        assert decision.use_claude is True
+        assert backend._client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_cascade_primary_succeeds_no_fallback(self, mock_settings):
+        """Test that when primary succeeds, fallback is never called."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "response": json.dumps(
+                {
+                    "intent": "simple_query",
+                    "confidence": 0.95,
+                    "reasoning": "Primary succeeded",
+                }
+            )
+        }
+
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
+            backend = OllamaRouterBackend()
+            backend._client = MagicMock()
+            backend._client.post = AsyncMock(return_value=mock_response)
+
+            decision = await backend.classify("Hello!")
+
+        assert decision.intent == MessageIntent.SIMPLE_QUERY
+        assert decision.confidence == 0.95
+        # Only one call — primary succeeded, no fallback needed
+        assert backend._client.post.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_cascade_uses_correct_urls_and_models(self, mock_settings):
+        """Test that cascade passes correct URLs and models to each attempt."""
+        fallback_response = MagicMock()
+        fallback_response.status_code = 200
+        fallback_response.raise_for_status = MagicMock()
+        fallback_response.json.return_value = {
+            "response": json.dumps(
+                {
+                    "intent": "simple_query",
+                    "confidence": 0.85,
+                    "reasoning": "Fallback OK",
+                }
+            )
+        }
+
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
+            backend = OllamaRouterBackend()
+            backend._client = MagicMock()
+            backend._client.post = AsyncMock(
+                side_effect=[
+                    ValueError("Primary parse failed"),
+                    fallback_response,
+                ]
+            )
+
+            decision = await backend.classify("test")
+
+        assert decision.intent == MessageIntent.SIMPLE_QUERY
+        calls = backend._client.post.call_args_list
+        assert len(calls) == 2
+        # Primary call uses router URL
+        assert "http://ollama-router:11434/api/generate" in str(calls[0])
+        # Fallback call uses generation URL
+        assert "http://ollama:11434/api/generate" in str(calls[1])
 
 
 class TestOllamaRouterBackendGenerateSimpleResponse:

@@ -6,6 +6,7 @@ import time
 
 import httpx
 
+from zetherion_ai.agent.prompts import SYSTEM_PROMPT
 from zetherion_ai.agent.router import (
     ROUTER_PROMPT,
     MessageIntent,
@@ -31,6 +32,9 @@ class OllamaRouterBackend:
         self._url = settings.ollama_router_url
         self._model = settings.ollama_router_model
         self._timeout = settings.ollama_timeout
+        # Fallback to the larger generation model if the small router model fails
+        self._fallback_url = settings.ollama_url
+        self._fallback_model = settings.ollama_generation_model
         # Use longer timeout for warmup (model loading can take 60-90s)
         self._warmup_timeout = 120.0
         self._client = httpx.AsyncClient(timeout=self._timeout)
@@ -39,6 +43,8 @@ class OllamaRouterBackend:
             "ollama_router_initialized",
             url=self._url,
             model=self._model,
+            fallback_url=self._fallback_url,
+            fallback_model=self._fallback_model,
             timeout=self._timeout,
             container="ollama-router",
         )
@@ -125,8 +131,98 @@ class OllamaRouterBackend:
             self._is_warm = False
             return False
 
+    async def _attempt_classify(
+        self, url: str, model: str, message: str
+    ) -> RoutingDecision:
+        """Attempt to classify a message using a specific Ollama model.
+
+        Args:
+            url: Base URL of the Ollama instance.
+            model: Model name to use for classification.
+            message: The user's message to classify.
+
+        Returns:
+            RoutingDecision with intent and routing info.
+
+        Raises:
+            Any exception on failure (caller handles fallback).
+        """
+        prompt = f"{ROUTER_PROMPT}\n\nUser message: {message}"
+
+        response = await self._client.post(
+            f"{url}/api/generate",
+            json={
+                "model": model,
+                "prompt": prompt,
+                "stream": False,
+                "format": "json",
+                "keep_alive": OLLAMA_KEEP_ALIVE,
+                "options": {
+                    "temperature": 0.1,
+                    "num_predict": 150,
+                },
+            },
+        )
+        response.raise_for_status()
+
+        result_data = response.json()
+        result_text = result_data.get("response", "").strip()
+
+        # Extract JSON using regex (handles markdown code blocks)
+        json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", result_text, re.DOTALL)
+        if json_match:
+            result_text = json_match.group(1)
+        else:
+            json_match = re.search(r"\{.*?\}", result_text, re.DOTALL)
+            if json_match:
+                result_text = json_match.group(0)
+
+        result_text = result_text.strip()
+
+        try:
+            result = json.loads(result_text)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON response: {e}") from e
+
+        if "intent" not in result:
+            raise ValueError("Missing 'intent' field in response")
+
+        try:
+            intent = MessageIntent(result["intent"].lower())
+        except (ValueError, KeyError) as e:
+            raise ValueError(f"Invalid intent value: {result.get('intent')}") from e
+
+        confidence = float(result.get("confidence", 0.8))
+        reasoning = result.get("reasoning", "")
+
+        if not 0.0 <= confidence <= 1.0:
+            confidence = max(0.0, min(1.0, confidence))
+
+        use_claude = intent == MessageIntent.COMPLEX_TASK and confidence > 0.7
+
+        decision = RoutingDecision(
+            intent=intent,
+            confidence=confidence,
+            reasoning=reasoning,
+            use_claude=use_claude,
+        )
+
+        log.debug(
+            "message_classified",
+            intent=intent.value,
+            confidence=confidence,
+            use_claude=use_claude,
+            backend="ollama",
+            model=model,
+        )
+
+        return decision
+
     async def classify(self, message: str) -> RoutingDecision:
-        """Classify a message using Ollama.
+        """Classify a message using Ollama with fallback cascade.
+
+        Tries the small router model first (llama3.2:3b), then falls back
+        to the larger generation model (llama3.1:8b) before giving up.
 
         Args:
             message: The user's message to classify.
@@ -134,162 +230,68 @@ class OllamaRouterBackend:
         Returns:
             RoutingDecision with intent and routing info.
         """
+        # Try primary (small router model)
         try:
-            # Format prompt
-            prompt = f"{ROUTER_PROMPT}\n\nUser message: {message}"
-
-            # Make request to Ollama
-            response = await self._client.post(
-                f"{self._url}/api/generate",
-                json={
-                    "model": self._model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "format": "json",  # Request JSON format
-                    "keep_alive": OLLAMA_KEEP_ALIVE,  # Keep model loaded
-                    "options": {
-                        "temperature": 0.1,  # Low for consistent classification
-                        "num_predict": 150,
-                    },
-                },
-            )
-            response.raise_for_status()
-
-            # Parse response
-            result_data = response.json()
-            result_text = result_data.get("response", "").strip()
-
-            # Extract JSON using regex (same as Gemini router)
-            json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", result_text, re.DOTALL)
-            if json_match:
-                result_text = json_match.group(1)
-            else:
-                # Try to find raw JSON object
-                json_match = re.search(r"\{.*?\}", result_text, re.DOTALL)
-                if json_match:
-                    result_text = json_match.group(0)
-
-            result_text = result_text.strip()
-
-            # Parse JSON
-            try:
-                result = json.loads(result_text)
-            except json.JSONDecodeError as e:
-                log.warning(
-                    "json_parse_failed",
-                    error=str(e),
-                    response_text=result_text[:200],
-                )
-                raise ValueError(f"Invalid JSON response: {e}") from e
-
-            # Validate schema
-            if "intent" not in result:
-                raise ValueError("Missing 'intent' field in response")
-
-            # Parse intent with error handling
-            try:
-                intent = MessageIntent(result["intent"].lower())
-            except (ValueError, KeyError) as e:
-                log.warning(
-                    "invalid_intent",
-                    intent_value=result.get("intent"),
-                    error=str(e),
-                )
-                raise ValueError(f"Invalid intent value: {result.get('intent')}") from e
-
-            confidence = float(result.get("confidence", 0.8))
-            reasoning = result.get("reasoning", "")
-
-            # Validate confidence range
-            if not 0.0 <= confidence <= 1.0:
-                log.warning("invalid_confidence", confidence=confidence)
-                confidence = max(0.0, min(1.0, confidence))
-
-            # Determine if we need Claude (expensive) or can use Flash (cheap)
-            use_claude = intent == MessageIntent.COMPLEX_TASK and confidence > 0.7
-
-            decision = RoutingDecision(
-                intent=intent,
-                confidence=confidence,
-                reasoning=reasoning,
-                use_claude=use_claude,
-            )
-
-            log.debug(
-                "message_classified",
-                intent=intent.value,
-                confidence=confidence,
-                use_claude=use_claude,
-                backend="ollama",
-            )
-
-            return decision
-
-        except httpx.TimeoutException as e:
+            return await self._attempt_classify(self._url, self._model, message)
+        except Exception as primary_err:
             log.warning(
-                "ollama_timeout",
-                error=str(e),
+                "primary_router_failed",
+                error=str(primary_err),
+                error_type=type(primary_err).__name__,
+                model=self._model,
                 message=message[:50],
             )
-            # Default to simple query on timeout
+
+        # Try fallback (larger generation model)
+        try:
+            log.info("trying_fallback_router", model=self._fallback_model)
+            return await self._attempt_classify(
+                self._fallback_url, self._fallback_model, message
+            )
+        except httpx.TimeoutException as e:
+            log.warning("fallback_router_timeout", error=str(e), message=message[:50])
             return RoutingDecision(
                 intent=MessageIntent.SIMPLE_QUERY,
                 confidence=0.5,
-                reasoning="Ollama timeout, using simple query as fallback",
+                reasoning="Both Ollama models timed out, using simple query as fallback",
                 use_claude=False,
             )
         except httpx.ConnectError as e:
             log.error(
-                "ollama_connection_failed",
+                "fallback_router_connection_failed",
                 error=str(e),
-                url=self._url,
+                url=self._fallback_url,
                 message=message[:50],
             )
-            # Default to simple query on connection error
             return RoutingDecision(
                 intent=MessageIntent.SIMPLE_QUERY,
                 confidence=0.5,
-                reasoning="Ollama connection failed, using simple query as fallback",
+                reasoning="Both Ollama models unreachable, using simple query as fallback",
                 use_claude=False,
             )
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, ValueError) as e:
             log.warning(
-                "json_decode_error",
+                "fallback_router_parse_failed",
                 error=str(e),
                 message=message[:50],
             )
-            # Default to simple query on JSON errors
             return RoutingDecision(
                 intent=MessageIntent.SIMPLE_QUERY,
                 confidence=0.5,
-                reasoning="JSON decode failed, using simple query as fallback",
-                use_claude=False,
-            )
-        except ValueError as e:
-            log.warning(
-                "validation_error",
-                error=str(e),
-                message=message[:50],
-            )
-            # Default to simple query on validation errors
-            return RoutingDecision(
-                intent=MessageIntent.SIMPLE_QUERY,
-                confidence=0.5,
-                reasoning="Validation failed, using simple query as fallback",
+                reasoning="Both Ollama models failed parsing, using simple query as fallback",
                 use_claude=False,
             )
         except Exception as e:
             log.error(
-                "ollama_classification_failed",
+                "fallback_router_failed",
                 error=str(e),
                 error_type=type(e).__name__,
                 message=message[:50],
             )
-            # Default to complex task with Claude on unexpected errors
             return RoutingDecision(
                 intent=MessageIntent.COMPLEX_TASK,
                 confidence=0.5,
-                reasoning="Ollama classification failed unexpectedly, defaulting to complex task",
+                reasoning="Both Ollama models failed, defaulting to complex task",
                 use_claude=True,
             )
 
@@ -308,6 +310,7 @@ class OllamaRouterBackend:
                 json={
                     "model": self._model,
                     "prompt": message,
+                    "system": SYSTEM_PROMPT,
                     "stream": False,
                     "keep_alive": OLLAMA_KEEP_ALIVE,  # Keep model loaded
                     "options": {
