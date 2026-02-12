@@ -1,0 +1,2355 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Privacy-first personal AI assistant with encrypted memory, smart LLM routing, and Gmail integration">
+      
+      
+      
+        <link rel="canonical" href="https://jimtin.github.io/zetherion-ai/MULTI_TENANT_API_PLAN/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Plan: Multi-Tenant Public API + Client Intelligence Skills - Zetherion AI</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#plan-multi-tenant-public-api-client-intelligence-skills" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Zetherion AI" class="md-header__button md-logo" aria-label="Zetherion AI" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Zetherion AI
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Plan: Multi-Tenant Public API + Client Intelligence Skills
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/jimtin/zetherion-ai" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    jimtin/zetherion-ai
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../user/getting-started/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../technical/architecture/" class="md-tabs__link">
+          
+  
+  
+  Technical
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../development/setup/" class="md-tabs__link">
+          
+  
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../project/roadmap/" class="md-tabs__link">
+          
+  
+  
+  Project
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Zetherion AI" class="md-nav__button md-logo" aria-label="Zetherion AI" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Zetherion AI
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/jimtin/zetherion-ai" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    jimtin/zetherion-ai
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user/getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user/gmail/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gmail
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user/github-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user/tasks-and-calendar/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tasks & Calendar
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user/memory-and-profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory & Profiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user/faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Technical
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Technical
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker & Services
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/skills-framework/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Skills Framework
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/gmail-architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gmail Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/observation-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observation Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/personal-understanding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Personal Understanding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/cost-tracking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cost Tracking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Setup & Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/ci-cd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI/CD Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/github-secrets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub Secrets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/adding-a-skill/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding a Skill
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../project/roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../project/design-decisions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Decisions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Context
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-multi-level-intelligence-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Multi-Level Intelligence Model
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The Multi-Level Intelligence Model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#intelligence-extraction-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Intelligence Extraction Matrix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extraction-timing-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extraction Timing Summary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#auth-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auth Flow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workstream-a-public-api-infrastructure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workstream A: Public API Infrastructure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Workstream A: Public API Infrastructure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-a1-foundation-tenant-management-api-skeleton" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase A1: Foundation — Tenant Management &amp; API Skeleton
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-a2-chat-endpoint-rest-chat-with-ai" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase A2: Chat Endpoint — REST Chat with AI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-a3-sse-streaming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase A3: SSE Streaming
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-a4-cloudflare-tunnel-production-hardening" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase A4: Cloudflare Tunnel &amp; Production Hardening
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workstream-b-client-intelligence-skills" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workstream B: Client Intelligence Skills
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Workstream B: Client Intelligence Skills">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#skill-b1-client_provisioning-setup-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skill B1: client_provisioning — Setup &amp; Lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skill-b2-client_chat-runtime-conversation-handler" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skill B2: client_chat — Runtime Conversation Handler
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skill-b3-tenant_intelligence-entity-extraction-for-the-tenant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skill B3: tenant_intelligence — Entity Extraction FOR the Tenant
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skill-b4-client_insights-relationship-intelligence-for-james" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skill B4: client_insights — Relationship Intelligence FOR James
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#notification-dispatch-cross-cutting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Notification Dispatch (Cross-cutting)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-existing-code-to-reuse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Existing Code to Reuse
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Implementation Order
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dependencies-to-add" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dependencies to Add
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="plan-multi-tenant-public-api-client-intelligence-skills">Plan: Multi-Tenant Public API + Client Intelligence Skills<a class="headerlink" href="#plan-multi-tenant-public-api-client-intelligence-skills" title="Permanent link">&para;</a></h1>
+<h2 id="context">Context<a class="headerlink" href="#context" title="Permanent link">&para;</a></h2>
+<p>Zetherion AI currently runs as a self-hosted Discord bot on a home server. The goal is to expose it as a backend service for multiple client websites (chatbots, CRM, etc.). This involves two parallel workstreams:</p>
+<ol>
+<li><strong>Workstream A: Public API Infrastructure</strong> — The plumbing to expose Zetherion to the internet</li>
+<li><strong>Workstream B: Client Intelligence Skills</strong> — The brains that extract multi-level intelligence from conversations</li>
+</ol>
+<p><strong>Key decisions:</strong>
+- Networking: Cloudflare Tunnel (no open ports)
+- Auth: Per-site API key + lightweight session tokens
+- Chat UX: Streaming via SSE
+- Clients have their own backends (API keys stay server-side)
+- Shared infrastructure, tenant-isolated data via <code>tenant_id</code>
+- All skills are platform-agnostic (Discord today, Slack/web/etc. tomorrow)
+- CRM is a separate skill workstream, not part of the API infrastructure</p>
+<h2 id="the-multi-level-intelligence-model">The Multi-Level Intelligence Model<a class="headerlink" href="#the-multi-level-intelligence-model" title="Permanent link">&para;</a></h2>
+<p>When a customer chats on a client's website, Zetherion operates at multiple levels simultaneously:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>End-user sends message on Bob&#39;s Plumbing site
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  → L1a INLINE: Critical signal detection (urgency, safety, escalation)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>      → Bot adjusts response if needed (&quot;I can see this is urgent...&quot;)
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>  → client_chat generates a response for the end-user
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>  → L1b ASYNC: Entity extraction (contact info, intent, sentiment)
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>  → L2  ASYNC: Session summary when conversation ends
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>  → L3  PERIODIC: Daily/weekly tenant aggregation
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  → L4  PERIODIC: Cross-tenant intelligence (James only)
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>  → L5  CONTINUOUS: Feedback loop (bot improvement suggestions)
+</code></pre></div>
+<p>This is the key differentiator from traditional CRMs/chatbot platforms — Zetherion serves both the tenant AND the owner simultaneously, with different extraction lenses.</p>
+<h3 id="intelligence-extraction-matrix">Intelligence Extraction Matrix<a class="headerlink" href="#intelligence-extraction-matrix" title="Permanent link">&para;</a></h3>
+<p><strong>Level 1a: Per-Message Critical Signals (INLINE, pre-response)</strong>
+Lightweight detection that runs before the bot responds, so the response can adapt.</p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>For Tenant</th>
+<th>For James</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Urgency detection</td>
+<td>Bot reacts ("flagging for callback")</td>
+<td>Alert if critical</td>
+<td>"My pipe burst and water is flooding"</td>
+</tr>
+<tr>
+<td>Safety/harm signals</td>
+<td>Bot escalates appropriately</td>
+<td>Immediate alert</td>
+<td>Self-harm indicators, threats</td>
+</tr>
+<tr>
+<td>Escalation triggers</td>
+<td>Route to human if configured</td>
+<td>Track escalation rate</td>
+<td>"I want to speak to a real person"</td>
+</tr>
+<tr>
+<td>Returning customer</td>
+<td>Bot can greet by name</td>
+<td>--</td>
+<td>Session matches previous contact</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Level 1b: Per-Message Entity Extraction (ASYNC, post-response)</strong>
+Heavier LLM-based extraction that doesn't slow down the response.</p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>For Tenant</th>
+<th>For James</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Contact entities (name, email, phone)</td>
+<td>Store in tenant CRM</td>
+<td>--</td>
+<td>"My name is Dave, call me on 07700..."</td>
+</tr>
+<tr>
+<td>Intent classification</td>
+<td>Tag the interaction</td>
+<td>--</td>
+<td>Enquiry / complaint / booking / support</td>
+</tr>
+<tr>
+<td>Sentiment score</td>
+<td>Track per-customer</td>
+<td>Feed into aggregation</td>
+<td>Frustrated / neutral / happy</td>
+</tr>
+<tr>
+<td>Product/service mentioned</td>
+<td>Tag interaction</td>
+<td>--</td>
+<td>"bathroom renovation", "boiler service"</td>
+</tr>
+<tr>
+<td>Purchase signals</td>
+<td>Flag as lead</td>
+<td>--</td>
+<td>"How much would it cost to..."</td>
+</tr>
+<tr>
+<td>Communication preferences</td>
+<td>CRM enrichment</td>
+<td>--</td>
+<td>"I prefer email" / "Don't call before 10am"</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Level 2: Per-Session Summary (ASYNC, on session close/timeout)</strong></p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>For Tenant</th>
+<th>For James</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Conversation outcome</td>
+<td>Resolved / unresolved / needs followup</td>
+<td>Track resolution rates</td>
+<td>Did the chatbot actually help?</td>
+</tr>
+<tr>
+<td>Customer profile summary</td>
+<td>CRM enrichment</td>
+<td>--</td>
+<td>"Price-sensitive homeowner, kitchen refit, prefers weekends"</td>
+</tr>
+<tr>
+<td>Unmet needs / opportunities</td>
+<td>Opportunity alert ("customers want X, you don't offer it")</td>
+<td>--</td>
+<td>"Asked about gas safety certs — Bob doesn't list this"</td>
+</tr>
+<tr>
+<td>Sentiment trajectory</td>
+<td>Customer satisfaction trend</td>
+<td>Bot technical performance (did the bot cause frustration? misunderstand? fail to answer?)</td>
+<td>Started frustrated → ended satisfied</td>
+</tr>
+<tr>
+<td>Chatbot effectiveness</td>
+<td>--</td>
+<td>Technical quality signal (response failures, hallucinations, missed intents)</td>
+<td>Bot couldn't answer 3 questions → config needs work</td>
+</tr>
+<tr>
+<td>Topics covered</td>
+<td>FAQ data + content gap detection ("customers keep asking about X")</td>
+<td>Visibility into tenant content gaps (read-only)</td>
+<td>Which questions come up repeatedly?</td>
+</tr>
+<tr>
+<td>Follow-up actions needed</td>
+<td>Task creation for tenant</td>
+<td>--</td>
+<td>"Customer wants a callback Tuesday"</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Level 3: Per-Tenant Aggregation (PERIODIC, daily/weekly rollup)</strong>
+Tenants can access their own L3 data via API.</p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>For Tenant</th>
+<th>For James</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Volume trends</td>
+<td>"45 enquiries this week (+20%)"</td>
+<td>Engagement health</td>
+<td>Is this client's site being used?</td>
+</tr>
+<tr>
+<td>Top topics / FAQs</td>
+<td>"Customers mostly ask about pricing"</td>
+<td>Cross-client patterns</td>
+<td>Common across plumbing clients?</td>
+</tr>
+<tr>
+<td>Avg sentiment over time</td>
+<td>Customer satisfaction trend</td>
+<td>Client health score</td>
+<td>Sentiment dropping → something wrong</td>
+</tr>
+<tr>
+<td>Conversion rate</td>
+<td>"12/45 conversations were purchase-intent"</td>
+<td>Revenue signal</td>
+<td>High conversion = valuable client</td>
+</tr>
+<tr>
+<td>Peak hours</td>
+<td>"Most chats happen 6-9pm"</td>
+<td>--</td>
+<td>Useful for tenant's staffing</td>
+</tr>
+<tr>
+<td>Unmet needs (aggregated)</td>
+<td>"X asked about 15 times — you don't offer it"</td>
+<td>Upsell opportunity</td>
+<td>"Suggest Bob adds emergency plumbing"</td>
+</tr>
+<tr>
+<td>Repeat visitor rate</td>
+<td>Loyalty signals</td>
+<td>--</td>
+<td>Returning customers = good sign</td>
+</tr>
+<tr>
+<td>Escalation rate</td>
+<td>"8% needed human handoff"</td>
+<td>Bot quality signal</td>
+<td>High escalation = config needs work</td>
+</tr>
+<tr>
+<td>Response quality score</td>
+<td>"Bot resolved 85% without escalation"</td>
+<td>Service quality metric</td>
+<td>Benchmarkable across clients</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Level 4: Cross-Tenant Intelligence (PERIODIC, weekly, James only)</strong>
+Privacy boundaries: TBD — to be decided whether James sees anonymized aggregates or named comparisons.</p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>For James</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Industry benchmarks</td>
+<td>"Bob converts at 26%, trade avg is 18%"</td>
+<td></td>
+</tr>
+<tr>
+<td>Best-performing configs</td>
+<td>"Formal tone converts better for trade services"</td>
+<td></td>
+</tr>
+<tr>
+<td>Emerging patterns</td>
+<td>"3 clients getting AI-related questions — new service area?"</td>
+<td></td>
+</tr>
+<tr>
+<td>Client health dashboard</td>
+<td>Red/amber/green portfolio overview</td>
+<td></td>
+</tr>
+<tr>
+<td>Churn risk</td>
+<td>"Dave's site usage dropped 60% — check in"</td>
+<td></td>
+</tr>
+<tr>
+<td>Revenue attribution</td>
+<td>Which clients generate most value vs effort?</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Level 5: Feedback Loop (CONTINUOUS, threshold-triggered)</strong></p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>For James</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bot improvement suggestions</td>
+<td>"Bob's bot fails on pricing questions — add FAQ to config"</td>
+<td></td>
+</tr>
+<tr>
+<td>Knowledge gaps</td>
+<td>"Customers ask about X and the bot doesn't know"</td>
+<td></td>
+</tr>
+<tr>
+<td>Prompt tuning signals</td>
+<td>"Sarah's bot is too verbose — customers drop off mid-response"</td>
+<td></td>
+</tr>
+<tr>
+<td>Config recommendations</td>
+<td>"Based on successful clients, try adjusting tone to..."</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h3 id="extraction-timing-summary">Extraction Timing Summary<a class="headerlink" href="#extraction-timing-summary" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>Trigger</th>
+<th>Latency</th>
+<th>Storage</th>
+<th>Tenant can see?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>L1a</td>
+<td>Inline pre-response</td>
+<td>&lt;100ms</td>
+<td>In-memory (flags)</td>
+<td>No (internal)</td>
+</tr>
+<tr>
+<td>L1b</td>
+<td>Async post-response</td>
+<td>Seconds</td>
+<td>Tenant Postgres</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>L2</td>
+<td>Session close/timeout</td>
+<td>Seconds</td>
+<td>Tenant Postgres + James's Qdrant</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>L3</td>
+<td>Daily/weekly cron</td>
+<td>Background</td>
+<td>Aggregation tables</td>
+<td>Yes (via API)</td>
+</tr>
+<tr>
+<td>L4</td>
+<td>Weekly cron</td>
+<td>Background</td>
+<td>James's Qdrant</td>
+<td>No (James only)</td>
+</tr>
+<tr>
+<td>L5</td>
+<td>Threshold triggers</td>
+<td>Background</td>
+<td>Triggers notifications</td>
+<td>No (James only)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>Internet                     Home Server Docker Network
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>  |                          +------------------------------------+
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  |   Cloudflare Tunnel      |                                    |
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  +----&gt; cloudflared --------+--&gt; zetherion-api (8443) [NEW]      |
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>                             |        |                           |
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>                             |        v                           |
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>                             |   zetherion-ai-skills (8080)       |
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>                             |        |                           |
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>                             |   +----+-----+                     |
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>                             |   |          |                     |
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>                             |  postgres  qdrant   ollama         |
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>                             |                                    |
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>Discord/Slack/etc.           |                                    |
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>  +----&gt; zetherion-ai-bot ---+--&gt; zetherion-ai-skills (8080)      |
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>                             +------------------------------------+
+</code></pre></div>
+<h2 id="auth-flow">Auth Flow<a class="headerlink" href="#auth-flow" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>1. Client backend creates a session (server-to-server):
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>   POST /api/v1/sessions  [X-API-Key: sk_live_...]
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>   → { session_token: &quot;zt_sess_...&quot; }
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>2. Client passes session_token to their frontend
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>3. Browser sends chat messages using session token:
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>   POST /api/v1/chat  [Authorization: Bearer zt_sess_...]
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>   → SSE stream of AI response tokens
+</code></pre></div>
+<p>API keys: <code>sk_live_</code> prefix, bcrypt-hashed. Session tokens: signed JWTs (24hr expiry).</p>
+<hr />
+<h2 id="workstream-a-public-api-infrastructure">Workstream A: Public API Infrastructure<a class="headerlink" href="#workstream-a-public-api-infrastructure" title="Permanent link">&para;</a></h2>
+<h3 id="phase-a1-foundation-tenant-management-api-skeleton">Phase A1: Foundation — Tenant Management &amp; API Skeleton<a class="headerlink" href="#phase-a1-foundation-tenant-management-api-skeleton" title="Permanent link">&para;</a></h3>
+<p><strong>New files:</strong>
+- <code>src/zetherion_ai/api/__init__.py</code>
+- <code>src/zetherion_ai/api/server.py</code> — Public aiohttp app (port 8443), modeled on <code>skills/server.py</code>
+- <code>src/zetherion_ai/api/tenant.py</code> — <code>TenantManager</code> (CRUD, API key gen/validation), modeled on <code>discord/user_manager.py</code>
+- <code>src/zetherion_ai/api/auth.py</code> — API key generation (<code>secrets.token_urlsafe</code> + bcrypt), JWT session tokens (<code>PyJWT</code>)
+- <code>src/zetherion_ai/api/middleware.py</code> — CORS, API key validation, rate limiting, tenant context injection
+- <code>src/zetherion_ai/api/models.py</code> — Pydantic request/response schemas
+- <code>src/zetherion_ai/api/routes/__init__.py</code>
+- <code>src/zetherion_ai/api/routes/health.py</code> — <code>GET /api/v1/health</code> (no auth)
+- <code>src/zetherion_ai/api/routes/sessions.py</code> — Session CRUD (requires API key)</p>
+<p><strong>Modified files:</strong>
+- <code>src/zetherion_ai/config.py</code> — Add <code>api_host</code>, <code>api_port</code>, <code>api_jwt_secret</code>
+- <code>.env.example</code> — Add new env vars</p>
+<p><strong>Database (new tables):</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">tenants</span><span class="w"> </span><span class="p">(</span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">tenant_id</span><span class="w"> </span><span class="n">UUID</span><span class="p">,</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="k">domain</span><span class="p">,</span><span class="w"> </span><span class="n">api_key_hash</span><span class="p">,</span><span class="w"> </span><span class="n">api_key_prefix</span><span class="p">,</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">         </span><span class="n">is_active</span><span class="p">,</span><span class="w"> </span><span class="n">rate_limit_rpm</span><span class="p">,</span><span class="w"> </span><span class="n">allowed_skills</span><span class="p">[],</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="n">JSONB</span><span class="p">,</span><span class="w"> </span><span class="n">timestamps</span><span class="p">)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">chat_sessions</span><span class="w"> </span><span class="p">(</span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">session_id</span><span class="w"> </span><span class="n">UUID</span><span class="p">,</span><span class="w"> </span><span class="n">tenant_id</span><span class="w"> </span><span class="n">FK</span><span class="p">,</span><span class="w"> </span><span class="n">external_user_id</span><span class="p">,</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">               </span><span class="n">metadata</span><span class="w"> </span><span class="n">JSONB</span><span class="p">,</span><span class="w"> </span><span class="n">created_at</span><span class="p">,</span><span class="w"> </span><span class="n">last_active</span><span class="p">,</span><span class="w"> </span><span class="n">expires_at</span><span class="p">)</span>
+</code></pre></div></p>
+<p><strong>Tests:</strong> <code>test_api_auth.py</code>, <code>test_api_tenant.py</code>, <code>test_api_http.py</code></p>
+<p><strong>Deliverable:</strong> API starts, health check works, API key auth works, sessions can be created.</p>
+<h3 id="phase-a2-chat-endpoint-rest-chat-with-ai">Phase A2: Chat Endpoint — REST Chat with AI<a class="headerlink" href="#phase-a2-chat-endpoint-rest-chat-with-ai" title="Permanent link">&para;</a></h3>
+<p><strong>New files:</strong>
+- <code>src/zetherion_ai/api/routes/chat.py</code> — <code>POST /api/v1/chat</code>, <code>GET /api/v1/chat/history</code></p>
+<p><strong>Modified files:</strong>
+- <code>src/zetherion_ai/agent/core.py</code> — Add <code>generate_response_for_tenant()</code> accepting <code>tenant_id</code> + <code>session_id</code> instead of Discord-specific IDs. Uses tenant config for system prompt overrides. Scopes Qdrant by <code>tenant_id</code>.</p>
+<p><strong>Database:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">chat_messages</span><span class="w"> </span><span class="p">(</span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">session_id</span><span class="w"> </span><span class="n">FK</span><span class="p">,</span><span class="w"> </span><span class="n">tenant_id</span><span class="p">,</span><span class="w"> </span><span class="k">role</span><span class="p">,</span><span class="w"> </span><span class="n">content</span><span class="p">,</span><span class="w"> </span><span class="n">metadata</span><span class="w"> </span><span class="n">JSONB</span><span class="p">,</span><span class="w"> </span><span class="n">created_at</span><span class="p">)</span>
+</code></pre></div></p>
+<p><strong>Integration:</strong> Chat route calls <code>Agent</code> via <code>SkillsClient</code> (internal HTTP to 8080), using <code>user_id=f"tenant:{tenant_id}:session:{session_id}"</code> for data isolation.</p>
+<p><strong>Deliverable:</strong> POST a message, get an AI response. History persists.</p>
+<h3 id="phase-a3-sse-streaming">Phase A3: SSE Streaming<a class="headerlink" href="#phase-a3-sse-streaming" title="Permanent link">&para;</a></h3>
+<p><strong>Modified files:</strong>
+- <code>src/zetherion_ai/api/routes/chat.py</code> — Add SSE endpoint using <code>aiohttp.web.StreamResponse</code>
+- <code>src/zetherion_ai/agent/core.py</code> — Streaming variant that yields tokens</p>
+<p><strong>SSE format:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>data: {&quot;type&quot;: &quot;token&quot;, &quot;content&quot;: &quot;Hello&quot;}
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>data: {&quot;type&quot;: &quot;token&quot;, &quot;content&quot;: &quot; there&quot;}
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>data: {&quot;type&quot;: &quot;done&quot;, &quot;message_id&quot;: &quot;...&quot;}
+</code></pre></div></p>
+<p><strong>Deliverable:</strong> Real-time streaming responses.</p>
+<h3 id="phase-a4-cloudflare-tunnel-production-hardening">Phase A4: Cloudflare Tunnel &amp; Production Hardening<a class="headerlink" href="#phase-a4-cloudflare-tunnel-production-hardening" title="Permanent link">&para;</a></h3>
+<p><strong>New files:</strong>
+- <code>Dockerfile.api</code> — Multi-stage build (same Chainguard pattern as <code>Dockerfile.skills</code>)</p>
+<p><strong>Modified files:</strong>
+- <code>docker-compose.yml</code> — Add <code>zetherion-api</code> + <code>cloudflared</code> services
+- <code>.env.example</code> — Add <code>CLOUDFLARE_TUNNEL_TOKEN</code>
+- <code>scripts/pre-push-tests.sh</code> — Add API server tests</p>
+<p><strong>Hardening:</strong> Rate limiting, request size limits, audit logging (<code>tenant_audit_log</code>), usage tracking.</p>
+<p><strong>Deliverable:</strong> API accessible via <code>https://api.yourdomain.com</code>.</p>
+<hr />
+<h2 id="workstream-b-client-intelligence-skills">Workstream B: Client Intelligence Skills<a class="headerlink" href="#workstream-b-client-intelligence-skills" title="Permanent link">&para;</a></h2>
+<p>These are platform-agnostic skills. They can be triggered from Discord, Slack, the public API, or any future interface. Notifications go through a dispatch layer (Discord DM today, Slack/webhook tomorrow).</p>
+<h3 id="skill-b1-client_provisioning-setup-lifecycle">Skill B1: <code>client_provisioning</code> — Setup &amp; Lifecycle<a class="headerlink" href="#skill-b1-client_provisioning-setup-lifecycle" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> Create and manage client tenants. James triggers this from any interface.</p>
+<p><strong>Intents:</strong>
+- <code>client_create</code> — "Set up a new client called Bob's Plumbing for bobsplumbing.com"
+- <code>client_configure</code> — "Update Bob's chatbot personality to be more formal"
+- <code>client_deactivate</code> — "Pause Bob's account"
+- <code>client_rotate_key</code> — "Generate a new API key for Bob"
+- <code>client_list</code> — "Show me all my clients"</p>
+<p><strong>Implementation:</strong>
+- New skill in <code>src/zetherion_ai/skills/client_provisioning.py</code>
+- Calls <code>TenantManager</code> (from Workstream A) for all CRUD
+- Registers with <code>SkillRegistry</code> like any other skill
+- Platform-agnostic: works via Discord command, Slack, or future admin dashboard</p>
+<h3 id="skill-b2-client_chat-runtime-conversation-handler">Skill B2: <code>client_chat</code> — Runtime Conversation Handler<a class="headerlink" href="#skill-b2-client_chat-runtime-conversation-handler" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> The brain behind each client's website chatbot.</p>
+<p><strong>How it works:</strong>
+1. Public API receives a chat message → routes to this skill
+2. <strong>L1a runs inline</strong>: lightweight critical signal detection (urgency, safety, escalation)
+3. Loads tenant-specific config (system prompt, personality, allowed topics)
+4. Generates response using the Agent with tenant context (adjusting if L1a flagged anything)
+5. Returns response (or streams it via SSE)
+6. <strong>Fires async extraction pipeline</strong>: L1b + L2 (on session close)</p>
+<p><strong>Implementation:</strong>
+- New skill in <code>src/zetherion_ai/skills/client_chat.py</code>
+- Wraps <code>Agent.generate_response_for_tenant()</code>
+- Manages conversation context window per session
+- Applies tenant-specific system prompts from <code>tenants.config</code>
+- L1a detection as a fast pre-processing step (regex + lightweight classifier, not full LLM)</p>
+<h3 id="skill-b3-tenant_intelligence-entity-extraction-for-the-tenant">Skill B3: <code>tenant_intelligence</code> — Entity Extraction FOR the Tenant<a class="headerlink" href="#skill-b3-tenant_intelligence-entity-extraction-for-the-tenant" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> Passively extracts information useful to the tenant (L1b + L2 "For Tenant" columns).</p>
+<p><strong>Handles:</strong>
+- L1b (per-message, async): Contact entities, intent, sentiment, purchase signals
+- L2 (per-session): Customer profile summary, conversation outcome, follow-up actions, topics</p>
+<p><strong>Storage:</strong> Tenant-scoped tables (tenant can access via API):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">tenant_contacts</span><span class="w"> </span><span class="p">(</span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">tenant_id</span><span class="p">,</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">email</span><span class="p">,</span><span class="w"> </span><span class="n">phone</span><span class="p">,</span><span class="w"> </span><span class="k">source</span><span class="p">,</span><span class="w"> </span><span class="n">tags</span><span class="p">[],</span><span class="w"> </span><span class="n">custom_fields</span><span class="w"> </span><span class="n">JSONB</span><span class="p">)</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">tenant_interactions</span><span class="w"> </span><span class="p">(</span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">tenant_id</span><span class="p">,</span><span class="w"> </span><span class="n">contact_id</span><span class="w"> </span><span class="n">FK</span><span class="p">,</span><span class="w"> </span><span class="n">session_id</span><span class="p">,</span><span class="w"> </span><span class="k">type</span><span class="p">,</span><span class="w"> </span><span class="n">summary</span><span class="p">,</span><span class="w"> </span><span class="n">entities</span><span class="w"> </span><span class="n">JSONB</span><span class="p">,</span><span class="w"> </span><span class="n">sentiment</span><span class="p">)</span>
+</code></pre></div></p>
+<p><strong>Implementation:</strong>
+- New skill in <code>src/zetherion_ai/skills/tenant_intelligence.py</code>
+- Runs asynchronously after each <code>client_chat</code> response
+- Uses LLM extraction (similar to Phase 9's personal understanding layer)
+- Stores in tenant-scoped Postgres tables
+- Data exposed back to tenant via API endpoints from the start</p>
+<h3 id="skill-b4-client_insights-relationship-intelligence-for-james">Skill B4: <code>client_insights</code> — Relationship Intelligence FOR James<a class="headerlink" href="#skill-b4-client_insights-relationship-intelligence-for-james" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> Extracts signals useful to James (L1b-L5 "For James" columns).</p>
+<p><strong>Handles:</strong>
+- L1b/L2 (per-message/session): Feeds sentiment + outcome into aggregation
+- L3 (periodic): Volume trends, conversion rates, unmet needs, escalation rates per tenant
+- L4 (periodic): Cross-tenant benchmarks, emerging patterns, churn risk
+- L5 (continuous): Bot improvement suggestions, config recommendations</p>
+<p><strong>How James consumes it:</strong>
+- <strong>On-demand</strong>: "How are my clients doing?" → summary from Qdrant + aggregation tables
+- <strong>Proactive alerts</strong>: Threshold-based notifications ("Bob's satisfaction dropped 20%")</p>
+<p><strong>Storage:</strong>
+- Per-conversation signals → James's Qdrant (tagged with <code>client_tenant_id</code>)
+- Aggregated metrics → PostgreSQL aggregation table
+- Alerts → notification dispatch</p>
+<p><strong>Implementation:</strong>
+- New skill in <code>src/zetherion_ai/skills/client_insights.py</code>
+- L1b/L2: Runs async after each response (parallel with B3, different extraction prompt)
+- L3: Runs on daily/weekly heartbeat schedule
+- L4: Runs on weekly heartbeat schedule
+- L5: Triggered when L3/L4 metrics cross thresholds
+- Stores in Qdrant with <code>owner_id=james</code> + <code>client_tenant_id</code> metadata</p>
+<h3 id="notification-dispatch-cross-cutting">Notification Dispatch (Cross-cutting)<a class="headerlink" href="#notification-dispatch-cross-cutting" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> Route alerts/notifications to whatever platform James is using.</p>
+<p><strong>Today:</strong> Discord DM (existing <code>bot.get_user().send()</code> pattern)
+<strong>Tomorrow:</strong> Slack webhook, email, push notification</p>
+<p><strong>Implementation:</strong>
+- New module <code>src/zetherion_ai/notifications/dispatch.py</code>
+- Simple interface: <code>await dispatch.notify(user_id, message, priority)</code>
+- Backend registry: <code>{discord: DiscordNotifier, slack: SlackNotifier, ...}</code>
+- Skills call <code>dispatch.notify()</code> instead of platform-specific code</p>
+<hr />
+<h2 id="key-existing-code-to-reuse">Key Existing Code to Reuse<a class="headerlink" href="#key-existing-code-to-reuse" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th>Where</th>
+<th>Reuse for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>aiohttp server pattern</td>
+<td><code>src/zetherion_ai/skills/server.py</code></td>
+<td>Public API server</td>
+</tr>
+<tr>
+<td>PostgreSQL manager pattern</td>
+<td><code>src/zetherion_ai/discord/user_manager.py</code></td>
+<td>TenantManager</td>
+</tr>
+<tr>
+<td>Agent inference pipeline</td>
+<td><code>src/zetherion_ai/agent/core.py</code></td>
+<td><code>generate_response_for_tenant()</code></td>
+</tr>
+<tr>
+<td>Qdrant user scoping</td>
+<td><code>src/zetherion_ai/memory/qdrant.py</code></td>
+<td>Scope by <code>tenant_id</code></td>
+</tr>
+<tr>
+<td>Skill registration</td>
+<td><code>src/zetherion_ai/skills/registry.py</code></td>
+<td>Register all new skills</td>
+</tr>
+<tr>
+<td>Personal understanding (Phase 9)</td>
+<td><code>src/zetherion_ai/personal/</code></td>
+<td>Pattern for entity extraction in B3/B4</td>
+</tr>
+<tr>
+<td>Pydantic settings</td>
+<td><code>src/zetherion_ai/config.py</code></td>
+<td>New config fields</td>
+</tr>
+<tr>
+<td>TestServer pattern</td>
+<td><code>tests/integration/test_skills_http.py</code></td>
+<td>API integration tests</td>
+</tr>
+<tr>
+<td>Docker multi-stage</td>
+<td><code>Dockerfile.skills</code></td>
+<td><code>Dockerfile.api</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="implementation-order">Implementation Order<a class="headerlink" href="#implementation-order" title="Permanent link">&para;</a></h2>
+<p>Recommended sequence (workstreams can partially overlap):</p>
+<ol>
+<li><strong>A1</strong> (Foundation) — Must come first, establishes tenant infrastructure</li>
+<li><strong>B1</strong> (Provisioning skill) — Can start as soon as A1's TenantManager exists</li>
+<li><strong>A2</strong> (Chat endpoint) — Depends on A1</li>
+<li><strong>B2</strong> (Chat skill) — Developed alongside A2</li>
+<li><strong>A3</strong> (SSE streaming) — Depends on A2</li>
+<li><strong>B3</strong> (Tenant intelligence) — Can start after B2 is working</li>
+<li><strong>B4</strong> (Client insights) — Can start after B2 is working, parallel with B3</li>
+<li><strong>A4</strong> (Cloudflare + hardening) — Final production step</li>
+<li><strong>Notification dispatch</strong> — Can be built incrementally alongside B4</li>
+</ol>
+<h2 id="verification">Verification<a class="headerlink" href="#verification" title="Permanent link">&para;</a></h2>
+<p>After each phase:
+1. <code>ruff check src/ tests/</code> passes
+2. <code>pytest tests/ -m "not integration and not discord_e2e"</code> passes
+3. In-process integration tests pass
+4. Existing Discord bot tests remain green</p>
+<p>End-to-end (after A4):
+1. All services healthy including <code>zetherion-api</code> and <code>cloudflared</code>
+2. Health check returns 200 via public URL
+3. Create tenant → get API key → create session → chat → get streaming AI response
+4. Tenant intelligence extracts entities into tenant-scoped tables
+5. Client insights surface trends to James via Discord
+6. Discord bot continues working normally</p>
+<h2 id="dependencies-to-add">Dependencies to Add<a class="headerlink" href="#dependencies-to-add" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>PyJWT</code> — Session token signing/verification</li>
+<li><code>bcrypt</code> — API key hashing</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/jimtin/zetherion-ai" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
