@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from zetherion_ai.skills.base import SkillRequest, SkillStatus
-from zetherion_ai.skills.github.client import GitHubNotFoundError
+from zetherion_ai.skills.github.client import GitHubAPIError, GitHubAuthError, GitHubNotFoundError
 from zetherion_ai.skills.github.models import (
     ActionType,
     AutonomyLevel,
@@ -18,7 +18,7 @@ from zetherion_ai.skills.github.models import (
     User,
     WorkflowRun,
 )
-from zetherion_ai.skills.github.skill import GitHubSkill
+from zetherion_ai.skills.github.skill import INTENT_HANDLERS, GitHubSkill
 
 
 @pytest.fixture
@@ -1290,3 +1290,251 @@ class TestGitHubSkillInitException:
 
             assert result is False
             assert skill.status == SkillStatus.ERROR
+
+
+class TestGitHubSkillCoverageBoost:
+    """Additional branch coverage for GitHub skill."""
+
+    @pytest.mark.asyncio
+    async def test_initialize_calls_load_autonomy_when_memory_present(self, skill):
+        mock_client = AsyncMock()
+        mock_client.verify_token.return_value = True
+        mock_client.get_authenticated_user.return_value = User(login="testuser", id=123)
+        skill._memory = object()
+        with (
+            patch("zetherion_ai.skills.github.skill.GitHubClient", return_value=mock_client),
+            patch.object(skill, "_load_autonomy_config", AsyncMock()) as mock_load,
+        ):
+            result = await skill.initialize()
+            assert result is True
+            mock_load.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_load_and_save_autonomy_config_no_memory(self, skill):
+        skill._memory = None
+        await skill._load_autonomy_config()
+        await skill._save_autonomy_config()
+
+    @pytest.mark.asyncio
+    async def test_load_and_save_autonomy_config_with_memory(self, skill):
+        skill._memory = object()
+        await skill._load_autonomy_config()
+        await skill._save_autonomy_config()
+
+    @pytest.mark.asyncio
+    async def test_check_autonomy_reuses_existing_user_bucket(self, skill):
+        skill._autonomy_config.set_level(ActionType.CLOSE_ISSUE, AutonomyLevel.ASK)
+        skill._pending_actions["user123"] = {}
+        can_proceed, pending_id = await skill._check_autonomy(
+            ActionType.CLOSE_ISSUE,
+            "user123",
+            "Close issue #1",
+            "_execute_close_issue",
+            {"issue_number": 1},
+        )
+        assert can_proceed is False
+        assert pending_id is not None
+        assert len(skill._pending_actions["user123"]) == 1
+
+    def test_cancel_action_missing_user_returns_false(self, skill):
+        assert skill.cancel_action("missing-user", str(uuid4())) is False
+
+    @pytest.mark.asyncio
+    async def test_handle_missing_implementation_branch(self, skill, mock_client):
+        skill._client = mock_client
+        skill._status = SkillStatus.READY
+        with patch.dict(INTENT_HANDLERS, {"_fake_intent": "_missing_handler"}, clear=False):
+            response = await skill.handle(SkillRequest(intent="_fake_intent", user_id="user123"))
+        assert response.success is False
+        assert "Handler not implemented" in response.error
+
+    @pytest.mark.asyncio
+    async def test_handle_exception_mappings(self, skill, mock_client):
+        skill._client = mock_client
+        skill._status = SkillStatus.READY
+
+        with patch.object(skill, "handle_list_issues", AsyncMock(side_effect=GitHubAuthError("x"))):
+            response = await skill.handle(SkillRequest(intent="list_issues", user_id="user123"))
+            assert response.success is False
+            assert "authentication failed" in response.error.lower()
+
+        with patch.object(
+            skill, "handle_list_issues", AsyncMock(side_effect=GitHubAPIError("boom"))
+        ):
+            response = await skill.handle(SkillRequest(intent="list_issues", user_id="user123"))
+            assert response.success is False
+            assert "GitHub API error" in response.error
+
+        with patch.object(
+            skill, "handle_list_issues", AsyncMock(side_effect=ValueError("bad input"))
+        ):
+            response = await skill.handle(SkillRequest(intent="list_issues", user_id="user123"))
+            assert response.success is False
+            assert "bad input" in response.error
+
+    @pytest.mark.asyncio
+    async def test_missing_client_or_required_fields_paths(self, skill, mock_client):
+        skill._status = SkillStatus.READY
+
+        skill._client = None
+        response = await skill.handle(SkillRequest(intent="list_issues", user_id="user123"))
+        assert response.success is False
+        assert "not initialized" in response.error.lower()
+
+        response = await skill.handle(SkillRequest(intent="get_issue", user_id="user123"))
+        assert response.success is False
+        assert "not initialized" in response.error.lower()
+
+        response = await skill.handle(SkillRequest(intent="create_issue", user_id="user123"))
+        assert response.success is False
+        assert "not initialized" in response.error.lower()
+
+        response = await skill.handle(SkillRequest(intent="add_label", user_id="user123"))
+        assert response.success is False
+        assert "not initialized" in response.error.lower()
+
+        response = await skill.handle(SkillRequest(intent="add_comment", user_id="user123"))
+        assert response.success is False
+        assert "not initialized" in response.error.lower()
+
+        response = await skill.handle(SkillRequest(intent="list_prs", user_id="user123"))
+        assert response.success is False
+        assert "not initialized" in response.error.lower()
+
+        response = await skill.handle(SkillRequest(intent="merge_pr", user_id="user123"))
+        assert response.success is False
+        assert "not initialized" in response.error.lower()
+
+        skill._client = mock_client
+
+        response = await skill.handle(
+            SkillRequest(
+                intent="get_issue", user_id="user123", context={"repository": "owner/repo"}
+            )
+        )
+        assert response.success is False
+        assert "Issue number required" in response.error
+
+        response = await skill.handle(
+            SkillRequest(
+                intent="create_issue", user_id="user123", context={"repository": "owner/repo"}
+            )
+        )
+        assert response.success is False
+        assert "Issue title required" in response.error
+
+        response = await skill.handle(
+            SkillRequest(
+                intent="add_label", user_id="user123", context={"repository": "owner/repo"}
+            )
+        )
+        assert response.success is False
+        assert "Issue number required" in response.error
+
+        response = await skill.handle(
+            SkillRequest(
+                intent="add_label",
+                user_id="user123",
+                context={"repository": "owner/repo", "issue_number": 1},
+            )
+        )
+        assert response.success is False
+        assert "Labels required" in response.error
+
+        response = await skill.handle(
+            SkillRequest(
+                intent="add_comment", user_id="user123", context={"repository": "owner/repo"}
+            )
+        )
+        assert response.success is False
+        assert "Issue/PR number required" in response.error
+
+        response = await skill.handle(
+            SkillRequest(
+                intent="add_comment",
+                user_id="user123",
+                context={"repository": "owner/repo", "issue_number": 1},
+            )
+        )
+        assert response.success is False
+        assert "Comment body required" in response.error
+
+        response = await skill.handle(
+            SkillRequest(intent="merge_pr", user_id="user123", context={"repository": "owner/repo"})
+        )
+        assert response.success is False
+        assert "PR number required" in response.error
+
+    @pytest.mark.asyncio
+    async def test_execute_helpers_no_client(self, skill):
+        from uuid import uuid4
+
+        skill._client = None
+        request_id = uuid4()
+        update_resp = await skill._execute_update_issue(
+            request_id=request_id,
+            owner="owner",
+            repo="repo",
+            issue_number=1,
+            context={},
+        )
+        close_resp = await skill._execute_close_issue(
+            request_id=request_id,
+            owner="owner",
+            repo="repo",
+            issue_number=1,
+        )
+        reopen_resp = await skill._execute_reopen_issue(
+            request_id=request_id,
+            owner="owner",
+            repo="repo",
+            issue_number=1,
+        )
+        create_resp = await skill._execute_create_issue(
+            request_id=request_id,
+            owner="owner",
+            repo="repo",
+            title="t",
+        )
+        assert update_resp.success is False
+        assert close_resp.success is False
+        assert reopen_resp.success is False
+        assert create_resp.success is False
+
+    @pytest.mark.asyncio
+    async def test_close_issue_confirmation_branch(self, skill, mock_client):
+        skill._client = mock_client
+        skill._status = SkillStatus.READY
+        skill._autonomy_config.set_level(ActionType.CLOSE_ISSUE, AutonomyLevel.ASK)
+        response = await skill.handle(
+            SkillRequest(
+                intent="close_issue",
+                user_id="user123",
+                context={"repository": "owner/repo", "issue_number": 42},
+            )
+        )
+        assert response.success is True
+        assert response.data.get("requires_confirmation") is True
+
+    @pytest.mark.asyncio
+    async def test_handle_merge_pr_autonomous_executes(self, skill, mock_client):
+        skill._client = mock_client
+        skill._status = SkillStatus.READY
+        skill._autonomy_config.set_level(ActionType.MERGE_PR, AutonomyLevel.AUTONOMOUS)
+        mock_client.merge_pull_request.return_value = {"message": "ok", "merged": True}
+
+        response = await skill.handle(
+            SkillRequest(
+                intent="merge_pr",
+                user_id="user123",
+                context={"repository": "owner/repo", "pr_number": 9, "merge_method": "squash"},
+            )
+        )
+        assert response.success is True
+        assert "Merged PR #9" in response.message
+
+    @pytest.mark.asyncio
+    async def test_cleanup_when_client_missing_is_noop(self, skill):
+        skill._client = None
+        await skill.cleanup()
+        assert skill._client is None

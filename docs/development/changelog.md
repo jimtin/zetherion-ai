@@ -5,6 +5,10 @@ All notable changes to Zetherion AI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+> Note: percentage/count metrics in historical phase sections are snapshots from
+> the date of that phase. Current policy is enforced by test configuration:
+> overall coverage must remain `>=90%`.
+
 ---
 
 ## [Unreleased]
@@ -146,7 +150,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Test suite**: Expanded to **3,000+ tests** (93%+ coverage) across **89 test files** covering **91 source files**
+- **Test suite**: Expanded to **3,000+ tests** (historical snapshot at the time:
+  93%+ coverage across 89 test files and 91 source files)
 - **Docker services**: Expanded to **6 services** (bot, skills, qdrant, postgres, ollama, ollama-router)
 - **Ollama models**: Updated from Qwen to Meta Llama (llama3.2:3b for router, llama3.1:8b for generation)
 - **Default cloud models**: claude-sonnet-4-5-20250929, gpt-5.2, gemini-2.5-flash
@@ -240,7 +245,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Windows deployment scripts (PowerShell)
 - MkDocs documentation site with wiki sync
 
-### Phase 5: Skills and Routing (Coverage: 87.58% -> 93%+)
+### Phase 5: Skills and Routing (Historical snapshot: 87.58% -> 93%+)
 
 - Complete InferenceBroker with multi-provider routing
 - Encryption layer with AES-256-GCM
@@ -272,14 +277,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PostgreSQL-backed personal model (4 data models)
 - Communication style dimensions, contact graphs, policy system
 
-### Current Test Statistics
+### Historical Test Statistics (Snapshot)
 
 | Category | Count | Status |
 |----------|-------|--------|
-| **Test Files** | 89 | All passing |
-| **Source Files** | 91 | Covered |
+| **Test Files** | 89 (snapshot) | All passing |
+| **Source Files** | 91 (snapshot) | Covered |
 | **Total Tests** | 3,000+ | All passing |
-| **Overall Coverage** | 93%+ | Target exceeded |
+| **Overall Coverage** | 93%+ (snapshot) | Target exceeded at that time |
 
 ### Docker Services
 

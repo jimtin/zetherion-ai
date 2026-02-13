@@ -39,3 +39,37 @@ async def timed_operation(
         result["elapsed_ms"] = round((time.perf_counter() - start) * 1000, 2)
         if log:
             log.info(name, duration_ms=result["elapsed_ms"], **extra)
+
+
+def split_text_chunks(content: str, max_length: int) -> list[str]:
+    """Split text into chunks that are each <= ``max_length``.
+
+    Prefers splitting at newline boundaries, but hard-splits long lines when
+    needed so every chunk always respects Discord's message length limit.
+    """
+    if max_length <= 0:
+        raise ValueError("max_length must be > 0")
+
+    if len(content) <= max_length:
+        return [content] if content else []
+
+    chunks: list[str] = []
+    remaining = content
+
+    while remaining:
+        if len(remaining) <= max_length:
+            chunks.append(remaining)
+            break
+
+        split_at = remaining.rfind("\n", 0, max_length + 1)
+        if split_at > 0:
+            chunk = remaining[:split_at]
+            if chunk:
+                chunks.append(chunk)
+            remaining = remaining[split_at + 1 :]
+            continue
+
+        chunks.append(remaining[:max_length])
+        remaining = remaining[max_length:]
+
+    return [chunk for chunk in chunks if chunk]

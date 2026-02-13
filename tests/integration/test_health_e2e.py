@@ -296,6 +296,7 @@ async def test_health_report_intent(
 
 @pytest.mark.asyncio
 @pytest.mark.integration
+@pytest.mark.optional_e2e
 async def test_health_snapshots_in_postgres(
     async_client: httpx.AsyncClient,
     api_secret: str | None,

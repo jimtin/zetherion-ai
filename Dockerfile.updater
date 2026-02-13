@@ -8,17 +8,14 @@
 
 FROM docker:27-cli
 
-# Install git, python3, and curl for health checks
+# Install git, python3, curl, and Docker Compose v2 plugin
 # hadolint ignore=DL3018
 RUN apk add --no-cache \
     git \
     python3 \
     py3-pip \
-    curl
-
-# Install Docker Compose v2 plugin
-COPY --from=docker/compose:2.32.4 /usr/local/bin/docker-compose \
-     /usr/local/lib/docker/cli-plugins/docker-compose
+    curl \
+    docker-cli-compose
 
 WORKDIR /app
 

@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
-from zetherion_ai.config import Settings
+from zetherion_ai.config import Settings, get_dynamic
 
 
 def _make_settings(**overrides) -> Settings:
@@ -149,3 +149,37 @@ class TestEncryptionStrict:
         """Test that encryption_strict can be set to True."""
         settings = _make_settings(encryption_strict=True)
         assert settings.encryption_strict is True
+
+
+class TestDynamicSettingsFallback:
+    """Tests for get_dynamic() DB -> env -> default cascade."""
+
+    def test_get_dynamic_prefers_db_override(self):
+        mgr = type("Mgr", (), {"get": lambda self, ns, key: 0.9})()
+        fake_settings = type("SettingsObj", (), {"security_block_threshold": 0.6})()
+
+        with patch("zetherion_ai.config._settings_manager", mgr):
+            with patch("zetherion_ai.config.get_settings", return_value=fake_settings):
+                value = get_dynamic("security", "block_threshold", 0.5)
+
+        assert value == 0.9
+
+    def test_get_dynamic_uses_namespaced_env_fallback(self):
+        mgr = type("Mgr", (), {"get": lambda self, ns, key: None})()
+        fake_settings = type("SettingsObj", (), {"security_block_threshold": 0.7})()
+
+        with patch("zetherion_ai.config._settings_manager", mgr):
+            with patch("zetherion_ai.config.get_settings", return_value=fake_settings):
+                value = get_dynamic("security", "block_threshold", 0.5)
+
+        assert value == 0.7
+
+    def test_get_dynamic_uses_key_env_fallback(self):
+        mgr = type("Mgr", (), {"get": lambda self, ns, key: None})()
+        fake_settings = type("SettingsObj", (), {"api_port": 9000})()
+
+        with patch("zetherion_ai.config._settings_manager", mgr):
+            with patch("zetherion_ai.config.get_settings", return_value=fake_settings):
+                value = get_dynamic("api", "port", 8443)
+
+        assert value == 9000

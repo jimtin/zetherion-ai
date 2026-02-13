@@ -137,13 +137,25 @@ class TestSettingsManagerSet:
         await mgr.set("tuning", "params", payload, changed_by=1, data_type="json")
 
         # The first execute call is the UPSERT; args are
-        # (sql, namespace, key, str_value, data_type, description).
+        # (sql, namespace, key, str_value, data_type, description, updated_by).
         upsert_call = conn.execute.call_args_list[0]
         str_value = upsert_call.args[3]
         assert str_value == json.dumps(payload)
 
         # The cache should hold the deserialised object (via _coerce_value)
         assert mgr._cache[("tuning", "params")] == payload
+
+    @pytest.mark.asyncio
+    async def test_set_writes_updated_by_column(self):
+        """set() propagates changed_by into settings.updated_by on UPSERT."""
+        pool, conn = _make_mock_pool()
+        mgr = SettingsManager()
+        mgr._pool = pool
+
+        await mgr.set("models", "default_provider", "openai", changed_by=42)
+
+        upsert_call = conn.execute.call_args_list[0]
+        assert upsert_call.args[6] == 42
 
     @pytest.mark.asyncio
     async def test_set_reraises_on_db_error(self):

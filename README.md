@@ -1,7 +1,7 @@
 # Zetherion AI
 
 [![CI Pipeline](https://github.com/jimtin/zetherion-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/jimtin/zetherion-ai/actions/workflows/ci.yml)
-[![Test Coverage](https://img.shields.io/badge/coverage-93%25+-brightgreen)](https://github.com/jimtin/zetherion-ai/actions)
+[![Test Coverage Gate](https://img.shields.io/badge/coverage-%3E%3D90%25-brightgreen)](https://github.com/jimtin/zetherion-ai/actions)
 [![Tests](https://img.shields.io/badge/tests-3000+-blue)](https://github.com/jimtin/zetherion-ai/actions)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -18,7 +18,7 @@ You choose how inference runs. The system supports local models via Ollama for o
 
 Zetherion doesn't just respond when asked. An observation pipeline passively extracts facts and preferences from your conversations without explicit commands. A heartbeat scheduler proactively surfaces task reminders, email digests, and calendar alerts on its own. A progressive trust system gradually earns autonomy over actions like drafting and sending email replies, expanding what it does automatically as you approve its judgement over time.
 
-Every piece of memory is encrypted with AES-256-GCM before it touches a database. Everything runs on your own infrastructure. Six Docker services, zero cloud dependencies for your personal data, and 3,000+ tests across 89 test files ensuring it all works reliably.
+Every piece of memory is encrypted with AES-256-GCM before it touches a database. Everything runs on your own infrastructure. Six Docker services, zero cloud dependencies for your personal data, and 3,000+ tests with an enforced `>=90%` coverage gate ensuring it all works reliably.
 
 ---
 
@@ -38,7 +38,7 @@ Every piece of memory is encrypted with AES-256-GCM before it touches a database
 | **Skills Framework** | Extensible architecture for tasks, calendar, email, GitHub, profiles, and custom integrations |
 | **Cost Tracking** | Per-request cost logging across all providers with configurable budget alerts |
 | **Security-First Design** | Distroless containers, prompt injection defense, rate limiting, and no-new-privileges enforcement |
-| **3,000+ Tests** | 93%+ code coverage across 89 test files and 91 source modules -- tested in CI on every commit |
+| **3,000+ Tests** | Coverage gate enforced at `>=90%` -- tested in CI on every commit |
 
 ---
 
@@ -197,7 +197,7 @@ The only hard requirement beyond Docker is a Discord bot token (as the first inp
 
 ## Contributing
 
-Contributions are welcome. The codebase maintains 93%+ coverage across 89 test files, so the bar for new contributions is straightforward -- write tests, pass CI, and follow the existing patterns. See the [development guide](docs/development/setup.md) for environment setup and testing instructions.
+Contributions are welcome. The codebase enforces a `>=90%` coverage gate, so the bar for new contributions is straightforward -- write tests, pass CI, and follow the existing patterns. See the [development guide](docs/development/setup.md) for environment setup and testing instructions.
 
 If you have ideas for new input interfaces, skills, LLM provider integrations, or security improvements, open an issue to discuss before submitting a PR.
 

@@ -9,7 +9,6 @@ import discord
 import pytest
 
 from zetherion_ai.discord.bot import ZetherionAIBot
-from zetherion_ai.discord.security import ThreatAction, ThreatVerdict
 from zetherion_ai.memory.qdrant import QdrantMemory
 
 
@@ -68,7 +67,7 @@ def inline_message() -> MagicMock:
 
 
 class TestDiscordBotCriticalPaths:
-    """Tests for queue fallback, security pipeline, DM delivery, and shutdown."""
+    """Tests for queue fallback, prompt-injection block, and shutdown."""
 
     @pytest.mark.asyncio
     async def test_on_message_routes_to_queue_when_running(
@@ -82,11 +81,37 @@ class TestDiscordBotCriticalPaths:
         with (
             patch.object(bot, "_enqueue_message", new=AsyncMock()) as mock_enqueue,
             patch.object(bot._rate_limiter, "check", return_value=(True, None)),
-            patch.object(bot, "_is_security_blocked", new=AsyncMock(return_value=False)),
+            patch(
+                "zetherion_ai.discord.bot.detect_prompt_injection",
+                return_value=False,
+            ),
         ):
             await bot.on_message(queue_message)
 
         mock_enqueue.assert_awaited_once_with(queue_message, "hello from dm", False)
+
+    @pytest.mark.asyncio
+    async def test_on_message_blocks_prompt_injection(
+        self,
+        bot_with_queue: tuple[ZetherionAIBot, AsyncMock],
+        queue_message: MagicMock,
+    ) -> None:
+        bot, _ = bot_with_queue
+        bot._agent = AsyncMock()
+
+        with (
+            patch.object(bot, "_enqueue_message", new=AsyncMock()) as mock_enqueue,
+            patch.object(bot._rate_limiter, "check", return_value=(True, None)),
+            patch(
+                "zetherion_ai.discord.bot.detect_prompt_injection",
+                return_value=True,
+            ),
+        ):
+            await bot.on_message(queue_message)
+
+        mock_enqueue.assert_not_called()
+        queue_message.reply.assert_awaited_once()
+        assert "unusual patterns" in queue_message.reply.call_args[0][0]
 
     @pytest.mark.asyncio
     async def test_enqueue_message_failure_falls_back_inline(
@@ -118,104 +143,21 @@ class TestDiscordBotCriticalPaths:
         assert "issue processing your message" in inline_message.reply.call_args[0][0].lower()
 
     @pytest.mark.asyncio
-    async def test_is_security_blocked_returns_true_for_block_verdict(
-        self,
-        bot_with_queue: tuple[ZetherionAIBot, AsyncMock],
-    ) -> None:
-        bot, _ = bot_with_queue
-        pipeline = AsyncMock()
-        pipeline.analyze = AsyncMock(
-            return_value=ThreatVerdict(action=ThreatAction.BLOCK, score=0.95)
-        )
-        bot._security_pipeline = pipeline
+    async def test_send_long_message_splits_chunks(self) -> None:
+        bot = ZetherionAIBot(memory=AsyncMock(spec=QdrantMemory))
+        channel = AsyncMock()
 
-        blocked = await bot._is_security_blocked(content="test", user_id=1, channel_id=2)
-        assert blocked is True
+        content = "line1\nline2\nline3\nline4"
+        await bot._send_long_message(channel, content, max_length=7)
+
+        assert channel.send.await_count >= 2
 
     @pytest.mark.asyncio
-    async def test_is_security_blocked_allows_flag_verdict(
-        self,
-        bot_with_queue: tuple[ZetherionAIBot, AsyncMock],
-    ) -> None:
-        bot, _ = bot_with_queue
-        pipeline = AsyncMock()
-        pipeline.analyze = AsyncMock(
-            return_value=ThreatVerdict(action=ThreatAction.FLAG, score=0.70)
-        )
-        bot._security_pipeline = pipeline
-
-        blocked = await bot._is_security_blocked(content="test", user_id=1, channel_id=2)
-        assert blocked is False
-
-    @pytest.mark.asyncio
-    async def test_is_security_blocked_falls_back_on_pipeline_error(
-        self,
-        bot_with_queue: tuple[ZetherionAIBot, AsyncMock],
-    ) -> None:
-        bot, _ = bot_with_queue
-        pipeline = AsyncMock()
-        pipeline.analyze = AsyncMock(side_effect=RuntimeError("security timeout"))
-        bot._security_pipeline = pipeline
-
-        with patch(
-            "zetherion_ai.discord.bot.detect_prompt_injection",
-            return_value=True,
-        ) as mock_detect:
-            blocked = await bot._is_security_blocked(content="test", user_id=1, channel_id=2)
-
-        assert blocked is True
-        mock_detect.assert_called_once_with("test")
-
-    @pytest.mark.asyncio
-    async def test_send_dm_invalid_user_id_returns_false(
-        self,
-        bot_with_queue: tuple[ZetherionAIBot, AsyncMock],
-    ) -> None:
-        bot, _ = bot_with_queue
-        assert await bot.send_dm("not-a-number", "hello") is False
-
-    @pytest.mark.asyncio
-    async def test_send_dm_user_not_found_returns_false(
-        self,
-        bot_with_queue: tuple[ZetherionAIBot, AsyncMock],
-    ) -> None:
-        bot, _ = bot_with_queue
-        bot.get_user = MagicMock(return_value=None)
-        bot.fetch_user = AsyncMock(return_value=None)
-        assert await bot.send_dm("123", "hello") is False
-
-    @pytest.mark.asyncio
-    async def test_send_dm_success_uses_send_long_message(
-        self,
-        bot_with_queue: tuple[ZetherionAIBot, AsyncMock],
-    ) -> None:
-        bot, _ = bot_with_queue
-        user = AsyncMock()
-        bot.get_user = MagicMock(return_value=user)
-
-        with patch.object(bot, "_send_long_message", new=AsyncMock()) as mock_send:
-            ok = await bot.send_dm("123", "hello from bot")
-
-        assert ok is True
-        mock_send.assert_awaited_once_with(user, "hello from bot")
-
-    @pytest.mark.asyncio
-    async def test_send_dm_handles_exception_and_returns_false(
-        self,
-        bot_with_queue: tuple[ZetherionAIBot, AsyncMock],
-    ) -> None:
-        bot, _ = bot_with_queue
-        bot.get_user = MagicMock(side_effect=RuntimeError("lookup failed"))
-        assert await bot.send_dm("123", "hello") is False
-
-    @pytest.mark.asyncio
-    async def test_close_cleans_all_background_resources(
+    async def test_close_cleans_background_resources(
         self,
         bot_with_queue: tuple[ZetherionAIBot, AsyncMock],
     ) -> None:
         bot, queue_manager = bot_with_queue
-        scheduler = AsyncMock()
-        bot._heartbeat_scheduler = scheduler
         queue_manager.stop = AsyncMock()
 
         blocker = asyncio.Event()
@@ -226,15 +168,10 @@ class TestDiscordBotCriticalPaths:
         bot._keep_warm_task = asyncio.create_task(_pending())
         bot._agent = MagicMock()
         bot._agent._inference_broker = AsyncMock()
-        analyzer = AsyncMock()
-        bot._security_ai_analyzer = analyzer
 
         with patch.object(discord.Client, "close", new=AsyncMock()) as mock_super_close:
             await bot.close()
 
-        scheduler.stop.assert_awaited_once()
         queue_manager.stop.assert_awaited_once()
         bot._agent._inference_broker.close.assert_awaited_once()
-        analyzer.close.assert_awaited_once()
-        assert bot._security_ai_analyzer is None
         mock_super_close.assert_awaited_once()

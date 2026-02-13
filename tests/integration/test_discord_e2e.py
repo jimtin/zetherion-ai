@@ -492,6 +492,7 @@ async def test_bot_handles_mention(discord_test_client: DiscordTestClient) -> No
 
 
 @pytest.mark.discord_e2e
+@pytest.mark.optional_e2e
 @pytest.mark.skipif(SKIP_DISCORD_E2E, reason=SKIP_REASON)
 @pytest.mark.asyncio
 async def test_bot_slash_commands_available(discord_test_client: DiscordTestClient) -> None:

@@ -111,7 +111,7 @@ Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
 ## Project Structure
 
 ```
-src/zetherion_ai/                   # 91 source files
+src/zetherion_ai/                   # Core source tree
     agent/                          # Agent core, routing, inference
         core.py                     # Message handling, retry logic, dual generators
         router.py                   # Gemini router backend
@@ -171,7 +171,7 @@ src/zetherion_ai/                   # 91 source files
     constants.py                    # Project-wide constants
     utils.py                        # Shared utilities
     settings_manager.py             # Runtime settings CRUD
-tests/                              # 89 test files, 3,000+ tests, 93%+ coverage
+tests/                              # 3,000+ tests, >=90% coverage gate
     unit/                           # Fast, isolated tests (~24s)
     integration/                    # Full-stack tests (~2 min)
     conftest.py                     # Shared fixtures
@@ -333,7 +333,7 @@ ruff format .
 
 ## Testing
 
-Zetherion AI has 89 test files containing 3,000+ tests with 93%+ code coverage across 91 source files.
+Zetherion AI maintains 3,000+ tests with an enforced overall coverage gate of `>=90%`.
 
 For the full testing guide, patterns, fixtures, and mocking strategies, see [Testing](testing.md).
 
@@ -342,6 +342,9 @@ For the full testing guide, patterns, fixtures, and mocking strategies, see [Tes
 ```bash
 # Unit tests only (fast, ~24s)
 pytest tests/ -m "not integration and not discord_e2e"
+
+# Production-parity validation (recommended before merge)
+bash scripts/pre-push-tests.sh
 
 # All tests except Discord E2E (includes integration)
 pytest tests/ -m "not discord_e2e"
@@ -367,7 +370,7 @@ pytest tests/ -s -l
 
 - New features must include tests
 - Aim for 85%+ coverage on new modules
-- Maintain overall 93%+ coverage across the project
+- Maintain overall >=90% coverage across the project
 - Focus coverage on critical paths: security, routing, core agent logic
 - Avoid over-testing trivial code (simple getters, dataclass properties)
 
@@ -510,7 +513,7 @@ BREAKING CHANGE: RouterBackend.classify() is now async.
 Migration: add 'await' to all classify() calls."
 
 # Multi-line with body
-git commit -m "test: improve Discord bot coverage to 93%
+git commit -m "test: improve Discord bot coverage while keeping gate >=90%
 
 - Add /channels command tests (6 tests)
 - Add message splitting edge cases (4 tests)
@@ -538,7 +541,7 @@ Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
 Run through this checklist:
 
 - [ ] All tests pass: `pytest tests/ -m "not discord_e2e"`
-- [ ] Coverage maintained at 93%+ (or improved)
+- [ ] Coverage maintained at >=90% (or improved)
 - [ ] Pre-commit hooks pass: `pre-commit run --all-files`
 - [ ] Type checking passes: `mypy src/zetherion_ai`
 - [ ] Code formatted: `ruff check --fix . && ruff format .`

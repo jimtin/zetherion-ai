@@ -132,12 +132,20 @@ class SettingsManager:
             async with self._pool.acquire() as conn, conn.transaction():  # type: ignore[union-attr]
                 await conn.execute(
                     """
-                        INSERT INTO settings (namespace, key, value, data_type, description)
-                        VALUES ($1, $2, $3, $4, $5)
+                        INSERT INTO settings (
+                            namespace,
+                            key,
+                            value,
+                            data_type,
+                            description,
+                            updated_by
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6)
                         ON CONFLICT (namespace, key) DO UPDATE
                             SET value       = EXCLUDED.value,
                                 data_type   = EXCLUDED.data_type,
                                 description = COALESCE(EXCLUDED.description, settings.description),
+                                updated_by  = EXCLUDED.updated_by,
                                 updated_at  = NOW()
                         """,
                     namespace,
@@ -145,6 +153,7 @@ class SettingsManager:
                     str_value,
                     data_type,
                     description,
+                    changed_by,
                 )
 
                 await conn.execute(
