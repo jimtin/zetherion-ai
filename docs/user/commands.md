@@ -12,6 +12,15 @@ Complete reference for all Zetherion AI commands. Discord is the first supported
 | `/remember` | Slash Command | Store a memory | `/remember I prefer dark mode` |
 | `/search` | Slash Command | Search memories | `/search preferences` |
 | `/ping` | Slash Command | Check bot status and latency | `/ping` |
+| `/channels` | Slash Command | List visible text channels | `/channels` |
+| `/allow` | Admin Slash Command | Add user to allowlist with role | `/allow @user user` |
+| `/deny` | Admin Slash Command | Remove user from allowlist | `/deny @user` |
+| `/role` | Admin Slash Command | Change a user's RBAC role | `/role @user admin` |
+| `/allowlist` | Admin Slash Command | List allowed users (optional role filter) | `/allowlist admin` |
+| `/audit` | Admin Slash Command | Show recent audit entries | `/audit 20` |
+| `/config_list` | Admin Slash Command | Show runtime settings (optional namespace) | `/config_list security` |
+| `/config_set` | Admin Slash Command | Set runtime setting with type inference | `/config_set security block_threshold 0.7` |
+| `/config_reset` | Admin Slash Command | Remove DB override and use default/env | `/config_reset security block_threshold` |
 | DM | Direct Message | Talk naturally, no prefix needed | Just send a message |
 | @mention | Server Message | Ask in a server channel | `@Zetherion AI help me` |
 | "Check my email" | Natural Language | Check email inbox summary | `@Zetherion AI check my email` |
@@ -128,6 +137,66 @@ Pong! Latency: 45ms
 ```
 
 **Response time:** Under 500ms. The response is ephemeral (only visible to you).
+
+---
+
+### Administrative Slash Commands
+
+These commands require `admin` or `owner` RBAC role.
+
+#### `/channels`
+
+Lists channels the bot can currently access in the guild.
+
+#### `/allow <user> [role]`
+
+Adds a user to the allowlist and assigns a role (`user`, `admin`, `owner`, `restricted`).
+
+#### `/deny <user>`
+
+Removes a user from the allowlist.
+
+#### `/role <user> <role>`
+
+Changes an existing user's role.
+
+#### `/allowlist [role]`
+
+Shows allowed users, optionally filtered by role.
+
+#### `/audit [limit]`
+
+Shows recent RBAC and settings audit entries.
+
+#### `/config_list [namespace]`
+
+Displays runtime settings currently overridden in PostgreSQL.
+
+#### `/config_set <namespace> <key> <value>`
+
+Creates or updates a runtime setting override.
+
+`value` type is inferred automatically:
+
+- `true|false|yes|no` -> boolean
+- integer literals -> integer
+- float/scientific literals -> float
+- JSON object/array text -> json
+- anything else -> string
+
+Examples:
+
+```text
+/config_set security block_threshold 0.7
+/config_set security tier2_enabled true
+/config_set notifications daily_summary_hour 8
+/config_set github default_repo my-org/my-repo
+/config_set profile defaults {"formality":0.7,"verbosity":0.4}
+```
+
+#### `/config_reset <namespace> <key>`
+
+Deletes the runtime override so resolution falls back to env/default values.
 
 ---
 

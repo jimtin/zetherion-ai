@@ -138,6 +138,7 @@ async def run_server(
     jwt_secret: str,
     host: str = "0.0.0.0",  # nosec B104 - Intentional for Docker container
     port: int = 8443,
+    inference_broker: Any = None,
     youtube_storage: Any = None,
     youtube_skills: dict[str, Any] | None = None,
 ) -> None:
@@ -147,6 +148,7 @@ async def run_server(
         jwt_secret=jwt_secret,
         host=host,
         port=port,
+        inference_broker=inference_broker,
         youtube_storage=youtube_storage,
         youtube_skills=youtube_skills,
     )
@@ -182,12 +184,19 @@ def main() -> None:
     async def init_and_run() -> None:
         await tenant_manager.initialize()
 
+        api_broker: Any = None
+        try:
+            from zetherion_ai.agent.inference import InferenceBroker
+
+            api_broker = InferenceBroker()
+        except Exception as e:
+            log.warning("api_inference_broker_init_failed", error=str(e))
+
         # Initialize YouTube storage and skills if Postgres is available
         yt_storage = None
         yt_skills: dict[str, Any] = {}
         if settings.postgres_dsn:
             try:
-                from zetherion_ai.agent.inference import InferenceBroker
                 from zetherion_ai.skills.youtube.intelligence import YouTubeIntelligenceSkill
                 from zetherion_ai.skills.youtube.management import YouTubeManagementSkill
                 from zetherion_ai.skills.youtube.storage import YouTubeStorage
@@ -196,10 +205,9 @@ def main() -> None:
                 yt_storage = YouTubeStorage(dsn=settings.postgres_dsn)
                 await yt_storage.initialize()
 
-                yt_broker = InferenceBroker()
-                intel_skill = YouTubeIntelligenceSkill(storage=yt_storage, broker=yt_broker)
-                mgmt_skill = YouTubeManagementSkill(storage=yt_storage, broker=yt_broker)
-                strat_skill = YouTubeStrategySkill(storage=yt_storage, broker=yt_broker)
+                intel_skill = YouTubeIntelligenceSkill(storage=yt_storage, broker=api_broker)
+                mgmt_skill = YouTubeManagementSkill(storage=yt_storage, broker=api_broker)
+                strat_skill = YouTubeStrategySkill(storage=yt_storage, broker=api_broker)
 
                 await intel_skill.safe_initialize()
                 await mgmt_skill.safe_initialize()
@@ -214,14 +222,19 @@ def main() -> None:
             except Exception as e:
                 log.warning("youtube_api_init_failed", error=str(e))
 
-        await run_server(
-            tenant_manager,
-            jwt_secret,
-            host,
-            port,
-            youtube_storage=yt_storage,
-            youtube_skills=yt_skills,
-        )
+        try:
+            await run_server(
+                tenant_manager,
+                jwt_secret,
+                host,
+                port,
+                inference_broker=api_broker,
+                youtube_storage=yt_storage,
+                youtube_skills=yt_skills,
+            )
+        finally:
+            if api_broker is not None:
+                await api_broker.close()
 
     try:
         asyncio.run(init_and_run())

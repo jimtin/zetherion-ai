@@ -310,3 +310,102 @@ class TestUnknownIntent:
         resp = await skill.safe_handle(req)
         assert resp.success is False
         assert "Unknown" in resp.error
+
+
+class TestAdditionalCoverage:
+    @pytest.mark.asyncio
+    async def test_initialize_without_broker_logs_warning(self) -> None:
+        skill = ClientInsightsSkill(inference_broker=None, tenant_manager=_make_tenant_manager())
+        # Keep this explicit call to hit init warning paths.
+        assert await skill.initialize() is True
+
+    @pytest.mark.asyncio
+    async def test_cross_tenant_requires_broker(self) -> None:
+        skill = ClientInsightsSkill(inference_broker=None, tenant_manager=_make_tenant_manager())
+        await skill.safe_initialize()
+        resp = await skill.safe_handle(SkillRequest(intent="cross_tenant_analysis"))
+        assert resp.success is False
+        assert "No LLM configured" in (resp.error or "")
+
+    @pytest.mark.asyncio
+    async def test_cross_tenant_broker_failure_returns_empty_analysis(self) -> None:
+        broker = MagicMock()
+        broker.infer = AsyncMock(side_effect=RuntimeError("boom"))
+        skill = ClientInsightsSkill(inference_broker=broker, tenant_manager=_make_tenant_manager())
+        await skill.safe_initialize()
+        resp = await skill.safe_handle(SkillRequest(intent="cross_tenant_analysis"))
+        assert resp.success is True
+        assert resp.data["analysis"] == {
+            "patterns": [],
+            "recommendations": [],
+            "risks": [],
+            "opportunities": [],
+        }
+
+    @pytest.mark.asyncio
+    async def test_run_l3_aggregation_no_tenant_manager(self) -> None:
+        skill = ClientInsightsSkill(inference_broker=_make_broker(), tenant_manager=None)
+        actions = await skill._run_l3_aggregation(["user123"])
+        assert actions == []
+
+    @pytest.mark.asyncio
+    async def test_run_l3_aggregation_no_alerts(self) -> None:
+        tm = _make_tenant_manager()
+        tm.get_interactions = AsyncMock(
+            return_value=[
+                {"sentiment": "positive", "intent": "enquiry", "outcome": "resolved"},
+                {"sentiment": "neutral", "intent": "enquiry", "outcome": "resolved"},
+            ]
+        )
+        skill = ClientInsightsSkill(inference_broker=_make_broker(), tenant_manager=tm)
+        actions = await skill._run_l3_aggregation(["user123"])
+        assert actions == []
+
+    @pytest.mark.asyncio
+    async def test_on_heartbeat_triggers_l4_path(self, skill: ClientInsightsSkill) -> None:
+        skill._beat_count = 287
+        skill._run_l3_aggregation = AsyncMock(return_value=[])
+        skill._run_l4_analysis = AsyncMock(return_value=[])
+        actions = await skill.on_heartbeat(["user123"])
+        assert actions == []
+        skill._run_l4_analysis.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_run_l4_analysis_builds_message(self, skill: ClientInsightsSkill) -> None:
+        analysis = {
+            "patterns": ["Pattern A"],
+            "risks": ["Risk B"],
+            "opportunities": ["Opportunity C"],
+            "recommendations": ["Recommendation D"],
+        }
+        skill.handle = AsyncMock(return_value=MagicMock(success=True, data={"analysis": analysis}))
+        actions = await skill._run_l4_analysis(["user123"])
+        assert len(actions) == 1
+        message = actions[0].data["message"]
+        assert "Weekly Cross-Tenant Intelligence" in message
+        assert "Pattern A" in message
+        assert "Recommendation D" in message
+
+    @pytest.mark.asyncio
+    async def test_run_l4_analysis_no_data_returns_empty(self, skill: ClientInsightsSkill) -> None:
+        skill.handle = AsyncMock(return_value=MagicMock(success=True, data={"analysis": {}}))
+        actions = await skill._run_l4_analysis(["user123"])
+        assert actions == []
+
+    @pytest.mark.asyncio
+    async def test_run_l4_analysis_requires_user_ids(self, skill: ClientInsightsSkill) -> None:
+        skill.handle = AsyncMock(
+            return_value=MagicMock(success=True, data={"analysis": {"patterns": ["X"]}})
+        )
+        actions = await skill._run_l4_analysis([])
+        assert actions == []
+
+    def test_aggregate_tenant_ignores_none_intents(self) -> None:
+        tenant = {"tenant_id": uuid4(), "name": "NoIntent Co", "domain": "example.com"}
+        interactions = [
+            {"sentiment": "positive", "intent": None, "outcome": "resolved"},
+            {"sentiment": "neutral", "intent": "faq", "outcome": "resolved"},
+        ]
+        summary = ClientInsightsSkill._aggregate_tenant(tenant, interactions)
+        assert "faq" in summary["top_intents"]
+        assert None not in summary["top_intents"]

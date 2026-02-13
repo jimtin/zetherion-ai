@@ -60,10 +60,10 @@ Current status and future plans for Zetherion AI.
 
 | Metric | Value |
 |--------|-------|
-| Source files | 91 Python files |
-| Test files | 89 |
+| Source files | 90+ Python files |
+| Test files | 90+ |
 | Total tests | 3,000+ |
-| Coverage | 93%+ |
+| Coverage gate | >=90% |
 | Docker services | 6 |
 | Skills | 6 built-in (tasks, calendar, profile, gmail, github, personal) |
 

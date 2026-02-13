@@ -164,6 +164,7 @@ class QueueStorage:
 
     async def dequeue(
         self,
+        priority_min: int = 0,
         priority_max: int = 3,
         worker_id: str = "",
     ) -> QueueItem | None:
@@ -173,6 +174,7 @@ class QueueStorage:
         concurrently without contention.
 
         Args:
+            priority_min: Minimum priority value to consider (inclusive).
             priority_max: Maximum priority value to consider (inclusive).
             worker_id: Identifier of the claiming worker.
 
@@ -191,7 +193,8 @@ class QueueStorage:
                     SELECT id FROM message_queue
                     WHERE status = 'queued'
                       AND scheduled_for <= now()
-                      AND priority <= $2
+                      AND priority >= $2
+                      AND priority <= $3
                     ORDER BY priority ASC, scheduled_for ASC
                     LIMIT 1
                     FOR UPDATE SKIP LOCKED
@@ -199,6 +202,7 @@ class QueueStorage:
                 RETURNING *
                 """,
                 worker_id,
+                priority_min,
                 priority_max,
             )
         if row is None:
@@ -278,7 +282,7 @@ class QueueStorage:
                 )
             else:
                 # Exponential back-off: index clamped to length of delay list
-                backoff_idx = min(attempt_count, len(_RETRY_BACKOFF_SECONDS) - 1)
+                backoff_idx = min(max(attempt_count - 1, 0), len(_RETRY_BACKOFF_SECONDS) - 1)
                 delay = _RETRY_BACKOFF_SECONDS[backoff_idx]
                 next_run = datetime.now(tz=UTC) + timedelta(seconds=delay)
 

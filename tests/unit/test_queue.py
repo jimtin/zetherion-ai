@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
@@ -258,6 +258,20 @@ class TestQueueStorageDequeue:
         assert result is not None
         assert result.worker_id == "w-0"
 
+    @pytest.mark.asyncio
+    async def test_dequeue_passes_priority_range(self) -> None:
+        pool, conn = _make_pool()
+        row = _make_row(status="processing", worker_id="w-bg")
+        conn.fetchrow.return_value = row
+
+        storage = QueueStorage(pool=pool)
+        await storage.dequeue(priority_min=2, priority_max=3, worker_id="w-bg")
+
+        call_args = conn.fetchrow.call_args[0]
+        assert call_args[1] == "w-bg"
+        assert call_args[2] == 2
+        assert call_args[3] == 3
+
 
 class TestQueueStorageComplete:
     """Tests for QueueStorage.complete()."""
@@ -300,6 +314,12 @@ class TestQueueStorageFail:
 
         sql = conn.execute.call_args[0][0]
         assert "queued" in sql
+
+        # First retry should use the first backoff bucket (5 seconds).
+        next_run = conn.execute.call_args[0][3]
+        assert isinstance(next_run, datetime)
+        delta = (next_run - datetime.now(tz=UTC)).total_seconds()
+        assert 0 <= delta <= 6
 
     @pytest.mark.asyncio
     async def test_fail_not_found_does_nothing(self) -> None:
@@ -602,6 +622,38 @@ class TestQueueManagerLifecycle:
             await mgr.stop()
             assert mgr.is_running is False
             assert len(mgr._workers) == 0
+
+    @pytest.mark.asyncio
+    async def test_start_uses_distinct_priority_bands(self) -> None:
+        """Interactive and background workers should dequeue different priority ranges."""
+        storage = AsyncMock(spec=QueueStorage)
+        storage.dequeue = AsyncMock(return_value=None)
+        processors = MagicMock(spec=QueueProcessors)
+        mgr = QueueManager(storage=storage, processors=processors)
+
+        with patch("zetherion_ai.queue.manager.get_settings") as mock_settings:
+            s = MagicMock()
+            s.queue_interactive_workers = 1
+            s.queue_background_workers = 1
+            s.queue_poll_interval_ms = 10
+            s.queue_background_poll_ms = 10
+            mock_settings.return_value = s
+
+            await mgr.start()
+            await asyncio.sleep(0.03)
+            await mgr.stop()
+
+        calls = storage.dequeue.call_args_list
+        assert any(
+            c.kwargs.get("priority_min") == QueuePriority.INTERACTIVE
+            and c.kwargs.get("priority_max") == QueuePriority.NEAR_INTERACTIVE
+            for c in calls
+        )
+        assert any(
+            c.kwargs.get("priority_min") == QueuePriority.SCHEDULED
+            and c.kwargs.get("priority_max") == QueuePriority.BULK
+            for c in calls
+        )
 
     @pytest.mark.asyncio
     async def test_stop_when_not_running_is_noop(self) -> None:

@@ -17,11 +17,11 @@ Every code change passes through three automated quality tiers before reaching p
                              |
                              v
 +---------------------------------------------------------------+
-|  Tier 2: Pre-Push Hooks (~30-60s)                             |
-|  Runs: on every git push                                      |
-|  Checks: Ruff lint, Mypy type check, full pytest suite        |
-|          with coverage (unit tests only)                       |
-|  Effect: blocks push if any check fails                       |
+|  Tier 2: Local Push Gates                                      |
+|  Runs: on every git push (hook) and pre-merge validation       |
+|  Checks: lightweight pre-push hook + full production-parity     |
+|          pipeline via scripts/pre-push-tests.sh                |
+|  Effect: blocks push/merge if checks fail                      |
 +---------------------------------------------------------------+
                              |
                              v
@@ -39,7 +39,7 @@ Every code change passes through three automated quality tiers before reaching p
 **Design philosophy:**
 
 - **Fast feedback locally** -- pre-commit catches formatting and security issues in seconds.
-- **Confidence before push** -- pre-push ensures the full test suite (3,000+ tests, 93%+ coverage) passes.
+- **Confidence before push** -- local gates catch failures before CI, including a full containerized validation path.
 - **Comprehensive CI** -- GitHub Actions catches cross-version issues, container problems, and dependency vulnerabilities.
 
 ## Pre-Commit Hooks
@@ -100,27 +100,35 @@ SKIP=mypy git commit -m "Skip type checking"
 
 Bypassing hooks is discouraged. If you bypass locally, GitHub Actions CI will still enforce the same checks and block the PR.
 
-## Pre-Push Hooks
+## Pre-Push and Pre-Merge Validation
 
-Pre-push hooks run automatically on every `git push`. The custom hook lives at `.git-hooks/pre-push` and is symlinked into `.git/hooks/` during setup.
+Zetherion AI has two local validation paths:
 
-### What Runs (3 Steps)
+1. `.git-hooks/pre-push` (automatic on `git push`) for fast feedback.
+2. `scripts/pre-push-tests.sh` (manual/CI-style) for production-parity validation.
 
-| Step | Command | What It Checks | Duration |
-|------|---------|---------------|----------|
-| 1 | `ruff check src/ tests/` | Linting across all source and test code | ~2s |
-| 2 | `mypy src/zetherion_ai --config-file=pyproject.toml` | Static type checking (strict mode) | ~10s |
-| 3 | `pytest tests/ -m "not integration" -v --tb=short --cov=src/zetherion_ai --cov-report=term-missing` | Full unit test suite with coverage report | ~45s |
+### Lightweight Git Hook (`.git-hooks/pre-push`)
 
-**Total duration:** approximately 30-60 seconds.
+| Step | Command | What It Checks |
+|------|---------|----------------|
+| 1 | `ruff check src/ tests/` | Linting |
+| 2 | `mypy src/zetherion_ai --config-file=pyproject.toml` | Type checking |
+| 3 | `pytest tests/ -m "not integration" ... --cov=src/zetherion_ai` | Unit suite + coverage gate |
 
-The hook automatically activates `.venv` if it exists and `$VIRTUAL_ENV` is not set.
+### Production-Parity Pipeline (`scripts/pre-push-tests.sh`)
 
-**Optional integration test step:** Set `RUN_INTEGRATION_TESTS=1` to also run integration tests before push. This adds 2-3 minutes.
+This script is the canonical full local gate before merge. It performs:
+
+1. Static analysis (`ruff`, `bandit`, `gitleaks`, `hadolint`, license checks)
+2. Unit tests + `mypy` + `pip-audit` (parallel)
+3. In-process integration tests
+4. Docker test environment rebuild/start (`docker-compose.test.yml`)
+5. Full Docker E2E and Discord E2E suites
+
+Run it directly:
 
 ```bash
-# Push with integration tests
-RUN_INTEGRATION_TESTS=1 git push origin main
+bash scripts/pre-push-tests.sh
 ```
 
 ### Setup
@@ -299,7 +307,8 @@ git push
 | File | Purpose |
 |------|---------|
 | `.pre-commit-config.yaml` | Pre-commit hook definitions (7 hooks across 6 tool repositories) |
-| `.git-hooks/pre-push` | Custom pre-push hook script (3-step: lint, type-check, test) |
+| `.git-hooks/pre-push` | Lightweight pre-push hook (lint, type-check, unit tests) |
+| `scripts/pre-push-tests.sh` | Full production-parity test pipeline (unit + integration + Docker E2E + Discord E2E) |
 | `.github/workflows/ci.yml` | GitHub Actions CI/CD workflow (9 jobs) |
 | `.gitleaks.toml` | Gitleaks secret scanning rules and allowlists |
 | `pyproject.toml` | Unified configuration for pytest, mypy, ruff, coverage, and bandit |
@@ -367,27 +376,30 @@ pre-commit run --all-files
 
 ### Test Failures Blocking Push
 
-**Problem:** Tests fail during pre-push and block the push.
+**Problem:** Tests fail during local gates and block push/merge.
 
 ```bash
-# Run tests manually to see full output
-pytest tests/ -m "not integration" -v --tb=long
+# Fast path (same shape as hook)
+pytest tests/ -m "not integration and not discord_e2e" -v --tb=long
+
+# Full production-parity path
+bash scripts/pre-push-tests.sh
 
 # Run only the failing test with debug output
 pytest tests/unit/test_agent_core.py::test_failing_case -s -vv
 
 # If tests pass individually but fail together, check for fixture pollution
-pytest tests/ -m "not integration" -p no:randomly --tb=short
+pytest tests/ -m "not integration and not discord_e2e" -p no:randomly --tb=short
 ```
 
 **Problem:** Coverage threshold not met
 
 ```bash
 # Check current coverage with missing lines
-pytest tests/ -m "not integration" --cov=src/zetherion_ai --cov-report=term-missing
+pytest tests/ -m "not integration and not discord_e2e" --cov=src/zetherion_ai --cov-report=term-missing
 
 # Generate HTML report for detailed analysis
-pytest tests/ -m "not integration" --cov=src/zetherion_ai --cov-report=html
+pytest tests/ -m "not integration and not discord_e2e" --cov=src/zetherion_ai --cov-report=html
 open htmlcov/index.html
 ```
 

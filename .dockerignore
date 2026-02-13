@@ -4,6 +4,7 @@
 # Include source and dependencies
 !requirements.txt
 !src/
+!updater_sidecar/
 
 # Exclude Python caches from included dirs
 **/__pycache__

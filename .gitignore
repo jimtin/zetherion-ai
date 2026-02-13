@@ -79,3 +79,7 @@ gitleaks-report.json
 .gitleaks/
 wiki/
 site/
+
+# Local CI debug artifacts
+tmp/ci-debug/
+scripts/collect-ci-failure-logs.sh

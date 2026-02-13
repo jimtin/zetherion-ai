@@ -396,7 +396,13 @@ def docker_env() -> Generator[DockerEnvironment, None, None]:
             env.stop()
 
 
-@pytest.fixture(scope="module", params=["gemini", "ollama"])
+@pytest.fixture(
+    scope="module",
+    params=[
+        "gemini",
+        pytest.param("ollama", marks=pytest.mark.optional_e2e, id="ollama"),
+    ],
+)
 def router_backend(request: Any, docker_env: DockerEnvironment) -> str:
     """Pytest fixture to parameterize router backend.
 
@@ -466,10 +472,10 @@ async def test_router_backend(mock_bot: MockDiscordBot) -> None:
     assert len(response) > 0
     assert isinstance(response, str)
 
-    # If the API hit a rate limit / returned a fallback error, skip gracefully
+    # Required E2E suite: fallback/rate-limit responses should fail, not skip.
     lower = response.lower()
     if "trouble processing" in lower or "try again" in lower:
-        pytest.skip(f"{backend} router returned rate-limit fallback: {response[:80]}")
+        pytest.fail(f"{backend} router returned fallback response: {response[:80]}")
 
     # Simple queries should mention Paris
     assert "paris" in lower
@@ -598,7 +604,7 @@ async def test_help_command(mock_bot: MockDiscordBot) -> None:
 
 
 @pytest.mark.integration
-def test_docker_services_running(docker_env: DockerEnvironment) -> None:
+async def test_docker_services_running(docker_env: DockerEnvironment) -> None:
     """Test that all Docker services are running."""
     # Check Qdrant (uses container_name from docker-compose.yml)
     result = subprocess.run(
@@ -638,7 +644,7 @@ def test_docker_services_running(docker_env: DockerEnvironment) -> None:
 
 
 @pytest.mark.integration
-def test_qdrant_collections_exist(docker_env: DockerEnvironment) -> None:
+async def test_qdrant_collections_exist(docker_env: DockerEnvironment) -> None:
     """Test that Qdrant collections are created."""
     # Use curl from host machine since Qdrant container doesn't have curl
     result = subprocess.run(
@@ -694,7 +700,7 @@ async def test_profile_query_skill(mock_bot: MockDiscordBot) -> None:
 
 
 @pytest.mark.integration
-def test_skills_service_health(docker_env: DockerEnvironment) -> None:
+async def test_skills_service_health(docker_env: DockerEnvironment) -> None:
     """Test that skills service is healthy (Phase 5D)."""
     # Check if skills service container is running
     result = subprocess.run(

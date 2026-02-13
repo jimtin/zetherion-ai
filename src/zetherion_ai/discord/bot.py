@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import json
 import time
 from typing import Any
 from uuid import uuid4
@@ -15,13 +16,19 @@ from zetherion_ai.config import get_settings
 from zetherion_ai.constants import KEEP_WARM_INTERVAL_SECONDS, MAX_DISCORD_MESSAGE_LENGTH
 from zetherion_ai.discord.security import (
     RateLimiter,
+    SecurityPipeline,
+    ThreatAction,
     detect_prompt_injection,
 )
+from zetherion_ai.discord.security.tier2_ai import SecurityAIAnalyzer
 from zetherion_ai.discord.user_manager import ROLE_HIERARCHY, UserManager
 from zetherion_ai.logging import get_logger
 from zetherion_ai.memory.qdrant import QdrantMemory
 from zetherion_ai.queue.manager import QueueManager
 from zetherion_ai.queue.models import QueuePriority, QueueTaskType
+from zetherion_ai.scheduler.actions import ActionExecutor
+from zetherion_ai.scheduler.heartbeat import HeartbeatScheduler
+from zetherion_ai.utils import split_text_chunks
 
 log = get_logger("zetherion_ai.discord.bot")
 
@@ -58,6 +65,9 @@ class ZetherionAIBot(discord.Client):
         self._settings_manager = settings_manager
         self._queue_manager = queue_manager
         self._keep_warm_task: asyncio.Task[None] | None = None
+        self._security_pipeline: SecurityPipeline | None = None
+        self._security_ai_analyzer: SecurityAIAnalyzer | None = None
+        self._heartbeat_scheduler: HeartbeatScheduler | None = None
         self._last_message_time: float = 0.0
 
         self._setup_commands()
@@ -182,12 +192,56 @@ class ZetherionAIBot(discord.Client):
         self._keep_warm_task = asyncio.create_task(self._keep_warm_loop())
         log.info("keep_warm_task_started", interval_seconds=KEEP_WARM_INTERVAL_SECONDS)
 
-        # Wire queue processors with bot/agent, then start workers
+        # Initialize security pipeline (Tier 1 + optional Tier 2 AI)
+        try:
+            enable_tier2 = bool(get_settings().security_tier2_enabled)
+            self._security_ai_analyzer = SecurityAIAnalyzer() if enable_tier2 else None
+            self._security_pipeline = SecurityPipeline(
+                ai_analyzer=self._security_ai_analyzer,
+                enable_tier2=enable_tier2,
+            )
+            log.info("security_pipeline_initialized", tier2_enabled=enable_tier2)
+        except Exception:
+            log.exception("security_pipeline_init_failed")
+            self._security_ai_analyzer = None
+            self._security_pipeline = None
+
+        # Shared integrations for queue workers and heartbeat scheduler
+        skills_client = None
+        action_executor = ActionExecutor(message_sender=self)
+        if self._agent is not None:
+            try:
+                skills_client = await self._agent._get_skills_client()
+            except Exception:
+                log.exception("skills_client_init_failed")
+
+        # Wire queue processors with bot/agent/deps, then start workers
         if self._queue_manager is not None:
             self._queue_manager._processors._bot = self
             self._queue_manager._processors._agent = self._agent
+            self._queue_manager._processors._skills_client = skills_client
+            self._queue_manager._processors._action_executor = action_executor
             await self._queue_manager.start()
             log.info("queue_manager_started")
+
+        # Start heartbeat scheduler
+        self._heartbeat_scheduler = HeartbeatScheduler(
+            skills_client=skills_client,
+            action_executor=action_executor,
+            queue_manager=self._queue_manager,
+        )
+        if self._user_manager is not None:
+            try:
+                users = await self._user_manager.list_users()
+                heartbeat_users = [
+                    str(u["discord_user_id"])
+                    for u in users
+                    if str(u.get("role", "")) != "restricted"
+                ]
+                self._heartbeat_scheduler.set_user_ids(heartbeat_users)
+            except Exception:
+                log.exception("heartbeat_user_list_failed")
+        await self._heartbeat_scheduler.start()
 
         # Sync commands
         await self._tree.sync()
@@ -207,6 +261,13 @@ class ZetherionAIBot(discord.Client):
 
     async def close(self) -> None:
         """Clean up resources when bot is closing."""
+        # Stop heartbeat scheduler first so no new queue tasks are generated.
+        scheduler = self._heartbeat_scheduler
+        if scheduler is not None:
+            await scheduler.stop()
+            self._heartbeat_scheduler = None
+            log.info("heartbeat_scheduler_stopped")
+
         # Drain queue workers (graceful shutdown)
         if self._queue_manager is not None:
             await self._queue_manager.stop()
@@ -227,6 +288,10 @@ class ZetherionAIBot(discord.Client):
             and self._agent._inference_broker
         ):
             await self._agent._inference_broker.close()
+
+        if self._security_ai_analyzer is not None:
+            await self._security_ai_analyzer.close()
+            self._security_ai_analyzer = None
 
         await super().close()
 
@@ -286,7 +351,11 @@ class ZetherionAIBot(discord.Client):
                 return
 
             # Check for prompt injection
-            if detect_prompt_injection(message.content):
+            if await self._is_security_blocked(
+                content=message.content,
+                user_id=message.author.id,
+                channel_id=message.channel.id,
+            ):
                 await message.reply(
                     "I noticed some unusual patterns in your message. "
                     "Could you rephrase your question?",
@@ -461,7 +530,11 @@ class ZetherionAIBot(discord.Client):
             )
             return False
 
-        if content and detect_prompt_injection(content):
+        if content and await self._is_security_blocked(
+            content=content,
+            user_id=interaction.user.id,
+            channel_id=interaction.channel_id or 0,
+        ):
             await interaction.response.send_message(
                 "I noticed some unusual patterns in your message. Could you rephrase it?",
                 ephemeral=True,
@@ -469,6 +542,41 @@ class ZetherionAIBot(discord.Client):
             return False
 
         return True
+
+    async def _is_security_blocked(
+        self,
+        *,
+        content: str,
+        user_id: int,
+        channel_id: int,
+    ) -> bool:
+        """Return True when message content should be blocked by security checks."""
+        pipeline = self._security_pipeline
+        if pipeline is None:
+            return detect_prompt_injection(content)
+
+        try:
+            verdict = await pipeline.analyze(
+                content,
+                user_id=user_id,
+                channel_id=channel_id,
+                request_id=str(uuid4())[:12],
+            )
+        except Exception:
+            log.exception("security_pipeline_failed")
+            return detect_prompt_injection(content)
+
+        if verdict.action == ThreatAction.BLOCK:
+            return True
+        if verdict.action == ThreatAction.FLAG:
+            log.warning(
+                "message_flagged_by_security",
+                user_id=user_id,
+                channel_id=channel_id,
+                score=verdict.score,
+                tier=verdict.tier_reached,
+            )
+        return False
 
     async def _handle_ask(
         self,
@@ -644,19 +752,7 @@ class ZetherionAIBot(discord.Client):
 
         response = "\n".join(lines)
 
-        # Split if too long (Discord 2000 char limit)
-        if len(response) > MAX_DISCORD_MESSAGE_LENGTH:
-            # Send first batch
-            first_batch = text_channels[:20] if len(text_channels) > 0 else []
-            await interaction.followup.send(
-                f"**Text Channels ({len(text_channels)}):**\n" + "\n".join(first_batch)
-            )
-            # Send remaining if needed
-            if len(text_channels) > 20:
-                remaining = text_channels[20:40]
-                await interaction.followup.send("\n".join(remaining))
-        else:
-            await interaction.followup.send(response)
+        await self._send_long_interaction_response(interaction, response)
 
     async def _send_long_message(
         self,
@@ -675,20 +771,7 @@ class ZetherionAIBot(discord.Client):
             await channel.send(content)
             return
 
-        # Split on paragraph boundaries if possible
-        parts = []
-        current = ""
-
-        for line in content.split("\n"):
-            if len(current) + len(line) + 1 <= max_length:
-                current += line + "\n"
-            else:
-                if current:
-                    parts.append(current.strip())
-                current = line + "\n"
-
-        if current:
-            parts.append(current.strip())
+        parts = split_text_chunks(content, max_length=max_length)
 
         for part in parts:
             if part:
@@ -715,20 +798,7 @@ class ZetherionAIBot(discord.Client):
             await message.reply(content, mention_author=mention_author)
             return
 
-        # Split on paragraph boundaries if possible
-        parts: list[str] = []
-        current = ""
-
-        for line in content.split("\n"):
-            if len(current) + len(line) + 1 <= max_length:
-                current += line + "\n"
-            else:
-                if current:
-                    parts.append(current.strip())
-                current = line + "\n"
-
-        if current:
-            parts.append(current.strip())
+        parts = split_text_chunks(content, max_length=max_length)
 
         for i, part in enumerate(parts):
             if part:
@@ -748,21 +818,33 @@ class ZetherionAIBot(discord.Client):
             await interaction.followup.send(content)
             return
 
-        parts = []
-        current = ""
-        for line in content.split("\n"):
-            if len(current) + len(line) + 1 <= max_length:
-                current += line + "\n"
-            else:
-                if current:
-                    parts.append(current.strip())
-                current = line + "\n"
-        if current:
-            parts.append(current.strip())
+        parts = split_text_chunks(content, max_length=max_length)
 
         for part in parts:
             if part:
                 await interaction.followup.send(part)
+
+    async def send_dm(self, user_id: str, message: str) -> bool:
+        """Send a DM to a Discord user ID string."""
+        try:
+            discord_user_id = int(user_id)
+        except (TypeError, ValueError):
+            log.warning("send_dm_invalid_user_id", user_id=user_id)
+            return False
+
+        try:
+            user = self.get_user(discord_user_id)
+            if user is None:
+                user = await self.fetch_user(discord_user_id)
+            if user is None:
+                log.warning("send_dm_user_not_found", user_id=user_id)
+                return False
+
+            await self._send_long_message(user, message)
+            return True
+        except Exception:
+            log.exception("send_dm_failed", user_id=user_id)
+            return False
 
     # ------------------------------------------------------------------
     # Admin permission helper
@@ -970,15 +1052,53 @@ class ZetherionAIBot(discord.Client):
         await interaction.response.defer(ephemeral=True)
 
         try:
+            typed_value, data_type = self._coerce_setting_value(value)
             await self._settings_manager.set(  # type: ignore[attr-defined]
                 namespace=namespace,
                 key=key,
-                value=value,
+                value=typed_value,
                 changed_by=interaction.user.id,
+                data_type=data_type,
             )
-            await interaction.followup.send(f"Set **{namespace}.{key}** = `{value}`")
+            display_value = json.dumps(typed_value) if data_type == "json" else str(typed_value)
+            await interaction.followup.send(
+                f"Set **{namespace}.{key}** = `{display_value}` (type: `{data_type}`)"
+            )
         except ValueError as e:
             await interaction.followup.send(f"Invalid setting: {e}")
+
+    @staticmethod
+    def _coerce_setting_value(value: str) -> tuple[Any, str]:
+        """Infer a settings value type from slash-command text input."""
+        stripped = value.strip()
+        lowered = stripped.lower()
+
+        if lowered in {"true", "false", "yes", "no"}:
+            return lowered in {"true", "yes"}, "bool"
+
+        if stripped and (
+            stripped.isdigit() or (stripped.startswith("-") and stripped[1:].isdigit())
+        ):
+            try:
+                return int(stripped), "int"
+            except ValueError:
+                pass
+
+        if any(ch in stripped for ch in (".", "e", "E")):
+            try:
+                return float(stripped), "float"
+            except ValueError:
+                pass
+
+        if (stripped.startswith("{") and stripped.endswith("}")) or (
+            stripped.startswith("[") and stripped.endswith("]")
+        ):
+            try:
+                return json.loads(stripped), "json"
+            except json.JSONDecodeError:
+                pass
+
+        return value, "string"
 
     async def _handle_config_reset(
         self,

@@ -96,6 +96,43 @@ def _serialise(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+async def _json_body(request: web.Request) -> dict[str, Any]:
+    """Parse request JSON body or raise 400 with a stable payload."""
+    try:
+        data = await request.json()
+    except Exception as err:
+        raise web.HTTPBadRequest(
+            text=json.dumps({"error": "Invalid JSON body"}),
+            content_type="application/json",
+        ) from err
+    if not isinstance(data, dict):
+        raise web.HTTPBadRequest(
+            text=json.dumps({"error": "JSON body must be an object"}),
+            content_type="application/json",
+        )
+    return data
+
+
+def _query_int(request: web.Request, name: str, default: int, *, minimum: int = 1) -> int:
+    """Parse an integer query parameter and raise 400 on invalid input."""
+    raw = request.query.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as err:
+        raise web.HTTPBadRequest(
+            text=json.dumps({"error": f"Invalid integer for '{name}'"}),
+            content_type="application/json",
+        ) from err
+    if value < minimum:
+        raise web.HTTPBadRequest(
+            text=json.dumps({"error": f"'{name}' must be >= {minimum}"}),
+            content_type="application/json",
+        )
+    return value
+
+
 # ---------------------------------------------------------------------------
 # Channels
 # ---------------------------------------------------------------------------
@@ -104,7 +141,7 @@ def _serialise(row: dict[str, Any]) -> dict[str, Any]:
 async def handle_register_channel(request: web.Request) -> web.Response:
     """POST /api/v1/youtube/channels — register a YouTube channel."""
     storage = _get_storage(request)
-    data = await request.json()
+    data = await _json_body(request)
 
     channel_youtube_id = data.get("channel_youtube_id")
     if not channel_youtube_id:
@@ -137,7 +174,7 @@ async def handle_push_videos(request: web.Request) -> web.Response:
     ch_id = _channel_id(request)
     await _verify_channel_ownership(request, ch_id)
 
-    data = await request.json()
+    data = await _json_body(request)
     videos = data.get("videos", [])
     if not videos:
         return web.json_response({"error": "videos array required"}, status=400)
@@ -152,7 +189,7 @@ async def handle_push_comments(request: web.Request) -> web.Response:
     ch_id = _channel_id(request)
     await _verify_channel_ownership(request, ch_id)
 
-    data = await request.json()
+    data = await _json_body(request)
     comments = data.get("comments", [])
     if not comments:
         return web.json_response({"error": "comments array required"}, status=400)
@@ -167,7 +204,7 @@ async def handle_push_stats(request: web.Request) -> web.Response:
     ch_id = _channel_id(request)
     await _verify_channel_ownership(request, ch_id)
 
-    data = await request.json()
+    data = await _json_body(request)
     snapshot = data.get("snapshot", data)
     row = await storage.insert_stats(ch_id, snapshot)
     return web.json_response(_serialise(row), status=201)
@@ -179,7 +216,7 @@ async def handle_push_document(request: web.Request) -> web.Response:
     ch_id = _channel_id(request)
     await _verify_channel_ownership(request, ch_id)
 
-    data = await request.json()
+    data = await _json_body(request)
     title = data.get("title", "")
     content = data.get("content", "")
     doc_type = data.get("doc_type", "")
@@ -226,7 +263,7 @@ async def handle_intelligence_history(request: web.Request) -> web.Response:
     ch_id = _channel_id(request)
     await _verify_channel_ownership(request, ch_id)
 
-    limit = int(request.query.get("limit", "10"))
+    limit = _query_int(request, "limit", 10)
     rows = await storage.get_report_history(ch_id, limit=limit)
     return web.json_response([_serialise(r) for r in rows])
 
@@ -256,7 +293,7 @@ async def handle_configure_management(request: web.Request) -> web.Response:
     ch_id = _channel_id(request)
     await _verify_channel_ownership(request, ch_id)
 
-    data = await request.json()
+    data = await _json_body(request)
     req = SkillRequest(
         intent="yt_configure_management",
         context={
@@ -276,7 +313,7 @@ async def handle_list_replies(request: web.Request) -> web.Response:
     await _verify_channel_ownership(request, ch_id)
 
     status_filter = request.query.get("status")
-    limit = int(request.query.get("limit", "50"))
+    limit = _query_int(request, "limit", 50)
     rows = await storage.get_reply_drafts(ch_id, status=status_filter, limit=limit)
     return web.json_response([_serialise(r) for r in rows])
 
@@ -290,7 +327,7 @@ async def handle_update_reply(request: web.Request) -> web.Response:
     await _verify_channel_ownership(request, ch_id)
 
     reply_id = request.match_info.get("reply_id", "")
-    data = await request.json()
+    data = await _json_body(request)
     action = data.get("action")  # approve / reject / posted
 
     if not action:
@@ -367,7 +404,7 @@ async def handle_strategy_history(request: web.Request) -> web.Response:
     ch_id = _channel_id(request)
     await _verify_channel_ownership(request, ch_id)
 
-    limit = int(request.query.get("limit", "10"))
+    limit = _query_int(request, "limit", 10)
     rows = await storage.get_strategy_history(ch_id, limit=limit)
     return web.json_response([_serialise(r) for r in rows])
 
@@ -401,7 +438,7 @@ async def handle_update_assumption(request: web.Request) -> web.Response:
     except ValueError:
         return web.json_response({"error": "Invalid assumption_id"}, status=400)
 
-    data = await request.json()
+    data = await _json_body(request)
     action = data.get("action")  # confirm / invalidate
 
     tracker = AssumptionTracker(storage)

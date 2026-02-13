@@ -459,6 +459,14 @@ class TestUserManagementEndpoints:
         assert data["ok"] is False
         assert "error" in data
 
+    async def test_delete_user_invalid_user_id_returns_400(self, client_with_users):
+        """DELETE /users/{user_id} with invalid integer returns 400."""
+        resp = await client_with_users.delete("/users/not-an-int")
+        assert resp.status == 400
+
+        data = await resp.json()
+        assert "error" in data
+
     async def test_patch_user_role_success(self, client_with_users, user_manager):
         """PATCH /users/{user_id}/role should return 200 on success."""
         user_manager.set_role.return_value = True
@@ -502,6 +510,14 @@ class TestUserManagementEndpoints:
         assert len(data["entries"]) == 2
         assert data["entries"][0]["action"] == "add_user"
         user_manager.get_audit_log.assert_awaited_once_with(limit=10)
+
+    async def test_audit_log_invalid_limit_returns_400(self, client_with_users):
+        """GET /users/audit with invalid limit returns 400."""
+        resp = await client_with_users.get("/users/audit", params={"limit": "bad"})
+        assert resp.status == 400
+
+        data = await resp.json()
+        assert "error" in data
 
     async def test_list_users_returns_501_when_manager_is_none(self, mock_registry):
         """GET /users should return 501 when user_manager is None."""
@@ -605,6 +621,17 @@ class TestSettingsEndpoints:
         data = await resp.json()
         assert "error" in data
         assert "Invalid data type" in data["error"]
+
+    async def test_put_setting_invalid_changed_by_returns_400(self, client_with_settings):
+        """PUT /settings/{namespace}/{key} with invalid changed_by returns 400."""
+        resp = await client_with_settings.put(
+            "/settings/models/key",
+            json={"value": "new_value", "changed_by": "not-int", "data_type": "string"},
+        )
+        assert resp.status == 400
+
+        data = await resp.json()
+        assert "error" in data
 
     async def test_delete_setting_success(self, client_with_settings, settings_manager):
         """DELETE /settings/{namespace}/{key} should return 200 on success."""

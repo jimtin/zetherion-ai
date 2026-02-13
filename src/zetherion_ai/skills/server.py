@@ -11,6 +11,7 @@ This server runs in its own Docker container and provides:
 import asyncio
 import hmac
 import os
+from json import JSONDecodeError
 from typing import Any
 
 from aiohttp import web
@@ -85,6 +86,25 @@ class SkillsServer:
         provided = request.headers.get("X-API-Secret")
         return provided is not None and hmac.compare_digest(provided, self._api_secret)
 
+    @staticmethod
+    async def _read_json_object(request: web.Request) -> dict[str, Any]:
+        """Read request JSON and ensure the payload is a JSON object."""
+        try:
+            data = await request.json()
+        except (ValueError, JSONDecodeError) as err:
+            raise ValueError("Invalid JSON body") from err
+        if not isinstance(data, dict):
+            raise ValueError("JSON body must be an object")
+        return data
+
+    @staticmethod
+    def _parse_int(raw: Any, field_name: str) -> int:
+        """Parse an integer field and raise ValueError on invalid input."""
+        try:
+            return int(raw)
+        except (TypeError, ValueError) as err:
+            raise ValueError(f"Invalid integer for '{field_name}'") from err
+
     @web.middleware
     async def auth_middleware(
         self,
@@ -141,13 +161,15 @@ class SkillsServer:
             Response from the skill.
         """
         try:
-            data = await request.json()
+            data = await self._read_json_object(request)
             skill_request = SkillRequest.from_dict(data)
 
             response = await self._registry.handle_request(skill_request)
 
             return web.json_response(response.to_dict())
 
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
         except Exception:
             log.exception("handle_request_error")
             return web.json_response(
@@ -165,7 +187,7 @@ class SkillsServer:
             List of heartbeat actions.
         """
         try:
-            data = await request.json()
+            data = await self._read_json_object(request)
             user_ids = data.get("user_ids", [])
 
             actions = await self._registry.run_heartbeat(user_ids)
@@ -176,6 +198,8 @@ class SkillsServer:
                 }
             )
 
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
         except Exception:
             log.exception("heartbeat_error")
             return web.json_response(
@@ -280,11 +304,16 @@ class SkillsServer:
         """POST /users — add a user."""
         if self._user_manager is None:
             return web.json_response({"error": "User management not configured"}, status=501)
-        data = await request.json()
+        try:
+            data = await self._read_json_object(request)
+            user_id = self._parse_int(data.get("user_id"), "user_id")
+            added_by = self._parse_int(data.get("added_by"), "added_by")
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
         success = await self._user_manager.add_user(
-            user_id=int(data["user_id"]),
+            user_id=user_id,
             role=data.get("role", "user"),
-            added_by=int(data["added_by"]),
+            added_by=added_by,
         )
         if success:
             return web.json_response({"ok": True}, status=201)
@@ -296,8 +325,11 @@ class SkillsServer:
         """DELETE /users/{user_id} — remove a user."""
         if self._user_manager is None:
             return web.json_response({"error": "User management not configured"}, status=501)
-        user_id = int(request.match_info["user_id"])
-        removed_by = int(request.query.get("removed_by", "0"))
+        try:
+            user_id = self._parse_int(request.match_info.get("user_id"), "user_id")
+            removed_by = self._parse_int(request.query.get("removed_by", "0"), "removed_by")
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
         success = await self._user_manager.remove_user(user_id=user_id, removed_by=removed_by)
         if success:
             return web.json_response({"ok": True})
@@ -309,12 +341,16 @@ class SkillsServer:
         """PATCH /users/{user_id}/role — change a user's role."""
         if self._user_manager is None:
             return web.json_response({"error": "User management not configured"}, status=501)
-        user_id = int(request.match_info["user_id"])
-        data = await request.json()
+        try:
+            user_id = self._parse_int(request.match_info.get("user_id"), "user_id")
+            data = await self._read_json_object(request)
+            changed_by = self._parse_int(data.get("changed_by"), "changed_by")
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
         success = await self._user_manager.set_role(
             user_id=user_id,
             new_role=data["role"],
-            changed_by=int(data["changed_by"]),
+            changed_by=changed_by,
         )
         if success:
             return web.json_response({"ok": True})
@@ -326,7 +362,10 @@ class SkillsServer:
         """GET /users/audit — recent audit log entries."""
         if self._user_manager is None:
             return web.json_response({"error": "User management not configured"}, status=501)
-        limit = int(request.query.get("limit", "50"))
+        try:
+            limit = self._parse_int(request.query.get("limit", "50"), "limit")
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
         entries = await self._user_manager.get_audit_log(limit=limit)
         return web.json_response({"entries": [_serialise_record(e) for e in entries]})
 
@@ -357,13 +396,13 @@ class SkillsServer:
             return web.json_response({"error": "Settings not configured"}, status=501)
         namespace = request.match_info["namespace"]
         key = request.match_info["key"]
-        data = await request.json()
         try:
+            data = await self._read_json_object(request)
             await self._settings_manager.set(
                 namespace=namespace,
                 key=key,
                 value=data["value"],
-                changed_by=int(data.get("changed_by", 0)),
+                changed_by=self._parse_int(data.get("changed_by", 0), "changed_by"),
                 data_type=data.get("data_type", "string"),
             )
             return web.json_response({"ok": True})
@@ -376,7 +415,10 @@ class SkillsServer:
             return web.json_response({"error": "Settings not configured"}, status=501)
         namespace = request.match_info["namespace"]
         key = request.match_info["key"]
-        deleted_by = int(request.query.get("deleted_by", "0"))
+        try:
+            deleted_by = self._parse_int(request.query.get("deleted_by", "0"), "deleted_by")
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
         deleted = await self._settings_manager.delete(
             namespace=namespace, key=key, deleted_by=deleted_by
         )

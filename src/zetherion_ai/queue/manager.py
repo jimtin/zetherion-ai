@@ -69,6 +69,7 @@ class QueueManager:
             task = asyncio.create_task(
                 self._worker_loop(
                     name=f"interactive-{i}",
+                    priority_min=QueuePriority.INTERACTIVE,
                     priority_max=QueuePriority.NEAR_INTERACTIVE,
                     poll_ms=settings.queue_poll_interval_ms,
                 ),
@@ -80,6 +81,7 @@ class QueueManager:
             task = asyncio.create_task(
                 self._worker_loop(
                     name=f"background-{i}",
+                    priority_min=QueuePriority.SCHEDULED,
                     priority_max=QueuePriority.BULK,
                     poll_ms=settings.queue_background_poll_ms,
                 ),
@@ -214,6 +216,7 @@ class QueueManager:
     async def _worker_loop(
         self,
         name: str,
+        priority_min: int,
         priority_max: int,
         poll_ms: int,
     ) -> None:
@@ -221,15 +224,22 @@ class QueueManager:
 
         Args:
             name: Human-readable worker name for logging.
+            priority_min: Minimum priority value this worker handles.
             priority_max: Maximum priority value this worker handles.
             poll_ms: Milliseconds between polls when queue is empty.
         """
-        log.debug("worker_started", worker=name, priority_max=priority_max)
+        log.debug(
+            "worker_started",
+            worker=name,
+            priority_min=priority_min,
+            priority_max=priority_max,
+        )
         poll_seconds = poll_ms / 1000.0
 
         while self._running:
             try:
                 item = await self._storage.dequeue(
+                    priority_min=priority_min,
                     priority_max=priority_max,
                     worker_id=name,
                 )
