@@ -129,7 +129,7 @@ class UpdateManager:
     Typical flow:
     1. ``check_for_update()`` — query GitHub for the latest release
     2. ``apply_update(release)`` — delegate to updater sidecar via HTTP
-    3. Sidecar handles git pull, build, restart, health check, rollback
+    3. Sidecar handles git fetch/tag checkout, build, restart, health check, rollback
     """
 
     def __init__(
@@ -150,7 +150,10 @@ class UpdateManager:
 
     @property
     def current_version(self) -> str:
-        return __version__
+        current = __version__
+        if parse_semver(current) is None and re.match(r"^\d+\.\d+$", current):
+            return f"{current}.0"
+        return current
 
     # ------------------------------------------------------------------
     # Check for updates
@@ -218,6 +221,19 @@ class UpdateManager:
     # Apply update via sidecar
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _extract_sidecar_error(resp: httpx.Response) -> str:
+        """Extract the best-effort error payload from a sidecar response."""
+        try:
+            data = resp.json()
+            if isinstance(data, dict):
+                detail = str(data.get("error", "")).strip()
+                if detail:
+                    return detail
+        except Exception as exc:
+            log.debug("updater_sidecar_error_parse_failed", error=str(exc))
+        return resp.text.strip()[:200]
+
     async def apply_update(self, release: ReleaseInfo) -> UpdateResult:
         """Apply an update by delegating to the updater sidecar.
 
@@ -255,6 +271,16 @@ class UpdateManager:
                     headers=headers,
                 )
 
+            if resp.status_code in {401, 403}:
+                result.status = UpdateStatus.FAILED
+                detail = self._extract_sidecar_error(resp)
+                result.error = (
+                    f"unauthorized: {detail}" if detail else "unauthorized: sidecar rejected auth"
+                )
+                result.completed_at = datetime.now().isoformat()
+                await self._record_update(result)
+                return result
+
             if resp.status_code == 409:
                 result.status = UpdateStatus.FAILED
                 result.error = "Update already in progress"
@@ -262,7 +288,42 @@ class UpdateManager:
                 await self._record_update(result)
                 return result
 
-            data = resp.json()
+            if resp.status_code == 423:
+                result.status = UpdateStatus.FAILED
+                detail = self._extract_sidecar_error(resp)
+                result.error = f"paused: {detail}" if detail else "paused: rollouts are paused"
+                result.completed_at = datetime.now().isoformat()
+                await self._record_update(result)
+                return result
+
+            if resp.status_code >= 500:
+                result.status = UpdateStatus.FAILED
+                detail = self._extract_sidecar_error(resp)
+                result.error = (
+                    f"sidecar_error: {detail}"
+                    if detail
+                    else f"sidecar_error: HTTP {resp.status_code}"
+                )
+                result.completed_at = datetime.now().isoformat()
+                await self._record_update(result)
+                return result
+
+            if resp.status_code >= 400:
+                result.status = UpdateStatus.FAILED
+                detail = self._extract_sidecar_error(resp)
+                result.error = (
+                    f"sidecar_error: {detail}"
+                    if detail
+                    else f"sidecar_error: HTTP {resp.status_code}"
+                )
+                result.completed_at = datetime.now().isoformat()
+                await self._record_update(result)
+                return result
+
+            try:
+                data = resp.json()
+            except Exception:
+                data = {}
             result.previous_git_sha = data.get("previous_sha")
             result.new_git_sha = data.get("new_sha")
             result.steps_completed = data.get("steps_completed", [])
@@ -318,6 +379,26 @@ class UpdateManager:
                     headers=headers,
                 )
 
+            if resp.status_code in {401, 403}:
+                log.error(
+                    "updater_rollback_unauthorized",
+                    status=resp.status_code,
+                    error=self._extract_sidecar_error(resp),
+                )
+                return False
+
+            if resp.status_code == 409:
+                log.error("updater_rollback_busy")
+                return False
+
+            if resp.status_code >= 400:
+                log.error(
+                    "updater_rollback_http_error",
+                    status=resp.status_code,
+                    error=self._extract_sidecar_error(resp),
+                )
+                return False
+
             data = resp.json()
             if data.get("status") == "success":
                 log.info("updater_rollback_complete")
@@ -332,6 +413,52 @@ class UpdateManager:
         except httpx.RequestError as exc:
             log.error("updater_rollback_error", error=str(exc))
             return False
+
+    async def unpause_rollouts(self) -> bool:
+        """Clear sidecar paused state to resume automatic rollouts."""
+        if not self._updater_url:
+            log.error("updater_unpause_no_url")
+            return False
+
+        try:
+            headers: dict[str, str] = {}
+            if self._updater_secret:
+                headers["X-Updater-Secret"] = self._updater_secret
+
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(f"{self._updater_url}/update/unpause", headers=headers)
+
+            if resp.status_code >= 400:
+                log.error(
+                    "updater_unpause_failed",
+                    status=resp.status_code,
+                    error=self._extract_sidecar_error(resp),
+                )
+                return False
+
+            data = resp.json()
+            return bool(data.get("resumed", False))
+        except httpx.RequestError as exc:
+            log.error("updater_unpause_error", error=str(exc))
+            return False
+
+    async def get_sidecar_status(self) -> dict[str, Any] | None:
+        """Return status details from the updater sidecar, if reachable."""
+        if not self._updater_url:
+            return None
+        try:
+            headers: dict[str, str] = {}
+            if self._updater_secret:
+                headers["X-Updater-Secret"] = self._updater_secret
+
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(f"{self._updater_url}/status", headers=headers)
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            return data if isinstance(data, dict) else None
+        except httpx.RequestError:
+            return None
 
     # ------------------------------------------------------------------
     # Health validation

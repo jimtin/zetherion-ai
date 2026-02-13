@@ -661,6 +661,48 @@ class TestApplyUpdate:
         headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers", {})
         assert "X-Updater-Secret" not in headers
 
+    async def test_unauthorized_401_sets_actionable_error(self) -> None:
+        mgr = _make_manager()
+        release = _make_release()
+
+        mock_client = self._mock_sidecar_post(401, {"error": "invalid secret"})
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch.object(mgr, "_record_update", new_callable=AsyncMock),
+        ):
+            result = await mgr.apply_update(release)
+
+        assert result.status == UpdateStatus.FAILED
+        assert "unauthorized" in (result.error or "")
+
+    async def test_paused_423_sets_actionable_error(self) -> None:
+        mgr = _make_manager()
+        release = _make_release()
+
+        mock_client = self._mock_sidecar_post(423, {"error": "updates paused"})
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch.object(mgr, "_record_update", new_callable=AsyncMock),
+        ):
+            result = await mgr.apply_update(release)
+
+        assert result.status == UpdateStatus.FAILED
+        assert "paused" in (result.error or "")
+
+    async def test_sidecar_500_sets_sidecar_error(self) -> None:
+        mgr = _make_manager()
+        release = _make_release()
+
+        mock_client = self._mock_sidecar_post(500, {"error": "internal"})
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch.object(mgr, "_record_update", new_callable=AsyncMock),
+        ):
+            result = await mgr.apply_update(release)
+
+        assert result.status == UpdateStatus.FAILED
+        assert "sidecar_error" in (result.error or "")
+
 
 # ---------------------------------------------------------------------------
 # TestRollback
@@ -756,6 +798,61 @@ class TestRollback:
         call_kwargs = mock_client.post.call_args
         headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers", {})
         assert "X-Updater-Secret" not in headers
+
+    async def test_rollback_unauthorized_returns_false(self) -> None:
+        mgr = _make_manager()
+        mock_client = self._mock_sidecar_post(401, {"error": "invalid secret"})
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await mgr.rollback("abc123")
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# TestSidecarControl
+# ---------------------------------------------------------------------------
+
+
+class TestSidecarControl:
+    """Tests for sidecar control/status helper APIs."""
+
+    async def test_unpause_rollouts_success(self) -> None:
+        mgr = _make_manager()
+        mock_client = AsyncMock()
+        mock_resp = _mock_http_response(200, {"resumed": True})
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            ok = await mgr.unpause_rollouts()
+
+        assert ok is True
+
+    async def test_unpause_rollouts_failure(self) -> None:
+        mgr = _make_manager()
+        mock_client = AsyncMock()
+        mock_resp = _mock_http_response(500, {"error": "bad"})
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            ok = await mgr.unpause_rollouts()
+
+        assert ok is False
+
+    async def test_get_sidecar_status(self) -> None:
+        mgr = _make_manager()
+        payload = {"state": "idle", "paused": False}
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=_mock_http_response(200, payload))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            data = await mgr.get_sidecar_status()
+
+        assert data == payload
 
 
 # ---------------------------------------------------------------------------
@@ -958,7 +1055,7 @@ class TestUpdateManagerInit:
 
     def test_current_version_returns_package_version(self) -> None:
         mgr = _make_manager()
-        assert mgr.current_version == __version__
+        assert mgr.current_version in {__version__, f"{__version__}.0"}
 
     def test_constructor_stores_attributes(self) -> None:
         storage = AsyncMock()

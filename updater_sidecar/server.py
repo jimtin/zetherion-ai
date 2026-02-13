@@ -41,6 +41,12 @@ def create_app(
         project_dir=os.environ.get("PROJECT_DIR", "/project"),
         compose_file=os.environ.get("COMPOSE_FILE", "/project/docker-compose.yml"),
         health_urls=_parse_health_urls(os.environ.get("HEALTH_URLS", "")),
+        state_path=os.environ.get("UPDATER_STATE_PATH", "/app/data/updater-state.json"),
+        route_config_path=os.environ.get(
+            "UPDATER_TRAEFIK_DYNAMIC_PATH",
+            "/project/config/traefik/dynamic/updater-routes.yml",
+        ),
+        pause_on_failure=os.environ.get("AUTO_UPDATE_PAUSE_ON_FAILURE", "true").lower() != "false",
     )
     app["secret"] = secret or ""
     history: deque[HistoryEntry] = deque(maxlen=MAX_HISTORY)
@@ -52,6 +58,7 @@ def create_app(
     app.router.add_get("/status", handle_status)
     app.router.add_post("/update/apply", handle_apply)
     app.router.add_post("/update/rollback", handle_rollback)
+    app.router.add_post("/update/unpause", handle_unpause)
     app.router.add_get("/update/history", handle_history)
     app.router.add_get("/diagnostics", handle_diagnostics)
 
@@ -87,11 +94,11 @@ def _parse_health_urls(urls_str: str) -> dict[str, str]:
 
 def _check_auth(request: web.Request) -> bool:
     """Validate the request's auth header against the shared secret."""
-    secret = request.app["secret"]
+    secret = request.app["secret"]  # gitleaks:allow
     if not secret:
         # No secret configured — allow all requests (internal network only)
         return True
-    request_secret = request.headers.get("X-Updater-Secret")
+    request_secret = request.headers.get("X-Updater-Secret")  # gitleaks:allow
     return validate_secret(request_secret, secret)
 
 
@@ -115,6 +122,12 @@ async def handle_status(request: web.Request) -> web.Response:
         current_operation=executor.current_operation,
         last_result=last_result,
         uptime_seconds=round(time.monotonic() - start_time, 2),
+        active_color=executor.active_color,
+        paused=executor.paused,
+        pause_reason=executor.pause_reason,
+        last_checked_at=executor.last_checked_at,
+        last_attempted_tag=executor.last_attempted_tag,
+        last_good_tag=executor.last_good_tag,
     )
     return web.json_response(status.to_dict())
 
@@ -128,6 +141,17 @@ async def handle_apply(request: web.Request) -> web.Response:
 
     if executor.is_busy:
         return web.json_response({"error": "Update already in progress"}, status=409)
+    if executor.paused:
+        return web.json_response(
+            {
+                "error": (
+                    f"Updates are paused: {executor.pause_reason}"
+                    if executor.pause_reason
+                    else "Updates are paused"
+                ),
+            },
+            status=423,
+        )
 
     try:
         data = await request.json()
@@ -185,6 +209,21 @@ async def handle_rollback(request: web.Request) -> web.Response:
     return web.json_response(result.to_dict(), status=status_code)
 
 
+async def handle_unpause(request: web.Request) -> web.Response:
+    """Clear paused state so automatic rollouts can continue."""
+    if not _check_auth(request):
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    executor: UpdateExecutor = request.app["executor"]
+    if executor.is_busy:
+        return web.json_response({"error": "Operation already in progress"}, status=409)
+
+    resumed = await executor.unpause()
+    if not resumed:
+        return web.json_response({"error": "Could not resume updates"}, status=500)
+    return web.json_response({"resumed": True, "status": "ok"})
+
+
 async def handle_history(request: web.Request) -> web.Response:
     """Return recent update history."""
     if not _check_auth(request):
@@ -210,7 +249,7 @@ async def run_server(
 ) -> None:
     """Start the updater sidecar server."""
     secret_path = os.environ.get("UPDATER_SECRET_PATH", "/app/data/.updater-secret")
-    secret = get_or_create_secret(secret_path)
+    secret = get_or_create_secret(secret_path)  # gitleaks:allow
 
     app = create_app(secret=secret)
 

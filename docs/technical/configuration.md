@@ -197,9 +197,14 @@ Priority bands:
 | `SELF_HEALING_ENABLED` | `true` | Enable auto-healing routines |
 | `AUTO_UPDATE_ENABLED` | `false` | Enable update checker |
 | `AUTO_UPDATE_REPO` | empty | Update source repository |
-| `UPDATE_REQUIRE_APPROVAL` | `true` | Require approval for updates |
+| `AUTO_UPDATE_CHECK_INTERVAL_MINUTES` | `15` | Minutes between update checks |
+| `UPDATE_REQUIRE_APPROVAL` | `false` | Require approval for updates |
+| `AUTO_UPDATE_PAUSE_ON_FAILURE` | `true` | Pause future rollouts after failed update |
 | `UPDATER_SERVICE_URL` | empty | Updater sidecar URL |
 | `UPDATER_SECRET` | empty | Updater sidecar shared secret |
+| `UPDATER_SECRET_PATH` | `/app/data/.updater-secret` | Shared secret file path |
+| `UPDATER_STATE_PATH` | `/app/data/updater-state.json` | Persisted updater state path |
+| `UPDATER_TRAEFIK_DYNAMIC_PATH` | `/project/config/traefik/dynamic/updater-routes.yml` | Traefik dynamic route file |
 | `TELEMETRY_SHARING_ENABLED` | `false` | Enable outbound telemetry sharing |
 | `TELEMETRY_CONSENT_CATEGORIES` | empty | Allowed telemetry categories |
 | `TELEMETRY_CENTRAL_URL` | empty | Central telemetry endpoint |

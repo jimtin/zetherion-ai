@@ -49,6 +49,10 @@ class UpdateResult:
     status: str  # success, failed, rolled_back
     previous_sha: str | None = None
     new_sha: str | None = None
+    active_color: str | None = None
+    target_color: str | None = None
+    paused: bool = False
+    pause_reason: str | None = None
     steps_completed: list[str] = field(default_factory=list)
     error: str | None = None
     duration_seconds: float = 0.0
@@ -60,6 +64,10 @@ class UpdateResult:
             "status": self.status,
             "previous_sha": self.previous_sha,
             "new_sha": self.new_sha,
+            "active_color": self.active_color,
+            "target_color": self.target_color,
+            "paused": self.paused,
+            "pause_reason": self.pause_reason,
             "steps_completed": self.steps_completed,
             "error": self.error,
             "duration_seconds": self.duration_seconds,
@@ -76,6 +84,12 @@ class SidecarStatus:
     current_operation: str | None = None
     last_result: UpdateResult | None = None
     uptime_seconds: float = 0.0
+    active_color: str | None = None
+    paused: bool = False
+    pause_reason: str | None = None
+    last_checked_at: str | None = None
+    last_attempted_tag: str | None = None
+    last_good_tag: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -83,6 +97,12 @@ class SidecarStatus:
             "current_operation": self.current_operation,
             "last_result": self.last_result.to_dict() if self.last_result else None,
             "uptime_seconds": self.uptime_seconds,
+            "active_color": self.active_color,
+            "paused": self.paused,
+            "pause_reason": self.pause_reason,
+            "last_checked_at": self.last_checked_at,
+            "last_attempted_tag": self.last_attempted_tag,
+            "last_good_tag": self.last_good_tag,
         }
 
 

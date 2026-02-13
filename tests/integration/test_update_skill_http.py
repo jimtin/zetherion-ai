@@ -32,6 +32,8 @@ def _mock_skill_internals(skill: UpdateCheckerSkill) -> None:
     mock_manager = AsyncMock()
     mock_manager.current_version = "0.1.0"
     mock_manager.check_for_update = AsyncMock(return_value=None)
+    mock_manager.unpause_rollouts = AsyncMock(return_value=True)
+    mock_manager.get_sidecar_status = AsyncMock(return_value=None)
     skill._manager = mock_manager
 
     mock_storage = MagicMock()
@@ -251,3 +253,21 @@ async def test_intents_include_update(
     assert "apply_update" in intents
     assert "rollback_update" in intents
     assert "update_status" in intents
+    assert "resume_updates" in intents
+
+
+@pytest.mark.integration
+async def test_handle_resume_updates_intent(
+    server_and_client: tuple[SkillsServer, SkillsClient, str],
+) -> None:
+    """POST /handle with resume_updates should call manager unpause flow."""
+    _server, client, _url = server_and_client
+    request = SkillRequest(
+        user_id=TEST_USER,
+        intent="resume_updates",
+        message="resume updates",
+    )
+    response = await client.handle_request(request)
+
+    assert response.success is True
+    assert response.data["resumed"] is True

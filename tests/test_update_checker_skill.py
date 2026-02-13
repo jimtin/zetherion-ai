@@ -84,6 +84,8 @@ def _make_skill(
         manager.check_for_update = AsyncMock(return_value=None)
         manager.apply_update = AsyncMock(return_value=_make_update_result())
         manager.rollback = AsyncMock(return_value=True)
+        manager.unpause_rollouts = AsyncMock(return_value=True)
+        manager.get_sidecar_status = AsyncMock(return_value=None)
         skill._manager = manager
 
     if with_storage:
@@ -114,6 +116,7 @@ class TestMetadata:
             "apply_update",
             "rollback_update",
             "update_status",
+            "resume_updates",
         ]
 
     def test_metadata_permissions(self) -> None:
@@ -275,6 +278,14 @@ class TestHandle:
         resp = await skill.handle(req)
         assert resp.success is True
         assert __version__ in resp.message
+
+    @pytest.mark.asyncio
+    async def test_dispatches_resume_updates(self) -> None:
+        skill = _make_skill()
+        req = _make_request("resume_updates")
+        resp = await skill.handle(req)
+        assert resp.success is True
+        assert "resumed" in resp.message.lower()
 
     @pytest.mark.asyncio
     async def test_unknown_intent_returns_error(self) -> None:

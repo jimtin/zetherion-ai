@@ -18,12 +18,21 @@ def _make_mock_executor(
     state: str = "idle",
     current_operation: str | None = None,
     is_busy: bool = False,
+    paused: bool = False,
+    pause_reason: str = "",
+    active_color: str = "blue",
 ) -> AsyncMock:
     """Return a mock UpdateExecutor with configurable properties."""
     executor = AsyncMock()
     type(executor).state = PropertyMock(return_value=state)
     type(executor).current_operation = PropertyMock(return_value=current_operation)
     type(executor).is_busy = PropertyMock(return_value=is_busy)
+    type(executor).paused = PropertyMock(return_value=paused)
+    type(executor).pause_reason = PropertyMock(return_value=pause_reason)
+    type(executor).active_color = PropertyMock(return_value=active_color)
+    type(executor).last_checked_at = PropertyMock(return_value=None)
+    type(executor).last_attempted_tag = PropertyMock(return_value=None)
+    type(executor).last_good_tag = PropertyMock(return_value=None)
     return executor
 
 
@@ -199,6 +208,20 @@ class TestApplyEndpoint:
             assert resp.status == 409
             data = await resp.json()
             assert "already in progress" in data["error"].lower()
+        finally:
+            await client.close()
+
+    async def test_apply_423_when_paused(self) -> None:
+        ex = _make_mock_executor(paused=True, pause_reason="manual intervention")
+        client = await _make_client(executor=ex)
+        try:
+            resp = await client.post(
+                "/update/apply",
+                json={"tag": "v1.0.0", "version": "1.0.0"},
+            )
+            assert resp.status == 423
+            data = await resp.json()
+            assert "paused" in data["error"].lower()
         finally:
             await client.close()
 
@@ -477,6 +500,49 @@ class TestDiagnosticsEndpoint:
 
 
 # ---------------------------------------------------------------------------
+# TestUnpauseEndpoint
+# ---------------------------------------------------------------------------
+
+
+class TestUnpauseEndpoint:
+    """Tests for POST /update/unpause."""
+
+    async def test_unpause_success(self) -> None:
+        ex = _make_mock_executor(paused=True)
+        ex.unpause = AsyncMock(return_value=True)
+        client = await _make_client(executor=ex)
+        try:
+            resp = await client.post("/update/unpause")
+            assert resp.status == 200
+            data = await resp.json()
+            assert data["resumed"] is True
+            ex.unpause.assert_awaited_once()
+        finally:
+            await client.close()
+
+    async def test_unpause_busy(self) -> None:
+        ex = _make_mock_executor(is_busy=True)
+        ex.unpause = AsyncMock(return_value=True)
+        client = await _make_client(executor=ex)
+        try:
+            resp = await client.post("/update/unpause")
+            assert resp.status == 409
+            ex.unpause.assert_not_awaited()
+        finally:
+            await client.close()
+
+    async def test_unpause_failure(self) -> None:
+        ex = _make_mock_executor(paused=True)
+        ex.unpause = AsyncMock(return_value=False)
+        client = await _make_client(executor=ex)
+        try:
+            resp = await client.post("/update/unpause")
+            assert resp.status == 500
+        finally:
+            await client.close()
+
+
+# ---------------------------------------------------------------------------
 # TestAuthBehavior
 # ---------------------------------------------------------------------------
 
@@ -488,11 +554,13 @@ class TestAuthBehavior:
         """When no secret is set, all authenticated endpoints are accessible."""
         ex = _make_mock_executor()
         ex.get_diagnostics = AsyncMock(return_value={})
+        ex.unpause = AsyncMock(return_value=True)
         client = await _make_client(executor=ex, secret="")
         try:
             assert (await client.get("/status")).status == 200
             assert (await client.get("/update/history")).status == 200
             assert (await client.get("/diagnostics")).status == 200
+            assert (await client.post("/update/unpause")).status == 200
         finally:
             await client.close()
 
@@ -508,6 +576,7 @@ class TestAuthBehavior:
             assert (await client.post("/update/apply", json=body_apply)).status == 401
             body_rb = {"previous_sha": "abc"}
             assert (await client.post("/update/rollback", json=body_rb)).status == 401
+            assert (await client.post("/update/unpause")).status == 401
         finally:
             await client.close()
 

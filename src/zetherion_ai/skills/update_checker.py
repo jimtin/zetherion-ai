@@ -9,6 +9,7 @@ Intents:
 - ``apply_update``  — apply a pending update
 - ``rollback_update`` — rollback to the previous version
 - ``update_status`` — show current version and last update info
+- ``resume_updates`` — clear updater pause and resume auto-rollouts
 """
 
 from __future__ import annotations
@@ -36,7 +37,7 @@ if TYPE_CHECKING:
 log = get_logger("zetherion_ai.skills.update_checker")
 
 # Check every 6th heartbeat (~30 min at default 5-min interval)
-_CHECK_EVERY_N_BEATS = 6
+_DEFAULT_CHECK_EVERY_N_BEATS = 6
 
 
 class UpdateCheckerSkill(Skill):
@@ -52,6 +53,7 @@ class UpdateCheckerSkill(Skill):
         enabled: bool = True,
         updater_url: str = "",
         updater_secret: str = "",  # noqa: S107  # nosec B107 — not a real password
+        check_every_n_beats: int = _DEFAULT_CHECK_EVERY_N_BEATS,
     ) -> None:
         super().__init__(memory)
         self._db_pool = db_pool
@@ -61,6 +63,7 @@ class UpdateCheckerSkill(Skill):
         self._enabled = enabled
         self._updater_url = updater_url
         self._updater_secret = updater_secret
+        self._check_every_n_beats = max(1, int(check_every_n_beats))
 
         # Lazily initialised
         self._manager: UpdateManager | None = None
@@ -90,6 +93,7 @@ class UpdateCheckerSkill(Skill):
                 "apply_update",
                 "rollback_update",
                 "update_status",
+                "resume_updates",
             ],
         )
 
@@ -133,6 +137,8 @@ class UpdateCheckerSkill(Skill):
             return await self._handle_rollback(request)
         elif intent == "update_status":
             return await self._handle_status(request)
+        elif intent == "resume_updates":
+            return await self._handle_resume(request)
         else:
             return SkillResponse.error_response(request.id, f"Unknown update intent: {intent}")
 
@@ -144,7 +150,7 @@ class UpdateCheckerSkill(Skill):
         if not self._enabled or self._manager is None:
             return actions
 
-        if self._beat_count % _CHECK_EVERY_N_BEATS != 0:
+        if self._beat_count % self._check_every_n_beats != 0:
             return actions
 
         release = await self._manager.check_for_update()
@@ -309,14 +315,33 @@ class UpdateCheckerSkill(Skill):
             "auto_apply": self._auto_apply,
             "enabled": self._enabled,
             "repo": self._github_repo,
+            "check_every_n_beats": self._check_every_n_beats,
         }
 
         if self._pending_release:
             data["pending_release"] = self._pending_release.to_dict()
+
+        if self._manager is not None:
+            sidecar_status = await self._manager.get_sidecar_status()
+            if sidecar_status:
+                data["sidecar"] = sidecar_status
 
         return SkillResponse(
             request_id=request.id,
             success=True,
             message=f"Running v{__version__}",
             data=data,
+        )
+
+    async def _handle_resume(self, request: SkillRequest) -> SkillResponse:
+        """Resume automatic rollouts if updater sidecar is paused."""
+        if self._manager is None:
+            return SkillResponse.error_response(request.id, "Update checker not configured")
+
+        resumed = await self._manager.unpause_rollouts()
+        return SkillResponse(
+            request_id=request.id,
+            success=resumed,
+            message="Updates resumed." if resumed else "Failed to resume updates.",
+            data={"resumed": resumed},
         )
