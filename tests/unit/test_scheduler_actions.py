@@ -737,3 +737,47 @@ class TestActionExecutor:
 
         await executor.execute(action)
         assert len(executor._message_counts.get("user123", [])) == 0
+
+    def test_extended_notification_actions_are_message_actions(self) -> None:
+        """New notification-like action types should be treated as message actions."""
+        expected = {
+            "dev_stale_annotation",
+            "dev_idea_reminder",
+            "milestone_drafts_pending",
+            "intelligence_report_generated",
+            "reply_drafts_generated",
+            "strategy_stale",
+        }
+        assert expected.issubset(ActionExecutor.MESSAGE_ACTION_TYPES)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("action_type", "data"),
+        [
+            ("dev_stale_annotation", {"project": "PersonalBot", "days_stale": 3}),
+            ("dev_idea_reminder", {"count": 2}),
+            ("milestone_drafts_pending", {"count": 4}),
+            ("intelligence_report_generated", {"channel_name": "My Channel"}),
+            ("reply_drafts_generated", {"total": 3, "pending_review": 1}),
+            ("strategy_stale", {"channel_name": "My Channel"}),
+        ],
+    )
+    async def test_extended_notification_actions_send_message(
+        self, action_type: str, data: dict[str, object]
+    ) -> None:
+        """Extended notification action handlers should produce/send user messages."""
+        sender = MockMessageSender(should_succeed=True)
+        executor = ActionExecutor(message_sender=sender)
+        action = HeartbeatAction(
+            skill_name="test_skill",
+            action_type=action_type,
+            user_id="user123",
+            data=dict(data),
+        )
+
+        result = await executor.execute(action)
+
+        assert result.success is True
+        assert len(sender.sent_messages) == 1
+        assert sender.sent_messages[0][0] == "user123"
+        assert sender.sent_messages[0][1]

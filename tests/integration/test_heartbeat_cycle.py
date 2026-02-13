@@ -13,6 +13,7 @@ external services are required.
 """
 
 from datetime import datetime, time, timedelta
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -216,26 +217,37 @@ async def test_rate_limiting(heartbeat_pipeline):
 
 
 @pytest.mark.integration
-async def test_quiet_hours_skip(heartbeat_pipeline):
-    """During quiet hours, _run_heartbeat() should skip the skills client call."""
+async def test_quiet_hours_defers_notifications(heartbeat_pipeline):
+    """During quiet hours, heartbeat still runs but message actions are deferred."""
     scheduler, sender, _executor, _client, _ts = heartbeat_pipeline
 
-    # Override config so it is *always* quiet
-    scheduler._config.quiet_start = time(0, 0)
-    scheduler._config.quiet_end = time(23, 59)
+    scheduler._user_ids = ["user-1"]
+    scheduler._get_skill_actions = AsyncMock(
+        return_value=[
+            HeartbeatAction(
+                skill_name="task_manager",
+                action_type="send_message",
+                user_id="user-1",
+                data={"message": "Quiet-hours test"},
+                priority=5,
+            )
+        ]
+    )
 
     msgs_before = len(sender.messages)
-    total_actions_before = scheduler.stats.total_actions
+    with (
+        patch.object(scheduler, "_is_quiet_hours_for_user", new=AsyncMock(return_value=True)),
+        patch.object(
+            scheduler,
+            "_next_notification_time",
+            new=AsyncMock(return_value=datetime.now() + timedelta(hours=1)),
+        ),
+    ):
+        await scheduler._run_heartbeat()
 
-    await scheduler._run_heartbeat()
-
-    # No new skill actions should have been fetched
-    assert scheduler.stats.total_actions == total_actions_before
-
-    # No messages should have been sent via the skills pipeline
+    # Message is deferred, not sent immediately.
     assert len(sender.messages) == msgs_before
-
-    # But total_beats should have incremented (heartbeat still ran)
+    assert len(scheduler._scheduled_events) == 1
     assert scheduler.stats.total_beats >= 1
 
 

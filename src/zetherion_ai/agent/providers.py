@@ -45,6 +45,7 @@ class TaskType(Enum):
     PROFILE_EXTRACTION = "profile_extraction"
     TASK_PARSING = "task_parsing"
     HEARTBEAT_DECISION = "heartbeat_decision"
+    DOCS_QA = "docs_qa"
 
 
 class Provider(Enum):
@@ -157,6 +158,11 @@ CAPABILITY_MATRIX: dict[TaskType, ProviderConfig] = {
         rationale="Simple yes/no decisions, no API cost",
         fallbacks=[Provider.GEMINI],
     ),
+    TaskType.DOCS_QA: ProviderConfig(
+        provider=Provider.OLLAMA,
+        rationale="Local docs retrieval QA should stay on-device",
+        fallbacks=[Provider.GEMINI, Provider.CLAUDE],
+    ),
 }
 
 
@@ -216,6 +222,7 @@ OLLAMA_TIER_CAPABILITIES: dict[OllamaTier, set[TaskType]] = {
         TaskType.PROFILE_EXTRACTION,
         TaskType.TASK_PARSING,
         TaskType.HEARTBEAT_DECISION,
+        TaskType.DOCS_QA,
     },
     OllamaTier.MEDIUM: {
         TaskType.SIMPLE_QA,
@@ -224,6 +231,7 @@ OLLAMA_TIER_CAPABILITIES: dict[OllamaTier, set[TaskType]] = {
         TaskType.PROFILE_EXTRACTION,
         TaskType.TASK_PARSING,
         TaskType.HEARTBEAT_DECISION,
+        TaskType.DOCS_QA,
         TaskType.SUMMARIZATION,
         TaskType.CONVERSATION,
     },
@@ -234,6 +242,7 @@ OLLAMA_TIER_CAPABILITIES: dict[OllamaTier, set[TaskType]] = {
         TaskType.PROFILE_EXTRACTION,
         TaskType.TASK_PARSING,
         TaskType.HEARTBEAT_DECISION,
+        TaskType.DOCS_QA,
         TaskType.SUMMARIZATION,
         TaskType.CONVERSATION,
         TaskType.CODE_GENERATION,

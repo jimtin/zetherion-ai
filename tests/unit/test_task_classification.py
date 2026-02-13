@@ -26,7 +26,11 @@ def agent():
     with (
         patch("zetherion_ai.agent.core.create_router_sync") as _mock_router,
         patch("zetherion_ai.agent.core.InferenceBroker") as _mock_broker,
+        patch("zetherion_ai.agent.core.get_settings") as mock_get_settings,
     ):
+        mock_settings = MagicMock()
+        mock_settings.docs_knowledge_enabled = False
+        mock_get_settings.return_value = mock_settings
         mock_memory = MagicMock()
         from zetherion_ai.agent.core import Agent
 
