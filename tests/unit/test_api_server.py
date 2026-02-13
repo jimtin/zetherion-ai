@@ -175,6 +175,7 @@ class TestMain:
     def test_main_runs_server_with_expected_args(self) -> None:
         settings = SimpleNamespace(postgres_dsn=None)
         tenant_manager = AsyncMock()
+        broker = AsyncMock()
 
         with (
             patch.dict(
@@ -184,6 +185,7 @@ class TestMain:
             ),
             patch("zetherion_ai.config.get_settings", return_value=settings),
             patch("zetherion_ai.api.server.TenantManager", return_value=tenant_manager),
+            patch("zetherion_ai.agent.inference.InferenceBroker", return_value=broker),
             patch("zetherion_ai.api.server.run_server", new_callable=AsyncMock) as mock_run_server,
         ):
             main()
@@ -198,9 +200,7 @@ class TestMain:
         assert args[3] == 9443
         assert kwargs["youtube_storage"] is None
         assert kwargs["youtube_skills"] == {}
-        # Optional in newer local API versions.
-        if "inference_broker" in kwargs:
-            assert kwargs["inference_broker"] is not None
+        assert kwargs["inference_broker"] is broker
 
     def test_main_continues_when_youtube_init_fails(self) -> None:
         settings = SimpleNamespace(postgres_dsn="postgres://test")
@@ -210,6 +210,10 @@ class TestMain:
             patch.dict("os.environ", {"API_JWT_SECRET": "secret"}, clear=True),
             patch("zetherion_ai.config.get_settings", return_value=settings),
             patch("zetherion_ai.api.server.TenantManager", return_value=tenant_manager),
+            patch(
+                "zetherion_ai.agent.inference.InferenceBroker",
+                side_effect=RuntimeError("broker init failed"),
+            ),
             patch(
                 "zetherion_ai.skills.youtube.storage.YouTubeStorage",
                 side_effect=RuntimeError("init failed"),
@@ -228,5 +232,4 @@ class TestMain:
         assert args[3] == 8443
         assert kwargs["youtube_storage"] is None
         assert kwargs["youtube_skills"] == {}
-        if "inference_broker" in kwargs:
-            assert kwargs["inference_broker"] is not None
+        assert kwargs["inference_broker"] is None
