@@ -5,6 +5,7 @@ SkillRegistry, registers all three built-in skills, and launches
 the async server via asyncio.run.
 """
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 
@@ -200,3 +201,51 @@ class TestSkillsServerMain:
         main()
 
         mock_get_settings.assert_called_once()
+
+    @patch("zetherion_ai.skills.server.asyncio.run")
+    @patch("zetherion_ai.skills.server.SkillRegistry")
+    @patch("zetherion_ai.config.get_settings")
+    @patch("zetherion_ai.skills.update_checker.UpdateCheckerSkill")
+    def test_update_checker_receives_token_interval_and_secret_fallback(
+        self,
+        mock_update_checker_cls,
+        mock_get_settings,
+        mock_registry_cls,
+        mock_asyncio_run,
+        tmp_path,
+    ) -> None:
+        """UpdateCheckerSkill should get github token, beat interval, and file-based secret."""
+        from zetherion_ai.skills.server import main
+
+        mock_settings = _configure_mock_settings(mock_get_settings)
+        mock_settings.auto_update_repo = "owner/repo"
+        mock_settings.auto_update_enabled = True
+        mock_settings.update_require_approval = False
+        mock_settings.auto_update_check_interval_minutes = 15
+        mock_settings.updater_url = "http://unused"
+        mock_settings.updater_service_url = "http://updater:9090"
+        mock_settings.updater_secret = ""
+
+        mock_secret = MagicMock()
+        mock_secret.get_secret_value.return_value = "ghp_token"
+        mock_settings.github_token = mock_secret
+
+        secret_file = Path(tmp_path) / ".updater-secret"
+        secret_file.write_text("file-secret", encoding="utf-8")
+
+        mock_registry = MagicMock()
+        mock_registry_cls.return_value = mock_registry
+        _close_coro_in_asyncio_run(mock_asyncio_run)
+
+        with patch.dict(
+            "os.environ",
+            {"UPDATER_SECRET_PATH": str(secret_file)},
+            clear=False,
+        ):
+            main()
+
+        mock_update_checker_cls.assert_called_once()
+        kwargs = mock_update_checker_cls.call_args.kwargs
+        assert kwargs["github_token"] == "ghp_token"
+        assert kwargs["updater_secret"] == "file-secret"
+        assert kwargs["check_every_n_beats"] == 3

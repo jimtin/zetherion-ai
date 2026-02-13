@@ -369,12 +369,27 @@ class Settings(BaseSettings):
     auto_update_repo: str = Field(
         default="", description="GitHub repo for update checks (owner/repo)"
     )
+    auto_update_check_interval_minutes: int = Field(
+        default=15,
+        description="Minutes between automatic update checks",
+    )
     update_require_approval: bool = Field(
-        default=True, description="Require owner approval before applying updates"
+        default=False, description="Require owner approval before applying updates"
+    )
+    auto_update_pause_on_failure: bool = Field(
+        default=True, description="Pause future auto-rollouts after a failed update"
     )
     updater_service_url: str = Field(default="", description="URL of the updater sidecar service")
     updater_secret: str = Field(
         default="", description="Shared secret for updater sidecar authentication"
+    )
+    updater_secret_path: str = Field(
+        default="/app/data/.updater-secret",
+        description="Shared updater secret file path used when env secret is unset",
+    )
+    updater_state_path: str = Field(
+        default="/app/data/updater-state.json",
+        description="Updater sidecar state file path for color/pause metadata",
     )
 
     # Telemetry Configuration (Phase 10C)

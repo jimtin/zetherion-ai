@@ -499,6 +499,39 @@ class TestParseProfileIntent:
 
 
 # ===========================================================================
+# _parse_update_intent
+# ===========================================================================
+
+
+class TestParseUpdateIntent:
+    """Tests for Agent._parse_update_intent."""
+
+    def test_resume_updates(self):
+        agent = _make_agent()
+        assert agent._parse_update_intent("resume updates") == "resume_updates"
+        assert agent._parse_update_intent("unpause rollout") == "resume_updates"
+
+    def test_rollback_update(self):
+        agent = _make_agent()
+        assert agent._parse_update_intent("rollback now") == "rollback_update"
+        assert agent._parse_update_intent("revert the release") == "rollback_update"
+
+    def test_apply_update(self):
+        agent = _make_agent()
+        assert agent._parse_update_intent("apply latest update") == "apply_update"
+        assert agent._parse_update_intent("install release") == "apply_update"
+
+    def test_update_status(self):
+        agent = _make_agent()
+        assert agent._parse_update_intent("what version are you") == "update_status"
+        assert agent._parse_update_intent("update status") == "update_status"
+
+    def test_default_check_update(self):
+        agent = _make_agent()
+        assert agent._parse_update_intent("check for updates") == "check_update"
+
+
+# ===========================================================================
 # generate_response — skill intents
 # ===========================================================================
 
@@ -578,6 +611,30 @@ class TestGenerateResponseSkillIntents:
             123,
             "show my profile",
             "profile_manager",
+        )
+
+    async def test_update_management_intent(self):
+        """UPDATE_MANAGEMENT routes to _handle_skill_intent(update_checker)."""
+        mock_memory = AsyncMock()
+        mock_router = AsyncMock()
+        mock_router.classify = AsyncMock(
+            return_value=_routing(MessageIntent.UPDATE_MANAGEMENT),
+        )
+
+        agent = _make_agent(mock_memory=mock_memory, mock_router=mock_router)
+        agent._handle_skill_intent = AsyncMock(return_value="Update status.")
+
+        result = await agent.generate_response(
+            user_id=123,
+            channel_id=456,
+            message="check for updates",
+        )
+
+        assert result == "Update status."
+        agent._handle_skill_intent.assert_awaited_once_with(
+            123,
+            "check for updates",
+            "update_checker",
         )
 
     async def test_docs_answer_short_circuits_email_skill(self):

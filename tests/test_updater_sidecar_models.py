@@ -114,6 +114,10 @@ class TestUpdateResult:
             "status": "success",
             "previous_sha": "abc123",
             "new_sha": "def456",
+            "active_color": None,
+            "target_color": None,
+            "paused": False,
+            "pause_reason": None,
             "steps_completed": ["git_fetch", "git_checkout"],
             "error": None,
             "duration_seconds": 12.5,
@@ -127,6 +131,10 @@ class TestUpdateResult:
         assert d["status"] == "failed"
         assert d["previous_sha"] is None
         assert d["new_sha"] is None
+        assert d["active_color"] is None
+        assert d["target_color"] is None
+        assert d["paused"] is False
+        assert d["pause_reason"] is None
         assert d["steps_completed"] == []
         assert d["error"] is None
         assert d["duration_seconds"] == 0.0
@@ -162,6 +170,12 @@ class TestSidecarStatus:
             "current_operation": None,
             "last_result": None,
             "uptime_seconds": 0.0,
+            "active_color": None,
+            "paused": False,
+            "pause_reason": None,
+            "last_checked_at": None,
+            "last_attempted_tag": None,
+            "last_good_tag": None,
         }
 
     def test_to_dict_with_last_result(self) -> None:
@@ -177,6 +191,7 @@ class TestSidecarStatus:
         assert d["last_result"] is not None
         assert d["last_result"]["status"] == "success"
         assert d["last_result"]["previous_sha"] == "abc123"
+        assert d["paused"] is False
 
     def test_to_dict_updating_state(self) -> None:
         status = SidecarStatus(

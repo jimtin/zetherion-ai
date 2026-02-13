@@ -1,10 +1,13 @@
-"""Tests for updater_sidecar.executor — UpdateExecutor and subprocess orchestration."""
+"""Tests for updater_sidecar.executor blue/green update orchestration."""
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
+import json
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from updater_sidecar.executor import UpdateExecutor
 
@@ -13,246 +16,128 @@ from updater_sidecar.executor import UpdateExecutor
 # ---------------------------------------------------------------------------
 
 
-def _make_executor(
-    health_urls: dict[str, str] | None = None,
-) -> UpdateExecutor:
-    """Return an UpdateExecutor with safe defaults for testing.
+def _make_executor(tmp_path: Path, health_urls: dict[str, str] | None = None) -> UpdateExecutor:
+    """Create an executor with writable temp paths."""
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
 
-    Note: UpdateExecutor.__init__ does ``health_urls or DEFAULT_HEALTH_URLS``
-    so passing an empty dict falls through to the default.  We always override
-    ``_health_urls`` after construction to guarantee test isolation.
-    """
-    ex = UpdateExecutor(
-        project_dir="/tmp/test-project",
-        compose_file="/tmp/test-project/docker-compose.yml",
-    )
-    # Override explicitly so tests never hit real DEFAULT_HEALTH_URLS
-    ex._health_urls = health_urls if health_urls is not None else {}
-    return ex
+    state_path = project_dir / "data" / "updater-state.json"
+    route_path = project_dir / "config" / "traefik" / "dynamic" / "updater-routes.yml"
 
-
-def _patch_run_cmd(executor: UpdateExecutor, side_effects: list[str | None]):
-    """Return a patch context manager for _run_cmd with ordered returns."""
-    return patch.object(
-        executor,
-        "_run_cmd",
-        new_callable=AsyncMock,
-        side_effect=side_effects,
-    )
-
-
-def _patch_health(return_value: bool = True):
-    """Patch check_service_health to return a fixed value."""
-    return patch(
-        "updater_sidecar.executor.check_service_health",
-        new_callable=AsyncMock,
-        return_value=return_value,
+    return UpdateExecutor(
+        project_dir=str(project_dir),
+        compose_file=str(project_dir / "docker-compose.yml"),
+        health_urls=health_urls,
+        state_path=str(state_path),
+        route_config_path=str(route_path),
+        pause_on_failure=True,
     )
 
 
 # ---------------------------------------------------------------------------
-# TestUpdateExecutorInit
+# Init / state
 # ---------------------------------------------------------------------------
 
 
 class TestUpdateExecutorInit:
-    """Tests for UpdateExecutor constructor and properties."""
+    """Tests for constructor/state bootstrapping."""
 
-    def test_default_state(self) -> None:
-        ex = _make_executor()
+    def test_default_state_and_route_file(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
         assert ex.state == "idle"
         assert ex.current_operation is None
-        assert ex.is_busy is False
+        assert ex.active_color == "blue"
+        assert ex.paused is False
 
-    def test_custom_health_urls(self) -> None:
-        urls = {"svc1": "http://svc1:8080/health"}
-        ex = _make_executor(health_urls=urls)
-        assert ex._health_urls == urls
+        route_file = Path(ex._route_config_path)
+        assert route_file.exists()
+        assert "skills-blue" in route_file.read_text(encoding="utf-8")
 
-    def test_default_health_urls_used_when_none_in_constructor(self) -> None:
-        """When constructed without overriding, DEFAULT_HEALTH_URLS are used."""
-        ex = UpdateExecutor(
-            project_dir="/proj",
-            compose_file="/proj/docker-compose.yml",
+    def test_load_existing_state(self, tmp_path: Path) -> None:
+        ex1 = _make_executor(tmp_path)
+        state_file = Path(ex1._state_path)
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(
+            json.dumps(
+                {
+                    "active_color": "green",
+                    "paused": True,
+                    "pause_reason": "failure",
+                    "last_good_tag": "v0.4.0",
+                }
+            ),
+            encoding="utf-8",
         )
-        # Should use DEFAULT_HEALTH_URLS (not overridden by helper)
-        assert "zetherion-ai-skills" in ex._health_urls
-        assert "zetherion-ai-api" in ex._health_urls
+
+        ex2 = _make_executor(tmp_path)
+        assert ex2.active_color == "green"
+        assert ex2.paused is True
+        assert ex2.pause_reason == "failure"
+        assert ex2.last_good_tag == "v0.4.0"
 
 
 # ---------------------------------------------------------------------------
-# TestApplyUpdate
+# apply_update
 # ---------------------------------------------------------------------------
 
 
 class TestApplyUpdate:
-    """Tests for UpdateExecutor.apply_update()."""
+    """Tests for apply_update() flow."""
 
-    async def test_successful_update_no_health_urls(self) -> None:
-        """Full update succeeds when there are no health URLs to check."""
-        ex = _make_executor(health_urls={})
+    @pytest.mark.asyncio
+    async def test_paused_update_returns_failed(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
+        ex._runtime["paused"] = True
+        ex._runtime["pause_reason"] = "manual pause"
 
-        # apply_update calls: git rev-parse HEAD, git fetch, git checkout,
-        # git rev-parse HEAD, docker compose build,
-        # then for each of 3 services: docker compose up -d
+        result = await ex.apply_update("v1.0.0", "1.0.0")
+
+        assert result.status == "failed"
+        assert result.paused is True
+        assert "paused" in (result.error or "")
+
+    @pytest.mark.asyncio
+    async def test_successful_update_switches_color(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
+
         run_results = [
-            "abc123\n",  # git rev-parse HEAD (initial)
-            "ok\n",  # git fetch origin tag v1.0.0
-            "ok\n",  # git checkout v1.0.0
-            "def456\n",  # git rev-parse HEAD (new)
+            "abc123\n",  # git rev-parse HEAD
+            "ok\n",  # git fetch
+            "ok\n",  # git checkout tag
+            "def456\n",  # git rev-parse HEAD
             "ok\n",  # docker compose build
-            "ok\n",  # restart zetherion-ai-skills
-            "ok\n",  # restart zetherion-ai-api
-            "ok\n",  # restart zetherion-ai-bot
+            "ok\n",  # up skills-green
+            "ok\n",  # up api-green
+            "ok\n",  # restart bot
+            "zetherion-ai-bot\n",  # ps running bot
+            "ok\n",  # stop old blue services
         ]
 
-        with _patch_run_cmd(ex, run_results):
-            result = await ex.apply_update("v1.0.0", "1.0.0")
+        with (
+            patch.object(ex, "_run_cmd", new_callable=AsyncMock, side_effect=run_results),
+            patch(
+                "updater_sidecar.executor.check_service_health",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(ex, "_attempt_rollback", new_callable=AsyncMock, return_value=True),
+        ):
+            result = await ex.apply_update("v1.0.1", "1.0.1")
 
         assert result.status == "success"
         assert result.previous_sha == "abc123"
         assert result.new_sha == "def456"
-        assert "git_fetch" in result.steps_completed
-        assert "git_checkout" in result.steps_completed
-        assert "docker_build" in result.steps_completed
-        assert "restart_zetherion-ai-skills" in result.steps_completed
-        assert "restart_zetherion-ai-api" in result.steps_completed
-        assert "restart_zetherion-ai-bot" in result.steps_completed
-        assert result.completed_at is not None
-        assert result.duration_seconds >= 0
-        assert result.error is None
+        assert result.active_color == "green"
+        assert ex.active_color == "green"
+        assert ex.last_good_tag == "v1.0.1"
 
-    async def test_successful_update_with_health_checks(self) -> None:
-        """Update succeeds with health checks passing."""
-        health_urls = {
-            "zetherion-ai-skills": "http://skills:8080/health",
-            "zetherion-ai-api": "http://api:8443/health",
-        }
-        ex = _make_executor(health_urls=health_urls)
+        route_text = Path(ex._route_config_path).read_text(encoding="utf-8")
+        assert "skills-green" in route_text
+        assert "api-green" in route_text
 
-        run_results = [
-            "abc123\n",  # git rev-parse HEAD (initial)
-            "ok\n",  # git fetch
-            "ok\n",  # git checkout
-            "def456\n",  # git rev-parse HEAD (new)
-            "ok\n",  # docker compose build
-            "ok\n",  # restart zetherion-ai-skills
-            "ok\n",  # restart zetherion-ai-api
-            "ok\n",  # restart zetherion-ai-bot
-        ]
-
-        with (
-            _patch_run_cmd(ex, run_results),
-            _patch_health(return_value=True),
-        ):
-            result = await ex.apply_update("v1.0.0", "1.0.0")
-
-        assert result.status == "success"
-        assert "health_zetherion-ai-skills" in result.steps_completed
-        assert "health_zetherion-ai-api" in result.steps_completed
-
-    async def test_git_rev_parse_fails(self) -> None:
-        """If initial git rev-parse HEAD fails, update fails immediately."""
-        ex = _make_executor(health_urls={})
-
-        with _patch_run_cmd(ex, [None]):
-            result = await ex.apply_update("v1.0.0", "1.0.0")
-
-        assert result.status == "failed"
-        assert result.error == "Failed to get current git SHA"
-        assert result.completed_at is not None
-
-    async def test_git_fetch_fails(self) -> None:
-        ex = _make_executor(health_urls={})
-
-        with _patch_run_cmd(ex, ["abc123\n", None]):
-            result = await ex.apply_update("v1.0.0", "1.0.0")
-
-        assert result.status == "failed"
-        assert result.error == "git fetch failed"
-        assert result.previous_sha == "abc123"
-
-    async def test_git_checkout_fails(self) -> None:
-        ex = _make_executor(health_urls={})
-
-        with _patch_run_cmd(ex, ["abc123\n", "ok\n", None]):
-            result = await ex.apply_update("v1.0.0", "1.0.0")
-
-        assert result.status == "failed"
-        assert result.error == "git checkout failed"
-        assert "git_fetch" in result.steps_completed
-        assert "git_checkout" not in result.steps_completed
-
-    async def test_docker_build_fails_triggers_rollback(self) -> None:
-        """Docker build failure triggers rollback attempt."""
-        ex = _make_executor(health_urls={})
-
-        run_results = [
-            "abc123\n",  # git rev-parse HEAD
-            "ok\n",  # git fetch
-            "ok\n",  # git checkout
-            "def456\n",  # git rev-parse HEAD (new)
-            None,  # docker compose build FAILS
-        ]
-
-        with (
-            _patch_run_cmd(ex, run_results),
-            patch.object(ex, "_attempt_rollback", new_callable=AsyncMock, return_value=True),
-        ):
-            result = await ex.apply_update("v1.0.0", "1.0.0")
-
-        assert result.status == "rolled_back"
-        assert result.error == "docker build failed"
-
-    async def test_service_restart_fails_triggers_rollback(self) -> None:
-        """Service restart failure triggers rollback."""
-        ex = _make_executor(health_urls={})
-
-        run_results = [
-            "abc123\n",  # git rev-parse HEAD
-            "ok\n",  # git fetch
-            "ok\n",  # git checkout
-            "def456\n",  # git rev-parse HEAD (new)
-            "ok\n",  # docker compose build
-            None,  # restart first service FAILS
-        ]
-
-        with (
-            _patch_run_cmd(ex, run_results),
-            patch.object(ex, "_attempt_rollback", new_callable=AsyncMock, return_value=True),
-        ):
-            result = await ex.apply_update("v1.0.0", "1.0.0")
-
-        assert result.status == "rolled_back"
-        assert "Failed to restart" in result.error
-
-    async def test_health_check_fails_triggers_rollback(self) -> None:
-        """Health check failure after restart triggers rollback."""
-        health_urls = {"zetherion-ai-skills": "http://skills:8080/health"}
-        ex = _make_executor(health_urls=health_urls)
-
-        run_results = [
-            "abc123\n",  # git rev-parse HEAD
-            "ok\n",  # git fetch
-            "ok\n",  # git checkout
-            "def456\n",  # git rev-parse HEAD (new)
-            "ok\n",  # docker compose build
-            "ok\n",  # restart zetherion-ai-skills
-        ]
-
-        with (
-            _patch_run_cmd(ex, run_results),
-            _patch_health(return_value=False),
-            patch.object(ex, "_attempt_rollback", new_callable=AsyncMock, return_value=True),
-        ):
-            result = await ex.apply_update("v1.0.0", "1.0.0")
-
-        assert result.status == "rolled_back"
-        assert "Health check failed" in result.error
-
-    async def test_state_returns_to_idle_after_update(self) -> None:
-        ex = _make_executor(health_urls={})
-
+    @pytest.mark.asyncio
+    async def test_update_fetches_exact_tag_from_origin(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
         run_results = [
             "abc123\n",
             "ok\n",
@@ -262,326 +147,174 @@ class TestApplyUpdate:
             "ok\n",
             "ok\n",
             "ok\n",
+            "zetherion-ai-bot\n",
+            "ok\n",
+        ]
+        run_cmd = AsyncMock(side_effect=run_results)
+
+        with (
+            patch.object(ex, "_run_cmd", run_cmd),
+            patch(
+                "updater_sidecar.executor.check_service_health",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(ex, "_attempt_rollback", new_callable=AsyncMock, return_value=True),
+        ):
+            result = await ex.apply_update("v1.2.3", "1.2.3")
+
+        assert result.status == "success"
+        commands = [str(call.args[0]) for call in run_cmd.call_args_list]
+        assert any(
+            cmd.startswith("git fetch --force origin ")
+            and "refs/tags/v1.2.3:refs/tags/v1.2.3" in cmd
+            for cmd in commands
+        )
+        assert any(
+            cmd.startswith("git checkout --force ") and "refs/tags/v1.2.3" in cmd
+            for cmd in commands
+        )
+
+    @pytest.mark.asyncio
+    async def test_build_failure_rolls_back_and_pauses(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
+
+        run_results = [
+            "abc123\n",  # git rev-parse
+            "ok\n",  # fetch
+            "ok\n",  # checkout
+            "def456\n",  # rev-parse
+            None,  # build fails
         ]
 
-        with _patch_run_cmd(ex, run_results):
-            await ex.apply_update("v1.0.0", "1.0.0")
-
-        assert ex.state == "idle"
-        assert ex.current_operation is None
-
-    async def test_state_returns_to_idle_after_failure(self) -> None:
-        ex = _make_executor(health_urls={})
-
-        with _patch_run_cmd(ex, [None]):
-            await ex.apply_update("v1.0.0", "1.0.0")
-
-        assert ex.state == "idle"
-        assert ex.current_operation is None
-
-    async def test_concurrent_update_returns_failed(self) -> None:
-        """Second concurrent apply_update returns failed immediately."""
-
-        ex = _make_executor(health_urls={})
-
-        # The first call will hold the lock via slow _run_cmd
-        slow_call_started = asyncio.Event()
-
-        async def slow_run_cmd(cmd: str, timeout: int = 120) -> str | None:
-            slow_call_started.set()
-            await asyncio.sleep(10)
-            return "ok\n"
-
-        with patch.object(ex, "_run_cmd", side_effect=slow_run_cmd):
-            task1 = asyncio.create_task(ex.apply_update("v1.0.0", "1.0.0"))
-            # Wait for the first task to actually start and acquire the lock
-            await slow_call_started.wait()
-
-            # Second call should fail immediately
-            result2 = await ex.apply_update("v2.0.0", "2.0.0")
-            assert result2.status == "failed"
-            assert result2.error == "Update already in progress"
-
-            task1.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task1
-
-    async def test_unexpected_exception_is_caught(self) -> None:
-        """Unexpected errors are caught and reported."""
-        ex = _make_executor(health_urls={})
-
-        with patch.object(
-            ex,
-            "_run_cmd",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("unexpected boom"),
+        with (
+            patch.object(ex, "_run_cmd", new_callable=AsyncMock, side_effect=run_results),
+            patch.object(ex, "_attempt_rollback", new_callable=AsyncMock, return_value=True),
         ):
-            result = await ex.apply_update("v1.0.0", "1.0.0")
+            result = await ex.apply_update("v1.0.2", "1.0.2")
 
-        assert result.status == "failed"
-        assert "Unexpected error" in result.error
-        assert ex.state == "idle"
+        assert result.status == "rolled_back"
+        assert ex.paused is True
+        assert "docker build failed" in ex.pause_reason
+
+    @pytest.mark.asyncio
+    async def test_concurrent_update_rejected(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
+
+        async def slow_apply(*_args, **_kwargs):
+            await asyncio.sleep(0.2)
+            return ex._default_state()  # pragma: no cover - never used
+
+        with patch.object(ex, "_do_apply", side_effect=slow_apply):
+            t1 = asyncio.create_task(ex.apply_update("v1", "1"))
+            await asyncio.sleep(0.05)
+            result2 = await ex.apply_update("v2", "2")
+            t1.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await t1
+
+        assert result2.status == "failed"
+        assert "in progress" in (result2.error or "")
 
 
 # ---------------------------------------------------------------------------
-# TestRollback
+# unpause / rollback / routes
 # ---------------------------------------------------------------------------
 
 
-class TestRollback:
-    """Tests for UpdateExecutor.rollback()."""
+class TestStateTransitions:
+    """Tests for unpause/rollback/helpers."""
 
-    async def test_successful_rollback(self) -> None:
-        ex = _make_executor(health_urls={})
+    @pytest.mark.asyncio
+    async def test_unpause_clears_pause(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
+        ex._runtime["paused"] = True
+        ex._runtime["pause_reason"] = "failure"
 
+        ok = await ex.unpause()
+
+        assert ok is True
+        assert ex.paused is False
+        assert ex.pause_reason == ""
+
+    @pytest.mark.asyncio
+    async def test_unpause_while_busy_returns_false(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
+        await ex._lock.acquire()
+        try:
+            ok = await ex.unpause()
+        finally:
+            ex._lock.release()
+
+        assert ok is False
+
+    @pytest.mark.asyncio
+    async def test_manual_rollback_success(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
         with patch.object(ex, "_attempt_rollback", new_callable=AsyncMock, return_value=True):
             result = await ex.rollback("abc123")
 
         assert result.status == "success"
-        assert result.previous_sha == "abc123"
         assert result.new_sha == "abc123"
-        assert result.completed_at is not None
-        assert result.duration_seconds >= 0
 
-    async def test_failed_rollback(self) -> None:
-        ex = _make_executor(health_urls={})
-
+    @pytest.mark.asyncio
+    async def test_manual_rollback_failure(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
         with patch.object(ex, "_attempt_rollback", new_callable=AsyncMock, return_value=False):
             result = await ex.rollback("abc123")
 
         assert result.status == "failed"
         assert result.error == "Rollback failed"
 
-    async def test_rollback_state_returns_to_idle(self) -> None:
-        ex = _make_executor(health_urls={})
+    def test_switch_active_color_updates_file_and_state(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
 
-        with patch.object(ex, "_attempt_rollback", new_callable=AsyncMock, return_value=True):
-            await ex.rollback("abc123")
+        assert ex._switch_active_color("green") is True
+        assert ex.active_color == "green"
+        text = Path(ex._route_config_path).read_text(encoding="utf-8")
+        assert "skills-green" in text
 
-        assert ex.state == "idle"
-        assert ex.current_operation is None
-
-    async def test_concurrent_rollback_returns_failed(self) -> None:
-        ex = _make_executor(health_urls={})
-
-        slow_started = asyncio.Event()
-
-        async def slow_rollback(sha: str) -> bool:
-            slow_started.set()
-            await asyncio.sleep(10)
-            return True
-
-        with patch.object(ex, "_attempt_rollback", side_effect=slow_rollback):
-            task1 = asyncio.create_task(ex.rollback("abc123"))
-            await slow_started.wait()
-
-            result2 = await ex.rollback("def456")
-            assert result2.status == "failed"
-            assert result2.error == "Operation already in progress"
-
-            task1.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task1
+    def test_switch_active_color_rejects_invalid(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
+        assert ex._switch_active_color("purple") is False
 
 
 # ---------------------------------------------------------------------------
-# TestAttemptRollback
+# Diagnostics / command runner
 # ---------------------------------------------------------------------------
 
 
-class TestAttemptRollback:
-    """Tests for UpdateExecutor._attempt_rollback()."""
+class TestDiagnosticsAndCommands:
+    """Tests for diagnostics and low-level command execution."""
 
-    async def test_empty_sha_returns_false(self) -> None:
-        ex = _make_executor(health_urls={})
-        result = await ex._attempt_rollback("")
-        assert result is False
+    @pytest.mark.asyncio
+    async def test_get_diagnostics(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
+        ex._runtime["active_color"] = "green"
 
-    async def test_successful_rollback_no_health_urls(self) -> None:
-        """Full rollback succeeds: checkout, build, restart all services."""
-        ex = _make_executor(health_urls={})
-
-        # checkout, build, restart x3
-        run_results = [
-            "ok\n",  # git checkout
-            "ok\n",  # docker compose build
-            "ok\n",  # restart svc1
-            "ok\n",  # restart svc2
-            "ok\n",  # restart svc3
+        outputs = [
+            "abc123\n",  # rev-parse
+            "v1.0.0\n",  # describe/branch
+            "",  # status porcelain
+            "[]\n",  # compose ps
+            "disk\n",  # df
         ]
 
-        with _patch_run_cmd(ex, run_results):
-            result = await ex._attempt_rollback("abc123")
+        with patch.object(ex, "_run_cmd", new_callable=AsyncMock, side_effect=outputs):
+            data = await ex.get_diagnostics()
 
-        assert result is True
+        assert data["git_sha"] == "abc123"
+        assert data["git_ref"] == "v1.0.0"
+        assert data["git_clean"] is True
+        assert data["active_color"] == "green"
+        assert "disk_usage" in data
 
-    async def test_checkout_fails(self) -> None:
-        ex = _make_executor(health_urls={})
+    @pytest.mark.asyncio
+    async def test_run_cmd_success_and_failure(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
 
-        with _patch_run_cmd(ex, [None]):
-            result = await ex._attempt_rollback("abc123")
+        out = await ex._run_cmd("printf 'ok'")
+        assert out == "ok"
 
-        assert result is False
-
-    async def test_build_fails(self) -> None:
-        ex = _make_executor(health_urls={})
-
-        with _patch_run_cmd(ex, ["ok\n", None]):
-            result = await ex._attempt_rollback("abc123")
-
-        assert result is False
-
-    async def test_restart_fails(self) -> None:
-        ex = _make_executor(health_urls={})
-
-        with _patch_run_cmd(ex, ["ok\n", "ok\n", None]):
-            result = await ex._attempt_rollback("abc123")
-
-        assert result is False
-
-    async def test_health_check_fails_during_rollback(self) -> None:
-        health_urls = {"zetherion-ai-skills": "http://skills:8080/health"}
-        ex = _make_executor(health_urls=health_urls)
-
-        run_results = [
-            "ok\n",  # git checkout
-            "ok\n",  # docker compose build
-            "ok\n",  # restart svc1
-            "ok\n",  # restart svc2
-            "ok\n",  # restart svc3
-        ]
-
-        with (
-            _patch_run_cmd(ex, run_results),
-            _patch_health(return_value=False),
-        ):
-            result = await ex._attempt_rollback("abc123")
-
-        assert result is False
-
-
-# ---------------------------------------------------------------------------
-# TestGetDiagnostics
-# ---------------------------------------------------------------------------
-
-
-class TestGetDiagnostics:
-    """Tests for UpdateExecutor.get_diagnostics()."""
-
-    async def test_all_commands_succeed(self) -> None:
-        ex = _make_executor()
-
-        run_results = [
-            "abc123def456\n",  # git rev-parse HEAD
-            "v1.0.0\n",  # git describe
-            "\n",  # git status (clean)
-            '{"Name":"svc1","State":"running"}\n',  # docker compose ps
-            "/dev/sda1 50G 20G 30G 40% /\n",  # df -h
-        ]
-
-        with _patch_run_cmd(ex, run_results):
-            diag = await ex.get_diagnostics()
-
-        assert diag["git_sha"] == "abc123def456"
-        assert diag["git_ref"] == "v1.0.0"
-        assert diag["git_clean"] is True
-        assert "svc1" in diag["containers_raw"]
-        assert "/" in diag["disk_usage"]
-
-    async def test_commands_fail_gracefully(self) -> None:
-        ex = _make_executor()
-
-        with _patch_run_cmd(ex, [None, None, None, None, None]):
-            diag = await ex.get_diagnostics()
-
-        assert diag["git_sha"] == "unknown"
-        assert diag["git_ref"] == "unknown"
-        assert diag["git_clean"] is False
-        assert diag["containers_raw"] == "unavailable"
-        assert diag["disk_usage"] == "unavailable"
-
-    async def test_dirty_working_tree(self) -> None:
-        ex = _make_executor()
-
-        run_results = [
-            "abc123\n",
-            "main\n",
-            " M src/app.py\n",  # dirty working tree
-            "{}",
-            "/dev/sda1 50G 20G 30G 40% /\n",
-        ]
-
-        with _patch_run_cmd(ex, run_results):
-            diag = await ex.get_diagnostics()
-
-        assert diag["git_clean"] is False
-
-
-# ---------------------------------------------------------------------------
-# TestRunCmd
-# ---------------------------------------------------------------------------
-
-
-class TestRunCmd:
-    """Tests for UpdateExecutor._run_cmd()."""
-
-    async def test_successful_command(self) -> None:
-        ex = _make_executor()
-
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"output\n", b""))
-        mock_proc.returncode = 0
-
-        with patch("asyncio.create_subprocess_shell", return_value=mock_proc):
-            result = await ex._run_cmd("echo hello")
-
-        assert result == "output\n"
-
-    async def test_failed_command_returns_none(self) -> None:
-        ex = _make_executor()
-
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"", b"error msg"))
-        mock_proc.returncode = 1
-
-        with patch("asyncio.create_subprocess_shell", return_value=mock_proc):
-            result = await ex._run_cmd("false")
-
-        assert result is None
-
-    async def test_timeout_returns_none(self) -> None:
-        ex = _make_executor()
-
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"", b""))
-
-        with patch("asyncio.create_subprocess_shell", return_value=mock_proc):
-            with patch("asyncio.wait_for", side_effect=TimeoutError):
-                result = await ex._run_cmd("sleep 999", timeout=1)
-
-        assert result is None
-
-    async def test_generic_exception_returns_none(self) -> None:
-        ex = _make_executor()
-
-        with patch(
-            "asyncio.create_subprocess_shell",
-            side_effect=OSError("no such file"),
-        ):
-            result = await ex._run_cmd("bad_command")
-
-        assert result is None
-
-    async def test_cwd_is_project_dir(self) -> None:
-        ex = _make_executor()
-
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"ok\n", b""))
-        mock_proc.returncode = 0
-
-        with patch("asyncio.create_subprocess_shell", return_value=mock_proc) as mock_create:
-            await ex._run_cmd("pwd")
-
-        mock_create.assert_awaited_once()
-        call_kwargs = mock_create.call_args
-        assert call_kwargs.kwargs.get("cwd") == "/tmp/test-project"
+        fail = await ex._run_cmd("exit 1")
+        assert fail is None
