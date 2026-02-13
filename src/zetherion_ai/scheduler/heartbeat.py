@@ -9,9 +9,11 @@ The scheduler runs inside the bot container and periodically:
 
 import asyncio
 import contextlib
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, time
+from datetime import UTC, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 from zetherion_ai.config import get_dynamic
 from zetherion_ai.logging import get_logger
@@ -71,6 +73,16 @@ class HeartbeatStats:
         }
 
 
+@dataclass
+class QuietHoursWindow:
+    """Quiet-hours window for a specific user."""
+
+    start: time
+    end: time
+    timezone: str | None = None
+    enabled: bool = True
+
+
 class HeartbeatScheduler:
     """Async scheduler for periodic skill heartbeat.
 
@@ -88,6 +100,7 @@ class HeartbeatScheduler:
         action_executor: ActionExecutor | None = None,
         config: HeartbeatConfig | None = None,
         queue_manager: "QueueManager | None" = None,
+        quiet_hours_resolver: Callable[[str], Awaitable[QuietHoursWindow | None]] | None = None,
     ):
         """Initialize the heartbeat scheduler.
 
@@ -96,11 +109,13 @@ class HeartbeatScheduler:
             action_executor: Executor for actions.
             config: Scheduler configuration.
             queue_manager: Optional QueueManager for enqueuing actions.
+            quiet_hours_resolver: Optional resolver for per-user quiet windows.
         """
         self._skills_client = skills_client
         self._action_executor = action_executor or ActionExecutor()
         self._config = config or HeartbeatConfig()
         self._queue_manager = queue_manager
+        self._quiet_hours_resolver = quiet_hours_resolver
         self._stats = HeartbeatStats()
         self._running = False
         self._task: asyncio.Task[None] | None = None
@@ -176,21 +191,113 @@ class HeartbeatScheduler:
             return True
         return False
 
-    def _is_quiet_hours(self) -> bool:
-        """Check if current time is within quiet hours."""
-        now = datetime.now().time()
+    @staticmethod
+    def _within_quiet_window(now: time, start: time, end: time) -> bool:
+        """Check if ``now`` is inside a quiet-hours window."""
+        # Handle overnight quiet hours (e.g., 22:00 - 07:00)
+        if start > end:
+            return now >= start or now <= end
+        return start <= now <= end
+
+    def _default_quiet_window(self) -> QuietHoursWindow:
+        """Get system/default quiet-hours configuration."""
         quiet_start_hour = get_dynamic("scheduler", "quiet_start", None)
         quiet_end_hour = get_dynamic("scheduler", "quiet_end", None)
         start = (
             time(quiet_start_hour, 0) if quiet_start_hour is not None else self._config.quiet_start
         )
         end = time(quiet_end_hour, 0) if quiet_end_hour is not None else self._config.quiet_end
+        enabled = bool(get_dynamic("scheduler", "quiet_hours_enabled", True))
+        return QuietHoursWindow(start=start, end=end, enabled=enabled)
 
-        # Handle overnight quiet hours (e.g., 22:00 - 07:00)
-        if start > end:
-            return now >= start or now <= end
-        else:
-            return start <= now <= end
+    def _is_quiet_hours(self) -> bool:
+        """Check if current time is within system quiet hours."""
+        window = self._default_quiet_window()
+        if not window.enabled:
+            return False
+        return self._within_quiet_window(datetime.now().time(), window.start, window.end)
+
+    async def _resolve_quiet_window(self, user_id: str) -> QuietHoursWindow:
+        """Resolve quiet-hours window for a specific user."""
+        if self._quiet_hours_resolver is None:
+            return self._default_quiet_window()
+
+        try:
+            resolved = await self._quiet_hours_resolver(user_id)
+        except Exception as exc:
+            log.warning("quiet_hours_resolver_failed", user_id=user_id, error=str(exc))
+            return self._default_quiet_window()
+
+        if resolved is None:
+            return self._default_quiet_window()
+        return resolved
+
+    async def _is_quiet_hours_for_user(self, user_id: str) -> bool:
+        """Check quiet-hours state for a specific user."""
+        window = await self._resolve_quiet_window(user_id)
+        if not window.enabled:
+            return False
+
+        if self._config.respect_timezone and window.timezone:
+            try:
+                zone_now = datetime.now(UTC).astimezone(ZoneInfo(window.timezone)).time()
+                return self._within_quiet_window(zone_now, window.start, window.end)
+            except Exception:
+                log.warning(
+                    "quiet_hours_timezone_invalid",
+                    user_id=user_id,
+                    timezone=window.timezone,
+                )
+
+        return self._within_quiet_window(datetime.now().time(), window.start, window.end)
+
+    async def _next_notification_time(self, user_id: str) -> datetime:
+        """Compute next allowed notification time for a user."""
+        window = await self._resolve_quiet_window(user_id)
+        if not window.enabled:
+            return datetime.now()
+
+        # If timezone is available, compute the exact quiet-end instant there.
+        if self._config.respect_timezone and window.timezone:
+            try:
+                zone = ZoneInfo(window.timezone)
+                now_utc = datetime.now(UTC)
+                now_local = now_utc.astimezone(zone)
+                local_now_time = now_local.time()
+                if not self._within_quiet_window(local_now_time, window.start, window.end):
+                    return datetime.now()
+
+                end_dt_local = datetime.combine(now_local.date(), window.end, tzinfo=zone)
+                if window.start > window.end and local_now_time >= window.start:
+                    end_dt_local += timedelta(days=1)
+                if window.start <= window.end and local_now_time > window.end:
+                    end_dt_local += timedelta(days=1)
+                return end_dt_local.astimezone().replace(tzinfo=None)
+            except Exception:
+                log.warning("quiet_hours_next_time_timezone_failed", user_id=user_id)
+
+        now_local = datetime.now()
+        now_time = now_local.time()
+        if not self._within_quiet_window(now_time, window.start, window.end):
+            return now_local
+
+        end_dt = datetime.combine(now_local.date(), window.end)
+        if window.start > window.end and now_time >= window.start:
+            end_dt += timedelta(days=1)
+        if window.start <= window.end and now_time > window.end:
+            end_dt += timedelta(days=1)
+        return end_dt
+
+    @staticmethod
+    def _is_message_action(action: HeartbeatAction) -> bool:
+        """Whether an action sends a user-facing notification."""
+        return action.action_type in ActionExecutor.MESSAGE_ACTION_TYPES
+
+    async def _should_defer_action(self, action: HeartbeatAction) -> bool:
+        """Determine whether action execution should be deferred."""
+        if not self._is_message_action(action):
+            return False
+        return await self._is_quiet_hours_for_user(action.user_id)
 
     async def start(self) -> None:
         """Start the heartbeat scheduler."""
@@ -231,16 +338,8 @@ class HeartbeatScheduler:
         self._stats.total_beats += 1
         self._stats.last_beat = datetime.now()
 
-        # Skip during quiet hours (but still process scheduled events)
-        in_quiet_hours = self._is_quiet_hours()
-
         # Process scheduled events
         await self._process_scheduled_events()
-
-        # Skip skills heartbeat during quiet hours
-        if in_quiet_hours:
-            log.debug("skipping_heartbeat_quiet_hours")
-            return
 
         # Skip if no users to check
         if not self._user_ids:
@@ -297,8 +396,26 @@ class HeartbeatScheduler:
             return await self._enqueue_actions(actions)
 
         # Direct execution fallback
-        results = []
+        results: list[ActionResult] = []
         for action in actions:
+            if await self._should_defer_action(action):
+                trigger_time = await self._next_notification_time(action.user_id)
+                event = ScheduledEvent(
+                    user_id=action.user_id,
+                    skill_name=action.skill_name,
+                    action_type=action.action_type,
+                    trigger_time=trigger_time,
+                    data=action.data,
+                )
+                self.schedule_event(event)
+                results.append(
+                    ActionResult(
+                        action=action,
+                        success=True,
+                        message=f"Deferred until {trigger_time.isoformat()}",
+                    )
+                )
+                continue
             result = await self._action_executor.execute(action)
             results.append(result)
         return results
@@ -311,6 +428,10 @@ class HeartbeatScheduler:
         results: list[ActionResult] = []
         for action in actions:
             try:
+                scheduled_for = None
+                if await self._should_defer_action(action):
+                    scheduled_for = await self._next_notification_time(action.user_id)
+
                 await self._queue_manager.enqueue(
                     task_type=QueueTaskType.HEARTBEAT_ACTION,
                     user_id=int(action.user_id) if action.user_id.isdigit() else 0,
@@ -322,13 +443,36 @@ class HeartbeatScheduler:
                         "priority": action.priority,
                     },
                     priority=QueuePriority.SCHEDULED,
+                    scheduled_for=scheduled_for,
                 )
-                results.append(ActionResult(action=action, success=True, message="Enqueued"))
+                message = "Enqueued"
+                if scheduled_for is not None:
+                    message = f"Deferred until {scheduled_for.isoformat()}"
+                results.append(ActionResult(action=action, success=True, message=message))
             except Exception as exc:
                 log.warning("heartbeat_enqueue_failed", error=str(exc))
-                # Fall back to direct execution for this action
-                result = await self._action_executor.execute(action)
-                results.append(result)
+                # Fall back while still respecting quiet-hours delivery policy.
+                if await self._should_defer_action(action):
+                    trigger_time = await self._next_notification_time(action.user_id)
+                    self.schedule_event(
+                        ScheduledEvent(
+                            user_id=action.user_id,
+                            skill_name=action.skill_name,
+                            action_type=action.action_type,
+                            trigger_time=trigger_time,
+                            data=action.data,
+                        )
+                    )
+                    results.append(
+                        ActionResult(
+                            action=action,
+                            success=True,
+                            message=f"Deferred until {trigger_time.isoformat()}",
+                        )
+                    )
+                else:
+                    result = await self._action_executor.execute(action)
+                    results.append(result)
         return results
 
     async def _process_scheduled_events(self) -> None:

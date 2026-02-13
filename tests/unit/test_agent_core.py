@@ -27,9 +27,15 @@ def _make_agent(mock_memory=None, mock_router=None):
     """
     memory = mock_memory or AsyncMock()
     router = mock_router or AsyncMock()
-    with patch("zetherion_ai.agent.core.create_router_sync", return_value=router):
-        with patch("zetherion_ai.agent.core.InferenceBroker"):
-            agent = Agent(memory=memory)
+    with (
+        patch("zetherion_ai.agent.core.create_router_sync", return_value=router),
+        patch("zetherion_ai.agent.core.InferenceBroker"),
+        patch("zetherion_ai.agent.core.get_settings") as mock_get_settings,
+    ):
+        mock_settings = MagicMock()
+        mock_settings.docs_knowledge_enabled = False
+        mock_get_settings.return_value = mock_settings
+        agent = Agent(memory=memory)
     return agent
 
 
@@ -572,6 +578,56 @@ class TestGenerateResponseSkillIntents:
             123,
             "show my profile",
             "profile_manager",
+        )
+
+    async def test_docs_answer_short_circuits_email_skill(self):
+        """Docs-backed answer should be preferred for setup/how-to email questions."""
+        mock_memory = AsyncMock()
+        mock_router = AsyncMock()
+        mock_router.classify = AsyncMock(
+            return_value=_routing(MessageIntent.EMAIL_MANAGEMENT),
+        )
+
+        agent = _make_agent(mock_memory=mock_memory, mock_router=mock_router)
+        agent._docs_knowledge = AsyncMock()
+        agent._docs_knowledge.maybe_answer = AsyncMock(return_value="Use `/gmail connect`.")
+        agent._handle_skill_intent = AsyncMock(return_value="skill fallback")
+
+        result = await agent.generate_response(
+            user_id=123,
+            channel_id=456,
+            message="How do I add an email account?",
+        )
+
+        assert result == "Use `/gmail connect`."
+        agent._docs_knowledge.maybe_answer.assert_awaited_once()
+        agent._handle_skill_intent.assert_not_awaited()
+
+    async def test_docs_fallback_to_email_skill_when_unknown(self):
+        """When docs don't have an answer, email skill should still handle the message."""
+        mock_memory = AsyncMock()
+        mock_router = AsyncMock()
+        mock_router.classify = AsyncMock(
+            return_value=_routing(MessageIntent.EMAIL_MANAGEMENT),
+        )
+
+        agent = _make_agent(mock_memory=mock_memory, mock_router=mock_router)
+        agent._docs_knowledge = AsyncMock()
+        agent._docs_knowledge.maybe_answer = AsyncMock(return_value=None)
+        agent._handle_skill_intent = AsyncMock(return_value="Email status.")
+
+        result = await agent.generate_response(
+            user_id=123,
+            channel_id=456,
+            message="How do I add an email account?",
+        )
+
+        assert result == "Email status."
+        agent._docs_knowledge.maybe_answer.assert_awaited_once()
+        agent._handle_skill_intent.assert_awaited_once_with(
+            123,
+            "How do I add an email account?",
+            "gmail",
         )
 
     async def test_simple_query_does_not_store_messages(self):

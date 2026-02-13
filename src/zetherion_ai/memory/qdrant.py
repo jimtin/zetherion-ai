@@ -433,6 +433,70 @@ class QdrantMemory:
         )
         return point_id
 
+    async def search_collection(
+        self,
+        collection_name: str,
+        query: str,
+        *,
+        filters: dict[str, Any] | None = None,
+        limit: int = 10,
+        score_threshold: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """Search any collection by semantic similarity.
+
+        Args:
+            collection_name: Collection to query.
+            query: Semantic search query.
+            filters: Optional exact-match payload filters.
+            limit: Maximum results to return.
+            score_threshold: Optional minimum similarity score.
+
+        Returns:
+            List of matching payloads with ``id`` and ``score``.
+        """
+        query_vector = await self._embeddings.embed_query(query)
+
+        filter_obj: qdrant_models.Filter | None = None
+        if filters:
+            conditions: list[qdrant_models.Condition] = []
+            for key, value in filters.items():
+                conditions.append(
+                    qdrant_models.FieldCondition(
+                        key=key,
+                        match=qdrant_models.MatchValue(value=value),
+                    )
+                )
+            filter_obj = qdrant_models.Filter(must=conditions)
+
+        response = await self._client.query_points(
+            collection_name=collection_name,
+            query=query_vector,
+            query_filter=filter_obj,
+            limit=limit,
+        )
+
+        output: list[dict[str, Any]] = []
+        for hit in response.points:
+            payload = hit.payload or {}
+            if self._encryptor is not None:
+                payload = self._encryptor.decrypt_payload(payload)
+            entry = {
+                "id": str(hit.id),
+                "score": hit.score,
+                **payload,
+            }
+            if score_threshold is not None and float(hit.score) < score_threshold:
+                continue
+            output.append(entry)
+
+        log.debug(
+            "collection_search_complete",
+            collection=collection_name,
+            result_count=len(output),
+            top_score=round(output[0]["score"], 3) if output else None,
+        )
+        return output
+
     async def get_by_id(
         self,
         collection_name: str,
@@ -502,6 +566,42 @@ class QdrantMemory:
                 payload = self._encryptor.decrypt_payload(payload)
             output.append({"id": str(point.id), **payload})
         return output
+
+    async def delete_by_field(
+        self,
+        collection_name: str,
+        field: str,
+        value: Any,
+    ) -> bool:
+        """Delete all points in ``collection_name`` where ``field`` equals ``value``."""
+        try:
+            await self._client.delete(
+                collection_name=collection_name,
+                points_selector=qdrant_models.FilterSelector(
+                    filter=qdrant_models.Filter(
+                        must=[
+                            qdrant_models.FieldCondition(
+                                key=field,
+                                match=qdrant_models.MatchValue(value=value),
+                            )
+                        ]
+                    )
+                ),
+            )
+            log.debug(
+                "points_deleted_by_field",
+                collection=collection_name,
+                field=field,
+            )
+            return True
+        except Exception as e:
+            log.error(
+                "delete_by_field_failed",
+                collection=collection_name,
+                field=field,
+                error=str(e),
+            )
+            return False
 
     async def delete_by_id(
         self,
