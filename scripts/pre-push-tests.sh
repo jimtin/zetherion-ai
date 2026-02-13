@@ -5,11 +5,12 @@
 # Pipeline structure:
 #   Phase A (concurrent):
 #     Background — Docker teardown, build, health wait, model pulls + warm-up
-#     Foreground — Static checks (ruff, bandit, gitleaks, hadolint, licenses,
-#                  Python 3.13 compat), then unit tests + mypy + pip-audit in
-#                  parallel (90% coverage gate), then in-process integration tests
+#     Foreground — Static checks in parallel, then unit tests + mypy + pip-audit
+#                  in parallel (90% coverage gate), then in-process integration
+#                  tests in parallel workers.
 #   Phase B (concurrent, requires Docker):
-#     All Docker E2E test files run in parallel once Docker is ready.
+#     Required Docker E2E groups run in parallel once Docker is ready.
+#     Optional E2E marker tests can run afterward (non-blocking).
 set -euo pipefail
 
 # Activate virtualenv so ruff/python/pytest are available
@@ -40,8 +41,36 @@ PROJECT="zetherion-ai-test"
 DOCKER_STARTED_BY_US=false
 DOCKER_LOG="$(mktemp)"
 DOCKER_PID=""
+STRICT_REQUIRED_TESTS="${STRICT_REQUIRED_TESTS:-true}"
+RUN_OPTIONAL_E2E="${RUN_OPTIONAL_E2E:-false}"
 
 ts() { date "+%H:%M:%S"; }
+
+contains_skips() {
+    local log_file="$1"
+    rg -q "[1-9][0-9]* skipped|\\bSKIPPED\\b" "$log_file"
+}
+
+assert_no_skips_in_log() {
+    local suite="$1"
+    local log_file="$2"
+    if [ "$STRICT_REQUIRED_TESTS" = "true" ] && contains_skips "$log_file"; then
+        echo "[$(ts)] ERROR: ${suite} reported skipped tests (STRICT_REQUIRED_TESTS=true)."
+        return 1
+    fi
+    return 0
+}
+
+start_static_check() {
+    local name="$1"
+    local command="$2"
+    local log_file
+    log_file="$(mktemp)"
+    (eval "$command" > "$log_file" 2>&1) &
+    STATIC_PIDS+=($!)
+    STATIC_NAMES+=("$name")
+    STATIC_LOGS+=("$log_file")
+}
 
 cleanup() {
     # Kill heartbeat if running
@@ -55,6 +84,11 @@ cleanup() {
     fi
     # Kill any background test processes (mypy, pip-audit, E2E)
     for pid in "${BG_PIDS[@]:-}"; do
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+        fi
+    done
+    for pid in "${STATIC_PIDS[@]:-}"; do
         if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
             kill "$pid" 2>/dev/null || true
         fi
@@ -75,6 +109,9 @@ trap cleanup EXIT
 # Arrays to track background PIDs
 declare -a BG_PIDS=()
 declare -a E2E_PIDS=()
+declare -a STATIC_PIDS=()
+declare -a STATIC_NAMES=()
+declare -a STATIC_LOGS=()
 
 # ── Background Docker Preparation ──────────────────────────────────
 # Runs Docker startup concurrently with fast foreground tests.
@@ -174,7 +211,7 @@ start_docker_background &
 DOCKER_PID=$!
 DOCKER_STARTED_BY_US=true
 
-# ── Step 1: Static analysis (fast, sequential) ───────────────────
+# ── Step 1: Static analysis (parallel) ────────────────────────────
 # Catches: ruff lint+format, bandit, gitleaks, hadolint, licenses,
 #          Python 3.13 syntax compat — all checks CI would run.
 echo ""
@@ -188,43 +225,58 @@ if [ "$ACTUAL_RUFF" != "$EXPECTED_RUFF" ]; then
     exit 1
 fi
 
-# 1b. Ruff lint (includes updater_sidecar/)
-ruff check $SRC_DIRS
+echo "[$(ts)]   Launching static checks in parallel..."
 
-# 1c. Ruff format check
-ruff format --check $SRC_DIRS
+start_static_check "ruff lint" "ruff check $SRC_DIRS"
+start_static_check "ruff format" "ruff format --check $SRC_DIRS"
+start_static_check "bandit" "bandit -c pyproject.toml -r $LINT_DIRS -q"
 
-# 1d. Bandit security scan (src/ + updater_sidecar/, tests/scripts excluded via pyproject.toml)
-bandit -c pyproject.toml -r $LINT_DIRS -q
-
-# 1e. Gitleaks secret scanning
 if command -v gitleaks >/dev/null 2>&1; then
-    gitleaks detect --no-git --redact --config=.gitleaks.toml
+    start_static_check "gitleaks" "gitleaks detect --no-git --redact --config=.gitleaks.toml"
 else
     echo "  [skip] gitleaks not installed (install: brew install gitleaks)"
 fi
 
-# 1f. Hadolint Dockerfile linting
 if docker image inspect ghcr.io/hadolint/hadolint:latest >/dev/null 2>&1 || docker info >/dev/null 2>&1; then
-    docker run --rm -v "$(pwd):/work" -w /work ghcr.io/hadolint/hadolint:latest \
-        hadolint --ignore DL3007 --ignore DL3008 --ignore DL3009 \
-        Dockerfile Dockerfile.updater
+    start_static_check \
+        "hadolint" \
+        "docker run --rm -v \"$(pwd):/work\" -w /work ghcr.io/hadolint/hadolint:latest hadolint --ignore DL3007 --ignore DL3008 --ignore DL3009 Dockerfile Dockerfile.updater"
 else
     echo "  [skip] hadolint requires Docker (Docker not available yet)"
 fi
 
-# 1g. License compliance check
 if command -v pip-licenses >/dev/null 2>&1; then
-    pip-licenses --allow-only="$LICENSE_ALLOWLIST" --partial-match
+    start_static_check "license compliance" "pip-licenses --allow-only=\"$LICENSE_ALLOWLIST\" --partial-match"
 else
     echo "  [skip] pip-licenses not installed (pip install pip-licenses)"
 fi
 
-# 1h. Python 3.13 syntax compatibility (if python3.13 is available)
 if command -v python3.13 >/dev/null 2>&1; then
-    python3.13 -m compileall -q src/ updater_sidecar/
+    start_static_check "python3.13 compileall" "python3.13 -m compileall -q src/ updater_sidecar/"
 else
     echo "  [skip] python3.13 not available for syntax compat check"
+fi
+
+STATIC_FAILED=false
+for i in "${!STATIC_PIDS[@]}"; do
+    name="${STATIC_NAMES[$i]}"
+    log_file="${STATIC_LOGS[$i]}"
+    pid="${STATIC_PIDS[$i]}"
+    if wait "$pid"; then
+        echo "[$(ts)]   ${name} passed."
+    else
+        STATIC_FAILED=true
+        echo "[$(ts)]   ${name} FAILED:"
+        cat "$log_file"
+    fi
+    rm -f "$log_file"
+done
+STATIC_PIDS=()
+STATIC_NAMES=()
+STATIC_LOGS=()
+
+if [ "$STATIC_FAILED" = true ]; then
+    exit 1
 fi
 
 echo "[$(ts)] [1/5] Static analysis passed."
@@ -290,7 +342,8 @@ echo "[$(ts)] [2/5] Unit tests + mypy + pip-audit passed."
 # ── Step 3: In-process integration tests (no Docker) ──────────────
 echo ""
 echo "[$(ts)] [3/5] In-process integration tests..."
-python -m pytest \
+INTEGRATION_LOG="$(mktemp)"
+if ! python -m pytest \
     tests/integration/test_skills_http.py \
     tests/integration/test_heartbeat_cycle.py \
     tests/integration/test_profile_pipeline.py \
@@ -302,7 +355,23 @@ python -m pytest \
     tests/integration/test_update_skill_http.py \
     tests/integration/test_telemetry_http.py \
     tests/integration/test_api_http.py \
-    -m integration --timeout=60 --tb=short -q --no-cov
+    tests/integration/test_dev_watcher_e2e.py \
+    tests/integration/test_milestone_e2e.py \
+    tests/integration/test_youtube_http.py \
+    -m "integration and not optional_e2e" \
+    -n 4 \
+    --timeout=60 --tb=short -q --no-cov \
+    > "$INTEGRATION_LOG" 2>&1; then
+    cat "$INTEGRATION_LOG"
+    rm -f "$INTEGRATION_LOG"
+    exit 1
+fi
+cat "$INTEGRATION_LOG"
+if ! assert_no_skips_in_log "In-process integration tests" "$INTEGRATION_LOG"; then
+    rm -f "$INTEGRATION_LOG"
+    exit 1
+fi
+rm -f "$INTEGRATION_LOG"
 echo "[$(ts)] [3/5] Integration tests passed."
 
 # ═══════════════════════════════════════════════════════════════════
@@ -311,8 +380,11 @@ echo "[$(ts)] [3/5] Integration tests passed."
 
 echo ""
 echo "[$(ts)] Waiting for Docker environment to be ready..."
-wait "$DOCKER_PID"
-DOCKER_EXIT=$?
+if ! wait "$DOCKER_PID"; then
+    DOCKER_EXIT=$?
+else
+    DOCKER_EXIT=0
+fi
 DOCKER_PID=""
 
 if [ "$DOCKER_EXIT" -ne 0 ] || grep -q "DOCKER_ERROR" "$DOCKER_LOG" 2>/dev/null; then
@@ -322,14 +394,15 @@ if [ "$DOCKER_EXIT" -ne 0 ] || grep -q "DOCKER_ERROR" "$DOCKER_LOG" 2>/dev/null;
 fi
 echo "[$(ts)] Docker environment confirmed ready."
 
-# ── Step 4: All Docker E2E tests (concurrent) ─────────────────────
+# ── Step 4: Required Docker E2E tests (concurrent) ────────────────
 echo ""
-echo "[$(ts)] [4/5] Docker E2E + Discord E2E tests (concurrent)..."
+echo "[$(ts)] [4/5] Required Docker E2E + Discord E2E tests (concurrent)..."
 
 # Create temp files for each parallel test output
-E2E_LOG_A="$(mktemp)"    # test_e2e.py (the big one)
-E2E_LOG_B="$(mktemp)"    # test_health_e2e.py + test_update_e2e.py + test_telemetry_e2e.py
-E2E_LOG_C="$(mktemp)"    # test_discord_e2e.py
+E2E_LOG_A="$(mktemp)"     # test_e2e.py (required)
+E2E_LOG_B="$(mktemp)"     # health/update/telemetry required tests
+E2E_LOG_C="$(mktemp)"     # discord required tests (optional_e2e marker excluded)
+E2E_OPTIONAL_LOG="$(mktemp)"
 
 # Start a heartbeat so we can see the tests are still running
 (while true; do sleep 30; echo "[$(ts)]   ...E2E tests still running"; done) &
@@ -338,7 +411,7 @@ HEARTBEAT_PID=$!
 # Launch all 3 test groups concurrently
 DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
     tests/integration/test_e2e.py \
-    -m integration --timeout=120 -v --tb=short -s --no-cov \
+    -m "integration and not optional_e2e" --timeout=120 -v --tb=short -s --no-cov \
     > "$E2E_LOG_A" 2>&1 &
 E2E_PIDS+=($!)
 
@@ -346,13 +419,13 @@ DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
     tests/integration/test_health_e2e.py \
     tests/integration/test_update_e2e.py \
     tests/integration/test_telemetry_e2e.py \
-    -m integration --timeout=120 -v --tb=short -s --no-cov \
+    -m "integration and not optional_e2e" --timeout=120 -v --tb=short -s --no-cov \
     > "$E2E_LOG_B" 2>&1 &
 E2E_PIDS+=($!)
 
 DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
     tests/integration/test_discord_e2e.py \
-    -m discord_e2e --timeout=180 -v --tb=short -s --no-cov \
+    -m "discord_e2e and not optional_e2e" --timeout=180 -v --tb=short -s --no-cov \
     > "$E2E_LOG_C" 2>&1 &
 E2E_PIDS+=($!)
 
@@ -380,6 +453,7 @@ E2E_PIDS=()
 
 # Stop heartbeat
 kill "$HEARTBEAT_PID" 2>/dev/null || true
+wait "$HEARTBEAT_PID" 2>/dev/null || true
 unset HEARTBEAT_PID
 
 # Print all outputs
@@ -393,8 +467,38 @@ echo ""
 echo "═══ Discord E2E output ═══"
 cat "$E2E_LOG_C"
 
+if ! assert_no_skips_in_log "Docker E2E tests (test_e2e.py)" "$E2E_LOG_A"; then
+    E2E_FAILED=true
+fi
+if ! assert_no_skips_in_log "Health/Update/Telemetry E2E tests" "$E2E_LOG_B"; then
+    E2E_FAILED=true
+fi
+if ! assert_no_skips_in_log "Discord E2E tests" "$E2E_LOG_C"; then
+    E2E_FAILED=true
+fi
+
+# Optional E2E tests are non-blocking and can be enabled via RUN_OPTIONAL_E2E=true.
+if [ "$RUN_OPTIONAL_E2E" = "true" ]; then
+    echo ""
+    echo "[$(ts)] Running optional E2E tests (non-blocking)..."
+    if DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
+        tests/integration/test_health_e2e.py \
+        tests/integration/test_discord_e2e.py \
+        -m optional_e2e --timeout=180 -v --tb=short -s --no-cov \
+        > "$E2E_OPTIONAL_LOG" 2>&1; then
+        echo "[$(ts)] Optional E2E tests passed."
+    else
+        echo "[$(ts)] Optional E2E tests FAILED (non-blocking)."
+    fi
+    echo ""
+    echo "═══ Optional E2E output ═══"
+    cat "$E2E_OPTIONAL_LOG"
+else
+    echo "[$(ts)] Optional E2E tests skipped (set RUN_OPTIONAL_E2E=true to run)."
+fi
+
 # Clean up temp files
-rm -f "$E2E_LOG_A" "$E2E_LOG_B" "$E2E_LOG_C"
+rm -f "$E2E_LOG_A" "$E2E_LOG_B" "$E2E_LOG_C" "$E2E_OPTIONAL_LOG"
 
 if [ "$E2E_FAILED" = true ]; then
     echo ""
