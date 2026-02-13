@@ -15,7 +15,9 @@ services:
     depends_on:
       qdrant:
         condition: service_healthy
-      zetherion-ai-skills:
+      traefik:
+        condition: service_started
+      zetherion-ai-skills-blue:
         condition: service_healthy
       postgres:
         condition: service_healthy
@@ -30,7 +32,8 @@ services:
       # Router container (small, fast model for classification)
       - OLLAMA_ROUTER_HOST=ollama-router
       - OLLAMA_ROUTER_PORT=11434
-      - SKILLS_SERVICE_URL=http://zetherion-ai-skills:8080
+      # Route skills traffic via Traefik so sidecar can blue/green swap
+      - SKILLS_SERVICE_URL=http://zetherion-ai-traefik:8080
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - ENVIRONMENT=production
       - LOG_FILE_PREFIX=bot
@@ -55,12 +58,12 @@ services:
           cpus: '0.5'
           memory: 512M
 
-  # Public API server for multi-tenant client websites (Phase 11)
-  zetherion-ai-api:
+  # Public API server (blue deployment)
+  zetherion-ai-api-blue:
     build:
       context: .
       dockerfile: Dockerfile.api
-    container_name: zetherion-ai-api
+    container_name: zetherion-ai-api-blue
     restart: unless-stopped
     # Security: read-only filesystem with writable tmpfs for temp files
     read_only: true
@@ -84,7 +87,7 @@ services:
       - OLLAMA_ROUTER_HOST=ollama-router
       - OLLAMA_ROUTER_PORT=11434
       - ENVIRONMENT=production
-      - LOG_FILE_PREFIX=api
+      - LOG_FILE_PREFIX=api-blue
     volumes:
       - ./logs:/app/logs
     logging:
@@ -106,6 +109,52 @@ services:
           cpus: '0.25'
           memory: 128M
 
+  # Public API server (green deployment)
+  zetherion-ai-api-green:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: zetherion-ai-api-green
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+      - /home/nonroot/.cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
+      - API_HOST=0.0.0.0
+      - API_PORT=8443
+      - OLLAMA_HOST=ollama
+      - OLLAMA_PORT=11434
+      - OLLAMA_ROUTER_HOST=ollama-router
+      - OLLAMA_ROUTER_PORT=11434
+      - ENVIRONMENT=production
+      - LOG_FILE_PREFIX=api-green
+    volumes:
+      - ./logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - zetherion-ai-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
   # Cloudflare Tunnel — exposes the API to the internet without opening ports
   # Requires a Cloudflare Tunnel token (create at https://one.dash.cloudflare.com)
   cloudflared:
@@ -116,9 +165,11 @@ services:
       - no-new-privileges:true
     command: tunnel run
     environment:
-      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-} # gitleaks:allow
     depends_on:
-      zetherion-ai-api:
+      traefik:
+        condition: service_started
+      zetherion-ai-api-blue:
         condition: service_healthy
     networks:
       - zetherion-ai-net
@@ -141,11 +192,15 @@ services:
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--providers.file.watch=true"
       - "--entrypoints.skills.address=:8080"
+      - "--entrypoints.api.address=:8443"
       - "--api.insecure=false"
       - "--log.level=WARN"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/traefik/dynamic:/etc/traefik/dynamic
     networks:
       - zetherion-ai-net
     deploy:
@@ -157,11 +212,11 @@ services:
           cpus: '0.1'
           memory: 32M
 
-  zetherion-ai-skills:
+  zetherion-ai-skills-blue:
     build:
       context: .
       dockerfile: Dockerfile.skills
-    container_name: zetherion-ai-skills
+    container_name: zetherion-ai-skills-blue
     restart: unless-stopped
     # Security: read-only filesystem with writable tmpfs for temp files
     read_only: true
@@ -190,7 +245,8 @@ services:
       - SKILLS_HOST=0.0.0.0
       - SKILLS_PORT=8080
       - UPDATER_SERVICE_URL=http://zetherion-ai-updater:9090
-      - LOG_FILE_PREFIX=skills
+      - UPDATER_SECRET_PATH=/app/data/.updater-secret
+      - LOG_FILE_PREFIX=skills-blue
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -199,19 +255,61 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    # Traefik labels for zero-downtime blue-green deployments
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.skills.rule=PathPrefix(`/`)"
-      - "traefik.http.routers.skills.entrypoints=skills"
-      - "traefik.http.services.skills.loadbalancer.server.port=8080"
-      - "traefik.http.services.skills.loadbalancer.healthcheck.path=/health"
-      - "traefik.http.services.skills.loadbalancer.healthcheck.interval=5s"
-    # No ports exposed to host - only accessible from bot via internal network
     networks:
       - zetherion-ai-net
     # Use Dockerfile HEALTHCHECK - distroless can only exec via ENTRYPOINT
     # Resource limits for skills service
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  zetherion-ai-skills-green:
+    build:
+      context: .
+      dockerfile: Dockerfile.skills
+    container_name: zetherion-ai-skills-green
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+      - /home/nonroot/.cache
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - OLLAMA_HOST=ollama
+      - OLLAMA_PORT=11434
+      - OLLAMA_ROUTER_HOST=ollama-router
+      - OLLAMA_ROUTER_PORT=11434
+      - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
+      - SKILLS_HOST=0.0.0.0
+      - SKILLS_PORT=8080
+      - UPDATER_SERVICE_URL=http://zetherion-ai-updater:9090
+      - UPDATER_SECRET_PATH=/app/data/.updater-secret
+      - LOG_FILE_PREFIX=skills-green
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - zetherion-ai-net
     deploy:
       resources:
         limits:
@@ -353,7 +451,7 @@ services:
           cpus: '0.25'
           memory: 256M
 
-  # Updater Sidecar — handles git pull, docker build, rolling restarts
+  # Updater Sidecar — handles git fetch/tag checkout, docker build, rolling restarts
   # This is the ONLY container with Docker socket write access
   zetherion-ai-updater:
     build:
@@ -366,8 +464,11 @@ services:
     environment:
       - COMPOSE_FILE=/project/docker-compose.yml
       - PROJECT_DIR=/project
-      - HEALTH_URLS=http://zetherion-ai-skills:8080/health,http://zetherion-ai-api:8443/health
+      - HEALTH_URLS=http://zetherion-ai-skills-blue:8080/health,http://zetherion-ai-skills-green:8080/health,http://zetherion-ai-api-blue:8443/health,http://zetherion-ai-api-green:8443/health
       - UPDATER_SECRET_PATH=/app/data/.updater-secret
+      - UPDATER_STATE_PATH=/app/data/updater-state.json
+      - UPDATER_TRAEFIK_DYNAMIC_PATH=/project/config/traefik/dynamic/updater-routes.yml
+      - AUTO_UPDATE_PAUSE_ON_FAILURE=${AUTO_UPDATE_PAUSE_ON_FAILURE:-true}
     volumes:
       # Docker socket — READ/WRITE (required for build + restart)
       - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock

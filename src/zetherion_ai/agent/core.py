@@ -228,6 +228,12 @@ class Agent:
                             message,
                             "gmail",
                         )
+                    case MessageIntent.UPDATE_MANAGEMENT:
+                        response = await self._handle_skill_intent(
+                            user_id,
+                            message,
+                            "update_checker",
+                        )
                     case MessageIntent.DEV_WATCHER:
                         response = await self._handle_skill_intent(
                             user_id,
@@ -413,6 +419,7 @@ class Agent:
             "profile_manager": self._parse_profile_intent(message),
             "personal_model": self._parse_personal_model_intent(message),
             "gmail": self._parse_email_intent(message),
+            "update_checker": self._parse_update_intent(message),
             "dev_watcher": self._parse_dev_watcher_intent(message),
             "milestone_tracker": self._parse_milestone_intent(message),
             "youtube_intelligence": self._parse_youtube_intent(message, "intelligence"),
@@ -539,6 +546,28 @@ class Agent:
         elif any(w in msg_lower for w in ["unread", "new email", "urgent"]):
             return "email_unread"
         return "email_check"
+
+    def _parse_update_intent(self, message: str) -> str:
+        """Parse specific update-management intent from message."""
+        msg_lower = message.lower()
+        if any(w in msg_lower for w in ["resume", "unpause"]):
+            return "resume_updates"
+        if any(w in msg_lower for w in ["rollback", "roll back", "revert"]):
+            return "rollback_update"
+        if any(
+            w in msg_lower
+            for w in [
+                "apply",
+                "install",
+                "deploy",
+                "upgrade",
+                "update now",
+            ]
+        ):
+            return "apply_update"
+        if any(w in msg_lower for w in ["status", "version", "current version"]):
+            return "update_status"
+        return "check_update"
 
     def _parse_dev_watcher_intent(self, message: str) -> str:
         """Parse specific dev watcher intent from message."""

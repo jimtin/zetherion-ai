@@ -1,0 +1,29 @@
+http:
+  routers:
+    skills:
+      entryPoints:
+        - skills
+      rule: "PathPrefix(`/`)"
+      service: skills-blue
+    api:
+      entryPoints:
+        - api
+      rule: "PathPrefix(`/`)"
+      service: api-blue
+  services:
+    skills-blue:
+      loadBalancer:
+        servers:
+          - url: "http://zetherion-ai-skills-blue:8080"
+    skills-green:
+      loadBalancer:
+        servers:
+          - url: "http://zetherion-ai-skills-green:8080"
+    api-blue:
+      loadBalancer:
+        servers:
+          - url: "http://zetherion-ai-api-blue:8443"
+    api-green:
+      loadBalancer:
+        servers:
+          - url: "http://zetherion-ai-api-green:8443"
