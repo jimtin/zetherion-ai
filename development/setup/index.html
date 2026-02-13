@@ -2592,7 +2592,7 @@
 </code></pre></div>
 <hr />
 <h2 id="project-structure">Project Structure<a class="headerlink" href="#project-structure" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>src/zetherion_ai/                   # 91 source files
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>src/zetherion_ai/                   # Core source tree
 <a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    agent/                          # Agent core, routing, inference
 <a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>        core.py                     # Message handling, retry logic, dual generators
 <a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>        router.py                   # Gemini router backend
@@ -2652,7 +2652,7 @@
 <a id="__codelineno-5-58" name="__codelineno-5-58" href="#__codelineno-5-58"></a>    constants.py                    # Project-wide constants
 <a id="__codelineno-5-59" name="__codelineno-5-59" href="#__codelineno-5-59"></a>    utils.py                        # Shared utilities
 <a id="__codelineno-5-60" name="__codelineno-5-60" href="#__codelineno-5-60"></a>    settings_manager.py             # Runtime settings CRUD
-<a id="__codelineno-5-61" name="__codelineno-5-61" href="#__codelineno-5-61"></a>tests/                              # 89 test files, 3,000+ tests, 93%+ coverage
+<a id="__codelineno-5-61" name="__codelineno-5-61" href="#__codelineno-5-61"></a>tests/                              # 3,000+ tests, &gt;=90% coverage gate
 <a id="__codelineno-5-62" name="__codelineno-5-62" href="#__codelineno-5-62"></a>    unit/                           # Fast, isolated tests (~24s)
 <a id="__codelineno-5-63" name="__codelineno-5-63" href="#__codelineno-5-63"></a>    integration/                    # Full-stack tests (~2 min)
 <a id="__codelineno-5-64" name="__codelineno-5-64" href="#__codelineno-5-64"></a>    conftest.py                     # Shared fixtures
@@ -2909,36 +2909,39 @@
 </code></pre></div>
 <hr />
 <h2 id="testing">Testing<a class="headerlink" href="#testing" title="Permanent link">&para;</a></h2>
-<p>Zetherion AI has 89 test files containing 3,000+ tests with 93%+ code coverage across 91 source files.</p>
+<p>Zetherion AI maintains 3,000+ tests with an enforced overall coverage gate of <code>&gt;=90%</code>.</p>
 <p>For the full testing guide, patterns, fixtures, and mocking strategies, see <a href="../testing/">Testing</a>.</p>
 <h3 id="key-commands">Key Commands<a class="headerlink" href="#key-commands" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Unit tests only (fast, ~24s)</span>
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration and not discord_e2e&quot;</span>
 <a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="c1"># All tests except Discord E2E (includes integration)</span>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not discord_e2e&quot;</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="c1"># Production-parity validation (recommended before merge)</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>bash<span class="w"> </span>scripts/pre-push-tests.sh
 <a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>
-<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="c1"># Full suite with coverage</span>
-<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not discord_e2e&quot;</span><span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>term
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="c1"># All tests except Discord E2E (includes integration)</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not discord_e2e&quot;</span>
 <a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>
-<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="c1"># HTML coverage report</span>
-<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not discord_e2e&quot;</span><span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>html
-<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a>open<span class="w"> </span>htmlcov/index.html<span class="w">  </span><span class="c1"># macOS</span>
-<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>
-<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="c1"># Run a single test file</span>
-<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a>pytest<span class="w"> </span>tests/unit/test_agent_core.py<span class="w"> </span>-v
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="c1"># Full suite with coverage</span>
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not discord_e2e&quot;</span><span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>term
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a>
+<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="c1"># HTML coverage report</span>
+<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not discord_e2e&quot;</span><span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>html
+<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a>open<span class="w"> </span>htmlcov/index.html<span class="w">  </span><span class="c1"># macOS</span>
 <a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a>
-<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="c1"># Drop into debugger on first failure</span>
-<a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>--pdb<span class="w"> </span>--maxfail<span class="o">=</span><span class="m">1</span>
+<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="c1"># Run a single test file</span>
+<a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a>pytest<span class="w"> </span>tests/unit/test_agent_core.py<span class="w"> </span>-v
 <a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a>
-<a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="c1"># Show print output and local variables on failure</span>
-<a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-s<span class="w"> </span>-l
+<a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="c1"># Drop into debugger on first failure</span>
+<a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>--pdb<span class="w"> </span>--maxfail<span class="o">=</span><span class="m">1</span>
+<a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a>
+<a id="__codelineno-10-23" name="__codelineno-10-23" href="#__codelineno-10-23"></a><span class="c1"># Show print output and local variables on failure</span>
+<a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-s<span class="w"> </span>-l
 </code></pre></div>
 <h3 id="coverage-standards">Coverage Standards<a class="headerlink" href="#coverage-standards" title="Permanent link">&para;</a></h3>
 <ul>
 <li>New features must include tests</li>
 <li>Aim for 85%+ coverage on new modules</li>
-<li>Maintain overall 93%+ coverage across the project</li>
+<li>Maintain overall &gt;=90% coverage across the project</li>
 <li>Focus coverage on critical paths: security, routing, core agent logic</li>
 <li>Avoid over-testing trivial code (simple getters, dataclass properties)</li>
 </ul>
@@ -3085,7 +3088,7 @@
 <a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a><span class="s2">Migration: add &#39;await&#39; to all classify() calls.&quot;</span>
 <a id="__codelineno-18-12" name="__codelineno-18-12" href="#__codelineno-18-12"></a>
 <a id="__codelineno-18-13" name="__codelineno-18-13" href="#__codelineno-18-13"></a><span class="c1"># Multi-line with body</span>
-<a id="__codelineno-18-14" name="__codelineno-18-14" href="#__codelineno-18-14"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;test: improve Discord bot coverage to 93%</span>
+<a id="__codelineno-18-14" name="__codelineno-18-14" href="#__codelineno-18-14"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;test: improve Discord bot coverage while keeping gate &gt;=90%</span>
 <a id="__codelineno-18-15" name="__codelineno-18-15" href="#__codelineno-18-15"></a>
 <a id="__codelineno-18-16" name="__codelineno-18-16" href="#__codelineno-18-16"></a><span class="s2">- Add /channels command tests (6 tests)</span>
 <a id="__codelineno-18-17" name="__codelineno-18-17" href="#__codelineno-18-17"></a><span class="s2">- Add message splitting edge cases (4 tests)</span>
@@ -3105,7 +3108,7 @@
 <p>Run through this checklist:</p>
 <ul>
 <li>[ ] All tests pass: <code>pytest tests/ -m "not discord_e2e"</code></li>
-<li>[ ] Coverage maintained at 93%+ (or improved)</li>
+<li>[ ] Coverage maintained at &gt;=90% (or improved)</li>
 <li>[ ] Pre-commit hooks pass: <code>pre-commit run --all-files</code></li>
 <li>[ ] Type checking passes: <code>mypy src/zetherion_ai</code></li>
 <li>[ ] Code formatted: <code>ruff check --fix . &amp;&amp; ruff format .</code></li>

@@ -1853,7 +1853,7 @@
 <h1 id="system-architecture">System Architecture<a class="headerlink" href="#system-architecture" title="Permanent link">&para;</a></h1>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <p>Zetherion AI is a source-agnostic personal AI assistant built on a microservice architecture with 6 Docker services. The system accepts input from any source (Discord is the first interface, with REST API, email sync, and webhooks also available) and provides user-controlled multi-provider LLM routing, AES-256-GCM encrypted semantic memory, Gmail integration, GitHub management, and deep personal understanding through passive observation, proactive prompting, and explicit learning.</p>
-<p>The codebase comprises 91 source files with 3,000+ tests across 89 test files, maintaining 93%+ code coverage. The architecture prioritizes security, modularity, and cost-efficient inference by routing queries to the most appropriate LLM provider based on complexity, privacy requirements, and task type.</p>
+<p>The codebase is heavily tested (3,000+ tests) with a repository-enforced coverage gate of <code>&gt;=90%</code>. The architecture prioritizes security, modularity, and cost-efficient inference by routing queries to the most appropriate LLM provider based on complexity, privacy requirements, and task type.</p>
 <h3 id="key-design-principles">Key Design Principles<a class="headerlink" href="#key-design-principles" title="Permanent link">&para;</a></h3>
 <ol>
 <li><strong>Security-First</strong> -- Defense in depth from container to application layer</li>
@@ -1870,7 +1870,7 @@
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    |
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    v
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>+---[Bot Service]---+
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>|  Security Layer   |---&gt; Prompt Injection Detection (17 regex patterns)
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>|  Security Layer   |---&gt; Tiered Injection Defense (regex + optional AI)
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>|  (rate limit,     |---&gt; User Allowlist / RBAC
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>|   auth)           |
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>|                   |
@@ -1909,12 +1909,20 @@
 <p><strong>Input Gateway</strong> -- Currently connects to Discord via the gateway protocol using <code>discord.py</code>. Handles direct messages, @mentions, and slash commands. The architecture supports additional input sources (REST API, email, webhooks) through the same agent pipeline.</p>
 </li>
 <li>
-<p><strong>Security Layer</strong> -- Three-stage defense applied to every incoming message before any processing occurs:</p>
+<p><strong>Security Layer</strong> -- Defense-in-depth applied to every incoming message before processing:</p>
 </li>
 <li><em>User Allowlist</em>: Only pre-authorized Discord user IDs may interact with the bot. Supports RBAC with owner, admin, and user roles stored in PostgreSQL.</li>
 <li><em>Rate Limiting</em>: Per-user message throttling (configurable, default 10 messages per 60 seconds) to prevent abuse and runaway API costs.</li>
 <li>
-<p><em>Prompt Injection Detection</em>: 17 compiled regex patterns that scan for known injection techniques including role override attempts, delimiter injection, and Unicode obfuscation.</p>
+<p><em>Security Pipeline</em>: Tier 1 regex/heuristic detection plus optional Tier 2 AI analysis, with dynamic flag/block thresholds and a safe regex fallback path if Tier 2 fails.</p>
+</li>
+<li>
+<p><strong>Priority Queue</strong> -- Incoming Discord work is enqueued and processed by two worker pools:</p>
+</li>
+<li><em>Interactive workers</em> process P0-P1 tasks (<code>INTERACTIVE</code>, <code>NEAR_INTERACTIVE</code>) with fast polling.</li>
+<li><em>Background workers</em> process P2-P3 tasks (<code>SCHEDULED</code>, <code>BULK</code>) for heartbeat and bulk ingestion.</li>
+<li>
+<p>Queue retries use staged backoff and stale in-flight recovery to keep throughput stable.</p>
 </li>
 <li>
 <p><strong>Agent Core</strong> -- Manages the full conversation flow: context assembly, provider selection, response generation, and post-response observation. Handles retry logic with exponential backoff (max 3 retries) for transient API failures.</p>
@@ -2062,10 +2070,10 @@
 <li>
 <p><strong>Security checks</strong> -- Three sequential checks are applied:</p>
 </li>
-<li>Rate limit verification (reject if user has exceeded their message quota).</li>
 <li>Allowlist check (reject if the user's Discord ID is not authorized).</li>
+<li>Rate limit verification (reject if user has exceeded their message quota).</li>
 <li>
-<p>Prompt injection scan (reject if the message matches any of the 17 injection detection patterns).</p>
+<p>Security pipeline analysis (Tier 1 regex/heuristics + optional Tier 2 AI). If pipeline initialization or analysis fails, the bot falls back to regex-only injection detection.</p>
 </li>
 <li>
 <p><strong>Router classification</strong> -- The message is sent to the router for intent classification. The router attempts Gemini Flash first, falls back to Ollama llama3.2:3b, and finally to local regex patterns if both external calls fail.</p>
@@ -2098,7 +2106,7 @@
 <p><strong>Observation pipeline</strong> -- After generating the response, a passive observation step extracts learnings from the conversation (e.g., "user mentioned they prefer Python over JavaScript") and stores them in PostgreSQL for future context enrichment.</p>
 </li>
 <li>
-<p><strong>Response delivery</strong> -- The response is sent back to the originating input source. For Discord, messages exceeding 2,000 characters are automatically split across multiple messages.</p>
+<p><strong>Response delivery</strong> -- The response is sent back to the originating input source. For Discord, messages exceeding 2,000 characters are split into safe chunks (including long single-line responses).</p>
 </li>
 <li>
 <p><strong>Cost tracking</strong> -- The token usage and estimated cost for the request are recorded in a local SQLite database (<code>costs.db</code>) for monitoring and budget management.</p>
@@ -2191,7 +2199,7 @@
 - AES-256-GCM encryption with PBKDF2 key derivation for all stored memories
 - User allowlist with RBAC (owner/admin/user roles)
 - Rate limiting per user to prevent abuse
-- 17 compiled regex patterns for prompt injection detection
+- Tiered prompt-injection defense (Tier 1 regex/heuristics + optional Tier 2 AI)
 - Pydantic <code>SecretStr</code> for all credentials (never logged or serialized)
 - HMAC-based service-to-service authentication</p>
 <p><strong>Supply Chain Security:</strong>
