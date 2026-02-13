@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
+from zetherion_ai import __version__
 from zetherion_ai.updater.manager import (
     ReleaseInfo,
     UpdateManager,
@@ -957,7 +958,7 @@ class TestUpdateManagerInit:
 
     def test_current_version_returns_package_version(self) -> None:
         mgr = _make_manager()
-        assert mgr.current_version == "0.4.0"
+        assert mgr.current_version == __version__
 
     def test_constructor_stores_attributes(self) -> None:
         storage = AsyncMock()

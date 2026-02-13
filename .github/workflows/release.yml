@@ -1,6 +1,9 @@
 name: Release
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       version:
@@ -35,29 +38,36 @@ jobs:
         run: |
           if [[ -n "${{ inputs.version }}" ]]; then
             VERSION="${{ inputs.version }}"
+            TAG="v$VERSION"
+          elif [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"
           else
             VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+            TAG="v$VERSION"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Releasing version: $VERSION (tag: v$VERSION)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Releasing version: $VERSION (tag: $TAG)"
 
-      - name: Check if tag already exists
-        id: check_tag
+      - name: Check if release already exists
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+          if gh release view "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Tag v${{ steps.version.outputs.version }} already exists — skipping release."
+            echo "Release ${{ steps.version.outputs.tag }} already exists — skipping release."
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Generate changelog
         id: changelog
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.check_release.outputs.exists == 'false'
         run: |
-          # Get the previous tag (if any)
-          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          CURRENT_TAG="${{ steps.version.outputs.tag }}"
+          PREV_TAG="$(git tag --sort=-v:refname | grep -Fxv "$CURRENT_TAG" | head -n 1 || true)"
           if [[ -n "$PREV_TAG" ]]; then
             CHANGES=$(git log "$PREV_TAG"..HEAD --oneline --no-merges)
           else
@@ -74,15 +84,16 @@ jobs:
             echo "- $line" >> /tmp/changelog.md
           done
 
+          BASE_REF="${PREV_TAG:-$(git rev-list --max-parents=0 HEAD | head -1)}"
           echo "" >> /tmp/changelog.md
-          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:-$(git rev-list --max-parents=0 HEAD | head -1)}..v${{ steps.version.outputs.version }}" >> /tmp/changelog.md
+          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${BASE_REF}..${{ steps.version.outputs.tag }}" >> /tmp/changelog.md
 
       - name: Create GitHub Release
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.check_release.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "v${{ steps.version.outputs.version }}" \
-            --title "v${{ steps.version.outputs.version }}" \
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --title "${{ steps.version.outputs.tag }}" \
             --notes-file /tmp/changelog.md \
             --target "${{ github.sha }}"
