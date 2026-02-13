@@ -1245,6 +1245,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#production-parity-test-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Production-Parity Test Run
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#test-markers" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1338,17 +1349,6 @@
     <span class="md-ellipsis">
       
         Coverage Targets
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#coverage-by-module-approximate" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Coverage by Module (Approximate)
       
     </span>
   </a>
@@ -1910,6 +1910,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#production-parity-test-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Production-Parity Test Run
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#test-markers" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2003,17 +2014,6 @@
     <span class="md-ellipsis">
       
         Coverage Targets
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#coverage-by-module-approximate" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Coverage by Module (Approximate)
       
     </span>
   </a>
@@ -2255,8 +2255,8 @@
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
 <p>Zetherion AI maintains a rigorous testing discipline across the entire codebase:</p>
 <ul>
-<li><strong>3,000+ tests</strong> across <strong>89 test files</strong> covering <strong>91 source files</strong></li>
-<li><strong>93%+ code coverage</strong> with branch coverage enabled</li>
+<li><strong>3,000+ tests</strong> spanning unit, integration, and end-to-end paths</li>
+<li><strong>Coverage gate enforced in pytest</strong>: <code>--cov-fail-under=90</code></li>
 <li><strong>Three-layer testing pyramid</strong>: Unit, Integration, and Discord E2E</li>
 <li><strong>Async-first</strong> test design using <code>pytest-asyncio</code> with <code>asyncio_mode = "auto"</code></li>
 </ul>
@@ -2383,7 +2383,6 @@
 <tr>
 <th>Category</th>
 <th>Location</th>
-<th>Count</th>
 <th>Speed</th>
 <th>Dependencies</th>
 </tr>
@@ -2392,59 +2391,66 @@
 <tr>
 <td>Unit tests</td>
 <td><code>tests/unit/</code></td>
-<td>~70 files</td>
-<td>Fast (~60s total)</td>
-<td>Mocked</td>
+<td>Fast</td>
+<td>Mocked/in-process</td>
 </tr>
 <tr>
 <td>Root-level tests</td>
 <td><code>tests/test_*.py</code></td>
-<td>9 files</td>
-<td>Fast (~10s)</td>
-<td>Mocked</td>
+<td>Fast</td>
+<td>Mocked/in-process</td>
 </tr>
 <tr>
 <td>Integration tests</td>
-<td><code>tests/integration/</code></td>
-<td>9 files</td>
-<td>Slow (~2-3 min)</td>
-<td>Docker services</td>
+<td><code>tests/integration/</code> (<code>@pytest.mark.integration</code>)</td>
+<td>Medium</td>
+<td>Local services and HTTP flows</td>
 </tr>
 <tr>
 <td>Discord E2E</td>
-<td><code>tests/integration/test_discord_e2e.py</code></td>
-<td>1 file</td>
-<td>Slow (~1 min)</td>
+<td><code>tests/integration/test_discord_e2e.py</code> (<code>@pytest.mark.discord_e2e</code>)</td>
+<td>Slow</td>
 <td>Real Discord API</td>
 </tr>
 </tbody>
 </table>
 <h2 id="running-tests">Running Tests<a class="headerlink" href="#running-tests" title="Permanent link">&para;</a></h2>
 <h3 id="quick-commands">Quick Commands<a class="headerlink" href="#quick-commands" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># All unit tests (fast, ~60s) -- excludes integration and Discord E2E</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration and not discord_e2e&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Full production-style validation (recommended before merge)</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>bash<span class="w"> </span>scripts/pre-push-tests.sh
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Specific test file</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>pytest<span class="w"> </span>tests/unit/test_agent_core.py<span class="w"> </span>-v
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># All unit tests (fast, ~60s) -- excludes integration and Discord E2E</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration and not discord_e2e&quot;</span>
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># Specific test class</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>pytest<span class="w"> </span>tests/unit/test_config.py::TestSettingsValidation<span class="w"> </span>-v
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># Specific test file</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>pytest<span class="w"> </span>tests/unit/test_agent_core.py<span class="w"> </span>-v
 <a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="c1"># Specific test function</span>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>pytest<span class="w"> </span>tests/unit/test_encryption.py::test_encrypt_decrypt_roundtrip<span class="w"> </span>-v
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="c1"># Specific test class</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>pytest<span class="w"> </span>tests/unit/test_config.py::TestSettingsValidation<span class="w"> </span>-v
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="c1"># Pattern matching</span>
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-k<span class="w"> </span><span class="s2">&quot;test_gmail&quot;</span><span class="w"> </span>-v
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="c1"># Specific test function</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>pytest<span class="w"> </span>tests/unit/test_encryption.py::test_encrypt_decrypt_roundtrip<span class="w"> </span>-v
 <a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>
-<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="c1"># With coverage (HTML + terminal)</span>
-<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not discord_e2e&quot;</span><span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>html<span class="w"> </span>--cov-report<span class="o">=</span>term-missing
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="c1"># Pattern matching</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-k<span class="w"> </span><span class="s2">&quot;test_gmail&quot;</span><span class="w"> </span>-v
 <a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>
-<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="c1"># Integration tests only (requires Docker)</span>
-<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>pytest<span class="w"> </span>tests/integration/<span class="w"> </span>-m<span class="w"> </span>integration<span class="w"> </span>-v<span class="w"> </span>-s
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="c1"># With coverage (HTML + terminal)</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not discord_e2e&quot;</span><span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>html<span class="w"> </span>--cov-report<span class="o">=</span>term-missing
 <a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>
-<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="c1"># Full suite (everything except Discord E2E)</span>
-<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not discord_e2e&quot;</span><span class="w"> </span>-v
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="c1"># Integration tests only (requires Docker)</span>
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>pytest<span class="w"> </span>tests/integration/<span class="w"> </span>-m<span class="w"> </span>integration<span class="w"> </span>-v<span class="w"> </span>-s
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a><span class="c1"># Full suite (everything except Discord E2E)</span>
+<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not discord_e2e&quot;</span><span class="w"> </span>-v
 </code></pre></div>
+<h3 id="production-parity-test-run">Production-Parity Test Run<a class="headerlink" href="#production-parity-test-run" title="Permanent link">&para;</a></h3>
+<p><code>scripts/pre-push-tests.sh</code> is the canonical full validation path. It:</p>
+<ol>
+<li>Runs static gates (ruff, bandit, gitleaks, hadolint, licenses, syntax checks)</li>
+<li>Runs unit tests with coverage gate (<code>&gt;=90%</code>) plus <code>mypy</code> and <code>pip-audit</code></li>
+<li>Runs in-process integration suites</li>
+<li>Builds/rebuilds <code>docker-compose.test.yml</code>, waits for healthy services, then runs Docker E2E and Discord E2E suites</li>
+</ol>
 <h3 id="test-markers">Test Markers<a class="headerlink" href="#test-markers" title="Permanent link">&para;</a></h3>
 <p>Zetherion AI defines three custom markers in <code>pyproject.toml</code>:</p>
 <table>
@@ -2672,8 +2678,8 @@
 </thead>
 <tbody>
 <tr>
-<td>Overall coverage</td>
-<td>93%+</td>
+<td>Coverage gate</td>
+<td>&gt;=90% (enforced by pytest addopts)</td>
 </tr>
 <tr>
 <td>Total tests</td>
@@ -2681,11 +2687,11 @@
 </tr>
 <tr>
 <td>Test files</td>
-<td>89</td>
+<td>90+</td>
 </tr>
 <tr>
 <td>Source files</td>
-<td>91</td>
+<td>90+</td>
 </tr>
 <tr>
 <td>Branch coverage</td>
@@ -2725,85 +2731,8 @@
 </tr>
 <tr>
 <td>Overall project</td>
-<td>93%+</td>
-<td>Do not regress</td>
-</tr>
-</tbody>
-</table>
-<h3 id="coverage-by-module-approximate">Coverage by Module (Approximate)<a class="headerlink" href="#coverage-by-module-approximate" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Module</th>
-<th>Coverage</th>
-<th>Notes</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>security/</code></td>
-<td>97%</td>
-<td>Encryption, user auth, permissions</td>
-</tr>
-<tr>
-<td><code>agent/</code></td>
-<td>95%</td>
-<td>Core agent, router, providers</td>
-</tr>
-<tr>
-<td><code>memory/</code></td>
-<td>94%</td>
-<td>Qdrant, embeddings</td>
-</tr>
-<tr>
-<td><code>config.py</code></td>
-<td>96%</td>
-<td>Settings validation</td>
-</tr>
-<tr>
-<td><code>discord/</code></td>
-<td>92%</td>
-<td>Bot handlers, user manager</td>
-</tr>
-<tr>
-<td><code>skills/</code></td>
-<td>91%</td>
-<td>Gmail, GitHub, calendar, tasks</td>
-</tr>
-<tr>
-<td><code>observation/</code></td>
-<td>93%</td>
-<td>Pipeline, extractors, adapters</td>
-</tr>
-<tr>
-<td><code>personal/</code></td>
-<td>92%</td>
-<td>Context, actions, storage</td>
-</tr>
-<tr>
-<td><code>profile/</code></td>
-<td>93%</td>
-<td>Builder, cache, inference</td>
-</tr>
-<tr>
-<td><code>models/</code></td>
-<td>95%</td>
-<td>Pydantic data models</td>
-</tr>
-<tr>
-<td><code>costs/</code></td>
-<td>94%</td>
-<td>Usage tracking</td>
-</tr>
-<tr>
-<td><code>scheduler/</code></td>
-<td>90%</td>
-<td>Heartbeat, actions</td>
-</tr>
-<tr>
-<td><code>notifications/</code></td>
-<td>91%</td>
-<td>Discord notifier</td>
+<td>&gt;=90%</td>
+<td>CI/local gate</td>
 </tr>
 </tbody>
 </table>

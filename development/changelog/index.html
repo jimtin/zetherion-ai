@@ -1646,10 +1646,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#phase-5-skills-and-routing-coverage-8758-93" class="md-nav__link">
+  <a href="#phase-5-skills-and-routing-historical-snapshot-8758-93" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 5: Skills and Routing (Coverage: 87.58% -&gt; 93%+)
+        Phase 5: Skills and Routing (Historical snapshot: 87.58% -&gt; 93%+)
       
     </span>
   </a>
@@ -1701,10 +1701,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#current-test-statistics" class="md-nav__link">
+  <a href="#historical-test-statistics-snapshot" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Current Test Statistics
+        Historical Test Statistics (Snapshot)
       
     </span>
   </a>
@@ -2371,10 +2371,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#phase-5-skills-and-routing-coverage-8758-93" class="md-nav__link">
+  <a href="#phase-5-skills-and-routing-historical-snapshot-8758-93" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 5: Skills and Routing (Coverage: 87.58% -&gt; 93%+)
+        Phase 5: Skills and Routing (Historical snapshot: 87.58% -&gt; 93%+)
       
     </span>
   </a>
@@ -2426,10 +2426,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#current-test-statistics" class="md-nav__link">
+  <a href="#historical-test-statistics-snapshot" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Current Test Statistics
+        Historical Test Statistics (Snapshot)
       
     </span>
   </a>
@@ -2598,6 +2598,11 @@
 <p>All notable changes to Zetherion AI will be documented in this file.</p>
 <p>The format is based on <a href="https://keepachangelog.com/en/1.0.0/">Keep a Changelog</a>,
 and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semantic Versioning</a>.</p>
+<blockquote>
+<p>Note: percentage/count metrics in historical phase sections are snapshots from
+the date of that phase. Current policy is enforced by test configuration:
+overall coverage must remain <code>&gt;=90%</code>.</p>
+</blockquote>
 <hr />
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
 <h3 id="added-phase-9-2026-02-08">Added - Phase 9 (2026-02-08)<a class="headerlink" href="#added-phase-9-2026-02-08" title="Permanent link">&para;</a></h3>
@@ -2732,7 +2737,8 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 </ul>
 <h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Test suite</strong>: Expanded to <strong>3,000+ tests</strong> (93%+ coverage) across <strong>89 test files</strong> covering <strong>91 source files</strong></li>
+<li><strong>Test suite</strong>: Expanded to <strong>3,000+ tests</strong> (historical snapshot at the time:
+  93%+ coverage across 89 test files and 91 source files)</li>
 <li><strong>Docker services</strong>: Expanded to <strong>6 services</strong> (bot, skills, qdrant, postgres, ollama, ollama-router)</li>
 <li><strong>Ollama models</strong>: Updated from Qwen to Meta Llama (llama3.2:3b for router, llama3.1:8b for generation)</li>
 <li><strong>Default cloud models</strong>: claude-sonnet-4-5-20250929, gpt-5.2, gemini-2.5-flash</li>
@@ -2820,7 +2826,7 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li>Windows deployment scripts (PowerShell)</li>
 <li>MkDocs documentation site with wiki sync</li>
 </ul>
-<h3 id="phase-5-skills-and-routing-coverage-8758-93">Phase 5: Skills and Routing (Coverage: 87.58% -&gt; 93%+)<a class="headerlink" href="#phase-5-skills-and-routing-coverage-8758-93" title="Permanent link">&para;</a></h3>
+<h3 id="phase-5-skills-and-routing-historical-snapshot-8758-93">Phase 5: Skills and Routing (Historical snapshot: 87.58% -&gt; 93%+)<a class="headerlink" href="#phase-5-skills-and-routing-historical-snapshot-8758-93" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Complete InferenceBroker with multi-provider routing</li>
 <li>Encryption layer with AES-256-GCM</li>
@@ -2852,7 +2858,7 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li>PostgreSQL-backed personal model (4 data models)</li>
 <li>Communication style dimensions, contact graphs, policy system</li>
 </ul>
-<h3 id="current-test-statistics">Current Test Statistics<a class="headerlink" href="#current-test-statistics" title="Permanent link">&para;</a></h3>
+<h3 id="historical-test-statistics-snapshot">Historical Test Statistics (Snapshot)<a class="headerlink" href="#historical-test-statistics-snapshot" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -2864,12 +2870,12 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <tbody>
 <tr>
 <td><strong>Test Files</strong></td>
-<td>89</td>
+<td>89 (snapshot)</td>
 <td>All passing</td>
 </tr>
 <tr>
 <td><strong>Source Files</strong></td>
-<td>91</td>
+<td>91 (snapshot)</td>
 <td>Covered</td>
 </tr>
 <tr>
@@ -2879,8 +2885,8 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 </tr>
 <tr>
 <td><strong>Overall Coverage</strong></td>
-<td>93%+</td>
-<td>Target exceeded</td>
+<td>93%+ (snapshot)</td>
+<td>Target exceeded at that time</td>
 </tr>
 </tbody>
 </table>

@@ -1272,22 +1272,33 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#pre-push-hooks" class="md-nav__link">
+  <a href="#pre-push-and-pre-merge-validation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Pre-Push Hooks
+        Pre-Push and Pre-Merge Validation
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Pre-Push Hooks">
+    <nav class="md-nav" aria-label="Pre-Push and Pre-Merge Validation">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#what-runs-3-steps" class="md-nav__link">
+  <a href="#lightweight-git-hook-git-hookspre-push" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What Runs (3 Steps)
+        Lightweight Git Hook (.git-hooks/pre-push)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#production-parity-pipeline-scriptspre-push-testssh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Production-Parity Pipeline (scripts/pre-push-tests.sh)
       
     </span>
   </a>
@@ -1859,22 +1870,33 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#pre-push-hooks" class="md-nav__link">
+  <a href="#pre-push-and-pre-merge-validation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Pre-Push Hooks
+        Pre-Push and Pre-Merge Validation
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Pre-Push Hooks">
+    <nav class="md-nav" aria-label="Pre-Push and Pre-Merge Validation">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#what-runs-3-steps" class="md-nav__link">
+  <a href="#lightweight-git-hook-git-hookspre-push" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What Runs (3 Steps)
+        Lightweight Git Hook (.git-hooks/pre-push)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#production-parity-pipeline-scriptspre-push-testssh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Production-Parity Pipeline (scripts/pre-push-tests.sh)
       
     </span>
   </a>
@@ -2164,11 +2186,11 @@
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>                             |
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>                             v
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>+---------------------------------------------------------------+
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>|  Tier 2: Pre-Push Hooks (~30-60s)                             |
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>|  Runs: on every git push                                      |
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>|  Checks: Ruff lint, Mypy type check, full pytest suite        |
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>|          with coverage (unit tests only)                       |
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>|  Effect: blocks push if any check fails                       |
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>|  Tier 2: Local Push Gates                                      |
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>|  Runs: on every git push (hook) and pre-merge validation       |
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>|  Checks: lightweight pre-push hook + full production-parity     |
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>|          pipeline via scripts/pre-push-tests.sh                |
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>|  Effect: blocks push/merge if checks fail                      |
 <a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>+---------------------------------------------------------------+
 <a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>                             |
 <a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>                             v
@@ -2185,7 +2207,7 @@
 <p><strong>Design philosophy:</strong></p>
 <ul>
 <li><strong>Fast feedback locally</strong> -- pre-commit catches formatting and security issues in seconds.</li>
-<li><strong>Confidence before push</strong> -- pre-push ensures the full test suite (3,000+ tests, 93%+ coverage) passes.</li>
+<li><strong>Confidence before push</strong> -- local gates catch failures before CI, including a full containerized validation path.</li>
 <li><strong>Comprehensive CI</strong> -- GitHub Actions catches cross-version issues, container problems, and dependency vulnerabilities.</li>
 </ul>
 <h2 id="pre-commit-hooks">Pre-Commit Hooks<a class="headerlink" href="#pre-commit-hooks" title="Permanent link">&para;</a></h2>
@@ -2285,44 +2307,50 @@
 <a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="nv">SKIP</span><span class="o">=</span>mypy<span class="w"> </span>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;Skip type checking&quot;</span>
 </code></pre></div>
 <p>Bypassing hooks is discouraged. If you bypass locally, GitHub Actions CI will still enforce the same checks and block the PR.</p>
-<h2 id="pre-push-hooks">Pre-Push Hooks<a class="headerlink" href="#pre-push-hooks" title="Permanent link">&para;</a></h2>
-<p>Pre-push hooks run automatically on every <code>git push</code>. The custom hook lives at <code>.git-hooks/pre-push</code> and is symlinked into <code>.git/hooks/</code> during setup.</p>
-<h3 id="what-runs-3-steps">What Runs (3 Steps)<a class="headerlink" href="#what-runs-3-steps" title="Permanent link">&para;</a></h3>
+<h2 id="pre-push-and-pre-merge-validation">Pre-Push and Pre-Merge Validation<a class="headerlink" href="#pre-push-and-pre-merge-validation" title="Permanent link">&para;</a></h2>
+<p>Zetherion AI has two local validation paths:</p>
+<ol>
+<li><code>.git-hooks/pre-push</code> (automatic on <code>git push</code>) for fast feedback.</li>
+<li><code>scripts/pre-push-tests.sh</code> (manual/CI-style) for production-parity validation.</li>
+</ol>
+<h3 id="lightweight-git-hook-git-hookspre-push">Lightweight Git Hook (<code>.git-hooks/pre-push</code>)<a class="headerlink" href="#lightweight-git-hook-git-hookspre-push" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
 <th>Step</th>
 <th>Command</th>
 <th>What It Checks</th>
-<th>Duration</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>1</td>
 <td><code>ruff check src/ tests/</code></td>
-<td>Linting across all source and test code</td>
-<td>~2s</td>
+<td>Linting</td>
 </tr>
 <tr>
 <td>2</td>
 <td><code>mypy src/zetherion_ai --config-file=pyproject.toml</code></td>
-<td>Static type checking (strict mode)</td>
-<td>~10s</td>
+<td>Type checking</td>
 </tr>
 <tr>
 <td>3</td>
-<td><code>pytest tests/ -m "not integration" -v --tb=short --cov=src/zetherion_ai --cov-report=term-missing</code></td>
-<td>Full unit test suite with coverage report</td>
-<td>~45s</td>
+<td><code>pytest tests/ -m "not integration" ... --cov=src/zetherion_ai</code></td>
+<td>Unit suite + coverage gate</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Total duration:</strong> approximately 30-60 seconds.</p>
-<p>The hook automatically activates <code>.venv</code> if it exists and <code>$VIRTUAL_ENV</code> is not set.</p>
-<p><strong>Optional integration test step:</strong> Set <code>RUN_INTEGRATION_TESTS=1</code> to also run integration tests before push. This adds 2-3 minutes.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Push with integration tests</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nv">RUN_INTEGRATION_TESTS</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>main
+<h3 id="production-parity-pipeline-scriptspre-push-testssh">Production-Parity Pipeline (<code>scripts/pre-push-tests.sh</code>)<a class="headerlink" href="#production-parity-pipeline-scriptspre-push-testssh" title="Permanent link">&para;</a></h3>
+<p>This script is the canonical full local gate before merge. It performs:</p>
+<ol>
+<li>Static analysis (<code>ruff</code>, <code>bandit</code>, <code>gitleaks</code>, <code>hadolint</code>, license checks)</li>
+<li>Unit tests + <code>mypy</code> + <code>pip-audit</code> (parallel)</li>
+<li>In-process integration tests</li>
+<li>Docker test environment rebuild/start (<code>docker-compose.test.yml</code>)</li>
+<li>Full Docker E2E and Discord E2E suites</li>
+</ol>
+<p>Run it directly:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>bash<span class="w"> </span>scripts/pre-push-tests.sh
 </code></pre></div>
 <h3 id="setup_1">Setup<a class="headerlink" href="#setup_1" title="Permanent link">&para;</a></h3>
 <p>The pre-push hook is installed as a symlink:</p>
@@ -2556,7 +2584,11 @@
 </tr>
 <tr>
 <td><code>.git-hooks/pre-push</code></td>
-<td>Custom pre-push hook script (3-step: lint, type-check, test)</td>
+<td>Lightweight pre-push hook (lint, type-check, unit tests)</td>
+</tr>
+<tr>
+<td><code>scripts/pre-push-tests.sh</code></td>
+<td>Full production-parity test pipeline (unit + integration + Docker E2E + Discord E2E)</td>
 </tr>
 <tr>
 <td><code>.github/workflows/ci.yml</code></td>
@@ -2617,22 +2649,25 @@
 <a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>pre-commit<span class="w"> </span>run<span class="w"> </span>--all-files
 </code></pre></div>
 <h3 id="test-failures-blocking-push">Test Failures Blocking Push<a class="headerlink" href="#test-failures-blocking-push" title="Permanent link">&para;</a></h3>
-<p><strong>Problem:</strong> Tests fail during pre-push and block the push.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Run tests manually to see full output</span>
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration&quot;</span><span class="w"> </span>-v<span class="w"> </span>--tb<span class="o">=</span>long
+<p><strong>Problem:</strong> Tests fail during local gates and block push/merge.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Fast path (same shape as hook)</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration and not discord_e2e&quot;</span><span class="w"> </span>-v<span class="w"> </span>--tb<span class="o">=</span>long
 <a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
-<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="c1"># Run only the failing test with debug output</span>
-<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>pytest<span class="w"> </span>tests/unit/test_agent_core.py::test_failing_case<span class="w"> </span>-s<span class="w"> </span>-vv
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="c1"># Full production-parity path</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>bash<span class="w"> </span>scripts/pre-push-tests.sh
 <a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>
-<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="c1"># If tests pass individually but fail together, check for fixture pollution</span>
-<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration&quot;</span><span class="w"> </span>-p<span class="w"> </span>no:randomly<span class="w"> </span>--tb<span class="o">=</span>short
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="c1"># Run only the failing test with debug output</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>pytest<span class="w"> </span>tests/unit/test_agent_core.py::test_failing_case<span class="w"> </span>-s<span class="w"> </span>-vv
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>
+<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="c1"># If tests pass individually but fail together, check for fixture pollution</span>
+<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration and not discord_e2e&quot;</span><span class="w"> </span>-p<span class="w"> </span>no:randomly<span class="w"> </span>--tb<span class="o">=</span>short
 </code></pre></div>
 <p><strong>Problem:</strong> Coverage threshold not met</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># Check current coverage with missing lines</span>
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration&quot;</span><span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>term-missing
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration and not discord_e2e&quot;</span><span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>term-missing
 <a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>
 <a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="c1"># Generate HTML report for detailed analysis</span>
-<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration&quot;</span><span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>html
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration and not discord_e2e&quot;</span><span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>html
 <a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>open<span class="w"> </span>htmlcov/index.html
 </code></pre></div>
 <h3 id="ci-failures">CI Failures<a class="headerlink" href="#ci-failures" title="Permanent link">&para;</a></h3>
