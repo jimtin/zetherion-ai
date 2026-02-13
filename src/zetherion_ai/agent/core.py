@@ -4,6 +4,7 @@ import asyncio
 import time
 from typing import Any
 
+from zetherion_ai.agent.docs_knowledge import DocsKnowledgeBase
 from zetherion_ai.agent.inference import InferenceBroker
 from zetherion_ai.agent.prompts import SYSTEM_PROMPT
 from zetherion_ai.agent.providers import TaskType
@@ -87,6 +88,7 @@ class Agent:
         Args:
             memory: The memory system for context retrieval.
         """
+        settings = get_settings()
         self._memory = memory
         self._router = create_router_sync()
 
@@ -98,9 +100,24 @@ class Agent:
         self._skills_enabled = False
         # Skills client is initialized lazily when first needed
 
+        # Docs-backed setup/help knowledge (vectorized from local docs).
+        self._docs_knowledge: DocsKnowledgeBase | None = None
+        if settings.docs_knowledge_enabled:
+            self._docs_knowledge = DocsKnowledgeBase(
+                memory=self._memory,
+                inference_broker=self._inference_broker,
+                docs_root=settings.docs_knowledge_root,
+                state_file=settings.docs_knowledge_state_path,
+                gap_log_file=settings.docs_knowledge_gap_log_path,
+                sync_interval_seconds=settings.docs_knowledge_sync_interval_seconds,
+                max_hits=settings.docs_knowledge_max_hits,
+                min_score=settings.docs_knowledge_min_score,
+            )
+
         log.info(
             "agent_initialized",
             inference_broker_enabled=True,
+            docs_knowledge_enabled=self._docs_knowledge is not None,
         )
 
     async def warmup(self) -> bool:
@@ -164,83 +181,91 @@ class Agent:
 
         # Step 2: Handle based on intent
         async with timed_operation("intent_handling") as t:
-            match routing.intent:
-                case MessageIntent.MEMORY_STORE:
-                    response = await self._handle_memory_store(message, user_id=user_id)
-                case MessageIntent.MEMORY_RECALL:
-                    response = await self._handle_memory_recall(user_id, message)
-                case MessageIntent.SYSTEM_COMMAND:
-                    response = await self._handle_system_command(message)
-                case MessageIntent.SIMPLE_QUERY:
-                    response = await self._handle_simple_query(message)
-                case MessageIntent.COMPLEX_TASK:
-                    response = await self._handle_complex_task(
-                        user_id,
-                        channel_id,
-                        message,
-                        routing,
-                    )
-                # Skill intents (Phase 5G)
-                case MessageIntent.TASK_MANAGEMENT:
-                    response = await self._handle_skill_intent(user_id, message, "task_manager")
-                case MessageIntent.CALENDAR_QUERY:
-                    response = await self._handle_skill_intent(user_id, message, "calendar")
-                case MessageIntent.PROFILE_QUERY:
-                    response = await self._handle_skill_intent(
-                        user_id,
-                        message,
-                        "profile_manager",
-                    )
-                case MessageIntent.PERSONAL_MODEL:
-                    response = await self._handle_skill_intent(
-                        user_id,
-                        message,
-                        "personal_model",
-                    )
-                case MessageIntent.EMAIL_MANAGEMENT:
-                    response = await self._handle_skill_intent(
-                        user_id,
-                        message,
-                        "gmail",
-                    )
-                case MessageIntent.DEV_WATCHER:
-                    response = await self._handle_skill_intent(
-                        user_id,
-                        message,
-                        "dev_watcher",
-                    )
-                case MessageIntent.MILESTONE_MANAGEMENT:
-                    response = await self._handle_skill_intent(
-                        user_id,
-                        message,
-                        "milestone_tracker",
-                    )
-                # YouTube skill intents (Phase 12)
-                case MessageIntent.YOUTUBE_INTELLIGENCE:
-                    response = await self._handle_skill_intent(
-                        user_id,
-                        message,
-                        "youtube_intelligence",
-                    )
-                case MessageIntent.YOUTUBE_MANAGEMENT:
-                    response = await self._handle_skill_intent(
-                        user_id,
-                        message,
-                        "youtube_management",
-                    )
-                case MessageIntent.YOUTUBE_STRATEGY:
-                    response = await self._handle_skill_intent(
-                        user_id,
-                        message,
-                        "youtube_strategy",
-                    )
-                case _:
-                    response = await self._handle_complex_task(
-                        user_id,
-                        channel_id,
-                        message,
-                        routing,
-                    )
+            docs_response = await self._maybe_answer_from_docs(
+                user_id=user_id,
+                message=message,
+                routing=routing,
+            )
+            if docs_response is not None:
+                response = docs_response
+            else:
+                match routing.intent:
+                    case MessageIntent.MEMORY_STORE:
+                        response = await self._handle_memory_store(message, user_id=user_id)
+                    case MessageIntent.MEMORY_RECALL:
+                        response = await self._handle_memory_recall(user_id, message)
+                    case MessageIntent.SYSTEM_COMMAND:
+                        response = await self._handle_system_command(message)
+                    case MessageIntent.SIMPLE_QUERY:
+                        response = await self._handle_simple_query(message)
+                    case MessageIntent.COMPLEX_TASK:
+                        response = await self._handle_complex_task(
+                            user_id,
+                            channel_id,
+                            message,
+                            routing,
+                        )
+                    # Skill intents (Phase 5G)
+                    case MessageIntent.TASK_MANAGEMENT:
+                        response = await self._handle_skill_intent(user_id, message, "task_manager")
+                    case MessageIntent.CALENDAR_QUERY:
+                        response = await self._handle_skill_intent(user_id, message, "calendar")
+                    case MessageIntent.PROFILE_QUERY:
+                        response = await self._handle_skill_intent(
+                            user_id,
+                            message,
+                            "profile_manager",
+                        )
+                    case MessageIntent.PERSONAL_MODEL:
+                        response = await self._handle_skill_intent(
+                            user_id,
+                            message,
+                            "personal_model",
+                        )
+                    case MessageIntent.EMAIL_MANAGEMENT:
+                        response = await self._handle_skill_intent(
+                            user_id,
+                            message,
+                            "gmail",
+                        )
+                    case MessageIntent.DEV_WATCHER:
+                        response = await self._handle_skill_intent(
+                            user_id,
+                            message,
+                            "dev_watcher",
+                        )
+                    case MessageIntent.MILESTONE_MANAGEMENT:
+                        response = await self._handle_skill_intent(
+                            user_id,
+                            message,
+                            "milestone_tracker",
+                        )
+                    # YouTube skill intents (Phase 12)
+                    case MessageIntent.YOUTUBE_INTELLIGENCE:
+                        response = await self._handle_skill_intent(
+                            user_id,
+                            message,
+                            "youtube_intelligence",
+                        )
+                    case MessageIntent.YOUTUBE_MANAGEMENT:
+                        response = await self._handle_skill_intent(
+                            user_id,
+                            message,
+                            "youtube_management",
+                        )
+                    case MessageIntent.YOUTUBE_STRATEGY:
+                        response = await self._handle_skill_intent(
+                            user_id,
+                            message,
+                            "youtube_strategy",
+                        )
+                    case _:
+                        response = await self._handle_complex_task(
+                            user_id,
+                            channel_id,
+                            message,
+                            routing,
+                        )
         log.info(
             "intent_handled",
             intent=routing.intent.value,
@@ -287,6 +312,48 @@ class Agent:
         """
         log.debug("handling_simple_query")
         return await self._router.generate_simple_response(message)
+
+    def _should_use_docs_knowledge(self, message: str, routing: RoutingDecision) -> bool:
+        """Whether this message should first try docs-backed answering."""
+        if self._docs_knowledge is None:
+            return False
+
+        if not DocsKnowledgeBase.should_handle_question(message):
+            return False
+
+        return routing.intent in (
+            MessageIntent.SYSTEM_COMMAND,
+            MessageIntent.EMAIL_MANAGEMENT,
+            MessageIntent.SIMPLE_QUERY,
+            MessageIntent.PROFILE_QUERY,
+            MessageIntent.TASK_MANAGEMENT,
+            MessageIntent.CALENDAR_QUERY,
+        )
+
+    async def _maybe_answer_from_docs(
+        self,
+        *,
+        user_id: int,
+        message: str,
+        routing: RoutingDecision,
+    ) -> str | None:
+        """Try docs-backed answering for setup/help style queries."""
+        docs = self._docs_knowledge
+        if docs is None or not self._should_use_docs_knowledge(message, routing):
+            return None
+
+        try:
+            return await docs.maybe_answer(
+                question=message,
+                user_id=user_id,
+                intent=routing.intent.value,
+            )
+        except Exception:
+            log.exception(
+                "docs_knowledge_query_failed",
+                intent=routing.intent.value,
+            )
+            return None
 
     async def _get_skills_client(self) -> SkillsClient | None:
         """Get or create the skills client.

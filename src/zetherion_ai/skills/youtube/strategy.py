@@ -86,6 +86,7 @@ class YouTubeStrategySkill(Skill):
                 {
                     Permission.READ_PROFILE,
                     Permission.WRITE_MEMORIES,
+                    Permission.SEND_MESSAGES,
                 }
             ),
             collections=["yt_docs"],

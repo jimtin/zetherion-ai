@@ -20,7 +20,7 @@ from zetherion_ai.skills.gmail.skill import (
     INTENT_UNREAD,
     GmailSkill,
 )
-from zetherion_ai.skills.permissions import PermissionSet
+from zetherion_ai.skills.permissions import Permission, PermissionSet
 
 # ---------------------------------------------------------------------------
 # Mock helpers
@@ -152,6 +152,9 @@ class TestGmailSkillMetadata:
     def test_permissions_set_is_present(self, skill: GmailSkill) -> None:
         meta = skill.metadata
         assert isinstance(meta.permissions, PermissionSet)
+
+    def test_permissions_include_send_messages(self, skill: GmailSkill) -> None:
+        assert skill.metadata.permissions.has(Permission.SEND_MESSAGES)
 
     def test_description(self, skill: GmailSkill) -> None:
         assert "Gmail" in skill.metadata.description
@@ -684,7 +687,8 @@ class TestOnHeartbeat:
         assert actions[0].skill_name == "gmail"
         assert actions[0].action_type == "send_message"
         assert actions[0].user_id == "99"
-        assert actions[0].data == {"type": "email_digest"}
+        assert "message" in actions[0].data
+        assert "digest" in actions[0].data["message"].lower()
         assert actions[0].priority == 3
 
     async def test_user_without_accounts_no_action(

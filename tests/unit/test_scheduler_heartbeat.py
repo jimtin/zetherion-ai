@@ -260,6 +260,38 @@ class TestHeartbeatScheduler:
         assert len(results) == 3
 
     @pytest.mark.asyncio
+    async def test_execute_actions_queue_defers_message_during_quiet_hours(self) -> None:
+        """Queued heartbeat actions should use scheduled_for when quiet-hours deferral applies."""
+        queue_manager = AsyncMock()
+        queue_manager.is_running = True
+        queue_manager.enqueue = AsyncMock()
+        scheduler = HeartbeatScheduler(queue_manager=queue_manager)
+
+        trigger_time = datetime.now() + timedelta(hours=2)
+        action = HeartbeatAction(
+            skill_name="gmail",
+            action_type="send_message",
+            user_id="123",
+            data={"message": "Digest ready"},
+            priority=5,
+        )
+
+        with (
+            patch.object(scheduler, "_is_quiet_hours_for_user", new=AsyncMock(return_value=True)),
+            patch.object(
+                scheduler,
+                "_next_notification_time",
+                new=AsyncMock(return_value=trigger_time),
+            ),
+        ):
+            results = await scheduler._execute_actions([action])
+
+        assert len(results) == 1
+        assert "Deferred until" in (results[0].message or "")
+        enqueue_kwargs = queue_manager.enqueue.await_args.kwargs
+        assert enqueue_kwargs["scheduled_for"] == trigger_time
+
+    @pytest.mark.asyncio
     async def test_run_once_respects_max_actions(self) -> None:
         """run_once should limit actions per beat."""
         mock_client = AsyncMock()
@@ -406,17 +438,37 @@ class TestHeartbeatScheduler:
         assert scheduler.stats.rate_limited == 0
 
     @pytest.mark.asyncio
-    async def test_run_heartbeat_quiet_hours_skips_skills(self) -> None:
-        """_run_heartbeat should skip skills heartbeat during quiet hours."""
+    async def test_run_heartbeat_quiet_hours_defers_messages(self) -> None:
+        """_run_heartbeat should still fetch actions but defer message delivery in quiet hours."""
         mock_client = AsyncMock()
-        scheduler = HeartbeatScheduler(skills_client=mock_client)
+        mock_executor = AsyncMock(spec=ActionExecutor)
+        scheduler = HeartbeatScheduler(skills_client=mock_client, action_executor=mock_executor)
         scheduler.set_user_ids(["user1"])
+        mock_client.trigger_heartbeat = AsyncMock(
+            return_value=[
+                HeartbeatAction(
+                    skill_name="test",
+                    action_type="send_message",
+                    user_id="user1",
+                    data={"message": "hello"},
+                    priority=5,
+                )
+            ]
+        )
 
-        with patch.object(scheduler, "_is_quiet_hours", return_value=True):
+        with (
+            patch.object(scheduler, "_is_quiet_hours_for_user", new=AsyncMock(return_value=True)),
+            patch.object(
+                scheduler,
+                "_next_notification_time",
+                new=AsyncMock(return_value=datetime.now() + timedelta(hours=1)),
+            ),
+        ):
             await scheduler._run_heartbeat()
 
-        # Skills heartbeat should not be called during quiet hours
-        mock_client.trigger_heartbeat.assert_not_called()
+        mock_client.trigger_heartbeat.assert_awaited_once_with(["user1"])
+        mock_executor.execute.assert_not_awaited()
+        assert len(scheduler._scheduled_events) == 1
         assert scheduler.stats.total_beats == 1
 
     @pytest.mark.asyncio
@@ -426,8 +478,7 @@ class TestHeartbeatScheduler:
         scheduler = HeartbeatScheduler(skills_client=mock_client)
         # No users set
 
-        with patch.object(scheduler, "_is_quiet_hours", return_value=False):
-            await scheduler._run_heartbeat()
+        await scheduler._run_heartbeat()
 
         mock_client.trigger_heartbeat.assert_not_called()
 
@@ -566,9 +617,8 @@ class TestHeartbeatScheduler:
         """_run_heartbeat should always increment total_beats."""
         scheduler = HeartbeatScheduler()
 
-        with patch.object(scheduler, "_is_quiet_hours", return_value=True):
-            await scheduler._run_heartbeat()
-            await scheduler._run_heartbeat()
+        await scheduler._run_heartbeat()
+        await scheduler._run_heartbeat()
 
         assert scheduler.stats.total_beats == 2
         assert scheduler.stats.last_beat is not None

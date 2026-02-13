@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import time
+from datetime import time as clock_time
 from typing import Any
 from uuid import uuid4
 
@@ -27,7 +28,7 @@ from zetherion_ai.memory.qdrant import QdrantMemory
 from zetherion_ai.queue.manager import QueueManager
 from zetherion_ai.queue.models import QueuePriority, QueueTaskType
 from zetherion_ai.scheduler.actions import ActionExecutor
-from zetherion_ai.scheduler.heartbeat import HeartbeatScheduler
+from zetherion_ai.scheduler.heartbeat import HeartbeatScheduler, QuietHoursWindow
 from zetherion_ai.utils import split_text_chunks
 
 log = get_logger("zetherion_ai.discord.bot")
@@ -229,6 +230,7 @@ class ZetherionAIBot(discord.Client):
             skills_client=skills_client,
             action_executor=action_executor,
             queue_manager=self._queue_manager,
+            quiet_hours_resolver=self._resolve_quiet_hours,
         )
         if self._user_manager is not None:
             try:
@@ -246,6 +248,77 @@ class ZetherionAIBot(discord.Client):
         # Sync commands
         await self._tree.sync()
         log.info("commands_synced")
+
+    @staticmethod
+    def _parse_clock_time(value: Any) -> clock_time | None:
+        """Parse ``HH:MM`` clock strings into ``datetime.time``."""
+        if not isinstance(value, str):
+            return None
+        raw = value.strip()
+        if not raw:
+            return None
+        try:
+            hour_str, minute_str = raw.split(":")
+            hour = int(hour_str)
+            minute = int(minute_str)
+        except (ValueError, AttributeError):
+            return None
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            return None
+        return clock_time(hour, minute)
+
+    async def _resolve_quiet_hours(self, user_id: str) -> QuietHoursWindow | None:
+        """Resolve per-user quiet-hours from personal profile settings."""
+        if self._user_manager is None or not user_id.isdigit():
+            return None
+
+        profile = await self._user_manager.get_personal_profile(int(user_id))
+        if not profile:
+            return None
+
+        timezone = profile.get("timezone")
+        timezone_str = str(timezone) if isinstance(timezone, str) and timezone else None
+
+        preferences = profile.get("preferences")
+        if isinstance(preferences, str):
+            try:
+                preferences = json.loads(preferences)
+            except json.JSONDecodeError:
+                preferences = {}
+
+        if isinstance(preferences, dict):
+            quiet = preferences.get("quiet_hours")
+            if isinstance(quiet, dict):
+                start = self._parse_clock_time(quiet.get("start"))
+                end = self._parse_clock_time(quiet.get("end"))
+                if start and end:
+                    return QuietHoursWindow(
+                        start=start,
+                        end=end,
+                        timezone=timezone_str,
+                        enabled=bool(quiet.get("enabled", True)),
+                    )
+
+        # Learning fallback: infer quiet-hours as inverse of working hours.
+        working_hours = profile.get("working_hours")
+        if isinstance(working_hours, str):
+            try:
+                working_hours = json.loads(working_hours)
+            except json.JSONDecodeError:
+                working_hours = {}
+
+        if isinstance(working_hours, dict):
+            work_start = self._parse_clock_time(working_hours.get("start"))
+            work_end = self._parse_clock_time(working_hours.get("end"))
+            if work_start and work_end:
+                return QuietHoursWindow(
+                    start=work_end,
+                    end=work_start,
+                    timezone=timezone_str,
+                    enabled=True,
+                )
+
+        return None
 
     async def _keep_warm_loop(self) -> None:
         """Background task to periodically keep the Ollama model warm."""
