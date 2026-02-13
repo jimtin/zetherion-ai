@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiohttp import web
@@ -12,6 +12,7 @@ from zetherion_ai.api.middleware import (
     RateLimiter,
     create_auth_middleware,
     create_cors_middleware,
+    create_rate_limit_middleware,
 )
 
 # ---------------------------------------------------------------------------
@@ -141,7 +142,15 @@ class TestAuthMiddleware:
             return web.json_response({"tenant_id": str(tenant.get("tenant_id", ""))})
 
         async def chat(request: web.Request) -> web.Response:
-            return web.json_response({"ok": True})
+            tenant = request.get("tenant", {})
+            session = request.get("session", {})
+            return web.json_response(
+                {
+                    "ok": True,
+                    "tenant_id": str(tenant.get("tenant_id", "")),
+                    "session_id": str(session.get("session_id", "")),
+                }
+            )
 
         app.router.add_get("/api/v1/health", health)
         app.router.add_get("/api/v1/tenants", protected)
@@ -218,3 +227,176 @@ class TestAuthMiddleware:
                 headers={"Authorization": "Bearer zt_sess_invalid.jwt.token"},
             )
             assert resp.status == 401
+
+    @pytest.mark.asyncio
+    async def test_session_auth_tenant_inactive_403(self):
+        """Session JWT with inactive tenant is rejected."""
+        tm = AsyncMock()
+        tm.get_tenant = AsyncMock(return_value={"tenant_id": "t1", "is_active": False})
+        app = self._make_app(tenant_manager=tm)
+
+        with patch(
+            "zetherion_ai.api.middleware.validate_session_token",
+            return_value={"tenant_id": "t1", "session_id": "s1"},
+        ):
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.post(
+                    "/api/v1/chat",
+                    headers={"Authorization": "Bearer valid.token"},
+                )
+                assert resp.status == 403
+                assert (await resp.json())["error"] == "Tenant not found or inactive"
+
+    @pytest.mark.asyncio
+    async def test_session_auth_missing_session_401(self):
+        """Session JWT with unknown session is rejected."""
+        tm = AsyncMock()
+        tm.get_tenant = AsyncMock(return_value={"tenant_id": "t1", "is_active": True})
+        tm.get_session = AsyncMock(return_value=None)
+        app = self._make_app(tenant_manager=tm)
+
+        with patch(
+            "zetherion_ai.api.middleware.validate_session_token",
+            return_value={"tenant_id": "t1", "session_id": "s1"},
+        ):
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.post(
+                    "/api/v1/chat",
+                    headers={"Authorization": "Bearer valid.token"},
+                )
+                assert resp.status == 401
+                assert (await resp.json())["error"] == "Session expired or not found"
+
+    @pytest.mark.asyncio
+    async def test_session_auth_tenant_session_mismatch_403(self):
+        """Session must belong to the same tenant as JWT payload."""
+        tm = AsyncMock()
+        tm.get_tenant = AsyncMock(return_value={"tenant_id": "tenant-a", "is_active": True})
+        tm.get_session = AsyncMock(return_value={"session_id": "s1", "tenant_id": "tenant-b"})
+        app = self._make_app(tenant_manager=tm)
+
+        with patch(
+            "zetherion_ai.api.middleware.validate_session_token",
+            return_value={"tenant_id": "tenant-a", "session_id": "s1"},
+        ):
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.post(
+                    "/api/v1/chat",
+                    headers={"Authorization": "Bearer valid.token"},
+                )
+                assert resp.status == 403
+                assert (await resp.json())["error"] == "Session does not belong to tenant"
+
+    @pytest.mark.asyncio
+    async def test_session_auth_success_attaches_context_and_touches_session(self):
+        """Valid session auth attaches tenant/session and updates activity."""
+        tm = AsyncMock()
+        tm.get_tenant = AsyncMock(return_value={"tenant_id": "tenant-a", "is_active": True})
+        tm.get_session = AsyncMock(return_value={"session_id": "s1", "tenant_id": "tenant-a"})
+        tm.touch_session = AsyncMock()
+        app = self._make_app(tenant_manager=tm)
+
+        with patch(
+            "zetherion_ai.api.middleware.validate_session_token",
+            return_value={"tenant_id": "tenant-a", "session_id": "s1"},
+        ):
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.post(
+                    "/api/v1/chat",
+                    headers={"Authorization": "Bearer valid.token"},
+                )
+                assert resp.status == 200
+                data = await resp.json()
+                assert data["tenant_id"] == "tenant-a"
+                assert data["session_id"] == "s1"
+        tm.touch_session.assert_awaited_once_with("s1")
+
+
+class TestRateLimitMiddleware:
+    """Tests for rate-limit middleware behavior."""
+
+    def _make_app(
+        self,
+        rate_limiter: RateLimiter,
+        *,
+        inject_tenant: dict[str, object] | None = None,
+    ) -> web.Application:
+        middlewares = []
+        if inject_tenant is not None:
+
+            @web.middleware
+            async def attach_tenant(request: web.Request, handler):
+                request["tenant"] = inject_tenant
+                return await handler(request)
+
+            middlewares.append(attach_tenant)
+
+        middlewares.append(create_rate_limit_middleware(rate_limiter))
+        app = web.Application(middlewares=middlewares)
+
+        async def health(request: web.Request) -> web.Response:
+            return web.json_response({"ok": True})
+
+        async def protected(request: web.Request) -> web.Response:
+            return web.json_response({"ok": True})
+
+        app.router.add_get("/api/v1/health", health)
+        app.router.add_get("/api/v1/tenants", protected)
+        return app
+
+    @pytest.mark.asyncio
+    async def test_public_path_bypasses_rate_limit(self):
+        """Public paths should not call the limiter."""
+        rate_limiter = MagicMock(spec=RateLimiter)
+        app = self._make_app(rate_limiter, inject_tenant={"tenant_id": "t1", "rate_limit_rpm": 1})
+
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/api/v1/health")
+
+        assert resp.status == 200
+        rate_limiter.check.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_missing_tenant_context_bypasses_rate_limit(self):
+        """If auth has not attached tenant yet, middleware should pass through."""
+        rate_limiter = MagicMock(spec=RateLimiter)
+        app = self._make_app(rate_limiter, inject_tenant=None)
+
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/api/v1/tenants")
+
+        assert resp.status == 200
+        rate_limiter.check.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_allows_request_within_limit(self):
+        """Allowed request continues to handler."""
+        rate_limiter = MagicMock(spec=RateLimiter)
+        rate_limiter.check.return_value = True
+        app = self._make_app(
+            rate_limiter,
+            inject_tenant={"tenant_id": "tenant-a", "rate_limit_rpm": 120},
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/api/v1/tenants")
+
+        assert resp.status == 200
+        rate_limiter.check.assert_called_once_with("tenant-a", 120)
+
+    @pytest.mark.asyncio
+    async def test_blocks_request_when_limit_exceeded(self):
+        """Exceeded limits return 429 with retry metadata."""
+        rate_limiter = MagicMock(spec=RateLimiter)
+        rate_limiter.check.return_value = False
+        app = self._make_app(
+            rate_limiter,
+            inject_tenant={"tenant_id": "tenant-a", "rate_limit_rpm": 60},
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/api/v1/tenants")
+            assert resp.status == 429
+            body = await resp.json()
+            assert body["error"] == "Rate limit exceeded"
+            assert body["retry_after"] == 60
