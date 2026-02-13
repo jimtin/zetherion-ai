@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -152,6 +153,7 @@ class QueueManager:
         channel_id: int | None = None,
         payload: dict[str, Any],
         priority: int = QueuePriority.INTERACTIVE,
+        scheduled_for: datetime | None = None,
         correlation_id: str | None = None,
         parent_id: UUID | None = None,
     ) -> UUID:
@@ -166,6 +168,7 @@ class QueueManager:
             channel_id: Discord channel ID (optional).
             payload: JSON-serialisable task data.
             priority: Queue priority (0 = highest).
+            scheduled_for: Optional earliest dequeue time for deferred tasks.
             correlation_id: Optional correlation ID.
             parent_id: Optional parent item UUID.
 
@@ -182,6 +185,7 @@ class QueueManager:
             channel_id=channel_id,
             payload=payload,
             max_attempts=settings.queue_max_retry_attempts,
+            scheduled_for=scheduled_for or datetime.now(),
             correlation_id=correlation_id,
             parent_id=parent_id,
         )

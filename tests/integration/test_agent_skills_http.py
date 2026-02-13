@@ -53,7 +53,11 @@ async def agent_with_skills() -> Agent:
     with (
         patch("zetherion_ai.agent.core.create_router_sync"),
         patch("zetherion_ai.agent.core.InferenceBroker"),
+        patch("zetherion_ai.agent.core.get_settings") as mock_get_settings,
     ):
+        mock_settings = MagicMock()
+        mock_settings.docs_knowledge_enabled = False
+        mock_get_settings.return_value = mock_settings
         agent = Agent(memory=mock_memory)
 
     agent._skills_client = client

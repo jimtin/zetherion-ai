@@ -47,6 +47,7 @@ class TestTaskType:
         assert TaskType.PROFILE_EXTRACTION.value == "profile_extraction"
         assert TaskType.TASK_PARSING.value == "task_parsing"
         assert TaskType.HEARTBEAT_DECISION.value == "heartbeat_decision"
+        assert TaskType.DOCS_QA.value == "docs_qa"
 
 
 class TestProvider:
@@ -120,6 +121,7 @@ class TestCapabilityMatrix:
         assert CAPABILITY_MATRIX[TaskType.PROFILE_EXTRACTION].provider == Provider.OLLAMA
         assert CAPABILITY_MATRIX[TaskType.TASK_PARSING].provider == Provider.OLLAMA
         assert CAPABILITY_MATRIX[TaskType.HEARTBEAT_DECISION].provider == Provider.OLLAMA
+        assert CAPABILITY_MATRIX[TaskType.DOCS_QA].provider == Provider.OLLAMA
 
     def test_all_configs_have_fallbacks(self):
         """Test all configs have fallback providers."""
@@ -184,6 +186,7 @@ class TestOllamaTierCapabilities:
         assert TaskType.CLASSIFICATION in small_caps
         assert TaskType.DATA_EXTRACTION in small_caps
         assert TaskType.HEARTBEAT_DECISION in small_caps
+        assert TaskType.DOCS_QA in small_caps
 
     def test_small_tier_limitations(self):
         """Test small tier cannot handle complex tasks."""

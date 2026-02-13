@@ -1019,3 +1019,36 @@ class TestSetRoleEdgeCases:
             result = await mgr.set_role(user_id=200, new_role="admin", changed_by=300)
 
         assert result is False
+
+
+class TestGetPersonalProfile:
+    """Tests for UserManager.get_personal_profile."""
+
+    @pytest.mark.asyncio
+    async def test_returns_profile_dict_when_found(self):
+        mgr = UserManager(DSN)
+        mock_pool, mock_conn = _make_mock_pool()
+        mgr._pool = mock_pool
+        mock_conn.fetch.return_value = [
+            {
+                "timezone": "America/New_York",
+                "working_hours": {"start": "09:00", "end": "17:00"},
+                "preferences": {"quiet_hours": {"start": "22:00", "end": "07:00"}},
+            }
+        ]
+
+        profile = await mgr.get_personal_profile(12345)
+
+        assert profile is not None
+        assert profile["timezone"] == "America/New_York"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_on_db_error(self):
+        mgr = UserManager(DSN)
+        mock_pool, mock_conn = _make_mock_pool()
+        mgr._pool = mock_pool
+        mock_conn.fetch.side_effect = asyncpg.PostgresError("db down")
+
+        profile = await mgr.get_personal_profile(12345)
+
+        assert profile is None

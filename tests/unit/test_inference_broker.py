@@ -45,6 +45,7 @@ class TestTaskType:
             "PROFILE_EXTRACTION",
             "TASK_PARSING",
             "HEARTBEAT_DECISION",
+            "DOCS_QA",
         ]
         for type_name in expected_types:
             assert hasattr(TaskType, type_name)
@@ -123,6 +124,7 @@ class TestCapabilityMatrix:
             TaskType.PROFILE_EXTRACTION,
             TaskType.TASK_PARSING,
             TaskType.HEARTBEAT_DECISION,
+            TaskType.DOCS_QA,
         ]
         for task_type in lightweight_types:
             config = CAPABILITY_MATRIX[task_type]

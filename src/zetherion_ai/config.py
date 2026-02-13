@@ -292,6 +292,37 @@ class Settings(BaseSettings):
         default=30, description="Timeout in seconds for skills service requests"
     )
 
+    # Docs Knowledge Configuration (Phase 14)
+    docs_knowledge_enabled: bool = Field(
+        default=True, description="Enable docs-backed setup/help responses"
+    )
+    docs_knowledge_root: str = Field(
+        default="docs",
+        description="Path to markdown docs to index for setup/help answers",
+    )
+    docs_knowledge_state_path: str = Field(
+        default="data/docs_knowledge_state.json",
+        description="Path to local docs index state file",
+    )
+    docs_knowledge_gap_log_path: str = Field(
+        default="data/docs_unknown_questions.jsonl",
+        description="Path to unresolved docs-question log",
+    )
+    docs_knowledge_sync_interval_seconds: int = Field(
+        default=300,
+        description="How frequently docs sync is allowed to run (seconds)",
+    )
+    docs_knowledge_max_hits: int = Field(
+        default=6,
+        description="Maximum retrieved docs chunks used per question",
+    )
+    docs_knowledge_min_score: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Minimum vector similarity score for docs context",
+    )
+
     # Gmail Integration Configuration (Phase 8)
     google_client_id: str | None = Field(
         default=None, description="Google OAuth2 client ID for Gmail integration"

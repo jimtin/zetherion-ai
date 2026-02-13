@@ -33,13 +33,13 @@ class TestSkillsServerMain:
     @patch("zetherion_ai.skills.server.asyncio.run")
     @patch("zetherion_ai.skills.server.SkillRegistry")
     @patch("zetherion_ai.config.get_settings")
-    def test_registry_register_called_five_times(
+    def test_registry_register_called_eight_times(
         self,
         mock_get_settings,
         mock_registry_cls,
         mock_asyncio_run,
     ) -> None:
-        """registry.register should be called exactly 5 times."""
+        """registry.register should be called for all default built-in skills."""
         from zetherion_ai.skills.server import main
 
         _configure_mock_settings(mock_get_settings)
@@ -49,7 +49,7 @@ class TestSkillsServerMain:
 
         main()
 
-        assert mock_registry.register.call_count == 7
+        assert mock_registry.register.call_count == 8
 
     @patch("zetherion_ai.skills.server.asyncio.run")
     @patch("zetherion_ai.skills.server.SkillRegistry")
@@ -154,6 +154,7 @@ class TestSkillsServerMain:
         """Skills registered in correct order including DevWatcher and Milestone."""
         from zetherion_ai.skills.calendar import CalendarSkill
         from zetherion_ai.skills.dev_watcher import DevWatcherSkill
+        from zetherion_ai.skills.gmail.skill import GmailSkill
         from zetherion_ai.skills.health_analyzer import HealthAnalyzerSkill
         from zetherion_ai.skills.milestone import MilestoneSkill
         from zetherion_ai.skills.profile_skill import ProfileSkill
@@ -169,14 +170,15 @@ class TestSkillsServerMain:
         main()
 
         calls = mock_registry.register.call_args_list
-        assert len(calls) == 7
+        assert len(calls) == 8
         assert isinstance(calls[0].args[0], TaskManagerSkill)
         assert isinstance(calls[1].args[0], CalendarSkill)
         assert isinstance(calls[2].args[0], ProfileSkill)
         assert isinstance(calls[3].args[0], HealthAnalyzerSkill)
         assert isinstance(calls[4].args[0], DevWatcherSkill)
         assert isinstance(calls[5].args[0], MilestoneSkill)
-        assert isinstance(calls[6].args[0], UpdateCheckerSkill)
+        assert isinstance(calls[6].args[0], GmailSkill)
+        assert isinstance(calls[7].args[0], UpdateCheckerSkill)
 
     @patch("zetherion_ai.skills.server.asyncio.run")
     @patch("zetherion_ai.skills.server.SkillRegistry")

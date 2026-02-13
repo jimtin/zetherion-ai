@@ -136,6 +136,29 @@ class ActionExecutor:
 
     # Rate limit: max proactive messages per user per hour
     MAX_MESSAGES_PER_HOUR = 3
+    # Action types that send proactive user-facing notifications.
+    MESSAGE_ACTION_TYPES = frozenset(
+        {
+            "send_message",
+            "deadline_reminder",
+            "overdue_alert",
+            "morning_briefing",
+            "meeting_prep",
+            "end_of_day",
+            "stale_task_check",
+            "confirm_low_confidence",
+            "decay_check",
+            # Dev watcher
+            "dev_stale_annotation",
+            "dev_idea_reminder",
+            # Milestones
+            "milestone_drafts_pending",
+            # YouTube
+            "intelligence_report_generated",
+            "reply_drafts_generated",
+            "strategy_stale",
+        }
+    )
 
     def __init__(
         self,
@@ -186,19 +209,9 @@ class ActionExecutor:
         )
 
         # Check rate limit for message actions
-        message_actions = {
-            "send_message",
-            "deadline_reminder",
-            "overdue_alert",
-            "morning_briefing",
-            "meeting_prep",
-            "end_of_day",
-            "stale_task_check",
-            "confirm_low_confidence",
-            "decay_check",
-        }
-
-        if action.action_type in message_actions and not self._can_send_message(action.user_id):
+        if action.action_type in self.MESSAGE_ACTION_TYPES and not self._can_send_message(
+            action.user_id
+        ):
             log.warning(
                 "rate_limited",
                 user_id=action.user_id,
@@ -214,7 +227,7 @@ class ActionExecutor:
         handler = self._get_handler(action.action_type)
         if handler:
             result: ActionResult = await handler(action)
-            if result.success and action.action_type in message_actions:
+            if result.success and action.action_type in self.MESSAGE_ACTION_TYPES:
                 self._record_message(action.user_id)
             return result
 
@@ -238,6 +251,12 @@ class ActionExecutor:
             "stale_task_check": self._handle_stale_task_check,
             "confirm_low_confidence": self._handle_confirm_low_confidence,
             "decay_check": self._handle_decay_check,
+            "dev_stale_annotation": self._handle_dev_stale_annotation,
+            "dev_idea_reminder": self._handle_dev_idea_reminder,
+            "milestone_drafts_pending": self._handle_milestone_drafts_pending,
+            "intelligence_report_generated": self._handle_intelligence_report_generated,
+            "reply_drafts_generated": self._handle_reply_drafts_generated,
+            "strategy_stale": self._handle_strategy_stale,
             "update_memory": self._handle_update_memory,
             "schedule": self._handle_schedule,
         }
@@ -373,6 +392,67 @@ class ActionExecutor:
             message="Stale task check sent" if sent else None,
             error=None if sent else "Failed to send check",
         )
+
+    async def _handle_dev_stale_annotation(self, action: HeartbeatAction) -> ActionResult:
+        """Handle stale development annotation reminder."""
+        project = action.data.get("project", "a project")
+        days_stale = action.data.get("days_stale")
+        suffix = f" ({days_stale} days stale)" if days_stale is not None else ""
+        action.data.setdefault(
+            "message",
+            f"Dev reminder: annotations for {project} need an update{suffix}.",
+        )
+        return await self._handle_send_message(action)
+
+    async def _handle_dev_idea_reminder(self, action: HeartbeatAction) -> ActionResult:
+        """Handle development idea follow-up reminder."""
+        count = action.data.get("count")
+        if count is None:
+            message = "Dev reminder: you have saved ideas worth reviewing."
+        else:
+            message = f"Dev reminder: you have {count} saved idea(s) to review."
+        action.data.setdefault("message", message)
+        return await self._handle_send_message(action)
+
+    async def _handle_milestone_drafts_pending(self, action: HeartbeatAction) -> ActionResult:
+        """Handle milestone drafts pending review notification."""
+        count = action.data.get("count", action.data.get("pending_drafts", 0))
+        action.data.setdefault(
+            "message",
+            f"You have {count} milestone promotion draft(s) pending review.",
+        )
+        return await self._handle_send_message(action)
+
+    async def _handle_intelligence_report_generated(self, action: HeartbeatAction) -> ActionResult:
+        """Handle YouTube intelligence report completion notification."""
+        channel_name = action.data.get("channel_name") or "your channel"
+        action.data.setdefault(
+            "message",
+            f"YouTube Intelligence: a new report is ready for {channel_name}.",
+        )
+        return await self._handle_send_message(action)
+
+    async def _handle_reply_drafts_generated(self, action: HeartbeatAction) -> ActionResult:
+        """Handle YouTube reply drafts generated notification."""
+        total = action.data.get("total")
+        pending = action.data.get("pending_review")
+        if total is None:
+            message = "YouTube Management: new reply drafts are ready."
+        else:
+            message = f"YouTube Management: {total} reply draft(s) generated."
+            if pending is not None:
+                message += f" {pending} need review."
+        action.data.setdefault("message", message)
+        return await self._handle_send_message(action)
+
+    async def _handle_strategy_stale(self, action: HeartbeatAction) -> ActionResult:
+        """Handle stale strategy notification."""
+        channel_name = action.data.get("channel_name") or "your channel"
+        action.data.setdefault(
+            "message",
+            f"YouTube Strategy: your strategy for {channel_name} is stale and should be refreshed.",
+        )
+        return await self._handle_send_message(action)
 
     async def _handle_confirm_low_confidence(self, action: HeartbeatAction) -> ActionResult:
         """Handle profile confirmation request."""

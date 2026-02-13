@@ -98,7 +98,11 @@ class GmailSkill(Skill):
             description="Gmail integration: email management, drafts, digests, and calendar",
             version="1.0.0",
             permissions=PermissionSet.from_list(
-                [Permission.READ_MEMORIES.name, Permission.WRITE_MEMORIES.name]
+                [
+                    Permission.READ_MEMORIES.name,
+                    Permission.WRITE_MEMORIES.name,
+                    Permission.SEND_MESSAGES.name,
+                ]
             ),
             intents=self.INTENTS,
         )
@@ -180,7 +184,9 @@ class GmailSkill(Skill):
                         skill_name="gmail",
                         action_type="send_message",
                         user_id=uid_str,
-                        data={"type": "email_digest"},
+                        data={
+                            "message": "Email digest is ready. Ask me for a morning/evening digest."
+                        },
                         priority=3,
                     )
                 )

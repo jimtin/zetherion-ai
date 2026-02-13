@@ -534,6 +534,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
 
     from zetherion_ai.skills.calendar import CalendarSkill
     from zetherion_ai.skills.dev_watcher import DevWatcherSkill
+    from zetherion_ai.skills.gmail.skill import GmailSkill
     from zetherion_ai.skills.health_analyzer import HealthAnalyzerSkill
     from zetherion_ai.skills.milestone import MilestoneSkill
     from zetherion_ai.skills.profile_skill import ProfileSkill
@@ -547,6 +548,8 @@ def main() -> None:  # pragma: no cover — CLI entry-point
     registry.register(HealthAnalyzerSkill())
     registry.register(DevWatcherSkill())
     registry.register(MilestoneSkill())
+    # Register Gmail intents so setup/support questions and status checks route cleanly.
+    registry.register(GmailSkill())
     registry.register(
         UpdateCheckerSkill(
             github_repo=settings.auto_update_repo,
@@ -579,12 +582,27 @@ def main() -> None:  # pragma: no cover — CLI entry-point
 
     # Conditional: Client Provisioning (requires Postgres for TenantManager)
     _tenant_manager = None
+    _personal_pool_factory = None
+    _personal_storage_cls = None
+    _personal_skill_cls = None
     if settings.postgres_dsn:
         from zetherion_ai.api.tenant import TenantManager
         from zetherion_ai.skills.client_provisioning import ClientProvisioningSkill
 
         _tenant_manager = TenantManager(dsn=settings.postgres_dsn)
         registry.register(ClientProvisioningSkill(tenant_manager=_tenant_manager))
+        # Personal model requires direct PostgreSQL access.
+        try:
+            import asyncpg  # type: ignore[import-not-found,import-untyped]
+
+            from zetherion_ai.personal.storage import PersonalStorage
+            from zetherion_ai.skills.personal_model import PersonalModelSkill
+
+            _personal_pool_factory = asyncpg.create_pool
+            _personal_storage_cls = PersonalStorage
+            _personal_skill_cls = PersonalModelSkill
+        except Exception as e:
+            log.warning("personal_model_bootstrap_failed", error=str(e))
 
     # Conditional: Fleet Insights (central instance only)
     if settings.telemetry_central_mode:
@@ -594,12 +612,27 @@ def main() -> None:  # pragma: no cover — CLI entry-point
 
     # Initialize all skills
     async def init_and_run() -> None:
+        personal_db_pool = None
         if _yt_storage is not None:
             await _yt_storage.initialize()
         if _tenant_manager is not None:
             await _tenant_manager.initialize()
+        if (
+            _personal_pool_factory is not None
+            and _personal_storage_cls is not None
+            and _personal_skill_cls is not None
+        ):
+            personal_db_pool = await _personal_pool_factory(dsn=settings.postgres_dsn)
+            personal_storage = _personal_storage_cls(personal_db_pool)
+            await personal_storage.ensure_schema()
+            registry.register(_personal_skill_cls(storage=personal_storage))
+            log.info("personal_model_skill_registered")
         await registry.initialize_all()
-        await run_server(registry, api_secret, host, port)
+        try:
+            await run_server(registry, api_secret, host, port)
+        finally:
+            if personal_db_pool is not None:
+                await personal_db_pool.close()
 
     try:
         asyncio.run(init_and_run())

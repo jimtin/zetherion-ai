@@ -378,6 +378,26 @@ class UserManager:
             log.error("list_users_query_failed", error=str(exc))
             return []
 
+    async def get_personal_profile(self, user_id: int) -> dict[str, Any] | None:
+        """Return personal profile data used by heartbeat quiet-hours resolution."""
+        try:
+            rows = await self._fetch(
+                """
+                SELECT timezone, working_hours, preferences
+                FROM personal_profile
+                WHERE user_id = $1
+                LIMIT 1
+                """,
+                user_id,
+            )
+        except asyncpg.PostgresError as exc:
+            log.error("get_personal_profile_query_failed", user_id=user_id, error=str(exc))
+            return None
+
+        if not rows:
+            return None
+        return dict(rows[0])
+
     async def get_audit_log(self, limit: int = 50) -> list[dict[str, Any]]:
         """Return the most recent audit log entries.
 

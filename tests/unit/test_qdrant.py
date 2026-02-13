@@ -1097,3 +1097,112 @@ class TestDeleteById:
                     result = await memory.delete_by_id("test_col", "error-point")
 
         assert result is False
+
+
+class TestSearchCollection:
+    """Tests for search_collection method."""
+
+    @pytest.mark.asyncio
+    async def test_search_collection_with_filters_and_threshold(
+        self, mock_settings, mock_embeddings
+    ):
+        """search_collection should apply filters and score threshold."""
+        mock_client = AsyncMock()
+        high = MagicMock()
+        high.id = "p-high"
+        high.score = 0.91
+        high.payload = {"content": "Best match", "source_path": "docs/user/gmail.md"}
+        low = MagicMock()
+        low.id = "p-low"
+        low.score = 0.22
+        low.payload = {"content": "Weak match", "source_path": "docs/user/faq.md"}
+        mock_response = MagicMock()
+        mock_response.points = [high, low]
+        mock_client.query_points = AsyncMock(return_value=mock_response)
+
+        with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
+                with patch(
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
+                ):
+                    memory = QdrantMemory()
+                    results = await memory.search_collection(
+                        collection_name="docs_knowledge",
+                        query="how do I add email",
+                        filters={"source_path": "docs/user/gmail.md"},
+                        limit=4,
+                        score_threshold=0.5,
+                    )
+
+        assert len(results) == 1
+        assert results[0]["id"] == "p-high"
+        assert results[0]["source_path"] == "docs/user/gmail.md"
+        call_args = mock_client.query_points.call_args
+        assert call_args[1]["query_filter"] is not None
+        assert call_args[1]["limit"] == 4
+
+    @pytest.mark.asyncio
+    async def test_search_collection_decrypts_payload(
+        self, mock_settings, mock_embeddings, mock_encryptor
+    ):
+        """search_collection should decrypt payloads when encryptor is configured."""
+        mock_client = AsyncMock()
+        hit = MagicMock()
+        hit.id = "p-enc"
+        hit.score = 0.85
+        hit.payload = {"content": "encrypted text", "_encrypted": True}
+        mock_response = MagicMock()
+        mock_response.points = [hit]
+        mock_client.query_points = AsyncMock(return_value=mock_response)
+
+        with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
+                with patch(
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
+                ):
+                    memory = QdrantMemory(encryptor=mock_encryptor)
+                    results = await memory.search_collection(
+                        collection_name="docs_knowledge",
+                        query="question",
+                    )
+
+        mock_encryptor.decrypt_payload.assert_called_once()
+        assert len(results) == 1
+        assert "_encrypted" not in results[0]
+
+
+class TestDeleteByField:
+    """Tests for delete_by_field method."""
+
+    @pytest.mark.asyncio
+    async def test_delete_by_field_success(self, mock_settings, mock_embeddings):
+        """delete_by_field should return True when deletion succeeds."""
+        mock_client = AsyncMock()
+        mock_client.delete = AsyncMock()
+
+        with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
+                with patch(
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
+                ):
+                    memory = QdrantMemory()
+                    result = await memory.delete_by_field("docs_knowledge", "source_path", "a.md")
+
+        assert result is True
+        mock_client.delete.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_delete_by_field_failure(self, mock_settings, mock_embeddings):
+        """delete_by_field should return False when the operation raises."""
+        mock_client = AsyncMock()
+        mock_client.delete = AsyncMock(side_effect=RuntimeError("boom"))
+
+        with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
+                with patch(
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
+                ):
+                    memory = QdrantMemory()
+                    result = await memory.delete_by_field("docs_knowledge", "source_path", "a.md")
+
+        assert result is False
