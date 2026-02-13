@@ -1,18 +1,18 @@
 # Core dependencies - pinned versions for reproducible builds
 # Last updated: 2026-02-05
-discord.py==2.4.0
+discord.py==2.6.4
 audioop-lts>=0.2.1;python_version>='3.13'  # Required for discord.py on Python 3.13+ (audioop removed in 3.13)
-qdrant-client==1.12.1
-google-genai==1.9.0
-anthropic==0.42.0
+qdrant-client==1.16.2
+google-genai==1.63.0
+anthropic==0.79.0
 cryptography==46.0.5  # AES-256-GCM encryption for Phase 5A (CVE-2026-26007 fix)
-openai==1.58.1
+openai==2.20.0
 pydantic==2.12.5  # Updated for Python 3.14 support (pydantic-core wheels)
-pydantic-settings==2.8.1  # Compatible with pydantic 2.12
-structlog==24.4.0
+pydantic-settings==2.12.0  # Compatible with pydantic 2.12
+structlog==25.5.0
 httpx==0.28.1
-cachetools==5.5.0  # TTL cache for profile system (Phase 5C)
+cachetools==7.0.1  # TTL cache for profile system (Phase 5C)
 aiohttp==3.13.3  # Skills service REST API (Phase 5D)
 asyncpg==0.31.0  # PostgreSQL async driver for RBAC and settings
-bcrypt==4.3.0  # API key hashing for telemetry receiver (Phase 10C)
+bcrypt==5.0.0  # API key hashing for telemetry receiver (Phase 10C)
 PyJWT==2.11.0  # JWT session tokens for multi-tenant API
