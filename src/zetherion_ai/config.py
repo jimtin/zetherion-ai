@@ -282,7 +282,7 @@ class Settings(BaseSettings):
 
     # Skills Service Configuration (Phase 5D)
     skills_service_url: str = Field(
-        default="http://zetherion_ai-skills:8080",
+        default="http://zetherion-ai-skills:8080",
         description="URL of the skills service (internal Docker network)",
     )
     skills_api_secret: SecretStr | None = Field(
@@ -536,6 +536,14 @@ def get_dynamic(namespace: str, key: str, default: Any = None) -> Any:
         val = _settings_manager.get(namespace, key)
         if val is not None:
             return val
+
+    settings = get_settings()
+    for attr in (f"{namespace}_{key}", key):
+        if hasattr(settings, attr):
+            env_val = getattr(settings, attr)
+            if env_val is not None:
+                return env_val
+
     return default
 
 

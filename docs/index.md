@@ -76,8 +76,8 @@ If you want to contribute or extend:
 | Guide | Description |
 |-------|-------------|
 | [Setup & Contributing](development/setup.md) | Development environment and guidelines |
-| [Testing](development/testing.md) | 3,000+ tests across 89 files |
-| [CI/CD Pipeline](development/ci-cd.md) | 10-job CI pipeline and 7-step pre-push |
+| [Testing](development/testing.md) | 3,000+ tests, integration + E2E coverage |
+| [CI/CD Pipeline](development/ci-cd.md) | Pre-commit, pre-push, and CI quality gates |
 | [GitHub Secrets](development/github-secrets.md) | CI/CD secrets configuration |
 | [Adding a Skill](development/adding-a-skill.md) | Tutorial: create a custom skill |
 | [Changelog](development/changelog.md) | Release history |
@@ -96,9 +96,9 @@ If you want to contribute or extend:
 | Metric | Value |
 |--------|-------|
 | Tests | 3,000+ |
-| Test Coverage | 93%+ |
-| Test Files | 89 |
-| Source Files | 91 |
+| Coverage Gate | >=90% (`pytest --cov-fail-under=90`) |
+| Test Files | 90+ |
+| Source Files | 90+ |
 | Docker Services | 6 |
 | Configuration Fields | 70+ |
 | CI/CD Jobs | 10 |

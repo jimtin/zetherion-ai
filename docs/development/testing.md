@@ -6,8 +6,8 @@ Comprehensive guide to Zetherion AI's test suite, testing patterns, and coverage
 
 Zetherion AI maintains a rigorous testing discipline across the entire codebase:
 
-- **3,000+ tests** across **89 test files** covering **91 source files**
-- **93%+ code coverage** with branch coverage enabled
+- **3,000+ tests** spanning unit, integration, and end-to-end paths
+- **Coverage gate enforced in pytest**: `--cov-fail-under=90`
 - **Three-layer testing pyramid**: Unit, Integration, and Discord E2E
 - **Async-first** test design using `pytest-asyncio` with `asyncio_mode = "auto"`
 
@@ -137,18 +137,21 @@ tests/
 
 ### Test Categories
 
-| Category | Location | Count | Speed | Dependencies |
-|----------|----------|-------|-------|--------------|
-| Unit tests | `tests/unit/` | ~70 files | Fast (~60s total) | Mocked |
-| Root-level tests | `tests/test_*.py` | 9 files | Fast (~10s) | Mocked |
-| Integration tests | `tests/integration/` | 9 files | Slow (~2-3 min) | Docker services |
-| Discord E2E | `tests/integration/test_discord_e2e.py` | 1 file | Slow (~1 min) | Real Discord API |
+| Category | Location | Speed | Dependencies |
+|----------|----------|-------|--------------|
+| Unit tests | `tests/unit/` | Fast | Mocked/in-process |
+| Root-level tests | `tests/test_*.py` | Fast | Mocked/in-process |
+| Integration tests | `tests/integration/` (`@pytest.mark.integration`) | Medium | Local services and HTTP flows |
+| Discord E2E | `tests/integration/test_discord_e2e.py` (`@pytest.mark.discord_e2e`) | Slow | Real Discord API |
 
 ## Running Tests
 
 ### Quick Commands
 
 ```bash
+# Full production-style validation (recommended before merge)
+bash scripts/pre-push-tests.sh
+
 # All unit tests (fast, ~60s) -- excludes integration and Discord E2E
 pytest tests/ -m "not integration and not discord_e2e"
 
@@ -173,6 +176,15 @@ pytest tests/integration/ -m integration -v -s
 # Full suite (everything except Discord E2E)
 pytest tests/ -m "not discord_e2e" -v
 ```
+
+### Production-Parity Test Run
+
+`scripts/pre-push-tests.sh` is the canonical full validation path. It:
+
+1. Runs static gates (ruff, bandit, gitleaks, hadolint, licenses, syntax checks)
+2. Runs unit tests with coverage gate (`>=90%`) plus `mypy` and `pip-audit`
+3. Runs in-process integration suites
+4. Builds/rebuilds `docker-compose.test.yml`, waits for healthy services, then runs Docker E2E and Discord E2E suites
 
 ### Test Markers
 
@@ -346,10 +358,10 @@ def gmail_client(mock_settings):
 
 | Metric | Value |
 |--------|-------|
-| Overall coverage | 93%+ |
+| Coverage gate | >=90% (enforced by pytest addopts) |
 | Total tests | 3,000+ |
-| Test files | 89 |
-| Source files | 91 |
+| Test files | 90+ |
+| Source files | 90+ |
 | Branch coverage | Enabled |
 
 ### Coverage Targets
@@ -360,25 +372,7 @@ def gmail_client(mock_settings):
 | Security paths (encryption, auth, permissions) | 95%+ | Critical user data protection |
 | Core agent loop | 90%+ | Primary user-facing path |
 | Skills and integrations | 85%+ | External API interaction |
-| Overall project | 93%+ | Do not regress |
-
-### Coverage by Module (Approximate)
-
-| Module | Coverage | Notes |
-|--------|----------|-------|
-| `security/` | 97% | Encryption, user auth, permissions |
-| `agent/` | 95% | Core agent, router, providers |
-| `memory/` | 94% | Qdrant, embeddings |
-| `config.py` | 96% | Settings validation |
-| `discord/` | 92% | Bot handlers, user manager |
-| `skills/` | 91% | Gmail, GitHub, calendar, tasks |
-| `observation/` | 93% | Pipeline, extractors, adapters |
-| `personal/` | 92% | Context, actions, storage |
-| `profile/` | 93% | Builder, cache, inference |
-| `models/` | 95% | Pydantic data models |
-| `costs/` | 94% | Usage tracking |
-| `scheduler/` | 90% | Heartbeat, actions |
-| `notifications/` | 91% | Discord notifier |
+| Overall project | >=90% | CI/local gate |
 
 ### Generating Reports
 

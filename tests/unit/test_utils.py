@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from zetherion_ai.utils import timed_operation
+from zetherion_ai.utils import split_text_chunks, timed_operation
 
 
 class TestTimedOperation:
@@ -102,3 +102,24 @@ class TestTimedOperation:
         if "." in decimal_str:
             decimal_places = len(decimal_str.split(".")[1])
             assert decimal_places <= 2
+
+
+class TestSplitTextChunks:
+    """Tests for split_text_chunks helper."""
+
+    def test_returns_single_chunk_when_under_limit(self) -> None:
+        assert split_text_chunks("hello", max_length=10) == ["hello"]
+
+    def test_splits_on_newline_when_possible(self) -> None:
+        content = "a" * 5 + "\n" + "b" * 5
+        chunks = split_text_chunks(content, max_length=8)
+        assert chunks == ["aaaaa", "bbbbb"]
+
+    def test_hard_splits_long_line(self) -> None:
+        content = "x" * 25
+        chunks = split_text_chunks(content, max_length=10)
+        assert chunks == ["x" * 10, "x" * 10, "x" * 5]
+
+    def test_raises_for_non_positive_limit(self) -> None:
+        with pytest.raises(ValueError, match="max_length"):
+            split_text_chunks("hello", max_length=0)

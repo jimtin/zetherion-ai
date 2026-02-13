@@ -30,7 +30,7 @@ def detect_prompt_injection(content: str) -> bool:
     """Backward-compatible wrapper.
 
     Returns ``True`` if the Tier 1 aggregate score exceeds the flag
-    threshold (0.3).  This preserves the existing call-site contract in
+    threshold (0.6).  This preserves the existing call-site contract in
     ``bot.py`` and test suites while the codebase migrates to the full
     :class:`SecurityPipeline`.
     """

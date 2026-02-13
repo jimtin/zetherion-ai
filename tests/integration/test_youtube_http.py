@@ -354,6 +354,18 @@ async def test_register_channel_missing_id(yt_client):
 
 
 @pytest.mark.integration
+async def test_register_channel_invalid_json_returns_400(yt_client):
+    """POST /api/v1/youtube/channels with malformed JSON returns 400."""
+    client, _, _, _, api_key = yt_client
+    resp = await client.post(
+        "/api/v1/youtube/channels",
+        data="{bad-json",
+        headers={"X-API-Key": api_key, "Content-Type": "application/json"},
+    )
+    assert resp.status == 400
+
+
+@pytest.mark.integration
 async def test_list_channels(yt_client):
     """GET /api/v1/youtube/channels returns tenant's channels."""
     client, _, storage, _, api_key = yt_client
@@ -551,6 +563,17 @@ async def test_intelligence_history_with_limit(yt_client):
     storage.get_report_history.assert_called_once_with(CHANNEL_UUID, limit=5)
 
 
+@pytest.mark.integration
+async def test_intelligence_history_invalid_limit_returns_400(yt_client):
+    """GET .../intelligence/history with non-integer limit returns 400."""
+    client, _, _, _, api_key = yt_client
+    resp = await client.get(
+        f"/api/v1/youtube/channels/{CHANNEL_ID}/intelligence/history?limit=bad",
+        headers={"X-API-Key": api_key},
+    )
+    assert resp.status == 400
+
+
 # ---------------------------------------------------------------------------
 # 4. Management
 # ---------------------------------------------------------------------------
@@ -642,6 +665,17 @@ async def test_list_replies_with_status_filter(yt_client):
     )
     assert resp.status == 200
     storage.get_reply_drafts.assert_called_once_with(CHANNEL_UUID, status="pending", limit=10)
+
+
+@pytest.mark.integration
+async def test_list_replies_invalid_limit_returns_400(yt_client):
+    """GET .../management/replies with non-integer limit returns 400."""
+    client, _, _, _, api_key = yt_client
+    resp = await client.get(
+        f"/api/v1/youtube/channels/{CHANNEL_ID}/management/replies?limit=nope",
+        headers={"X-API-Key": api_key},
+    )
+    assert resp.status == 400
 
 
 @pytest.mark.integration
@@ -788,6 +822,17 @@ async def test_strategy_history_with_limit(yt_client):
     )
     assert resp.status == 200
     storage.get_strategy_history.assert_called_once_with(CHANNEL_UUID, limit=3)
+
+
+@pytest.mark.integration
+async def test_strategy_history_invalid_limit_returns_400(yt_client):
+    """GET .../strategy/history with non-integer limit returns 400."""
+    client, _, _, _, api_key = yt_client
+    resp = await client.get(
+        f"/api/v1/youtube/channels/{CHANNEL_ID}/strategy/history?limit=oops",
+        headers={"X-API-Key": api_key},
+    )
+    assert resp.status == 400
 
 
 # ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from zetherion_ai.logging import get_logger
 from zetherion_ai.queue.models import QueueTaskType
+from zetherion_ai.utils import split_text_chunks
 
 if TYPE_CHECKING:
     import discord
@@ -173,7 +174,8 @@ class QueueProcessors:
         elif channel_id:
             channel = self._bot.get_channel(channel_id)
             if channel is not None and hasattr(channel, "send"):
-                await channel.send(response[:2000])
+                for chunk in split_text_chunks(response, max_length=2000):
+                    await channel.send(chunk)
 
         log.debug(
             "discord_message_processed",
@@ -286,17 +288,7 @@ class QueueProcessors:
             await message.reply(content, mention_author=True)
             return
 
-        parts: list[str] = []
-        current = ""
-        for line in content.split("\n"):
-            if len(current) + len(line) + 1 <= max_length:
-                current += line + "\n"
-            else:
-                if current:
-                    parts.append(current.strip())
-                current = line + "\n"
-        if current:
-            parts.append(current.strip())
+        parts = split_text_chunks(content, max_length=max_length)
 
         for i, part in enumerate(parts):
             if part:

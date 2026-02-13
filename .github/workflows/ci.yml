@@ -187,8 +187,8 @@ jobs:
   # ============================================================================
   # Test Jobs
   # ============================================================================
-  test:
-    name: Tests (Python ${{ matrix.python-version }})
+  unit-test:
+    name: Unit Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -216,7 +216,7 @@ jobs:
       - name: Run unit tests with coverage
         run: |
           pytest tests/ \
-            -m "not integration" \
+            -m "not integration and not discord_e2e" \
             -v \
             --tb=short \
             --cov=src/zetherion_ai \
@@ -241,6 +241,160 @@ jobs:
           name: coverage-report
           path: htmlcov/
           retention-days: 30
+
+  integration-test:
+    name: Integration (${{ matrix.shard.name }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - name: core
+            files: >-
+              tests/integration/test_skills_http.py
+              tests/integration/test_heartbeat_cycle.py
+              tests/integration/test_profile_pipeline.py
+              tests/integration/test_agent_skills_http.py
+              tests/integration/test_skills_e2e.py
+              tests/integration/test_user_isolation.py
+              tests/integration/test_encryption_at_rest.py
+          - name: api-and-ops
+            files: >-
+              tests/integration/test_health_skill_http.py
+              tests/integration/test_update_skill_http.py
+              tests/integration/test_telemetry_http.py
+              tests/integration/test_api_http.py
+          - name: feature-http
+            files: >-
+              tests/integration/test_dev_watcher_e2e.py
+              tests/integration/test_milestone_e2e.py
+              tests/integration/test_youtube_http.py
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+
+      - name: Run integration shard
+        run: |
+          pytest ${{ matrix.shard.files }} \
+            -m "integration and not optional_e2e" \
+            -n 4 \
+            --timeout=60 \
+            --tb=short \
+            --no-cov \
+            -q
+
+  docker-e2e:
+    name: Docker E2E (Required)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Fork PRs cannot use repository secrets; treat this job as optional there.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+    env:
+      GEMINI_API_KEY: test_key
+      DISCORD_TOKEN: test_token
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+
+      - name: Start Docker test stack
+        run: |
+          docker compose -f docker-compose.test.yml -p zetherion-ai-test down -v || true
+          docker compose -f docker-compose.test.yml -p zetherion-ai-test up -d --build
+
+      - name: Wait for services to become healthy
+        run: |
+          for i in $(seq 1 90); do
+            postgres=$(docker inspect --format='{{.State.Health.Status}}' zetherion-ai-test-postgres 2>/dev/null || echo "missing")
+            qdrant=$(docker inspect --format='{{.State.Health.Status}}' zetherion-ai-test-qdrant 2>/dev/null || echo "missing")
+            ollama=$(docker inspect --format='{{.State.Health.Status}}' zetherion-ai-test-ollama 2>/dev/null || echo "missing")
+            ollama_router=$(docker inspect --format='{{.State.Health.Status}}' zetherion-ai-test-ollama-router 2>/dev/null || echo "missing")
+            skills=$(docker inspect --format='{{.State.Health.Status}}' zetherion-ai-test-skills 2>/dev/null || echo "missing")
+            api=$(docker inspect --format='{{.State.Health.Status}}' zetherion-ai-test-api 2>/dev/null || echo "missing")
+            bot=$(docker inspect --format='{{.State.Status}}' zetherion-ai-test-bot 2>/dev/null || echo "missing")
+
+            if [ "$postgres" = "healthy" ] && [ "$qdrant" = "healthy" ] && [ "$ollama" = "healthy" ] && [ "$ollama_router" = "healthy" ] && [ "$skills" = "healthy" ] && [ "$api" = "healthy" ] && [ "$bot" = "running" ]; then
+              break
+            fi
+
+            if [ "$i" -eq 90 ]; then
+              echo "Timed out waiting for Docker test stack."
+              docker compose -f docker-compose.test.yml -p zetherion-ai-test logs --tail=50
+              exit 1
+            fi
+            sleep 3
+          done
+
+      - name: Run required Docker E2E groups in parallel
+        run: |
+          DOCKER_MANAGED_EXTERNALLY=true pytest tests/integration/test_e2e.py \
+            -m "integration and not optional_e2e" \
+            --timeout=120 -v --tb=short -s --no-cov \
+            > /tmp/e2e_required_a.log 2>&1 &
+          PID_A=$!
+
+          DOCKER_MANAGED_EXTERNALLY=true pytest \
+            tests/integration/test_health_e2e.py \
+            tests/integration/test_update_e2e.py \
+            tests/integration/test_telemetry_e2e.py \
+            -m "integration and not optional_e2e" \
+            --timeout=120 -v --tb=short -s --no-cov \
+            > /tmp/e2e_required_b.log 2>&1 &
+          PID_B=$!
+
+          wait $PID_A
+          RC_A=$?
+          wait $PID_B
+          RC_B=$?
+
+          echo "═══ test_e2e.py output ═══"
+          cat /tmp/e2e_required_a.log
+          echo "═══ health/update/telemetry output ═══"
+          cat /tmp/e2e_required_b.log
+
+          if [ $RC_A -ne 0 ] || [ $RC_B -ne 0 ]; then
+            exit 1
+          fi
+
+          if grep -Eq '[1-9][0-9]* skipped' /tmp/e2e_required_a.log; then
+            echo "Required Docker E2E group A contained skipped tests."
+            exit 1
+          fi
+          if grep -Eq '[1-9][0-9]* skipped' /tmp/e2e_required_b.log; then
+            echo "Required Docker E2E group B contained skipped tests."
+            exit 1
+          fi
+
+      - name: Tear down Docker test stack
+        if: always()
+        run: docker compose -f docker-compose.test.yml -p zetherion-ai-test down -v
 
   # ============================================================================
   # Container Build & Scan Jobs
@@ -320,7 +474,20 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    needs: [lint, type-check, security, semgrep, dependency-audit, license-check, pre-commit, test, docker-build]
+    needs:
+      [
+        lint,
+        type-check,
+        security,
+        semgrep,
+        dependency-audit,
+        license-check,
+        pre-commit,
+        unit-test,
+        integration-test,
+        docker-e2e,
+        docker-build,
+      ]
     if: always()
     steps:
       - name: Check all jobs
@@ -330,6 +497,10 @@ jobs:
           if [[ "$PRE_COMMIT_RESULT" == "skipped" ]]; then
             PRE_COMMIT_RESULT="success"
           fi
+          DOCKER_E2E_RESULT="${{ needs.docker-e2e.result }}"
+          if [[ "$DOCKER_E2E_RESULT" == "skipped" ]]; then
+            DOCKER_E2E_RESULT="success"
+          fi
 
           if [[ "${{ needs.lint.result }}" == "success" ]] && \
              [[ "${{ needs.type-check.result }}" == "success" ]] && \
@@ -338,7 +509,9 @@ jobs:
              [[ "${{ needs.dependency-audit.result }}" == "success" ]] && \
              [[ "${{ needs.license-check.result }}" == "success" ]] && \
              [[ "$PRE_COMMIT_RESULT" == "success" ]] && \
-             [[ "${{ needs.test.result }}" == "success" ]] && \
+             [[ "${{ needs.unit-test.result }}" == "success" ]] && \
+             [[ "${{ needs.integration-test.result }}" == "success" ]] && \
+             [[ "$DOCKER_E2E_RESULT" == "success" ]] && \
              [[ "${{ needs.docker-build.result }}" == "success" ]]; then
             echo "✅ All CI checks passed!"
             exit 0
@@ -351,7 +524,9 @@ jobs:
             echo "  Dependency Audit: ${{ needs.dependency-audit.result }}"
             echo "  License Check: ${{ needs.license-check.result }}"
             echo "  Pre-commit: ${{ needs.pre-commit.result }}"
-            echo "  Tests: ${{ needs.test.result }}"
+            echo "  Unit Tests: ${{ needs.unit-test.result }}"
+            echo "  Integration Tests: ${{ needs.integration-test.result }}"
+            echo "  Docker E2E: ${{ needs.docker-e2e.result }}"
             echo "  Docker Build: ${{ needs.docker-build.result }}"
             exit 1
           fi
@@ -370,7 +545,9 @@ jobs:
           echo "| Dependency Audit | ${{ needs.dependency-audit.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| License Check | ${{ needs.license-check.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Pre-commit | ${{ needs.pre-commit.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Tests | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Unit Tests | ${{ needs.unit-test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Integration Tests | ${{ needs.integration-test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker E2E | ${{ needs.docker-e2e.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Docker Build & Scan | ${{ needs.docker-build.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Security Scanning**: Trivy (container), Semgrep (SAST), Bandit (Python), pip-audit (dependencies)" >> $GITHUB_STEP_SUMMARY

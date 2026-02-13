@@ -4,7 +4,7 @@
 
 Zetherion AI is a source-agnostic personal AI assistant built on a microservice architecture with 6 Docker services. The system accepts input from any source (Discord is the first interface, with REST API, email sync, and webhooks also available) and provides user-controlled multi-provider LLM routing, AES-256-GCM encrypted semantic memory, Gmail integration, GitHub management, and deep personal understanding through passive observation, proactive prompting, and explicit learning.
 
-The codebase comprises 91 source files with 3,000+ tests across 89 test files, maintaining 93%+ code coverage. The architecture prioritizes security, modularity, and cost-efficient inference by routing queries to the most appropriate LLM provider based on complexity, privacy requirements, and task type.
+The codebase is heavily tested (3,000+ tests) with a repository-enforced coverage gate of `>=90%`. The architecture prioritizes security, modularity, and cost-efficient inference by routing queries to the most appropriate LLM provider based on complexity, privacy requirements, and task type.
 
 ### Key Design Principles
 
@@ -25,7 +25,7 @@ Any Input Source
     |
     v
 +---[Bot Service]---+
-|  Security Layer   |---> Prompt Injection Detection (17 regex patterns)
+|  Security Layer   |---> Tiered Injection Defense (regex + optional AI)
 |  (rate limit,     |---> User Allowlist / RBAC
 |   auth)           |
 |                   |
@@ -67,10 +67,15 @@ The Bot Service is the primary entry point for user interactions. Discord is the
 
 - **Input Gateway** -- Currently connects to Discord via the gateway protocol using `discord.py`. Handles direct messages, @mentions, and slash commands. The architecture supports additional input sources (REST API, email, webhooks) through the same agent pipeline.
 
-- **Security Layer** -- Three-stage defense applied to every incoming message before any processing occurs:
+- **Security Layer** -- Defense-in-depth applied to every incoming message before processing:
   - *User Allowlist*: Only pre-authorized Discord user IDs may interact with the bot. Supports RBAC with owner, admin, and user roles stored in PostgreSQL.
   - *Rate Limiting*: Per-user message throttling (configurable, default 10 messages per 60 seconds) to prevent abuse and runaway API costs.
-  - *Prompt Injection Detection*: 17 compiled regex patterns that scan for known injection techniques including role override attempts, delimiter injection, and Unicode obfuscation.
+  - *Security Pipeline*: Tier 1 regex/heuristic detection plus optional Tier 2 AI analysis, with dynamic flag/block thresholds and a safe regex fallback path if Tier 2 fails.
+
+- **Priority Queue** -- Incoming Discord work is enqueued and processed by two worker pools:
+  - *Interactive workers* process P0-P1 tasks (`INTERACTIVE`, `NEAR_INTERACTIVE`) with fast polling.
+  - *Background workers* process P2-P3 tasks (`SCHEDULED`, `BULK`) for heartbeat and bulk ingestion.
+  - Queue retries use staged backoff and stale in-flight recovery to keep throughput stable.
 
 - **Agent Core** -- Manages the full conversation flow: context assembly, provider selection, response generation, and post-response observation. Handles retry logic with exponential backoff (max 3 retries) for transient API failures.
 
@@ -166,9 +171,9 @@ A complete request lifecycle from incoming message to response:
 1. **Message received** -- The Bot Service receives a message from an input source (currently Discord via the gateway WebSocket, but the pipeline is source-agnostic).
 
 2. **Security checks** -- Three sequential checks are applied:
-   - Rate limit verification (reject if user has exceeded their message quota).
    - Allowlist check (reject if the user's Discord ID is not authorized).
-   - Prompt injection scan (reject if the message matches any of the 17 injection detection patterns).
+   - Rate limit verification (reject if user has exceeded their message quota).
+   - Security pipeline analysis (Tier 1 regex/heuristics + optional Tier 2 AI). If pipeline initialization or analysis fails, the bot falls back to regex-only injection detection.
 
 3. **Router classification** -- The message is sent to the router for intent classification. The router attempts Gemini Flash first, falls back to Ollama llama3.2:3b, and finally to local regex patterns if both external calls fail.
 
@@ -190,7 +195,7 @@ A complete request lifecycle from incoming message to response:
 
 8. **Observation pipeline** -- After generating the response, a passive observation step extracts learnings from the conversation (e.g., "user mentioned they prefer Python over JavaScript") and stores them in PostgreSQL for future context enrichment.
 
-9. **Response delivery** -- The response is sent back to the originating input source. For Discord, messages exceeding 2,000 characters are automatically split across multiple messages.
+9. **Response delivery** -- The response is sent back to the originating input source. For Discord, messages exceeding 2,000 characters are split into safe chunks (including long single-line responses).
 
 10. **Cost tracking** -- The token usage and estimated cost for the request are recorded in a local SQLite database (`costs.db`) for monitoring and budget management.
 
@@ -242,7 +247,7 @@ Security is implemented as defense in depth across every layer of the stack. For
 - AES-256-GCM encryption with PBKDF2 key derivation for all stored memories
 - User allowlist with RBAC (owner/admin/user roles)
 - Rate limiting per user to prevent abuse
-- 17 compiled regex patterns for prompt injection detection
+- Tiered prompt-injection defense (Tier 1 regex/heuristics + optional Tier 2 AI)
 - Pydantic `SecretStr` for all credentials (never logged or serialized)
 - HMAC-based service-to-service authentication
 

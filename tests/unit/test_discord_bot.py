@@ -1080,6 +1080,7 @@ class TestSettingsCommands:
             key="model",
             value="llama3",
             changed_by=mock_interaction.user.id,
+            data_type="string",
         )
         sent = mock_interaction.followup.send.call_args[0][0]
         assert "inference.model" in sent
@@ -1098,6 +1099,42 @@ class TestSettingsCommands:
         sent = mock_interaction.followup.send.call_args[0][0]
         assert "Invalid setting" in sent
         assert "Unknown key" in sent
+
+    @pytest.mark.asyncio
+    async def test_handle_config_set_infers_int_type(self, bot, mock_interaction):
+        """Test _handle_config_set infers integer values."""
+        bot._settings_manager = AsyncMock()
+        bot._settings_manager.set = AsyncMock()
+        with patch.object(
+            bot._user_manager, "get_role", new_callable=AsyncMock, return_value="admin"
+        ):
+            await bot._handle_config_set(mock_interaction, "queue", "background_workers", "4")
+
+        bot._settings_manager.set.assert_awaited_once_with(
+            namespace="queue",
+            key="background_workers",
+            value=4,
+            changed_by=mock_interaction.user.id,
+            data_type="int",
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_config_set_infers_json_type(self, bot, mock_interaction):
+        """Test _handle_config_set infers JSON objects."""
+        bot._settings_manager = AsyncMock()
+        bot._settings_manager.set = AsyncMock()
+        with patch.object(
+            bot._user_manager, "get_role", new_callable=AsyncMock, return_value="admin"
+        ):
+            await bot._handle_config_set(mock_interaction, "tuning", "params", '{"x": 1}')
+
+        bot._settings_manager.set.assert_awaited_once_with(
+            namespace="tuning",
+            key="params",
+            value={"x": 1},
+            changed_by=mock_interaction.user.id,
+            data_type="json",
+        )
 
     @pytest.mark.asyncio
     async def test_handle_config_reset_existed(self, bot, mock_interaction):
