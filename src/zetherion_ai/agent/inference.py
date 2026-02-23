@@ -19,6 +19,7 @@ import openai
 from google import genai  # type: ignore[attr-defined]
 
 from zetherion_ai.agent.providers import (
+    CAPABILITY_MATRIX,
     Provider,
     TaskType,
     get_ollama_tier,
@@ -91,6 +92,7 @@ COST_PER_MILLION_TOKENS: dict[Provider, tuple[float, float]] = {
     Provider.OPENAI: (2.5, 10.0),  # GPT-5.2
     Provider.GEMINI: (0.075, 0.30),  # Gemini 2.5 Flash
     Provider.OLLAMA: (0.0, 0.0),  # Free (local)
+    Provider.GROQ: (0.59, 0.79),  # llama-3.3-70b-versatile
 }
 
 
@@ -101,6 +103,7 @@ class InferenceBroker:
     - Selects the optimal provider for each task type
     - Handles fallback when providers are unavailable
     - Tracks costs and usage per provider
+    - Tracks Groq-first rollout counters for inbound tasks
     - Prefers Ollama where possible to reduce API costs
     """
 
@@ -127,6 +130,9 @@ class InferenceBroker:
 
         # Cost tracking
         self._cost_tracker: dict[Provider, CostTracker] = {p: CostTracker() for p in Provider}
+        self._groq_rollout_eligible_requests = 0
+        self._groq_rollout_successes = 0
+        self._groq_rollout_fallback_uses = 0
 
         # Ollama configuration (uses generation container, not router container)
         self._ollama_model = settings.ollama_generation_model
@@ -137,11 +143,13 @@ class InferenceBroker:
         self._claude_client: anthropic.AsyncAnthropic | None = None
         self._openai_client: openai.AsyncOpenAI | None = None
         self._gemini_client: genai.Client | None = None
+        self._groq_client: openai.AsyncOpenAI | None = None
 
         # Track current API keys for lazy hot-reload
         self._current_anthropic_key: str | None = None
         self._current_openai_key: str | None = None
         self._current_gemini_key: str | None = None
+        self._current_groq_key: str | None = None
 
         # Claude
         if settings.anthropic_api_key:
@@ -163,6 +171,17 @@ class InferenceBroker:
             self._gemini_client = genai.Client(api_key=self._current_gemini_key)
             self._gemini_model = settings.router_model
             self._available_providers.add(Provider.GEMINI)
+
+        # Groq (OpenAI-compatible API with different base_url)
+        self._groq_base_url = getattr(settings, "groq_base_url", "https://api.groq.com/openai/v1")
+        if settings.groq_api_key:
+            self._current_groq_key = settings.groq_api_key.get_secret_value()
+            self._groq_client = openai.AsyncOpenAI(
+                api_key=self._current_groq_key,
+                base_url=self._groq_base_url,
+            )
+            self._groq_model = settings.groq_model
+            self._available_providers.add(Provider.GROQ)
 
         # Ollama (check availability asynchronously later)
         # For now, assume available - health check will update this
@@ -204,6 +223,16 @@ class InferenceBroker:
             self._current_gemini_key = new_key
             self._available_providers.add(Provider.GEMINI)
             log.info("gemini_client_reinitialized")
+
+        new_key = get_secret("groq_api_key")
+        if new_key and new_key != self._current_groq_key:
+            self._groq_client = openai.AsyncOpenAI(
+                api_key=new_key,
+                base_url=self._groq_base_url,
+            )
+            self._current_groq_key = new_key
+            self._available_providers.add(Provider.GROQ)
+            log.info("groq_client_reinitialized")
 
     async def infer(
         self,
@@ -287,6 +316,7 @@ class InferenceBroker:
 
         # Track costs
         self._track_cost(result, cost_estimated=cost_estimated)
+        self._track_groq_rollout(task_type=task_type, result_provider=result.provider)
 
         log.info(
             "inference_complete",
@@ -395,6 +425,7 @@ class InferenceBroker:
             estimated_cost_usd=cost_usd,
         )
         self._track_cost(result_obj, cost_estimated=cost_estimated)
+        self._track_groq_rollout(task_type=task_type, result_provider=provider)
 
         # Final metadata chunk
         yield StreamChunk(
@@ -426,6 +457,11 @@ class InferenceBroker:
                     yield chunk
             case Provider.OPENAI:
                 async for chunk in self._stream_openai(
+                    prompt, task_type, system_prompt, messages, max_tokens, temperature
+                ):
+                    yield chunk
+            case Provider.GROQ:
+                async for chunk in self._stream_groq(
                     prompt, task_type, system_prompt, messages, max_tokens, temperature
                 ):
                     yield chunk
@@ -540,6 +576,54 @@ class InferenceBroker:
             output_tokens=output_tokens,
         )
 
+    async def _stream_groq(
+        self,
+        prompt: str,
+        task_type: TaskType,
+        system_prompt: str | None,
+        messages: list[dict[str, str]] | None,
+        max_tokens: int,
+        temperature: float,
+    ) -> AsyncGenerator[StreamChunk, None]:
+        """Stream from Groq API (OpenAI-compatible)."""
+        if not self._groq_client:
+            raise RuntimeError("Groq client not initialized")
+
+        api_messages: list[dict[str, Any]] = []
+        if system_prompt:
+            api_messages.append({"role": "system", "content": system_prompt})
+        if messages:
+            for msg in messages:
+                api_messages.append({"role": msg["role"], "content": msg["content"]})
+        api_messages.append({"role": "user", "content": prompt})
+
+        model = get_dynamic("models", "groq_model", self._groq_model)
+        stream = await self._groq_client.chat.completions.create(  # type: ignore[call-overload]
+            model=model,
+            messages=api_messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+
+        input_tokens = 0
+        output_tokens = 0
+        async for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield StreamChunk(content=chunk.choices[0].delta.content)
+            if chunk.usage:
+                input_tokens = chunk.usage.prompt_tokens or 0
+                output_tokens = chunk.usage.completion_tokens or 0
+
+        yield StreamChunk(
+            content="",
+            done=True,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+
     async def _stream_ollama(
         self,
         prompt: str,
@@ -627,6 +711,10 @@ class InferenceBroker:
                 return await self._call_openai(
                     prompt, task_type, system_prompt, messages, max_tokens, temperature
                 )
+            case Provider.GROQ:
+                return await self._call_groq(
+                    prompt, task_type, system_prompt, messages, max_tokens, temperature
+                )
             case Provider.GEMINI:
                 return await self._call_gemini(
                     prompt, task_type, system_prompt, messages, max_tokens, temperature
@@ -708,6 +796,44 @@ class InferenceBroker:
         return InferenceResult(
             content=response.choices[0].message.content or "",
             provider=Provider.OPENAI,
+            task_type=task_type,
+            model=model,
+            input_tokens=response.usage.prompt_tokens if response.usage else 0,
+            output_tokens=response.usage.completion_tokens if response.usage else 0,
+        )
+
+    async def _call_groq(
+        self,
+        prompt: str,
+        task_type: TaskType,
+        system_prompt: str | None,
+        messages: list[dict[str, str]] | None,
+        max_tokens: int,
+        temperature: float,
+    ) -> InferenceResult:
+        """Call Groq API (OpenAI-compatible)."""
+        if not self._groq_client:
+            raise RuntimeError("Groq client not initialized")
+
+        api_messages: list[dict[str, Any]] = []
+        if system_prompt:
+            api_messages.append({"role": "system", "content": system_prompt})
+        if messages:
+            for msg in messages:
+                api_messages.append({"role": msg["role"], "content": msg["content"]})
+        api_messages.append({"role": "user", "content": prompt})
+
+        model = get_dynamic("models", "groq_model", self._groq_model)
+        response = await self._groq_client.chat.completions.create(
+            model=model,
+            messages=api_messages,  # type: ignore[arg-type]
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+
+        return InferenceResult(
+            content=response.choices[0].message.content or "",
+            provider=Provider.GROQ,
             task_type=task_type,
             model=model,
             input_tokens=response.usage.prompt_tokens if response.usage else 0,
@@ -827,7 +953,26 @@ class InferenceBroker:
         # Get remaining available providers
         remaining = self._available_providers - {failed_provider}
 
-        for fallback in [Provider.CLAUDE, Provider.OPENAI, Provider.GEMINI, Provider.OLLAMA]:
+        # Prefer task-specific fallback ordering from capability matrix.
+        fallback_order: list[Provider] = []
+        task_config = CAPABILITY_MATRIX.get(task_type)
+        if task_config is not None:
+            fallback_order.extend(task_config.fallbacks)
+
+        # Ensure we still have deterministic coverage for providers not listed
+        # in the task config fallbacks.
+        default_order = [
+            Provider.GROQ,
+            Provider.GEMINI,
+            Provider.CLAUDE,
+            Provider.OPENAI,
+            Provider.OLLAMA,
+        ]
+        for provider in default_order:
+            if provider not in fallback_order:
+                fallback_order.append(provider)
+
+        for fallback in fallback_order:
             if fallback in remaining:
                 try:
                     log.info("trying_fallback", provider=fallback.value)
@@ -896,6 +1041,45 @@ class InferenceBroker:
                 latency_ms=int(result.latency_ms) if result.latency_ms else None,
             )
 
+    def _track_groq_rollout(self, *, task_type: TaskType, result_provider: Provider) -> None:
+        """Track Groq-first rollout counters for inbound task types."""
+        config = CAPABILITY_MATRIX.get(task_type)
+        if config is None or config.provider != Provider.GROQ:
+            return
+
+        self._groq_rollout_eligible_requests += 1
+        used_groq = result_provider == Provider.GROQ
+        if used_groq:
+            self._groq_rollout_successes += 1
+        else:
+            self._groq_rollout_fallback_uses += 1
+
+        stats = self.get_groq_rollout_stats()
+        event = "groq_rollout_success" if used_groq else "groq_rollout_fallback"
+        log.info(
+            event,
+            task_type=task_type.value,
+            result_provider=result_provider.value,
+            eligible_requests=stats["eligible_requests"],
+            groq_successes=stats["groq_successes"],
+            fallback_uses=stats["fallback_uses"],
+            groq_success_rate=stats["groq_success_rate"],
+            fallback_rate=stats["fallback_rate"],
+        )
+
+    def get_groq_rollout_stats(self) -> dict[str, Any]:
+        """Return Groq-first rollout counters and rates for inbound task types."""
+        total = self._groq_rollout_eligible_requests
+        success_rate = (self._groq_rollout_successes / total) if total else 0.0
+        fallback_rate = (self._groq_rollout_fallback_uses / total) if total else 0.0
+        return {
+            "eligible_requests": total,
+            "groq_successes": self._groq_rollout_successes,
+            "fallback_uses": self._groq_rollout_fallback_uses,
+            "groq_success_rate": round(success_rate, 6),
+            "fallback_rate": round(fallback_rate, 6),
+        }
+
     def get_cost_summary(self) -> dict[str, Any]:
         """Get a summary of costs by provider.
 
@@ -945,6 +1129,9 @@ class InferenceBroker:
                 return True  # Client initialized = available (no free list endpoint)
             elif provider == Provider.OPENAI and self._openai_client:
                 await self._openai_client.models.list()
+                return True
+            elif provider == Provider.GROQ and self._groq_client:
+                await self._groq_client.models.list()
                 return True
         except Exception as e:
             log.warning("health_check_failed", provider=provider.value, error=str(e))

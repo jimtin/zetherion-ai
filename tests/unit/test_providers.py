@@ -110,15 +110,15 @@ class TestCapabilityMatrix:
         assert CAPABILITY_MATRIX[TaskType.LONG_DOCUMENT].provider == Provider.GEMINI
         assert CAPABILITY_MATRIX[TaskType.SUMMARIZATION].provider == Provider.GEMINI
 
-    def test_lightweight_tasks_prefer_ollama(self):
-        """Test lightweight tasks prefer Ollama."""
-        assert CAPABILITY_MATRIX[TaskType.SIMPLE_QA].provider == Provider.OLLAMA
-        assert CAPABILITY_MATRIX[TaskType.CLASSIFICATION].provider == Provider.OLLAMA
-        assert CAPABILITY_MATRIX[TaskType.DATA_EXTRACTION].provider == Provider.OLLAMA
+    def test_lightweight_tasks_prefer_groq(self):
+        """Test lightweight tasks prefer Groq for inbound latency/accuracy."""
+        assert CAPABILITY_MATRIX[TaskType.SIMPLE_QA].provider == Provider.GROQ
+        assert CAPABILITY_MATRIX[TaskType.CLASSIFICATION].provider == Provider.GROQ
+        assert CAPABILITY_MATRIX[TaskType.DATA_EXTRACTION].provider == Provider.GROQ
 
     def test_internal_tasks_prefer_ollama(self):
-        """Test internal tasks prefer Ollama."""
-        assert CAPABILITY_MATRIX[TaskType.PROFILE_EXTRACTION].provider == Provider.OLLAMA
+        """Test internal tasks prefer Ollama (except benchmarked overrides)."""
+        assert CAPABILITY_MATRIX[TaskType.PROFILE_EXTRACTION].provider == Provider.GEMINI
         assert CAPABILITY_MATRIX[TaskType.TASK_PARSING].provider == Provider.OLLAMA
         assert CAPABILITY_MATRIX[TaskType.HEARTBEAT_DECISION].provider == Provider.OLLAMA
         assert CAPABILITY_MATRIX[TaskType.DOCS_QA].provider == Provider.OLLAMA
@@ -283,27 +283,22 @@ class TestGetProviderForTask:
         assert provider == Provider.OPENAI
 
     def test_ollama_tier_check(self):
-        """Test Ollama tier checking for task suitability."""
-        # Small model can't handle code generation
+        """Test fallback selection when Groq primary is unavailable."""
         provider = get_provider_for_task(
-            TaskType.SIMPLE_QA,  # Ollama prefers, small can handle
+            TaskType.SIMPLE_QA,
             ollama_model="llama3.1:8b",
             available_providers={Provider.OLLAMA, Provider.GEMINI},
         )
-        assert provider == Provider.OLLAMA
+        assert provider == Provider.GEMINI
 
     def test_ollama_tier_insufficient_fallback(self):
-        """Test fallback when Ollama tier is insufficient."""
-        # For a task that small Ollama can't handle
-        # The matrix shows SUMMARIZATION prefers GEMINI, with OLLAMA as fallback
-        # Let's test a task where Ollama is primary but tier is insufficient
+        """Test fallback order still prefers cloud provider over local fallback."""
         provider = get_provider_for_task(
-            TaskType.SIMPLE_QA,  # Ollama primary
-            ollama_model="llama3.1:8b",  # Small tier
+            TaskType.SIMPLE_QA,
+            ollama_model="llama3.1:8b",
             available_providers={Provider.OLLAMA, Provider.GEMINI},
         )
-        # Small tier CAN handle SIMPLE_QA, so Ollama is used
-        assert provider == Provider.OLLAMA
+        assert provider == Provider.GEMINI
 
     def test_no_providers_available_raises(self):
         """Test error when no providers available."""

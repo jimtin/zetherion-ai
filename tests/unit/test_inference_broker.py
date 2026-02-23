@@ -62,7 +62,7 @@ class TestProvider:
 
     def test_all_providers_exist(self):
         """Verify all expected providers exist."""
-        expected = ["CLAUDE", "OPENAI", "GEMINI", "OLLAMA"]
+        expected = ["CLAUDE", "OPENAI", "GEMINI", "OLLAMA", "GROQ"]
         for provider_name in expected:
             assert hasattr(Provider, provider_name)
 
@@ -72,6 +72,7 @@ class TestProvider:
         assert Provider.OPENAI.value == "openai"
         assert Provider.GEMINI.value == "gemini"
         assert Provider.OLLAMA.value == "ollama"
+        assert Provider.GROQ.value == "groq"
 
 
 class TestOllamaTier:
@@ -115,20 +116,27 @@ class TestCapabilityMatrix:
         config = CAPABILITY_MATRIX[TaskType.LONG_DOCUMENT]
         assert config.provider == Provider.GEMINI
 
-    def test_lightweight_tasks_use_ollama(self):
-        """Lightweight tasks should prefer Ollama (free, local)."""
-        lightweight_types = [
+    def test_lightweight_tasks_use_expected_providers(self):
+        """Lightweight tasks should prefer Groq for inbound paths and Ollama for internals."""
+        groq_types = [
             TaskType.SIMPLE_QA,
-            TaskType.CLASSIFICATION,
             TaskType.DATA_EXTRACTION,
-            TaskType.PROFILE_EXTRACTION,
+        ]
+        for task_type in groq_types:
+            config = CAPABILITY_MATRIX[task_type]
+            assert config.provider == Provider.GROQ
+
+        ollama_types = [
             TaskType.TASK_PARSING,
             TaskType.HEARTBEAT_DECISION,
             TaskType.DOCS_QA,
         ]
-        for task_type in lightweight_types:
+        for task_type in ollama_types:
             config = CAPABILITY_MATRIX[task_type]
             assert config.provider == Provider.OLLAMA
+
+        assert CAPABILITY_MATRIX[TaskType.CLASSIFICATION].provider == Provider.GROQ
+        assert CAPABILITY_MATRIX[TaskType.PROFILE_EXTRACTION].provider == Provider.GEMINI
 
     def test_all_configs_have_fallbacks(self):
         """Verify every config has at least one fallback."""
@@ -381,6 +389,7 @@ class TestInferenceBrokerInit:
     def test_init_with_all_providers(self, mock_get_settings):
         """InferenceBroker initializes with all providers when keys available."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = MagicMock()
         mock_settings.anthropic_api_key.get_secret_value.return_value = "sk-ant-test"
         mock_settings.openai_api_key = MagicMock()
@@ -410,6 +419,7 @@ class TestInferenceBrokerInit:
     def test_init_without_anthropic_key(self, mock_get_settings):
         """InferenceBroker works without Anthropic key."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = None  # No Claude
         mock_settings.openai_api_key = MagicMock()
         mock_settings.openai_api_key.get_secret_value.return_value = "sk-test"
@@ -434,6 +444,7 @@ class TestInferenceBrokerInit:
     def test_ollama_tier_detection(self, mock_get_settings):
         """InferenceBroker correctly detects Ollama tier based on generation model."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = None
         mock_settings.openai_api_key = None
         mock_settings.gemini_api_key = MagicMock()
@@ -456,6 +467,7 @@ class TestInferenceBrokerCostTracking:
     def test_estimate_cost_claude(self, mock_get_settings):
         """Verify cost estimation for Claude uses pricing module."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = None
         mock_settings.openai_api_key = None
         mock_settings.gemini_api_key = MagicMock()
@@ -483,6 +495,7 @@ class TestInferenceBrokerCostTracking:
     def test_estimate_cost_ollama(self, mock_get_settings):
         """Verify Ollama is free."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = None
         mock_settings.openai_api_key = None
         mock_settings.gemini_api_key = MagicMock()
@@ -508,6 +521,7 @@ class TestInferenceBrokerCostTracking:
     def test_track_cost_updates_tracker(self, mock_get_settings):
         """Verify cost tracking updates the tracker correctly."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = None
         mock_settings.openai_api_key = None
         mock_settings.gemini_api_key = MagicMock()
@@ -543,6 +557,7 @@ class TestInferenceBrokerCostTracking:
     def test_get_cost_summary(self, mock_get_settings):
         """Verify cost summary generation."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = None
         mock_settings.openai_api_key = None
         mock_settings.gemini_api_key = MagicMock()
@@ -597,6 +612,7 @@ class TestInferenceBrokerInfer:
     async def test_infer_selects_correct_provider(self, mock_get_settings):
         """Verify infer selects the correct provider based on task type."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = MagicMock()
         mock_settings.anthropic_api_key.get_secret_value.return_value = "sk-test"
         mock_settings.openai_api_key = None
@@ -634,6 +650,7 @@ class TestInferenceBrokerInfer:
     async def test_infer_falls_back_on_failure(self, mock_get_settings):
         """Verify infer falls back to another provider on failure."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = MagicMock()
         mock_settings.anthropic_api_key.get_secret_value.return_value = "sk-test"
         mock_settings.openai_api_key = MagicMock()
@@ -682,6 +699,7 @@ class TestInferenceBrokerInfer:
     async def test_infer_tracks_latency(self, mock_get_settings):
         """Verify infer tracks latency."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = None
         mock_settings.openai_api_key = None
         mock_settings.gemini_api_key = MagicMock()
@@ -718,6 +736,7 @@ class TestInferenceBrokerHealthCheck:
     async def test_ollama_health_check(self, mock_get_settings):
         """Verify Ollama health check uses the shared httpx client."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = None
         mock_settings.openai_api_key = None
         mock_settings.gemini_api_key = MagicMock()
@@ -750,6 +769,7 @@ class TestInferenceBrokerHealthCheck:
     async def test_health_check_returns_false_on_error(self, mock_get_settings):
         """Verify health check returns False on error."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = None
         mock_settings.openai_api_key = None
         mock_settings.gemini_api_key = MagicMock()
@@ -796,6 +816,7 @@ class TestInferenceBrokerClose:
     async def test_close_calls_httpx_aclose(self, mock_get_settings):
         """Test that close() calls self._httpx_client.aclose()."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = None
         mock_settings.openai_api_key = None
         mock_settings.gemini_api_key = MagicMock()
@@ -826,6 +847,7 @@ class TestHealthCheckNoInference:
     async def test_openai_health_check_uses_models_list(self, mock_get_settings):
         """Verify OpenAI health check uses models.list, not chat completions."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = None
         mock_settings.openai_api_key = MagicMock()
         mock_settings.openai_api_key.get_secret_value.return_value = "sk-test"
@@ -858,6 +880,7 @@ class TestHealthCheckNoInference:
     async def test_gemini_health_check_uses_models_list(self, mock_get_settings):
         """Verify Gemini health check uses models.list, not generate_content."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = None
         mock_settings.openai_api_key = None
         mock_settings.gemini_api_key = MagicMock()
@@ -885,6 +908,7 @@ class TestHealthCheckNoInference:
     async def test_claude_health_check_just_checks_client_init(self, mock_get_settings):
         """Verify Claude health check just checks client initialization (no API call)."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = MagicMock()
         mock_settings.anthropic_api_key.get_secret_value.return_value = "sk-ant-test"
         mock_settings.openai_api_key = None
@@ -924,6 +948,7 @@ class TestFallbackDiscardNoRaise:
         removed from the set.
         """
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = MagicMock()
         mock_settings.anthropic_api_key.get_secret_value.return_value = "sk-test"
         mock_settings.openai_api_key = MagicMock()
@@ -985,6 +1010,7 @@ class TestGeminiUsageMetadata:
     async def test_gemini_uses_usage_metadata_when_available(self, mock_get_settings):
         """Test that Gemini uses actual usage_metadata token counts when available."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = None
         mock_settings.openai_api_key = None
         mock_settings.gemini_api_key = MagicMock()
@@ -1029,6 +1055,7 @@ class TestGeminiUsageMetadata:
     async def test_gemini_falls_back_to_heuristic_without_usage_metadata(self, mock_get_settings):
         """Test that Gemini falls back to heuristic when usage_metadata is absent."""
         mock_settings = MagicMock()
+        mock_settings.groq_api_key = None
         mock_settings.anthropic_api_key = None
         mock_settings.openai_api_key = None
         mock_settings.gemini_api_key = MagicMock()
@@ -1063,3 +1090,112 @@ class TestGeminiUsageMetadata:
         # Without usage_metadata, should use heuristic: len(words) * 2
         assert result.input_tokens == len(["hello", "world"]) * 2
         assert result.output_tokens == len(["word1", "word2", "word3"]) * 2
+
+
+class TestGroqRolloutCounters:
+    """Tests for Groq-first rollout counters in InferenceBroker."""
+
+    @staticmethod
+    def _settings_with_groq() -> MagicMock:
+        settings = MagicMock()
+        settings.groq_api_key = MagicMock()
+        settings.groq_api_key.get_secret_value.return_value = "gsk-test"
+        settings.groq_model = "llama-3.3-70b-versatile"
+        settings.groq_base_url = "https://api.groq.com/openai/v1"
+        settings.anthropic_api_key = None
+        settings.openai_api_key = None
+        settings.gemini_api_key = MagicMock()
+        settings.gemini_api_key.get_secret_value.return_value = "gemini-test"
+        settings.router_model = "gemini-2.5-flash"
+        settings.ollama_generation_model = "llama3.1:8b"
+        settings.ollama_url = "http://localhost:11434"
+        settings.ollama_timeout = 30
+        return settings
+
+    @pytest.mark.asyncio
+    @patch("zetherion_ai.agent.inference.get_settings")
+    async def test_infer_tracks_groq_success(self, mock_get_settings):
+        """Classification request counted as Groq success when Groq handles it."""
+        mock_get_settings.return_value = self._settings_with_groq()
+
+        with (
+            patch("zetherion_ai.agent.inference.openai.AsyncOpenAI"),
+            patch("zetherion_ai.agent.inference.genai.Client"),
+        ):
+            broker = InferenceBroker()
+
+        broker._call_provider = AsyncMock(
+            return_value=InferenceResult(
+                content="{}",
+                provider=Provider.GROQ,
+                task_type=TaskType.CLASSIFICATION,
+                model="llama-3.3-70b-versatile",
+            )
+        )
+
+        await broker.infer(prompt="classify", task_type=TaskType.CLASSIFICATION)
+        stats = broker.get_groq_rollout_stats()
+        assert stats["eligible_requests"] == 1
+        assert stats["groq_successes"] == 1
+        assert stats["fallback_uses"] == 0
+        assert stats["groq_success_rate"] == 1.0
+        assert stats["fallback_rate"] == 0.0
+
+    @pytest.mark.asyncio
+    @patch("zetherion_ai.agent.inference.get_settings")
+    async def test_infer_tracks_groq_fallback(self, mock_get_settings):
+        """Classification request counted as fallback when non-Groq provider handles it."""
+        mock_get_settings.return_value = self._settings_with_groq()
+
+        with (
+            patch("zetherion_ai.agent.inference.openai.AsyncOpenAI"),
+            patch("zetherion_ai.agent.inference.genai.Client"),
+        ):
+            broker = InferenceBroker()
+
+        broker._call_provider = AsyncMock(side_effect=RuntimeError("groq down"))
+        broker._try_fallbacks = AsyncMock(
+            return_value=InferenceResult(
+                content="{}",
+                provider=Provider.GEMINI,
+                task_type=TaskType.CLASSIFICATION,
+                model="gemini-2.5-flash",
+            )
+        )
+
+        result = await broker.infer(prompt="classify", task_type=TaskType.CLASSIFICATION)
+        assert result.provider == Provider.GEMINI
+
+        stats = broker.get_groq_rollout_stats()
+        assert stats["eligible_requests"] == 1
+        assert stats["groq_successes"] == 0
+        assert stats["fallback_uses"] == 1
+        assert stats["groq_success_rate"] == 0.0
+        assert stats["fallback_rate"] == 1.0
+
+    @pytest.mark.asyncio
+    @patch("zetherion_ai.agent.inference.get_settings")
+    async def test_non_groq_primary_task_not_counted(self, mock_get_settings):
+        """Tasks not configured as Groq-primary should not increment rollout counters."""
+        mock_get_settings.return_value = self._settings_with_groq()
+
+        with (
+            patch("zetherion_ai.agent.inference.openai.AsyncOpenAI"),
+            patch("zetherion_ai.agent.inference.genai.Client"),
+        ):
+            broker = InferenceBroker()
+
+        broker._call_provider = AsyncMock(
+            return_value=InferenceResult(
+                content="summary",
+                provider=Provider.GEMINI,
+                task_type=TaskType.SUMMARIZATION,
+                model="gemini-2.5-flash",
+            )
+        )
+
+        await broker.infer(prompt="summarize", task_type=TaskType.SUMMARIZATION)
+        stats = broker.get_groq_rollout_stats()
+        assert stats["eligible_requests"] == 0
+        assert stats["groq_successes"] == 0
+        assert stats["fallback_uses"] == 0

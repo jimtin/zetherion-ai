@@ -226,7 +226,7 @@ class Agent:
                         response = await self._handle_skill_intent(
                             user_id,
                             message,
-                            "gmail",
+                            "email",
                         )
                     case MessageIntent.UPDATE_MANAGEMENT:
                         response = await self._handle_skill_intent(
@@ -418,6 +418,7 @@ class Agent:
             "calendar": self._parse_calendar_intent(message),
             "profile_manager": self._parse_profile_intent(message),
             "personal_model": self._parse_personal_model_intent(message),
+            "email": self._parse_email_router_intent(message),
             "gmail": self._parse_email_intent(message),
             "update_checker": self._parse_update_intent(message),
             "dev_watcher": self._parse_dev_watcher_intent(message),
@@ -546,6 +547,59 @@ class Agent:
         elif any(w in msg_lower for w in ["unread", "new email", "urgent"]):
             return "email_unread"
         return "email_check"
+
+    def _parse_email_router_intent(self, message: str) -> str:
+        """Parse provider-agnostic email-router intents."""
+        msg_lower = message.lower()
+        if any(
+            phrase in msg_lower
+            for phrase in [
+                "connect email",
+                "connect gmail",
+                "add email account",
+                "link email",
+                "link gmail",
+            ]
+        ):
+            return "email_connect"
+        if any(
+            phrase in msg_lower
+            for phrase in [
+                "disconnect email",
+                "disconnect gmail",
+                "remove email account",
+                "unlink email",
+                "stop monitoring",
+            ]
+        ):
+            return "email_disconnect"
+        if "primary calendar" in msg_lower or "default calendar" in msg_lower:
+            return "email_set_primary_calendar"
+        if "primary task" in msg_lower or "default task list" in msg_lower:
+            return "email_set_primary_task_list"
+        if any(
+            phrase in msg_lower
+            for phrase in [
+                "email queue status",
+                "queue status",
+                "routing queue status",
+                "pending email queue",
+            ]
+        ):
+            return "email_queue_status"
+        if any(
+            phrase in msg_lower
+            for phrase in [
+                "resume email queue",
+                "drain email queue",
+                "retry queued emails",
+                "resume queue",
+            ]
+        ):
+            return "email_queue_resume"
+        if any(w in msg_lower for w in ["status", "connected", "provider", "account"]):
+            return "email_status"
+        return "email_route"
 
     def _parse_update_intent(self, message: str) -> str:
         """Parse specific update-management intent from message."""
