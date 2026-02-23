@@ -169,7 +169,7 @@ class TestCreateRouter:
                 await create_router()
 
             assert "Invalid router backend: invalid_backend" in str(exc_info.value)
-            assert "Must be 'gemini' or 'ollama'" in str(exc_info.value)
+            assert "Must be 'gemini', 'ollama', or 'groq'" in str(exc_info.value)
 
 
 class TestCreateRouterSync:
@@ -220,7 +220,7 @@ class TestCreateRouterSync:
                 create_router_sync()
 
             assert "Invalid router backend: invalid_backend" in str(exc_info.value)
-            assert "Must be 'gemini' or 'ollama'" in str(exc_info.value)
+            assert "Must be 'gemini', 'ollama', or 'groq'" in str(exc_info.value)
 
 
 class TestRouterFactoryEdgeCases:

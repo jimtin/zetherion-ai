@@ -137,6 +137,20 @@ class TestAllowAllUsers:
         assert settings.allow_all_users is True
 
 
+class TestRouterBackendValidation:
+    """Tests for router backend validation."""
+
+    def test_router_backend_accepts_groq(self):
+        """Router backend accepts groq option."""
+        settings = _make_settings(router_backend="groq")
+        assert settings.router_backend == "groq"
+
+    def test_router_backend_rejects_invalid_value(self):
+        """Router backend rejects unknown values."""
+        with pytest.raises(ValidationError, match="router_backend"):
+            _make_settings(router_backend="invalid-router")
+
+
 class TestEncryptionStrict:
     """Tests for the encryption_strict field."""
 

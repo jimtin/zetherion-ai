@@ -17,6 +17,7 @@ from zetherion_ai.skills.base import (
     SkillRequest,
     SkillResponse,
 )
+from zetherion_ai.skills.email import EmailSkill
 from zetherion_ai.skills.permissions import Permission, PermissionSet
 
 if TYPE_CHECKING:
@@ -413,4 +414,24 @@ class GmailSkill(Skill):
                 "Calendar integration requires an active Gmail account "
                 "with Calendar API access. Use /gmail connect first."
             ),
+        )
+
+
+class GmailCompatibilitySkill(EmailSkill):
+    """Legacy alias for Gmail intent compatibility using the provider-agnostic router."""
+
+    @property
+    def metadata(self) -> SkillMetadata:
+        return SkillMetadata(
+            name="gmail_compat",
+            description="Legacy Gmail compatibility alias over provider-neutral email router",
+            version="1.0.0",
+            permissions=PermissionSet.from_list(
+                [
+                    Permission.READ_MEMORIES.name,
+                    Permission.WRITE_MEMORIES.name,
+                    Permission.SEND_MESSAGES.name,
+                ]
+            ),
+            intents=[],
         )
