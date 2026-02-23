@@ -68,8 +68,12 @@ htmlcov/
 coverage.xml
 docs/implementation_plan.md
 
-# Benchmark results (large JSON files)
+# Benchmark results (large JSON + summary reports)
 benchmarks/results/*.json
+benchmarks/results/*.md
+
+# Benchmark email datasets (contain real email data)
+benchmarks/datasets/
 
 # Windows deployment config (local only, never push)
 config/windows-remote.yml

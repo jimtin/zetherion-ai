@@ -43,8 +43,19 @@ DOCKER_LOG="$(mktemp)"
 DOCKER_PID=""
 STRICT_REQUIRED_TESTS="${STRICT_REQUIRED_TESTS:-true}"
 RUN_OPTIONAL_E2E="${RUN_OPTIONAL_E2E:-false}"
+SKIP_OLLAMA_PULLS="${SKIP_OLLAMA_PULLS:-false}"
+PRESERVE_TEST_VOLUMES="${PRESERVE_TEST_VOLUMES:-false}"
+RUN_DISCORD_E2E_REQUIRED="${RUN_DISCORD_E2E_REQUIRED:-false}"
 
 ts() { date "+%H:%M:%S"; }
+
+compose_down() {
+    if [ "$PRESERVE_TEST_VOLUMES" = "true" ]; then
+        docker compose -f "$COMPOSE_FILE" -p "$PROJECT" down 2>/dev/null || true
+    else
+        docker compose -f "$COMPOSE_FILE" -p "$PROJECT" down -v 2>/dev/null || true
+    fi
+}
 
 contains_skips() {
     local log_file="$1"
@@ -100,7 +111,7 @@ cleanup() {
     done
     if [ "$DOCKER_STARTED_BY_US" = true ]; then
         echo "[$(ts)] Tearing down Docker test environment..."
-        docker compose -f "$COMPOSE_FILE" -p "$PROJECT" down -v 2>/dev/null || true
+        compose_down
     fi
     rm -f "$DOCKER_LOG"
 }
@@ -122,8 +133,21 @@ start_docker_background() {
         return 1
     fi
 
+    # docker-compose.test.yml uses fixed container_name values. Remove any stale
+    # leftovers explicitly so compose up never fails with "name is already in use".
+    local stale_containers=(
+        "${PROJECT}-bot"
+        "${PROJECT}-api"
+        "${PROJECT}-skills"
+        "${PROJECT}-postgres"
+        "${PROJECT}-qdrant"
+        "${PROJECT}-ollama"
+        "${PROJECT}-ollama-router"
+    )
+    docker rm -f "${stale_containers[@]}" >/dev/null 2>&1 || true
+
     echo "[$(ts)] [docker] Tearing down any stale test environment..."
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT" down -v 2>/dev/null || true
+    compose_down
 
     echo "[$(ts)] [docker] Building and starting containers..."
     docker compose -f "$COMPOSE_FILE" -p "$PROJECT" up -d --build 2>&1 | tail -5
@@ -156,6 +180,13 @@ start_docker_background() {
         fi
         sleep 3
     done
+
+    if [ "$SKIP_OLLAMA_PULLS" = "true" ]; then
+        echo "[$(ts)] [docker] Skipping Ollama model pulls/warm-up (SKIP_OLLAMA_PULLS=true)."
+        echo "DOCKER_READY" > "$DOCKER_LOG"
+        echo "[$(ts)] [docker] Docker environment fully ready."
+        return 0
+    fi
 
     # Pull Ollama models (skip if already cached)
     echo "[$(ts)] [docker] Checking Ollama models..."
@@ -314,11 +345,23 @@ python -m pytest tests/ \
 
 # Wait for mypy
 if ! wait "$MYPY_PID"; then
-    echo ""
-    echo "mypy FAILED:"
-    cat "$MYPY_LOG"
-    rm -f "$MYPY_LOG" "$PIPAUDIT_LOG"
-    exit 1
+    if rg -q "Error reading JSON file; you likely have a bad cache" "$MYPY_LOG"; then
+        echo "[$(ts)]   mypy cache is corrupted; clearing .mypy_cache and retrying once..."
+        rm -rf .mypy_cache
+        if ! mypy src/zetherion_ai/ updater_sidecar/ --config-file=pyproject.toml > "$MYPY_LOG" 2>&1; then
+            echo ""
+            echo "mypy FAILED after cache reset:"
+            cat "$MYPY_LOG"
+            rm -f "$MYPY_LOG" "$PIPAUDIT_LOG"
+            exit 1
+        fi
+    else
+        echo ""
+        echo "mypy FAILED:"
+        cat "$MYPY_LOG"
+        rm -f "$MYPY_LOG" "$PIPAUDIT_LOG"
+        exit 1
+    fi
 fi
 echo "[$(ts)]   mypy passed."
 
@@ -346,6 +389,7 @@ INTEGRATION_LOG="$(mktemp)"
 if ! python -m pytest \
     tests/integration/test_skills_http.py \
     tests/integration/test_heartbeat_cycle.py \
+    tests/integration/test_email_personality_persistence_integration.py \
     tests/integration/test_profile_pipeline.py \
     tests/integration/test_agent_skills_http.py \
     tests/integration/test_skills_e2e.py \
@@ -396,13 +440,14 @@ echo "[$(ts)] Docker environment confirmed ready."
 
 # ── Step 4: Required Docker E2E tests (concurrent) ────────────────
 echo ""
-echo "[$(ts)] [4/5] Required Docker E2E + Discord E2E tests (concurrent)..."
+echo "[$(ts)] [4/5] Required Docker E2E tests (concurrent)..."
 
 # Create temp files for each parallel test output
 E2E_LOG_A="$(mktemp)"     # test_e2e.py (required)
 E2E_LOG_B="$(mktemp)"     # health/update/telemetry required tests
-E2E_LOG_C="$(mktemp)"     # discord required tests (optional_e2e marker excluded)
+E2E_LOG_C="$(mktemp)"     # discord required tests (optional, gated by RUN_DISCORD_E2E_REQUIRED)
 E2E_OPTIONAL_LOG="$(mktemp)"
+DISCORD_REQUIRED_STARTED=false
 
 # Start a heartbeat so we can see the tests are still running
 (while true; do sleep 30; echo "[$(ts)]   ...E2E tests still running"; done) &
@@ -423,11 +468,16 @@ DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
     > "$E2E_LOG_B" 2>&1 &
 E2E_PIDS+=($!)
 
-DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
-    tests/integration/test_discord_e2e.py \
-    -m "discord_e2e and not optional_e2e" --timeout=180 -v --tb=short -s --no-cov \
-    > "$E2E_LOG_C" 2>&1 &
-E2E_PIDS+=($!)
+if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
+    DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
+        tests/integration/test_discord_e2e.py \
+        -m "discord_e2e and not optional_e2e" --timeout=180 -v --tb=short -s --no-cov \
+        > "$E2E_LOG_C" 2>&1 &
+    E2E_PIDS+=($!)
+    DISCORD_REQUIRED_STARTED=true
+else
+    echo "[$(ts)] Discord required E2E skipped (set RUN_DISCORD_E2E_REQUIRED=true to enforce)."
+fi
 
 # Wait for all to finish, track failures
 E2E_FAILED=false
@@ -439,13 +489,21 @@ for i in "${!E2E_PIDS[@]}"; do
         case $i in
             0) echo "[$(ts)] FAILED: Docker E2E tests (test_e2e.py)" ;;
             1) echo "[$(ts)] FAILED: Health/Update/Telemetry E2E tests" ;;
-            2) echo "[$(ts)] FAILED: Discord E2E tests" ;;
+            2)
+                if [ "$DISCORD_REQUIRED_STARTED" = "true" ]; then
+                    echo "[$(ts)] FAILED: Discord E2E tests"
+                fi
+                ;;
         esac
     else
         case $i in
             0) echo "[$(ts)] PASSED: Docker E2E tests (test_e2e.py)" ;;
             1) echo "[$(ts)] PASSED: Health/Update/Telemetry E2E tests" ;;
-            2) echo "[$(ts)] PASSED: Discord E2E tests" ;;
+            2)
+                if [ "$DISCORD_REQUIRED_STARTED" = "true" ]; then
+                    echo "[$(ts)] PASSED: Discord E2E tests"
+                fi
+                ;;
         esac
     fi
 done
@@ -465,7 +523,11 @@ echo "═══ Health/Update/Telemetry E2E output ═══"
 cat "$E2E_LOG_B"
 echo ""
 echo "═══ Discord E2E output ═══"
-cat "$E2E_LOG_C"
+if [ "$DISCORD_REQUIRED_STARTED" = "true" ]; then
+    cat "$E2E_LOG_C"
+else
+    echo "[not run]"
+fi
 
 if ! assert_no_skips_in_log "Docker E2E tests (test_e2e.py)" "$E2E_LOG_A"; then
     E2E_FAILED=true
@@ -473,8 +535,10 @@ fi
 if ! assert_no_skips_in_log "Health/Update/Telemetry E2E tests" "$E2E_LOG_B"; then
     E2E_FAILED=true
 fi
-if ! assert_no_skips_in_log "Discord E2E tests" "$E2E_LOG_C"; then
-    E2E_FAILED=true
+if [ "$DISCORD_REQUIRED_STARTED" = "true" ]; then
+    if ! assert_no_skips_in_log "Discord E2E tests" "$E2E_LOG_C"; then
+        E2E_FAILED=true
+    fi
 fi
 
 # Optional E2E tests are non-blocking and can be enabled via RUN_OPTIONAL_E2E=true.
@@ -482,6 +546,7 @@ if [ "$RUN_OPTIONAL_E2E" = "true" ]; then
     echo ""
     echo "[$(ts)] Running optional E2E tests (non-blocking)..."
     if DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
+        tests/integration/test_inbound_groq_rollout_e2e.py \
         tests/integration/test_health_e2e.py \
         tests/integration/test_discord_e2e.py \
         -m optional_e2e --timeout=180 -v --tb=short -s --no-cov \

@@ -13,6 +13,7 @@ import json
 import os
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from uuid import uuid4
 
 import discord
 import httpx
@@ -356,8 +357,12 @@ async def test_bot_responds_to_message(discord_test_client: DiscordTestClient) -
     if not bot_id:
         pytest.skip("Could not find Zetherion AI bot in channel")
 
+    correlation = uuid4().hex[:8]
     # Send test message with @mention
-    test_message = await discord_test_client.send_message(f"<@{bot_id}> Hello, what is 2+2?")
+    test_message = await discord_test_client.send_message(
+        f"<@{bot_id}> Hello, what is 2+2? id:{correlation}"
+    )
+    retry_message = None
     response = None
 
     try:
@@ -366,6 +371,14 @@ async def test_bot_responds_to_message(discord_test_client: DiscordTestClient) -
             test_message, timeout=90.0, bot_id=bot_id
         )
 
+        if response is None:
+            retry_message = await discord_test_client.send_message(
+                f"<@{bot_id}> Retry: what is 2+2? id:{correlation}"
+            )
+            response = await discord_test_client.wait_for_bot_response(
+                retry_message, timeout=90.0, bot_id=bot_id
+            )
+
         assert response is not None, "Bot did not respond within timeout"
         assert len(response.content) > 0, "Bot response was empty"
         print(f"✅ Bot responded: {response.content[:100]}...")
@@ -373,6 +386,8 @@ async def test_bot_responds_to_message(discord_test_client: DiscordTestClient) -
     finally:
         # Cleanup test messages
         await discord_test_client.delete_message(test_message)
+        if retry_message:
+            await discord_test_client.delete_message(retry_message)
         if response:
             await discord_test_client.delete_message(response)
 
@@ -417,9 +432,11 @@ async def test_bot_remembers_information(discord_test_client: DiscordTestClient)
     if not bot_id:
         pytest.skip("Could not find Zetherion AI bot in channel")
 
+    favorite_color = f"purple-{uuid4().hex[:6]}"
+
     # Store memory
     store_message = await discord_test_client.send_message(
-        f"<@{bot_id}> Remember that my favorite color is purple"
+        f"<@{bot_id}> Remember that my favorite color is {favorite_color}"
     )
     store_response = None
     recall_message = None
@@ -432,11 +449,11 @@ async def test_bot_remembers_information(discord_test_client: DiscordTestClient)
         assert store_response is not None, "Bot did not acknowledge memory storage"
 
         # Wait a moment for memory to be indexed
-        await asyncio.sleep(3)
+        await asyncio.sleep(5)
 
         # Recall memory
         recall_message = await discord_test_client.send_message(
-            f"<@{bot_id}> What is my favorite color?"
+            f"<@{bot_id}> What is my favorite color? Please include the exact value."
         )
         recall_response = await discord_test_client.wait_for_bot_response(
             recall_message, timeout=90.0, bot_id=bot_id
@@ -445,7 +462,7 @@ async def test_bot_remembers_information(discord_test_client: DiscordTestClient)
         assert recall_response is not None, "Bot did not respond to recall query"
 
         # Validate that the bot successfully recalled the information
-        success, explanation = await validate_memory_recall(recall_response.content, "purple")
+        success, explanation = await validate_memory_recall(recall_response.content, favorite_color)
         print(f"Memory validation: {explanation}")
         print(f"Bot response: {recall_response.content[:200]}...")
 

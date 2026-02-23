@@ -21,6 +21,9 @@ _HEX_PATTERN = re.compile(r"(?:0x)?([0-9a-fA-F]{20,})")
 # Three or more consecutive percent-encoded characters
 _URL_ENCODED_PATTERN = re.compile(r"(?:%[0-9a-fA-F]{2}){3,}")
 
+# Percent-encoded characters interspersed with words (e.g. ignore%20previous%20instructions)
+_URL_ENCODED_WORDS_PATTERN = re.compile(r"(?:[A-Za-z]+%[0-9a-fA-F]{2}){2,}")
+
 
 def decode_and_check(content: str) -> list[ThreatSignal]:
     """Attempt to decode encoded payloads and re-scan their content.
@@ -50,11 +53,20 @@ def decode_and_check(content: str) -> list[ThreatSignal]:
         except Exception:
             pass  # nosec B110
 
-    # URL-encoded
+    # URL-encoded (consecutive)
     for match in _URL_ENCODED_PATTERN.finditer(content):
         decoded = unquote(match.group(0))
         if decoded != match.group(0):
             decoded_texts.append(("url_encoded", decoded, match.group(0)[:30]))
+
+    # URL-encoded (word-separated, e.g. word%20word%20word)
+    seen_previews = {dt[2] for dt in decoded_texts}
+    for match in _URL_ENCODED_WORDS_PATTERN.finditer(content):
+        preview = match.group(0)[:30]
+        if preview not in seen_previews:
+            decoded = unquote(match.group(0))
+            if decoded != match.group(0) and len(decoded) > 5:
+                decoded_texts.append(("url_encoded", decoded, preview))
 
     # Re-run Tier 1 regex on each decoded payload
     for encoding, decoded_text, original_preview in decoded_texts:

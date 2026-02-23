@@ -21,6 +21,7 @@ from zetherion_ai.observation.models import (
     ItemType,
     ObservationEvent,
 )
+from zetherion_ai.routing.models import RouteDecision, RouteMode, RouteTag
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -77,6 +78,21 @@ def _mock_policy(
     policy = AsyncMock(spec=PolicyProvider)
     policy.get_mode = AsyncMock(return_value=return_value)
     return policy
+
+
+def _make_route_decision(
+    *,
+    mode: RouteMode = RouteMode.AUTO,
+    route_tag: RouteTag = RouteTag.TASK_CANDIDATE,
+    reason: str = "routed",
+    provider: str = "google",
+) -> RouteDecision:
+    return RouteDecision(
+        mode=mode,
+        route_tag=route_tag,
+        reason=reason,
+        provider=provider,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +283,111 @@ class TestDispatcherConstructor:
         )
         assert ActionTarget.TASK_MANAGER in dispatcher._handlers
         assert dispatcher._policy_provider is policy
+
+
+# ---------------------------------------------------------------------------
+# Dispatcher.dispatch_email_event() tests
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchEmailEvent:
+    """Tests for dispatch_email_event email-router bridge."""
+
+    @pytest.mark.asyncio
+    async def test_without_email_router_returns_empty(self):
+        """No configured email router returns no dispatch results."""
+        dispatcher = Dispatcher()
+        event = ObservationEvent(
+            source="gmail",
+            source_id="msg-1",
+            user_id=12345,
+            author="sender@example.com",
+            author_is_owner=False,
+            content="Email body",
+        )
+
+        results = await dispatcher.dispatch_email_event(event, user_id=12345)
+
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_processes_email_event_with_provider_and_account_context(self):
+        """dispatch_email_event forwards normalized email fields to EmailRouter."""
+        email_router = AsyncMock()
+        email_router.process_email = AsyncMock(
+            return_value=_make_route_decision(
+                mode=RouteMode.AUTO,
+                route_tag=RouteTag.TASK_CANDIDATE,
+            )
+        )
+        dispatcher = Dispatcher(email_router=email_router)
+        event = ObservationEvent(
+            source="gmail",
+            source_id="gmail-1",
+            user_id=12345,
+            author="sender@example.com",
+            author_is_owner=False,
+            content="Subject: Follow up\nPlease follow up.",
+            context={
+                "provider": "google",
+                "account_ref": "acct-1",
+                "external_id": "gmail-1",
+                "thread_id": "thread-42",
+                "subject": "Follow up",
+                "body_text": "Please follow up.",
+                "from_email": "sender@example.com",
+                "to_emails": ["owner@example.com"],
+            },
+        )
+
+        results = await dispatcher.dispatch_email_event(event, user_id=999)
+
+        assert len(results) == 1
+        result = results[0]
+        assert result.success is True
+        assert result.target == ActionTarget.TASK_MANAGER
+        email_router.process_email.assert_awaited_once()
+        call_kwargs = email_router.process_email.await_args.kwargs
+        assert call_kwargs["user_id"] == 999
+        assert call_kwargs["provider"] == "google"
+        assert call_kwargs["account_ref"] == "acct-1"
+        normalized_email = call_kwargs["email"]
+        assert normalized_email.external_id == "gmail-1"
+        assert normalized_email.thread_id == "thread-42"
+        assert normalized_email.subject == "Follow up"
+        assert normalized_email.body_text == "Please follow up."
+        assert normalized_email.from_email == "sender@example.com"
+        assert normalized_email.to_emails == ["owner@example.com"]
+
+    @pytest.mark.asyncio
+    async def test_defaults_provider_and_account_when_missing(self):
+        """Provider/account defaults are used when event context is missing values."""
+        email_router = AsyncMock()
+        email_router.process_email = AsyncMock(
+            return_value=_make_route_decision(
+                mode=RouteMode.BLOCK,
+                route_tag=RouteTag.IGNORE,
+                reason="Blocked",
+            )
+        )
+        dispatcher = Dispatcher(email_router=email_router, email_provider_default="google")
+        event = ObservationEvent(
+            source="email",
+            source_id="mail-1",
+            user_id=1,
+            author="unknown@example.com",
+            author_is_owner=False,
+            content="Untrusted message",
+            context={},
+        )
+
+        results = await dispatcher.dispatch_email_event(event, user_id=1)
+
+        assert len(results) == 1
+        assert results[0].success is False
+        call_kwargs = email_router.process_email.await_args.kwargs
+        assert call_kwargs["provider"] == "google"
+        assert call_kwargs["account_ref"] == "default"
 
 
 # ---------------------------------------------------------------------------

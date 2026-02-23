@@ -16,6 +16,7 @@ from zetherion_ai.personal.models import (
     LearningCategory,
     LearningSource,
     PersonalContact,
+    PersonalityProfile,
     PersonalLearning,
     PersonalPolicy,
     PersonalProfile,
@@ -132,6 +133,47 @@ def _learning_row(
         "source": "explicit",
         "confirmed": confirmed,
         "created_at": datetime(2025, 1, 15, 12, 0, 0),
+    }
+
+
+def _personality_profile_row(
+    *,
+    id: int = 1,
+    user_id: int = 12345,
+    subject_email: str = "alice@example.com",
+    subject_role: str = "contact",
+    observation_count: int = 3,
+) -> dict:
+    """Return a dict mimicking a personality_profiles DB row."""
+    now = datetime(2025, 1, 15, 12, 0, 0)
+    return {
+        "id": id,
+        "user_id": user_id,
+        "subject_email": subject_email,
+        "subject_role": subject_role,
+        "observation_count": observation_count,
+        "writing_style": {
+            "formality_distribution": {"formal": 2, "casual": 1},
+            "formality_mode": "formal",
+        },
+        "communication": {
+            "primary_trait_distribution": {"direct": 3},
+            "primary_trait_mode": "direct",
+            "assertiveness_ema": 0.7,
+        },
+        "relationship": {
+            "familiarity_ema": 0.6,
+            "power_dynamic_distribution": {"peer": 3},
+            "power_dynamic_mode": "peer",
+        },
+        "commitments": ["send update"],
+        "expectations": ["review draft"],
+        "preferences": ["prefers async updates"],
+        "schedule_signals": ["available mornings"],
+        "confidence": 0.65,
+        "first_observed": now,
+        "last_observed": now,
+        "updated_at": now,
     }
 
 
@@ -938,6 +980,115 @@ class TestLearningCRUD:
         result = await storage.delete_learnings_by_category(12345, "nonexistent")
 
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# Tests: Personality signal/profile storage
+# ---------------------------------------------------------------------------
+
+
+class TestPersonalityStorage:
+    """Tests for personality signal log and aggregated profile methods."""
+
+    @pytest.mark.asyncio
+    async def test_log_personality_signal_returns_id(self):
+        """log_personality_signal inserts row and returns generated id."""
+        pool, conn = _make_mock_pool()
+        storage = PersonalStorage(pool)
+        conn.fetchval.return_value = 42
+
+        signal_data = {"writing_style": {"formality": "formal"}}
+        result = await storage.log_personality_signal(
+            user_id=12345,
+            signal_data=signal_data,
+            author_role="contact",
+            author_email="alice@example.com",
+            author_name="Alice",
+            email_external_id="gmail-123",
+            extraction_confidence=0.91,
+        )
+
+        assert result == 42
+        conn.fetchval.assert_awaited_once()
+        query = conn.fetchval.call_args[0][0]
+        assert "INSERT INTO personality_signal_log" in query
+
+    @pytest.mark.asyncio
+    async def test_get_personality_profile_returns_none(self):
+        """get_personality_profile returns None when row is absent."""
+        pool, conn = _make_mock_pool()
+        storage = PersonalStorage(pool)
+        conn.fetchrow.return_value = None
+
+        result = await storage.get_personality_profile(12345, "alice@example.com", "contact")
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_personality_profile_returns_model(self):
+        """get_personality_profile returns a PersonalityProfile instance."""
+        pool, conn = _make_mock_pool()
+        storage = PersonalStorage(pool)
+        conn.fetchrow.return_value = _personality_profile_row()
+
+        result = await storage.get_personality_profile(12345, "alice@example.com", "contact")
+
+        assert result is not None
+        assert isinstance(result, PersonalityProfile)
+        assert result.user_id == 12345
+        assert result.subject_email == "alice@example.com"
+        assert result.subject_role == "contact"
+        assert result.observation_count == 3
+
+    @pytest.mark.asyncio
+    async def test_upsert_personality_profile_returns_id(self):
+        """upsert_personality_profile writes JSONB fields and returns profile id."""
+        pool, conn = _make_mock_pool()
+        storage = PersonalStorage(pool)
+        conn.fetchval.return_value = 9
+
+        profile = PersonalityProfile(
+            user_id=12345,
+            subject_email="alice@example.com",
+            subject_role="contact",
+            observation_count=4,
+            commitments=["send update"],
+            expectations=["review draft"],
+            preferences=["prefers async updates"],
+            schedule_signals=["available mornings"],
+            confidence=0.7,
+        )
+
+        result = await storage.upsert_personality_profile(profile)
+
+        assert result == 9
+        conn.fetchval.assert_awaited_once()
+        query = conn.fetchval.call_args[0][0]
+        assert "INSERT INTO personality_profiles" in query
+        assert "ON CONFLICT (user_id, subject_email, subject_role)" in query
+
+    @pytest.mark.asyncio
+    async def test_list_personality_profiles_with_filters(self):
+        """list_personality_profiles applies role/min_observations/limit filters."""
+        pool, conn = _make_mock_pool()
+        storage = PersonalStorage(pool)
+        conn.fetch.return_value = [
+            _personality_profile_row(id=1, subject_email="a@example.com", observation_count=5),
+            _personality_profile_row(id=2, subject_email="b@example.com", observation_count=4),
+        ]
+
+        result = await storage.list_personality_profiles(
+            12345,
+            subject_role="contact",
+            min_observations=3,
+            limit=10,
+        )
+
+        assert len(result) == 2
+        assert all(isinstance(item, PersonalityProfile) for item in result)
+        query = conn.fetch.call_args[0][0]
+        assert "subject_role" in query
+        assert "observation_count >=" in query
 
 
 # ---------------------------------------------------------------------------

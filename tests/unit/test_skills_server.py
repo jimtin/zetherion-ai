@@ -78,6 +78,34 @@ class TestSkillsServerEndpoints:
         async with TestClient(TestServer(app)) as test_client:
             yield test_client
 
+    @pytest.fixture
+    async def oauth_client(self, mock_registry):
+        """Create client with OAuth handler configured."""
+        handler = AsyncMock(return_value={"ok": True, "provider": "google"})
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="test-secret",
+            oauth_handlers={"google": handler},
+        )
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as test_client:
+            yield test_client, handler
+
+    @pytest.fixture
+    async def oauth_authorize_client(self, mock_registry):
+        """Create client with OAuth authorize handler configured."""
+        authorizer = AsyncMock(
+            return_value={"ok": True, "provider": "google", "auth_url": "https://example.test/auth"}
+        )
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="test-secret",
+            oauth_authorizers={"google": authorizer},
+        )
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as test_client:
+            yield test_client, authorizer
+
     async def test_health_endpoint(self, client, mock_registry):
         """GET /health should return 200 with healthy status."""
         mock_registry.list_ready_skills.return_value = []
@@ -284,6 +312,51 @@ class TestSkillsServerEndpoints:
 
         data = await resp.json()
         assert data["error"] == "Unauthorized"
+
+    async def test_oauth_callback_bypasses_auth_and_calls_handler(self, oauth_client):
+        """OAuth callback should bypass API-secret auth and invoke provider handler."""
+        client, handler = oauth_client
+        resp = await client.get("/oauth/google/callback", params={"code": "c", "state": "s"})
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["ok"] is True
+        handler.assert_awaited_once()
+
+    async def test_oauth_callback_unknown_provider(self, auth_client):
+        """Unknown OAuth provider should return 404 (not 401)."""
+        resp = await auth_client.get("/oauth/outlook/callback")
+        assert resp.status == 404
+        data = await resp.json()
+        assert "not configured" in data["error"]
+
+    async def test_gmail_callback_alias_uses_google_handler(self, oauth_client):
+        """Legacy /gmail/callback should route through google OAuth handler."""
+        client, handler = oauth_client
+        resp = await client.get("/gmail/callback", params={"code": "c", "state": "s"})
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["provider"] == "google"
+        assert handler.await_count == 1
+
+    async def test_oauth_authorize_requires_auth_header(self, auth_client):
+        """OAuth authorize route should require API-secret auth."""
+        resp = await auth_client.get("/oauth/google/authorize", params={"user_id": "1"})
+        assert resp.status == 401
+
+    async def test_oauth_authorize_returns_url(self, oauth_authorize_client):
+        """OAuth authorize route should return URL payload when configured."""
+        client, authorizer = oauth_authorize_client
+        resp = await client.get(
+            "/oauth/google/authorize",
+            params={"user_id": "1"},
+            headers={"X-API-Secret": "test-secret"},
+        )
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["ok"] is True
+        assert data["provider"] == "google"
+        assert "auth_url" in data
+        authorizer.assert_awaited_once()
 
     async def test_auth_middleware_allows_valid_secret(self, auth_client, mock_registry):
         """Authenticated server should allow requests with valid auth header."""
@@ -655,5 +728,80 @@ class TestSettingsEndpoints:
             resp = await client.get("/settings")
             assert resp.status == 501
 
+            data = await resp.json()
+            assert "error" in data
+
+
+class TestSecretsEndpoints:
+    """Tests for secrets API endpoints (/secrets/*)."""
+
+    @pytest.fixture
+    def secrets_manager(self):
+        """Create a mock secrets manager."""
+        mgr = MagicMock()
+        mgr.get_metadata = AsyncMock(return_value=[])
+        mgr.set = AsyncMock(return_value=None)
+        mgr.delete = AsyncMock(return_value=True)
+        return mgr
+
+    @pytest.fixture
+    def server_with_secrets(self, mock_registry, secrets_manager):
+        """Create a SkillsServer with a mock secrets manager."""
+        return SkillsServer(registry=mock_registry, secrets_manager=secrets_manager)
+
+    @pytest.fixture
+    async def client_with_secrets(self, server_with_secrets):
+        """Create a test client for secrets endpoints."""
+        app = server_with_secrets.create_app()
+        async with TestClient(TestServer(app)) as test_client:
+            yield test_client
+
+    async def test_list_secrets(self, client_with_secrets, secrets_manager):
+        """GET /secrets should return metadata list."""
+        secrets_manager.get_metadata.return_value = [{"name": "google_client_secret"}]
+        resp = await client_with_secrets.get("/secrets")
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["secrets"][0]["name"] == "google_client_secret"
+        secrets_manager.get_metadata.assert_awaited_once()
+
+    async def test_put_secret(self, client_with_secrets, secrets_manager):
+        """PUT /secrets/{name} should store an encrypted secret."""
+        resp = await client_with_secrets.put(
+            "/secrets/google_client_secret",
+            json={"value": "secret-value", "changed_by": 1, "description": "OAuth client secret"},
+        )
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["ok"] is True
+        secrets_manager.set.assert_awaited_once_with(
+            name="google_client_secret",
+            value="secret-value",
+            changed_by=1,
+            description="OAuth client secret",
+        )
+
+    async def test_delete_secret(self, client_with_secrets, secrets_manager):
+        """DELETE /secrets/{name} should delete a secret."""
+        resp = await client_with_secrets.delete(
+            "/secrets/google_client_secret",
+            params={"deleted_by": "1"},
+        )
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["ok"] is True
+        assert data["existed"] is True
+        secrets_manager.delete.assert_awaited_once_with(
+            name="google_client_secret",
+            deleted_by=1,
+        )
+
+    async def test_list_secrets_returns_501_when_manager_is_none(self, mock_registry):
+        """GET /secrets should return 501 when secrets_manager is None."""
+        server = SkillsServer(registry=mock_registry, secrets_manager=None)
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as test_client:
+            resp = await test_client.get("/secrets")
+            assert resp.status == 501
             data = await resp.json()
             assert "error" in data

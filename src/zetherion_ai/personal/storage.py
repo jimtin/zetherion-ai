@@ -14,6 +14,7 @@ import asyncpg  # type: ignore[import-not-found,import-untyped]
 from zetherion_ai.logging import get_logger
 from zetherion_ai.personal.models import (
     PersonalContact,
+    PersonalityProfile,
     PersonalLearning,
     PersonalPolicy,
     PersonalProfile,
@@ -85,6 +86,44 @@ CREATE INDEX IF NOT EXISTS idx_personal_learnings_user_id
     ON personal_learnings (user_id);
 CREATE INDEX IF NOT EXISTS idx_personal_learnings_category
     ON personal_learnings (user_id, category);
+
+CREATE TABLE IF NOT EXISTS personality_signal_log (
+    id                    BIGSERIAL    PRIMARY KEY,
+    user_id               BIGINT       NOT NULL,
+    author_role           TEXT         NOT NULL,
+    author_email          TEXT         NOT NULL,
+    author_name           TEXT         NOT NULL DEFAULT '',
+    email_external_id     TEXT,
+    signal_data           JSONB        NOT NULL,
+    extraction_confidence FLOAT        NOT NULL DEFAULT 0.5,
+    created_at            TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_signal_log_user_email
+    ON personality_signal_log (user_id, author_email, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS personality_profiles (
+    id                  SERIAL       PRIMARY KEY,
+    user_id             BIGINT       NOT NULL,
+    subject_email       TEXT         NOT NULL,
+    subject_role        TEXT         NOT NULL,
+    observation_count   INT          NOT NULL DEFAULT 0,
+    writing_style       JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    communication       JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    relationship        JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    commitments         JSONB        NOT NULL DEFAULT '[]'::jsonb,
+    expectations        JSONB        NOT NULL DEFAULT '[]'::jsonb,
+    preferences         JSONB        NOT NULL DEFAULT '[]'::jsonb,
+    schedule_signals    JSONB        NOT NULL DEFAULT '[]'::jsonb,
+    confidence          FLOAT        NOT NULL DEFAULT 0.0,
+    first_observed      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    last_observed       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (user_id, subject_email, subject_role)
+);
+
+CREATE INDEX IF NOT EXISTS idx_personality_profiles_user
+    ON personality_profiles (user_id, subject_role);
 """
 
 
@@ -509,6 +548,147 @@ class PersonalStorage:
                 count=count,
             )
         return count
+
+    # ------------------------------------------------------------------
+    # Personality signal log + aggregated profiles
+    # ------------------------------------------------------------------
+
+    async def log_personality_signal(
+        self,
+        user_id: int,
+        signal_data: dict[str, Any],
+        author_role: str,
+        author_email: str,
+        author_name: str = "",
+        email_external_id: str | None = None,
+        extraction_confidence: float = 0.5,
+    ) -> int:
+        """Append a raw personality signal to the log. Returns the log ID."""
+        row_id = await self._fetchval(
+            """
+            INSERT INTO personality_signal_log
+                (user_id, author_role, author_email, author_name,
+                 email_external_id, signal_data, extraction_confidence)
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+            RETURNING id
+            """,
+            user_id,
+            author_role,
+            author_email,
+            author_name,
+            email_external_id,
+            json.dumps(signal_data),
+            extraction_confidence,
+        )
+        log.info(
+            "personality_signal_logged",
+            user_id=user_id,
+            author_email=author_email,
+            log_id=row_id,
+        )
+        return int(row_id)
+
+    async def get_personality_profile(
+        self,
+        user_id: int,
+        subject_email: str,
+        subject_role: str,
+    ) -> PersonalityProfile | None:
+        """Fetch an aggregated personality profile, or ``None``."""
+        row = await self._fetchrow(
+            """
+            SELECT * FROM personality_profiles
+             WHERE user_id = $1 AND subject_email = $2 AND subject_role = $3
+            """,
+            user_id,
+            subject_email,
+            subject_role,
+        )
+        if row is None:
+            return None
+        return PersonalityProfile.from_db_row(dict(row))
+
+    async def upsert_personality_profile(self, profile: PersonalityProfile) -> int:
+        """Insert or update an aggregated personality profile. Returns the profile ID."""
+        data = profile.to_db_row()
+        row_id = await self._fetchval(
+            """
+            INSERT INTO personality_profiles
+                (user_id, subject_email, subject_role, observation_count,
+                 writing_style, communication, relationship,
+                 commitments, expectations, preferences, schedule_signals,
+                 confidence, first_observed, last_observed, updated_at)
+            VALUES ($1, $2, $3, $4,
+                    $5::jsonb, $6::jsonb, $7::jsonb,
+                    $8::jsonb, $9::jsonb, $10::jsonb, $11::jsonb,
+                    $12, $13, $14, now())
+            ON CONFLICT (user_id, subject_email, subject_role) DO UPDATE SET
+                observation_count = EXCLUDED.observation_count,
+                writing_style    = EXCLUDED.writing_style,
+                communication    = EXCLUDED.communication,
+                relationship     = EXCLUDED.relationship,
+                commitments      = EXCLUDED.commitments,
+                expectations     = EXCLUDED.expectations,
+                preferences      = EXCLUDED.preferences,
+                schedule_signals = EXCLUDED.schedule_signals,
+                confidence       = EXCLUDED.confidence,
+                last_observed    = EXCLUDED.last_observed,
+                updated_at       = now()
+            RETURNING id
+            """,
+            data["user_id"],
+            data["subject_email"],
+            data["subject_role"],
+            data["observation_count"],
+            json.dumps(data["writing_style"]),
+            json.dumps(data["communication"]),
+            json.dumps(data["relationship"]),
+            json.dumps(data["commitments"]),
+            json.dumps(data["expectations"]),
+            json.dumps(data["preferences"]),
+            json.dumps(data["schedule_signals"]),
+            data["confidence"],
+            data["first_observed"],
+            data["last_observed"],
+        )
+        log.info(
+            "personality_profile_upserted",
+            user_id=profile.user_id,
+            subject_email=profile.subject_email,
+            subject_role=profile.subject_role,
+            observations=profile.observation_count,
+            profile_id=row_id,
+        )
+        return int(row_id)
+
+    async def list_personality_profiles(
+        self,
+        user_id: int,
+        *,
+        subject_role: str | None = None,
+        min_observations: int = 0,
+        limit: int = 20,
+    ) -> list[PersonalityProfile]:
+        """List aggregated personality profiles for a user."""
+        query = "SELECT * FROM personality_profiles WHERE user_id = $1"
+        params: list[Any] = [user_id]
+        idx = 2
+
+        if subject_role is not None:
+            query += f" AND subject_role = ${idx}"
+            params.append(subject_role)
+            idx += 1
+
+        if min_observations > 0:
+            query += f" AND observation_count >= ${idx}"
+            params.append(min_observations)
+            idx += 1
+
+        query += f" ORDER BY observation_count DESC, last_observed DESC LIMIT ${idx}"
+        params.append(limit)
+
+        rows = await self._fetch(query, *params)
+        return [PersonalityProfile.from_db_row(dict(r)) for r in rows]
 
     # ------------------------------------------------------------------
     # Pool convenience wrappers
