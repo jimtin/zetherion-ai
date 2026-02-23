@@ -17,7 +17,11 @@ import pytest_asyncio
 
 # Use module-scoped event loop so module-scoped async fixtures (mock_bot)
 # share the same loop across all tests in this module.
-pytestmark = pytest.mark.asyncio(loop_scope="module")
+# Docker startup/model warmup can exceed the default global 30s timeout.
+pytestmark = [
+    pytest.mark.asyncio(loop_scope="module"),
+    pytest.mark.timeout(1800),
+]
 
 
 def _load_env() -> None:

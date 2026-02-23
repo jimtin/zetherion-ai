@@ -108,7 +108,7 @@ class UnifiedInbox:
         account_email: str,
         account_id: int,
         *,
-        query: str = "is:inbox",
+        query: str = "in:inbox",
         max_results: int = 20,
     ) -> list[InboxEmail]:
         """Fetch emails from a single account and add to the inbox.

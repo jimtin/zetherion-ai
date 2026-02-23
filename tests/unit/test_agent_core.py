@@ -684,7 +684,7 @@ class TestGenerateResponseSkillIntents:
         agent._handle_skill_intent.assert_awaited_once_with(
             123,
             "How do I add an email account?",
-            "gmail",
+            "email",
         )
 
     async def test_simple_query_does_not_store_messages(self):

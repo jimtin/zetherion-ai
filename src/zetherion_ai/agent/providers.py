@@ -55,6 +55,7 @@ class Provider(Enum):
     OPENAI = "openai"
     GEMINI = "gemini"
     OLLAMA = "ollama"
+    GROQ = "groq"
 
 
 class OllamaTier(Enum):
@@ -121,21 +122,21 @@ CAPABILITY_MATRIX: dict[TaskType, ProviderConfig] = {
         rationale="Strongest narrative and style flexibility",
         fallbacks=[Provider.CLAUDE],
     ),
-    # Lightweight tasks - Ollama preferred (free, local, fast)
+    # Lightweight tasks - Groq preferred for inbound latency/accuracy
     TaskType.SIMPLE_QA: ProviderConfig(
-        provider=Provider.OLLAMA,
-        rationale="Free, no API cost, low latency",
-        fallbacks=[Provider.GEMINI],
+        provider=Provider.GROQ,
+        rationale="Fast cloud responses for inbound simple interactions",
+        fallbacks=[Provider.GEMINI, Provider.CLAUDE, Provider.OPENAI, Provider.OLLAMA],
     ),
     TaskType.CLASSIFICATION: ProviderConfig(
-        provider=Provider.OLLAMA,
-        rationale="Free, fast, already proven in router",
-        fallbacks=[Provider.GEMINI],
+        provider=Provider.GROQ,
+        rationale="85.1% accuracy, 444ms avg latency, benchmarked best email classifier",
+        fallbacks=[Provider.GEMINI, Provider.CLAUDE, Provider.OPENAI, Provider.OLLAMA],
     ),
     TaskType.DATA_EXTRACTION: ProviderConfig(
-        provider=Provider.OLLAMA,
-        rationale="Free, fast, sufficient quality for structured extraction",
-        fallbacks=[Provider.GEMINI],
+        provider=Provider.GROQ,
+        rationale="Fast cloud extraction with strong structured-output quality",
+        fallbacks=[Provider.GEMINI, Provider.CLAUDE, Provider.OPENAI, Provider.OLLAMA],
     ),
     TaskType.CONVERSATION: ProviderConfig(
         provider=Provider.CLAUDE,
@@ -144,9 +145,9 @@ CAPABILITY_MATRIX: dict[TaskType, ProviderConfig] = {
     ),
     # Internal tasks - Ollama keeps data local
     TaskType.PROFILE_EXTRACTION: ProviderConfig(
-        provider=Provider.OLLAMA,
-        rationale="Lightweight structured extraction, keeps data local",
-        fallbacks=[Provider.GEMINI],
+        provider=Provider.GEMINI,
+        rationale="83.6% accuracy, benchmarked best personality extractor",
+        fallbacks=[Provider.OLLAMA, Provider.CLAUDE],
     ),
     TaskType.TASK_PARSING: ProviderConfig(
         provider=Provider.OLLAMA,

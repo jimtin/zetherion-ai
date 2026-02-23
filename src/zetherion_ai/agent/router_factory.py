@@ -1,6 +1,10 @@
 """Factory for creating router instances with appropriate backends."""
 
-from zetherion_ai.agent.router import GeminiRouterBackend, MessageRouter
+from zetherion_ai.agent.router import (
+    GeminiRouterBackend,
+    GroqRouterBackend,
+    MessageRouter,
+)
 from zetherion_ai.agent.router_ollama import OllamaRouterBackend
 from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
@@ -69,9 +73,41 @@ async def create_router(warmup: bool = True) -> MessageRouter:
         gemini_backend = GeminiRouterBackend()
         return MessageRouter(gemini_backend)
 
+    elif settings.router_backend == "groq":
+        # Use Groq backend via InferenceBroker and fall back to Gemini/Ollama if unavailable.
+        groq_backend = GroqRouterBackend()
+        if await groq_backend.health_check():
+            log.info("router_backend_selected", backend="groq", model=settings.groq_model)
+            return MessageRouter(groq_backend)
+
+        log.warning("groq_unhealthy_falling_back", reason="Groq health check failed")
+        if settings.gemini_api_key:
+            log.warning("falling_back_to_gemini", reason="Groq unavailable")
+            return MessageRouter(GeminiRouterBackend())
+
+        try:
+            ollama_backend = OllamaRouterBackend()
+            if await ollama_backend.health_check():
+                log.warning("falling_back_to_ollama", reason="Groq unavailable and no Gemini key")
+                if warmup:
+                    await ollama_backend.warmup()
+                return MessageRouter(ollama_backend)
+        except Exception as e:
+            log.error(
+                "ollama_fallback_initialization_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+
+        raise RuntimeError(
+            "Groq backend requested but unavailable, "
+            "and no healthy Gemini/Ollama fallback configured"
+        )
+
     else:
         raise ValueError(
-            f"Invalid router backend: {settings.router_backend}. Must be 'gemini' or 'ollama'"
+            "Invalid router backend: "
+            f"{settings.router_backend}. Must be 'gemini', 'ollama', or 'groq'"
         )
 
 
@@ -101,7 +137,13 @@ def create_router_sync() -> MessageRouter:
         gemini_backend = GeminiRouterBackend()
         return MessageRouter(gemini_backend)
 
+    elif settings.router_backend == "groq":
+        log.info("router_backend_selected_sync", backend="groq", model=settings.groq_model)
+        groq_backend = GroqRouterBackend()
+        return MessageRouter(groq_backend)
+
     else:
         raise ValueError(
-            f"Invalid router backend: {settings.router_backend}. Must be 'gemini' or 'ollama'"
+            "Invalid router backend: "
+            f"{settings.router_backend}. Must be 'gemini', 'ollama', or 'groq'"
         )

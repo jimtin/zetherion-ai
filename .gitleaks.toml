@@ -12,6 +12,7 @@ useDefault = true
 # Paths to ignore (these are safe to exclude from scanning)
 paths = [
     '''\.git/''',
+    '''\.claude/''',
     '''\.venv/''',
     '''\.venv\.bak/''',
     '''venv/''',
@@ -31,6 +32,10 @@ paths = [
     '''data/''',
     '''qdrant_storage/''',
     '''ollama_models/''',
+    # Ignore generated benchmark datasets/reports and generator scripts
+    '''benchmarks/''',
+    '''scripts/benchmark-.*\.py$''',
+    '''scripts/generate-.*dataset\.py$''',
     # Ignore test files (contain fake tokens)
     '''tests/.*\.py$''',
     # Ignore documentation with examples (all doc subdirectories)

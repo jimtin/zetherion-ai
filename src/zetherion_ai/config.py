@@ -66,6 +66,17 @@ class Settings(BaseSettings):
     # OpenAI (optional, alternative LLM)
     openai_api_key: SecretStr | None = Field(default=None, description="OpenAI API key")
 
+    # Groq (optional, for fast cloud inference via OpenAI-compatible API)
+    groq_api_key: SecretStr | None = Field(default=None, description="Groq API key")
+    groq_model: str = Field(
+        default="llama-3.3-70b-versatile",
+        description="Groq model for email classification",
+    )
+    groq_base_url: str = Field(
+        default="https://api.groq.com/openai/v1",
+        description="Groq OpenAI-compatible API base URL",
+    )
+
     # Qdrant
     qdrant_host: str = Field(default="qdrant", description="Qdrant server host")
     qdrant_port: int = Field(default=6333, description="Qdrant server port")
@@ -137,7 +148,7 @@ class Settings(BaseSettings):
 
     # Router Backend Configuration
     router_backend: str = Field(
-        default="gemini", description="Router backend: 'gemini' or 'ollama'"
+        default="gemini", description="Router backend: 'gemini', 'ollama', or 'groq'"
     )
 
     # Ollama Configuration (Generation Container)
@@ -334,6 +345,25 @@ class Settings(BaseSettings):
         default="http://localhost:8080/gmail/callback",
         description="OAuth2 callback URL for Gmail",
     )
+    work_router_enabled: bool = Field(
+        default=False,
+        description="Enable provider-agnostic email/task/calendar router",
+    )
+    provider_outlook_enabled: bool = Field(
+        default=False,
+        description="Enable Outlook provider adapter (scaffold/feature-flagged)",
+    )
+    email_security_gate_enabled: bool = Field(
+        default=True,
+        description="Run the mandatory security gate for inbound email ingestion",
+    )
+    local_extraction_required: bool = Field(
+        default=False,
+        description=(
+            "Require larger local extraction path; when disabled, cloud-first extraction "
+            "runs with local as final fallback"
+        ),
+    )
 
     # GitHub Skill Configuration (Phase 7)
     github_token: SecretStr | None = Field(
@@ -468,7 +498,7 @@ class Settings(BaseSettings):
     @classmethod
     def validate_router_backend(cls, v: str) -> str:
         """Validate router backend choice."""
-        valid_backends = ["gemini", "ollama"]
+        valid_backends = ["gemini", "ollama", "groq"]
         if v not in valid_backends:
             raise ValueError(f"router_backend must be one of {valid_backends}, got: {v}")
         return v
