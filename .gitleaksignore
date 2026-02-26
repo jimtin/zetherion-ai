@@ -52,3 +52,6 @@ updater_sidecar/auth.py:env-file-secrets:34
 updater_sidecar/server.py:env-file-secrets:90
 updater_sidecar/server.py:env-file-secrets:94
 updater_sidecar/server.py:env-file-secrets:213
+
+# .env.example - empty placeholder variable name (not an actual secret)
+.env.example:env-file-secrets:300
