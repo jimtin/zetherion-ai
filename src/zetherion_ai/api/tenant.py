@@ -12,6 +12,7 @@ from typing import Any
 import asyncpg  # type: ignore[import-untyped,import-not-found]
 
 from zetherion_ai.api.auth import generate_api_key, verify_api_key
+from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
 
 log = get_logger("zetherion_ai.api.tenant")
@@ -294,8 +295,20 @@ class TenantManager:
     async def initialize(self) -> None:
         """Create connection pool and ensure schema exists."""
         try:
-            self._pool = await asyncpg.create_pool(dsn=self._dsn)
-            log.info("tenant_pool_created", dsn=self._dsn.split("@")[-1])
+            settings = get_settings()
+            pool_min = max(1, int(settings.postgres_pool_min_size))
+            pool_max = max(pool_min, int(settings.postgres_pool_max_size))
+            self._pool = await asyncpg.create_pool(
+                dsn=self._dsn,
+                min_size=pool_min,
+                max_size=pool_max,
+            )
+            log.info(
+                "tenant_pool_created",
+                dsn=self._dsn.split("@")[-1],
+                min_size=pool_min,
+                max_size=pool_max,
+            )
         except (asyncpg.PostgresError, OSError) as exc:
             log.error("tenant_pool_creation_failed", error=str(exc))
             raise

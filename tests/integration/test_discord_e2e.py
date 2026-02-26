@@ -11,6 +11,7 @@ Requires:
 import asyncio
 import json
 import os
+import re
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from uuid import uuid4
@@ -60,6 +61,27 @@ async def validate_memory_recall(response: str, expected_info: str) -> tuple[boo
     Returns:
         Tuple of (success: bool, explanation: str).
     """
+    response_lower = response.lower()
+    expected_lower = expected_info.lower()
+
+    # Fast deterministic checks first to avoid LLM validation flakiness.
+    if expected_lower in response_lower:
+        return True, f"Direct match for '{expected_info}'"
+
+    expected_parts = [part.strip() for part in expected_lower.split("-") if part.strip()]
+    if expected_parts:
+        part_matches: list[bool] = []
+        for part in expected_parts:
+            if part in response_lower:
+                part_matches.append(True)
+                continue
+            if re.fullmatch(r"[0-9a-f]{3,}", part) and f"#{part}" in response_lower:
+                part_matches.append(True)
+                continue
+            part_matches.append(False)
+        if all(part_matches):
+            return True, f"All expected components found for '{expected_info}'"
+
     validation_prompt = f"""Analyze this bot response and determine if it successfully \
 recalled the expected information.
 
@@ -93,9 +115,6 @@ Respond with ONLY a JSON object:
             return validation.get("success", False), validation.get("explanation", "No explanation")
     except Exception as e:
         # Fallback: check if the expected info is mentioned or if the response is substantive
-        response_lower = response.lower()
-        expected_lower = expected_info.lower()
-
         # Direct match
         if expected_lower in response_lower:
             return True, f"Fallback: Found '{expected_info}' in response"

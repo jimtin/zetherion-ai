@@ -110,7 +110,7 @@ class TestInitialize:
             mock_create.return_value = mock_pool
             await mgr.initialize()
 
-            mock_create.assert_awaited_once_with(dsn=DSN)
+            mock_create.assert_awaited_once_with(dsn=DSN, min_size=1, max_size=5)
             assert mgr._pool is mock_pool
             mock_schema.assert_awaited_once()
             mock_boot.assert_awaited_once()
