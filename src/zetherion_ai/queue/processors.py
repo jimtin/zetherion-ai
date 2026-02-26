@@ -164,12 +164,11 @@ class QueueProcessors:
                     log.warning("channel_fetch_failed", channel_id=channel_id)
                     channel = None
 
-        if channel is not None and message_id:
-            if channel is not None and hasattr(channel, "fetch_message"):
-                try:
-                    message_obj = await channel.fetch_message(message_id)
-                except Exception:
-                    log.debug("message_fetch_failed", message_id=message_id)
+        if channel is not None and message_id and hasattr(channel, "fetch_message"):
+            try:
+                message_obj = await channel.fetch_message(message_id)
+            except Exception:
+                log.debug("message_fetch_failed", message_id=message_id)
 
         # Generate response through the agent
         response = await self._agent.generate_response(
