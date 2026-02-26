@@ -181,13 +181,13 @@ class ZetherionAIBot(discord.Client):
         # Initialize agent after bot is ready
         self._agent = Agent(memory=self._memory)
 
-        # Warm up the Ollama model to avoid cold start delays
-        log.info("warming_up_ollama_model")
+        # Warm up the configured router backend to avoid first-request latency
+        log.info("warming_up_router_backend")
         warmup_success = await self._agent.warmup()
         if warmup_success:
-            log.info("ollama_warmup_successful")
+            log.info("router_warmup_successful")
         else:
-            log.warning("ollama_warmup_failed", note="First request may be slow")
+            log.warning("router_warmup_failed", note="First request may be slow")
 
         # Start background task to keep model warm
         self._keep_warm_task = asyncio.create_task(self._keep_warm_loop())
@@ -196,7 +196,10 @@ class ZetherionAIBot(discord.Client):
         # Initialize security pipeline (Tier 1 + optional Tier 2 AI)
         try:
             enable_tier2 = bool(get_settings().security_tier2_enabled)
-            self._security_ai_analyzer = SecurityAIAnalyzer() if enable_tier2 else None
+            security_inference = getattr(self._agent, "_inference_broker", None)
+            self._security_ai_analyzer = (
+                SecurityAIAnalyzer(inference=security_inference) if enable_tier2 else None
+            )
             self._security_pipeline = SecurityPipeline(
                 ai_analyzer=self._security_ai_analyzer,
                 enable_tier2=enable_tier2,
