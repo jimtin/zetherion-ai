@@ -787,6 +787,12 @@ class TestParseDevWatcherIntent:
         assert agent._parse_dev_watcher_intent("dev overview") == "dev_summary"
         assert agent._parse_dev_watcher_intent("weekly recap") == "dev_summary"
 
+    def test_release_keywords(self):
+        agent = _make_agent()
+        assert agent._parse_dev_watcher_intent("show release status") == "dev_release_summary"
+        assert agent._parse_dev_watcher_intent("latest deploy summary") == "dev_release_summary"
+        assert agent._parse_dev_watcher_intent("ci pipeline health") == "dev_release_summary"
+
     def test_default_fallback(self):
         agent = _make_agent()
         assert agent._parse_dev_watcher_intent("random text") == "dev_status"
