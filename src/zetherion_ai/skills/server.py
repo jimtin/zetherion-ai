@@ -964,6 +964,9 @@ def main() -> None:  # pragma: no cover — CLI entry-point
         oauth_authorizers: dict[str, OAuthAuthorizeHandler] = {}
         security_pipeline = None
         email_router = None
+        pool_min = max(1, int(settings.postgres_pool_min_size))
+        pool_max = max(pool_min, int(settings.postgres_pool_max_size))
+        pool_kwargs = {"min_size": pool_min, "max_size": pool_max}
         if _yt_storage is not None:
             await _yt_storage.initialize()
         if _tenant_manager is not None:
@@ -978,7 +981,10 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             from zetherion_ai.security.secrets import SecretsManager
             from zetherion_ai.settings_manager import SettingsManager
 
-            runtime_db_pool = await asyncpg.create_pool(dsn=settings.postgres_dsn)
+            runtime_db_pool = await asyncpg.create_pool(
+                dsn=settings.postgres_dsn,
+                **pool_kwargs,
+            )
             try:
                 async with runtime_db_pool.acquire() as conn:
                     await conn.execute(_SCHEMA_SQL)
@@ -1016,7 +1022,10 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             from zetherion_ai.security.content_pipeline import ContentSecurityPipeline
             from zetherion_ai.skills.gmail.accounts import GmailAccountManager
 
-            integration_pool = await asyncpg.create_pool(dsn=settings.postgres_dsn)
+            integration_pool = await asyncpg.create_pool(
+                dsn=settings.postgres_dsn,
+                **pool_kwargs,
+            )
             if encryptor is None:
                 raise RuntimeError("Encryption is not initialized")
 
@@ -1139,7 +1148,10 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             and _personal_storage_cls is not None
             and _personal_skill_cls is not None
         ):
-            personal_db_pool = await _personal_pool_factory(dsn=settings.postgres_dsn)
+            personal_db_pool = await _personal_pool_factory(
+                dsn=settings.postgres_dsn,
+                **pool_kwargs,
+            )
             personal_storage = _personal_storage_cls(personal_db_pool)
             await personal_storage.ensure_schema()
             registry.register(_personal_skill_cls(storage=personal_storage))
