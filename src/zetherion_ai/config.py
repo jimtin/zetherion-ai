@@ -44,6 +44,16 @@ class Settings(BaseSettings):
         default="postgresql://zetherion:password@postgres:5432/zetherion",
         description="PostgreSQL connection string",
     )
+    postgres_pool_min_size: int = Field(
+        default=1,
+        ge=1,
+        description="Minimum asyncpg pool size per service pool",
+    )
+    postgres_pool_max_size: int = Field(
+        default=5,
+        ge=1,
+        description="Maximum asyncpg pool size per service pool",
+    )
 
     @property
     def allowed_user_ids(self) -> list[int]:
