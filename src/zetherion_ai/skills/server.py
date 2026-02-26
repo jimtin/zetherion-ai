@@ -905,15 +905,34 @@ def main() -> None:  # pragma: no cover — CLI entry-point
 
     # Conditional: Client Provisioning (requires Postgres for TenantManager)
     _tenant_manager = None
+    _tenant_inference_broker = None
     _personal_pool_factory = None
     _personal_storage_cls = None
     _personal_skill_cls = None
     if settings.postgres_dsn:
+        from zetherion_ai.agent.inference import InferenceBroker
         from zetherion_ai.api.tenant import TenantManager
+        from zetherion_ai.skills.client_app_watcher import ClientAppWatcherSkill
+        from zetherion_ai.skills.client_insights import ClientInsightsSkill
         from zetherion_ai.skills.client_provisioning import ClientProvisioningSkill
+        from zetherion_ai.skills.tenant_intelligence import TenantIntelligenceSkill
 
         _tenant_manager = TenantManager(dsn=settings.postgres_dsn)
+        _tenant_inference_broker = InferenceBroker()
         registry.register(ClientProvisioningSkill(tenant_manager=_tenant_manager))
+        registry.register(
+            TenantIntelligenceSkill(
+                inference_broker=_tenant_inference_broker,
+                tenant_manager=_tenant_manager,
+            )
+        )
+        registry.register(
+            ClientInsightsSkill(
+                inference_broker=_tenant_inference_broker,
+                tenant_manager=_tenant_manager,
+            )
+        )
+        registry.register(ClientAppWatcherSkill(tenant_manager=_tenant_manager))
         # Personal model requires direct PostgreSQL access.
         try:
             import asyncpg  # type: ignore[import-not-found,import-untyped]
@@ -1148,6 +1167,8 @@ def main() -> None:  # pragma: no cover — CLI entry-point
                 await runtime_db_pool.close()
             if personal_db_pool is not None:
                 await personal_db_pool.close()
+            if _tenant_inference_broker is not None:
+                await _tenant_inference_broker.close()
 
     try:
         asyncio.run(init_and_run())

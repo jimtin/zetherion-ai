@@ -6,6 +6,7 @@ management. Follows the same pool/schema pattern as UserManager.
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any
 
 import asyncpg  # type: ignore[import-untyped,import-not-found]
@@ -126,6 +127,153 @@ CREATE INDEX IF NOT EXISTS idx_tenant_interactions_contact
     ON tenant_interactions (contact_id) WHERE contact_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_tenant_interactions_session
     ON tenant_interactions (session_id) WHERE session_id IS NOT NULL;
+
+-- App watcher: web session + behavior telemetry
+CREATE TABLE IF NOT EXISTS tenant_web_sessions (
+    id               SERIAL       PRIMARY KEY,
+    web_session_id   UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    tenant_id        UUID         NOT NULL REFERENCES tenants(tenant_id),
+    session_id       UUID         REFERENCES chat_sessions(session_id) ON DELETE SET NULL,
+    external_user_id TEXT,
+    consent_replay   BOOLEAN      NOT NULL DEFAULT FALSE,
+    replay_sampled   BOOLEAN      NOT NULL DEFAULT FALSE,
+    started_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    ended_at         TIMESTAMPTZ,
+    metadata         JSONB        DEFAULT '{}'::jsonb,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_web_sessions_tenant
+    ON tenant_web_sessions (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_web_sessions_chat
+    ON tenant_web_sessions (session_id, created_at DESC) WHERE session_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS tenant_web_events (
+    id               SERIAL       PRIMARY KEY,
+    event_id         UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    tenant_id        UUID         NOT NULL REFERENCES tenants(tenant_id),
+    web_session_id   UUID         REFERENCES tenant_web_sessions(web_session_id) ON DELETE CASCADE,
+    session_id       UUID         REFERENCES chat_sessions(session_id) ON DELETE SET NULL,
+    event_type       VARCHAR(64)  NOT NULL,
+    event_name       TEXT         DEFAULT '',
+    page_url         TEXT,
+    element_selector TEXT,
+    properties       JSONB        DEFAULT '{}'::jsonb,
+    occurred_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_web_events_tenant
+    ON tenant_web_events (tenant_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_web_events_session
+    ON tenant_web_events (web_session_id, occurred_at DESC) WHERE web_session_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS tenant_replay_chunks (
+    id               SERIAL       PRIMARY KEY,
+    chunk_id         UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    tenant_id        UUID         NOT NULL REFERENCES tenants(tenant_id),
+    web_session_id   UUID         NOT NULL
+                                REFERENCES tenant_web_sessions(web_session_id) ON DELETE CASCADE,
+    sequence_no      INT          NOT NULL,
+    object_key       TEXT         NOT NULL,
+    checksum_sha256  VARCHAR(64),
+    chunk_size_bytes INT          NOT NULL DEFAULT 0,
+    metadata         JSONB        DEFAULT '{}'::jsonb,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, web_session_id, sequence_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_replay_chunks_session
+    ON tenant_replay_chunks (web_session_id, sequence_no ASC);
+
+CREATE TABLE IF NOT EXISTS tenant_release_markers (
+    id               SERIAL       PRIMARY KEY,
+    marker_id        UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    tenant_id        UUID         NOT NULL REFERENCES tenants(tenant_id),
+    source           VARCHAR(50)  NOT NULL DEFAULT 'api',
+    environment      VARCHAR(30)  NOT NULL DEFAULT 'production',
+    commit_sha       TEXT,
+    branch           TEXT,
+    tag_name         TEXT,
+    deployed_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    metadata         JSONB        DEFAULT '{}'::jsonb,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_release_markers_tenant
+    ON tenant_release_markers (tenant_id, deployed_at DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_release_nonces (
+    id               SERIAL       PRIMARY KEY,
+    tenant_id        UUID         NOT NULL REFERENCES tenants(tenant_id),
+    nonce            TEXT         NOT NULL,
+    signature        TEXT,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, nonce)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_release_nonces_created
+    ON tenant_release_nonces (tenant_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_funnel_daily (
+    id               SERIAL       PRIMARY KEY,
+    tenant_id        UUID         NOT NULL REFERENCES tenants(tenant_id),
+    metric_date      DATE         NOT NULL,
+    funnel_name      TEXT         NOT NULL DEFAULT 'primary',
+    stage_name       TEXT         NOT NULL,
+    stage_order      INT          NOT NULL,
+    users_count      INT          NOT NULL DEFAULT 0,
+    drop_off_rate    FLOAT,
+    conversion_rate  FLOAT,
+    metadata         JSONB        DEFAULT '{}'::jsonb,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, metric_date, funnel_name, stage_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_funnel_daily_tenant
+    ON tenant_funnel_daily (tenant_id, metric_date DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_recommendations (
+    id               SERIAL       PRIMARY KEY,
+    recommendation_id UUID        NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    tenant_id        UUID         NOT NULL REFERENCES tenants(tenant_id),
+    recommendation_type VARCHAR(64) NOT NULL,
+    title            TEXT         NOT NULL,
+    description      TEXT         NOT NULL,
+    evidence         JSONB        DEFAULT '{}'::jsonb,
+    risk_class       VARCHAR(20)  NOT NULL DEFAULT 'low',
+    confidence       FLOAT        NOT NULL DEFAULT 0,
+    expected_impact  FLOAT,
+    status           VARCHAR(30)  NOT NULL DEFAULT 'open',
+    source           VARCHAR(30)  NOT NULL DEFAULT 'detector',
+    generated_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_recommendations_tenant
+    ON tenant_recommendations (tenant_id, generated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_recommendations_status
+    ON tenant_recommendations (tenant_id, status, generated_at DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_recommendation_feedback (
+    id               SERIAL       PRIMARY KEY,
+    feedback_id      UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    tenant_id        UUID         NOT NULL REFERENCES tenants(tenant_id),
+    recommendation_id UUID        NOT NULL REFERENCES tenant_recommendations(recommendation_id)
+                                       ON DELETE CASCADE,
+    feedback_type    VARCHAR(30)  NOT NULL,
+    note             TEXT,
+    actor            TEXT,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_recommendation_feedback_tenant
+    ON tenant_recommendation_feedback (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_recommendation_feedback_recommendation
+    ON tenant_recommendation_feedback (recommendation_id, created_at DESC);
 """
 
 
@@ -642,6 +790,633 @@ class TenantManager:
             limit,
         )
         return [dict(r) for r in rows]
+
+    async def update_contact_custom_fields(
+        self,
+        tenant_id: str,
+        contact_id: str,
+        custom_fields_patch: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Merge a patch into a contact's custom_fields JSON."""
+        import json as _json
+
+        row = await self._fetchrow(
+            """
+            UPDATE tenant_contacts
+            SET custom_fields = COALESCE(custom_fields, '{}'::jsonb) || $3::jsonb,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid AND contact_id = $2::uuid
+            RETURNING contact_id, tenant_id, name, email, phone, source,
+                      tags, custom_fields, created_at, updated_at
+            """,
+            tenant_id,
+            contact_id,
+            _json.dumps(custom_fields_patch),
+        )
+        return dict(row) if row else None
+
+    # ------------------------------------------------------------------
+    # App Watcher analytics storage
+    # ------------------------------------------------------------------
+
+    async def ensure_web_session(
+        self,
+        tenant_id: str,
+        *,
+        session_id: str | None = None,
+        external_user_id: str | None = None,
+        consent_replay: bool = False,
+        replay_sampled: bool = False,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Get or create an active tenant_web_session for a chat session."""
+        import json as _json
+
+        existing = None
+        if session_id:
+            existing = await self._fetchrow(
+                """
+                SELECT web_session_id, tenant_id, session_id, external_user_id,
+                       consent_replay, replay_sampled, started_at, ended_at, metadata
+                FROM tenant_web_sessions
+                WHERE tenant_id = $1::uuid
+                  AND session_id = $2::uuid
+                  AND ended_at IS NULL
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                tenant_id,
+                session_id,
+            )
+        if existing:
+            return dict(existing)
+
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_web_sessions
+                (tenant_id, session_id, external_user_id, consent_replay, replay_sampled, metadata)
+            VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::jsonb)
+            RETURNING web_session_id, tenant_id, session_id, external_user_id,
+                      consent_replay, replay_sampled, started_at, ended_at, metadata
+            """,
+            tenant_id,
+            session_id,
+            external_user_id,
+            consent_replay,
+            replay_sampled,
+            _json.dumps(metadata or {}),
+        )
+        return dict(row)
+
+    async def get_web_session(
+        self,
+        tenant_id: str,
+        web_session_id: str,
+    ) -> dict[str, Any] | None:
+        """Fetch one web session by ID and tenant."""
+        row = await self._fetchrow(
+            """
+            SELECT web_session_id, tenant_id, session_id, external_user_id,
+                   consent_replay, replay_sampled, started_at, ended_at, metadata
+            FROM tenant_web_sessions
+            WHERE tenant_id = $1::uuid AND web_session_id = $2::uuid
+            """,
+            tenant_id,
+            web_session_id,
+        )
+        return dict(row) if row else None
+
+    async def end_web_session(
+        self,
+        tenant_id: str,
+        web_session_id: str,
+        *,
+        ended_at: datetime | None = None,
+        metadata_patch: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Mark a web session ended and optionally merge metadata."""
+        import json as _json
+
+        row = await self._fetchrow(
+            """
+            UPDATE tenant_web_sessions
+            SET ended_at = COALESCE($3::timestamptz, now()),
+                metadata = COALESCE(metadata, '{}'::jsonb) || $4::jsonb,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid AND web_session_id = $2::uuid
+            RETURNING web_session_id, tenant_id, session_id, external_user_id,
+                      consent_replay, replay_sampled, started_at, ended_at, metadata
+            """,
+            tenant_id,
+            web_session_id,
+            ended_at,
+            _json.dumps(metadata_patch or {}),
+        )
+        return dict(row) if row else None
+
+    async def add_web_event(
+        self,
+        tenant_id: str,
+        *,
+        web_session_id: str | None,
+        session_id: str | None,
+        event_type: str,
+        event_name: str = "",
+        page_url: str | None = None,
+        element_selector: str | None = None,
+        properties: dict[str, Any] | None = None,
+        occurred_at: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Persist a single web behavior event."""
+        import json as _json
+
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_web_events
+                (tenant_id, web_session_id, session_id, event_type, event_name, page_url,
+                 element_selector, properties, occurred_at)
+            VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::jsonb, COALESCE($9, now()))
+            RETURNING event_id, tenant_id, web_session_id, session_id, event_type,
+                      event_name, page_url, element_selector, properties, occurred_at
+            """,
+            tenant_id,
+            web_session_id,
+            session_id,
+            event_type,
+            event_name,
+            page_url,
+            element_selector,
+            _json.dumps(properties or {}),
+            occurred_at,
+        )
+        return dict(row)
+
+    async def get_web_events(
+        self,
+        tenant_id: str,
+        *,
+        web_session_id: str | None = None,
+        session_id: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Fetch recent web events, optionally scoped by session."""
+        if web_session_id:
+            rows = await self._fetch(
+                """
+                SELECT event_id, tenant_id, web_session_id, session_id, event_type,
+                       event_name, page_url, element_selector, properties, occurred_at
+                FROM tenant_web_events
+                WHERE tenant_id = $1::uuid AND web_session_id = $2::uuid
+                ORDER BY occurred_at ASC
+                LIMIT $3
+                """,
+                tenant_id,
+                web_session_id,
+                limit,
+            )
+        elif session_id:
+            rows = await self._fetch(
+                """
+                SELECT event_id, tenant_id, web_session_id, session_id, event_type,
+                       event_name, page_url, element_selector, properties, occurred_at
+                FROM tenant_web_events
+                WHERE tenant_id = $1::uuid AND session_id = $2::uuid
+                ORDER BY occurred_at ASC
+                LIMIT $3
+                """,
+                tenant_id,
+                session_id,
+                limit,
+            )
+        else:
+            rows = await self._fetch(
+                """
+                SELECT event_id, tenant_id, web_session_id, session_id, event_type,
+                       event_name, page_url, element_selector, properties, occurred_at
+                FROM tenant_web_events
+                WHERE tenant_id = $1::uuid
+                ORDER BY occurred_at DESC
+                LIMIT $2
+                """,
+                tenant_id,
+                limit,
+            )
+            rows = list(reversed(rows))
+        return [dict(r) for r in rows]
+
+    async def add_replay_chunk(
+        self,
+        tenant_id: str,
+        *,
+        web_session_id: str,
+        sequence_no: int,
+        object_key: str,
+        checksum_sha256: str | None = None,
+        chunk_size_bytes: int = 0,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist replay chunk metadata."""
+        import json as _json
+
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_replay_chunks
+                (tenant_id, web_session_id, sequence_no, object_key, checksum_sha256,
+                 chunk_size_bytes, metadata)
+            VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7::jsonb)
+            ON CONFLICT (tenant_id, web_session_id, sequence_no) DO UPDATE
+            SET object_key = EXCLUDED.object_key,
+                checksum_sha256 = EXCLUDED.checksum_sha256,
+                chunk_size_bytes = EXCLUDED.chunk_size_bytes,
+                metadata = EXCLUDED.metadata
+            RETURNING chunk_id, tenant_id, web_session_id, sequence_no, object_key,
+                      checksum_sha256, chunk_size_bytes, metadata, created_at
+            """,
+            tenant_id,
+            web_session_id,
+            sequence_no,
+            object_key,
+            checksum_sha256,
+            chunk_size_bytes,
+            _json.dumps(metadata or {}),
+        )
+        return dict(row)
+
+    async def get_latest_replay_chunk(
+        self,
+        tenant_id: str,
+        *,
+        web_session_id: str,
+    ) -> dict[str, Any] | None:
+        """Fetch latest replay chunk metadata for a web session."""
+        row = await self._fetchrow(
+            """
+            SELECT chunk_id, tenant_id, web_session_id, sequence_no, object_key,
+                   checksum_sha256, chunk_size_bytes, metadata, created_at
+            FROM tenant_replay_chunks
+            WHERE tenant_id = $1::uuid AND web_session_id = $2::uuid
+            ORDER BY sequence_no DESC
+            LIMIT 1
+            """,
+            tenant_id,
+            web_session_id,
+        )
+        return dict(row) if row else None
+
+    async def get_replay_chunk(
+        self,
+        tenant_id: str,
+        *,
+        web_session_id: str,
+        sequence_no: int,
+    ) -> dict[str, Any] | None:
+        """Fetch one replay chunk metadata row by sequence number."""
+        row = await self._fetchrow(
+            """
+            SELECT chunk_id, tenant_id, web_session_id, sequence_no, object_key,
+                   checksum_sha256, chunk_size_bytes, metadata, created_at
+            FROM tenant_replay_chunks
+            WHERE tenant_id = $1::uuid
+              AND web_session_id = $2::uuid
+              AND sequence_no = $3
+            LIMIT 1
+            """,
+            tenant_id,
+            web_session_id,
+            sequence_no,
+        )
+        return dict(row) if row else None
+
+    async def add_release_marker(
+        self,
+        tenant_id: str,
+        *,
+        source: str = "api",
+        environment: str = "production",
+        commit_sha: str | None = None,
+        branch: str | None = None,
+        tag_name: str | None = None,
+        deployed_at: datetime | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Record a tenant deployment marker."""
+        import json as _json
+
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_release_markers
+                (
+                    tenant_id,
+                    source,
+                    environment,
+                    commit_sha,
+                    branch,
+                    tag_name,
+                    deployed_at,
+                    metadata
+                )
+            VALUES ($1::uuid, $2, $3, $4, $5, $6, COALESCE($7, now()), $8::jsonb)
+            RETURNING marker_id, tenant_id, source, environment, commit_sha, branch,
+                      tag_name, deployed_at, metadata, created_at
+            """,
+            tenant_id,
+            source,
+            environment,
+            commit_sha,
+            branch,
+            tag_name,
+            deployed_at,
+            _json.dumps(metadata or {}),
+        )
+        return dict(row)
+
+    async def get_release_markers(
+        self,
+        tenant_id: str,
+        *,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Fetch recent release markers for a tenant."""
+        rows = await self._fetch(
+            """
+            SELECT marker_id, tenant_id, source, environment, commit_sha, branch,
+                   tag_name, deployed_at, metadata, created_at
+            FROM tenant_release_markers
+            WHERE tenant_id = $1::uuid
+            ORDER BY deployed_at DESC
+            LIMIT $2
+            """,
+            tenant_id,
+            limit,
+        )
+        return [dict(r) for r in rows]
+
+    async def register_release_nonce(
+        self,
+        tenant_id: str,
+        *,
+        nonce: str,
+        signature: str | None = None,
+    ) -> bool:
+        """Register a release ingest nonce, returning False on replay."""
+        await self._execute(
+            "DELETE FROM tenant_release_nonces WHERE created_at < now() - INTERVAL '30 days'"
+        )
+        result = await self._execute(
+            """
+            INSERT INTO tenant_release_nonces (tenant_id, nonce, signature)
+            VALUES ($1::uuid, $2, $3)
+            ON CONFLICT (tenant_id, nonce) DO NOTHING
+            """,
+            tenant_id,
+            nonce,
+            signature,
+        )
+        return result == "INSERT 0 1"
+
+    async def prune_web_events(
+        self,
+        tenant_id: str,
+        *,
+        retention_days: int,
+    ) -> int:
+        """Delete web events older than retention window and return deleted count."""
+        count = await self._fetchval(
+            """
+            WITH deleted AS (
+                DELETE FROM tenant_web_events
+                WHERE tenant_id = $1::uuid
+                  AND occurred_at < now() - make_interval(days => $2)
+                RETURNING 1
+            )
+            SELECT count(*) FROM deleted
+            """,
+            tenant_id,
+            retention_days,
+        )
+        return int(count or 0)
+
+    async def prune_replay_chunks(
+        self,
+        tenant_id: str,
+        *,
+        retention_days: int,
+    ) -> list[str]:
+        """Delete replay chunk metadata older than retention window and return object keys."""
+        rows = await self._fetch(
+            """
+            DELETE FROM tenant_replay_chunks
+            WHERE tenant_id = $1::uuid
+              AND created_at < now() - make_interval(days => $2)
+            RETURNING object_key
+            """,
+            tenant_id,
+            retention_days,
+        )
+        return [str(r["object_key"]) for r in rows if r.get("object_key")]
+
+    async def upsert_funnel_stage_daily(
+        self,
+        tenant_id: str,
+        *,
+        metric_date: date,
+        funnel_name: str,
+        stage_name: str,
+        stage_order: int,
+        users_count: int,
+        drop_off_rate: float | None,
+        conversion_rate: float | None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Upsert one daily funnel stage metric."""
+        import json as _json
+
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_funnel_daily
+                (tenant_id, metric_date, funnel_name, stage_name, stage_order,
+                 users_count, drop_off_rate, conversion_rate, metadata)
+            VALUES ($1::uuid, $2::date, $3, $4, $5, $6, $7, $8, $9::jsonb)
+            ON CONFLICT (tenant_id, metric_date, funnel_name, stage_name) DO UPDATE
+            SET stage_order = EXCLUDED.stage_order,
+                users_count = EXCLUDED.users_count,
+                drop_off_rate = EXCLUDED.drop_off_rate,
+                conversion_rate = EXCLUDED.conversion_rate,
+                metadata = EXCLUDED.metadata,
+                updated_at = now()
+            RETURNING tenant_id, metric_date, funnel_name, stage_name, stage_order,
+                      users_count, drop_off_rate, conversion_rate, metadata, updated_at
+            """,
+            tenant_id,
+            metric_date,
+            funnel_name,
+            stage_name,
+            stage_order,
+            users_count,
+            drop_off_rate,
+            conversion_rate,
+            _json.dumps(metadata or {}),
+        )
+        return dict(row)
+
+    async def get_funnel_daily(
+        self,
+        tenant_id: str,
+        *,
+        metric_date: date | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Fetch daily funnel metrics."""
+        if metric_date is not None:
+            rows = await self._fetch(
+                """
+                SELECT tenant_id, metric_date, funnel_name, stage_name, stage_order,
+                       users_count, drop_off_rate, conversion_rate, metadata, updated_at
+                FROM tenant_funnel_daily
+                WHERE tenant_id = $1::uuid AND metric_date = $2::date
+                ORDER BY funnel_name, stage_order
+                """,
+                tenant_id,
+                metric_date,
+            )
+        else:
+            rows = await self._fetch(
+                """
+                SELECT tenant_id, metric_date, funnel_name, stage_name, stage_order,
+                       users_count, drop_off_rate, conversion_rate, metadata, updated_at
+                FROM tenant_funnel_daily
+                WHERE tenant_id = $1::uuid
+                ORDER BY metric_date DESC, funnel_name, stage_order
+                LIMIT $2
+                """,
+                tenant_id,
+                limit,
+            )
+        return [dict(r) for r in rows]
+
+    async def create_recommendation(
+        self,
+        tenant_id: str,
+        *,
+        recommendation_type: str,
+        title: str,
+        description: str,
+        evidence: dict[str, Any] | None = None,
+        risk_class: str = "low",
+        confidence: float = 0.0,
+        expected_impact: float | None = None,
+        status: str = "open",
+        source: str = "detector",
+    ) -> dict[str, Any]:
+        """Create a tenant recommendation."""
+        import json as _json
+
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_recommendations
+                (tenant_id, recommendation_type, title, description, evidence,
+                 risk_class, confidence, expected_impact, status, source)
+            VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10)
+            RETURNING recommendation_id, tenant_id, recommendation_type, title, description,
+                      evidence, risk_class, confidence, expected_impact, status, source,
+                      generated_at, created_at, updated_at
+            """,
+            tenant_id,
+            recommendation_type,
+            title,
+            description,
+            _json.dumps(evidence or {}),
+            risk_class,
+            confidence,
+            expected_impact,
+            status,
+            source,
+        )
+        return dict(row)
+
+    async def list_recommendations(
+        self,
+        tenant_id: str,
+        *,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """List tenant recommendations, optionally filtered by status."""
+        if status:
+            rows = await self._fetch(
+                """
+                SELECT recommendation_id, tenant_id, recommendation_type, title, description,
+                       evidence, risk_class, confidence, expected_impact, status, source,
+                       generated_at, created_at, updated_at
+                FROM tenant_recommendations
+                WHERE tenant_id = $1::uuid AND status = $2
+                ORDER BY generated_at DESC
+                LIMIT $3
+                """,
+                tenant_id,
+                status,
+                limit,
+            )
+        else:
+            rows = await self._fetch(
+                """
+                SELECT recommendation_id, tenant_id, recommendation_type, title, description,
+                       evidence, risk_class, confidence, expected_impact, status, source,
+                       generated_at, created_at, updated_at
+                FROM tenant_recommendations
+                WHERE tenant_id = $1::uuid
+                ORDER BY generated_at DESC
+                LIMIT $2
+                """,
+                tenant_id,
+                limit,
+            )
+        return [dict(r) for r in rows]
+
+    async def add_recommendation_feedback(
+        self,
+        tenant_id: str,
+        recommendation_id: str,
+        *,
+        feedback_type: str,
+        note: str | None = None,
+        actor: str | None = None,
+    ) -> dict[str, Any]:
+        """Record operator feedback for a recommendation."""
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_recommendation_feedback
+                (tenant_id, recommendation_id, feedback_type, note, actor)
+            VALUES ($1::uuid, $2::uuid, $3, $4, $5)
+            RETURNING feedback_id, tenant_id, recommendation_id, feedback_type,
+                      note, actor, created_at
+            """,
+            tenant_id,
+            recommendation_id,
+            feedback_type,
+            note,
+            actor,
+        )
+
+        status_map = {
+            "accepted": "accepted",
+            "rejected": "rejected",
+            "implemented": "implemented",
+        }
+        mapped_status = status_map.get(feedback_type.lower())
+        if mapped_status:
+            await self._execute(
+                """
+                UPDATE tenant_recommendations
+                SET status = $3, updated_at = now()
+                WHERE tenant_id = $1::uuid AND recommendation_id = $2::uuid
+                """,
+                tenant_id,
+                recommendation_id,
+                mapped_status,
+            )
+
+        return dict(row)
 
     # ------------------------------------------------------------------
     # Internal helpers

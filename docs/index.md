@@ -1,6 +1,6 @@
 # Zetherion AI Documentation
 
-Zetherion AI is a privacy-first personal AI assistant featuring encrypted memory, smart LLM routing, Gmail integration, and deep personal understanding. It runs as a Discord bot backed by 6 Docker services, designed to learn your preferences and adapt over time while keeping your data secure.
+Zetherion AI is a privacy-first personal AI assistant featuring encrypted memory, smart LLM routing, Gmail integration, and deep personal understanding. It runs as a Discord bot with a blue/green-ready container topology (bot, skills/api pairs, internal routing, updater, and data services), designed to learn your preferences and adapt over time while keeping your data secure.
 
 ---
 
@@ -44,6 +44,7 @@ If you are using Zetherion AI and want to know what it can do:
 | Guide | Description |
 |-------|-------------|
 | [Getting Started](user/getting-started.md) | Prerequisites, setup, first interaction |
+| [Auto-Update](user/auto-update.md) | Blue/green rollout, rollback, and unpause runbook |
 | [Commands](user/commands.md) | Complete Discord command reference |
 | [Gmail](user/gmail.md) | Email checking, drafts, digests, trust system |
 | [GitHub](user/github-integration.md) | Repository management, issues, PRs |
@@ -59,7 +60,7 @@ If you want to understand the internals:
 | Guide | Description |
 |-------|-------------|
 | [Architecture](technical/architecture.md) | System design and component interaction |
-| [Docker & Services](technical/docker.md) | 6-service container architecture |
+| [Docker & Services](technical/docker.md) | Current compose topology and blue/green routing |
 | [Security](technical/security.md) | Encryption, access control, container hardening |
 | [Configuration](technical/configuration.md) | All 70+ environment variables |
 | [Skills Framework](technical/skills-framework.md) | Skill lifecycle, permissions, registry |
@@ -67,7 +68,9 @@ If you want to understand the internals:
 | [Observation Pipeline](technical/observation-pipeline.md) | Tiered fact extraction |
 | [Personal Understanding](technical/personal-understanding.md) | PostgreSQL personal model |
 | [Cost Tracking](technical/cost-tracking.md) | Budget management and reporting |
-| [API Reference](technical/api-reference.md) | Skills REST API endpoints |
+| [Skills API Reference](technical/api-reference.md) | Internal skills REST API endpoints |
+| [Public API Reference](technical/public-api-reference.md) | External `/api/v1` contract for sessions/chat/YouTube |
+| [AI Agent Integration](technical/ai-agent-integration.md) | Integration contract and capability boundaries for external agents |
 
 ### For Developers
 
@@ -95,14 +98,14 @@ If you want to contribute or extend:
 
 | Metric | Value |
 |--------|-------|
-| Tests | 3,000+ |
+| Tests | 5,000+ |
 | Coverage Gate | >=90% (`pytest --cov-fail-under=90`) |
 | Test Files | 90+ |
 | Source Files | 90+ |
-| Docker Services | 6 |
+| Docker Services | Current compose topology (blue/green app + skills + routing + updater + data services) |
 | Configuration Fields | 70+ |
 | CI/CD Jobs | 10 |
-| Skills | 7 (task, calendar, profile, gmail, github, personal model, observation) |
+| Skills | 10+ built-in and optional skills (tasks, calendar, profile, gmail/email router, github, personal model, health, updater, dev watcher, milestone, YouTube when enabled) |
 
 ---
 

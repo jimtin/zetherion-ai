@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import sys
-import time
 
 import click  # type: ignore[import-not-found]
 
@@ -93,7 +92,12 @@ async def _watch_loop(config: AgentConfig, *, once: bool, verbose: bool) -> None
     """Main watch loop."""
     from zetherion_dev_agent.sender import send_event
     from zetherion_dev_agent.state import ScanState
-    from zetherion_dev_agent.watchers.annotations import diff_annotations, scan_annotations
+    from zetherion_dev_agent.watchers.annotations import (
+        annotation_state_key,
+        diff_annotations,
+        parse_state_annotation,
+        scan_annotations,
+    )
     from zetherion_dev_agent.watchers.claude_code import get_new_sessions
     from zetherion_dev_agent.watchers.git import (
         get_latest_sha,
@@ -137,6 +141,33 @@ async def _watch_loop(config: AgentConfig, *, once: bool, verbose: bool) -> None
                         status = "sent" if ok else "FAILED"
                         click.echo(f"  [{status}] commit {commit.sha[:7]}: {commit.message[:60]}")
 
+                    # Heuristic deploy marker: commits on main/release branches.
+                    branch = commit.branch.lower()
+                    if branch in {"main", "master"} or branch.startswith("release/"):
+                        deploy_fields = {
+                            "project": project,
+                            "environment": "production",
+                            "source": "heuristic_commit",
+                            "commit_sha": commit.sha,
+                            "branch": commit.branch,
+                            "status": "candidate",
+                            "title": f"Deploy candidate ({commit.branch})",
+                        }
+                        deploy_ok = await send_event(
+                            config.webhook_url,
+                            config.agent_name,
+                            "deploy",
+                            f"Deploy candidate: {commit.sha[:7]} on {commit.branch}",
+                            deploy_fields,
+                        )
+                        if deploy_ok:
+                            events_sent += 1
+                        if verbose:
+                            click.echo(
+                                f"  [{'sent' if deploy_ok else 'FAILED'}] deploy "
+                                f"candidate {commit.sha[:7]}"
+                            )
+
                 # Update state
                 new_sha = get_latest_sha(repo_path)
                 if new_sha:
@@ -163,6 +194,28 @@ async def _watch_loop(config: AgentConfig, *, once: bool, verbose: bool) -> None
                             events_sent += 1
                         if verbose:
                             click.echo(f"  [{'sent' if ok else 'FAILED'}] tag {tag.name}")
+
+                        # Heuristic deploy marker: new release tags.
+                        deploy_fields = {
+                            "project": project,
+                            "environment": "production",
+                            "source": "heuristic_tag",
+                            "commit_sha": tag.sha,
+                            "tag_name": tag.name,
+                            "status": "tagged",
+                            "title": f"Release tag {tag.name}",
+                        }
+                        deploy_ok = await send_event(
+                            config.webhook_url,
+                            config.agent_name,
+                            "deploy",
+                            f"Release tag observed: {tag.name}",
+                            deploy_fields,
+                        )
+                        if deploy_ok:
+                            events_sent += 1
+                        if verbose:
+                            click.echo(f"  [{'sent' if deploy_ok else 'FAILED'}] deploy tag marker")
                 state.known_tags[repo_path] = [t.name for t in current_tags]
 
             # --- Annotations ---
@@ -170,22 +223,19 @@ async def _watch_loop(config: AgentConfig, *, once: bool, verbose: bool) -> None
                 current_annotations = scan_annotations(repo_path)
 
                 # Reconstruct previous annotations from state
-                from zetherion_dev_agent.watchers.annotations import Annotation
-
                 old_annotations = []
+                saw_legacy_keys = False
                 for key, content in state.known_annotations.get(repo_path, {}).items():
-                    parts = key.split(":", 2)
-                    if len(parts) >= 2:
-                        old_annotations.append(
-                            Annotation(
-                                annotation_type=parts[0],
-                                content=content,
-                                file=parts[1] if len(parts) > 1 else "",
-                                line=0,
-                            )
-                        )
+                    annotation, is_legacy = parse_state_annotation(key, content)
+                    if is_legacy:
+                        saw_legacy_keys = True
+                    if annotation is not None:
+                        old_annotations.append(annotation)
 
                 added, removed = diff_annotations(old_annotations, current_annotations)
+                if saw_legacy_keys:
+                    # Avoid one-time false "removed" noise while migrating old keys.
+                    removed = []
 
                 for ann in added:
                     fields = {
@@ -230,7 +280,7 @@ async def _watch_loop(config: AgentConfig, *, once: bool, verbose: bool) -> None
 
                 # Update state
                 state.known_annotations[repo_path] = {
-                    f"{a.annotation_type}:{a.file}": a.content for a in current_annotations
+                    annotation_state_key(a): a.content for a in current_annotations
                 }
 
             # --- Claude Code sessions ---
@@ -269,7 +319,7 @@ async def _watch_loop(config: AgentConfig, *, once: bool, verbose: bool) -> None
         if once:
             break
 
-        time.sleep(config.scan_interval)
+        await asyncio.sleep(config.scan_interval)
 
 
 if __name__ == "__main__":

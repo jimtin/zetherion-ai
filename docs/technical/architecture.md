@@ -2,267 +2,198 @@
 
 ## Overview
 
-Zetherion AI is a source-agnostic personal AI assistant built on a microservice architecture with 6 Docker services. The system accepts input from any source (Discord is the first interface, with REST API, email sync, and webhooks also available) and provides user-controlled multi-provider LLM routing, AES-256-GCM encrypted semantic memory, Gmail integration, GitHub management, and deep personal understanding through passive observation, proactive prompting, and explicit learning.
+Zetherion AI is a source-agnostic assistant with two API surfaces:
 
-The codebase is heavily tested (3,000+ tests) with a repository-enforced coverage gate of `>=90%`. The architecture prioritizes security, modularity, and cost-efficient inference by routing queries to the most appropriate LLM provider based on complexity, privacy requirements, and task type.
+- **Internal Skills API** (`:8080`) for bot/service orchestration
+- **Public API** (`:8443`) for tenant-scoped external integrations
 
-### Key Design Principles
+The current Docker compose topology supports blue/green switching for both
+skills and public API services, with Traefik as the internal switch and an
+updater sidecar handling rollout/rollback orchestration.
 
-1. **Security-First** -- Defense in depth from container to application layer
-2. **Modularity** -- Clean separation across services (Bot, Skills, Storage)
-3. **Cost Efficiency** -- Intelligent routing sends simple queries to cheap/local models
-4. **Privacy-Aware** -- Local inference via Ollama for sensitive operations
-5. **Resilience** -- Fallback chains, retry logic, graceful degradation
-6. **Async-First** -- Non-blocking I/O throughout the entire stack
+The project enforces `>=90%` coverage in test configuration and currently
+contains 5,000+ tests.
 
 ---
 
-## Architecture Diagram
+## High-Level Topology
 
+```text
+Discord Gateway / External App Clients
+            |
+            v
++-------------------------------+
+| zetherion-ai-bot              |
+| - Security pipeline           |
+| - Router + inference broker   |
+| - Skills client               |
++---------------+---------------+
+                |
+                v
+      +---------------------+
+      | zetherion-ai-traefik|
+      +---+-------------+---+
+          |             |
+          v             v
++----------------+  +----------------+
+| skills-blue    |  | skills-green   |
+| :8080 internal |  | :8080 internal |
++----------------+  +----------------+
+
+Public API path (tenant integrations):
+
+External Client -> Cloudflared (optional) -> Traefik -> api-blue/api-green
+
+Data plane:
+- PostgreSQL (RBAC, settings, integrations, tenant/session data)
+- Qdrant (vector memory)
+- Ollama (generation/embeddings)
+- Ollama Router (classification)
+
+Update plane:
+- updater sidecar performs blue/green rollout and rollback
 ```
-Any Input Source
-(Discord / REST API / Email / Webhooks)
-    |
-    v
-+---[Bot Service]---+
-|  Security Layer   |---> Tiered Injection Defense (regex + optional AI)
-|  (rate limit,     |---> User Allowlist / RBAC
-|   auth)           |
-|                   |
-|  Agent Core       |---> InferenceBroker
-|   - Router        |     |-> Gemini 2.5 Flash      (simple/routing)
-|   - Providers     |     |-> Claude Sonnet 4.5      (complex reasoning)
-|   - Context       |     |-> GPT-5.2               (alternative complex)
-|                   |     |-> Ollama llama3.1:8b     (local/private)
-|                   |     |-> Ollama llama3.2:3b     (router classification)
-+--------+----------+
-         |
-    +----+----+
-    |         |
-    v         v
-+-------+  +--------+
-|Skills |  |Memory  |
-|Service|  |Layer   |
-+---+---+  +---+----+
-    |          |
-    v          v
-+-------+  +-------+  +----------+
-|Gmail  |  |Qdrant |  |PostgreSQL|
-|GitHub |  |(vectors|  |(users,   |
-|Tasks  |  | memory)|  | contacts,|
-|Calendar| |        |  | policies)|
-|Profile|  +-------+  +----------+
-+-------+
-```
 
 ---
 
-## Service Architecture
+## Service Inventory
 
-### Bot Service
-
-The Bot Service is the primary entry point for user interactions. Discord is the first supported interface, but the service orchestrates the entire request lifecycle independently of the input source. The agent core, security layer, router, and inference broker all operate on messages regardless of origin.
-
-**Core Responsibilities:**
-
-- **Input Gateway** -- Currently connects to Discord via the gateway protocol using `discord.py`. Handles direct messages, @mentions, and slash commands. The architecture supports additional input sources (REST API, email, webhooks) through the same agent pipeline.
-
-- **Security Layer** -- Defense-in-depth applied to every incoming message before processing:
-  - *User Allowlist*: Only pre-authorized Discord user IDs may interact with the bot. Supports RBAC with owner, admin, and user roles stored in PostgreSQL.
-  - *Rate Limiting*: Per-user message throttling (configurable, default 10 messages per 60 seconds) to prevent abuse and runaway API costs.
-  - *Security Pipeline*: Tier 1 regex/heuristic detection plus optional Tier 2 AI analysis, with dynamic flag/block thresholds and a safe regex fallback path if Tier 2 fails.
-
-- **Priority Queue** -- Incoming Discord work is enqueued and processed by two worker pools:
-  - *Interactive workers* process P0-P1 tasks (`INTERACTIVE`, `NEAR_INTERACTIVE`) with fast polling.
-  - *Background workers* process P2-P3 tasks (`SCHEDULED`, `BULK`) for heartbeat and bulk ingestion.
-  - Queue retries use staged backoff and stale in-flight recovery to keep throughput stable.
-
-- **Agent Core** -- Manages the full conversation flow: context assembly, provider selection, response generation, and post-response observation. Handles retry logic with exponential backoff (max 3 retries) for transient API failures.
-
-- **Router** -- Classifies each incoming query by intent and complexity. The router can operate through multiple backends: Gemini Flash (cloud, fast), Ollama llama3.2:3b (local, dedicated container), or local regex fallback. Classification categories include `simple_query`, `complex_task`, `memory_store`, `memory_recall`, `task_management`, and others.
-
-- **InferenceBroker** -- Multi-provider routing engine with fallback chains and cost tracking. Selects the optimal LLM provider based on task type, privacy requirements, cost constraints, and availability. Tracks per-request costs in a local SQLite database.
-
-**LLM Providers:**
-
-| Provider | Model | Use Case |
-|----------|-------|----------|
-| Google Gemini | gemini-2.5-flash | Simple queries, routing, fast responses |
-| Anthropic Claude | claude-sonnet-4-5-20250929 (Sonnet 4.5) | Complex reasoning, code, analysis |
-| OpenAI | gpt-5.2 | Alternative complex tasks |
-| Ollama (local) | llama3.1:8b | Privacy-sensitive operations |
-| Ollama (local) | llama3.2:3b | Fast query classification (router) |
-
-**Embedding Providers:**
-
-| Provider | Model | Dimensions |
-|----------|-------|------------|
-| Google Gemini | text-embedding-004 | 768 |
-| Ollama | nomic-embed-text | 768 |
-| OpenAI | text-embedding-3-large | 3072 |
-
-### Skills Service
-
-The Skills Service is an independent aiohttp REST API running on port 8080 (internal network only, not exposed to the host). It provides a pluggable skill framework with lifecycle management.
-
-**Core Responsibilities:**
-
-- **Skill Registry** -- Manages registration, initialization, and shutdown of skill modules. Each skill implements a standard interface with `initialize()`, `execute()`, and `cleanup()` lifecycle methods.
-
-- **Built-in Skills:**
-  - *TaskManager* -- Create, update, complete, and query tasks with priority and due date support.
-  - *Calendar* -- Schedule events, check availability, and receive proactive reminders.
-  - *Profile* -- Manage personal data, preferences, and contacts. Supports passive learning from conversations.
-  - *Gmail* -- Read, search, draft, and send emails. Includes trust scoring for senders and sync state management.
-  - *GitHub* -- Repository management, issue tracking, PR reviews, and audit logging with configurable autonomy levels.
-
-- **Heartbeat Scheduler** -- A background scheduler that triggers proactive actions such as daily summaries, upcoming event reminders, and email digest notifications. Runs on configurable intervals.
-
-- **Authentication** -- All requests from the Bot Service must include an `X-API-Secret` header with an HMAC-based token. Requests without valid authentication are rejected.
-
-### Qdrant
-
-Qdrant serves as the vector database for semantic memory storage and retrieval.
-
-- **Collections**: `long_term_memory` and `conversation_history`, with per-user filtering via metadata payloads.
-- **Embeddings**: Supports three embedding providers with different dimensionalities -- 768-dim (Gemini text-embedding-004), 768-dim (Ollama nomic-embed-text), or 3072-dim (OpenAI text-embedding-3-large).
-- **Encryption**: All memory content undergoes AES-256-GCM field-level encryption before being stored in Qdrant payloads. Encryption keys are derived using PBKDF2 from a master secret and per-record salt.
-- **Search**: Cosine similarity with configurable `top_k` (default 5). Results are decrypted, ranked, and returned as context fragments.
-
-### PostgreSQL
-
-PostgreSQL provides persistent relational storage for structured data that does not benefit from vector search.
-
-- **User Management** -- RBAC system with three roles: owner (full control), admin (manage users and settings), and user (standard interaction). User records include Discord ID, role, and metadata.
-- **Dynamic Settings** -- Namespace/key/value store with full audit trail. Supports runtime configuration changes without restarts. Falls back to environment variables when database values are not set.
-- **Personal Understanding:**
-  - *Profiles*: User preferences, communication style, timezone, interests.
-  - *Contacts*: People the user mentions, with relationship context and interaction frequency.
-  - *Policies*: User-defined rules (e.g., "always respond formally", "never mention competitor X").
-  - *Learnings*: Passively observed facts extracted from conversations by the observation pipeline.
-- **Gmail Integration** -- Account registration, OAuth state, sync cursors, message metadata, trust scores per sender, and draft management.
-- **GitHub Integration** -- Audit log of all actions taken, autonomy configuration per repository, and webhook state.
-
-### Ollama (Generation)
-
-A dedicated Ollama container for privacy-sensitive LLM operations and local embedding generation.
-
-- **Default Model**: llama3.1:8b (8 billion parameters). Provides capable text generation for queries that should not leave the local network.
-- **Embeddings**: Also serves `nomic-embed-text` for local embedding generation, ensuring that sensitive text never reaches external APIs.
-- **Resource Allocation**: 2G-8G memory, 1-4 CPU cores. The model remains loaded in memory to eliminate cold-start latency.
-- **Port**: Exposed on 11434 to the host for debugging and direct model interaction.
-
-### Ollama Router
-
-A separate, lightweight Ollama container dedicated exclusively to fast query classification.
-
-- **Default Model**: llama3.2:3b (3 billion parameters). Small enough to classify queries in under 500ms on CPU.
-- **Purpose**: Eliminates the 2-10 second model-swapping delay that would occur if routing and generation shared a single Ollama instance. Each container keeps exactly one model loaded in memory at all times.
-- **Classification Output**: Returns structured JSON with intent category, confidence score, and provider recommendation.
-- **Resource Allocation**: 1.5G-3G memory, 0.5-2 CPU cores. Minimal footprint due to the small model size.
-- **Network**: Internal only, no port exposed to host.
+| Service | Role |
+|---|---|
+| `zetherion-ai-bot` | Discord runtime and main orchestration path |
+| `zetherion-ai-skills-blue/green` | Internal skills control plane |
+| `zetherion-ai-api-blue/green` | Public `/api/v1` service |
+| `zetherion-ai-traefik` | Internal routing/switch layer |
+| `zetherion-ai-updater` | Rollout/rollback sidecar |
+| `zetherion-ai-cloudflared` | Optional secure tunnel for public API exposure |
+| `postgres` | Relational persistence |
+| `qdrant` | Vector memory persistence |
+| `ollama` | Local generation + embeddings |
+| `ollama-router` | Local routing model |
 
 ---
 
-## Request Flow
+## API Surfaces
 
-A complete request lifecycle from incoming message to response:
+### Internal Skills API (`:8080`)
 
-1. **Message received** -- The Bot Service receives a message from an input source (currently Discord via the gateway WebSocket, but the pipeline is source-agnostic).
+Primary uses:
 
-2. **Security checks** -- Three sequential checks are applied:
-   - Allowlist check (reject if the user's Discord ID is not authorized).
-   - Rate limit verification (reject if user has exceeded their message quota).
-   - Security pipeline analysis (Tier 1 regex/heuristics + optional Tier 2 AI). If pipeline initialization or analysis fails, the bot falls back to regex-only injection detection.
+- skill execution (`/handle`)
+- heartbeat actions (`/heartbeat`)
+- runtime RBAC/settings/secrets operations
+- OAuth authorization/callback handling
 
-3. **Router classification** -- The message is sent to the router for intent classification. The router attempts Gemini Flash first, falls back to Ollama llama3.2:3b, and finally to local regex patterns if both external calls fail.
+Auth model:
 
-4. **Skill dispatch** -- If the router identifies a skill-related intent (e.g., `task_management`, `email_read`, `github_action`), the Bot Service forwards the request to the Skills Service via an internal HTTP call to `http://zetherion-ai-skills:8080`.
+- `X-API-Secret` required for most routes
+- health and OAuth callback routes are exempt by design
 
-5. **Provider selection** -- The InferenceBroker selects an LLM provider based on the routing classification and user configuration. You control which providers handle which task types:
-   - Simple queries can route to Gemini 2.5 Flash or Ollama (your choice).
-   - Complex reasoning can route to Claude Sonnet 4.5, GPT-5.2, or local Ollama (your choice).
-   - Privacy-sensitive queries can be restricted to Ollama llama3.1:8b (local inference, never leaves your machine).
-   - Fallback chains ensure a response even if the primary provider is unavailable.
+See [Skills API Reference](api-reference.md).
 
-6. **Context assembly** -- The system builds a rich context window by combining:
-   - Recent conversation history (last N messages from the current session).
-   - Semantic memory search results from Qdrant (top-k similar memories).
-   - User profile data from PostgreSQL (preferences, communication style).
-   - Skill-specific context fragments (e.g., upcoming tasks, recent emails).
+### Public API (`:8443`)
 
-7. **LLM generation** -- The assembled prompt is sent to the selected LLM provider. The response is streamed or returned as a complete message depending on provider capabilities.
+Primary uses:
 
-8. **Observation pipeline** -- After generating the response, a passive observation step extracts learnings from the conversation (e.g., "user mentioned they prefer Python over JavaScript") and stores them in PostgreSQL for future context enrichment.
+- tenant session lifecycle (`/api/v1/sessions`)
+- session-token chat (`/api/v1/chat`, `/chat/stream`, `/chat/history`)
+- optional tenant-scoped YouTube endpoints (`/api/v1/youtube/...`)
 
-9. **Response delivery** -- The response is sent back to the originating input source. For Discord, messages exceeding 2,000 characters are split into safe chunks (including long single-line responses).
+Auth model:
 
-10. **Cost tracking** -- The token usage and estimated cost for the request are recorded in a local SQLite database (`costs.db`) for monitoring and budget management.
+- `X-API-Key` for tenant control-plane routes
+- Bearer session token for chat routes
+- per-tenant in-memory rate limiting
 
----
-
-## Data Flow
-
-### Storage Responsibilities
-
-| Data Type | Storage | Details |
-|-----------|---------|---------|
-| Conversation context | Qdrant + in-memory | Last N messages held in memory; semantic history in Qdrant vectors |
-| Long-term memory | Qdrant | Encrypted vector embeddings with metadata payloads |
-| User profiles | PostgreSQL | personal_profiles, personal_contacts, personal_policies tables |
-| Gmail data | PostgreSQL | gmail_accounts, gmail_messages, gmail_drafts, gmail_trust tables |
-| GitHub data | PostgreSQL | github_audit_log, github_autonomy_config tables |
-| User/role data | PostgreSQL | users table with RBAC roles |
-| Dynamic settings | PostgreSQL | settings table with namespace/key/value and audit trail |
-| Cost tracking | SQLite | costs.db in ./data directory |
-| Application logs | Filesystem | Structured JSON logs in ./logs with rotation |
-| Encryption salt | Filesystem | Persistent salt file in ./data |
-
-### Configuration Cascade
-
-Settings are resolved in the following priority order:
-
-1. PostgreSQL dynamic settings (highest priority, runtime-changeable)
-2. Environment variables (set in docker-compose.yml or .env)
-3. Default values in Pydantic Settings (lowest priority, compile-time)
+See [Public API Reference](public-api-reference.md).
 
 ---
 
-## Security Architecture
+## Runtime Flows
 
-Security is implemented as defense in depth across every layer of the stack. For comprehensive details, see [security.md](security.md).
+### 1. Discord Bot Flow
 
-**Container Security:**
-- Distroless base images for bot and skills services (no shell, minimal attack surface)
-- Read-only root filesystems with tmpfs mounts for writable temporary directories
-- `no-new-privileges` flag on all 6 containers prevents privilege escalation
-- Resource limits (CPU and memory quotas) on every service prevent denial-of-service
+1. Message arrives from Discord gateway.
+2. Bot security checks run (allowlist/RBAC, rate limits, content security).
+3. Router classifies intent and complexity.
+4. Bot either:
+   - handles direct inference path, or
+   - dispatches to Skills API (`/handle`), depending on intent.
+5. Memory/profile context is merged as needed.
+6. Response is returned to Discord.
 
-**Network Security:**
-- All services communicate over an internal Docker bridge network (`zetherion-ai-net`)
-- Only Qdrant (6333) and Ollama generation (11434) expose ports to the host
-- The Skills Service, PostgreSQL, and Ollama Router are entirely internal
+### 2. Skills/Heartbeat Flow
 
-**Application Security:**
-- AES-256-GCM encryption with PBKDF2 key derivation for all stored memories
-- User allowlist with RBAC (owner/admin/user roles)
-- Rate limiting per user to prevent abuse
-- Tiered prompt-injection defense (Tier 1 regex/heuristics + optional Tier 2 AI)
-- Pydantic `SecretStr` for all credentials (never logged or serialized)
-- HMAC-based service-to-service authentication
+1. Scheduler triggers heartbeat cycle.
+2. Skills service aggregates `on_heartbeat` actions.
+3. Actions are prioritized and returned to bot.
+4. Bot executes actions with quiet-hours/rate-limit safeguards.
 
-**Supply Chain Security:**
-- Pinned Docker image digests for Qdrant and Ollama (Dependabot auto-updates)
-- Gitleaks pre-commit hook for secret scanning
-- CodeQL weekly static analysis scans
-- Dependabot weekly dependency updates
-- Bandit security scanning in CI pipeline
+### 3. Public API Chat Flow
+
+1. External app creates session with tenant API key.
+2. API returns prefixed JWT session token.
+3. Client calls chat endpoints with bearer token.
+4. API validates tenant + session, applies tenant rate limits.
+5. Chat skill/inference path generates response.
+6. Messages are persisted to tenant session history.
 
 ---
 
-## Related Documentation
+## Data Architecture
 
-- [Docker Services and Deployment](docker.md) -- Service configuration, resource limits, and deployment procedures
-- [Security Architecture](security.md) -- Comprehensive security controls, threat model, and hardening measures
-- [Configuration Guide](configuration.md) -- Environment variables, settings hierarchy, and secrets management
-- [Skills Framework](skills-framework.md) -- Building and registering custom skills
+| Data | Store |
+|---|---|
+| Tenant/session/chat records | PostgreSQL |
+| RBAC users + audit log | PostgreSQL |
+| Runtime settings + encrypted secrets metadata | PostgreSQL |
+| Integrations/work router state | PostgreSQL |
+| Personal/profile/contact/policy records | PostgreSQL |
+| Vectorized memory and docs-knowledge embeddings | Qdrant |
+| Cost tracking operational DB | SQLite (`data/costs.db`) |
+
+---
+
+## Inference and Routing
+
+- Router backend is configurable: `gemini`, `ollama`, or `groq`.
+- Inference broker supports provider-aware task routing across local and cloud models.
+- Dedicated Ollama router model avoids generation model swap latency.
+- Work router/email routing path supports provider-agnostic ingestion and policy gates.
+
+---
+
+## Update and Rollback Architecture
+
+Updater sidecar coordinates zero-downtime style swaps for API/skills services:
+
+1. Build inactive color
+2. Health-check inactive services
+3. Flip Traefik routing to inactive color
+4. Restart bot with graceful reconnect path
+5. Stop old color
+
+On failure, sidecar rolls back and can pause future rollouts until unpaused.
+State is persisted in `UPDATER_STATE_PATH`.
+
+See [Docker & Services](docker.md) and [Auto-Update](../user/auto-update.md).
+
+---
+
+## Known Script Drift
+
+`start.sh` and `status.sh` still contain a few legacy checks using old
+single-service names (for example `zetherion-ai-skills`).
+
+When script output disagrees with live topology, use `docker compose ps` as
+canonical runtime state.
+
+---
+
+## Related Docs
+
+- [Docker & Services](docker.md)
+- [Security](security.md)
+- [Skills API Reference](api-reference.md)
+- [Public API Reference](public-api-reference.md)
+- [AI Agent Integration](ai-agent-integration.md)

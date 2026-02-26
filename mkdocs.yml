@@ -56,6 +56,7 @@ nav:
   - Home: index.md
   - User Guide:
       - Getting Started: user/getting-started.md
+      - Auto-Update: user/auto-update.md
       - Commands: user/commands.md
       - Gmail: user/gmail.md
       - GitHub: user/github-integration.md
@@ -73,7 +74,9 @@ nav:
       - Observation Pipeline: technical/observation-pipeline.md
       - Personal Understanding: technical/personal-understanding.md
       - Cost Tracking: technical/cost-tracking.md
-      - API Reference: technical/api-reference.md
+      - Skills API Reference: technical/api-reference.md
+      - Public API Reference: technical/public-api-reference.md
+      - AI Agent Integration: technical/ai-agent-integration.md
   - Development:
       - Setup & Contributing: development/setup.md
       - Testing: development/testing.md
