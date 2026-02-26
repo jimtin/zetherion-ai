@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from zetherion_ai.security.secret_resolver import SecretResolver
     from zetherion_ai.settings_manager import SettingsManager
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -115,6 +115,14 @@ class Settings(BaseSettings):
     dev_agent_webhook_name: str = Field(
         default="zetherion-dev-agent",
         description="Webhook username for the local dev agent",
+    )
+    dev_agent_webhook_id: str = Field(
+        default="",
+        description="Optional Discord webhook ID to validate dev-agent ingestion source",
+    )
+    dev_journal_retention_days: int = Field(
+        default=120,
+        description="Days to retain dev journal entries before pruning",
     )
 
     @property
@@ -443,6 +451,96 @@ class Settings(BaseSettings):
         default=86400, description="Seconds between telemetry reports (default 24h)"
     )
 
+    # Analytics / App Watcher Configuration
+    analytics_event_retention_days: int = Field(
+        default=90, description="Days to retain raw web analytics events"
+    )
+    analytics_replay_retention_days: int = Field(
+        default=14, description="Days to retain session replay chunks"
+    )
+    analytics_replay_enabled_default: bool = Field(
+        default=False, description="Default replay capture setting for tenants"
+    )
+    analytics_replay_sample_rate_default: float = Field(
+        default=0.1, description="Default replay sampling rate for tenants (0.0-1.0)"
+    )
+    analytics_jobs_enabled: bool = Field(
+        default=True, description="Enable periodic analytics aggregation and retention jobs"
+    )
+    analytics_hourly_job_interval_seconds: int = Field(
+        default=3600, description="Interval for hourly analytics job loop"
+    )
+    analytics_daily_job_interval_seconds: int = Field(
+        default=86400, description="Interval for daily analytics job loop"
+    )
+
+    object_storage_backend: str = Field(
+        default="local",
+        validation_alias=AliasChoices("OBJECT_STORAGE_BACKEND", "REPLAY_STORAGE_BACKEND"),
+        description="Replay chunk storage backend: none, local, s3",
+    )
+    object_storage_local_path: str = Field(
+        default="data/replay_chunks",
+        validation_alias=AliasChoices("OBJECT_STORAGE_LOCAL_PATH", "REPLAY_STORAGE_LOCAL_PATH"),
+        description="Local object storage path for replay chunks",
+    )
+    object_storage_bucket: str = Field(
+        default="",
+        validation_alias=AliasChoices("OBJECT_STORAGE_BUCKET", "REPLAY_STORAGE_BUCKET"),
+        description="Object storage bucket for replay chunks when object_storage_backend=s3",
+    )
+    object_storage_region: str = Field(
+        default="",
+        validation_alias=AliasChoices("OBJECT_STORAGE_REGION", "REPLAY_STORAGE_REGION"),
+        description="Object storage region for replay chunks",
+    )
+    object_storage_endpoint: str = Field(
+        default="",
+        validation_alias=AliasChoices("OBJECT_STORAGE_ENDPOINT", "REPLAY_STORAGE_ENDPOINT"),
+        description="Optional custom S3-compatible object storage endpoint",
+    )
+    object_storage_access_key_id: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "OBJECT_STORAGE_ACCESS_KEY_ID", "REPLAY_STORAGE_ACCESS_KEY_ID"
+        ),
+        description="Optional object storage access key ID for replay chunks",
+    )
+    object_storage_secret_access_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "OBJECT_STORAGE_SECRET_ACCESS_KEY", "REPLAY_STORAGE_SECRET_ACCESS_KEY"
+        ),
+        description="Optional object storage secret access key for replay chunks",
+    )
+    object_storage_force_path_style: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "OBJECT_STORAGE_FORCE_PATH_STYLE", "REPLAY_STORAGE_FORCE_PATH_STYLE"
+        ),
+        description="Force path-style addressing for S3-compatible object storage",
+    )
+
+    release_marker_signing_secret: SecretStr | None = Field(
+        default=None,
+        description="Optional shared secret for signed release marker ingestion",
+    )
+    release_marker_signature_ttl_seconds: int = Field(
+        default=300,
+        description="Allowed clock skew/age window for signed release marker requests",
+    )
+
+    app_watcher_trust_mode: str = Field(
+        default="recommend_only",
+        description="Autonomy mode: recommend_only, guarded_autopilot, full_autonomous",
+    )
+    app_watcher_autopilot_enabled: bool = Field(
+        default=False, description="Enable guarded autopilot rollout path"
+    )
+    app_watcher_global_kill_switch: bool = Field(
+        default=False, description="Disable all autonomous app-watcher actions"
+    )
+
     # Security Pipeline Configuration (Phase 13)
     security_tier2_enabled: bool = Field(
         default=True, description="Enable AI-based Tier 2 security analysis on all messages"
@@ -486,12 +584,31 @@ class Settings(BaseSettings):
         "default_verbosity",
         "default_proactivity",
         "trust_evolution_rate",
+        "analytics_replay_sample_rate_default",
     )
     @classmethod
     def validate_float_0_1(cls, v: float) -> float:
         """Validate float values are between 0 and 1."""
         if not 0 <= v <= 1:
             raise ValueError(f"Value must be between 0 and 1, got: {v}")
+        return v
+
+    @field_validator("app_watcher_trust_mode")
+    @classmethod
+    def validate_app_watcher_trust_mode(cls, v: str) -> str:
+        """Validate app watcher trust mode."""
+        valid_modes = ["recommend_only", "guarded_autopilot", "full_autonomous"]
+        if v not in valid_modes:
+            raise ValueError(f"app_watcher_trust_mode must be one of {valid_modes}, got: {v}")
+        return v
+
+    @field_validator("object_storage_backend")
+    @classmethod
+    def validate_object_storage_backend(cls, v: str) -> str:
+        """Validate object storage backend choice."""
+        valid_backends = ["none", "local", "s3"]
+        if v not in valid_backends:
+            raise ValueError(f"object_storage_backend must be one of {valid_backends}, got: {v}")
         return v
 
     @field_validator("router_backend")
@@ -537,6 +654,18 @@ class Settings(BaseSettings):
             raise ValueError(f"daily_summary_hour must be between 0 and 23, got: {v}")
         return v
 
+    @field_validator(
+        "analytics_hourly_job_interval_seconds",
+        "analytics_daily_job_interval_seconds",
+        "release_marker_signature_ttl_seconds",
+    )
+    @classmethod
+    def validate_positive_seconds(cls, v: int) -> int:
+        """Validate second-based durations are positive."""
+        if v <= 0:
+            raise ValueError(f"Duration must be > 0, got: {v}")
+        return v
+
     @model_validator(mode="after")
     def validate_encryption_config(self) -> Self:
         """Validate encryption configuration consistency."""
@@ -569,6 +698,39 @@ class Settings(BaseSettings):
         """Get the full Qdrant URL."""
         scheme = "https" if self.qdrant_use_tls else "http"
         return f"{scheme}://{self.qdrant_host}:{self.qdrant_port}"
+
+    # Backward-compatible accessors (deprecated): prefer object_storage_*.
+    @property
+    def replay_storage_backend(self) -> str:
+        return self.object_storage_backend
+
+    @property
+    def replay_storage_local_path(self) -> str:
+        return self.object_storage_local_path
+
+    @property
+    def replay_storage_bucket(self) -> str:
+        return self.object_storage_bucket
+
+    @property
+    def replay_storage_region(self) -> str:
+        return self.object_storage_region
+
+    @property
+    def replay_storage_endpoint(self) -> str:
+        return self.object_storage_endpoint
+
+    @property
+    def replay_storage_access_key_id(self) -> str:
+        return self.object_storage_access_key_id
+
+    @property
+    def replay_storage_secret_access_key(self) -> SecretStr | None:
+        return self.object_storage_secret_access_key
+
+    @property
+    def replay_storage_force_path_style(self) -> bool:
+        return self.object_storage_force_path_style
 
 
 @lru_cache

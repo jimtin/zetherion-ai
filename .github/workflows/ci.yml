@@ -184,6 +184,36 @@ jobs:
       - name: Run pre-commit
         uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd  # v3.0.1
 
+  docs-contract:
+    name: Documentation Contracts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install docs dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mkdocs-material
+
+      - name: Run docs contract checks
+        run: |
+          scripts/check-docs-nav.py
+          scripts/check-docs-links.py
+          scripts/check-route-doc-parity.py
+          scripts/check-env-doc-parity.py
+
+      - name: Build docs (strict)
+        run: mkdocs build --strict
+
   # ============================================================================
   # Test Jobs
   # ============================================================================
@@ -314,6 +344,7 @@ jobs:
         dependency-audit,
         license-check,
         pre-commit,
+        docs-contract,
         unit-test,
         integration-test,
       ]
@@ -334,6 +365,7 @@ jobs:
              [[ "${{ needs.dependency-audit.result }}" == "success" ]] && \
              [[ "${{ needs.license-check.result }}" == "success" ]] && \
              [[ "$PRE_COMMIT_RESULT" == "success" ]] && \
+             [[ "${{ needs.docs-contract.result }}" == "success" ]] && \
              [[ "${{ needs.unit-test.result }}" == "success" ]] && \
              [[ "${{ needs.integration-test.result }}" == "success" ]]; then
             echo "✅ All CI checks passed!"
@@ -347,6 +379,7 @@ jobs:
             echo "  Dependency Audit: ${{ needs.dependency-audit.result }}"
             echo "  License Check: ${{ needs.license-check.result }}"
             echo "  Pre-commit: ${{ needs.pre-commit.result }}"
+            echo "  Docs Contracts: ${{ needs.docs-contract.result }}"
             echo "  Unit Tests: ${{ needs.unit-test.result }}"
             echo "  Integration Tests: ${{ needs.integration-test.result }}"
             exit 1
@@ -366,6 +399,7 @@ jobs:
           echo "| Dependency Audit | ${{ needs.dependency-audit.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| License Check | ${{ needs.license-check.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Pre-commit | ${{ needs.pre-commit.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docs Contracts | ${{ needs.docs-contract.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Unit Tests | ${{ needs.unit-test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Integration Tests | ${{ needs.integration-test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

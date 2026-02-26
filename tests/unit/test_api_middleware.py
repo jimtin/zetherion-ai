@@ -155,6 +155,8 @@ class TestAuthMiddleware:
         app.router.add_get("/api/v1/health", health)
         app.router.add_get("/api/v1/tenants", protected)
         app.router.add_post("/api/v1/chat", chat)
+        app.router.add_post("/api/v1/analytics/events", chat)
+        app.router.add_post("/api/v1/releases/markers", protected)
 
         return app
 
@@ -227,6 +229,30 @@ class TestAuthMiddleware:
                 headers={"Authorization": "Bearer zt_sess_invalid.jwt.token"},
             )
             assert resp.status == 401
+
+    @pytest.mark.asyncio
+    async def test_analytics_session_auth_missing_bearer(self):
+        """Analytics endpoints also require Bearer session auth."""
+        tm = AsyncMock()
+        app = self._make_app(tenant_manager=tm)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post("/api/v1/analytics/events")
+            assert resp.status == 401
+
+    @pytest.mark.asyncio
+    async def test_release_marker_endpoint_uses_api_key_auth(self):
+        """Release marker route must keep API key auth (not session auth)."""
+        tm = AsyncMock()
+        tm.authenticate_api_key = AsyncMock(
+            return_value={"tenant_id": "tenant-release", "is_active": True}
+        )
+        app = self._make_app(tenant_manager=tm)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/api/v1/releases/markers",
+                headers={"X-API-Key": "sk_live_valid"},
+            )
+            assert resp.status == 200
 
     @pytest.mark.asyncio
     async def test_session_auth_tenant_inactive_403(self):

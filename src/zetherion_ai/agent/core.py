@@ -630,6 +630,11 @@ class Agent:
             return "dev_next"
         elif any(w in msg_lower for w in ["idea", "ideas"]):
             return "dev_ideas"
+        elif any(
+            w in msg_lower
+            for w in ["release", "deploy", "deployment", "ci", "pipeline", "build status"]
+        ):
+            return "dev_release_summary"
         elif any(w in msg_lower for w in ["journal", "log", "this week", "today", "yesterday"]):
             return "dev_journal"
         elif any(w in msg_lower for w in ["summary", "overview", "recap"]):

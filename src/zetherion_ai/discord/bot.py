@@ -385,7 +385,16 @@ class ZetherionAIBot(discord.Client):
         # Handle dev-agent webhook messages (before the general bot filter)
         if message.webhook_id is not None:
             settings = get_settings()
-            if message.author.name == settings.dev_agent_webhook_name:
+            webhook_name = getattr(settings, "dev_agent_webhook_name", "zetherion-dev-agent")
+            if not isinstance(webhook_name, str):
+                webhook_name = "zetherion-dev-agent"
+            webhook_id = getattr(settings, "dev_agent_webhook_id", "")
+            if not isinstance(webhook_id, str):
+                webhook_id = ""
+
+            name_match = message.author.name == webhook_name
+            id_match = not webhook_id.strip() or str(message.webhook_id) == webhook_id.strip()
+            if name_match and id_match:
                 await self._handle_dev_event(message)
             return  # All other webhooks are ignored
 
@@ -546,6 +555,8 @@ class ZetherionAIBot(discord.Client):
                 "annotation": "dev_ingest_annotation",
                 "session": "dev_ingest_session",
                 "tag": "dev_ingest_tag",
+                "deploy": "dev_ingest_deploy",
+                "ci_result": "dev_ingest_ci_result",
             }
             intent = intent_map.get(event_type, "dev_ingest_commit")
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 import subprocess  # nosec B404
 from dataclasses import dataclass
@@ -54,6 +55,65 @@ class Annotation:
     content: str
     file: str  # Relative path
     line: int
+
+
+def annotation_content_hash(content: str) -> str:
+    """Return a compact stable hash for annotation content."""
+    return hashlib.sha1(content.strip().encode("utf-8")).hexdigest()[:16]
+
+
+def annotation_state_key(annotation: Annotation) -> str:
+    """Build the persisted state key for an annotation.
+
+    Format: ``type:file:line:content_hash``.
+    """
+    return (
+        f"{annotation.annotation_type}:{annotation.file}:{annotation.line}:"
+        f"{annotation_content_hash(annotation.content)}"
+    )
+
+
+def parse_state_annotation(
+    key: str,
+    content: str,
+) -> tuple[Annotation | None, bool]:
+    """Parse an annotation from persisted state.
+
+    Returns:
+        Tuple of ``(annotation, is_legacy_key)`` where legacy keys are the
+        historical ``type:file`` format without line/hash.
+    """
+    parts = key.split(":", 3)
+    if len(parts) == 4:
+        annotation_type, file_path, line_raw, _ = parts
+        try:
+            line_no = int(line_raw)
+        except ValueError:
+            line_no = 0
+        return (
+            Annotation(
+                annotation_type=annotation_type,
+                content=content,
+                file=file_path,
+                line=line_no,
+            ),
+            False,
+        )
+
+    legacy = key.split(":", 1)
+    if len(legacy) == 2:
+        annotation_type, file_path = legacy
+        return (
+            Annotation(
+                annotation_type=annotation_type,
+                content=content,
+                file=file_path,
+                line=0,
+            ),
+            True,
+        )
+
+    return None, True
 
 
 def scan_annotations(repo_path: str) -> list[Annotation]:
@@ -162,7 +222,7 @@ def diff_annotations(
     """
 
     def _key(a: Annotation) -> str:
-        return f"{a.file}:{a.annotation_type}:{a.content}"
+        return annotation_state_key(a)
 
     old_set = {_key(a) for a in old}
     new_set = {_key(a) for a in new}
