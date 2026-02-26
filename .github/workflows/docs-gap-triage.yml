@@ -1,0 +1,60 @@
+name: Weekly Docs Gap Triage
+
+on:
+  schedule:
+    - cron: '0 15 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: '3.12'
+
+      - name: Build triage report from docs gap log
+        run: |
+          mkdir -p tmp
+          scripts/build-docs-gap-triage.py \
+            --input data/docs_unknown_questions.jsonl \
+            --output tmp/docs-gap-triage.md
+
+      - name: Create weekly triage issue
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const titleDate = new Date().toISOString().slice(0, 10);
+            const title = `Weekly docs knowledge gap triage (${titleDate})`;
+            const body = fs.readFileSync('tmp/docs-gap-triage.md', 'utf8');
+
+            const { owner, repo } = context.repo;
+            const openIssues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            });
+
+            const exists = openIssues.some((issue) => issue.title === title);
+            if (exists) {
+              core.info(`Issue already exists: ${title}`);
+              return;
+            }
+
+            const created = await github.rest.issues.create({
+              owner,
+              repo,
+              title,
+              body,
+            });
+            core.info(`Created issue #${created.data.number}`);

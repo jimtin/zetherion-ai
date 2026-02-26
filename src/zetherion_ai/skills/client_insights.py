@@ -11,6 +11,7 @@ Levels:
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import TYPE_CHECKING, Any
 
 from zetherion_ai.logging import get_logger
@@ -373,6 +374,31 @@ class ClientInsightsSkill(Skill):
             if intent is not None:
                 intent_counts[intent] = intent_counts.get(intent, 0) + 1
 
+        behavior_summaries = [
+            i
+            for i in interactions
+            if i.get("interaction_type") == "web_behavior_summary"
+            and isinstance(i.get("entities"), dict)
+        ]
+        behavior_total = len(behavior_summaries)
+        behavior_converted = 0
+        funnel_counter: Counter[str] = Counter()
+        for interaction in behavior_summaries:
+            entities = interaction.get("entities") or {}
+            if not isinstance(entities, dict):
+                continue
+            summary = entities.get("web_behavior_summary") or {}
+            if not isinstance(summary, dict):
+                continue
+            stage = str(summary.get("funnel_stage", "unknown"))
+            funnel_counter[stage] += 1
+            if bool(summary.get("converted")):
+                behavior_converted += 1
+
+        behavior_conversion_rate = (
+            behavior_converted / behavior_total if behavior_total > 0 else 0.0
+        )
+
         return {
             "tenant_id": str(tenant.get("tenant_id", "")),
             "name": tenant.get("name", "Unknown"),
@@ -384,6 +410,9 @@ class ClientInsightsSkill(Skill):
             "top_intents": dict(
                 sorted(intent_counts.items(), key=lambda x: x[1], reverse=True)[:5]
             ),
+            "behavior_sessions": behavior_total,
+            "behavior_conversion_rate": round(behavior_conversion_rate, 3),
+            "top_funnel_stages": dict(funnel_counter.most_common(5)),
         }
 
     @staticmethod

@@ -61,7 +61,7 @@ Zetherion AI uses multiple models, each selected for its strengths:
 | Gemini 2.5 Flash | Routing, simple queries, embeddings |
 | Claude Sonnet 4.5 | Complex reasoning, code analysis, creative tasks |
 | GPT-5.2 | Alternative for complex tasks |
-| Llama 3.2 1B | Local router (Ollama backend) |
+| Llama 3.2 3B | Local router (Ollama backend) |
 | Llama 3.1 8B | Local generation (Ollama backend) |
 
 Embeddings use Gemini text-embedding-004 (768 dimensions).
@@ -71,7 +71,7 @@ Embeddings use Gemini text-embedding-004 (768 dimensions).
 The InferenceBroker classifies each query by complexity and routes it to the optimal provider:
 
 1. User sends a message.
-2. The router (Gemini 2.5 Flash or Llama 3.2 1B) analyzes intent and complexity.
+2. The router (Gemini 2.5 Flash or Llama 3.2 3B) analyzes intent and complexity.
 3. Simple queries (greetings, factual questions) are handled by the router model directly.
 4. Complex queries (code generation, analysis, multi-step reasoning) are routed to Claude Sonnet 4.5 or GPT-5.2.
 

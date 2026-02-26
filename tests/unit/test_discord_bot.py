@@ -1409,6 +1409,44 @@ class TestWebhookDetection:
             bot._agent.generate_response.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_webhook_id_mismatch_ignored(self, bot, mock_message):
+        """Configured webhook ID mismatch should block ingestion."""
+        mock_message.webhook_id = 111222333
+        mock_message.author.name = "zetherion-dev-agent"
+        mock_message.embeds = []
+        bot._agent = AsyncMock()
+
+        with patch.object(bot, "_handle_dev_event", new_callable=AsyncMock) as mock_handler:
+            with patch("zetherion_ai.discord.bot.get_settings") as mock_settings:
+                mock_settings.return_value = MagicMock(
+                    dev_agent_webhook_name="zetherion-dev-agent",
+                    dev_agent_webhook_id="444555666",
+                    allow_bot_messages=False,
+                )
+                await bot.on_message(mock_message)
+
+            mock_handler.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_webhook_id_match_calls_handle(self, bot, mock_message):
+        """Configured webhook ID match should allow ingestion."""
+        mock_message.webhook_id = 111222333
+        mock_message.author.name = "zetherion-dev-agent"
+        mock_message.embeds = []
+        bot._agent = AsyncMock()
+
+        with patch.object(bot, "_handle_dev_event", new_callable=AsyncMock) as mock_handler:
+            with patch("zetherion_ai.discord.bot.get_settings") as mock_settings:
+                mock_settings.return_value = MagicMock(
+                    dev_agent_webhook_name="zetherion-dev-agent",
+                    dev_agent_webhook_id="111222333",
+                    allow_bot_messages=False,
+                )
+                await bot.on_message(mock_message)
+
+            mock_handler.assert_called_once_with(mock_message)
+
+    @pytest.mark.asyncio
     async def test_non_webhook_processed_normally(self, bot, mock_message, mock_agent):
         """Non-webhook messages continue through normal processing."""
         bot._agent = mock_agent
