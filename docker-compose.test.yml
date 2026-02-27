@@ -28,6 +28,10 @@ services:
       - QDRANT_PORT=6333
       - SKILLS_SERVICE_URL=http://zetherion-ai-skills:8080
       - ENVIRONMENT=test
+      - EMBEDDINGS_BACKEND=${EMBEDDINGS_BACKEND:-openai}
+      - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}
+      - OPENAI_EMBEDDING_DIMENSIONS=${OPENAI_EMBEDDING_DIMENSIONS:-3072}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OLLAMA_HOST=ollama
       - OLLAMA_PORT=11434
       - OLLAMA_ROUTER_HOST=ollama-router
@@ -66,6 +70,10 @@ services:
       - API_HOST=0.0.0.0
       - API_PORT=8443
       - API_JWT_SECRET=test-jwt-secret-for-integration-tests-only
+      - EMBEDDINGS_BACKEND=${EMBEDDINGS_BACKEND:-openai}
+      - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}
+      - OPENAI_EMBEDDING_DIMENSIONS=${OPENAI_EMBEDDING_DIMENSIONS:-3072}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OLLAMA_HOST=ollama
       - OLLAMA_PORT=11434
       - OLLAMA_ROUTER_HOST=ollama-router
@@ -95,6 +103,10 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      ollama:
+        condition: service_healthy
+      ollama-router:
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -103,9 +115,16 @@ services:
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - SKILLS_HOST=0.0.0.0
       - SKILLS_PORT=8080
+      - ENCRYPTION_SALT_PATH=/app/data/salt.bin
+      - EMBEDDINGS_BACKEND=${EMBEDDINGS_BACKEND:-openai}
+      - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}
+      - OPENAI_EMBEDDING_DIMENSIONS=${OPENAI_EMBEDDING_DIMENSIONS:-3072}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     # Expose port for integration test health checks
     ports:
       - "18080:8080"
+    volumes:
+      - ./data:/app/data
     networks:
       - zetherion-ai-test-net
     # Use Dockerfile HEALTHCHECK - distroless can only exec via ENTRYPOINT

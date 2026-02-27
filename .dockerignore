@@ -5,6 +5,7 @@
 !requirements.txt
 !src/
 !updater_sidecar/
+!zetherion-dev-agent/
 
 # Exclude Python caches from included dirs
 **/__pycache__

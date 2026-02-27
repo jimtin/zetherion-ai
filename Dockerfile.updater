@@ -6,7 +6,7 @@
 # Security: no-new-privileges, restricted to update ops only.
 # ============================================================
 
-FROM docker:27-cli
+FROM docker:29-cli
 
 # Install git, python3, curl, and Docker Compose v2 plugin
 # hadolint ignore=DL3018
@@ -15,7 +15,8 @@ RUN apk add --no-cache \
     python3 \
     py3-pip \
     curl \
-    docker-cli-compose
+    docker-cli-compose \
+    cosign
 
 WORKDIR /app
 

@@ -9,6 +9,8 @@ Coordinates the full observation flow:
 
 from __future__ import annotations
 
+from typing import Any
+
 from zetherion_ai.logging import get_logger
 from zetherion_ai.observation.dispatcher import (
     ActionHandler,
@@ -29,6 +31,8 @@ from zetherion_ai.observation.models import ExtractedItem, ObservationEvent
 
 log = get_logger("zetherion_ai.observation.pipeline")
 
+EMAIL_ROUTER_SOURCES = frozenset({"gmail", "email"})
+
 
 class ObservationPipeline:
     """Orchestrates the full observation → extraction → dispatch flow.
@@ -44,6 +48,8 @@ class ObservationPipeline:
         tier3_provider: LLMProvider | None = None,
         handlers: dict[ActionTarget, ActionHandler] | None = None,
         policy_provider: PolicyProvider | None = None,
+        email_router: Any | None = None,
+        email_provider_default: str = "google",
         enable_tier2: bool = True,
         enable_tier3: bool = True,
     ) -> None:
@@ -54,6 +60,8 @@ class ObservationPipeline:
         self._dispatcher = Dispatcher(
             handlers=handlers,
             policy_provider=policy_provider,
+            email_router=email_router,
+            email_provider_default=email_provider_default,
         )
 
     async def observe(self, event: ObservationEvent) -> list[DispatchResult]:
@@ -72,6 +80,22 @@ class ObservationPipeline:
             user_id=event.user_id,
             content_length=len(event.content),
         )
+
+        # Email-origin observations use shared EmailRouter first.
+        if event.source.lower() in EMAIL_ROUTER_SOURCES:
+            email_results = await self._dispatcher.dispatch_email_event(
+                event,
+                user_id=event.user_id,
+            )
+            if email_results:
+                log.info(
+                    "pipeline_email_router_dispatched",
+                    source=event.source,
+                    source_id=event.source_id,
+                    user_id=event.user_id,
+                    result_count=len(email_results),
+                )
+                return email_results
 
         # Step 1: Tier 1 extraction (always runs)
         tier1_items = extract_tier1(event)

@@ -1,0 +1,24 @@
+# ============================================================
+# Dev Agent Sidecar — Docker project monitor + cleanup daemon
+# ============================================================
+
+FROM docker:27-cli
+
+# hadolint ignore=DL3018
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    git \
+    curl
+
+WORKDIR /app
+
+COPY zetherion-dev-agent/ /app/zetherion-dev-agent/
+
+# hadolint ignore=DL3013
+RUN pip3 install --no-cache-dir --break-system-packages /app/zetherion-dev-agent
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["curl", "-sf", "http://localhost:8787/v1/health"]
+
+CMD ["zetherion-dev-agent", "daemon"]

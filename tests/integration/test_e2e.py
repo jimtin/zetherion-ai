@@ -17,7 +17,11 @@ import pytest_asyncio
 
 # Use module-scoped event loop so module-scoped async fixtures (mock_bot)
 # share the same loop across all tests in this module.
-pytestmark = pytest.mark.asyncio(loop_scope="module")
+# Docker startup/model warmup can exceed the default global 30s timeout.
+pytestmark = [
+    pytest.mark.asyncio(loop_scope="module"),
+    pytest.mark.timeout(1800),
+]
 
 
 def _load_env() -> None:
@@ -176,14 +180,15 @@ class DockerEnvironment:
         self,
         router_model: str = "llama3.2:3b",
         generation_model: str = "llama3.1:8b",
-        embedding_model: str = "nomic-embed-text",
+        embedding_model: str | None = None,
     ) -> bool:
         """Pull Ollama models for both containers if not already pulled.
 
         Args:
             router_model: Model for router container (small, fast).
             generation_model: Model for generation container (larger, capable).
-            embedding_model: Model for embeddings (runs on generation container).
+            embedding_model: Optional embedding model for generation container.
+                Leave unset to skip embedding model pulls.
 
         Returns:
             True if all models are available, False otherwise.
@@ -236,23 +241,31 @@ class DockerEnvironment:
             print(f"❌ Error pulling generation model: {e}")
             success = False
 
-        # Pull embedding model to generation container
-        print(f"📥 Pulling embedding model '{embedding_model}'...")
-        try:
-            result = subprocess.run(
-                ["docker", "exec", "zetherion-ai-test-ollama", "ollama", "pull", embedding_model],
-                capture_output=True,
-                text=True,
-                timeout=300,  # 5 minute timeout for embedding model
-            )
-            if result.returncode == 0:
-                print(f"✅ Embedding model '{embedding_model}' pulled successfully")
-            else:
-                print(f"❌ Failed to pull embedding model: {result.stderr}")
+        if embedding_model:
+            # Pull embedding model to generation container (optional path)
+            print(f"📥 Pulling embedding model '{embedding_model}'...")
+            try:
+                result = subprocess.run(
+                    [
+                        "docker",
+                        "exec",
+                        "zetherion-ai-test-ollama",
+                        "ollama",
+                        "pull",
+                        embedding_model,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,  # 5 minute timeout for embedding model
+                )
+                if result.returncode == 0:
+                    print(f"✅ Embedding model '{embedding_model}' pulled successfully")
+                else:
+                    print(f"❌ Failed to pull embedding model: {result.stderr}")
+                    success = False
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
+                print(f"❌ Error pulling embedding model: {e}")
                 success = False
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
-            print(f"❌ Error pulling embedding model: {e}")
-            success = False
 
         if success:
             self.ollama_model_pulled = True
@@ -292,13 +305,16 @@ class MockDiscordBot:
         os.environ["QDRANT_PORT"] = "16333"
 
         # Set Ollama host-accessible URLs (tests run on host, not in Docker)
-        # These are needed for embeddings even when using Gemini router
         # Router container exposed on port 31434
         os.environ["OLLAMA_ROUTER_HOST"] = "localhost"
         os.environ["OLLAMA_ROUTER_PORT"] = "31434"
         # Generation container exposed on port 21434
         os.environ["OLLAMA_HOST"] = "localhost"
         os.environ["OLLAMA_PORT"] = "21434"
+        # Canonical E2E uses cloud embeddings (OpenAI), not local Ollama embeddings.
+        os.environ["EMBEDDINGS_BACKEND"] = "openai"
+        os.environ["OPENAI_EMBEDDING_MODEL"] = "text-embedding-3-large"
+        os.environ["OPENAI_EMBEDDING_DIMENSIONS"] = "3072"
 
         # Clear settings cache to pick up new environment variables
         from zetherion_ai.config import get_settings
@@ -344,7 +360,7 @@ def docker_env() -> Generator[DockerEnvironment, None, None]:
         pytest.skip("Integration tests disabled (SKIP_INTEGRATION_TESTS=true)")
 
     # Check if required environment variables are set
-    required_vars = ["GEMINI_API_KEY", "DISCORD_TOKEN"]
+    required_vars = ["GEMINI_API_KEY", "OPENAI_API_KEY", "DISCORD_TOKEN"]
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     if missing_vars:
         pytest.skip(f"Missing required environment variables: {', '.join(missing_vars)}")
@@ -364,30 +380,6 @@ def docker_env() -> Generator[DockerEnvironment, None, None]:
 
         # Brief pause for services to fully initialize
         time.sleep(2)
-
-        # Pull embedding model early - needed by both Gemini and Ollama backends
-        # since the default embeddings_backend is 'ollama'
-        print("📥 Pre-pulling embedding model for all tests...")
-        try:
-            result = subprocess.run(
-                [
-                    "docker",
-                    "exec",
-                    "zetherion-ai-test-ollama",
-                    "ollama",
-                    "pull",
-                    "nomic-embed-text",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-            if result.returncode == 0:
-                print("✅ Embedding model 'nomic-embed-text' ready")
-            else:
-                print(f"⚠️ Warning: Failed to pull embedding model: {result.stderr}")
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
-            print(f"⚠️ Warning: Error pulling embedding model: {e}")
 
         yield env
 
@@ -422,17 +414,13 @@ def router_backend(request: Any, docker_env: DockerEnvironment) -> str:
         # Generation: larger, capable model (8b needs 8GB+ container)
         router_model = "llama3.2:3b"
         generation_model = "llama3.1:8b"
-        embedding_model = "nomic-embed-text"
-
         # Set environment variables for the test to override any .env settings
         os.environ["OLLAMA_ROUTER_MODEL"] = router_model
         os.environ["OLLAMA_GENERATION_MODEL"] = generation_model
-        os.environ["OLLAMA_EMBEDDING_MODEL"] = embedding_model
 
         if not docker_env.pull_ollama_models(
             router_model=router_model,
             generation_model=generation_model,
-            embedding_model=embedding_model,
         ):
             pytest.skip("Failed to pull Ollama models for dual-container architecture")
 

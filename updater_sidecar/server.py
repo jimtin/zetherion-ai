@@ -159,8 +159,57 @@ async def handle_apply(request: web.Request) -> web.Response:
     except (ValueError, Exception) as exc:
         return web.json_response({"error": f"Invalid request: {exc}"}, status=400)
 
+    # Allow request payload to override, otherwise inherit from env defaults.
+    if not update_req.verify_signatures:
+        update_req.verify_signatures = (
+            os.environ.get("UPDATER_VERIFY_SIGNATURES", "false").strip().lower() == "true"
+        )
+    if not update_req.github_repo:
+        update_req.github_repo = os.environ.get("AUTO_UPDATE_REPO", "").strip()
+    if not update_req.verify_identity:
+        update_req.verify_identity = os.environ.get("UPDATER_VERIFY_IDENTITY", "").strip()
+    if not update_req.verify_oidc_issuer:
+        update_req.verify_oidc_issuer = os.environ.get(
+            "UPDATER_VERIFY_OIDC_ISSUER",
+            "https://token.actions.githubusercontent.com",
+        ).strip()
+    if not update_req.verify_rekor_url:
+        update_req.verify_rekor_url = os.environ.get(
+            "UPDATER_VERIFY_REKOR_URL",
+            "https://rekor.sigstore.dev",
+        ).strip()
+    if not update_req.manifest_asset_name:
+        update_req.manifest_asset_name = os.environ.get(
+            "UPDATER_RELEASE_MANIFEST_ASSET",
+            "release-manifest.json",
+        ).strip()
+    if not update_req.signature_asset_name:
+        update_req.signature_asset_name = os.environ.get(
+            "UPDATER_RELEASE_SIGNATURE_ASSET",
+            "release-manifest.sig",
+        ).strip()
+    if not update_req.certificate_asset_name:
+        update_req.certificate_asset_name = os.environ.get(
+            "UPDATER_RELEASE_CERTIFICATE_ASSET",
+            "release-manifest.pem",
+        ).strip()
+    if not update_req.github_token:
+        update_req.github_token = os.environ.get("GITHUB_TOKEN", "").strip()
+
     log.info("Starting update to %s (v%s)", update_req.tag, update_req.version)
-    result = await executor.apply_update(update_req.tag, update_req.version)
+    result = await executor.apply_update_with_verification(
+        tag=update_req.tag,
+        version=update_req.version,
+        verify_signatures=update_req.verify_signatures,
+        github_repo=update_req.github_repo,
+        github_token=update_req.github_token,
+        verify_identity=update_req.verify_identity,
+        verify_oidc_issuer=update_req.verify_oidc_issuer,
+        verify_rekor_url=update_req.verify_rekor_url,
+        manifest_asset_name=update_req.manifest_asset_name,
+        signature_asset_name=update_req.signature_asset_name,
+        certificate_asset_name=update_req.certificate_asset_name,
+    )
 
     # Record in history
     history: deque[HistoryEntry] = request.app["history"]
