@@ -3,17 +3,21 @@
 Passively monitors development activity via Discord webhook events from the
 zetherion-dev-agent and builds a queryable development journal.
 
-Capabilities:
-- Ingest commits, annotations, Claude Code sessions, and tags
-- Query development status, ideas, journal, and summaries
-- Heartbeat: daily summaries, idea reminders, stale annotation alerts
+    Capabilities:
+    - Ingest commits, annotations, Claude Code sessions, and tags
+    - Ingest deploy and CI result markers
+    - Ingest local container project discovery and cleanup autopilot signals
+    - Query development status, ideas, journal, and summaries
+    - Heartbeat: daily summaries, idea reminders, stale annotation alerts
 """
 
+import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
+from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
 from zetherion_ai.skills.base import (
     HeartbeatAction,
@@ -50,6 +54,7 @@ class DevEntry:
     title: str = ""
     content: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    fingerprint: str = ""
     status: str = "active"  # "active", "resolved", "archived"
     created_at: datetime = field(default_factory=datetime.now)
 
@@ -63,6 +68,7 @@ class DevEntry:
             "title": self.title,
             "content": self.content,
             "metadata": self.metadata,
+            "fingerprint": self.fingerprint,
             "status": self.status,
             "created_at": self.created_at.isoformat(),
         }
@@ -78,6 +84,7 @@ class DevEntry:
             title=data.get("title", ""),
             content=data.get("content", ""),
             metadata=data.get("metadata", {}),
+            fingerprint=data.get("fingerprint", ""),
             status=data.get("status", "active"),
             created_at=datetime.fromisoformat(data["created_at"])
             if data.get("created_at")
@@ -99,6 +106,8 @@ class DevWatcherSkill(Skill):
     - dev_ingest_annotation: Store a TODO/FIXME/IDEA annotation
     - dev_ingest_session: Store a Claude Code session summary
     - dev_ingest_tag: Store a version tag
+    - dev_ingest_deploy: Store a deployment marker
+    - dev_ingest_ci_result: Store a CI result marker
 
     Query intents (active, from user messages):
     - dev_status: What am I working on?
@@ -106,6 +115,7 @@ class DevWatcherSkill(Skill):
     - dev_ideas: What ideas have I had?
     - dev_journal: What did I do recently?
     - dev_summary: Give me a dev summary
+    - dev_release_summary: Summarise deploys and CI signals
     """
 
     INGEST_INTENTS = [
@@ -113,6 +123,11 @@ class DevWatcherSkill(Skill):
         "dev_ingest_annotation",
         "dev_ingest_session",
         "dev_ingest_tag",
+        "dev_ingest_deploy",
+        "dev_ingest_ci_result",
+        "dev_ingest_container_project",
+        "dev_ingest_cleanup_approval",
+        "dev_ingest_cleanup_report",
     ]
 
     QUERY_INTENTS = [
@@ -121,6 +136,7 @@ class DevWatcherSkill(Skill):
         "dev_ideas",
         "dev_journal",
         "dev_summary",
+        "dev_release_summary",
     ]
 
     INTENTS = INGEST_INTENTS + QUERY_INTENTS
@@ -128,6 +144,7 @@ class DevWatcherSkill(Skill):
     def __init__(self, memory: "QdrantMemory | None" = None):
         super().__init__(memory=memory)
         self._entries_cache: dict[str, dict[UUID, DevEntry]] = {}
+        self._fingerprint_cache: dict[str, set[str]] = {}
 
     @property
     def metadata(self) -> SkillMetadata:
@@ -169,12 +186,18 @@ class DevWatcherSkill(Skill):
             "dev_ingest_annotation": self._handle_ingest_annotation,
             "dev_ingest_session": self._handle_ingest_session,
             "dev_ingest_tag": self._handle_ingest_tag,
+            "dev_ingest_deploy": self._handle_ingest_deploy,
+            "dev_ingest_ci_result": self._handle_ingest_ci_result,
+            "dev_ingest_container_project": self._handle_ingest_container_project,
+            "dev_ingest_cleanup_approval": self._handle_ingest_cleanup_approval,
+            "dev_ingest_cleanup_report": self._handle_ingest_cleanup_report,
             # Queries
             "dev_status": self._handle_status,
             "dev_next": self._handle_next,
             "dev_ideas": self._handle_ideas,
             "dev_journal": self._handle_journal,
             "dev_summary": self._handle_summary,
+            "dev_release_summary": self._handle_release_summary,
         }
         handler = handlers.get(request.intent)
         if not handler:
@@ -200,6 +223,9 @@ class DevWatcherSkill(Skill):
                 "branch": ctx.get("branch", ""),
             },
         )
+        entry.fingerprint = self._build_fingerprint(entry)
+        if await self._is_duplicate_entry(entry):
+            return SkillResponse(request_id=request.id, message="Duplicate commit ignored.")
         await self._store_entry(entry)
         log.info("dev_commit_ingested", sha=ctx.get("sha", "")[:8], project=entry.project)
         return SkillResponse(request_id=request.id, message=f"Ingested commit: {entry.title[:80]}")
@@ -220,6 +246,9 @@ class DevWatcherSkill(Skill):
                 "action": ctx.get("action", "added"),  # "added" or "removed"
             },
         )
+        entry.fingerprint = self._build_fingerprint(entry)
+        if await self._is_duplicate_entry(entry):
+            return SkillResponse(request_id=request.id, message="Duplicate annotation ignored.")
 
         # If an annotation was removed, mark existing ones as resolved
         if ctx.get("action") == "removed":
@@ -250,6 +279,9 @@ class DevWatcherSkill(Skill):
                 "tools_used": ctx.get("tools_used", 0),
             },
         )
+        entry.fingerprint = self._build_fingerprint(entry)
+        if await self._is_duplicate_entry(entry):
+            return SkillResponse(request_id=request.id, message="Duplicate session ignored.")
         await self._store_entry(entry)
         log.info("dev_session_ingested", project=entry.project)
         return SkillResponse(request_id=request.id, message="Ingested Claude Code session")
@@ -267,12 +299,137 @@ class DevWatcherSkill(Skill):
                 "sha": ctx.get("sha", ""),
             },
         )
+        entry.fingerprint = self._build_fingerprint(entry)
+        if await self._is_duplicate_entry(entry):
+            return SkillResponse(request_id=request.id, message="Duplicate tag ignored.")
         await self._store_entry(entry)
         log.info("dev_tag_ingested", tag=ctx.get("tag_name", ""))
         return SkillResponse(
             request_id=request.id,
             message=f"Ingested tag: {ctx.get('tag_name', '')}",
         )
+
+    async def _handle_ingest_deploy(self, request: SkillRequest) -> SkillResponse:
+        """Store a deployment marker event."""
+        ctx = request.context
+        entry = DevEntry(
+            user_id=request.user_id,
+            entry_type="deploy",
+            project=ctx.get("project", ""),
+            title=ctx.get("title", "Deployment marker"),
+            content=request.message,
+            metadata={
+                "environment": ctx.get("environment", "production"),
+                "source": ctx.get("source", "heuristic"),
+                "commit_sha": ctx.get("commit_sha", ctx.get("sha", "")),
+                "branch": ctx.get("branch", ""),
+                "tag_name": ctx.get("tag_name", ""),
+                "status": ctx.get("status", "deployed"),
+            },
+        )
+        entry.fingerprint = self._build_fingerprint(entry)
+        if await self._is_duplicate_entry(entry):
+            return SkillResponse(request_id=request.id, message="Duplicate deploy marker ignored.")
+        await self._store_entry(entry)
+        return SkillResponse(request_id=request.id, message="Ingested deploy marker")
+
+    async def _handle_ingest_ci_result(self, request: SkillRequest) -> SkillResponse:
+        """Store a CI result marker event."""
+        ctx = request.context
+        entry = DevEntry(
+            user_id=request.user_id,
+            entry_type="ci_result",
+            project=ctx.get("project", ""),
+            title=ctx.get("title", "CI result"),
+            content=request.message,
+            metadata={
+                "pipeline": ctx.get("pipeline", ""),
+                "status": ctx.get("status", "unknown"),
+                "duration_seconds": ctx.get("duration_seconds", 0),
+                "url": ctx.get("url", ""),
+                "branch": ctx.get("branch", ""),
+                "sha": ctx.get("sha", ""),
+            },
+        )
+        entry.fingerprint = self._build_fingerprint(entry)
+        if await self._is_duplicate_entry(entry):
+            return SkillResponse(request_id=request.id, message="Duplicate CI result ignored.")
+        await self._store_entry(entry)
+        return SkillResponse(request_id=request.id, message="Ingested CI result")
+
+    async def _handle_ingest_container_project(self, request: SkillRequest) -> SkillResponse:
+        """Store local container project discovery event."""
+        ctx = request.context
+        project = ctx.get("project", ctx.get("project_id", ""))
+        entry = DevEntry(
+            user_id=request.user_id,
+            entry_type="container_project",
+            project=project,
+            title=f"Container project discovered: {project or 'unknown'}",
+            content=request.message,
+            metadata={
+                "total_containers": ctx.get("containers", ctx.get("total_containers", "0")),
+                "running_containers": ctx.get("running", ctx.get("running_containers", "0")),
+                "reason": ctx.get("reason", ""),
+            },
+        )
+        entry.fingerprint = self._build_fingerprint(entry)
+        if await self._is_duplicate_entry(entry):
+            return SkillResponse(
+                request_id=request.id,
+                message="Duplicate project discovery ignored.",
+            )
+        await self._store_entry(entry)
+        return SkillResponse(request_id=request.id, message="Ingested container project signal")
+
+    async def _handle_ingest_cleanup_approval(self, request: SkillRequest) -> SkillResponse:
+        """Store cleanup approval prompt signal for project tracking."""
+        ctx = request.context
+        project = ctx.get("project", ctx.get("project_id", ""))
+        entry = DevEntry(
+            user_id=request.user_id,
+            entry_type="cleanup_approval",
+            project=project,
+            title=f"Cleanup approval requested: {project or 'unknown'}",
+            content=request.message,
+            metadata={
+                "reason": ctx.get("reason", ""),
+                "containers": ctx.get("containers", "0"),
+                "running": ctx.get("running", "0"),
+            },
+        )
+        entry.fingerprint = self._build_fingerprint(entry)
+        if await self._is_duplicate_entry(entry):
+            return SkillResponse(
+                request_id=request.id,
+                message="Duplicate cleanup approval signal ignored.",
+            )
+        await self._store_entry(entry)
+        return SkillResponse(request_id=request.id, message="Ingested cleanup approval signal")
+
+    async def _handle_ingest_cleanup_report(self, request: SkillRequest) -> SkillResponse:
+        """Store cleanup execution report signal."""
+        ctx = request.context
+        project = ctx.get("project", ctx.get("project_id", ""))
+        entry = DevEntry(
+            user_id=request.user_id,
+            entry_type="cleanup_report",
+            project=project,
+            title=f"Cleanup report: {project or 'unknown'}",
+            content=request.message,
+            metadata={
+                "dry_run": ctx.get("dry_run", "false"),
+                "actions": ctx.get("actions", "0"),
+                "successful_actions": ctx.get("successful_actions", "0"),
+                "status": ctx.get("status", "unknown"),
+                "error": ctx.get("error", ""),
+            },
+        )
+        entry.fingerprint = self._build_fingerprint(entry)
+        if await self._is_duplicate_entry(entry):
+            return SkillResponse(request_id=request.id, message="Duplicate cleanup report ignored.")
+        await self._store_entry(entry)
+        return SkillResponse(request_id=request.id, message="Ingested cleanup report")
 
     # ------------------------------------------------------------------
     # Query handlers (active)
@@ -436,6 +593,8 @@ class DevWatcherSkill(Skill):
         annotations = [e for e in entries if e.entry_type == "annotation"]
         sessions = [e for e in entries if e.entry_type == "session"]
         tags = [e for e in entries if e.entry_type == "tag"]
+        deploys = [e for e in entries if e.entry_type == "deploy"]
+        ci_results = [e for e in entries if e.entry_type == "ci_result"]
 
         active_annotations = [a for a in annotations if a.status == "active"]
         resolved_annotations = [a for a in annotations if a.status == "resolved"]
@@ -447,7 +606,9 @@ class DevWatcherSkill(Skill):
             f"Projects active: {', '.join(projects) if projects else 'none'}\n"
             f"Commits: {len(commits)} | "
             f"Sessions: {len(sessions)} | "
-            f"Tags: {len(tags)}\n"
+            f"Tags: {len(tags)} | "
+            f"Deploys: {len(deploys)} | "
+            f"CI: {len(ci_results)}\n"
             f"Annotations: {len(active_annotations)} open, "
             f"{len(resolved_annotations)} resolved"
         )
@@ -474,8 +635,85 @@ class DevWatcherSkill(Skill):
                 "commits": len(commits),
                 "sessions": len(sessions),
                 "tags": len(tags),
+                "deploys": len(deploys),
+                "ci_results": len(ci_results),
                 "active_annotations": len(active_annotations),
                 "projects": list(projects),
+            },
+        )
+
+    async def _handle_release_summary(self, request: SkillRequest) -> SkillResponse:
+        """Summarise deploy, tag, and CI signals."""
+        entries = await self._get_recent_entries(
+            request.user_id,
+            limit=100,
+            entry_types=["deploy", "ci_result", "tag", "commit"],
+        )
+        if not entries:
+            return SkillResponse(
+                request_id=request.id, message="No deploy/CI signals recorded yet."
+            )
+
+        deploys = [e for e in entries if e.entry_type == "deploy"]
+        ci_results = [e for e in entries if e.entry_type == "ci_result"]
+        tags = [e for e in entries if e.entry_type == "tag"]
+        commits = [e for e in entries if e.entry_type == "commit"]
+
+        ci_status = {"passed": 0, "failed": 0, "other": 0}
+        for result in ci_results:
+            status = str(result.metadata.get("status", "")).lower()
+            if status in {"pass", "passed", "success", "succeeded", "green"}:
+                ci_status["passed"] += 1
+            elif status in {"fail", "failed", "error", "errored", "red"}:
+                ci_status["failed"] += 1
+            else:
+                ci_status["other"] += 1
+
+        parts = ["**Release Summary:**\n"]
+        parts.append(
+            f"Deploy markers: {len(deploys)} | CI results: {len(ci_results)} | "
+            f"Tags: {len(tags)} | Recent commits: {len(commits)}"
+        )
+        parts.append(
+            f"CI status: {ci_status['passed']} passed, {ci_status['failed']} failed, "
+            f"{ci_status['other']} other"
+        )
+
+        if deploys:
+            parts.append("\n**Latest Deploys:**")
+            for deploy in deploys[:5]:
+                env = deploy.metadata.get("environment", "production")
+                status = deploy.metadata.get("status", "deployed")
+                branch = deploy.metadata.get("branch", "")
+                commit = str(deploy.metadata.get("commit_sha", ""))[:8]
+                age = _format_age(deploy.created_at)
+                parts.append(
+                    f"  - {deploy.project or 'unknown'} [{env}] {status} "
+                    f"{branch} {commit} ({age})"
+                )
+
+        if ci_results:
+            parts.append("\n**Latest CI Results:**")
+            for result in ci_results[:5]:
+                pipeline = result.metadata.get("pipeline", "pipeline")
+                status = result.metadata.get("status", "unknown")
+                age = _format_age(result.created_at)
+                parts.append(f"  - {pipeline}: {status} ({age})")
+
+        if tags:
+            parts.append("\n**Latest Tags:**")
+            for tag in tags[:3]:
+                parts.append(f"  - {tag.title}")
+
+        return SkillResponse(
+            request_id=request.id,
+            message="\n".join(parts),
+            data={
+                "deploys": len(deploys),
+                "ci_results": len(ci_results),
+                "ci_status": ci_status,
+                "tags": len(tags),
+                "commits": len(commits),
             },
         )
 
@@ -485,8 +723,10 @@ class DevWatcherSkill(Skill):
 
     async def on_heartbeat(self, user_ids: list[str]) -> list[HeartbeatAction]:
         actions: list[HeartbeatAction] = []
+        retention_days = max(1, int(get_settings().dev_journal_retention_days))
 
         for user_id in user_ids:
+            await self._prune_old_entries(user_id, retention_days=retention_days)
             # Stale annotations
             annotations = await self._get_active_annotations(user_id, limit=50)
             stale = [a for a in annotations if a.is_stale()]
@@ -556,10 +796,61 @@ class DevWatcherSkill(Skill):
     # Storage helpers
     # ------------------------------------------------------------------
 
+    def _build_fingerprint(self, entry: DevEntry) -> str:
+        """Build a deterministic fingerprint for idempotent ingestion."""
+        canonical = "|".join(
+            [
+                entry.user_id,
+                entry.entry_type,
+                entry.project,
+                entry.title.strip(),
+                entry.content.strip(),
+                str(entry.metadata.get("sha", "")),
+                str(entry.metadata.get("file", "")),
+                str(entry.metadata.get("line", "")),
+                str(entry.metadata.get("action", "")),
+                str(entry.metadata.get("session_id", "")),
+                str(entry.metadata.get("tag_name", "")),
+                str(entry.metadata.get("commit_sha", "")),
+                str(entry.metadata.get("pipeline", "")),
+                str(entry.metadata.get("status", "")),
+            ]
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    async def _is_duplicate_entry(self, entry: DevEntry) -> bool:
+        """Check whether an entry has already been ingested."""
+        if not entry.fingerprint:
+            return False
+        user_fingerprints = self._fingerprint_cache.setdefault(entry.user_id, set())
+        if entry.fingerprint in user_fingerprints:
+            return True
+
+        cached_entries = self._entries_cache.get(entry.user_id, {})
+        for existing in cached_entries.values():
+            if existing.fingerprint == entry.fingerprint:
+                user_fingerprints.add(entry.fingerprint)
+                return True
+
+        if self._memory:
+            matches = await self._memory.filter_by_field(
+                collection_name=DEV_JOURNAL_COLLECTION,
+                field="fingerprint",
+                value=entry.fingerprint,
+                limit=5,
+            )
+            if any(m.get("user_id") == entry.user_id for m in matches):
+                user_fingerprints.add(entry.fingerprint)
+                return True
+
+        return False
+
     async def _store_entry(self, entry: DevEntry) -> None:
         if entry.user_id not in self._entries_cache:
             self._entries_cache[entry.user_id] = {}
         self._entries_cache[entry.user_id][entry.id] = entry
+        if entry.fingerprint:
+            self._fingerprint_cache.setdefault(entry.user_id, set()).add(entry.fingerprint)
 
         if self._memory:
             search_text = f"{entry.entry_type} {entry.project} {entry.title} {entry.content}"
@@ -618,8 +909,34 @@ class DevWatcherSkill(Skill):
                 ann.status = "resolved"
                 await self._store_entry(ann)
 
+    async def _prune_old_entries(self, user_id: str, *, retention_days: int) -> int:
+        """Prune entries older than retention window."""
+        threshold = datetime.now() - timedelta(days=retention_days)
+        entries = await self._get_user_entries(user_id)
+        old_entries = [e for e in entries if e.created_at < threshold]
+        if not old_entries:
+            return 0
+
+        removed = 0
+        for entry in old_entries:
+            cache = self._entries_cache.get(user_id, {})
+            cache.pop(entry.id, None)
+            if entry.fingerprint:
+                self._fingerprint_cache.get(user_id, set()).discard(entry.fingerprint)
+            if self._memory:
+                deleted = await self._memory.delete_by_id(
+                    collection_name=DEV_JOURNAL_COLLECTION,
+                    point_id=str(entry.id),
+                )
+                if deleted:
+                    removed += 1
+            else:
+                removed += 1
+        return removed
+
     async def cleanup(self) -> None:
         self._entries_cache.clear()
+        self._fingerprint_cache.clear()
         log.info("dev_watcher_cleanup_complete")
 
 
@@ -642,5 +959,10 @@ def _entry_type_icon(entry_type: str) -> str:
         "session": "[session]",
         "tag": "[tag]",
         "idea": "[idea]",
+        "deploy": "[deploy]",
+        "ci_result": "[ci]",
+        "container_project": "[container]",
+        "cleanup_approval": "[approval]",
+        "cleanup_report": "[cleanup]",
     }
     return icons.get(entry_type, "[?]")

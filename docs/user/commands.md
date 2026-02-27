@@ -29,6 +29,9 @@ Complete reference for all Zetherion AI commands. Discord is the first supported
 | "Show my profile" | Natural Language | View your learned profile | `@Zetherion AI show my profile` |
 | "Remember that ..." | Natural Language | Store a memory | `Remember that I use VS Code` |
 | "Search for ..." | Natural Language | Semantic memory search | `Search for my project notes` |
+| "Check for updates" | Natural Language | Check update status/version | `@Zetherion AI check for updates` |
+| "Email queue status" | Natural Language | Show email router queue status | `@Zetherion AI email queue status` |
+| "Analyze my channel" | Natural Language | Trigger YouTube analysis/report paths | `@Zetherion AI analyze my channel` |
 
 ---
 
@@ -58,7 +61,7 @@ Ask Zetherion AI a question or request help with a task. The bot analyzes intent
 
 - The router classifies your query by intent and complexity, then dispatches to the provider you've configured for that task type
 - You choose between local inference (Ollama) and cloud providers (Gemini, Claude, OpenAI) -- see the LLM Provider Configuration section in the README
-- Routing classification can use Gemini Flash (cloud) or Ollama Llama 3.2 1B (local), depending on your setup
+- Routing classification can use Gemini Flash (cloud) or Ollama Llama 3.2 3B (local), depending on your setup
 - The bot searches recent conversation history and relevant memories to provide context
 
 **Expected response time:**
@@ -230,7 +233,7 @@ Debug this code: [code snippet]
 
 **Routing logic:**
 
-- The router classifies your message by intent and complexity (using Gemini Flash or local Llama 3.2 1B, depending on your configuration)
+- The router classifies your message by intent and complexity (using Gemini Flash or local Llama 3.2 3B, depending on your configuration)
 - If the query is classified as complex, it is dispatched to your configured reasoning provider
 - Simple queries go to your configured fast provider
 - You control which providers handle which task types -- see the LLM Provider Configuration section in the README
@@ -313,6 +316,51 @@ Find emails about project update
 Search my email for meeting notes
 ```
 Triggers the `email_search` intent. Searches by subject and sender across connected accounts.
+
+---
+
+### Email Router Commands (Provider-Agnostic)
+
+These commands target the shared `email` skill path used by the work router.
+
+**Connect an account:**
+```
+Connect gmail
+Connect email account
+Link email
+```
+Triggers `email_connect`.
+
+**Disconnect an account:**
+```
+Disconnect gmail
+Unlink email
+Stop monitoring this mailbox
+```
+Triggers `email_disconnect`.
+
+**Route unread email now:**
+```
+Route unread email
+Process unread emails
+```
+Triggers `email_route`.
+
+**Queue status / resume:**
+```
+Email queue status
+Routing queue status
+Resume email queue
+Retry queued emails
+```
+Triggers `email_queue_status` or `email_queue_resume`.
+
+**Primary destination controls:**
+```
+Set primary calendar to my work calendar
+Set primary task list to Inbox
+```
+Triggers `email_set_primary_calendar` and `email_set_primary_task_list`.
 
 ---
 
@@ -484,6 +532,78 @@ Permanently deletes all stored data. This action requires confirmation before pr
 
 ---
 
+### Update Commands
+
+These commands target the updater skill path:
+
+**Check status/version:**
+```
+Check for updates
+What version are you?
+Update status
+```
+
+**Apply update:**
+```
+Apply update
+Install latest update
+Update now
+```
+
+**Rollback:**
+```
+Rollback update
+Revert to previous version
+```
+
+**Unpause updates:**
+```
+Resume updates
+Unpause updates
+```
+
+---
+
+### Health / Dev Watcher / Milestone / YouTube Commands
+
+These capabilities are available through natural-language intents when the
+corresponding skills are enabled.
+
+**Health analyzer examples:**
+```
+Health check
+System status
+Health report
+```
+
+**Dev watcher examples:**
+```
+What should I work on next?
+Show my dev ideas
+Dev journal this week
+Dev summary
+```
+
+**Milestone tracker examples:**
+```
+Show milestones
+Show milestone drafts
+Approve this milestone post
+Milestone settings
+```
+
+**YouTube examples:**
+```
+Analyze my channel
+Show channel intelligence history
+Review pending replies
+Show tag recommendations
+Generate a new channel strategy
+Show strategy history
+```
+
+---
+
 ### Cost Commands
 
 Cost tracking is handled automatically by the system and is not triggered by direct user commands. Costs are tracked per-model and per-user. Information about costs appears in:
@@ -492,7 +612,7 @@ Cost tracking is handled automatically by the system and is not triggered by dir
 - Admin dashboards and logs
 - Per-request metadata (visible in debug mode)
 
-The 6 Docker services that make up Zetherion AI each contribute to overall resource usage, and cost tracking covers all external API calls to Claude Sonnet 4.5, GPT-5.2, and Gemini 2.5 Flash.
+The current compose topology contributes to overall resource usage, and cost tracking covers external API calls across configured providers.
 
 ---
 

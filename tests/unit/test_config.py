@@ -64,10 +64,10 @@ class TestOpenAIModelDefault:
 class TestEmbeddingsBackend:
     """Tests for the embeddings_backend field."""
 
-    def test_embeddings_backend_default_is_ollama(self):
-        """Test that embeddings_backend defaults to 'ollama'."""
+    def test_embeddings_backend_default_is_openai(self):
+        """Test that embeddings_backend defaults to 'openai'."""
         settings = _make_settings()
-        assert settings.embeddings_backend == "ollama"
+        assert settings.embeddings_backend == "openai"
 
     def test_embeddings_backend_accepts_openai(self):
         """Test that embeddings_backend accepts 'openai' as valid."""
@@ -135,6 +135,20 @@ class TestAllowAllUsers:
         """Test that allow_all_users can be set to True."""
         settings = _make_settings(allow_all_users=True)
         assert settings.allow_all_users is True
+
+
+class TestRouterBackendValidation:
+    """Tests for router backend validation."""
+
+    def test_router_backend_accepts_groq(self):
+        """Router backend accepts groq option."""
+        settings = _make_settings(router_backend="groq")
+        assert settings.router_backend == "groq"
+
+    def test_router_backend_rejects_invalid_value(self):
+        """Router backend rejects unknown values."""
+        with pytest.raises(ValidationError, match="router_backend"):
+            _make_settings(router_backend="invalid-router")
 
 
 class TestEncryptionStrict:

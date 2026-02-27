@@ -185,6 +185,138 @@ You can re-enable them at any time:
 
 ---
 
+## Runtime Google Integration Test Plan (No Restart)
+
+This plan validates dynamic Google credential management and dynamic mailbox
+monitoring (add/remove) without restarting the skills service.
+
+### Prerequisites
+
+- Skills service is running (default: `http://localhost:8080`).
+- Work router is enabled.
+- You know your Discord `user_id`.
+- If `SKILLS_API_SECRET` is configured, include it in all API calls.
+
+### 0. Set local shell variables
+
+```bash
+export SKILLS_URL="http://localhost:8080"
+export SKILLS_API_SECRET="replace-if-enabled"
+export USER_ID="123456789"
+
+export GOOGLE_CLIENT_ID="your-google-client-id"
+export GOOGLE_CLIENT_SECRET="your-google-client-secret"
+export GOOGLE_REDIRECT_URI="http://localhost:8080/gmail/callback"
+```
+
+If your local server does not enforce API-secret auth, remove the
+`X-API-Secret` header from the commands below.
+
+### 1. Set runtime OAuth config (no restart)
+
+```bash
+curl -sS -X PUT "$SKILLS_URL/settings/integrations/google_client_id" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Secret: $SKILLS_API_SECRET" \
+  -d "{\"value\":\"$GOOGLE_CLIENT_ID\",\"changed_by\":$USER_ID,\"data_type\":\"string\"}"
+```
+
+```bash
+curl -sS -X PUT "$SKILLS_URL/settings/integrations/google_redirect_uri" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Secret: $SKILLS_API_SECRET" \
+  -d "{\"value\":\"$GOOGLE_REDIRECT_URI\",\"changed_by\":$USER_ID,\"data_type\":\"string\"}"
+```
+
+```bash
+curl -sS -X PUT "$SKILLS_URL/secrets/google_client_secret" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Secret: $SKILLS_API_SECRET" \
+  -d "{\"value\":\"$GOOGLE_CLIENT_SECRET\",\"changed_by\":$USER_ID,\"description\":\"Google OAuth client secret\"}"
+```
+
+Optional checks:
+
+```bash
+curl -sS "$SKILLS_URL/settings/integrations/google_client_id" \
+  -H "X-API-Secret: $SKILLS_API_SECRET"
+```
+
+```bash
+curl -sS "$SKILLS_URL/secrets" \
+  -H "X-API-Secret: $SKILLS_API_SECRET"
+```
+
+### 2. Connect mailbox #1 via OAuth
+
+```bash
+curl -sS "$SKILLS_URL/oauth/google/authorize?user_id=$USER_ID" \
+  -H "X-API-Secret: $SKILLS_API_SECRET"
+```
+
+Copy the `auth_url` from the response, open it in your browser, and complete
+Google consent.
+
+### 3. Verify connected mailboxes
+
+```bash
+curl -sS -X POST "$SKILLS_URL/handle" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Secret: $SKILLS_API_SECRET" \
+  -d "{\"user_id\":\"$USER_ID\",\"intent\":\"email_status\",\"message\":\"email status\",\"context\":{\"skill_name\":\"email\",\"provider\":\"google\"}}"
+```
+
+Expected: `connected_mailboxes >= 1`.
+
+### 4. Connect mailbox #2 (dynamic add, still no restart)
+
+Run Step 2 again and log in with a different Google account.
+
+Run Step 3 again and confirm mailbox count increased.
+
+### 5. Run classification + routing from unread email
+
+Send a test email to one connected mailbox, for example:
+
+- Subject: `Please add task`
+- Body: `Please create a task to review sprint notes tomorrow at 10am.`
+
+Then trigger routing:
+
+```bash
+curl -sS -X POST "$SKILLS_URL/handle" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Secret: $SKILLS_API_SECRET" \
+  -d "{\"user_id\":\"$USER_ID\",\"intent\":\"email_route\",\"message\":\"route unread email\",\"context\":{\"skill_name\":\"email\",\"provider\":\"google\",\"limit\":20}}"
+```
+
+Expected:
+
+- `count > 0` after unread messages exist.
+- `mode_counts` reflects auto/review/draft/ask/block decisions.
+- If no primary task list/calendar exists, response includes primary-selection
+  guidance.
+
+### 6. Remove a monitored mailbox dynamically
+
+```bash
+export ACCOUNT_EMAIL_TO_REMOVE="you@example.com"
+
+curl -sS -X POST "$SKILLS_URL/handle" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Secret: $SKILLS_API_SECRET" \
+  -d "{\"user_id\":\"$USER_ID\",\"intent\":\"email_disconnect\",\"message\":\"disconnect $ACCOUNT_EMAIL_TO_REMOVE\",\"context\":{\"skill_name\":\"email\",\"provider\":\"google\",\"account_email\":\"$ACCOUNT_EMAIL_TO_REMOVE\"}}"
+```
+
+Run Step 3 again and confirm mailbox count decreased.
+
+### 7. Rotate OAuth credentials at runtime (optional)
+
+Repeat Step 1 with new credential values, then run Step 2 again. No service
+restart is required.
+
+---
+
 ## Tips
 
 - **Natural language works best.** You do not need to memorize exact commands.

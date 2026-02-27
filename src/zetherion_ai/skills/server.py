@@ -12,6 +12,8 @@ import asyncio
 import hmac
 import math
 import os
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
@@ -19,10 +21,14 @@ from typing import Any
 from aiohttp import web
 
 from zetherion_ai.logging import get_logger
+from zetherion_ai.routing.models import DestinationType
 from zetherion_ai.skills.base import SkillRequest
 from zetherion_ai.skills.registry import SkillRegistry
 
 log = get_logger("zetherion_ai.skills.server")
+
+OAuthCallbackHandler = Callable[[web.Request], Awaitable[dict[str, Any]]]
+OAuthAuthorizeHandler = Callable[[web.Request], Awaitable[dict[str, Any]]]
 
 
 def _serialise_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -57,6 +63,154 @@ def _resolve_updater_secret() -> str:
         return ""
 
 
+def _resolve_google_oauth(
+    *,
+    settings: Any,
+) -> Any:
+    """Resolve Google OAuth credentials dynamically from settings+secrets."""
+    from zetherion_ai.config import get_dynamic, get_secret
+    from zetherion_ai.skills.gmail.auth import GmailAuth
+
+    env_client_id = settings.google_client_id or ""
+    env_redirect_uri = settings.google_redirect_uri
+    env_secret = (
+        settings.google_client_secret.get_secret_value()
+        if settings.google_client_secret is not None
+        else None
+    )
+
+    client_id = str(get_dynamic("integrations", "google_client_id", env_client_id) or "").strip()
+    redirect_uri = str(
+        get_dynamic("integrations", "google_redirect_uri", env_redirect_uri) or env_redirect_uri
+    ).strip()
+    client_secret = str(get_secret("google_client_secret", env_secret) or "").strip()
+
+    if not client_id:
+        raise ValueError("Google OAuth client id is not configured")
+    if not client_secret:
+        raise ValueError("Google OAuth client secret is not configured")
+    if not redirect_uri:
+        raise ValueError("Google OAuth redirect URI is not configured")
+
+    return GmailAuth(
+        client_id=client_id,
+        client_secret=client_secret,
+        redirect_uri=redirect_uri,
+    )
+
+
+def _build_google_oauth_authorize_handler(
+    *,
+    auth_resolver: Callable[[], Any],
+) -> OAuthAuthorizeHandler:
+    """Build OAuth authorize handler that returns a provider auth URL."""
+
+    async def _handler(request: web.Request) -> dict[str, Any]:
+        raw_user_id = request.query.get("user_id", "").strip()
+        if not raw_user_id:
+            raise ValueError("Missing user_id query parameter")
+
+        try:
+            user_id = int(raw_user_id)
+        except ValueError as exc:
+            raise ValueError("Invalid user_id query parameter") from exc
+
+        auth = auth_resolver()
+        auth_url, state = auth.generate_auth_url(user_id)
+        return {
+            "ok": True,
+            "provider": "google",
+            "user_id": user_id,
+            "auth_url": auth_url,
+            "state": state,
+        }
+
+    return _handler
+
+
+def _build_google_oauth_handler(
+    *,
+    auth_resolver: Callable[[], Any],
+    account_manager: Any,
+    integration_storage: Any,
+) -> OAuthCallbackHandler:
+    """Build OAuth callback handler for Google account linking."""
+
+    async def _handler(request: web.Request) -> dict[str, Any]:
+        auth = auth_resolver()
+        oauth_error = request.query.get("error")
+        if oauth_error:
+            raise ValueError(f"Google OAuth failed: {oauth_error}")
+
+        code = request.query.get("code", "").strip()
+        state = request.query.get("state", "").strip()
+        if not code or not state:
+            raise ValueError("Missing OAuth code/state")
+
+        user_id = auth.validate_state_token(state)
+        token_data = await auth.exchange_code(code)
+        access_token = str(token_data.get("access_token") or "")
+        refresh_token = str(token_data.get("refresh_token") or "")
+        if not access_token:
+            raise ValueError("Google OAuth did not return access_token")
+
+        email_addr = await auth.get_user_email(access_token)
+        if not email_addr:
+            raise ValueError("Google OAuth did not provide account email")
+
+        if not refresh_token:
+            existing = await account_manager.get_account_by_email(user_id, email_addr)
+            if existing is not None:
+                refresh_token = existing.refresh_token
+        if not refresh_token:
+            raise ValueError("Google OAuth did not return refresh_token")
+
+        expires_in = int(token_data.get("expires_in") or 3600)
+        token_expiry = datetime.now(UTC) + timedelta(seconds=expires_in)
+        raw_scopes = token_data.get("scope") or ""
+        scopes = [s for s in str(raw_scopes).split() if s]
+
+        account_id = await account_manager.add_account(
+            user_id=user_id,
+            email_addr=email_addr,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_expiry=token_expiry,
+            scopes=scopes,
+        )
+
+        await integration_storage.upsert_account(
+            user_id=user_id,
+            provider="google",
+            account_ref=str(account_id),
+            email=email_addr,
+            scopes=scopes,
+            is_primary=False,
+            metadata={"account_email": email_addr},
+        )
+        await integration_storage.upsert_destination(
+            user_id=user_id,
+            provider="google",
+            account_ref=str(account_id),
+            destination_id=email_addr,
+            destination_type=DestinationType.MAILBOX,
+            display_name=email_addr,
+            is_primary=False,
+            writable=True,
+            metadata={"account_id": account_id},
+        )
+
+        return {
+            "ok": True,
+            "provider": "google",
+            "user_id": user_id,
+            "account_email": email_addr,
+            "account_id": account_id,
+        }
+
+    return _handler
+
+
 class SkillsServer:
     """REST API server for skills service.
 
@@ -72,6 +226,9 @@ class SkillsServer:
         port: int = 8080,
         user_manager: Any | None = None,
         settings_manager: Any | None = None,
+        secrets_manager: Any | None = None,
+        oauth_handlers: dict[str, OAuthCallbackHandler] | None = None,
+        oauth_authorizers: dict[str, OAuthAuthorizeHandler] | None = None,
     ):
         """Initialize the skills server.
 
@@ -89,6 +246,9 @@ class SkillsServer:
         self._port = port
         self._user_manager = user_manager
         self._settings_manager = settings_manager
+        self._secrets_manager = secrets_manager
+        self._oauth_handlers = oauth_handlers or {}
+        self._oauth_authorizers = oauth_authorizers or {}
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
 
@@ -143,9 +303,15 @@ class SkillsServer:
         Returns:
             Response from handler or 401 if unauthorized.
         """
+        response: web.Response
         # Skip auth for health check
         if request.path == "/health":
-            response: web.Response = await handler(request)
+            response = await handler(request)
+            return response
+        if request.path == "/gmail/callback" or (
+            request.path.startswith("/oauth/") and request.path.endswith("/callback")
+        ):
+            response = await handler(request)
             return response
 
         if not self._check_auth(request):
@@ -311,6 +477,67 @@ class SkillsServer:
             }
         )
 
+    async def handle_oauth_callback(self, request: web.Request) -> web.Response:
+        """Handle provider OAuth callbacks without API-secret auth."""
+        provider = request.match_info.get("provider", "").strip().lower()
+        if not provider:
+            return web.json_response({"error": "Missing provider"}, status=400)
+
+        handler = self._oauth_handlers.get(provider)
+        if handler is None:
+            return web.json_response(
+                {"error": f"OAuth callback provider '{provider}' is not configured"},
+                status=404,
+            )
+
+        try:
+            result = await handler(request)
+            return web.json_response(result)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception("oauth_callback_failed", provider=provider)
+            return web.json_response({"error": "OAuth callback failed"}, status=500)
+
+    async def handle_oauth_authorize(self, request: web.Request) -> web.Response:
+        """Generate provider OAuth authorization URL."""
+        provider = request.match_info.get("provider", "").strip().lower()
+        if not provider:
+            return web.json_response({"error": "Missing provider"}, status=400)
+
+        handler = self._oauth_authorizers.get(provider)
+        if handler is None:
+            return web.json_response(
+                {"error": f"OAuth authorize provider '{provider}' is not configured"},
+                status=404,
+            )
+
+        try:
+            result = await handler(request)
+            return web.json_response(result)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception("oauth_authorize_failed", provider=provider)
+            return web.json_response({"error": "OAuth authorize failed"}, status=500)
+
+    async def handle_gmail_callback_alias(self, request: web.Request) -> web.Response:
+        """Backward-compatible Gmail callback route alias."""
+        handler = self._oauth_handlers.get("google")
+        if handler is None:
+            return web.json_response(
+                {"error": "OAuth callback provider 'google' is not configured"},
+                status=404,
+            )
+        try:
+            result = await handler(request)
+            return web.json_response(result)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception("oauth_callback_failed", provider="google")
+            return web.json_response({"error": "OAuth callback failed"}, status=500)
+
     # ------------------------------------------------------------------
     # User management API
     # ------------------------------------------------------------------
@@ -447,6 +674,45 @@ class SkillsServer:
         )
         return web.json_response({"ok": True, "existed": deleted})
 
+    async def handle_list_secrets(self, request: web.Request) -> web.Response:
+        """GET /secrets — list secret metadata (never returns secret values)."""
+        if self._secrets_manager is None:
+            return web.json_response({"error": "Secrets not configured"}, status=501)
+        records = await self._secrets_manager.get_metadata()
+        return web.json_response({"secrets": [_serialise_record(r) for r in records]})
+
+    async def handle_put_secret(self, request: web.Request) -> web.Response:
+        """PUT /secrets/{name} — create/update an encrypted secret."""
+        if self._secrets_manager is None:
+            return web.json_response({"error": "Secrets not configured"}, status=501)
+        name = request.match_info["name"]
+        try:
+            data = await self._read_json_object(request)
+            value = str(data.get("value", ""))
+            if not value:
+                raise ValueError("Missing non-empty secret 'value'")
+            await self._secrets_manager.set(
+                name=name,
+                value=value,
+                changed_by=self._parse_int(data.get("changed_by", 0), "changed_by"),
+                description=data.get("description"),
+            )
+            return web.json_response({"ok": True})
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
+
+    async def handle_delete_secret(self, request: web.Request) -> web.Response:
+        """DELETE /secrets/{name} — delete a stored secret."""
+        if self._secrets_manager is None:
+            return web.json_response({"error": "Secrets not configured"}, status=501)
+        name = request.match_info["name"]
+        try:
+            deleted_by = self._parse_int(request.query.get("deleted_by", "0"), "deleted_by")
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
+        deleted = await self._secrets_manager.delete(name=name, deleted_by=deleted_by)
+        return web.json_response({"ok": True, "existed": deleted})
+
     # ------------------------------------------------------------------
     # Application factory
     # ------------------------------------------------------------------
@@ -468,6 +734,9 @@ class SkillsServer:
         app.router.add_get("/status", self.handle_status)
         app.router.add_get("/prompt-fragments", self.handle_prompt_fragments)
         app.router.add_get("/intents", self.handle_intents)
+        app.router.add_get("/oauth/{provider}/authorize", self.handle_oauth_authorize)
+        app.router.add_get("/oauth/{provider}/callback", self.handle_oauth_callback)
+        app.router.add_get("/gmail/callback", self.handle_gmail_callback_alias)
 
         # User management routes
         app.router.add_get("/users", self.handle_list_users)
@@ -481,6 +750,9 @@ class SkillsServer:
         app.router.add_get("/settings/{namespace}/{key}", self.handle_get_setting)
         app.router.add_put("/settings/{namespace}/{key}", self.handle_put_setting)
         app.router.add_delete("/settings/{namespace}/{key}", self.handle_delete_setting)
+        app.router.add_get("/secrets", self.handle_list_secrets)
+        app.router.add_put("/secrets/{name}", self.handle_put_secret)
+        app.router.add_delete("/secrets/{name}", self.handle_delete_secret)
 
         self._app = app
         return app
@@ -513,6 +785,10 @@ async def run_server(  # pragma: no cover — starts infinite loop
     api_secret: str | None = None,
     host: str = "0.0.0.0",  # nosec B104 - Intentional for Docker container
     port: int = 8080,
+    settings_manager: Any | None = None,
+    secrets_manager: Any | None = None,
+    oauth_handlers: dict[str, OAuthCallbackHandler] | None = None,
+    oauth_authorizers: dict[str, OAuthAuthorizeHandler] | None = None,
 ) -> None:
     """Run the skills server.
 
@@ -529,6 +805,10 @@ async def run_server(  # pragma: no cover — starts infinite loop
         api_secret=api_secret,
         host=host,
         port=port,
+        settings_manager=settings_manager,
+        secrets_manager=secrets_manager,
+        oauth_handlers=oauth_handlers,
+        oauth_authorizers=oauth_authorizers,
     )
 
     await server.start()
@@ -545,7 +825,11 @@ async def run_server(  # pragma: no cover — starts infinite loop
 
 def main() -> None:  # pragma: no cover — CLI entry-point
     """Main entry point for the skills service."""
-    from zetherion_ai.config import get_settings
+    from zetherion_ai.config import (
+        get_settings,
+        set_secret_resolver,
+        set_settings_manager,
+    )
 
     # Get configuration from environment
     api_secret = os.environ.get("SKILLS_API_SECRET")
@@ -557,6 +841,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
 
     from zetherion_ai.skills.calendar import CalendarSkill
     from zetherion_ai.skills.dev_watcher import DevWatcherSkill
+    from zetherion_ai.skills.email import EmailSkill
     from zetherion_ai.skills.gmail.skill import GmailSkill
     from zetherion_ai.skills.health_analyzer import HealthAnalyzerSkill
     from zetherion_ai.skills.milestone import MilestoneSkill
@@ -575,14 +860,17 @@ def main() -> None:  # pragma: no cover — CLI entry-point
         settings.github_token.get_secret_value() if settings.github_token is not None else None
     )
     updater_secret = settings.updater_secret or _resolve_updater_secret()
+    gmail_skill = GmailSkill()
+    email_skill = EmailSkill(default_provider="google", legacy_gmail_skill=gmail_skill)
     registry.register(TaskManagerSkill())
     registry.register(CalendarSkill())
     registry.register(ProfileSkill())
     registry.register(HealthAnalyzerSkill())
     registry.register(DevWatcherSkill())
     registry.register(MilestoneSkill())
-    # Register Gmail intents so setup/support questions and status checks route cleanly.
-    registry.register(GmailSkill())
+    registry.register(gmail_skill)
+    # Register email skill after Gmail so shared provider-agnostic intents win.
+    registry.register(email_skill)
     registry.register(
         UpdateCheckerSkill(
             github_repo=settings.auto_update_repo,
@@ -592,6 +880,13 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             updater_url=settings.updater_service_url,
             updater_secret=updater_secret,
             check_every_n_beats=check_every_n_beats,
+            verify_signatures=settings.updater_verify_signatures,
+            verify_identity=settings.updater_verify_identity,
+            verify_oidc_issuer=settings.updater_verify_oidc_issuer,
+            verify_rekor_url=settings.updater_verify_rekor_url,
+            release_manifest_asset=settings.updater_release_manifest_asset,
+            release_signature_asset=settings.updater_release_signature_asset,
+            release_certificate_asset=settings.updater_release_certificate_asset,
         )
     )
 
@@ -617,15 +912,34 @@ def main() -> None:  # pragma: no cover — CLI entry-point
 
     # Conditional: Client Provisioning (requires Postgres for TenantManager)
     _tenant_manager = None
+    _tenant_inference_broker = None
     _personal_pool_factory = None
     _personal_storage_cls = None
     _personal_skill_cls = None
     if settings.postgres_dsn:
+        from zetherion_ai.agent.inference import InferenceBroker
         from zetherion_ai.api.tenant import TenantManager
+        from zetherion_ai.skills.client_app_watcher import ClientAppWatcherSkill
+        from zetherion_ai.skills.client_insights import ClientInsightsSkill
         from zetherion_ai.skills.client_provisioning import ClientProvisioningSkill
+        from zetherion_ai.skills.tenant_intelligence import TenantIntelligenceSkill
 
         _tenant_manager = TenantManager(dsn=settings.postgres_dsn)
+        _tenant_inference_broker = InferenceBroker()
         registry.register(ClientProvisioningSkill(tenant_manager=_tenant_manager))
+        registry.register(
+            TenantIntelligenceSkill(
+                inference_broker=_tenant_inference_broker,
+                tenant_manager=_tenant_manager,
+            )
+        )
+        registry.register(
+            ClientInsightsSkill(
+                inference_broker=_tenant_inference_broker,
+                tenant_manager=_tenant_manager,
+            )
+        )
+        registry.register(ClientAppWatcherSkill(tenant_manager=_tenant_manager))
         # Personal model requires direct PostgreSQL access.
         try:
             import asyncpg  # type: ignore[import-not-found,import-untyped]
@@ -647,27 +961,233 @@ def main() -> None:  # pragma: no cover — CLI entry-point
 
     # Initialize all skills
     async def init_and_run() -> None:
+        runtime_db_pool = None
+        runtime_settings_manager = None
+        runtime_secrets_manager = None
+        encryptor = None
         personal_db_pool = None
+        integration_pool = None
+        oauth_handlers: dict[str, OAuthCallbackHandler] = {}
+        oauth_authorizers: dict[str, OAuthAuthorizeHandler] = {}
+        security_pipeline = None
+        email_router = None
+        pool_min = max(1, int(settings.postgres_pool_min_size))
+        pool_max = max(pool_min, int(settings.postgres_pool_max_size))
+        pool_kwargs = {"min_size": pool_min, "max_size": pool_max}
         if _yt_storage is not None:
             await _yt_storage.initialize()
         if _tenant_manager is not None:
             await _tenant_manager.initialize()
+        if settings.postgres_dsn:
+            import asyncpg  # type: ignore[import-not-found,import-untyped]
+
+            from zetherion_ai.discord.user_manager import _SCHEMA_SQL
+            from zetherion_ai.security.encryption import FieldEncryptor
+            from zetherion_ai.security.keys import KeyManager
+            from zetherion_ai.security.secret_resolver import SecretResolver
+            from zetherion_ai.security.secrets import SecretsManager
+            from zetherion_ai.settings_manager import SettingsManager
+
+            runtime_db_pool = await asyncpg.create_pool(
+                dsn=settings.postgres_dsn,
+                **pool_kwargs,
+            )
+            try:
+                async with runtime_db_pool.acquire() as conn:
+                    await conn.execute(_SCHEMA_SQL)
+            except asyncpg.UniqueViolationError:
+                log.info("skills_runtime_schema_ensured", note="concurrent creation resolved")
+            else:
+                log.info("skills_runtime_schema_ensured")
+            runtime_settings_manager = SettingsManager()
+            await runtime_settings_manager.initialize(runtime_db_pool)
+            set_settings_manager(runtime_settings_manager)
+
+            key_manager = KeyManager(
+                passphrase=settings.encryption_passphrase.get_secret_value(),
+                salt_path=settings.encryption_salt_path,
+            )
+            encryptor = FieldEncryptor(key=key_manager.key, strict=settings.encryption_strict)
+
+            runtime_secrets_manager = SecretsManager(encryptor=encryptor)
+            await runtime_secrets_manager.initialize(runtime_db_pool)
+            set_secret_resolver(SecretResolver(runtime_secrets_manager, settings))
+        if settings.work_router_enabled and settings.postgres_dsn:
+            import asyncpg  # type: ignore[import-not-found,import-untyped]
+
+            from zetherion_ai.agent.inference import InferenceBroker
+            from zetherion_ai.integrations.providers.google import GoogleProviderAdapter
+            from zetherion_ai.integrations.providers.outlook import OutlookProviderAdapter
+            from zetherion_ai.integrations.storage import IntegrationStorage
+            from zetherion_ai.routing.email_router import EmailRouter
+            from zetherion_ai.routing.registry import (
+                ProviderAdapters,
+                ProviderCapabilities,
+                ProviderRegistry,
+            )
+            from zetherion_ai.routing.task_calendar_router import TaskCalendarRouter
+            from zetherion_ai.security.content_pipeline import ContentSecurityPipeline
+            from zetherion_ai.skills.gmail.accounts import GmailAccountManager
+
+            integration_pool = await asyncpg.create_pool(
+                dsn=settings.postgres_dsn,
+                **pool_kwargs,
+            )
+            if encryptor is None:
+                raise RuntimeError("Encryption is not initialized")
+
+            account_manager = GmailAccountManager(integration_pool, encryptor)
+            await account_manager.ensure_schema()
+
+            integration_storage = IntegrationStorage(integration_pool)
+            await integration_storage.ensure_schema()
+
+            def google_auth_resolver() -> Any:
+                return _resolve_google_oauth(settings=settings)
+
+            def try_google_auth() -> Any | None:
+                try:
+                    return google_auth_resolver()
+                except ValueError:
+                    return None
+
+            google_adapter = GoogleProviderAdapter(
+                account_manager,
+                auth=try_google_auth(),
+                auth_resolver=try_google_auth,
+            )
+            provider_registry = ProviderRegistry()
+            provider_registry.register(
+                "google",
+                adapters=ProviderAdapters(
+                    email=google_adapter,
+                    task=google_adapter,
+                    calendar=google_adapter,
+                ),
+                capabilities=ProviderCapabilities(
+                    email_read=True,
+                    task_read=True,
+                    task_write=True,
+                    calendar_read=True,
+                    calendar_write=True,
+                    two_way_sync=True,
+                    cross_calendar_conflicts=True,
+                ),
+            )
+
+            if settings.provider_outlook_enabled:
+                outlook_adapter = OutlookProviderAdapter(enabled=True)
+                provider_registry.register(
+                    "outlook",
+                    adapters=ProviderAdapters(
+                        email=outlook_adapter,
+                        task=outlook_adapter,
+                        calendar=outlook_adapter,
+                    ),
+                    capabilities=ProviderCapabilities(),
+                )
+
+            security_pipeline = ContentSecurityPipeline()
+            task_calendar_router = TaskCalendarRouter(
+                storage=integration_storage,
+                providers=provider_registry,
+                security=security_pipeline,
+            )
+
+            async def resolve_email_user_context(user_id: int) -> dict[str, Any]:
+                timezone_name = "UTC"
+                try:
+                    async with integration_pool.acquire() as conn:
+                        row = await conn.fetchrow(
+                            "SELECT timezone FROM personal_profile WHERE user_id = $1 LIMIT 1",
+                            user_id,
+                        )
+                    if row is not None:
+                        candidate = row["timezone"]
+                        if isinstance(candidate, str) and candidate.strip():
+                            timezone_name = candidate.strip()
+                except Exception as exc:
+                    log.debug(
+                        "email_user_context_lookup_failed",
+                        user_id=user_id,
+                        error=str(exc),
+                    )
+                return {"timezone": timezone_name}
+
+            email_router = EmailRouter(
+                storage=integration_storage,
+                providers=provider_registry,
+                security=security_pipeline,
+                task_calendar_router=task_calendar_router,
+                inference=InferenceBroker(),
+                email_security_gate_enabled=settings.email_security_gate_enabled,
+                local_extraction_required=settings.local_extraction_required,
+                user_context_resolver=resolve_email_user_context,
+                attachment_handling_enabled=False,
+            )
+            email_skill.configure(
+                router=email_router,
+                storage=integration_storage,
+                providers=provider_registry,
+                default_provider="google",
+                account_manager=account_manager,
+            )
+
+            oauth_handlers["google"] = _build_google_oauth_handler(
+                auth_resolver=google_auth_resolver,
+                account_manager=account_manager,
+                integration_storage=integration_storage,
+            )
+            oauth_authorizers["google"] = _build_google_oauth_authorize_handler(
+                auth_resolver=google_auth_resolver,
+            )
+
+            async def email_oauth_authorizer(*, user_id: int, provider: str) -> dict[str, str]:
+                if provider != "google":
+                    raise ValueError(f"Provider '{provider}' is not configured for OAuth linking")
+                auth = google_auth_resolver()
+                auth_url, state = auth.generate_auth_url(user_id)
+                return {"provider": provider, "auth_url": auth_url, "state": state}
+
+            email_skill.configure(oauth_authorizer=email_oauth_authorizer)
         if (
             _personal_pool_factory is not None
             and _personal_storage_cls is not None
             and _personal_skill_cls is not None
         ):
-            personal_db_pool = await _personal_pool_factory(dsn=settings.postgres_dsn)
+            personal_db_pool = await _personal_pool_factory(
+                dsn=settings.postgres_dsn,
+                **pool_kwargs,
+            )
             personal_storage = _personal_storage_cls(personal_db_pool)
             await personal_storage.ensure_schema()
             registry.register(_personal_skill_cls(storage=personal_storage))
+            if email_router is not None:
+                email_router.set_personal_storage(personal_storage)
             log.info("personal_model_skill_registered")
         await registry.initialize_all()
         try:
-            await run_server(registry, api_secret, host, port)
+            await run_server(
+                registry,
+                api_secret,
+                host,
+                port,
+                settings_manager=runtime_settings_manager,
+                secrets_manager=runtime_secrets_manager,
+                oauth_handlers=oauth_handlers,
+                oauth_authorizers=oauth_authorizers,
+            )
         finally:
+            if security_pipeline is not None:
+                await security_pipeline.close()
+            if integration_pool is not None:
+                await integration_pool.close()
+            if runtime_db_pool is not None:
+                await runtime_db_pool.close()
             if personal_db_pool is not None:
                 await personal_db_pool.close()
+            if _tenant_inference_broker is not None:
+                await _tenant_inference_broker.close()
 
     try:
         asyncio.run(init_and_run())

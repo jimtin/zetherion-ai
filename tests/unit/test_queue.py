@@ -816,6 +816,7 @@ class TestQueueProcessorsDiscordMessageEdgeCases:
 
         bot = MagicMock()
         bot.get_channel.return_value = mock_channel
+        bot.fetch_channel = AsyncMock(return_value=mock_channel)
 
         agent = AsyncMock()
         agent.generate_response = AsyncMock(return_value="Response text")
@@ -837,9 +838,10 @@ class TestQueueProcessorsDiscordMessageEdgeCases:
 
     @pytest.mark.asyncio
     async def test_discord_message_no_channel_found(self) -> None:
-        """When channel is not found, processing still succeeds but no send."""
+        """When channel cannot be resolved, processing fails for retry."""
         bot = MagicMock()
         bot.get_channel.return_value = None
+        bot.fetch_channel = AsyncMock(return_value=None)
 
         agent = AsyncMock()
         agent.generate_response = AsyncMock(return_value="Response")
@@ -855,16 +857,18 @@ class TestQueueProcessorsDiscordMessageEdgeCases:
             },
         )
 
-        # Should complete successfully even though no channel was found
-        assert result.success is True
+        assert result.success is False
+        assert "could not be delivered" in (result.error or "")
+        bot.fetch_channel.assert_awaited_once_with(100)
 
     @pytest.mark.asyncio
     async def test_discord_message_channel_without_send_method(self) -> None:
-        """Channel without send method is handled gracefully."""
+        """Channel without send method fails so the queue can retry."""
         mock_channel = MagicMock(spec=[])  # Explicitly no send method
 
         bot = MagicMock()
         bot.get_channel.return_value = mock_channel
+        bot.fetch_channel = AsyncMock(return_value=mock_channel)
 
         agent = AsyncMock()
         agent.generate_response = AsyncMock(return_value="Response")
@@ -879,8 +883,37 @@ class TestQueueProcessorsDiscordMessageEdgeCases:
             },
         )
 
-        # Should still succeed even though channel doesn't have send
+        assert result.success is False
+        assert "could not be delivered" in (result.error or "")
+
+    @pytest.mark.asyncio
+    async def test_discord_message_fetches_channel_when_cache_miss(self) -> None:
+        """When cache miss occurs, processor fetches channel and delivers response."""
+        mock_channel = AsyncMock()
+        mock_channel.fetch_message = AsyncMock(side_effect=Exception("Not found"))
+        mock_channel.send = AsyncMock()
+
+        bot = MagicMock()
+        bot.get_channel.return_value = None
+        bot.fetch_channel = AsyncMock(return_value=mock_channel)
+
+        agent = AsyncMock()
+        agent.generate_response = AsyncMock(return_value="Response via fetched channel")
+
+        procs = QueueProcessors(bot=bot, agent=agent)
+        result = await procs.process(
+            QueueTaskType.DISCORD_MESSAGE,
+            {
+                "content": "hello",
+                "user_id": 42,
+                "channel_id": 100,
+                "message_id": 200,
+            },
+        )
+
         assert result.success is True
+        bot.fetch_channel.assert_awaited_once_with(100)
+        mock_channel.send.assert_called_once()
 
 
 class TestQueueProcessorsBulkIngestion:

@@ -139,7 +139,11 @@ class TestInitialize:
 
             await s.initialize()
 
-            mock_asyncpg.create_pool.assert_awaited_once_with(dsn="postgresql://localhost/test")
+            mock_asyncpg.create_pool.assert_awaited_once_with(
+                dsn="postgresql://localhost/test",
+                min_size=1,
+                max_size=5,
+            )
             assert s._pool is pool
             conn.execute.assert_awaited_once_with(_SCHEMA_SQL)
 

@@ -11,9 +11,9 @@ are up and running in under ten minutes.
 
 | Requirement | Details |
 |---|---|
-| Docker Desktop 4.0+ | Required. Zetherion AI runs as 6 Docker services. |
+| Docker Desktop 4.0+ | Required. Zetherion AI runs via the current compose topology (bot, blue/green app+skills, routing, updater, and data services). |
 | Discord bot token | Required. Free to create in the Discord Developer Portal. |
-| Gemini API key | Optional. Free tier from Google AI Studio (1,500 requests/day). Enables cloud routing and simple queries. |
+| Gemini API key | Required by default runtime configuration. Free tier from Google AI Studio (1,500 requests/day). |
 | Anthropic API key | Optional. Enables Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`). |
 | OpenAI API key | Optional. Enables GPT-5.2. |
 | Python 3.12+ | Required on the host for the setup script. |
@@ -96,8 +96,8 @@ The setup script handles the entire installation process:
    - **Ollama** (local) -- private, roughly 9 minutes. Downloads and runs
      `llama3.2:3b` for routing and `llama3.1:8b` for local generation. All
      inference stays on your machine.
-4. **Builds and starts all 6 Docker services**: `bot`, `skills`, `qdrant`,
-   `postgres`, `ollama`, and `ollama-router`.
+4. **Builds and starts the current compose topology**: bot runtime, skills/app
+   blue/green deployments, routing/update services, and storage services.
 5. **Downloads Ollama models** if you selected the local backend.
 
 You do not need to edit any configuration files manually. The script generates
@@ -136,16 +136,20 @@ Run the status script to confirm all services are up:
 .\status.ps1
 ```
 
-You should see all 6 services reported as **healthy**:
+Check health with:
 
+```bash
+docker compose ps
 ```
-bot            healthy
-skills         healthy
-qdrant         healthy
-postgres       healthy
-ollama         healthy
-ollama-router  healthy
-```
+
+You should see healthy/running state for core services including:
+
+- `zetherion-ai-bot`
+- `zetherion-ai-skills-blue` and `zetherion-ai-skills-green`
+- `zetherion-ai-api-blue` and `zetherion-ai-api-green`
+- `zetherion-ai-traefik`
+- `zetherion-ai-updater`
+- `postgres`, `qdrant`, `ollama`, `ollama-router`
 
 ### Test in Discord
 
@@ -193,6 +197,12 @@ browser to verify the vector database is running and accessible.
 | View logs | `docker-compose logs -f zetherion-ai-bot` |
 | View all logs | `docker-compose logs -f` |
 | Update | `git pull && ./stop.sh && ./start.sh --force-rebuild` |
+
+### Known Drift (Temporary)
+
+`start.sh` and `status.sh` still include some legacy single-service checks
+(for example, `zetherion-ai-skills`). If script output and compose output
+conflict, use `docker compose ps` as the source of truth.
 
 ### Troubleshooting
 

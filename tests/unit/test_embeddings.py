@@ -497,3 +497,33 @@ class TestGetEmbeddingsClientFactory:
             with patch("zetherion_ai.memory.embeddings.httpx.AsyncClient"):
                 client = get_embeddings_client()
                 assert isinstance(client, OllamaEmbeddings)
+
+    def test_ollama_failure_falls_back_to_openai(self):
+        """Ollama backend should fall back to OpenAI when local init fails."""
+        mock_settings = MagicMock()
+        mock_settings.embeddings_backend = "ollama"
+        mock_settings.openai_api_key = MagicMock()
+        mock_settings.openai_api_key.get_secret_value.return_value = "test-key"
+        mock_settings.openai_embedding_model = "text-embedding-3-large"
+        mock_settings.openai_embedding_dimensions = 3072
+        mock_settings.gemini_api_key = MagicMock()
+
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.OllamaEmbeddings", side_effect=RuntimeError):
+                with patch("zetherion_ai.memory.embeddings.openai.AsyncOpenAI"):
+                    client = get_embeddings_client()
+                    assert isinstance(client, OpenAIEmbeddings)
+
+    def test_unknown_backend_prefers_openai(self):
+        """Unknown backend should prefer OpenAI before other fallbacks."""
+        mock_settings = MagicMock()
+        mock_settings.embeddings_backend = "unknown"
+        mock_settings.openai_api_key = MagicMock()
+        mock_settings.openai_api_key.get_secret_value.return_value = "test-key"
+        mock_settings.openai_embedding_model = "text-embedding-3-large"
+        mock_settings.openai_embedding_dimensions = 3072
+
+        with patch("zetherion_ai.memory.embeddings.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.embeddings.openai.AsyncOpenAI"):
+                client = get_embeddings_client()
+                assert isinstance(client, OpenAIEmbeddings)
