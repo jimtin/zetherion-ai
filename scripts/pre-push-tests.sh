@@ -591,12 +591,26 @@ E2E_LOG_B="$(mktemp)"     # health/update/telemetry required tests
 E2E_LOG_C="$(mktemp)"     # discord required tests (gated by RUN_DISCORD_E2E_REQUIRED)
 E2E_OPTIONAL_LOG="$(mktemp)"
 DISCORD_REQUIRED_STARTED=false
+E2E_FAIL_FAST="${E2E_FAIL_FAST:-true}"
 
 # Start a heartbeat so we can see the tests are still running
 (while true; do sleep 30; echo "[$(ts)]   ...E2E tests still running"; done) &
 HEARTBEAT_PID=$!
 
-# Launch all 3 test groups concurrently
+# Launch required test groups concurrently.
+# Keep Discord first in wait order so a Discord failure fails fast.
+if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
+    DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
+        tests/integration/test_discord_e2e.py \
+        -m "discord_e2e and not optional_e2e" --timeout=180 -v --tb=short -s --no-cov \
+        > "$E2E_LOG_C" 2>&1 &
+    E2E_PIDS+=($!)
+    E2E_NAMES+=("Discord E2E tests")
+    DISCORD_REQUIRED_STARTED=true
+else
+    echo "[$(ts)] Discord required E2E skipped (set RUN_DISCORD_E2E_REQUIRED=true to enforce)."
+fi
+
 DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
     tests/integration/test_e2e.py \
     -m "integration and not optional_e2e" --timeout=120 -v --tb=short -s --no-cov \
@@ -613,18 +627,6 @@ DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
 E2E_PIDS+=($!)
 E2E_NAMES+=("Health/Update/Telemetry E2E tests")
 
-if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
-    DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
-        tests/integration/test_discord_e2e.py \
-        -m "discord_e2e and not optional_e2e" --timeout=180 -v --tb=short -s --no-cov \
-        > "$E2E_LOG_C" 2>&1 &
-    E2E_PIDS+=($!)
-    E2E_NAMES+=("Discord E2E tests")
-    DISCORD_REQUIRED_STARTED=true
-else
-    echo "[$(ts)] Discord required E2E skipped (set RUN_DISCORD_E2E_REQUIRED=true to enforce)."
-fi
-
 # Wait for all to finish, track failures
 E2E_FAILED=false
 
@@ -634,9 +636,25 @@ for i in "${!E2E_PIDS[@]}"; do
     if ! wait "$pid"; then
         E2E_FAILED=true
         echo "[$(ts)] FAILED: ${name}"
+        if [ "$E2E_FAIL_FAST" = "true" ]; then
+            for j in "${!E2E_PIDS[@]}"; do
+                if [ "$j" -ne "$i" ]; then
+                    other_pid="${E2E_PIDS[$j]}"
+                    if kill -0 "$other_pid" 2>/dev/null; then
+                        kill "$other_pid" 2>/dev/null || true
+                    fi
+                fi
+            done
+            break
+        fi
     else
         echo "[$(ts)] PASSED: ${name}"
     fi
+done
+
+# Reap any terminated/remaining children to avoid zombies.
+for pid in "${E2E_PIDS[@]}"; do
+    wait "$pid" 2>/dev/null || true
 done
 E2E_PIDS=()
 E2E_NAMES=()

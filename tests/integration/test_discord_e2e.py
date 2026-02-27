@@ -347,7 +347,6 @@ async def test_bot_responds_to_message(discord_test_client: DiscordTestClient) -
     test_message = await discord_test_client.send_message(
         f"<@{bot_id}> Hello, what is 2+2? id:{correlation}"
     )
-    retry_message = None
     response = None
 
     try:
@@ -356,14 +355,6 @@ async def test_bot_responds_to_message(discord_test_client: DiscordTestClient) -
             test_message, timeout=90.0, bot_id=bot_id
         )
 
-        if response is None:
-            retry_message = await discord_test_client.send_message(
-                f"<@{bot_id}> Retry: what is 2+2? id:{correlation}"
-            )
-            response = await discord_test_client.wait_for_bot_response(
-                retry_message, timeout=90.0, bot_id=bot_id
-            )
-
         assert response is not None, "Bot did not respond within timeout"
         assert len(response.content) > 0, "Bot response was empty"
         print(f"✅ Bot responded: {response.content[:100]}...")
@@ -371,8 +362,6 @@ async def test_bot_responds_to_message(discord_test_client: DiscordTestClient) -
     finally:
         # Cleanup test messages
         await discord_test_client.delete_message(test_message)
-        if retry_message:
-            await discord_test_client.delete_message(retry_message)
         if response:
             await discord_test_client.delete_message(response)
 
