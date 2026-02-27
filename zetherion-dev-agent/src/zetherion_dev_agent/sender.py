@@ -18,6 +18,8 @@ EVENT_COLORS = {
     "tag": 3066993,  # Green
     "deploy": 5763719,  # Teal
     "ci_result": 15158332,  # Orange-red
+    "cleanup_approval": 16753920,  # Orange
+    "cleanup_report": 2067276,  # Dark green
 }
 
 
@@ -35,7 +37,8 @@ async def send_event(
     Args:
         webhook_url: Discord webhook URL.
         agent_name: Username to display (used for bot-side filtering).
-        event_type: Type of event (commit, annotation, session, tag, deploy, ci_result).
+        event_type: Type of event (commit, annotation, session, tag, deploy, ci_result,
+            cleanup_approval, cleanup_report).
         description: Human-readable description.
         fields: Structured fields to include in the embed.
         timestamp: Event timestamp (defaults to now UTC).

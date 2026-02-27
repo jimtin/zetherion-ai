@@ -341,6 +341,9 @@ class TestDevWatcherMetadata:
             "dev_ingest_tag",
             "dev_ingest_deploy",
             "dev_ingest_ci_result",
+            "dev_ingest_container_project",
+            "dev_ingest_cleanup_approval",
+            "dev_ingest_cleanup_report",
             "dev_status",
             "dev_next",
             "dev_ideas",
@@ -696,7 +699,77 @@ class TestDevWatcherDeployAndCI:
 
 
 # ===================================================================
-# 10. TestDevWatcherIdempotency
+# 10. TestDevWatcherCleanupSignals
+# ===================================================================
+
+
+class TestDevWatcherCleanupSignals:
+    """Tests for local cleanup-related ingest intents."""
+
+    @pytest.mark.asyncio
+    async def test_ingest_container_project(self) -> None:
+        skill = DevWatcherSkill()
+        await skill.safe_initialize()
+        resp = await skill.handle(
+            _make_request(
+                intent="dev_ingest_container_project",
+                message="Discovered container project",
+                context={
+                    "project": "proj-a",
+                    "containers": "3",
+                    "running": "1",
+                    "reason": "new_project",
+                },
+            )
+        )
+        assert resp.success is True
+        entry = next(iter(skill._entries_cache["user123"].values()))
+        assert entry.entry_type == "container_project"
+        assert entry.project == "proj-a"
+        assert entry.metadata["total_containers"] == "3"
+
+    @pytest.mark.asyncio
+    async def test_ingest_cleanup_approval_signal(self) -> None:
+        skill = DevWatcherSkill()
+        await skill.safe_initialize()
+        resp = await skill.handle(
+            _make_request(
+                intent="dev_ingest_cleanup_approval",
+                message="Approve cleanup?",
+                context={"project": "proj-a", "reason": "reminder"},
+            )
+        )
+        assert resp.success is True
+        entry = next(iter(skill._entries_cache["user123"].values()))
+        assert entry.entry_type == "cleanup_approval"
+        assert entry.metadata["reason"] == "reminder"
+
+    @pytest.mark.asyncio
+    async def test_ingest_cleanup_report_signal(self) -> None:
+        skill = DevWatcherSkill()
+        await skill.safe_initialize()
+        resp = await skill.handle(
+            _make_request(
+                intent="dev_ingest_cleanup_report",
+                message="Cleanup report",
+                context={
+                    "project": "proj-a",
+                    "dry_run": "false",
+                    "actions": "2",
+                    "successful_actions": "2",
+                    "status": "success",
+                },
+            )
+        )
+        assert resp.success is True
+        entry = next(iter(skill._entries_cache["user123"].values()))
+        assert entry.entry_type == "cleanup_report"
+        assert entry.metadata["actions"] == "2"
+        assert entry.metadata["status"] == "success"
+
+
+# ===================================================================
+# 11. TestDevWatcherIdempotency
 # ===================================================================
 
 

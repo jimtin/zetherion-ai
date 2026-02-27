@@ -1282,6 +1282,46 @@ class TestHandleDevEvent:
         assert req.intent == "dev_ingest_tag"
 
     @pytest.mark.asyncio
+    async def test_processes_cleanup_approval_embed(self, bot, mock_agent, mock_message):
+        """cleanup_approval embed is routed as dev_ingest_cleanup_approval."""
+        bot._agent = mock_agent
+
+        embed = MagicMock(spec=discord.Embed)
+        embed.title = "cleanup_approval"
+        embed.description = "Approve cleanup for proj-a?"
+        embed.fields = []
+        mock_message.embeds = [embed]
+
+        mock_client = AsyncMock()
+        mock_client.handle_request = AsyncMock(return_value=MagicMock(success=True))
+        mock_agent._get_skills_client = AsyncMock(return_value=mock_client)
+
+        await bot._handle_dev_event(mock_message)
+
+        req = mock_client.handle_request.call_args[0][0]
+        assert req.intent == "dev_ingest_cleanup_approval"
+
+    @pytest.mark.asyncio
+    async def test_processes_cleanup_report_embed(self, bot, mock_agent, mock_message):
+        """cleanup_report embed is routed as dev_ingest_cleanup_report."""
+        bot._agent = mock_agent
+
+        embed = MagicMock(spec=discord.Embed)
+        embed.title = "cleanup_report"
+        embed.description = "Cleanup report"
+        embed.fields = []
+        mock_message.embeds = [embed]
+
+        mock_client = AsyncMock()
+        mock_client.handle_request = AsyncMock(return_value=MagicMock(success=True))
+        mock_agent._get_skills_client = AsyncMock(return_value=mock_client)
+
+        await bot._handle_dev_event(mock_message)
+
+        req = mock_client.handle_request.call_args[0][0]
+        assert req.intent == "dev_ingest_cleanup_report"
+
+    @pytest.mark.asyncio
     async def test_unknown_event_type_defaults_to_commit(self, bot, mock_agent, mock_message):
         """Unknown embed title defaults to dev_ingest_commit."""
         bot._agent = mock_agent
