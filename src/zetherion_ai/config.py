@@ -225,8 +225,8 @@ class Settings(BaseSettings):
 
     # Embeddings Backend Configuration
     embeddings_backend: str = Field(
-        default="ollama",
-        description="Embeddings backend: ollama (default), gemini, or openai",
+        default="openai",
+        description="Embeddings backend: openai (default), gemini, or ollama",
     )
     openai_embedding_model: str = Field(
         default="text-embedding-3-large", description="OpenAI embedding model"

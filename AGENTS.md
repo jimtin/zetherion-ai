@@ -20,10 +20,13 @@ This is the only supported full local gate. Do not substitute ad-hoc pytest comm
 
 1. The full pipeline must start from a clean test environment and fail fast on any stage failure.
 2. Discord E2E is required in full mode (`RUN_DISCORD_E2E_REQUIRED=true` by default).
-3. Do not bypass pre-push checks (`git push --no-verify` is not allowed for normal workflows).
-4. If required env vars for Discord E2E are missing, stop and surface that explicitly.
-5. Local socket-bind preflight must pass; if it fails, run the canonical gate outside sandbox restrictions.
-6. Background jobs (`mypy`, `pip-audit`) must never run indefinitely; canonical timeouts/heartbeat logging are mandatory.
+3. Required Discord E2E defaults to Groq (`DISCORD_E2E_PROVIDER=groq`) and must fail fast when Groq credentials are missing.
+4. Local-model Discord E2E is opt-in only (`RUN_DISCORD_E2E_LOCAL_MODEL=true`).
+5. Canonical full gate uses cloud embeddings (`EMBEDDINGS_BACKEND=openai`, `OPENAI_EMBEDDING_MODEL=text-embedding-3-large`) and must not pull local embedding models in required mode.
+6. Do not bypass pre-push checks (`git push --no-verify` is not allowed for normal workflows).
+7. If required env vars for Discord E2E are missing, stop and surface that explicitly.
+8. Local socket-bind preflight must pass; if it fails, run the canonical gate outside sandbox restrictions.
+9. Background jobs (`mypy`, `pip-audit`) must never run indefinitely; canonical timeouts/heartbeat logging are mandatory.
 
 ## Script Policy
 

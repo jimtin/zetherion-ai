@@ -5,11 +5,11 @@ Requires:
 - TEST_DISCORD_BOT_TOKEN environment variable (separate test bot)
 - TEST_DISCORD_CHANNEL_ID environment variable (test channel ID)
 - TEST_DISCORD_TARGET_BOT_ID environment variable (optional, ID of bot to test)
+- DISCORD_E2E_PROVIDER (optional, default: groq; allowed: groq|local)
 - Test Discord server set up
 """
 
 import asyncio
-import json
 import os
 import re
 from collections.abc import AsyncGenerator
@@ -17,7 +17,6 @@ from pathlib import Path
 from uuid import uuid4
 
 import discord
-import httpx
 import pytest
 import pytest_asyncio
 
@@ -36,6 +35,10 @@ def _load_env() -> None:
 # Load .env before evaluating skip conditions so TEST_DISCORD_* vars are available
 _load_env()
 
+DISCORD_E2E_PROVIDER = os.getenv("DISCORD_E2E_PROVIDER", "groq").strip().lower() or "groq"
+if DISCORD_E2E_PROVIDER not in {"groq", "local"}:
+    DISCORD_E2E_PROVIDER = "groq"
+
 # Skip if test Discord credentials not provided
 SKIP_DISCORD_E2E = not all(
     [
@@ -50,8 +53,8 @@ SKIP_REASON = (
 )
 
 
-async def validate_memory_recall(response: str, expected_info: str) -> tuple[bool, str]:
-    """Use Ollama to validate if a response indicates successful memory recall.
+def validate_memory_recall(response: str, expected_info: str) -> tuple[bool, str]:
+    """Validate whether response indicates successful memory recall.
 
     Args:
         response: The bot's response to analyze.
@@ -82,67 +85,29 @@ async def validate_memory_recall(response: str, expected_info: str) -> tuple[boo
         if all(part_matches):
             return True, f"All expected components found for '{expected_info}'"
 
-    validation_prompt = f"""Analyze this bot response and determine if it successfully \
-recalled the expected information.
+    # Check if it's an explicit recall failure.
+    error_phrases = [
+        "don't know",
+        "don't remember",
+        "not sure",
+        "can't recall",
+        "unable to",
+        "couldn't",
+        "haven't told me",
+        "didn't tell me",
+        "no information",
+        "no record",
+    ]
+    is_error = any(phrase in response_lower for phrase in error_phrases)
+    if is_error:
+        return False, "Response explicitly indicates failed recall"
 
-Bot response: "{response}"
-Expected information: "{expected_info}"
+    # Last-chance deterministic heuristic: require a substantive answer and
+    # at least one meaningful expected token.
+    if len(response.strip()) > 20 and any(part in response_lower for part in expected_parts):
+        return True, "Substantive response includes expected tokens"
 
-Did the bot successfully recall and mention the expected information? Consider:
-- Direct mentions (e.g., "purple", "your favorite color is purple")
-- Indirect references that indicate knowledge of the info
-- Explicit statements of not knowing indicate FAILURE
-
-Respond with ONLY a JSON object:
-{{"success": true/false, "explanation": "brief reason"}}"""
-
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            ollama_response = await client.post(
-                "http://localhost:11434/api/generate",
-                json={
-                    "model": "llama3.1:8b",
-                    "prompt": validation_prompt,
-                    "stream": False,
-                    "format": "json",
-                    "options": {"temperature": 0.1, "num_predict": 100},
-                },
-            )
-            result = ollama_response.json()
-            result_text = result.get("response", "").strip()
-
-            validation = json.loads(result_text)
-            return validation.get("success", False), validation.get("explanation", "No explanation")
-    except Exception as e:
-        # Fallback: check if the expected info is mentioned or if the response is substantive
-        # Direct match
-        if expected_lower in response_lower:
-            return True, f"Fallback: Found '{expected_info}' in response"
-
-        # Check if it's not an error/failure message
-        error_phrases = [
-            "don't know",
-            "don't remember",
-            "not sure",
-            "can't recall",
-            "unable to",
-            "couldn't",
-            "haven't told me",
-            "didn't tell me",
-            "no information",
-            "no record",
-        ]
-        is_error = any(phrase in response_lower for phrase in error_phrases)
-
-        # If it's a substantive response (not an error), consider it a pass
-        # This handles cases where the bot recalls the info indirectly
-        if not is_error and len(response) > 20:
-            return True, f"Fallback: Substantive non-error response (Ollama validation failed: {e})"
-
-        return (
-            False,
-            f"Fallback check failed (error: {e}, no '{expected_info}' found, or error response)",
-        )
+    return False, f"Expected value '{expected_info}' not found in recall response"
 
 
 class DiscordTestClient:
@@ -354,6 +319,7 @@ async def discord_test_client() -> AsyncGenerator[DiscordTestClient, None]:
     """
     if SKIP_DISCORD_E2E:
         pytest.skip(SKIP_REASON)
+    print(f"Discord E2E provider mode: {DISCORD_E2E_PROVIDER}")
 
     token = os.getenv("TEST_DISCORD_BOT_TOKEN", "")
     channel_id = int(os.getenv("TEST_DISCORD_CHANNEL_ID", "0"))
@@ -481,7 +447,7 @@ async def test_bot_remembers_information(discord_test_client: DiscordTestClient)
         assert recall_response is not None, "Bot did not respond to recall query"
 
         # Validate that the bot successfully recalled the information
-        success, explanation = await validate_memory_recall(recall_response.content, favorite_color)
+        success, explanation = validate_memory_recall(recall_response.content, favorite_color)
         print(f"Memory validation: {explanation}")
         print(f"Bot response: {recall_response.content[:200]}...")
 
