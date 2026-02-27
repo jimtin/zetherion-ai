@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import sys
-import time
 
 import click  # type: ignore[import-not-found]
 
 from zetherion_dev_agent.config import AgentConfig
+from zetherion_dev_agent.daemon import DevAutopilotDaemon
+from zetherion_dev_agent.policy_store import PolicyStore
 
 
 @click.group()  # type: ignore[misc]
@@ -87,13 +88,157 @@ def status() -> None:
     click.echo(f"\nClaude Code: {'enabled' if config.claude_code_enabled else 'disabled'}")
     click.echo(f"Annotations: {'enabled' if config.annotations_enabled else 'disabled'}")
     click.echo(f"Git:         {'enabled' if config.git_enabled else 'disabled'}")
+    click.echo(f"Container monitor: {'enabled' if config.container_monitor_enabled else 'disabled'}")
+    click.echo(f"Cleanup:           {'enabled' if config.cleanup_enabled else 'disabled'}")
+    click.echo(
+        f"Cleanup schedule:  {config.cleanup_hour:02d}:{config.cleanup_minute:02d} "
+        "(local time)"
+    )
+    click.echo(f"Autopilot API:     http://{config.api_host}:{config.api_port}/v1")
+
+
+@main.command()  # type: ignore[misc]
+@click.option("--once", is_flag=True, help="Run one discovery + cleanup cycle then exit")  # type: ignore[misc]
+@click.option("--dry-run-cleanup", is_flag=True, help="Only plan cleanup actions during --once")  # type: ignore[misc]
+@click.option("--verbose", "-v", is_flag=True, help="Verbose output")  # type: ignore[misc]
+def daemon(once: bool, dry_run_cleanup: bool, verbose: bool) -> None:
+    """Run autopilot daemon (project discovery, approvals, and nightly cleanup)."""
+    config = AgentConfig.load()
+    token_created = config.ensure_api_token()
+    if token_created:
+        config.save()
+        click.echo("Generated local API token in config.toml.")
+    click.echo(
+        f"Autopilot API endpoint: http://{config.api_host}:{config.api_port}/v1 "
+        "(Authorization: Bearer <api_token>)"
+    )
+    if not config.webhook_url:
+        click.echo("Webhook URL not configured; Discord prompts/reports will be skipped.")
+    if once:
+        daemon_runtime = DevAutopilotDaemon(config)
+        result = asyncio.run(daemon_runtime.run_once(dry_run_cleanup=dry_run_cleanup))
+        asyncio.run(daemon_runtime.close())
+        click.echo("One-shot autopilot run complete.")
+        click.echo(f"Projects discovered: {', '.join(result['projects_discovered']) or 'none'}")
+        cleanup_summary = result["cleanup_summary"]
+        click.echo(
+            "Cleanup summary: "
+            f"{cleanup_summary['success_count']} success, "
+            f"{cleanup_summary['failure_count']} failed, "
+            f"{cleanup_summary['project_count']} total project(s)."
+        )
+        return
+
+    try:
+        asyncio.run(_run_daemon(config, verbose=verbose))
+    except KeyboardInterrupt:
+        click.echo("Daemon stopped.")
+
+
+@main.group()  # type: ignore[misc]
+def policy() -> None:
+    """Manage per-project cleanup policies."""
+
+
+@policy.command("list")  # type: ignore[misc]
+def policy_list() -> None:
+    """List current per-project policies."""
+    config = AgentConfig.load()
+    store = PolicyStore(config.database_path)
+    try:
+        rows = store.list_policies()
+    finally:
+        store.close()
+    if not rows:
+        click.echo("No project policies configured yet.")
+        return
+    click.echo(f"Policies ({len(rows)}):")
+    for row in rows:
+        click.echo(
+            f"  - {row['project_id']}: mode={row['mode']} "
+            f"(source={row['source']}, updated={row['updated_at']})"
+        )
+
+
+@policy.command("set")  # type: ignore[misc]
+@click.argument("project_id")  # type: ignore[misc]
+@click.argument("mode", type=click.Choice(["ask", "auto_clean", "never_clean"]))  # type: ignore[misc]
+@click.option("--notes", default="", help="Optional notes stored with the policy")  # type: ignore[misc]
+def policy_set(project_id: str, mode: str, notes: str) -> None:
+    """Set policy mode for a project ID."""
+    config = AgentConfig.load()
+    store = PolicyStore(config.database_path)
+    try:
+        store.set_policy(project_id, mode, source="cli", notes=notes)
+    finally:
+        store.close()
+    click.echo(f"Policy set: {project_id} -> {mode}")
+
+
+@policy.command("pending")  # type: ignore[misc]
+def policy_pending() -> None:
+    """List pending project approvals."""
+    config = AgentConfig.load()
+    store = PolicyStore(config.database_path)
+    try:
+        pending = store.list_pending_approvals()
+    finally:
+        store.close()
+    if not pending:
+        click.echo("No pending approvals.")
+        return
+    click.echo(f"Pending approvals ({len(pending)}):")
+    for item in pending:
+        click.echo(
+            f"  - {item.project_id}: first_seen={item.first_seen_at}, "
+            f"last_prompted={item.last_prompted_at or 'never'}, prompts={item.prompt_count}"
+        )
+
+
+@main.command(name="cleanup")  # type: ignore[misc]
+@click.option("--project-id", default="", help="Run cleanup for one project ID")  # type: ignore[misc]
+@click.option("--dry-run/--execute", default=True, help="Plan only or execute cleanup")  # type: ignore[misc]
+def cleanup_command(project_id: str, dry_run: bool) -> None:
+    """Run cleanup immediately using current policies."""
+    config = AgentConfig.load()
+    daemon_runtime = DevAutopilotDaemon(config)
+    summary = asyncio.run(
+        daemon_runtime.run_cleanup_cycle(
+            dry_run=dry_run,
+            project_id=project_id.strip() or None,
+        )
+    )
+    asyncio.run(daemon_runtime.close())
+    click.echo(
+        f"Cleanup run complete: {summary.success_count} success, "
+        f"{summary.failure_count} failed, {summary.project_count} project(s)."
+    )
+
+
+async def _run_daemon(config: AgentConfig, *, verbose: bool) -> None:
+    """Run legacy watch loop and autopilot daemon together."""
+    daemon_runtime = DevAutopilotDaemon(config)
+    watch_task: asyncio.Task[None] | None = None
+    if config.webhook_url and config.repos:
+        watch_task = asyncio.create_task(_watch_loop(config, once=False, verbose=verbose))
+    try:
+        await daemon_runtime.run_forever()
+    finally:
+        if watch_task is not None:
+            watch_task.cancel()
+            await asyncio.gather(watch_task, return_exceptions=True)
 
 
 async def _watch_loop(config: AgentConfig, *, once: bool, verbose: bool) -> None:
     """Main watch loop."""
     from zetherion_dev_agent.sender import send_event
     from zetherion_dev_agent.state import ScanState
-    from zetherion_dev_agent.watchers.annotations import diff_annotations, scan_annotations
+    from zetherion_dev_agent.watchers.annotations import (
+        annotation_state_key,
+        diff_annotations,
+        parse_state_annotation,
+        scan_annotations,
+    )
     from zetherion_dev_agent.watchers.claude_code import get_new_sessions
     from zetherion_dev_agent.watchers.git import (
         get_latest_sha,
@@ -137,6 +282,33 @@ async def _watch_loop(config: AgentConfig, *, once: bool, verbose: bool) -> None
                         status = "sent" if ok else "FAILED"
                         click.echo(f"  [{status}] commit {commit.sha[:7]}: {commit.message[:60]}")
 
+                    # Heuristic deploy marker: commits on main/release branches.
+                    branch = commit.branch.lower()
+                    if branch in {"main", "master"} or branch.startswith("release/"):
+                        deploy_fields = {
+                            "project": project,
+                            "environment": "production",
+                            "source": "heuristic_commit",
+                            "commit_sha": commit.sha,
+                            "branch": commit.branch,
+                            "status": "candidate",
+                            "title": f"Deploy candidate ({commit.branch})",
+                        }
+                        deploy_ok = await send_event(
+                            config.webhook_url,
+                            config.agent_name,
+                            "deploy",
+                            f"Deploy candidate: {commit.sha[:7]} on {commit.branch}",
+                            deploy_fields,
+                        )
+                        if deploy_ok:
+                            events_sent += 1
+                        if verbose:
+                            click.echo(
+                                f"  [{'sent' if deploy_ok else 'FAILED'}] deploy "
+                                f"candidate {commit.sha[:7]}"
+                            )
+
                 # Update state
                 new_sha = get_latest_sha(repo_path)
                 if new_sha:
@@ -163,6 +335,28 @@ async def _watch_loop(config: AgentConfig, *, once: bool, verbose: bool) -> None
                             events_sent += 1
                         if verbose:
                             click.echo(f"  [{'sent' if ok else 'FAILED'}] tag {tag.name}")
+
+                        # Heuristic deploy marker: new release tags.
+                        deploy_fields = {
+                            "project": project,
+                            "environment": "production",
+                            "source": "heuristic_tag",
+                            "commit_sha": tag.sha,
+                            "tag_name": tag.name,
+                            "status": "tagged",
+                            "title": f"Release tag {tag.name}",
+                        }
+                        deploy_ok = await send_event(
+                            config.webhook_url,
+                            config.agent_name,
+                            "deploy",
+                            f"Release tag observed: {tag.name}",
+                            deploy_fields,
+                        )
+                        if deploy_ok:
+                            events_sent += 1
+                        if verbose:
+                            click.echo(f"  [{'sent' if deploy_ok else 'FAILED'}] deploy tag marker")
                 state.known_tags[repo_path] = [t.name for t in current_tags]
 
             # --- Annotations ---
@@ -170,22 +364,19 @@ async def _watch_loop(config: AgentConfig, *, once: bool, verbose: bool) -> None
                 current_annotations = scan_annotations(repo_path)
 
                 # Reconstruct previous annotations from state
-                from zetherion_dev_agent.watchers.annotations import Annotation
-
                 old_annotations = []
+                saw_legacy_keys = False
                 for key, content in state.known_annotations.get(repo_path, {}).items():
-                    parts = key.split(":", 2)
-                    if len(parts) >= 2:
-                        old_annotations.append(
-                            Annotation(
-                                annotation_type=parts[0],
-                                content=content,
-                                file=parts[1] if len(parts) > 1 else "",
-                                line=0,
-                            )
-                        )
+                    annotation, is_legacy = parse_state_annotation(key, content)
+                    if is_legacy:
+                        saw_legacy_keys = True
+                    if annotation is not None:
+                        old_annotations.append(annotation)
 
                 added, removed = diff_annotations(old_annotations, current_annotations)
+                if saw_legacy_keys:
+                    # Avoid one-time false "removed" noise while migrating old keys.
+                    removed = []
 
                 for ann in added:
                     fields = {
@@ -230,7 +421,7 @@ async def _watch_loop(config: AgentConfig, *, once: bool, verbose: bool) -> None
 
                 # Update state
                 state.known_annotations[repo_path] = {
-                    f"{a.annotation_type}:{a.file}": a.content for a in current_annotations
+                    annotation_state_key(a): a.content for a in current_annotations
                 }
 
             # --- Claude Code sessions ---
@@ -269,7 +460,7 @@ async def _watch_loop(config: AgentConfig, *, once: bool, verbose: bool) -> None
         if once:
             break
 
-        time.sleep(config.scan_interval)
+        await asyncio.sleep(config.scan_interval)
 
 
 if __name__ == "__main__":

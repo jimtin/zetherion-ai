@@ -19,8 +19,8 @@ Every code change passes through three automated quality tiers before reaching p
 +---------------------------------------------------------------+
 |  Tier 2: Local Push Gates                                      |
 |  Runs: on every git push (hook) and pre-merge validation       |
-|  Checks: lightweight pre-push hook + full production-parity     |
-|          pipeline via scripts/pre-push-tests.sh                |
+|  Checks: canonical full production-parity pipeline via          |
+|          scripts/test-full.sh                                   |
 |  Effect: blocks push/merge if checks fail                      |
 +---------------------------------------------------------------+
                              |
@@ -102,20 +102,12 @@ Bypassing hooks is discouraged. If you bypass locally, GitHub Actions CI will st
 
 ## Pre-Push and Pre-Merge Validation
 
-Zetherion AI has two local validation paths:
+Zetherion AI uses one canonical local validation path:
 
-1. `.git-hooks/pre-push` (automatic on `git push`) for fast feedback.
-2. `scripts/pre-push-tests.sh` (manual/CI-style) for production-parity validation.
+1. `.git-hooks/pre-push` (automatic on `git push`) executes `scripts/test-full.sh`.
+2. `scripts/test-full.sh` can be run directly for manual full validation.
 
-### Lightweight Git Hook (`.git-hooks/pre-push`)
-
-| Step | Command | What It Checks |
-|------|---------|----------------|
-| 1 | `ruff check src/ tests/` | Linting |
-| 2 | `mypy src/zetherion_ai --config-file=pyproject.toml` | Type checking |
-| 3 | `pytest tests/ -m "not integration" ... --cov=src/zetherion_ai` | Unit suite + coverage gate |
-
-### Production-Parity Pipeline (`scripts/pre-push-tests.sh`)
+### Production-Parity Pipeline (`scripts/test-full.sh`)
 
 This script is the canonical full local gate before merge. It performs:
 
@@ -128,7 +120,7 @@ This script is the canonical full local gate before merge. It performs:
 Run it directly:
 
 ```bash
-bash scripts/pre-push-tests.sh
+bash scripts/test-full.sh
 ```
 
 ### Setup
@@ -308,7 +300,7 @@ git push
 |------|---------|
 | `.pre-commit-config.yaml` | Pre-commit hook definitions (7 hooks across 6 tool repositories) |
 | `.git-hooks/pre-push` | Lightweight pre-push hook (lint, type-check, unit tests) |
-| `scripts/pre-push-tests.sh` | Full production-parity test pipeline (unit + integration + Docker E2E + Discord E2E) |
+| `scripts/test-full.sh` | Full production-parity test pipeline (unit + integration + Docker E2E + Discord E2E) |
 | `.github/workflows/ci.yml` | GitHub Actions CI/CD workflow (9 jobs) |
 | `.gitleaks.toml` | Gitleaks secret scanning rules and allowlists |
 | `pyproject.toml` | Unified configuration for pytest, mypy, ruff, coverage, and bandit |
@@ -383,7 +375,7 @@ pre-commit run --all-files
 pytest tests/ -m "not integration and not discord_e2e" -v --tb=long
 
 # Full production-parity path
-bash scripts/pre-push-tests.sh
+bash scripts/test-full.sh
 
 # Run only the failing test with debug output
 pytest tests/unit/test_agent_core.py::test_failing_case -s -vv

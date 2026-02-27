@@ -795,14 +795,16 @@ class TestCalendarSkillExtended:
         skill = CalendarSkill()
         event_id = uuid4()
         now = datetime.now()
-        # Event that is today but not happening right now
+        # Keep the event anchored to today's date so this test is deterministic
+        # regardless of wall-clock hour (e.g., near midnight).
+        today_event_start = now.replace(hour=9, minute=0, second=0, microsecond=0)
         skill._events_cache["user123"] = {
             event_id: CalendarEvent(
                 id=event_id,
                 user_id="user123",
                 title="Later Meeting",
-                start_time=now + timedelta(hours=3),
-                end_time=now + timedelta(hours=4),
+                start_time=today_event_start,
+                end_time=today_event_start + timedelta(hours=1),
             )
         }
 

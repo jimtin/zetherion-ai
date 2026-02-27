@@ -22,6 +22,7 @@ jobs:
     needs: [ci-gate]
     permissions:
       contents: write
+      id-token: write
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -88,6 +89,30 @@ jobs:
           echo "" >> /tmp/changelog.md
           echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${BASE_REF}..${{ steps.version.outputs.tag }}" >> /tmp/changelog.md
 
+      - name: Install Cosign
+        if: steps.check_release.outputs.exists == 'false'
+        uses: sigstore/cosign-installer@v3
+
+      - name: Generate signed release manifest
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          cat > /tmp/release-manifest.json <<EOF
+          {
+            "repo": "${{ github.repository }}",
+            "tag": "${{ steps.version.outputs.tag }}",
+            "version": "${{ steps.version.outputs.version }}",
+            "commit": "${{ github.sha }}",
+            "workflow_ref": "${{ github.workflow_ref }}",
+            "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+
+          cosign sign-blob \
+            --yes \
+            --output-signature /tmp/release-manifest.sig \
+            --output-certificate /tmp/release-manifest.pem \
+            /tmp/release-manifest.json
+
       - name: Create GitHub Release
         if: steps.check_release.outputs.exists == 'false'
         env:
@@ -96,4 +121,7 @@ jobs:
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "${{ steps.version.outputs.tag }}" \
             --notes-file /tmp/changelog.md \
-            --target "${{ github.sha }}"
+            --target "${{ github.sha }}" \
+            /tmp/release-manifest.json \
+            /tmp/release-manifest.sig \
+            /tmp/release-manifest.pem

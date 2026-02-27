@@ -16,10 +16,13 @@ import asyncio
 import json
 import logging
 import shlex
+import tempfile
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from updater_sidecar.health_checker import HealthCheckConfig, check_service_health
 from updater_sidecar.models import UpdateResult
@@ -155,6 +158,27 @@ class UpdateExecutor:
 
     async def apply_update(self, tag: str, version: str) -> UpdateResult:
         """Apply an update to the given release tag."""
+        return await self.apply_update_with_verification(
+            tag=tag,
+            version=version,
+        )
+
+    async def apply_update_with_verification(
+        self,
+        *,
+        tag: str,
+        version: str,
+        verify_signatures: bool = False,
+        github_repo: str = "",
+        github_token: str = "",
+        verify_identity: str = "",
+        verify_oidc_issuer: str = "",
+        verify_rekor_url: str = "",
+        manifest_asset_name: str = "release-manifest.json",
+        signature_asset_name: str = "release-manifest.sig",
+        certificate_asset_name: str = "release-manifest.pem",
+    ) -> UpdateResult:
+        """Apply an update to the given release tag with optional signature verification."""
         if self._lock.locked():
             return UpdateResult(status="failed", error="Update already in progress")
 
@@ -168,7 +192,19 @@ class UpdateExecutor:
             )
 
         async with self._lock:
-            return await self._do_apply(tag=tag, version=version)
+            return await self._do_apply(
+                tag=tag,
+                version=version,
+                verify_signatures=verify_signatures,
+                github_repo=github_repo,
+                github_token=github_token,
+                verify_identity=verify_identity,
+                verify_oidc_issuer=verify_oidc_issuer,
+                verify_rekor_url=verify_rekor_url,
+                manifest_asset_name=manifest_asset_name,
+                signature_asset_name=signature_asset_name,
+                certificate_asset_name=certificate_asset_name,
+            )
 
     async def rollback(self, previous_sha: str) -> UpdateResult:
         """Rollback to a previous git SHA and restore active color health."""
@@ -178,7 +214,21 @@ class UpdateExecutor:
         async with self._lock:
             return await self._do_rollback_full(previous_sha)
 
-    async def _do_apply(self, tag: str, version: str) -> UpdateResult:
+    async def _do_apply(
+        self,
+        *,
+        tag: str,
+        version: str,
+        verify_signatures: bool,
+        github_repo: str,
+        github_token: str,
+        verify_identity: str,
+        verify_oidc_issuer: str,
+        verify_rekor_url: str,
+        manifest_asset_name: str,
+        signature_asset_name: str,
+        certificate_asset_name: str,
+    ) -> UpdateResult:
         start = time.monotonic()
         previous_color = self.active_color
         target_color = self._inactive_color(previous_color)
@@ -196,6 +246,25 @@ class UpdateExecutor:
         )
 
         try:
+            if verify_signatures:
+                self._current_operation = f"Verifying release signature for {tag}"
+                verify_error = await self._verify_release_signature(
+                    tag=tag,
+                    version=version,
+                    github_repo=github_repo,
+                    github_token=github_token,
+                    verify_identity=verify_identity,
+                    verify_oidc_issuer=verify_oidc_issuer,
+                    verify_rekor_url=verify_rekor_url,
+                    manifest_asset_name=manifest_asset_name,
+                    signature_asset_name=signature_asset_name,
+                    certificate_asset_name=certificate_asset_name,
+                )
+                if verify_error is not None:
+                    result.error = verify_error
+                    return await self._pause_and_rollback(result, previous_color)
+                result.steps_completed.append("verify_signature")
+
             prev_sha = await self._run_cmd("git rev-parse HEAD")
             if prev_sha is None:
                 result.error = "Failed to get current git SHA"
@@ -338,6 +407,173 @@ class UpdateExecutor:
             result.completed_at = self._now_iso()
             self._state = "idle"
             self._current_operation = None
+
+    async def _verify_release_signature(
+        self,
+        *,
+        tag: str,
+        version: str,
+        github_repo: str,
+        github_token: str,
+        verify_identity: str,
+        verify_oidc_issuer: str,
+        verify_rekor_url: str,
+        manifest_asset_name: str,
+        signature_asset_name: str,
+        certificate_asset_name: str,
+    ) -> str | None:
+        """Verify a signed release manifest via Cosign keyless + Rekor."""
+        if not github_repo.strip():
+            return "Release verification failed: missing github_repo"
+        if not verify_identity.strip():
+            return "Release verification failed: missing verify_identity"
+        if not verify_oidc_issuer.strip():
+            return "Release verification failed: missing verify_oidc_issuer"
+
+        headers: dict[str, str] = {
+            "Accept": "application/vnd.github+json",
+        }
+        if github_token.strip():
+            headers["Authorization"] = f"Bearer {github_token.strip()}"
+
+        release_url = f"https://api.github.com/repos/{github_repo}/releases/tags/{tag}"
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                release_resp = await client.get(release_url, headers=headers)
+        except httpx.RequestError as exc:
+            return f"Release verification failed: could not query GitHub release ({exc})"
+
+        if release_resp.status_code != 200:
+            return (
+                "Release verification failed: GitHub release lookup returned "
+                f"HTTP {release_resp.status_code}"
+            )
+
+        try:
+            release_data = release_resp.json()
+        except ValueError:
+            return "Release verification failed: invalid GitHub release JSON"
+
+        assets_raw = release_data.get("assets", [])
+        if not isinstance(assets_raw, list):
+            return "Release verification failed: release assets payload is invalid"
+
+        assets_by_name: dict[str, dict[str, Any]] = {}
+        for item in assets_raw:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "")).strip()
+            if name:
+                assets_by_name[name] = item
+
+        required_assets = (
+            manifest_asset_name.strip(),
+            signature_asset_name.strip(),
+            certificate_asset_name.strip(),
+        )
+        missing_assets = [name for name in required_assets if name not in assets_by_name]
+        if missing_assets:
+            return "Release verification failed: missing required assets " + ", ".join(
+                sorted(missing_assets)
+            )
+
+        def _asset_download_url(name: str) -> str:
+            raw_url = str(assets_by_name[name].get("browser_download_url", "")).strip()
+            if not raw_url:
+                return ""
+            return raw_url
+
+        manifest_url = _asset_download_url(required_assets[0])
+        signature_url = _asset_download_url(required_assets[1])
+        certificate_url = _asset_download_url(required_assets[2])
+        if not manifest_url or not signature_url or not certificate_url:
+            return "Release verification failed: one or more asset download URLs are missing"
+
+        with tempfile.TemporaryDirectory(prefix="updater-verify-") as tmp_dir:
+            manifest_path = Path(tmp_dir) / required_assets[0]
+            signature_path = Path(tmp_dir) / required_assets[1]
+            certificate_path = Path(tmp_dir) / required_assets[2]
+
+            download_error = await self._download_assets(
+                urls={
+                    manifest_path: manifest_url,
+                    signature_path: signature_url,
+                    certificate_path: certificate_url,
+                },
+                headers=headers,
+            )
+            if download_error is not None:
+                return download_error
+
+            verify_cmd_parts = [
+                "cosign",
+                "verify-blob",
+                shlex.quote(str(manifest_path)),
+                "--signature",
+                shlex.quote(str(signature_path)),
+                "--certificate",
+                shlex.quote(str(certificate_path)),
+                "--certificate-identity",
+                shlex.quote(verify_identity.strip()),
+                "--certificate-oidc-issuer",
+                shlex.quote(verify_oidc_issuer.strip()),
+            ]
+            if verify_rekor_url.strip():
+                verify_cmd_parts.extend(["--rekor-url", shlex.quote(verify_rekor_url.strip())])
+            verify_cmd = " ".join(verify_cmd_parts)
+            verify_stdout = await self._run_cmd(verify_cmd, timeout=120)
+            if verify_stdout is None:
+                return "Release verification failed: cosign verify-blob returned non-zero"
+
+            try:
+                manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return "Release verification failed: manifest asset is not valid JSON"
+
+            if not isinstance(manifest_data, dict):
+                return "Release verification failed: manifest JSON must be an object"
+            manifest_repo = str(manifest_data.get("repo", "")).strip()
+            manifest_tag = str(manifest_data.get("tag", "")).strip()
+            manifest_version = str(manifest_data.get("version", "")).strip()
+
+            if manifest_repo != github_repo:
+                return (
+                    "Release verification failed: manifest repo mismatch "
+                    f"(expected {github_repo}, got {manifest_repo})"
+                )
+            if manifest_tag != tag:
+                return (
+                    "Release verification failed: manifest tag mismatch "
+                    f"(expected {tag}, got {manifest_tag})"
+                )
+            if manifest_version and manifest_version != version:
+                return (
+                    "Release verification failed: manifest version mismatch "
+                    f"(expected {version}, got {manifest_version})"
+                )
+
+        return None
+
+    async def _download_assets(
+        self,
+        *,
+        urls: dict[Path, str],
+        headers: dict[str, str],
+    ) -> str | None:
+        """Download release assets to local paths."""
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                for path, url in urls.items():
+                    resp = await client.get(url, headers=headers)
+                    if resp.status_code != 200:
+                        return (
+                            "Release verification failed: could not download asset "
+                            f"{path.name} (HTTP {resp.status_code})"
+                        )
+                    path.write_bytes(resp.content)
+        except (httpx.RequestError, OSError) as exc:
+            return f"Release verification failed: asset download error ({exc})"
+        return None
 
     async def _do_rollback_full(self, previous_sha: str) -> UpdateResult:
         start = time.monotonic()

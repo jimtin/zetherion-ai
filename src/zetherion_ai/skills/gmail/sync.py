@@ -46,7 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_gmail_emails_unprocessed
 
 # Default sync settings
 DEFAULT_MAX_MESSAGES = 50
-DEFAULT_SYNC_QUERY = "is:inbox newer_than:1d"
+DEFAULT_SYNC_QUERY = "in:inbox newer_than:1d"
 
 
 @dataclass

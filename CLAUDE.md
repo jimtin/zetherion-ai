@@ -2,7 +2,7 @@
 
 ## Git Push Process
 
-**Before every push, run `./scripts/pre-push-tests.sh` and confirm ALL steps pass. Only push after the script completes successfully.**
+**Before every push, run `./scripts/test-full.sh` and confirm ALL steps pass. Only push after the script completes successfully.**
 
 The push pipeline is:
 
@@ -24,13 +24,13 @@ If any step fails, fix the code and re-run from step 1. Docker is torn down auto
 
 ## Test Enforcement
 
-- A direct git pre-push hook (`.git/hooks/pre-push`) runs `scripts/pre-push-tests.sh` automatically on every push.
-- Run `./scripts/pre-push-tests.sh` before every push. Confirm it passes. Then push.
+- A direct git pre-push hook (`.git/hooks/pre-push`) runs `scripts/test-full.sh` automatically on every push.
+- Run `./scripts/test-full.sh` before every push. Confirm it passes. Then push.
 - Do not push without running the full pipeline first.
 - Do not use `git push --no-verify` or any equivalent flag.
 - If tests fail, fix the code — do not remove or weaken the tests.
 - Docker Desktop must be running before pushing (the script checks for this).
-- If the git hook is missing, reinstall it: `cp scripts/pre-push-tests.sh .git/hooks/pre-push && chmod +x .git/hooks/pre-push` (or create a wrapper that calls `exec ./scripts/pre-push-tests.sh`).
+- If the git hook is missing, reinstall it: `printf '#!/usr/bin/env bash\nexec ./scripts/test-full.sh\n' > .git/hooks/pre-push && chmod +x .git/hooks/pre-push`.
 
 ## Tool Version Pins
 
@@ -54,7 +54,7 @@ pytest tests/ -m "not integration and not discord_e2e" --tb=short -q
 pytest tests/integration/test_skills_http.py tests/integration/test_heartbeat_cycle.py tests/integration/test_profile_pipeline.py tests/integration/test_agent_skills_http.py tests/integration/test_skills_e2e.py tests/integration/test_user_isolation.py tests/integration/test_encryption_at_rest.py tests/integration/test_health_skill_http.py tests/integration/test_update_skill_http.py tests/integration/test_telemetry_http.py tests/integration/test_api_http.py -m integration --tb=short -q
 
 # Full pre-push suite (requires Docker)
-./scripts/pre-push-tests.sh
+./scripts/test-full.sh
 ```
 
 ## Project Structure
@@ -64,4 +64,4 @@ pytest tests/integration/test_skills_http.py tests/integration/test_heartbeat_cy
 - **Unit tests**: `tests/`
 - **Integration tests**: `tests/integration/`
 - **Docker test config**: `docker-compose.test.yml`
-- **Pre-push script**: `scripts/pre-push-tests.sh`
+- **Pre-push script**: `scripts/test-full.sh`

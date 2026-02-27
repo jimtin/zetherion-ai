@@ -9,7 +9,9 @@ from typing import Any, Protocol
 
 from google import genai  # type: ignore[attr-defined]
 
+from zetherion_ai.agent.inference import InferenceBroker
 from zetherion_ai.agent.prompts import SYSTEM_PROMPT
+from zetherion_ai.agent.providers import Provider, TaskType
 from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
 
@@ -349,6 +351,93 @@ class GeminiRouterBackend:
         except Exception as e:
             log.error("gemini_health_check_failed", error=str(e))
             return False
+
+
+class GroqRouterBackend:
+    """Router backend using InferenceBroker with Groq-first routing."""
+
+    def __init__(self, inference: InferenceBroker | None = None) -> None:
+        self._inference = inference or InferenceBroker()
+        settings = get_settings()
+        self._model = settings.groq_model
+        log.info("groq_router_initialized", model=self._model)
+
+    async def classify(self, message: str) -> RoutingDecision:
+        """Classify a message via InferenceBroker classification task."""
+        try:
+            result = await self._inference.infer(
+                prompt=f"{ROUTER_PROMPT}\n\nUser message: {message}",
+                task_type=TaskType.CLASSIFICATION,
+                max_tokens=150,
+                temperature=0.1,
+            )
+            result_text = (result.content or "").strip()
+
+            json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", result_text, re.DOTALL)
+            if json_match:
+                result_text = json_match.group(1)
+            else:
+                json_match = re.search(r"\{.*?\}", result_text, re.DOTALL)
+                if json_match:
+                    result_text = json_match.group(0)
+
+            parsed = json.loads(result_text.strip())
+            if "intent" not in parsed:
+                raise ValueError("Missing 'intent' field in response")
+
+            intent = MessageIntent(parsed["intent"].lower())
+            confidence = float(parsed.get("confidence", 0.8))
+            confidence = max(0.0, min(1.0, confidence))
+            reasoning = str(parsed.get("reasoning", ""))
+            use_claude = intent == MessageIntent.COMPLEX_TASK and confidence > 0.7
+
+            decision = RoutingDecision(
+                intent=intent,
+                confidence=confidence,
+                reasoning=reasoning,
+                use_claude=use_claude,
+            )
+            log.debug(
+                "message_classified",
+                intent=intent.value,
+                confidence=confidence,
+                use_claude=use_claude,
+                backend="groq",
+                provider=result.provider.value,
+                model=result.model,
+            )
+            return decision
+        except Exception as e:
+            log.error(
+                "groq_classification_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+                message=message[:50],
+            )
+            return RoutingDecision(
+                intent=MessageIntent.SIMPLE_QUERY,
+                confidence=0.5,
+                reasoning="Groq classification failed, using safe fallback",
+                use_claude=False,
+            )
+
+    async def generate_simple_response(self, message: str) -> str:
+        """Generate a simple response via InferenceBroker simple_qa task."""
+        try:
+            result = await self._inference.infer(
+                prompt=f"{SYSTEM_PROMPT}\n\nUser: {message}",
+                task_type=TaskType.SIMPLE_QA,
+                max_tokens=500,
+                temperature=0.7,
+            )
+            return result.content or "I'm having trouble processing that. Could you try again?"
+        except Exception as e:
+            log.error("groq_simple_response_failed", error=str(e))
+            return "I'm having trouble processing that. Could you try again?"
+
+    async def health_check(self) -> bool:
+        """Check Groq availability."""
+        return await self._inference.health_check(Provider.GROQ)
 
 
 class MessageRouter:

@@ -12,9 +12,14 @@ repos:
       - id: ruff
         args: [--fix]
         types_or: [python, pyi]
+        # Synthetic benchmark/data generators intentionally contain long payload literals
+        # and placeholder maps that trip generic lint rules.
+        exclude: ^scripts/(benchmark-router-security|generate-email-dataset|generate-router-security-dataset)\.py$
       # Run the formatter
       - id: ruff-format
         types_or: [python, pyi]
+        # Keep formatter behavior aligned with the ruff hook exclusion above.
+        exclude: ^scripts/(benchmark-router-security|generate-email-dataset|generate-router-security-dataset)\.py$
 
   # Type checking with mypy
   - repo: https://github.com/pre-commit/mirrors-mypy

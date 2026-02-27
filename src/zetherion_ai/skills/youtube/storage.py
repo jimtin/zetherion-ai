@@ -11,6 +11,7 @@ from uuid import UUID
 
 import asyncpg  # type: ignore[import-untyped,import-not-found]
 
+from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
 
 if TYPE_CHECKING:
@@ -216,8 +217,19 @@ class YouTubeStorage:
         if self._pool is None:
             if self._dsn is None:
                 raise RuntimeError("Cannot initialize without dsn or pool")
-            self._pool = await asyncpg.create_pool(dsn=self._dsn)
-            log.info("youtube_storage_pool_created")
+            settings = get_settings()
+            pool_min = max(1, int(settings.postgres_pool_min_size))
+            pool_max = max(pool_min, int(settings.postgres_pool_max_size))
+            self._pool = await asyncpg.create_pool(
+                dsn=self._dsn,
+                min_size=pool_min,
+                max_size=pool_max,
+            )
+            log.info(
+                "youtube_storage_pool_created",
+                min_size=pool_min,
+                max_size=pool_max,
+            )
         async with self._db.acquire() as conn:
             await conn.execute(_SCHEMA_SQL)
         log.info("youtube_storage_initialized")

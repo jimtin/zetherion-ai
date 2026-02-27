@@ -30,6 +30,8 @@ class DecisionContext:
     schedule_constraints: list[dict[str, Any]] = field(default_factory=list)
     active_policies: list[dict[str, Any]] = field(default_factory=list)
     recent_learnings: list[dict[str, Any]] = field(default_factory=list)
+    owner_personality: dict[str, Any] = field(default_factory=dict)
+    contact_personalities: list[dict[str, Any]] = field(default_factory=list)
 
     def to_prompt_fragment(self) -> str:
         """Convert the decision context into a text fragment for the LLM system prompt."""
@@ -70,6 +72,24 @@ class DecisionContext:
             learning_strs = [lr.get("content", "") for lr in self.recent_learnings[:3]]
             parts.append(f"Recent learnings: {'; '.join(learning_strs)}")
 
+        if self.owner_personality:
+            ws = self.owner_personality.get("writing_style", {})
+            comm = self.owner_personality.get("communication", {})
+            parts.append(
+                f"Owner style: {ws.get('formality_mode')} formality, "
+                f"{comm.get('primary_trait_mode')} communication, "
+                f"assertiveness: {comm.get('assertiveness_ema', 0.5):.2f}"
+            )
+
+        for cp in self.contact_personalities[:3]:
+            rel = cp.get("relationship", {})
+            parts.append(
+                f"Contact {cp.get('subject_email')}: "
+                f"familiarity={rel.get('familiarity_ema', 0.5):.2f}, "
+                f"dynamic={rel.get('power_dynamic_mode')}, "
+                f"obs={cp.get('observation_count', 0)}"
+            )
+
         return "\n".join(parts) if parts else ""
 
     @property
@@ -81,6 +101,8 @@ class DecisionContext:
             and not self.schedule_constraints
             and not self.active_policies
             and not self.recent_learnings
+            and not self.owner_personality
+            and not self.contact_personalities
         )
 
 
@@ -137,6 +159,22 @@ class DecisionContextBuilder:
         # Fetch recent learnings
         learnings = await self._storage.list_learnings(user_id, limit=MAX_LEARNINGS)
         ctx.recent_learnings = [lr.to_db_row() for lr in learnings]
+
+        # Owner personality profile
+        owner_profiles = await self._storage.list_personality_profiles(
+            user_id,
+            subject_role="owner",
+            limit=1,
+        )
+        if owner_profiles:
+            ctx.owner_personality = owner_profiles[0].to_db_row()
+
+        # Contact personalities for mentioned emails
+        if mentioned_emails:
+            for email in mentioned_emails[:MAX_CONTACTS]:
+                cp = await self._storage.get_personality_profile(user_id, email, "contact")
+                if cp:
+                    ctx.contact_personalities.append(cp.to_db_row())
 
         log.info(
             "decision_context_built",

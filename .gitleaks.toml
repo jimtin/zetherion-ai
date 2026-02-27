@@ -12,6 +12,7 @@ useDefault = true
 # Paths to ignore (these are safe to exclude from scanning)
 paths = [
     '''\.git/''',
+    '''\.claude/''',
     '''\.venv/''',
     '''\.venv\.bak/''',
     '''venv/''',
@@ -31,6 +32,10 @@ paths = [
     '''data/''',
     '''qdrant_storage/''',
     '''ollama_models/''',
+    # Ignore generated benchmark datasets/reports and generator scripts
+    '''benchmarks/''',
+    '''scripts/benchmark-.*\.py$''',
+    '''scripts/generate-.*dataset\.py$''',
     # Ignore test files (contain fake tokens)
     '''tests/.*\.py$''',
     # Ignore documentation with examples (all doc subdirectories)
@@ -135,7 +140,7 @@ tags = ["password", "url"]
 id = "env-file-secrets"
 description = "Secrets in .env files (not .env.example)"
 regex = '''(?i)(password|secret|token|api[_-]?key)[\s]*=[\s]*[^\s\n]{8,}'''
-paths = ['''^\.env$''']  # Only check .env, not .env.example
+path = '''^\.env$'''  # Only check .env, not .env.example
 tags = ["env", "password"]
 [rules.allowlist]
 regexes = [
@@ -147,6 +152,7 @@ regexes = [
     '''test_(token|key)''',
 ]
 paths = [
+    '''\.env\.example$''',
     '''README\.md''',
     '''docs/''',
     '''src/.*\.py$''',  # Allow source code (not actual secrets)

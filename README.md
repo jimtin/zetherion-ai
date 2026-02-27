@@ -18,7 +18,7 @@ You choose how inference runs. The system supports local models via Ollama for o
 
 Zetherion doesn't just respond when asked. An observation pipeline passively extracts facts and preferences from your conversations without explicit commands. A heartbeat scheduler proactively surfaces task reminders, email digests, and calendar alerts on its own. A progressive trust system gradually earns autonomy over actions like drafting and sending email replies, expanding what it does automatically as you approve its judgement over time.
 
-Every piece of memory is encrypted with AES-256-GCM before it touches a database. Everything runs on your own infrastructure. Six Docker services, zero cloud dependencies for your personal data, and 3,000+ tests with an enforced `>=90%` coverage gate ensuring it all works reliably.
+Every piece of memory is encrypted with AES-256-GCM before it touches a database. Everything runs on your own infrastructure, with the current compose topology supporting blue/green API and skills deployments, internal routing, and updater orchestration. The codebase enforces a `>=90%` coverage gate.
 
 ---
 
@@ -50,7 +50,7 @@ cd zetherion-ai
 ./start.sh      # Mac/Linux  |  .\start.ps1  # Windows
 ```
 
-The startup script walks you through configuration, pulls Docker images, and launches all six services. See the [full getting-started guide](docs/user/getting-started.md) for detailed setup instructions.
+The startup script walks you through configuration, pulls Docker images, and launches the current compose topology. See the [full getting-started guide](docs/user/getting-started.md) for detailed setup instructions.
 
 ---
 
@@ -123,7 +123,7 @@ Any Input Source
 |   Router              |-----> Intent Classification
 |                       |
 |   Inference Broker    |-----> LLM Providers (your choice):
-|                       |       Local: Ollama (Llama 3.1 8B / 3.2 1B)
+|                       |       Local: Ollama (Llama 3.1 8B / 3.2 3B)
 |                       |       Cloud: Gemini / Claude / OpenAI
 +--------+-+-----------+
          | |
@@ -142,16 +142,20 @@ Any Input Source
  (proactive actions)
 ```
 
-**Six Docker services** orchestrate the full stack:
+The **current compose topology** includes runtime, routing, update, and data services:
 
 | Service | Role |
 | --- | --- |
-| `bot` | Agent core -- input gateway, security, routing, inference |
-| `skills` | REST API for Gmail, GitHub, tasks, calendar, profiles, heartbeat |
-| `qdrant` | Vector database for semantic memory search |
-| `postgres` | Relational storage for user data, profiles, trust scores, and audit logs |
-| `ollama` | Local LLM inference (Llama 3.1 8B for generation, nomic-embed-text for embeddings) |
-| `ollama-router` | Dedicated routing container (Llama 3.2 1B for fast query classification) |
+| `zetherion-ai-bot` | Discord runtime and agent orchestration |
+| `zetherion-ai-skills-blue/green` | Internal skills control plane with blue/green switching |
+| `zetherion-ai-api-blue/green` | Public API app with blue/green switching |
+| `zetherion-ai-traefik` | Internal traffic switch for skills/API |
+| `zetherion-ai-updater` | Auto-update sidecar for rollout/rollback |
+| `zetherion-ai-cloudflared` | Optional secure tunnel for public API exposure |
+| `postgres` | Relational storage for users, settings, profiles, integrations |
+| `qdrant` | Vector memory store |
+| `ollama` | Local generation/embeddings |
+| `ollama-router` | Dedicated local router model |
 
 ---
 
@@ -161,7 +165,7 @@ You control which providers handle which tasks. The system supports mixing local
 
 | Provider | Models | Typical Use | Cost |
 | --- | --- | --- | --- |
-| **Ollama (local)** | Llama 3.1 8B, Llama 3.2 1B | Privacy-sensitive operations, routing | Free |
+| **Ollama (local)** | Llama 3.1 8B, Llama 3.2 3B | Privacy-sensitive operations, routing | Free |
 | **Gemini** | 2.5 Flash | Simple queries, classification | Free tier available |
 | **Claude** | Sonnet 4.5 | Complex reasoning, code generation | Paid |
 | **OpenAI** | GPT-5.2 | Alternative complex reasoning | Paid |
@@ -187,11 +191,11 @@ Without cloud API keys, Zetherion runs entirely on local Ollama models. Add clou
 | --- | --- |
 | **Docker Desktop 4.0+** | All services run containerized -- no local Python install needed for running |
 | **Discord bot token** | Free to create at [discord.com/developers](https://discord.com/developers/applications) -- the first supported input source |
-| **Gemini API key** | *Optional* -- enables cloud inference via [Google AI Studio](https://aistudio.google.com/) (free tier available) |
+| **Gemini API key** | Required by default runtime configuration (`GEMINI_API_KEY`) |
 | **Anthropic API key** | *Optional* -- enables Claude Sonnet 4.5 for complex reasoning tasks |
 | **OpenAI API key** | *Optional* -- enables GPT-5.2 as an alternative reasoning provider |
 
-The only hard requirement beyond Docker is a Discord bot token (as the first input interface). All LLM providers are optional -- Ollama provides fully local inference out of the box.
+Discord bot token, Gemini API key, and encryption passphrase are required in the current default runtime configuration. Other provider keys are optional.
 
 ---
 
