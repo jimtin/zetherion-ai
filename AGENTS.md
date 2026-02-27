@@ -24,9 +24,10 @@ This is the only supported full local gate. Do not substitute ad-hoc pytest comm
 4. Local-model Discord E2E is opt-in only (`RUN_DISCORD_E2E_LOCAL_MODEL=true`).
 5. Canonical full gate uses cloud embeddings (`EMBEDDINGS_BACKEND=openai`, `OPENAI_EMBEDDING_MODEL=text-embedding-3-large`) and must not pull local embedding models in required mode.
 6. Do not bypass pre-push checks (`git push --no-verify` is not allowed for normal workflows).
-7. If required env vars for Discord E2E are missing, stop and surface that explicitly.
-8. Local socket-bind preflight must pass; if it fails, run the canonical gate outside sandbox restrictions.
-9. Background jobs (`mypy`, `pip-audit`) must never run indefinitely; canonical timeouts/heartbeat logging are mandatory.
+7. Delete-only pushes (remote ref deletions with no new commits/tags) are exempt and should skip the full gate automatically via `.git-hooks/pre-push`.
+8. If required env vars for Discord E2E are missing, stop and surface that explicitly.
+9. Local socket-bind preflight must pass; if it fails, run the canonical gate outside sandbox restrictions.
+10. Background jobs (`mypy`, `pip-audit`) must never run indefinitely; canonical timeouts/heartbeat logging are mandatory.
 
 ## Script Policy
 
