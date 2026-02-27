@@ -92,6 +92,7 @@ run_check "pip-licenses" "pip-licenses --allow-only='MIT License;MIT;BSD License
 echo ""
 echo "--- Tests ---"
 run_check "pytest (unit)" "pytest tests/ -m 'not integration' -q --tb=no" "false" "pytest"
+run_check "pipeline contract" "python scripts/check_pipeline_contract.py" "false" "python"
 
 # Docker (optional)
 if [[ "$DOCKER" == "true" ]]; then

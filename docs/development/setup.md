@@ -77,7 +77,7 @@ The `start.ps1` script performs the following automatically:
 1. **Prerequisites check** -- installs Docker Desktop and Git via `winget` if not present
 2. **Hardware assessment** -- detects CPU, RAM, GPU and recommends an Ollama model
 3. **Configuration wizard** -- interactive `.env` setup if no config file exists
-4. **Docker build and deploy** -- builds containers, starts 6 Docker services, waits for health checks
+4. **Docker build and deploy** -- builds containers, starts the current compose topology, waits for health checks
 5. **Model download** -- pulls the recommended Ollama model if the Ollama backend is selected
 6. **Verification** -- tests Qdrant and Ollama connectivity, displays container status
 
@@ -171,7 +171,7 @@ src/zetherion_ai/                   # Core source tree
     constants.py                    # Project-wide constants
     utils.py                        # Shared utilities
     settings_manager.py             # Runtime settings CRUD
-tests/                              # 3,000+ tests, >=90% coverage gate
+tests/                              # 5,000+ tests, >=90% coverage gate
     unit/                           # Fast, isolated tests (~24s)
     integration/                    # Full-stack tests (~2 min)
     conftest.py                     # Shared fixtures
@@ -191,16 +191,23 @@ scripts/                            # Utility scripts
 
 ### Docker Services
 
-The production `docker-compose.yml` defines 6 services:
+The production `docker-compose.yml` currently defines a blue/green-ready topology:
 
 | Service | Purpose |
 |---------|---------|
 | `zetherion-ai-bot` | Agent core -- input gateway, security, routing, inference |
-| `zetherion-ai-skills` | Skills REST API server |
+| `zetherion-ai-skills-blue/green` | Internal skills control plane |
+| `zetherion-ai-api-blue/green` | Public API application |
+| `zetherion-ai-traefik` | Internal traffic switch for API/skills |
+| `zetherion-ai-updater` | Update/rollback sidecar |
+| `zetherion-ai-cloudflared` | Optional secure public API tunnel |
 | `ollama` | Local LLM inference (generation) |
 | `ollama-router` | Local LLM inference (routing) |
 | `postgres` | PostgreSQL for structured data |
 | `qdrant` | Vector database for semantic memory |
+
+If helper scripts disagree with container names (legacy single-skills checks),
+use `docker compose ps` as source of truth.
 
 ---
 
@@ -333,7 +340,7 @@ ruff format .
 
 ## Testing
 
-Zetherion AI maintains 3,000+ tests with an enforced overall coverage gate of `>=90%`.
+Zetherion AI maintains 5,000+ tests with an enforced overall coverage gate of `>=90%`.
 
 For the full testing guide, patterns, fixtures, and mocking strategies, see [Testing](testing.md).
 
@@ -344,7 +351,7 @@ For the full testing guide, patterns, fixtures, and mocking strategies, see [Tes
 pytest tests/ -m "not integration and not discord_e2e"
 
 # Production-parity validation (recommended before merge)
-bash scripts/pre-push-tests.sh
+bash scripts/test-full.sh
 
 # All tests except Discord E2E (includes integration)
 pytest tests/ -m "not discord_e2e"

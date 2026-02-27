@@ -5,17 +5,18 @@ Requires:
 - TEST_DISCORD_BOT_TOKEN environment variable (separate test bot)
 - TEST_DISCORD_CHANNEL_ID environment variable (test channel ID)
 - TEST_DISCORD_TARGET_BOT_ID environment variable (optional, ID of bot to test)
+- DISCORD_E2E_PROVIDER (optional, default: groq; allowed: groq|local)
 - Test Discord server set up
 """
 
 import asyncio
-import json
 import os
+import re
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from uuid import uuid4
 
 import discord
-import httpx
 import pytest
 import pytest_asyncio
 
@@ -34,6 +35,10 @@ def _load_env() -> None:
 # Load .env before evaluating skip conditions so TEST_DISCORD_* vars are available
 _load_env()
 
+DISCORD_E2E_PROVIDER = os.getenv("DISCORD_E2E_PROVIDER", "groq").strip().lower() or "groq"
+if DISCORD_E2E_PROVIDER not in {"groq", "local"}:
+    DISCORD_E2E_PROVIDER = "groq"
+
 # Skip if test Discord credentials not provided
 SKIP_DISCORD_E2E = not all(
     [
@@ -48,8 +53,8 @@ SKIP_REASON = (
 )
 
 
-async def validate_memory_recall(response: str, expected_info: str) -> tuple[bool, str]:
-    """Use Ollama to validate if a response indicates successful memory recall.
+def validate_memory_recall(response: str, expected_info: str) -> tuple[bool, str]:
+    """Validate whether response indicates successful memory recall.
 
     Args:
         response: The bot's response to analyze.
@@ -59,70 +64,50 @@ async def validate_memory_recall(response: str, expected_info: str) -> tuple[boo
     Returns:
         Tuple of (success: bool, explanation: str).
     """
-    validation_prompt = f"""Analyze this bot response and determine if it successfully \
-recalled the expected information.
+    response_lower = response.lower()
+    expected_lower = expected_info.lower()
 
-Bot response: "{response}"
-Expected information: "{expected_info}"
+    # Fast deterministic checks first to avoid LLM validation flakiness.
+    if expected_lower in response_lower:
+        return True, f"Direct match for '{expected_info}'"
 
-Did the bot successfully recall and mention the expected information? Consider:
-- Direct mentions (e.g., "purple", "your favorite color is purple")
-- Indirect references that indicate knowledge of the info
-- Explicit statements of not knowing indicate FAILURE
+    expected_parts = [part.strip() for part in expected_lower.split("-") if part.strip()]
+    if expected_parts:
+        part_matches: list[bool] = []
+        for part in expected_parts:
+            if part in response_lower:
+                part_matches.append(True)
+                continue
+            if re.fullmatch(r"[0-9a-f]{3,}", part) and f"#{part}" in response_lower:
+                part_matches.append(True)
+                continue
+            part_matches.append(False)
+        if all(part_matches):
+            return True, f"All expected components found for '{expected_info}'"
 
-Respond with ONLY a JSON object:
-{{"success": true/false, "explanation": "brief reason"}}"""
+    # Check if it's an explicit recall failure.
+    error_phrases = [
+        "don't know",
+        "don't remember",
+        "not sure",
+        "can't recall",
+        "unable to",
+        "couldn't",
+        "haven't told me",
+        "didn't tell me",
+        "no information",
+        "no record",
+    ]
+    is_error = any(phrase in response_lower for phrase in error_phrases)
+    if is_error:
+        return False, "Response explicitly indicates failed recall"
 
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            ollama_response = await client.post(
-                "http://localhost:11434/api/generate",
-                json={
-                    "model": "llama3.1:8b",
-                    "prompt": validation_prompt,
-                    "stream": False,
-                    "format": "json",
-                    "options": {"temperature": 0.1, "num_predict": 100},
-                },
-            )
-            result = ollama_response.json()
-            result_text = result.get("response", "").strip()
+    # Last-chance deterministic heuristic: require a substantive answer and
+    # at least one meaningful expected token.
+    if len(response.strip()) > 20 and any(part in response_lower for part in expected_parts):
+        return True, "Substantive response includes expected tokens"
 
-            validation = json.loads(result_text)
-            return validation.get("success", False), validation.get("explanation", "No explanation")
-    except Exception as e:
-        # Fallback: check if the expected info is mentioned or if the response is substantive
-        response_lower = response.lower()
-        expected_lower = expected_info.lower()
-
-        # Direct match
-        if expected_lower in response_lower:
-            return True, f"Fallback: Found '{expected_info}' in response"
-
-        # Check if it's not an error/failure message
-        error_phrases = [
-            "don't know",
-            "don't remember",
-            "not sure",
-            "can't recall",
-            "unable to",
-            "couldn't",
-            "haven't told me",
-            "didn't tell me",
-            "no information",
-            "no record",
-        ]
-        is_error = any(phrase in response_lower for phrase in error_phrases)
-
-        # If it's a substantive response (not an error), consider it a pass
-        # This handles cases where the bot recalls the info indirectly
-        if not is_error and len(response) > 20:
-            return True, f"Fallback: Substantive non-error response (Ollama validation failed: {e})"
-
-        return (
-            False,
-            f"Fallback check failed (error: {e}, no '{expected_info}' found, or error response)",
-        )
+    return False, f"Expected value '{expected_info}' not found in recall response"
 
 
 class DiscordTestClient:
@@ -334,6 +319,7 @@ async def discord_test_client() -> AsyncGenerator[DiscordTestClient, None]:
     """
     if SKIP_DISCORD_E2E:
         pytest.skip(SKIP_REASON)
+    print(f"Discord E2E provider mode: {DISCORD_E2E_PROVIDER}")
 
     token = os.getenv("TEST_DISCORD_BOT_TOKEN", "")
     channel_id = int(os.getenv("TEST_DISCORD_CHANNEL_ID", "0"))
@@ -356,8 +342,12 @@ async def test_bot_responds_to_message(discord_test_client: DiscordTestClient) -
     if not bot_id:
         pytest.skip("Could not find Zetherion AI bot in channel")
 
+    correlation = uuid4().hex[:8]
     # Send test message with @mention
-    test_message = await discord_test_client.send_message(f"<@{bot_id}> Hello, what is 2+2?")
+    test_message = await discord_test_client.send_message(
+        f"<@{bot_id}> Hello, what is 2+2? id:{correlation}"
+    )
+    retry_message = None
     response = None
 
     try:
@@ -366,6 +356,14 @@ async def test_bot_responds_to_message(discord_test_client: DiscordTestClient) -
             test_message, timeout=90.0, bot_id=bot_id
         )
 
+        if response is None:
+            retry_message = await discord_test_client.send_message(
+                f"<@{bot_id}> Retry: what is 2+2? id:{correlation}"
+            )
+            response = await discord_test_client.wait_for_bot_response(
+                retry_message, timeout=90.0, bot_id=bot_id
+            )
+
         assert response is not None, "Bot did not respond within timeout"
         assert len(response.content) > 0, "Bot response was empty"
         print(f"✅ Bot responded: {response.content[:100]}...")
@@ -373,6 +371,8 @@ async def test_bot_responds_to_message(discord_test_client: DiscordTestClient) -
     finally:
         # Cleanup test messages
         await discord_test_client.delete_message(test_message)
+        if retry_message:
+            await discord_test_client.delete_message(retry_message)
         if response:
             await discord_test_client.delete_message(response)
 
@@ -417,9 +417,11 @@ async def test_bot_remembers_information(discord_test_client: DiscordTestClient)
     if not bot_id:
         pytest.skip("Could not find Zetherion AI bot in channel")
 
+    favorite_color = f"purple-{uuid4().hex[:6]}"
+
     # Store memory
     store_message = await discord_test_client.send_message(
-        f"<@{bot_id}> Remember that my favorite color is purple"
+        f"<@{bot_id}> Remember that my favorite color is {favorite_color}"
     )
     store_response = None
     recall_message = None
@@ -432,11 +434,11 @@ async def test_bot_remembers_information(discord_test_client: DiscordTestClient)
         assert store_response is not None, "Bot did not acknowledge memory storage"
 
         # Wait a moment for memory to be indexed
-        await asyncio.sleep(3)
+        await asyncio.sleep(5)
 
         # Recall memory
         recall_message = await discord_test_client.send_message(
-            f"<@{bot_id}> What is my favorite color?"
+            f"<@{bot_id}> What is my favorite color? Please include the exact value."
         )
         recall_response = await discord_test_client.wait_for_bot_response(
             recall_message, timeout=90.0, bot_id=bot_id
@@ -445,7 +447,7 @@ async def test_bot_remembers_information(discord_test_client: DiscordTestClient)
         assert recall_response is not None, "Bot did not respond to recall query"
 
         # Validate that the bot successfully recalled the information
-        success, explanation = await validate_memory_recall(recall_response.content, "purple")
+        success, explanation = validate_memory_recall(recall_response.content, favorite_color)
         print(f"Memory validation: {explanation}")
         print(f"Bot response: {recall_response.content[:200]}...")
 

@@ -1,17 +1,22 @@
-"""Tier 2 security analysis: Ollama-based AI threat detection.
+"""Tier 2 security analysis: Groq-first AI threat detection.
 
-Uses the local Ollama router container (``llama3.2:3b``) to semantically
-analyse messages that Tier 1 could not conclusively classify.  Runs on
-**every message** by default (can be disabled via config).
+Tier 2 is explicitly cloud-first for inbound security checks:
+1. Primary: Groq (llama-3.3-70b-versatile)
+2. Fallback: Gemini
+
+No Ollama fallback is used for Tier 2 security decisions. If both cloud
+providers fail, Tier 2 fails open (returns ``None``) and Tier 1 signals
+remain in effect.
 """
 
 from __future__ import annotations
 
 import json
+import re
+from typing import Any
 
-import httpx
-
-from zetherion_ai.config import get_settings
+from zetherion_ai.agent.inference import InferenceBroker, InferenceResult
+from zetherion_ai.agent.providers import Provider, TaskType
 from zetherion_ai.discord.security.models import ThreatCategory, ThreatSignal
 from zetherion_ai.logging import get_logger
 
@@ -45,19 +50,11 @@ Respond with ONLY a JSON object:
 
 
 class SecurityAIAnalyzer:
-    """Ollama-based AI security analyzer for Tier 2 checks."""
+    """Groq-first security analyzer with Gemini fallback for Tier 2 checks."""
 
-    def __init__(self) -> None:
-        settings = get_settings()
-        self._url = settings.ollama_router_url
-        self._model = settings.ollama_router_model
-        self._timeout = settings.ollama_timeout
-        self._client: httpx.AsyncClient | None = None
-
-    async def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None:
-            self._client = httpx.AsyncClient(timeout=self._timeout)
-        return self._client
+    def __init__(self, inference: InferenceBroker | None = None) -> None:
+        self._inference = inference or InferenceBroker()
+        self._owns_inference = inference is None
 
     async def analyze(
         self,
@@ -84,24 +81,11 @@ class SecurityAIAnalyzer:
         )
 
         try:
-            client = await self._get_client()
-            response = await client.post(
-                f"{self._url}/api/generate",
-                json={
-                    "model": self._model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "format": "json",
-                    "keep_alive": "10m",
-                    "options": {
-                        "temperature": 0.1,
-                        "num_predict": 200,
-                    },
-                },
-            )
-            response.raise_for_status()
-            result_text = response.json().get("response", "").strip()
-            result = json.loads(result_text)
+            inference = await self._infer_security(prompt)
+            if inference is None:
+                return None
+
+            result = self._extract_json_payload(inference.content)
 
             if result.get("is_threat"):
                 categories = result.get("categories", ["prompt_injection"])
@@ -123,6 +107,8 @@ class SecurityAIAnalyzer:
                         "ai_reasoning": result.get("reasoning", ""),
                         "categories": categories,
                         "false_positive_likely": result.get("false_positive_likely", False),
+                        "provider": inference.provider.value,
+                        "model": inference.model,
                     },
                 )
             return None
@@ -131,8 +117,67 @@ class SecurityAIAnalyzer:
             log.warning("tier2_ai_analysis_failed", error=str(e))
             return None  # Fail open — do not block on AI failure
 
+    async def _infer_security(self, prompt: str) -> InferenceResult | None:
+        """Run security inference using Groq first, then Gemini."""
+        refresh = getattr(self._inference, "_check_api_key_updates", None)
+        if callable(refresh):
+            try:
+                refresh()
+            except Exception:
+                log.debug("tier2_key_refresh_failed")
+
+        call_provider = getattr(self._inference, "_call_provider", None)
+        if not callable(call_provider):
+            log.warning("tier2_provider_call_unavailable")
+            return None
+
+        provider_order = (Provider.GROQ, Provider.GEMINI)
+        available = self._inference.available_providers
+
+        for provider in provider_order:
+            if provider not in available:
+                continue
+
+            try:
+                result = await call_provider(
+                    provider=provider,
+                    prompt=prompt,
+                    task_type=TaskType.CLASSIFICATION,
+                    system_prompt=None,
+                    messages=None,
+                    max_tokens=220,
+                    temperature=0.1,
+                )
+                log.debug(
+                    "tier2_provider_used",
+                    provider=result.provider.value,
+                    model=result.model,
+                )
+                return result
+            except Exception as exc:
+                log.warning("tier2_provider_failed", provider=provider.value, error=str(exc))
+
+        log.warning("tier2_no_cloud_provider_available")
+        return None
+
+    @staticmethod
+    def _extract_json_payload(raw: str) -> dict[str, Any]:
+        """Parse model output JSON, tolerating markdown wrappers."""
+        text = (raw or "").strip()
+        if not text:
+            raise ValueError("empty tier2 response")
+
+        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+        if fenced:
+            text = fenced.group(1)
+        else:
+            inline = re.search(r"\{.*\}", text, re.DOTALL)
+            if inline:
+                text = inline.group(0)
+
+        return json.loads(text)
+
     async def close(self) -> None:
-        """Close the shared HTTP client."""
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        """Close internal resources when analyzer owns the broker."""
+        if self._owns_inference and hasattr(self._inference, "close"):
+            await self._inference.close()

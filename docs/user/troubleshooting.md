@@ -136,7 +136,7 @@ Kill the conflicting process or change the port in your `.env` file.
 
 ### Out of Memory
 
-Docker Desktop may not have enough memory allocated for all 6 services (bot, skills, qdrant, postgres, ollama, ollama-router). Increase the allocation in Docker Desktop under Settings > Resources > Advanced.
+Docker Desktop may not have enough memory allocated for the current compose topology (bot, API/skills blue-green services, routing, updater, and data services). Increase the allocation in Docker Desktop under Settings > Resources > Advanced.
 
 Recommended memory allocation:
 - **Gemini backend:** 4GB minimum (no local inference)
@@ -198,9 +198,7 @@ psycopg2.OperationalError: could not connect to server: Connection refused
    ```
 
 2. **Verify settings in `.env`:**
-   - `POSTGRES_HOST` -- use `localhost` for local development, `postgres` for Docker Compose
-   - `POSTGRES_PORT` -- default is 5432
-   - `POSTGRES_DB` -- the database name
+   - `POSTGRES_DSN` -- default is `postgresql://zetherion:password@postgres:5432/zetherion`
 
 3. **Check container logs:**
    ```bash
@@ -220,6 +218,20 @@ docker-compose logs zetherion-ai-bot | grep -i migration
 ```
 
 If migrations fail, check that the PostgreSQL container is fully initialized before the bot starts. The health check in Docker Compose should handle this, but on slow systems you may need to restart the bot after PostgreSQL is ready.
+
+---
+
+## Compose Drift (Temporary)
+
+`start.sh` and `status.sh` still include some legacy checks that reference the
+old single skills service name (`zetherion-ai-skills`). When those checks
+disagree with runtime state, use:
+
+```bash
+docker compose ps
+```
+
+Treat compose output as canonical until script checks are fully updated.
 
 ---
 
@@ -250,7 +262,7 @@ If Ollama is taking 30+ seconds to respond:
    docker stats zetherion-ai-ollama
    ```
 
-2. **Try a smaller model.** Llama 3.2 1B is used for routing and should be fast. If generation with Llama 3.1 8B is too slow, consider switching to Gemini for generation.
+2. **Try a smaller model.** Llama 3.2 3B is used for routing and should be fast. If generation with Llama 3.1 8B is too slow, consider switching to Gemini for generation.
 
 3. **GPU acceleration** is automatic on NVIDIA GPUs (with Docker GPU support) and Apple Silicon Macs (via Metal).
 

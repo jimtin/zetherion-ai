@@ -25,11 +25,14 @@ jobs:
 
       - name: Sync documentation files
         run: |
+          # Canonical wiki sync workflow. Keep mappings here (not docs.yml / scripts/sync-wiki.sh).
+
           # User-facing docs
           cp docs/user/troubleshooting.md wiki/Troubleshooting.md
           cp docs/user/faq.md wiki/FAQ.md
           cp docs/user/commands.md wiki/Commands.md
           cp docs/user/getting-started.md wiki/Getting-Started.md
+          cp docs/user/auto-update.md wiki/Auto-Update.md
           cp docs/user/gmail.md wiki/Gmail.md
           cp docs/user/github-integration.md wiki/GitHub-Integration.md
           cp docs/user/tasks-and-calendar.md wiki/Tasks-and-Calendar.md
@@ -39,6 +42,8 @@ jobs:
           cp docs/technical/architecture.md wiki/Architecture.md
           cp docs/technical/configuration.md wiki/Configuration.md
           cp docs/technical/security.md wiki/Security.md
+          cp docs/technical/api-reference.md wiki/Skills-API-Reference.md
+          cp docs/technical/public-api-reference.md wiki/Public-API-Reference.md
 
           # Create wiki home page
           cat > wiki/Home.md << 'EOF'
@@ -48,6 +53,7 @@ jobs:
 
           ## User Guide
           - [Getting Started](Getting-Started) - Installation and first run
+          - [Auto-Update](Auto-Update) - Update rollout/rollback runbook
           - [Commands](Commands) - All Discord commands
           - [Gmail](Gmail) - Email integration guide
           - [GitHub Integration](GitHub-Integration) - Repository management
@@ -60,6 +66,8 @@ jobs:
           - [Architecture](Architecture) - System architecture
           - [Configuration](Configuration) - Environment variables reference
           - [Security](Security) - Security model
+          - [Skills API Reference](Skills-API-Reference) - Internal skills API contract
+          - [Public API Reference](Public-API-Reference) - External `/api/v1` contract
 
           ## Links
           - [Full Documentation](https://jimtin.github.io/zetherion-ai)

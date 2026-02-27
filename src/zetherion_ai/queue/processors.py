@@ -32,6 +32,7 @@ class BotLike(Protocol):
     """Minimal bot interface needed by the queue processors."""
 
     def get_channel(self, channel_id: int, /) -> Any: ...
+    async def fetch_channel(self, channel_id: int, /) -> Any: ...
 
 
 class ReplySender(Protocol):
@@ -151,15 +152,23 @@ class QueueProcessors:
         if not content:
             return ProcessorResult(success=False, error="Empty message content")
 
-        # Try to fetch the original message for replying
+        # Resolve channel (cache first, API fetch fallback) then fetch original message.
         message_obj: Any | None = None
-        if channel_id and message_id:
+        channel: Any | None = None
+        if channel_id:
             channel = self._bot.get_channel(channel_id)
-            if channel is not None and hasattr(channel, "fetch_message"):
+            if channel is None:
                 try:
-                    message_obj = await channel.fetch_message(message_id)
+                    channel = await self._bot.fetch_channel(channel_id)
                 except Exception:
-                    log.debug("message_fetch_failed", message_id=message_id)
+                    log.warning("channel_fetch_failed", channel_id=channel_id)
+                    channel = None
+
+        if channel is not None and message_id and hasattr(channel, "fetch_message"):
+            try:
+                message_obj = await channel.fetch_message(message_id)
+            except Exception:
+                log.debug("message_fetch_failed", message_id=message_id)
 
         # Generate response through the agent
         response = await self._agent.generate_response(
@@ -169,13 +178,22 @@ class QueueProcessors:
         )
 
         # Reply to the original message or send to channel
+        delivered = False
         if message_obj is not None:
             await self._send_reply(message_obj, response)
-        elif channel_id:
-            channel = self._bot.get_channel(channel_id)
-            if channel is not None and hasattr(channel, "send"):
-                for chunk in split_text_chunks(response, max_length=2000):
-                    await channel.send(chunk)
+            delivered = True
+        elif channel is not None and hasattr(channel, "send"):
+            for chunk in split_text_chunks(response, max_length=2000):
+                await channel.send(chunk)
+            delivered = True
+
+        if not delivered:
+            log.warning(
+                "discord_response_not_delivered",
+                channel_id=channel_id,
+                message_id=message_id,
+            )
+            return ProcessorResult(success=False, error="Discord response could not be delivered")
 
         log.debug(
             "discord_message_processed",

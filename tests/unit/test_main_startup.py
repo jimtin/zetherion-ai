@@ -241,3 +241,82 @@ class TestMainStartup:
         assert call_kwargs["user_manager"] is mock_user_mgr
         assert call_kwargs["settings_manager"] is mock_settings_mgr
         mock_bot.start.assert_awaited_once_with("fake-token")
+
+    @patch("zetherion_ai.main.set_settings_manager")
+    @patch("zetherion_ai.main.SettingsManager")
+    @patch("zetherion_ai.main.UserManager")
+    @patch("zetherion_ai.main.ZetherionAIBot")
+    @patch("zetherion_ai.main.QdrantMemory")
+    @patch("zetherion_ai.main.FieldEncryptor")
+    @patch("zetherion_ai.main.KeyManager")
+    @patch("zetherion_ai.main.get_settings")
+    @patch("zetherion_ai.main.setup_logging")
+    @patch("zetherion_ai.main.get_logger")
+    async def test_main_bootstraps_model_settings_once(
+        self,
+        mock_get_logger,
+        mock_setup_logging,
+        mock_get_settings,
+        mock_key_manager_cls,
+        mock_field_encryptor_cls,
+        mock_qdrant_memory_cls,
+        mock_bot_cls,
+        mock_user_manager_cls,
+        mock_settings_manager_cls,
+        mock_set_settings_manager,
+    ) -> None:
+        """Startup should seed model settings into DB when keys are missing."""
+        from zetherion_ai.main import main
+
+        settings = MagicMock()
+        settings.encryption_passphrase.get_secret_value.return_value = "test-passphrase-long-enough"
+        settings.encryption_salt_path = "data/salt.bin"
+        settings.encryption_strict = False
+        settings.environment = "test"
+        settings.qdrant_url = "http://localhost:6333"
+        settings.discord_token.get_secret_value.return_value = "fake-token"
+        settings.postgres_dsn = "postgresql://test:test@localhost:5432/test"
+        settings.owner_user_id = 123
+        settings.openai_model = "gpt-5.2"
+        settings.claude_model = "claude-sonnet-4-5-20250929"
+        settings.groq_model = "llama-3.3-70b-versatile"
+        settings.router_model = "gemini-2.0-flash"
+        settings.ollama_generation_model = "llama3.1:8b"
+        mock_get_settings.return_value = settings
+        mock_get_logger.return_value = MagicMock()
+
+        mock_km_instance = MagicMock()
+        mock_km_instance.key = b"\x00" * 32
+        mock_key_manager_cls.return_value = mock_km_instance
+
+        mock_encryptor_instance = MagicMock()
+        mock_field_encryptor_cls.return_value = mock_encryptor_instance
+
+        mock_memory = AsyncMock()
+        mock_qdrant_memory_cls.return_value = mock_memory
+
+        mock_user_mgr = AsyncMock()
+        mock_user_mgr._pool = MagicMock()
+        mock_user_manager_cls.return_value = mock_user_mgr
+
+        mock_settings_mgr = AsyncMock()
+        mock_settings_manager_cls.return_value = mock_settings_mgr
+
+        mock_bot = AsyncMock()
+        mock_bot.start = AsyncMock()
+        mock_bot.close = AsyncMock()
+        mock_bot_cls.return_value = mock_bot
+
+        await main()
+
+        expected_keys = {
+            "openai_model",
+            "claude_model",
+            "groq_model",
+            "router_model",
+            "ollama_generation_model",
+        }
+        seeded_keys = {
+            call.args[1] for call in mock_settings_mgr.seed_if_missing.await_args_list if call.args
+        }
+        assert expected_keys.issubset(seeded_keys)
