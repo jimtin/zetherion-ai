@@ -156,6 +156,8 @@ class TestAuthMiddleware:
         app.router.add_get("/api/v1/tenants", protected)
         app.router.add_post("/api/v1/chat", chat)
         app.router.add_post("/api/v1/analytics/events", chat)
+        app.router.add_get("/api/v1/analytics/funnel", protected)
+        app.router.add_get("/api/v1/analytics/recommendations/tenant", protected)
         app.router.add_post("/api/v1/releases/markers", protected)
 
         return app
@@ -253,6 +255,30 @@ class TestAuthMiddleware:
                 headers={"X-API-Key": "sk_live_valid"},
             )
             assert resp.status == 200
+
+    @pytest.mark.asyncio
+    async def test_analytics_funnel_endpoint_uses_api_key_auth(self):
+        """Tenant funnel route is control-plane and must use API key auth."""
+        tm = AsyncMock()
+        tm.authenticate_api_key = AsyncMock(
+            return_value={"tenant_id": "tenant-funnel", "is_active": True}
+        )
+        app = self._make_app(tenant_manager=tm)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/api/v1/analytics/funnel",
+                headers={"X-API-Key": "sk_live_valid"},
+            )
+            assert resp.status == 200
+
+    @pytest.mark.asyncio
+    async def test_analytics_funnel_rejects_missing_api_key(self):
+        """Tenant funnel route should not accept missing API key."""
+        tm = AsyncMock()
+        app = self._make_app(tenant_manager=tm)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/api/v1/analytics/funnel")
+            assert resp.status == 401
 
     @pytest.mark.asyncio
     async def test_session_auth_tenant_inactive_403(self):

@@ -86,6 +86,45 @@ services:
       - zetherion-ai-test-net
     # Use Dockerfile HEALTHCHECK - distroless can only exec via ENTRYPOINT
 
+  # CGS gateway server for integration tests
+  zetherion-ai-cgs-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: zetherion-ai-test-cgs-gateway
+    command: ["-m", "zetherion_ai.cgs_gateway.server"]
+    restart: "no"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+      - /home/nonroot/.cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      zetherion-ai-api:
+        condition: service_healthy
+      zetherion-ai-skills:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
+      - CGS_GATEWAY_HOST=0.0.0.0
+      - CGS_GATEWAY_PORT=8443
+      - CGS_AUTH_JWKS_URL=https://example.com/.well-known/jwks.json
+      - CGS_AUTH_ISSUER=test-issuer
+      - CGS_AUTH_AUDIENCE=test-audience
+      - ZETHERION_PUBLIC_API_BASE_URL=http://zetherion-ai-api:8443
+      - ZETHERION_SKILLS_API_BASE_URL=http://zetherion-ai-skills:8080
+      - ZETHERION_SKILLS_API_SECRET=${ZETHERION_SKILLS_API_SECRET:-${SKILLS_API_SECRET:-test-skills-secret}}
+      - ENVIRONMENT=test
+    ports:
+      - "28444:8443"
+    networks:
+      - zetherion-ai-test-net
+
   zetherion-ai-skills:
     build:
       context: .

@@ -1,7 +1,7 @@
 # Windows Remote Installation Log
 
 **Date**: 2026-02-10
-**Source Machine**: macOS (<WINDOWS_HOST_IP_OLD>)
+**Source Machine**: macOS (<SOURCE_HOST_IP>)
 **Target Machine**: Windows 11 - "Computer-of-awesome" (<WINDOWS_HOST_IP>)
 **Windows User**: james
 **Method**: SSH remoting from macOS to Windows PowerShell
@@ -206,7 +206,7 @@ Expected: All 5 tests pass. Router and generation should respond in <3 seconds e
 - **Symptom**: `ssh: connect to host <WINDOWS_HOST_IP> port 22: Operation timed out`
 - **Cause**: Windows network profile was set to "Public", which blocks inbound connections
 - **Fix**: Changed network profile to "Private" in Windows Settings > Network & Internet
-- **Note**: Even on the same subnet (both `192.168.0.x`), Public profile blocks all inbound traffic
+- **Note**: Even on the same subnet (both `<WINDOWS_HOST_SUBNET>.x`), Public profile blocks all inbound traffic
 
 ### Issue 2: PowerShell `&&` Operator Not Supported
 - **Symptom**: `The token '&&' is not a valid statement separator in this version`

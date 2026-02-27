@@ -262,6 +262,58 @@ Query params:
 
 Attach feedback to one recommendation.
 
+### GET /api/v1/analytics/recommendations/tenant
+
+Tenant-level recommendation list for reporting/control-plane use.
+
+**Headers:** `X-API-Key`
+
+Query params:
+
+- `status` (optional)
+- `limit` (default `50`, max `200`)
+
+### GET /api/v1/analytics/funnel
+
+Tenant-level funnel rows for reporting/control-plane use.
+
+**Headers:** `X-API-Key`
+
+Query params:
+
+- `metric_date` (optional, `YYYY-MM-DD`)
+- `limit` (default `200`, max `500`)
+
+---
+
+## CRM Read API (API Key)
+
+Tenant-scoped CRM read endpoints for reporting/control-plane use.
+
+### GET /api/v1/crm/contacts
+
+List contacts for the authenticated tenant.
+
+**Headers:** `X-API-Key`
+
+Query params:
+
+- `email` (optional exact-match filter)
+- `limit` (default `50`, max `200`)
+
+### GET /api/v1/crm/interactions
+
+List interactions for the authenticated tenant.
+
+**Headers:** `X-API-Key`
+
+Query params:
+
+- `contact_id` (optional)
+- `session_id` (optional)
+- `interaction_type` (optional)
+- `limit` (default `50`, max `200`)
+
 ---
 
 ## Release Markers (API Key)

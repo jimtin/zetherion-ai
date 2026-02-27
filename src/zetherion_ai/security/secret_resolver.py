@@ -31,6 +31,7 @@ _SETTINGS_FIELD_MAP: dict[str, str] = {  # nosec B105 — field name mapping, no
     "github_token": "github_token",
     "skills_api_secret": "skills_api_secret",
     "api_jwt_secret": "api_jwt_secret",
+    "zetherion_skills_api_secret": "zetherion_skills_api_secret",
 }
 
 
