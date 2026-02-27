@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Tests for dev-agent policy persistence and cleanup history."""
 
 from __future__ import annotations

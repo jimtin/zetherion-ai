@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Tests for dev-agent Docker discovery and cleanup planning helpers."""
 
 from __future__ import annotations
