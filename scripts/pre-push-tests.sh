@@ -46,6 +46,12 @@ RUN_OPTIONAL_E2E="${RUN_OPTIONAL_E2E:-false}"
 SKIP_OLLAMA_PULLS="${SKIP_OLLAMA_PULLS:-false}"
 PRESERVE_TEST_VOLUMES="${PRESERVE_TEST_VOLUMES:-false}"
 RUN_DISCORD_E2E_REQUIRED="${RUN_DISCORD_E2E_REQUIRED:-true}"
+DISCORD_E2E_PROVIDER="${DISCORD_E2E_PROVIDER:-groq}"
+RUN_DISCORD_E2E_LOCAL_MODEL="${RUN_DISCORD_E2E_LOCAL_MODEL:-false}"
+OLLAMA_PULL_PROFILE="none"
+EMBEDDINGS_BACKEND="${EMBEDDINGS_BACKEND:-openai}"
+OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}"
+OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-3072}"
 MYPY_TIMEOUT_SECONDS="${MYPY_TIMEOUT_SECONDS:-600}"
 PIPAUDIT_TIMEOUT_SECONDS="${PIPAUDIT_TIMEOUT_SECONDS:-300}"
 
@@ -174,6 +180,7 @@ trap cleanup EXIT
 # Arrays to track background PIDs
 declare -a BG_PIDS=()
 declare -a E2E_PIDS=()
+declare -a E2E_NAMES=()
 declare -a STATIC_PIDS=()
 declare -a STATIC_NAMES=()
 declare -a STATIC_LOGS=()
@@ -242,21 +249,29 @@ start_docker_background() {
         return 0
     fi
 
-    # Pull Ollama models (skip if already cached)
-    echo "[$(ts)] [docker] Checking Ollama models..."
-
-    if ! docker exec "${PROJECT}-ollama-router" ollama list 2>/dev/null | grep -q "llama3.2:3b"; then
-        echo "[$(ts)] [docker]   Pulling llama3.2:3b → ollama-router..."
-        docker exec "${PROJECT}-ollama-router" ollama pull llama3.2:3b 2>&1 | tail -1
-    else
-        echo "[$(ts)] [docker]   llama3.2:3b already cached in ollama-router"
+    if [ "$OLLAMA_PULL_PROFILE" = "none" ]; then
+        echo "[$(ts)] [docker] Skipping Ollama model pulls/warm-up (OLLAMA_PULL_PROFILE=none)."
+        echo "DOCKER_READY" > "$DOCKER_LOG"
+        echo "[$(ts)] [docker] Docker environment fully ready."
+        return 0
     fi
 
-    if ! docker exec "${PROJECT}-ollama" ollama list 2>/dev/null | grep -q "nomic-embed-text"; then
-        echo "[$(ts)] [docker]   Pulling nomic-embed-text → ollama..."
-        docker exec "${PROJECT}-ollama" ollama pull nomic-embed-text 2>&1 | tail -1
-    else
-        echo "[$(ts)] [docker]   nomic-embed-text already cached in ollama"
+    if [ "$OLLAMA_PULL_PROFILE" != "full" ] && [ "$OLLAMA_PULL_PROFILE" != "generation_only" ]; then
+        echo "[$(ts)] [docker] ERROR: Unsupported OLLAMA_PULL_PROFILE='$OLLAMA_PULL_PROFILE'."
+        echo "DOCKER_ERROR: Unsupported OLLAMA_PULL_PROFILE '$OLLAMA_PULL_PROFILE'" > "$DOCKER_LOG"
+        return 1
+    fi
+
+    # Pull Ollama models (skip if already cached)
+    echo "[$(ts)] [docker] Checking Ollama models (profile=$OLLAMA_PULL_PROFILE)..."
+
+    if [ "$OLLAMA_PULL_PROFILE" = "full" ]; then
+        if ! docker exec "${PROJECT}-ollama-router" ollama list 2>/dev/null | grep -q "llama3.2:3b"; then
+            echo "[$(ts)] [docker]   Pulling llama3.2:3b → ollama-router..."
+            docker exec "${PROJECT}-ollama-router" ollama pull llama3.2:3b 2>&1 | tail -1
+        else
+            echo "[$(ts)] [docker]   llama3.2:3b already cached in ollama-router"
+        fi
     fi
 
     if ! docker exec "${PROJECT}-ollama" ollama list 2>/dev/null | grep -q "llama3.1:8b"; then
@@ -270,11 +285,13 @@ start_docker_background() {
 
     # Pre-warm models with a throwaway inference (loads weights into memory)
     echo "[$(ts)] [docker] Pre-warming models..."
-    docker exec "${PROJECT}-ollama-router" curl -sf http://localhost:11434/api/generate \
-        -d '{"model":"llama3.2:3b","prompt":"hi","stream":false}' >/dev/null 2>&1 &
+    if [ "$OLLAMA_PULL_PROFILE" = "full" ]; then
+        docker exec "${PROJECT}-ollama-router" curl -sf http://localhost:11434/api/generate \
+            -d '{"model":"llama3.2:3b","prompt":"hi","stream":false}' >/dev/null 2>&1 &
+    fi
     docker exec "${PROJECT}-ollama" curl -sf http://localhost:11434/api/generate \
         -d '{"model":"llama3.1:8b","prompt":"hi","stream":false}' >/dev/null 2>&1 &
-    wait  # Wait for both warm-ups to complete
+    wait
     echo "[$(ts)] [docker] Models pre-warmed."
 
     echo "DOCKER_READY" > "$DOCKER_LOG"
@@ -286,6 +303,28 @@ echo "  Pre-push: Full test suite"
 echo "  Started at $(ts)"
 echo "========================================"
 
+DISCORD_E2E_PROVIDER="$(printf '%s' "$DISCORD_E2E_PROVIDER" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+RUN_DISCORD_E2E_LOCAL_MODEL="$(printf '%s' "$RUN_DISCORD_E2E_LOCAL_MODEL" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+if [ "$DISCORD_E2E_PROVIDER" != "groq" ] && [ "$DISCORD_E2E_PROVIDER" != "local" ]; then
+    echo "[$(ts)] ERROR: DISCORD_E2E_PROVIDER must be 'groq' or 'local' (got '$DISCORD_E2E_PROVIDER')."
+    exit 1
+fi
+if [ "$RUN_DISCORD_E2E_LOCAL_MODEL" != "true" ] && [ "$RUN_DISCORD_E2E_LOCAL_MODEL" != "false" ]; then
+    echo "[$(ts)] ERROR: RUN_DISCORD_E2E_LOCAL_MODEL must be 'true' or 'false' (got '$RUN_DISCORD_E2E_LOCAL_MODEL')."
+    exit 1
+fi
+if [ "$RUN_DISCORD_E2E_LOCAL_MODEL" = "true" ]; then
+    DISCORD_E2E_PROVIDER="local"
+fi
+if [ "$DISCORD_E2E_PROVIDER" = "groq" ]; then
+    export ROUTER_BACKEND="groq"
+    OLLAMA_PULL_PROFILE="none"
+else
+    export ROUTER_BACKEND="ollama"
+    OLLAMA_PULL_PROFILE="full"
+fi
+echo "[$(ts)] Discord E2E provider mode: $DISCORD_E2E_PROVIDER (ROUTER_BACKEND=$ROUTER_BACKEND, OLLAMA_PULL_PROFILE=$OLLAMA_PULL_PROFILE)"
+
 if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
     if [ -f ".env" ]; then
         set -a
@@ -293,9 +332,20 @@ if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
         source .env
         set +a
     fi
+    # Canonical full gate runs cloud embeddings only (OpenAI), never local embedding pulls.
+    EMBEDDINGS_BACKEND="openai"
+    OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}"
+    OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-3072}"
+
     require_env_var "TEST_DISCORD_BOT_TOKEN"
     require_env_var "TEST_DISCORD_CHANNEL_ID"
+    require_env_var "OPENAI_API_KEY"
+    if [ "$DISCORD_E2E_PROVIDER" = "groq" ]; then
+        require_env_var "GROQ_API_KEY"
+    fi
 fi
+export EMBEDDINGS_BACKEND OPENAI_EMBEDDING_MODEL OPENAI_EMBEDDING_DIMENSIONS
+echo "[$(ts)] Embeddings backend: $EMBEDDINGS_BACKEND (model=$OPENAI_EMBEDDING_MODEL, dimensions=$OPENAI_EMBEDDING_DIMENSIONS)"
 
 if [ "${SKIP_LOCAL_SOCKET_PREFLIGHT:-false}" != "true" ]; then
     if ! can_bind_local_socket; then
@@ -538,7 +588,7 @@ echo "[$(ts)] [4/5] Required Docker E2E tests (concurrent)..."
 # Create temp files for each parallel test output
 E2E_LOG_A="$(mktemp)"     # test_e2e.py (required)
 E2E_LOG_B="$(mktemp)"     # health/update/telemetry required tests
-E2E_LOG_C="$(mktemp)"     # discord required tests (optional, gated by RUN_DISCORD_E2E_REQUIRED)
+E2E_LOG_C="$(mktemp)"     # discord required tests (gated by RUN_DISCORD_E2E_REQUIRED)
 E2E_OPTIONAL_LOG="$(mktemp)"
 DISCORD_REQUIRED_STARTED=false
 
@@ -552,6 +602,7 @@ DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
     -m "integration and not optional_e2e" --timeout=120 -v --tb=short -s --no-cov \
     > "$E2E_LOG_A" 2>&1 &
 E2E_PIDS+=($!)
+E2E_NAMES+=("Docker E2E tests (test_e2e.py)")
 
 DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
     tests/integration/test_health_e2e.py \
@@ -560,13 +611,15 @@ DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
     -m "integration and not optional_e2e" --timeout=120 -v --tb=short -s --no-cov \
     > "$E2E_LOG_B" 2>&1 &
 E2E_PIDS+=($!)
+E2E_NAMES+=("Health/Update/Telemetry E2E tests")
 
 if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
-    DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
+    DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
         tests/integration/test_discord_e2e.py \
         -m "discord_e2e and not optional_e2e" --timeout=180 -v --tb=short -s --no-cov \
         > "$E2E_LOG_C" 2>&1 &
     E2E_PIDS+=($!)
+    E2E_NAMES+=("Discord E2E tests")
     DISCORD_REQUIRED_STARTED=true
 else
     echo "[$(ts)] Discord required E2E skipped (set RUN_DISCORD_E2E_REQUIRED=true to enforce)."
@@ -577,30 +630,16 @@ E2E_FAILED=false
 
 for i in "${!E2E_PIDS[@]}"; do
     pid="${E2E_PIDS[$i]}"
+    name="${E2E_NAMES[$i]}"
     if ! wait "$pid"; then
         E2E_FAILED=true
-        case $i in
-            0) echo "[$(ts)] FAILED: Docker E2E tests (test_e2e.py)" ;;
-            1) echo "[$(ts)] FAILED: Health/Update/Telemetry E2E tests" ;;
-            2)
-                if [ "$DISCORD_REQUIRED_STARTED" = "true" ]; then
-                    echo "[$(ts)] FAILED: Discord E2E tests"
-                fi
-                ;;
-        esac
+        echo "[$(ts)] FAILED: ${name}"
     else
-        case $i in
-            0) echo "[$(ts)] PASSED: Docker E2E tests (test_e2e.py)" ;;
-            1) echo "[$(ts)] PASSED: Health/Update/Telemetry E2E tests" ;;
-            2)
-                if [ "$DISCORD_REQUIRED_STARTED" = "true" ]; then
-                    echo "[$(ts)] PASSED: Discord E2E tests"
-                fi
-                ;;
-        esac
+        echo "[$(ts)] PASSED: ${name}"
     fi
 done
 E2E_PIDS=()
+E2E_NAMES=()
 
 # Stop heartbeat
 kill "$HEARTBEAT_PID" 2>/dev/null || true
@@ -638,7 +677,7 @@ fi
 if [ "$RUN_OPTIONAL_E2E" = "true" ]; then
     echo ""
     echo "[$(ts)] Running optional E2E tests (non-blocking)..."
-    if DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
+    if DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
         tests/integration/test_inbound_groq_rollout_e2e.py \
         tests/integration/test_health_e2e.py \
         tests/integration/test_discord_e2e.py \
