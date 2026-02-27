@@ -270,6 +270,24 @@ class Settings(BaseSettings):
         default=False, description="Send daily cost summary notification"
     )
     daily_summary_hour: int = Field(default=9, description="Hour (0-23) to send daily cost summary")
+    provider_issue_alerts_enabled: bool = Field(
+        default=True,
+        description=(
+            "Send proactive alerts when paid providers fail due to " "auth/billing/rate-limits"
+        ),
+    )
+    provider_issue_alert_cooldown_seconds: int = Field(
+        default=3600,
+        description="Minimum interval between repeated alerts for the same provider issue",
+    )
+    provider_probe_enabled: bool = Field(
+        default=True,
+        description="Enable periodic low-cost paid-provider readiness probes",
+    )
+    provider_probe_interval_seconds: int = Field(
+        default=1800,
+        description="Seconds between periodic paid-provider readiness probes",
+    )
 
     # Profile System Configuration (Phase 5C)
     profile_inference_enabled: bool = Field(
@@ -668,6 +686,8 @@ class Settings(BaseSettings):
         "analytics_hourly_job_interval_seconds",
         "analytics_daily_job_interval_seconds",
         "release_marker_signature_ttl_seconds",
+        "provider_issue_alert_cooldown_seconds",
+        "provider_probe_interval_seconds",
     )
     @classmethod
     def validate_positive_seconds(cls, v: int) -> int:

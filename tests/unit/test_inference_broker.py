@@ -1199,3 +1199,87 @@ class TestGroqRolloutCounters:
         assert stats["eligible_requests"] == 0
         assert stats["groq_successes"] == 0
         assert stats["fallback_uses"] == 0
+
+
+class TestProviderIssueAlerts:
+    """Tests for proactive paid-provider issue detection and alerting."""
+
+    @staticmethod
+    def _settings_with_paid_providers() -> MagicMock:
+        settings = MagicMock()
+        settings.groq_api_key = None
+        settings.anthropic_api_key = MagicMock()
+        settings.anthropic_api_key.get_secret_value.return_value = "sk-ant"
+        settings.openai_api_key = MagicMock()
+        settings.openai_api_key.get_secret_value.return_value = "sk-openai"
+        settings.gemini_api_key = MagicMock()
+        settings.gemini_api_key.get_secret_value.return_value = "gemini-test"
+        settings.ollama_generation_model = "llama3.1:8b"
+        settings.ollama_url = "http://localhost:11434"
+        settings.ollama_timeout = 30
+        settings.claude_model = "claude-sonnet-4-5-20250929"
+        settings.openai_model = "gpt-5.2"
+        settings.router_model = "gemini-2.0-flash"
+        settings.provider_issue_alerts_enabled = True
+        settings.provider_issue_alert_cooldown_seconds = 3600
+        return settings
+
+    @pytest.mark.asyncio
+    @patch("zetherion_ai.agent.inference.get_settings")
+    async def test_infer_billing_failure_emits_alert_and_falls_back(self, mock_get_settings):
+        """Billing failures should trigger one provider alert and continue with fallback."""
+        mock_get_settings.return_value = self._settings_with_paid_providers()
+        handler = AsyncMock()
+
+        with (
+            patch("zetherion_ai.agent.inference.anthropic.AsyncAnthropic"),
+            patch("zetherion_ai.agent.inference.openai.AsyncOpenAI"),
+            patch("zetherion_ai.agent.inference.genai.Client"),
+        ):
+            broker = InferenceBroker(provider_issue_handler=handler)
+
+        broker._call_provider = AsyncMock(side_effect=RuntimeError("credit balance is too low"))
+        broker._try_fallbacks = AsyncMock(
+            return_value=InferenceResult(
+                content="fallback ok",
+                provider=Provider.OPENAI,
+                task_type=TaskType.CODE_GENERATION,
+                model="gpt-5.2",
+            )
+        )
+
+        result = await broker.infer(prompt="write code", task_type=TaskType.CODE_GENERATION)
+
+        assert result.provider == Provider.OPENAI
+        handler.assert_awaited_once()
+        alert = handler.await_args.args[0]
+        assert alert.provider == Provider.CLAUDE
+        assert alert.issue_type == "billing"
+        assert Provider.CLAUDE not in broker.available_providers
+
+    @pytest.mark.asyncio
+    @patch("zetherion_ai.agent.inference.get_settings")
+    async def test_duplicate_issue_within_cooldown_is_throttled(self, mock_get_settings):
+        """Identical provider issues should be throttled by cooldown."""
+        mock_get_settings.return_value = self._settings_with_paid_providers()
+        handler = AsyncMock()
+
+        with (
+            patch("zetherion_ai.agent.inference.anthropic.AsyncAnthropic"),
+            patch("zetherion_ai.agent.inference.openai.AsyncOpenAI"),
+            patch("zetherion_ai.agent.inference.genai.Client"),
+        ):
+            broker = InferenceBroker(provider_issue_handler=handler)
+
+        await broker._record_provider_issue(
+            Provider.CLAUDE,
+            RuntimeError("credit balance is too low"),
+            task_type=TaskType.CODE_GENERATION,
+        )
+        await broker._record_provider_issue(
+            Provider.CLAUDE,
+            RuntimeError("credit balance is too low"),
+            task_type=TaskType.CODE_GENERATION,
+        )
+
+        handler.assert_awaited_once()

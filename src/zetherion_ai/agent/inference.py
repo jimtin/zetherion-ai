@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json as _json
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -75,6 +75,32 @@ class ProviderHealth:
 
 
 @dataclass
+class ProviderIssueState:
+    """Tracks a persistent provider issue for reminder throttling."""
+
+    issue_type: str
+    first_seen: float
+    last_seen: float
+    last_notified: float
+    fail_count: int = 1
+    last_error: str = ""
+
+
+@dataclass
+class ProviderIssueAlert:
+    """Structured provider issue alert payload."""
+
+    provider: Provider
+    issue_type: str
+    error: str
+    fail_count: int
+    first_seen: float
+    last_seen: float
+    task_type: str = "unknown"
+    model: str = ""
+
+
+@dataclass
 class CostTracker:
     """Tracks costs per provider."""
 
@@ -111,6 +137,9 @@ class InferenceBroker:
         self,
         model_registry: ModelRegistry | None = None,
         cost_tracker: PersistentCostTracker | None = None,
+        provider_issue_handler: (
+            Callable[[ProviderIssueAlert], Awaitable[None] | None] | None
+        ) = None,
     ) -> None:
         """Initialize the inference broker.
 
@@ -127,6 +156,16 @@ class InferenceBroker:
         # Provider availability
         self._available_providers: set[Provider] = set()
         self._provider_health: dict[Provider, ProviderHealth] = {}
+        self._provider_issue_state: dict[Provider, ProviderIssueState] = {}
+        self._provider_issue_handler = provider_issue_handler
+        alerts_enabled_raw = getattr(settings, "provider_issue_alerts_enabled", True)
+        self._provider_issue_alerts_enabled = (
+            bool(alerts_enabled_raw) if isinstance(alerts_enabled_raw, bool) else True
+        )
+        cooldown_raw = getattr(settings, "provider_issue_alert_cooldown_seconds", 3600)
+        self._provider_issue_alert_cooldown_seconds = 3600
+        if isinstance(cooldown_raw, int):
+            self._provider_issue_alert_cooldown_seconds = max(60, cooldown_raw)
 
         # Cost tracking
         self._cost_tracker: dict[Provider, CostTracker] = {p: CostTracker() for p in Provider}
@@ -208,6 +247,7 @@ class InferenceBroker:
             self._claude_client = anthropic.AsyncAnthropic(api_key=new_key)
             self._current_anthropic_key = new_key
             self._available_providers.add(Provider.CLAUDE)
+            self._clear_provider_issue(Provider.CLAUDE)
             log.info("anthropic_client_reinitialized")
 
         new_key = get_secret("openai_api_key")
@@ -215,6 +255,7 @@ class InferenceBroker:
             self._openai_client = openai.AsyncOpenAI(api_key=new_key)
             self._current_openai_key = new_key
             self._available_providers.add(Provider.OPENAI)
+            self._clear_provider_issue(Provider.OPENAI)
             log.info("openai_client_reinitialized")
 
         new_key = get_secret("gemini_api_key")
@@ -222,6 +263,7 @@ class InferenceBroker:
             self._gemini_client = genai.Client(api_key=new_key)
             self._current_gemini_key = new_key
             self._available_providers.add(Provider.GEMINI)
+            self._clear_provider_issue(Provider.GEMINI)
             log.info("gemini_client_reinitialized")
 
         new_key = get_secret("groq_api_key")
@@ -232,7 +274,231 @@ class InferenceBroker:
             )
             self._current_groq_key = new_key
             self._available_providers.add(Provider.GROQ)
+            self._clear_provider_issue(Provider.GROQ)
             log.info("groq_client_reinitialized")
+
+    def set_provider_issue_handler(
+        self,
+        handler: Callable[[ProviderIssueAlert], Awaitable[None] | None] | None,
+    ) -> None:
+        """Set/replace the callback used when paid provider issues are detected."""
+        self._provider_issue_handler = handler
+
+    @staticmethod
+    def _classify_provider_issue(error: str) -> str | None:
+        """Classify high-signal paid-provider errors."""
+        text = error.lower()
+
+        billing_markers = (
+            "credit balance is too low",
+            "insufficient credit",
+            "insufficient credits",
+            "out of credits",
+            "insufficient_quota",
+            "quota exceeded",
+            "billing",
+            "payment required",
+            "hard limit",
+        )
+        if any(marker in text for marker in billing_markers):
+            return "billing"
+
+        auth_markers = (
+            "invalid api key",
+            "authentication",
+            "unauthorized",
+            "forbidden",
+            "api key not found",
+            "expired api key",
+            "permission denied",
+            "status code 401",
+            "status code 403",
+        )
+        if any(marker in text for marker in auth_markers):
+            return "auth"
+
+        rate_limit_markers = ("rate limit", "too many requests", "status code 429")
+        if any(marker in text for marker in rate_limit_markers):
+            return "rate_limit"
+
+        return None
+
+    async def _emit_provider_issue_alert(self, alert: ProviderIssueAlert) -> None:
+        """Emit a provider issue alert through the configured callback."""
+        handler = self._provider_issue_handler
+        if handler is None:
+            log.warning(
+                "provider_issue_alert_unhandled",
+                provider=alert.provider.value,
+                issue_type=alert.issue_type,
+                error=alert.error[:240],
+            )
+            return
+
+        try:
+            maybe = handler(alert)
+            if asyncio.iscoroutine(maybe):
+                await maybe
+        except Exception:
+            log.exception(
+                "provider_issue_alert_handler_failed",
+                provider=alert.provider.value,
+                issue_type=alert.issue_type,
+            )
+
+    def _clear_provider_issue(self, provider: Provider) -> None:
+        """Clear issue state once a provider succeeds again."""
+        if provider in self._provider_issue_state:
+            del self._provider_issue_state[provider]
+            log.info("provider_issue_cleared", provider=provider.value)
+
+    async def _record_provider_issue(
+        self,
+        provider: Provider,
+        error: Exception,
+        *,
+        task_type: TaskType | None,
+        model: str = "",
+    ) -> None:
+        """Track/alert paid-provider issues (billing/auth/rate-limit) with throttling."""
+        if not self._provider_issue_alerts_enabled:
+            return
+        if provider == Provider.OLLAMA:
+            return
+
+        issue_type = self._classify_provider_issue(str(error))
+        if issue_type is None:
+            return
+
+        now = time.time()
+        current = self._provider_issue_state.get(provider)
+        if current is None or current.issue_type != issue_type:
+            state = ProviderIssueState(
+                issue_type=issue_type,
+                first_seen=now,
+                last_seen=now,
+                last_notified=0.0,
+                fail_count=1,
+                last_error=str(error),
+            )
+            self._provider_issue_state[provider] = state
+        else:
+            state = current
+            state.last_seen = now
+            state.fail_count += 1
+            state.last_error = str(error)
+
+        if issue_type in {"billing", "auth"}:
+            # Remove hard-failing paid providers from primary selection until a
+            # successful probe or key rotation re-enables them.
+            self._available_providers.discard(provider)
+
+        should_notify = (
+            state.last_notified <= 0
+            or (now - state.last_notified) >= self._provider_issue_alert_cooldown_seconds
+        )
+        if not should_notify:
+            return
+
+        state.last_notified = now
+        await self._emit_provider_issue_alert(
+            ProviderIssueAlert(
+                provider=provider,
+                issue_type=issue_type,
+                error=state.last_error,
+                fail_count=state.fail_count,
+                first_seen=state.first_seen,
+                last_seen=state.last_seen,
+                task_type=task_type.value if task_type is not None else "probe",
+                model=model,
+            )
+        )
+
+    async def _probe_provider(self, provider: Provider) -> None:
+        """Run a low-cost readiness probe for a paid provider."""
+        if provider == Provider.CLAUDE:
+            if not self._claude_client:
+                raise RuntimeError("Claude client not initialized")
+            model = get_dynamic("models", "claude_model", self._claude_model)
+            await self._claude_client.messages.create(
+                model=model,
+                max_tokens=1,
+                system="Health check",
+                messages=[{"role": "user", "content": "Reply with OK"}],  # type: ignore[arg-type]
+            )
+            self._available_providers.add(Provider.CLAUDE)
+            self._clear_provider_issue(Provider.CLAUDE)
+            return
+
+        if provider == Provider.OPENAI:
+            if not self._openai_client:
+                raise RuntimeError("OpenAI client not initialized")
+            model = get_dynamic("models", "openai_model", self._openai_model)
+            await self._openai_client.chat.completions.create(  # type: ignore[call-overload]
+                model=model,
+                messages=[{"role": "user", "content": "Reply with OK"}],
+                max_tokens=1,
+                temperature=0.0,
+            )
+            self._available_providers.add(Provider.OPENAI)
+            self._clear_provider_issue(Provider.OPENAI)
+            return
+
+        if provider == Provider.GROQ:
+            if not self._groq_client:
+                raise RuntimeError("Groq client not initialized")
+            model = get_dynamic("models", "groq_model", self._groq_model)
+            await self._groq_client.chat.completions.create(  # type: ignore[call-overload]
+                model=model,
+                messages=[{"role": "user", "content": "Reply with OK"}],
+                max_tokens=1,
+                temperature=0.0,
+            )
+            self._available_providers.add(Provider.GROQ)
+            self._clear_provider_issue(Provider.GROQ)
+            return
+
+        if provider == Provider.GEMINI:
+            if not self._gemini_client:
+                raise RuntimeError("Gemini client not initialized")
+
+            model = get_dynamic("models", "router_model", self._gemini_model)
+
+            def _sync_probe() -> None:
+                self._gemini_client.models.generate_content(  # type: ignore[union-attr]
+                    model=model,
+                    contents="Reply with OK",
+                    config={"temperature": 0.0, "max_output_tokens": 1},
+                )
+
+            await asyncio.to_thread(_sync_probe)
+            self._available_providers.add(Provider.GEMINI)
+            self._clear_provider_issue(Provider.GEMINI)
+            return
+
+        raise ValueError(f"Unsupported probe provider: {provider}")
+
+    async def probe_paid_providers(self) -> dict[str, bool]:
+        """Run readiness probes for all configured paid providers."""
+        results: dict[str, bool] = {}
+        for provider in (Provider.CLAUDE, Provider.OPENAI, Provider.GROQ, Provider.GEMINI):
+            client_available = (
+                (provider == Provider.CLAUDE and self._claude_client is not None)
+                or (provider == Provider.OPENAI and self._openai_client is not None)
+                or (provider == Provider.GROQ and self._groq_client is not None)
+                or (provider == Provider.GEMINI and self._gemini_client is not None)
+            )
+            if not client_available:
+                continue
+
+            try:
+                await self._probe_provider(provider)
+                results[provider.value] = True
+            except Exception as exc:
+                results[provider.value] = False
+                await self._record_provider_issue(provider, exc, task_type=None)
+
+        return results
 
     async def infer(
         self,
@@ -286,6 +552,7 @@ class InferenceBroker:
                 temperature=temperature,
             )
         except Exception as e:
+            await self._record_provider_issue(provider, e, task_type=task_type)
             log.warning(
                 "provider_call_failed",
                 provider=provider.value,
@@ -301,6 +568,8 @@ class InferenceBroker:
                 temperature=temperature,
                 failed_provider=provider,
             )
+
+        self._clear_provider_issue(result.provider)
 
         # Calculate latency
         result.latency_ms = (time.time() - start_time) * 1000
@@ -380,6 +649,7 @@ class InferenceBroker:
                     full_content.append(chunk.content)
                     yield chunk
         except Exception as e:
+            await self._record_provider_issue(provider, e, task_type=task_type)
             log.warning(
                 "stream_provider_failed",
                 provider=provider.value,
@@ -403,6 +673,8 @@ class InferenceBroker:
                 token = word + " "
                 full_content.append(token)
                 yield StreamChunk(content=token)
+
+        self._clear_provider_issue(provider)
 
         latency_ms = (time.time() - start_time) * 1000
         cost_usd, cost_estimated = self._estimate_cost(
@@ -986,6 +1258,7 @@ class InferenceBroker:
                         temperature=temperature,
                     )
                 except Exception as e:
+                    await self._record_provider_issue(fallback, e, task_type=task_type)
                     log.warning("fallback_failed", provider=fallback.value, error=str(e))
                     remaining.discard(fallback)
 
