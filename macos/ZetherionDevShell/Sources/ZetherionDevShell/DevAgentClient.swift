@@ -1,14 +1,14 @@
 import Foundation
 
 enum DevAgentClientError: LocalizedError {
-    case missingToken
+    case missingCredential
     case invalidResponse
     case requestFailed(String)
 
     var errorDescription: String? {
         switch self {
-        case .missingToken:
-            return "Missing API token. Set ZETHERION_DEV_AGENT_TOKEN in your environment."
+        case .missingCredential:
+            return "Missing API credential. Set ZETHERION_DEV_AGENT_TOKEN in your environment."
         case .invalidResponse:
             return "Invalid response from daemon."
         case let .requestFailed(message):
@@ -19,7 +19,7 @@ enum DevAgentClientError: LocalizedError {
 
 final class DevAgentClient {
     private let baseURL: URL
-    private let token: String
+    private let authCredential: String
 
     init() throws {
         let env = ProcessInfo.processInfo.environment
@@ -27,17 +27,17 @@ final class DevAgentClient {
         guard let url = URL(string: base) else {
             throw DevAgentClientError.invalidResponse
         }
-        guard let token = env["ZETHERION_DEV_AGENT_TOKEN"], !token.isEmpty else {
-            throw DevAgentClientError.missingToken
+        guard let configuredCredential = env["ZETHERION_DEV_AGENT_TOKEN"], !configuredCredential.isEmpty else {
+            throw DevAgentClientError.missingCredential
         }
         self.baseURL = url
-        self.token = token
+        self.authCredential = configuredCredential
     }
 
     func listPendingApprovals() async throws -> [PendingApproval] {
         var request = URLRequest(url: baseURL.appending(path: "approvals/pending"))
         request.httpMethod = "GET"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(authCredential)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw DevAgentClientError.invalidResponse
@@ -52,7 +52,7 @@ final class DevAgentClient {
     func setPolicy(projectID: String, mode: String) async throws {
         var request = URLRequest(url: baseURL.appending(path: "projects").appending(path: projectID).appending(path: "policy"))
         request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(authCredential)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let body: [String: String] = [
             "mode": mode,

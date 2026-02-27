@@ -375,7 +375,10 @@ class DevWatcherSkill(Skill):
         )
         entry.fingerprint = self._build_fingerprint(entry)
         if await self._is_duplicate_entry(entry):
-            return SkillResponse(request_id=request.id, message="Duplicate project discovery ignored.")
+            return SkillResponse(
+                request_id=request.id,
+                message="Duplicate project discovery ignored.",
+            )
         await self._store_entry(entry)
         return SkillResponse(request_id=request.id, message="Ingested container project signal")
 
@@ -397,7 +400,10 @@ class DevWatcherSkill(Skill):
         )
         entry.fingerprint = self._build_fingerprint(entry)
         if await self._is_duplicate_entry(entry):
-            return SkillResponse(request_id=request.id, message="Duplicate cleanup approval signal ignored.")
+            return SkillResponse(
+                request_id=request.id,
+                message="Duplicate cleanup approval signal ignored.",
+            )
         await self._store_entry(entry)
         return SkillResponse(request_id=request.id, message="Ingested cleanup approval signal")
 
