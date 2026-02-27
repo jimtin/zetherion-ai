@@ -95,6 +95,12 @@ function maskText(value: string | null | undefined, masked: boolean): string {
 export class ZetherionObserver {
   private readonly options: ZetherionObserverOptions;
 
+  private readonly provider: "zetherion" | "cgs";
+
+  private readonly authToken: string;
+
+  private readonly conversationId?: string;
+
   private readonly fetchImpl: typeof fetch;
 
   private readonly baseUrl: string;
@@ -147,6 +153,24 @@ export class ZetherionObserver {
     this.fetchImpl = options.fetchImpl ?? fetch.bind(globalThis);
     this.baseUrl = normalizeBaseUrl(options.apiBaseUrl);
     this.webSessionId = options.webSessionId;
+    this.provider = options.provider ?? "zetherion";
+    this.conversationId = options.conversationId;
+
+    if (this.provider === "cgs") {
+      if (!options.authToken) {
+        throw new Error("authToken is required when provider='cgs'");
+      }
+      if (!options.conversationId) {
+        throw new Error("conversationId is required when provider='cgs'");
+      }
+      this.authToken = options.authToken;
+    } else {
+      if (!options.sessionToken) {
+        throw new Error("sessionToken is required when provider='zetherion'");
+      }
+      this.authToken = options.sessionToken;
+    }
+
     this.maskInputs = this.options.maskInputs !== false;
     this.maskTextEnabled = this.options.maskText !== false;
     this.maxBatchSize = Math.max(1, this.options.maxBatchSize ?? DEFAULT_MAX_BATCH_SIZE);
@@ -156,7 +180,7 @@ export class ZetherionObserver {
       this.replaySampled = this.options.sampledReplay;
     } else {
       this.replaySampled = shouldSample(
-        `${this.options.sessionToken}:${this.options.externalUserId ?? "anon"}`,
+        `${this.authToken}:${this.options.externalUserId ?? "anon"}`,
         this.options.replaySampleRate ?? 0,
       );
     }
@@ -256,7 +280,12 @@ export class ZetherionObserver {
     return async (input, init) => {
       const started = Date.now();
       const method = (init?.method ?? "GET").toUpperCase();
-      const url = typeof input === "string" ? input : input.url;
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
 
       try {
         const response = await fetchFn(input, init);
@@ -292,7 +321,7 @@ export class ZetherionObserver {
       return false;
     }
 
-    const response = await this.fetchImpl(`${this.baseUrl}/api/v1/analytics/replay/chunks`, {
+    const response = await this.fetchImpl(`${this.baseUrl}${this.replayChunksPath}`, {
       method: "POST",
       headers: this.requestHeaders,
       body: JSON.stringify({
@@ -313,7 +342,7 @@ export class ZetherionObserver {
   async endSession(options: EndSessionOptions = {}): Promise<void> {
     await this.flush();
 
-    await this.fetchImpl(`${this.baseUrl}/api/v1/analytics/sessions/end`, {
+    await this.fetchImpl(`${this.baseUrl}${this.analyticsEndPath}`, {
       method: "POST",
       headers: this.requestHeaders,
       body: JSON.stringify({
@@ -327,8 +356,29 @@ export class ZetherionObserver {
   private get requestHeaders(): HeadersInit {
     return {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${this.options.sessionToken}`,
+      Authorization: `Bearer ${this.authToken}`,
     };
+  }
+
+  private get analyticsEventsPath(): string {
+    if (this.provider === "cgs") {
+      return `/service/ai/v1/conversations/${this.conversationId}/analytics/events`;
+    }
+    return "/api/v1/analytics/events";
+  }
+
+  private get replayChunksPath(): string {
+    if (this.provider === "cgs") {
+      return `/service/ai/v1/conversations/${this.conversationId}/analytics/replay/chunks`;
+    }
+    return "/api/v1/analytics/replay/chunks";
+  }
+
+  private get analyticsEndPath(): string {
+    if (this.provider === "cgs") {
+      return `/service/ai/v1/conversations/${this.conversationId}/analytics/end`;
+    }
+    return "/api/v1/analytics/sessions/end";
   }
 
   private readonly handleClick = (event: MouseEvent): void => {
@@ -502,7 +552,7 @@ export class ZetherionObserver {
     };
 
     try {
-      const response = await this.fetchImpl(`${this.baseUrl}/api/v1/analytics/events`, {
+      const response = await this.fetchImpl(`${this.baseUrl}${this.analyticsEventsPath}`, {
         method: "POST",
         headers: this.requestHeaders,
         body: JSON.stringify(payload),
@@ -512,9 +562,13 @@ export class ZetherionObserver {
         throw new Error(`analytics event ingest failed (${response.status})`);
       }
 
-      const body = (await response.json()) as { web_session_id?: string };
-      if (body.web_session_id && !this.webSessionId) {
-        this.webSessionId = body.web_session_id;
+      const body = (await response.json()) as {
+        web_session_id?: string;
+        data?: { web_session_id?: string };
+      };
+      const webSessionId = body.web_session_id ?? body.data?.web_session_id;
+      if (webSessionId && !this.webSessionId) {
+        this.webSessionId = webSessionId;
       }
     } catch {
       this.queue = [...batch, ...this.queue];

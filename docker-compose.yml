@@ -155,6 +155,110 @@ services:
           cpus: '0.25'
           memory: 128M
 
+  # CGS gateway server (blue deployment)
+  zetherion-ai-cgs-gateway-blue:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: zetherion-ai-cgs-gateway-blue
+    command: ["-m", "zetherion_ai.cgs_gateway.server"]
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+      - /home/nonroot/.cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      traefik:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
+      - CGS_GATEWAY_HOST=0.0.0.0
+      - CGS_GATEWAY_PORT=8443
+      - ZETHERION_PUBLIC_API_BASE_URL=http://zetherion-ai-traefik:8443
+      - ZETHERION_SKILLS_API_BASE_URL=http://zetherion-ai-traefik:8080
+      - ZETHERION_SKILLS_API_SECRET=${ZETHERION_SKILLS_API_SECRET:-${SKILLS_API_SECRET:-}}
+      - CGS_AUTH_JWKS_URL=${CGS_AUTH_JWKS_URL:-}
+      - CGS_AUTH_ISSUER=${CGS_AUTH_ISSUER:-}
+      - CGS_AUTH_AUDIENCE=${CGS_AUTH_AUDIENCE:-}
+      - ENVIRONMENT=production
+      - LOG_FILE_PREFIX=cgs-gateway-blue
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - zetherion-ai-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  # CGS gateway server (green deployment)
+  zetherion-ai-cgs-gateway-green:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: zetherion-ai-cgs-gateway-green
+    command: ["-m", "zetherion_ai.cgs_gateway.server"]
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+      - /home/nonroot/.cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      traefik:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
+      - CGS_GATEWAY_HOST=0.0.0.0
+      - CGS_GATEWAY_PORT=8443
+      - ZETHERION_PUBLIC_API_BASE_URL=http://zetherion-ai-traefik:8443
+      - ZETHERION_SKILLS_API_BASE_URL=http://zetherion-ai-traefik:8080
+      - ZETHERION_SKILLS_API_SECRET=${ZETHERION_SKILLS_API_SECRET:-${SKILLS_API_SECRET:-}}
+      - CGS_AUTH_JWKS_URL=${CGS_AUTH_JWKS_URL:-}
+      - CGS_AUTH_ISSUER=${CGS_AUTH_ISSUER:-}
+      - CGS_AUTH_AUDIENCE=${CGS_AUTH_AUDIENCE:-}
+      - ENVIRONMENT=production
+      - LOG_FILE_PREFIX=cgs-gateway-green
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - zetherion-ai-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
   # Cloudflare Tunnel — exposes the API to the internet without opening ports
   # Requires a Cloudflare Tunnel token (create at https://one.dash.cloudflare.com)
   cloudflared:
@@ -170,6 +274,8 @@ services:
       traefik:
         condition: service_started
       zetherion-ai-api-blue:
+        condition: service_healthy
+      zetherion-ai-cgs-gateway-blue:
         condition: service_healthy
     networks:
       - zetherion-ai-net
@@ -464,7 +570,7 @@ services:
     environment:
       - COMPOSE_FILE=/project/docker-compose.yml
       - PROJECT_DIR=/project
-      - HEALTH_URLS=http://zetherion-ai-skills-blue:8080/health,http://zetherion-ai-skills-green:8080/health,http://zetherion-ai-api-blue:8443/health,http://zetherion-ai-api-green:8443/health
+      - HEALTH_URLS=http://zetherion-ai-skills-blue:8080/health,http://zetherion-ai-skills-green:8080/health,http://zetherion-ai-api-blue:8443/health,http://zetherion-ai-api-green:8443/health,http://zetherion-ai-cgs-gateway-blue:8443/service/ai/v1/health,http://zetherion-ai-cgs-gateway-green:8443/service/ai/v1/health
       - UPDATER_SECRET_PATH=/app/data/.updater-secret
       - UPDATER_STATE_PATH=/app/data/updater-state.json
       - UPDATER_TRAEFIK_DYNAMIC_PATH=/project/config/traefik/dynamic/updater-routes.yml

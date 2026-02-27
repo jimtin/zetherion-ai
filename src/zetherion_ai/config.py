@@ -453,6 +453,39 @@ class Settings(BaseSettings):
     api_jwt_secret: SecretStr | None = Field(
         default=None, description="JWT signing secret for session tokens"
     )
+    cgs_gateway_host: str = Field(
+        default="0.0.0.0",  # nosec B104 - Intentional for Docker container
+        description="CGS gateway bind host",
+    )
+    cgs_gateway_port: int = Field(default=8743, description="CGS gateway bind port")
+    cgs_gateway_allowed_origins: str = Field(
+        default="",
+        description="Comma-separated CORS origins for CGS gateway",
+    )
+    cgs_auth_jwks_url: str = Field(
+        default="",
+        description="JWKS URL used to validate CGS JWT bearer tokens",
+    )
+    cgs_auth_issuer: str = Field(
+        default="",
+        description="Expected JWT issuer for CGS auth tokens",
+    )
+    cgs_auth_audience: str = Field(
+        default="",
+        description="Expected JWT audience for CGS auth tokens",
+    )
+    zetherion_public_api_base_url: str = Field(
+        default="http://zetherion-ai-traefik:8443",
+        description="Base URL for upstream Zetherion public API",
+    )
+    zetherion_skills_api_base_url: str = Field(
+        default="http://zetherion-ai-traefik:8080",
+        description="Base URL for upstream Zetherion skills API",
+    )
+    zetherion_skills_api_secret: SecretStr | None = Field(
+        default=None,
+        description="Optional override secret for Zetherion Skills API from CGS gateway",
+    )
 
     # Health Monitoring Configuration (Phase 10B)
     health_analysis_enabled: bool = Field(
