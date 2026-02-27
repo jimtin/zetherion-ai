@@ -65,7 +65,7 @@ Current status and future plans for Zetherion AI.
 | Total tests | 3,000+ |
 | Coverage gate | >=90% |
 | Docker services | 6 |
-| Skills | 6 built-in (tasks, calendar, profile, gmail, github, personal) |
+| Skills | 10+ built-in, including tasks, calendar, profile, gmail/email router, github, personal model, health, updater, dev watcher, milestone, and YouTube (when enabled) |
 
 ## Future Directions
 
@@ -77,11 +77,11 @@ The following areas are under consideration for future development. These are id
 - Speech-to-text and text-to-speech
 - Voice-triggered commands and responses
 
-### Multi-Tenant API
+### Public API Expansion
 
-- Public REST API for additional input sources and third-party integrations
-- Multi-user authentication and authorization
-- API rate limiting and usage tracking per tenant
+- Expand the current public API with richer tenant lifecycle/admin workflows
+- Add stronger typed contracts and SDKs for third-party app developers
+- Extend non-chat surfaces (analytics, CRM exports, and event-driven webhooks)
 
 ### Enhanced Observation
 
@@ -126,4 +126,4 @@ Have a feature request or idea? The best ways to contribute:
 
 ---
 
-**Last Updated:** 2026-02-08
+**Last Updated:** 2026-02-23

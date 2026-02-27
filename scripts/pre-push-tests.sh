@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pre-push hook: runs the full test suite before allowing a push.
+# Full local gate: runs the full test suite before allowing a push.
 # Any failure exits non-zero, blocking the push.
 #
 # Pipeline structure:
@@ -43,8 +43,50 @@ DOCKER_LOG="$(mktemp)"
 DOCKER_PID=""
 STRICT_REQUIRED_TESTS="${STRICT_REQUIRED_TESTS:-true}"
 RUN_OPTIONAL_E2E="${RUN_OPTIONAL_E2E:-false}"
+SKIP_OLLAMA_PULLS="${SKIP_OLLAMA_PULLS:-false}"
+PRESERVE_TEST_VOLUMES="${PRESERVE_TEST_VOLUMES:-false}"
+RUN_DISCORD_E2E_REQUIRED="${RUN_DISCORD_E2E_REQUIRED:-true}"
+DISCORD_E2E_PROVIDER="${DISCORD_E2E_PROVIDER:-groq}"
+RUN_DISCORD_E2E_LOCAL_MODEL="${RUN_DISCORD_E2E_LOCAL_MODEL:-false}"
+OLLAMA_PULL_PROFILE="none"
+EMBEDDINGS_BACKEND="${EMBEDDINGS_BACKEND:-openai}"
+OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}"
+OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-3072}"
+MYPY_TIMEOUT_SECONDS="${MYPY_TIMEOUT_SECONDS:-600}"
+PIPAUDIT_TIMEOUT_SECONDS="${PIPAUDIT_TIMEOUT_SECONDS:-300}"
 
 ts() { date "+%H:%M:%S"; }
+
+require_env_var() {
+    local var_name="$1"
+    if [ -z "${!var_name:-}" ]; then
+        echo "[$(ts)] ERROR: Required environment variable '$var_name' is not set."
+        return 1
+    fi
+    return 0
+}
+
+can_bind_local_socket() {
+    python - <<'PY' >/dev/null 2>&1
+import socket
+
+sock = socket.socket()
+try:
+    sock.bind(("127.0.0.1", 0))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
+}
+
+compose_down() {
+    if [ "$PRESERVE_TEST_VOLUMES" = "true" ]; then
+        docker compose -f "$COMPOSE_FILE" -p "$PROJECT" down 2>/dev/null || true
+    else
+        docker compose -f "$COMPOSE_FILE" -p "$PROJECT" down -v 2>/dev/null || true
+    fi
+}
 
 contains_skips() {
     local log_file="$1"
@@ -70,6 +112,35 @@ start_static_check() {
     STATIC_PIDS+=($!)
     STATIC_NAMES+=("$name")
     STATIC_LOGS+=("$log_file")
+}
+
+wait_for_background_task() {
+    local pid="$1"
+    local name="$2"
+    local timeout_seconds="$3"
+    local start_seconds="$SECONDS"
+    local last_heartbeat="$SECONDS"
+
+    while kill -0 "$pid" 2>/dev/null; do
+        local elapsed=$((SECONDS - start_seconds))
+        if [ "$elapsed" -ge "$timeout_seconds" ]; then
+            echo "[$(ts)] ERROR: ${name} timed out after ${timeout_seconds}s."
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            return 124
+        fi
+
+        if [ $((SECONDS - last_heartbeat)) -ge 30 ]; then
+            echo "[$(ts)]   ...waiting for ${name} (${elapsed}s elapsed)"
+            last_heartbeat="$SECONDS"
+        fi
+        sleep 2
+    done
+
+    if wait "$pid"; then
+        return 0
+    fi
+    return $?
 }
 
 cleanup() {
@@ -100,7 +171,7 @@ cleanup() {
     done
     if [ "$DOCKER_STARTED_BY_US" = true ]; then
         echo "[$(ts)] Tearing down Docker test environment..."
-        docker compose -f "$COMPOSE_FILE" -p "$PROJECT" down -v 2>/dev/null || true
+        compose_down
     fi
     rm -f "$DOCKER_LOG"
 }
@@ -109,6 +180,7 @@ trap cleanup EXIT
 # Arrays to track background PIDs
 declare -a BG_PIDS=()
 declare -a E2E_PIDS=()
+declare -a E2E_NAMES=()
 declare -a STATIC_PIDS=()
 declare -a STATIC_NAMES=()
 declare -a STATIC_LOGS=()
@@ -122,8 +194,21 @@ start_docker_background() {
         return 1
     fi
 
+    # docker-compose.test.yml uses fixed container_name values. Remove any stale
+    # leftovers explicitly so compose up never fails with "name is already in use".
+    local stale_containers=(
+        "${PROJECT}-bot"
+        "${PROJECT}-api"
+        "${PROJECT}-skills"
+        "${PROJECT}-postgres"
+        "${PROJECT}-qdrant"
+        "${PROJECT}-ollama"
+        "${PROJECT}-ollama-router"
+    )
+    docker rm -f "${stale_containers[@]}" >/dev/null 2>&1 || true
+
     echo "[$(ts)] [docker] Tearing down any stale test environment..."
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT" down -v 2>/dev/null || true
+    compose_down
 
     echo "[$(ts)] [docker] Building and starting containers..."
     docker compose -f "$COMPOSE_FILE" -p "$PROJECT" up -d --build 2>&1 | tail -5
@@ -157,21 +242,36 @@ start_docker_background() {
         sleep 3
     done
 
-    # Pull Ollama models (skip if already cached)
-    echo "[$(ts)] [docker] Checking Ollama models..."
-
-    if ! docker exec "${PROJECT}-ollama-router" ollama list 2>/dev/null | grep -q "llama3.2:3b"; then
-        echo "[$(ts)] [docker]   Pulling llama3.2:3b → ollama-router..."
-        docker exec "${PROJECT}-ollama-router" ollama pull llama3.2:3b 2>&1 | tail -1
-    else
-        echo "[$(ts)] [docker]   llama3.2:3b already cached in ollama-router"
+    if [ "$SKIP_OLLAMA_PULLS" = "true" ]; then
+        echo "[$(ts)] [docker] Skipping Ollama model pulls/warm-up (SKIP_OLLAMA_PULLS=true)."
+        echo "DOCKER_READY" > "$DOCKER_LOG"
+        echo "[$(ts)] [docker] Docker environment fully ready."
+        return 0
     fi
 
-    if ! docker exec "${PROJECT}-ollama" ollama list 2>/dev/null | grep -q "nomic-embed-text"; then
-        echo "[$(ts)] [docker]   Pulling nomic-embed-text → ollama..."
-        docker exec "${PROJECT}-ollama" ollama pull nomic-embed-text 2>&1 | tail -1
-    else
-        echo "[$(ts)] [docker]   nomic-embed-text already cached in ollama"
+    if [ "$OLLAMA_PULL_PROFILE" = "none" ]; then
+        echo "[$(ts)] [docker] Skipping Ollama model pulls/warm-up (OLLAMA_PULL_PROFILE=none)."
+        echo "DOCKER_READY" > "$DOCKER_LOG"
+        echo "[$(ts)] [docker] Docker environment fully ready."
+        return 0
+    fi
+
+    if [ "$OLLAMA_PULL_PROFILE" != "full" ] && [ "$OLLAMA_PULL_PROFILE" != "generation_only" ]; then
+        echo "[$(ts)] [docker] ERROR: Unsupported OLLAMA_PULL_PROFILE='$OLLAMA_PULL_PROFILE'."
+        echo "DOCKER_ERROR: Unsupported OLLAMA_PULL_PROFILE '$OLLAMA_PULL_PROFILE'" > "$DOCKER_LOG"
+        return 1
+    fi
+
+    # Pull Ollama models (skip if already cached)
+    echo "[$(ts)] [docker] Checking Ollama models (profile=$OLLAMA_PULL_PROFILE)..."
+
+    if [ "$OLLAMA_PULL_PROFILE" = "full" ]; then
+        if ! docker exec "${PROJECT}-ollama-router" ollama list 2>/dev/null | grep -q "llama3.2:3b"; then
+            echo "[$(ts)] [docker]   Pulling llama3.2:3b → ollama-router..."
+            docker exec "${PROJECT}-ollama-router" ollama pull llama3.2:3b 2>&1 | tail -1
+        else
+            echo "[$(ts)] [docker]   llama3.2:3b already cached in ollama-router"
+        fi
     fi
 
     if ! docker exec "${PROJECT}-ollama" ollama list 2>/dev/null | grep -q "llama3.1:8b"; then
@@ -185,11 +285,13 @@ start_docker_background() {
 
     # Pre-warm models with a throwaway inference (loads weights into memory)
     echo "[$(ts)] [docker] Pre-warming models..."
-    docker exec "${PROJECT}-ollama-router" curl -sf http://localhost:11434/api/generate \
-        -d '{"model":"llama3.2:3b","prompt":"hi","stream":false}' >/dev/null 2>&1 &
+    if [ "$OLLAMA_PULL_PROFILE" = "full" ]; then
+        docker exec "${PROJECT}-ollama-router" curl -sf http://localhost:11434/api/generate \
+            -d '{"model":"llama3.2:3b","prompt":"hi","stream":false}' >/dev/null 2>&1 &
+    fi
     docker exec "${PROJECT}-ollama" curl -sf http://localhost:11434/api/generate \
         -d '{"model":"llama3.1:8b","prompt":"hi","stream":false}' >/dev/null 2>&1 &
-    wait  # Wait for both warm-ups to complete
+    wait
     echo "[$(ts)] [docker] Models pre-warmed."
 
     echo "DOCKER_READY" > "$DOCKER_LOG"
@@ -200,6 +302,59 @@ echo "========================================"
 echo "  Pre-push: Full test suite"
 echo "  Started at $(ts)"
 echo "========================================"
+
+DISCORD_E2E_PROVIDER="$(printf '%s' "$DISCORD_E2E_PROVIDER" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+RUN_DISCORD_E2E_LOCAL_MODEL="$(printf '%s' "$RUN_DISCORD_E2E_LOCAL_MODEL" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+if [ "$DISCORD_E2E_PROVIDER" != "groq" ] && [ "$DISCORD_E2E_PROVIDER" != "local" ]; then
+    echo "[$(ts)] ERROR: DISCORD_E2E_PROVIDER must be 'groq' or 'local' (got '$DISCORD_E2E_PROVIDER')."
+    exit 1
+fi
+if [ "$RUN_DISCORD_E2E_LOCAL_MODEL" != "true" ] && [ "$RUN_DISCORD_E2E_LOCAL_MODEL" != "false" ]; then
+    echo "[$(ts)] ERROR: RUN_DISCORD_E2E_LOCAL_MODEL must be 'true' or 'false' (got '$RUN_DISCORD_E2E_LOCAL_MODEL')."
+    exit 1
+fi
+if [ "$RUN_DISCORD_E2E_LOCAL_MODEL" = "true" ]; then
+    DISCORD_E2E_PROVIDER="local"
+fi
+if [ "$DISCORD_E2E_PROVIDER" = "groq" ]; then
+    export ROUTER_BACKEND="groq"
+    OLLAMA_PULL_PROFILE="none"
+else
+    export ROUTER_BACKEND="ollama"
+    OLLAMA_PULL_PROFILE="full"
+fi
+echo "[$(ts)] Discord E2E provider mode: $DISCORD_E2E_PROVIDER (ROUTER_BACKEND=$ROUTER_BACKEND, OLLAMA_PULL_PROFILE=$OLLAMA_PULL_PROFILE)"
+
+if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
+    if [ -f ".env" ]; then
+        set -a
+        # shellcheck disable=SC1091
+        source .env
+        set +a
+    fi
+    # Canonical full gate runs cloud embeddings only (OpenAI), never local embedding pulls.
+    EMBEDDINGS_BACKEND="openai"
+    OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}"
+    OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-3072}"
+
+    require_env_var "TEST_DISCORD_BOT_TOKEN"
+    require_env_var "TEST_DISCORD_CHANNEL_ID"
+    require_env_var "OPENAI_API_KEY"
+    if [ "$DISCORD_E2E_PROVIDER" = "groq" ]; then
+        require_env_var "GROQ_API_KEY"
+    fi
+fi
+export EMBEDDINGS_BACKEND OPENAI_EMBEDDING_MODEL OPENAI_EMBEDDING_DIMENSIONS
+echo "[$(ts)] Embeddings backend: $EMBEDDINGS_BACKEND (model=$OPENAI_EMBEDDING_MODEL, dimensions=$OPENAI_EMBEDDING_DIMENSIONS)"
+
+if [ "${SKIP_LOCAL_SOCKET_PREFLIGHT:-false}" != "true" ]; then
+    if ! can_bind_local_socket; then
+        echo "[$(ts)] ERROR: Local TCP socket bind preflight failed."
+        echo "[$(ts)] This environment blocks localhost binds, so aiohttp/HTTP integration tests cannot run."
+        echo "[$(ts)] Re-run outside sandbox restrictions or set SKIP_LOCAL_SOCKET_PREFLIGHT=true if you know what you are doing."
+        exit 1
+    fi
+fi
 
 # ═══════════════════════════════════════════════════════════════════
 # Phase A: Start Docker in background, run fast tests in foreground
@@ -240,7 +395,7 @@ fi
 if docker image inspect ghcr.io/hadolint/hadolint:latest >/dev/null 2>&1 || docker info >/dev/null 2>&1; then
     start_static_check \
         "hadolint" \
-        "docker run --rm -v \"$(pwd):/work\" -w /work ghcr.io/hadolint/hadolint:latest hadolint --ignore DL3007 --ignore DL3008 --ignore DL3009 Dockerfile Dockerfile.updater"
+        "docker run --rm -v \"$(pwd):/work\" -w /work ghcr.io/hadolint/hadolint:latest hadolint --ignore DL3007 --ignore DL3008 --ignore DL3009 Dockerfile Dockerfile.updater Dockerfile.dev-agent"
 else
     echo "  [skip] hadolint requires Docker (Docker not available yet)"
 fi
@@ -313,18 +468,48 @@ python -m pytest tests/ \
     --tb=short -q
 
 # Wait for mypy
-if ! wait "$MYPY_PID"; then
-    echo ""
-    echo "mypy FAILED:"
-    cat "$MYPY_LOG"
-    rm -f "$MYPY_LOG" "$PIPAUDIT_LOG"
-    exit 1
+mypy_status=0
+wait_for_background_task "$MYPY_PID" "mypy" "$MYPY_TIMEOUT_SECONDS" || mypy_status=$?
+if [ "$mypy_status" -ne 0 ]; then
+    if [ "$mypy_status" -eq 124 ]; then
+        echo ""
+        echo "mypy FAILED due to timeout:"
+        cat "$MYPY_LOG"
+        rm -f "$MYPY_LOG" "$PIPAUDIT_LOG"
+        exit 1
+    fi
+    if rg -q "Error reading JSON file; you likely have a bad cache" "$MYPY_LOG"; then
+        echo "[$(ts)]   mypy cache is corrupted; clearing .mypy_cache and retrying once..."
+        rm -rf .mypy_cache
+        if ! mypy src/zetherion_ai/ updater_sidecar/ --config-file=pyproject.toml > "$MYPY_LOG" 2>&1; then
+            echo ""
+            echo "mypy FAILED after cache reset:"
+            cat "$MYPY_LOG"
+            rm -f "$MYPY_LOG" "$PIPAUDIT_LOG"
+            exit 1
+        fi
+    else
+        echo ""
+        echo "mypy FAILED:"
+        cat "$MYPY_LOG"
+        rm -f "$MYPY_LOG" "$PIPAUDIT_LOG"
+        exit 1
+    fi
 fi
 echo "[$(ts)]   mypy passed."
 
 # Wait for pip-audit
 if [ -n "$PIPAUDIT_PID" ]; then
-    if ! wait "$PIPAUDIT_PID"; then
+    pipaudit_status=0
+    wait_for_background_task "$PIPAUDIT_PID" "pip-audit" "$PIPAUDIT_TIMEOUT_SECONDS" || pipaudit_status=$?
+    if [ "$pipaudit_status" -ne 0 ]; then
+        if [ "$pipaudit_status" -eq 124 ]; then
+            echo ""
+            echo "pip-audit FAILED due to timeout:"
+            cat "$PIPAUDIT_LOG"
+            rm -f "$MYPY_LOG" "$PIPAUDIT_LOG"
+            exit 1
+        fi
         echo ""
         echo "pip-audit FAILED:"
         cat "$PIPAUDIT_LOG"
@@ -346,6 +531,7 @@ INTEGRATION_LOG="$(mktemp)"
 if ! python -m pytest \
     tests/integration/test_skills_http.py \
     tests/integration/test_heartbeat_cycle.py \
+    tests/integration/test_email_personality_persistence_integration.py \
     tests/integration/test_profile_pipeline.py \
     tests/integration/test_agent_skills_http.py \
     tests/integration/test_skills_e2e.py \
@@ -356,6 +542,7 @@ if ! python -m pytest \
     tests/integration/test_telemetry_http.py \
     tests/integration/test_api_http.py \
     tests/integration/test_dev_watcher_e2e.py \
+    tests/integration/test_dev_watcher_onboarding_integration.py \
     tests/integration/test_milestone_e2e.py \
     tests/integration/test_youtube_http.py \
     -m "integration and not optional_e2e" \
@@ -396,13 +583,14 @@ echo "[$(ts)] Docker environment confirmed ready."
 
 # ── Step 4: Required Docker E2E tests (concurrent) ────────────────
 echo ""
-echo "[$(ts)] [4/5] Required Docker E2E + Discord E2E tests (concurrent)..."
+echo "[$(ts)] [4/5] Required Docker E2E tests (concurrent)..."
 
 # Create temp files for each parallel test output
 E2E_LOG_A="$(mktemp)"     # test_e2e.py (required)
 E2E_LOG_B="$(mktemp)"     # health/update/telemetry required tests
-E2E_LOG_C="$(mktemp)"     # discord required tests (optional_e2e marker excluded)
+E2E_LOG_C="$(mktemp)"     # discord required tests (gated by RUN_DISCORD_E2E_REQUIRED)
 E2E_OPTIONAL_LOG="$(mktemp)"
+DISCORD_REQUIRED_STARTED=false
 
 # Start a heartbeat so we can see the tests are still running
 (while true; do sleep 30; echo "[$(ts)]   ...E2E tests still running"; done) &
@@ -414,6 +602,7 @@ DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
     -m "integration and not optional_e2e" --timeout=120 -v --tb=short -s --no-cov \
     > "$E2E_LOG_A" 2>&1 &
 E2E_PIDS+=($!)
+E2E_NAMES+=("Docker E2E tests (test_e2e.py)")
 
 DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
     tests/integration/test_health_e2e.py \
@@ -422,34 +611,35 @@ DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
     -m "integration and not optional_e2e" --timeout=120 -v --tb=short -s --no-cov \
     > "$E2E_LOG_B" 2>&1 &
 E2E_PIDS+=($!)
+E2E_NAMES+=("Health/Update/Telemetry E2E tests")
 
-DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
-    tests/integration/test_discord_e2e.py \
-    -m "discord_e2e and not optional_e2e" --timeout=180 -v --tb=short -s --no-cov \
-    > "$E2E_LOG_C" 2>&1 &
-E2E_PIDS+=($!)
+if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
+    DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
+        tests/integration/test_discord_e2e.py \
+        -m "discord_e2e and not optional_e2e" --timeout=180 -v --tb=short -s --no-cov \
+        > "$E2E_LOG_C" 2>&1 &
+    E2E_PIDS+=($!)
+    E2E_NAMES+=("Discord E2E tests")
+    DISCORD_REQUIRED_STARTED=true
+else
+    echo "[$(ts)] Discord required E2E skipped (set RUN_DISCORD_E2E_REQUIRED=true to enforce)."
+fi
 
 # Wait for all to finish, track failures
 E2E_FAILED=false
 
 for i in "${!E2E_PIDS[@]}"; do
     pid="${E2E_PIDS[$i]}"
+    name="${E2E_NAMES[$i]}"
     if ! wait "$pid"; then
         E2E_FAILED=true
-        case $i in
-            0) echo "[$(ts)] FAILED: Docker E2E tests (test_e2e.py)" ;;
-            1) echo "[$(ts)] FAILED: Health/Update/Telemetry E2E tests" ;;
-            2) echo "[$(ts)] FAILED: Discord E2E tests" ;;
-        esac
+        echo "[$(ts)] FAILED: ${name}"
     else
-        case $i in
-            0) echo "[$(ts)] PASSED: Docker E2E tests (test_e2e.py)" ;;
-            1) echo "[$(ts)] PASSED: Health/Update/Telemetry E2E tests" ;;
-            2) echo "[$(ts)] PASSED: Discord E2E tests" ;;
-        esac
+        echo "[$(ts)] PASSED: ${name}"
     fi
 done
 E2E_PIDS=()
+E2E_NAMES=()
 
 # Stop heartbeat
 kill "$HEARTBEAT_PID" 2>/dev/null || true
@@ -465,7 +655,11 @@ echo "═══ Health/Update/Telemetry E2E output ═══"
 cat "$E2E_LOG_B"
 echo ""
 echo "═══ Discord E2E output ═══"
-cat "$E2E_LOG_C"
+if [ "$DISCORD_REQUIRED_STARTED" = "true" ]; then
+    cat "$E2E_LOG_C"
+else
+    echo "[not run]"
+fi
 
 if ! assert_no_skips_in_log "Docker E2E tests (test_e2e.py)" "$E2E_LOG_A"; then
     E2E_FAILED=true
@@ -473,15 +667,18 @@ fi
 if ! assert_no_skips_in_log "Health/Update/Telemetry E2E tests" "$E2E_LOG_B"; then
     E2E_FAILED=true
 fi
-if ! assert_no_skips_in_log "Discord E2E tests" "$E2E_LOG_C"; then
-    E2E_FAILED=true
+if [ "$DISCORD_REQUIRED_STARTED" = "true" ]; then
+    if ! assert_no_skips_in_log "Discord E2E tests" "$E2E_LOG_C"; then
+        E2E_FAILED=true
+    fi
 fi
 
 # Optional E2E tests are non-blocking and can be enabled via RUN_OPTIONAL_E2E=true.
 if [ "$RUN_OPTIONAL_E2E" = "true" ]; then
     echo ""
     echo "[$(ts)] Running optional E2E tests (non-blocking)..."
-    if DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
+    if DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
+        tests/integration/test_inbound_groq_rollout_e2e.py \
         tests/integration/test_health_e2e.py \
         tests/integration/test_discord_e2e.py \
         -m optional_e2e --timeout=180 -v --tb=short -s --no-cov \

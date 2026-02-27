@@ -24,6 +24,20 @@ def _configure_mock_settings(mock_get_settings: MagicMock) -> MagicMock:
     mock_settings = MagicMock()
     mock_settings.telemetry_central_mode = False
     mock_settings.postgres_dsn = ""  # No Postgres by default
+    mock_settings.auto_update_repo = ""
+    mock_settings.auto_update_enabled = False
+    mock_settings.update_require_approval = True
+    mock_settings.auto_update_check_interval_minutes = 15
+    mock_settings.updater_service_url = "http://updater:9090"
+    mock_settings.updater_secret = ""
+    mock_settings.updater_verify_signatures = True
+    mock_settings.updater_verify_identity = ""
+    mock_settings.updater_verify_oidc_issuer = "https://token.actions.githubusercontent.com"
+    mock_settings.updater_verify_rekor_url = "https://rekor.sigstore.dev"
+    mock_settings.updater_release_manifest_asset = "release-manifest.json"
+    mock_settings.updater_release_signature_asset = "release-manifest.sig"
+    mock_settings.updater_release_certificate_asset = "release-manifest.pem"
+    mock_settings.github_token = None
     mock_get_settings.return_value = mock_settings
     return mock_settings
 
@@ -34,7 +48,7 @@ class TestSkillsServerMain:
     @patch("zetherion_ai.skills.server.asyncio.run")
     @patch("zetherion_ai.skills.server.SkillRegistry")
     @patch("zetherion_ai.config.get_settings")
-    def test_registry_register_called_eight_times(
+    def test_registry_register_called_nine_times(
         self,
         mock_get_settings,
         mock_registry_cls,
@@ -50,7 +64,7 @@ class TestSkillsServerMain:
 
         main()
 
-        assert mock_registry.register.call_count == 8
+        assert mock_registry.register.call_count == 9
 
     @patch("zetherion_ai.skills.server.asyncio.run")
     @patch("zetherion_ai.skills.server.SkillRegistry")
@@ -155,6 +169,7 @@ class TestSkillsServerMain:
         """Skills registered in correct order including DevWatcher and Milestone."""
         from zetherion_ai.skills.calendar import CalendarSkill
         from zetherion_ai.skills.dev_watcher import DevWatcherSkill
+        from zetherion_ai.skills.email import EmailSkill
         from zetherion_ai.skills.gmail.skill import GmailSkill
         from zetherion_ai.skills.health_analyzer import HealthAnalyzerSkill
         from zetherion_ai.skills.milestone import MilestoneSkill
@@ -171,7 +186,7 @@ class TestSkillsServerMain:
         main()
 
         calls = mock_registry.register.call_args_list
-        assert len(calls) == 8
+        assert len(calls) == 9
         assert isinstance(calls[0].args[0], TaskManagerSkill)
         assert isinstance(calls[1].args[0], CalendarSkill)
         assert isinstance(calls[2].args[0], ProfileSkill)
@@ -179,7 +194,8 @@ class TestSkillsServerMain:
         assert isinstance(calls[4].args[0], DevWatcherSkill)
         assert isinstance(calls[5].args[0], MilestoneSkill)
         assert isinstance(calls[6].args[0], GmailSkill)
-        assert isinstance(calls[7].args[0], UpdateCheckerSkill)
+        assert isinstance(calls[7].args[0], EmailSkill)
+        assert isinstance(calls[8].args[0], UpdateCheckerSkill)
 
     @patch("zetherion_ai.skills.server.asyncio.run")
     @patch("zetherion_ai.skills.server.SkillRegistry")

@@ -8,15 +8,30 @@ chat and CRM endpoints.
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from typing import Any
 
 from aiohttp import web
 
+from zetherion_ai.analytics import (
+    AnalyticsJobRunner,
+    ReplayStore,
+    create_replay_store_from_settings,
+)
 from zetherion_ai.api.middleware import (
     RateLimiter,
     create_auth_middleware,
     create_cors_middleware,
     create_rate_limit_middleware,
+)
+from zetherion_ai.api.routes.analytics import (
+    handle_analytics_events,
+    handle_get_recommendations,
+    handle_get_replay_chunk,
+    handle_recommendation_feedback,
+    handle_release_marker,
+    handle_replay_chunks,
+    handle_session_end,
 )
 from zetherion_ai.api.routes.chat import handle_chat, handle_chat_history, handle_chat_stream
 from zetherion_ai.api.routes.health import handle_health
@@ -46,6 +61,10 @@ class PublicAPIServer:
         inference_broker: Any = None,
         youtube_storage: Any = None,
         youtube_skills: dict[str, Any] | None = None,
+        replay_store: ReplayStore | None = None,
+        analytics_jobs_enabled: bool = False,
+        analytics_hourly_interval_seconds: int = 3600,
+        analytics_daily_interval_seconds: int = 86400,
     ) -> None:
         self._tenant_manager = tenant_manager
         self._jwt_secret = jwt_secret
@@ -55,9 +74,15 @@ class PublicAPIServer:
         self._inference_broker = inference_broker
         self._youtube_storage = youtube_storage
         self._youtube_skills = youtube_skills or {}
+        self._replay_store = replay_store
+        self._analytics_jobs_enabled = analytics_jobs_enabled
+        self._analytics_hourly_interval_seconds = analytics_hourly_interval_seconds
+        self._analytics_daily_interval_seconds = analytics_daily_interval_seconds
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
         self._rate_limiter = RateLimiter()
+        self._analytics_stop_event: asyncio.Event | None = None
+        self._analytics_task: asyncio.Task[None] | None = None
 
         log.info("public_api_initialized", host=host, port=port)
 
@@ -82,6 +107,8 @@ class PublicAPIServer:
         app["jwt_secret"] = self._jwt_secret
         if self._inference_broker is not None:
             app["inference_broker"] = self._inference_broker
+        if self._replay_store is not None:
+            app["replay_store"] = self._replay_store
 
         # YouTube skill state (accessed by route handlers)
         if self._youtube_storage is not None:
@@ -101,6 +128,23 @@ class PublicAPIServer:
         app.router.add_post("/api/v1/chat", handle_chat)
         app.router.add_post("/api/v1/chat/stream", handle_chat_stream)
         app.router.add_get("/api/v1/chat/history", handle_chat_history)
+
+        # Analytics / app watcher (session token auth)
+        app.router.add_post("/api/v1/analytics/events", handle_analytics_events)
+        app.router.add_post("/api/v1/analytics/replay/chunks", handle_replay_chunks)
+        app.router.add_get(
+            "/api/v1/analytics/replay/chunks/{web_session_id}/{sequence_no}",
+            handle_get_replay_chunk,
+        )
+        app.router.add_post("/api/v1/analytics/sessions/end", handle_session_end)
+        app.router.add_get("/api/v1/analytics/recommendations", handle_get_recommendations)
+        app.router.add_post(
+            "/api/v1/analytics/recommendations/{recommendation_id}/feedback",
+            handle_recommendation_feedback,
+        )
+
+        # CI/deploy marker ingest (API-key auth)
+        app.router.add_post("/api/v1/releases/markers", handle_release_marker)
 
         # YouTube (API key auth)
         if self._youtube_storage is not None:
@@ -123,10 +167,31 @@ class PublicAPIServer:
         site = web.TCPSite(self._runner, self._host, self._port)
         await site.start()
 
+        if self._analytics_jobs_enabled:
+            self._analytics_stop_event = asyncio.Event()
+            analytics_runner = AnalyticsJobRunner(
+                self._tenant_manager,
+                replay_store=self._replay_store,
+                hourly_interval_seconds=self._analytics_hourly_interval_seconds,
+                daily_interval_seconds=self._analytics_daily_interval_seconds,
+            )
+            self._analytics_task = asyncio.create_task(
+                analytics_runner.run_loop(self._analytics_stop_event)
+            )
+
         log.info("public_api_started", host=self._host, port=self._port)
 
     async def stop(self) -> None:
         """Stop the server."""
+        if self._analytics_stop_event is not None:
+            self._analytics_stop_event.set()
+        if self._analytics_task is not None:
+            self._analytics_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._analytics_task
+            self._analytics_task = None
+        self._analytics_stop_event = None
+
         if self._runner:
             await self._runner.cleanup()
             self._runner = None
@@ -141,6 +206,10 @@ async def run_server(
     inference_broker: Any = None,
     youtube_storage: Any = None,
     youtube_skills: dict[str, Any] | None = None,
+    replay_store: ReplayStore | None = None,
+    analytics_jobs_enabled: bool = False,
+    analytics_hourly_interval_seconds: int = 3600,
+    analytics_daily_interval_seconds: int = 86400,
 ) -> None:
     """Run the public API server (main entry point for Docker container)."""
     server = PublicAPIServer(
@@ -151,6 +220,10 @@ async def run_server(
         inference_broker=inference_broker,
         youtube_storage=youtube_storage,
         youtube_skills=youtube_skills,
+        replay_store=replay_store,
+        analytics_jobs_enabled=analytics_jobs_enabled,
+        analytics_hourly_interval_seconds=analytics_hourly_interval_seconds,
+        analytics_daily_interval_seconds=analytics_daily_interval_seconds,
     )
     await server.start()
 
@@ -192,6 +265,12 @@ def main() -> None:
         except Exception as e:
             log.warning("api_inference_broker_init_failed", error=str(e))
 
+        replay_store = None
+        try:
+            replay_store = create_replay_store_from_settings(settings)
+        except Exception as e:
+            log.warning("replay_store_init_failed", error=str(e))
+
         # Initialize YouTube storage and skills if Postgres is available
         yt_storage = None
         yt_skills: dict[str, Any] = {}
@@ -231,10 +310,20 @@ def main() -> None:
                 inference_broker=api_broker,
                 youtube_storage=yt_storage,
                 youtube_skills=yt_skills,
+                replay_store=replay_store,
+                analytics_jobs_enabled=bool(getattr(settings, "analytics_jobs_enabled", True)),
+                analytics_hourly_interval_seconds=int(
+                    getattr(settings, "analytics_hourly_job_interval_seconds", 3600)
+                ),
+                analytics_daily_interval_seconds=int(
+                    getattr(settings, "analytics_daily_job_interval_seconds", 86400)
+                ),
             )
         finally:
             if api_broker is not None:
                 await api_broker.close()
+            if replay_store is not None:
+                await replay_store.close()
 
     try:
         asyncio.run(init_and_run())

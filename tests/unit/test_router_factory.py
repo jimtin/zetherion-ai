@@ -38,6 +38,26 @@ def mock_settings_gemini():
     return settings
 
 
+@pytest.fixture
+def mock_settings_groq():
+    """Create mock settings for Groq backend."""
+    settings = MagicMock()
+    settings.router_backend = "groq"
+    settings.groq_model = "llama-3.3-70b-versatile"
+    settings.groq_api_key = MagicMock()
+    settings.groq_api_key.get_secret_value.return_value = "gsk-test"
+    settings.groq_base_url = "https://api.groq.com/openai/v1"
+    settings.gemini_api_key = MagicMock()
+    settings.gemini_api_key.get_secret_value.return_value = "test-key"
+    settings.router_model = "gemini-2.0-flash"
+    settings.ollama_router_url = "http://ollama-router:11434"
+    settings.ollama_router_model = "llama3.2:3b"
+    settings.ollama_timeout = 30.0
+    settings.ollama_url = "http://ollama:11434"
+    settings.ollama_generation_model = "llama3.1:8b"
+    return settings
+
+
 class TestCreateRouter:
     """Tests for create_router async function."""
 
@@ -143,6 +163,46 @@ class TestCreateRouter:
         assert router._backend == mock_backend
 
     @pytest.mark.asyncio
+    async def test_create_router_groq(self, mock_settings_groq):
+        """Test creating router with Groq backend."""
+        with (
+            patch(
+                "zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings_groq
+            ),
+            patch("zetherion_ai.agent.router_factory.GroqRouterBackend") as mock_groq,
+        ):
+            mock_backend = MagicMock()
+            mock_backend.health_check = AsyncMock(return_value=True)
+            mock_groq.return_value = mock_backend
+
+            router = await create_router()
+
+        assert isinstance(router, MessageRouter)
+        assert router._backend == mock_backend
+
+    @pytest.mark.asyncio
+    async def test_create_router_groq_unhealthy_fallback_gemini(self, mock_settings_groq):
+        """Test Groq fallback to Gemini when health check fails."""
+        with (
+            patch(
+                "zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings_groq
+            ),
+            patch("zetherion_ai.agent.router_factory.GroqRouterBackend") as mock_groq,
+            patch("zetherion_ai.agent.router_factory.GeminiRouterBackend") as mock_gemini,
+        ):
+            mock_groq_backend = MagicMock()
+            mock_groq_backend.health_check = AsyncMock(return_value=False)
+            mock_groq.return_value = mock_groq_backend
+
+            mock_gemini_backend = MagicMock()
+            mock_gemini.return_value = mock_gemini_backend
+
+            router = await create_router()
+
+        assert isinstance(router, MessageRouter)
+        assert router._backend == mock_gemini_backend
+
+    @pytest.mark.asyncio
     async def test_create_router_invalid_backend(self):
         """Test error with invalid backend configuration."""
         mock_settings = MagicMock()
@@ -184,6 +244,22 @@ class TestCreateRouterSync:
         ):
             mock_backend = MagicMock()
             mock_gemini.return_value = mock_backend
+
+            router = create_router_sync()
+
+        assert isinstance(router, MessageRouter)
+        assert router._backend == mock_backend
+
+    def test_create_router_sync_groq(self, mock_settings_groq):
+        """Test creating router synchronously with Groq."""
+        with (
+            patch(
+                "zetherion_ai.agent.router_factory.get_settings", return_value=mock_settings_groq
+            ),
+            patch("zetherion_ai.agent.router_factory.GroqRouterBackend") as mock_groq,
+        ):
+            mock_backend = MagicMock()
+            mock_groq.return_value = mock_backend
 
             router = create_router_sync()
 

@@ -1,0 +1,59 @@
+{
+  "jobs": {
+    "lint": {
+      "local_equivalent": true,
+      "local_stage": "static-analysis",
+      "note": "ruff lint/format are included in scripts/pre-push-tests.sh"
+    },
+    "type-check": {
+      "local_equivalent": true,
+      "local_stage": "unit+mypy",
+      "note": "mypy is required in scripts/pre-push-tests.sh"
+    },
+    "security": {
+      "local_equivalent": true,
+      "local_stage": "static-analysis",
+      "note": "bandit is included in scripts/pre-push-tests.sh"
+    },
+    "semgrep": {
+      "local_equivalent": false,
+      "local_stage": "ci-heavy-only",
+      "note": "semgrep runs only in heavy CI mode (manual/nightly)."
+    },
+    "dependency-audit": {
+      "local_equivalent": true,
+      "local_stage": "unit+mypy",
+      "note": "pip-audit is required in scripts/pre-push-tests.sh"
+    },
+    "license-check": {
+      "local_equivalent": true,
+      "local_stage": "static-analysis",
+      "note": "pip-licenses allowlist check is in scripts/pre-push-tests.sh"
+    },
+    "pre-commit": {
+      "local_equivalent": true,
+      "local_stage": "superset-local",
+      "note": "pre-commit is covered by stricter canonical local pipeline checks"
+    },
+    "docs-contract": {
+      "local_equivalent": false,
+      "local_stage": "ci-path-gated",
+      "note": "docs-contract is CI-only/path-gated for cost control."
+    },
+    "pipeline-contract": {
+      "local_equivalent": true,
+      "local_stage": "static-analysis",
+      "note": "contract validation runs locally via scripts/check_pipeline_contract.py"
+    },
+    "unit-test": {
+      "local_equivalent": true,
+      "local_stage": "unit+mypy",
+      "note": "unit tests with coverage >=90% are required locally"
+    },
+    "integration-test": {
+      "local_equivalent": true,
+      "local_stage": "integration",
+      "note": "integration suites run in canonical local pipeline"
+    }
+  }
+}

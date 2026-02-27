@@ -391,8 +391,12 @@ class TestHeartbeatScheduler:
             ]
         )
 
-        # Mock _is_quiet_hours to return False so heartbeat proceeds
-        with patch.object(scheduler, "_is_quiet_hours", return_value=False):
+        # Mock user quiet-hours check to return False so heartbeat proceeds
+        with patch.object(
+            scheduler,
+            "_is_quiet_hours_for_user",
+            new=AsyncMock(return_value=False),
+        ):
             await scheduler._run_heartbeat()
 
         assert scheduler.stats.rate_limited == 1
@@ -431,7 +435,11 @@ class TestHeartbeatScheduler:
             ]
         )
 
-        with patch.object(scheduler, "_is_quiet_hours", return_value=False):
+        with patch.object(
+            scheduler,
+            "_is_quiet_hours_for_user",
+            new=AsyncMock(return_value=False),
+        ):
             await scheduler._run_heartbeat()
 
         assert scheduler.stats.failed_actions == 1
