@@ -217,3 +217,36 @@ async def test_status_flow_reads_remote_project_counts(
     assert "Projects discovered: `2`" in body
     assert "Pending approvals: `1`" in body
     assert "Stored API token: `yes`" in body
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_onboarding_halts_when_discord_assets_cannot_be_provisioned(
+    bot: ZetherionAIBot,
+    dm_message,
+    dev_agent_server: tuple[TestServer, dict[str, object]],
+) -> None:
+    server, _state = dev_agent_server
+    settings = _dev_settings(str(server.make_url("")).rstrip("/"))
+
+    guild = MagicMock(spec=discord.Guild)
+    guild.id = 404
+    guild.name = "My Guild"
+
+    with (
+        patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+        patch(
+            "zetherion_ai.discord.bot.get_dynamic",
+            side_effect=lambda _ns, _key, default=None: default,
+        ),
+        patch.object(
+            bot,
+            "_ensure_dev_watcher_discord_assets",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+    ):
+        await bot._run_dev_watcher_provisioning(dm_message, guild)
+
+    sent_messages = [str(call.args[0]) for call in dm_message.channel.send.await_args_list]
+    assert any("could not create Discord assets" in msg for msg in sent_messages)

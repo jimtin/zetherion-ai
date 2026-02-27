@@ -64,10 +64,10 @@ class TestOpenAIModelDefault:
 class TestEmbeddingsBackend:
     """Tests for the embeddings_backend field."""
 
-    def test_embeddings_backend_default_is_ollama(self):
-        """Test that embeddings_backend defaults to 'ollama'."""
+    def test_embeddings_backend_default_is_openai(self):
+        """Test that embeddings_backend defaults to 'openai'."""
         settings = _make_settings()
-        assert settings.embeddings_backend == "ollama"
+        assert settings.embeddings_backend == "openai"
 
     def test_embeddings_backend_accepts_openai(self):
         """Test that embeddings_backend accepts 'openai' as valid."""

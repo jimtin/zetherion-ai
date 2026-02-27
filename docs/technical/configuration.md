@@ -69,7 +69,7 @@ cp .env.example .env
 | `OLLAMA_ROUTER_HOST` | `ollama-router` | Router Ollama host |
 | `OLLAMA_ROUTER_PORT` | `11434` | Router Ollama port |
 | `OLLAMA_ROUTER_MODEL` | `llama3.2:3b` | Router model |
-| `EMBEDDINGS_BACKEND` | `ollama` | `ollama`, `gemini`, `openai` |
+| `EMBEDDINGS_BACKEND` | `openai` | `openai`, `gemini`, `ollama` |
 | `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-large` | OpenAI embedding model |
 | `OPENAI_EMBEDDING_DIMENSIONS` | `3072` | OpenAI embedding dimensions |
 
