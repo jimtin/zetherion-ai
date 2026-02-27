@@ -22,6 +22,7 @@ from zetherion_ai.api.routes.analytics import (
     _serialise,
     _verify_release_signature,
     handle_analytics_events,
+    handle_get_funnel,
     handle_get_recommendations,
     handle_get_replay_chunk,
     handle_recommendation_feedback,
@@ -75,6 +76,22 @@ async def analytics_routes_client():
     tenant_manager.list_recommendations = AsyncMock(
         return_value=[{"recommendation_id": "rec-1", "title": "Fix form drop-off"}]
     )
+    tenant_manager.get_funnel_daily = AsyncMock(
+        return_value=[
+            {
+                "tenant_id": "tenant-1",
+                "metric_date": datetime(2026, 2, 27, tzinfo=UTC).date(),
+                "funnel_name": "primary",
+                "stage_name": "consideration",
+                "stage_order": 2,
+                "users_count": 12,
+                "drop_off_rate": 0.1,
+                "conversion_rate": 0.5,
+                "metadata": {},
+                "updated_at": datetime.now(UTC),
+            }
+        ]
+    )
     tenant_manager.add_recommendation_feedback = AsyncMock(
         return_value={
             "feedback_id": "feedback-1",
@@ -111,6 +128,7 @@ async def analytics_routes_client():
     )
     app.router.add_post("/api/v1/analytics/sessions/end", handle_session_end)
     app.router.add_get("/api/v1/analytics/recommendations", handle_get_recommendations)
+    app.router.add_get("/api/v1/analytics/funnel", handle_get_funnel)
     app.router.add_post(
         "/api/v1/analytics/recommendations/{recommendation_id}/feedback",
         handle_recommendation_feedback,
@@ -382,6 +400,25 @@ async def test_handle_get_recommendations_returns_rows(analytics_routes_client) 
     assert body["count"] == 1
     assert body["recommendations"][0]["recommendation_id"] == "rec-1"
     tenant_manager.list_recommendations.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_get_funnel_returns_rows(analytics_routes_client) -> None:
+    client, tenant_manager, _ = analytics_routes_client
+    response = await client.get("/api/v1/analytics/funnel?metric_date=2026-02-27&limit=300")
+    assert response.status == 200
+    body = await response.json()
+    assert body["count"] == 1
+    assert body["funnel"][0]["stage_name"] == "consideration"
+    tenant_manager.get_funnel_daily.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_get_funnel_rejects_invalid_metric_date(analytics_routes_client) -> None:
+    client, tenant_manager, _ = analytics_routes_client
+    response = await client.get("/api/v1/analytics/funnel?metric_date=bad-date")
+    assert response.status == 400
+    tenant_manager.get_funnel_daily.assert_not_awaited()
 
 
 @pytest.mark.asyncio

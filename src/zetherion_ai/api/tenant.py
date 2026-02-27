@@ -782,26 +782,82 @@ class TenantManager:
         )
         return dict(row)
 
-    async def get_interactions(
+    async def list_contacts(
         self,
         tenant_id: str,
         *,
         limit: int = 50,
+        email: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Get recent interactions for a tenant."""
-        rows = await self._fetch(
-            """
+        """List tenant contacts, optionally filtered by exact email."""
+        if email:
+            rows = await self._fetch(
+                """
+                SELECT contact_id, tenant_id, name, email, phone, source,
+                       tags, custom_fields, created_at, updated_at
+                FROM tenant_contacts
+                WHERE tenant_id = $1::uuid AND email = $2
+                ORDER BY updated_at DESC
+                LIMIT $3
+                """,
+                tenant_id,
+                email,
+                limit,
+            )
+        else:
+            rows = await self._fetch(
+                """
+                SELECT contact_id, tenant_id, name, email, phone, source,
+                       tags, custom_fields, created_at, updated_at
+                FROM tenant_contacts
+                WHERE tenant_id = $1::uuid
+                ORDER BY updated_at DESC
+                LIMIT $2
+                """,
+                tenant_id,
+                limit,
+            )
+        return [dict(r) for r in rows]
+
+    async def get_interactions(
+        self,
+        tenant_id: str,
+        *,
+        contact_id: str | None = None,
+        session_id: str | None = None,
+        interaction_type: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Get recent interactions for a tenant with optional filters."""
+        conditions = ["tenant_id = $1::uuid"]
+        args: list[Any] = [tenant_id]
+        idx = 2
+
+        if contact_id:
+            conditions.append(f"contact_id = ${idx}::uuid")
+            args.append(contact_id)
+            idx += 1
+        if session_id:
+            conditions.append(f"session_id = ${idx}::uuid")
+            args.append(session_id)
+            idx += 1
+        if interaction_type:
+            conditions.append(f"interaction_type = ${idx}")
+            args.append(interaction_type)
+            idx += 1
+
+        args.append(limit)
+        query = f"""
             SELECT interaction_id, tenant_id, contact_id, session_id,
                    interaction_type, summary, entities, sentiment, intent,
                    outcome, created_at
             FROM tenant_interactions
-            WHERE tenant_id = $1::uuid
+            WHERE {" AND ".join(conditions)}
             ORDER BY created_at DESC
-            LIMIT $2
-            """,
-            tenant_id,
-            limit,
-        )
+            LIMIT ${idx}
+        """  # nosec B608 - query uses controlled conditional fragments only
+
+        rows = await self._fetch(query, *args)
         return [dict(r) for r in rows]
 
     async def update_contact_custom_fields(

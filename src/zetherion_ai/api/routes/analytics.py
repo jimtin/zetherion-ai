@@ -481,6 +481,32 @@ async def handle_get_recommendations(request: web.Request) -> web.Response:
     )
 
 
+async def handle_get_funnel(request: web.Request) -> web.Response:
+    """GET /api/v1/analytics/funnel (API-key auth)."""
+    tenant = request["tenant"]
+    tenant_manager = request.app["tenant_manager"]
+    tenant_id = str(tenant["tenant_id"])
+
+    metric_date_raw = request.query.get("metric_date")
+    metric_date = None
+    if metric_date_raw:
+        try:
+            metric_date = datetime.fromisoformat(metric_date_raw).date()
+        except ValueError:
+            return web.json_response(
+                {"error": "Invalid metric_date, expected YYYY-MM-DD"},
+                status=400,
+            )
+
+    try:
+        limit = max(1, min(int(request.query.get("limit", "200")), 500))
+    except ValueError:
+        limit = 200
+
+    rows = await tenant_manager.get_funnel_daily(tenant_id, metric_date=metric_date, limit=limit)
+    return web.json_response({"funnel": [_serialise(r) for r in rows], "count": len(rows)})
+
+
 async def handle_recommendation_feedback(request: web.Request) -> web.Response:
     """POST /api/v1/analytics/recommendations/{recommendation_id}/feedback."""
     tenant = request["tenant"]

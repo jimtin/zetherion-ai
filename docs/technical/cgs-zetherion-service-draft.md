@@ -135,14 +135,14 @@ Error envelope:
 | `/service/ai/v1/internal/tenants/{tenant_id}/keys/rotate` | `POST` | Rotate tenant API key | Skills `client_rotate_key` | Ready |
 | `/service/ai/v1/internal/tenants/{tenant_id}/release-markers` | `POST` | Publish deployment marker | `POST /api/v1/releases/markers` | Ready |
 
-### 6.3 Company Reporting Endpoints (phase-gated)
+### 6.3 Company Reporting Endpoints
 
 | CGS Endpoint | Method | Purpose | Upstream | Status |
 |---|---|---|---|---|
-| `/tenants/{tenant_id}/crm/contacts` | `GET` | CRM contacts for tenant | New Zetherion public endpoint or Skills intent | Gap |
-| `/tenants/{tenant_id}/crm/interactions` | `GET` | CRM interactions for tenant | New Zetherion public endpoint or Skills intent | Gap |
-| `/tenants/{tenant_id}/analytics/funnel` | `GET` | Tenant funnel daily metrics | New Zetherion public endpoint or Skills intent | Gap |
-| `/tenants/{tenant_id}/analytics/recommendations` | `GET` | Tenant-level recommendations | New Zetherion public endpoint or Skills intent | Gap |
+| `/tenants/{tenant_id}/crm/contacts` | `GET` | CRM contacts for tenant | `GET /api/v1/crm/contacts` | Ready |
+| `/tenants/{tenant_id}/crm/interactions` | `GET` | CRM interactions for tenant | `GET /api/v1/crm/interactions` | Ready |
+| `/tenants/{tenant_id}/analytics/funnel` | `GET` | Tenant funnel daily metrics | `GET /api/v1/analytics/funnel` | Ready |
+| `/tenants/{tenant_id}/analytics/recommendations` | `GET` | Tenant-level recommendations | `GET /api/v1/analytics/recommendations/tenant` | Ready |
 
 ## 7. Detailed Endpoint Drafts
 
@@ -523,23 +523,14 @@ Retry policy:
 - Use CGS proxy model only (no browser direct to Zetherion).
 
 ### Phase 2: Company reporting endpoints
-- Add CRM and tenant analytics read endpoints in section 6.3.
-- Preferred approach:
-  - Add new Zetherion public read routes for contacts/interactions/funnel.
-  - Or implement internal Skills intents for equivalent retrieval.
+- Integrate CGS reporting APIs in section 6.3 against existing Zetherion public read routes.
 
 ### Phase 3: Harden and scale
 - Add signature verification for CGS app client webhooks if needed.
 - Add circuit breaker and per-tenant concurrency controls.
 - Add dashboarding and alerting on upstream failures.
 
-## 13. Required Zetherion Enhancements (for full company service)
-
-Required for section 6.3 completeness:
-- `GET /api/v1/crm/contacts` (tenant-scoped).
-- `GET /api/v1/crm/interactions` (tenant-scoped).
-- `GET /api/v1/analytics/funnel` (tenant-scoped daily funnel rows).
-- Optional tenant-level recommendations endpoint independent of session context.
+## 13. Optional Zetherion Enhancements
 
 Recommended:
 - Public API idempotency support via `Idempotency-Key`.

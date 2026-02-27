@@ -76,7 +76,11 @@ class TestPublicAPIServerCreateApp:
         assert "/api/v1/analytics/replay/chunks/{web_session_id}/{sequence_no}" in paths
         assert "/api/v1/analytics/sessions/end" in paths
         assert "/api/v1/analytics/recommendations" in paths
+        assert "/api/v1/analytics/recommendations/tenant" in paths
+        assert "/api/v1/analytics/funnel" in paths
         assert "/api/v1/analytics/recommendations/{recommendation_id}/feedback" in paths
+        assert "/api/v1/crm/contacts" in paths
+        assert "/api/v1/crm/interactions" in paths
         assert "/api/v1/releases/markers" in paths
 
 

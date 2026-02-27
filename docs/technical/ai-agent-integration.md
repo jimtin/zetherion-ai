@@ -206,8 +206,9 @@ stateless chat endpoint.
 Some capabilities are implemented but not yet first-class public API resources:
 
 1. Tenant provisioning workflows are internal skill/control-plane operations.
-2. CRM extraction outputs are persisted and consumable internally, but there is
-   no broad public REST contract yet for full CRM analytics retrieval.
+2. CRM extraction outputs are persisted and available via tenant-scoped public
+   read endpoints (`/api/v1/crm/*` and `/api/v1/analytics/funnel`) using
+   API-key auth.
 3. Personal profile and policy controls are skill-facing; external app exposure
    should be mediated through trusted service layers.
 
