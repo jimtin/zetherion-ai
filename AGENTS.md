@@ -59,3 +59,17 @@ Critical-path integration coverage in canonical runs must include both:
 2. If reason is `SHOULD_HAVE_BEEN_CAUGHT_LOCALLY`, treat as local gate process breach and fix workflow usage.
 3. If reason is `PIPELINE_CONTRACT_GAP`, update contract mappings immediately.
 4. Re-run `./scripts/test-full.sh` after fixes before pushing again.
+
+## Post-Push Windows Deployment (Mandatory)
+
+Every successful GitHub push must be followed by a Windows host update and runtime verification.
+
+1. Use the local runbook at `.agent-handoff/GITHUB_PUSH_AND_WINDOWS_DEPLOY_RUNBOOK.md`.
+2. SSH to `james@192.168.0.157`, update `C:\ZetherionAI` to the pushed ref, and record the resulting commit hash.
+3. Apply the Docker credential fix from the runbook when needed, then run `docker compose up -d --build`.
+4. Verify deployment health with:
+   - `docker compose ps`
+   - bot startup logs (`settings_manager_initialized`, `provider_issue_alerts_wired`, `provider_probe_task_started`)
+   - model settings rows in Postgres (`models` namespace keys)
+   - fallback behavior check and related log signals.
+5. Do not consider work complete until Windows deploy + verification has succeeded, or a concrete blocker is reported.
