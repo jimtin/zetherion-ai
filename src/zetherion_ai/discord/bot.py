@@ -13,7 +13,8 @@ import structlog
 from discord import app_commands
 
 from zetherion_ai.agent.core import Agent
-from zetherion_ai.config import get_settings
+from zetherion_ai.agent.inference import ProviderIssueAlert
+from zetherion_ai.config import get_dynamic, get_settings
 from zetherion_ai.constants import KEEP_WARM_INTERVAL_SECONDS, MAX_DISCORD_MESSAGE_LENGTH
 from zetherion_ai.discord.security import (
     RateLimiter,
@@ -66,6 +67,7 @@ class ZetherionAIBot(discord.Client):
         self._settings_manager = settings_manager
         self._queue_manager = queue_manager
         self._keep_warm_task: asyncio.Task[None] | None = None
+        self._provider_watch_task: asyncio.Task[None] | None = None
         self._security_pipeline: SecurityPipeline | None = None
         self._security_ai_analyzer: SecurityAIAnalyzer | None = None
         self._heartbeat_scheduler: HeartbeatScheduler | None = None
@@ -181,6 +183,19 @@ class ZetherionAIBot(discord.Client):
         # Initialize agent after bot is ready
         self._agent = Agent(memory=self._memory)
 
+        # Wire provider issue alerts from InferenceBroker to owner DM notifications.
+        inference_broker = getattr(self._agent, "_inference_broker", None)
+        if inference_broker is not None and hasattr(inference_broker, "set_provider_issue_handler"):
+            try:
+                maybe = inference_broker.set_provider_issue_handler(
+                    self._handle_provider_issue_alert
+                )
+                if asyncio.iscoroutine(maybe):
+                    await maybe
+                log.info("provider_issue_alerts_wired")
+            except Exception:
+                log.exception("provider_issue_alert_wiring_failed")
+
         # Warm up the configured router backend to avoid first-request latency
         log.info("warming_up_router_backend")
         warmup_success = await self._agent.warmup()
@@ -192,6 +207,23 @@ class ZetherionAIBot(discord.Client):
         # Start background task to keep model warm
         self._keep_warm_task = asyncio.create_task(self._keep_warm_loop())
         log.info("keep_warm_task_started", interval_seconds=KEEP_WARM_INTERVAL_SECONDS)
+
+        # Periodic paid-provider readiness probes (credit/auth/billing visibility).
+        probe_enabled = get_dynamic(
+            "notifications",
+            "provider_probe_enabled",
+            get_settings().provider_probe_enabled,
+        )
+        if isinstance(probe_enabled, bool) and probe_enabled:
+            self._provider_watch_task = asyncio.create_task(self._provider_watch_loop())
+            log.info(
+                "provider_probe_task_started",
+                interval_seconds=get_dynamic(
+                    "notifications",
+                    "provider_probe_interval_seconds",
+                    get_settings().provider_probe_interval_seconds,
+                ),
+            )
 
         # Initialize security pipeline (Tier 1 + optional Tier 2 AI)
         try:
@@ -335,6 +367,115 @@ class ZetherionAIBot(discord.Client):
                 log.warning("keep_warm_error", error=str(e))
             await asyncio.sleep(KEEP_WARM_INTERVAL_SECONDS)
 
+    async def _resolve_owner_alert_user_id(self) -> int | None:
+        """Resolve the user ID that should receive critical runtime alerts."""
+        owner_id = get_settings().owner_user_id
+        if isinstance(owner_id, int) and owner_id > 0:
+            return owner_id
+
+        if self._user_manager is not None:
+            try:
+                users = await self._user_manager.list_users()
+                for user in users:
+                    role = str(user.get("role", ""))
+                    uid = user.get("discord_user_id")
+                    if role == "owner" and isinstance(uid, int):
+                        return uid
+            except Exception:
+                log.exception("owner_alert_user_resolution_failed")
+
+        return None
+
+    async def _handle_provider_issue_alert(self, alert: ProviderIssueAlert) -> None:
+        """Send paid-provider issue alerts to the configured owner user."""
+        if not self.is_ready():
+            return
+
+        owner_id = await self._resolve_owner_alert_user_id()
+        if owner_id is None:
+            log.warning(
+                "provider_issue_alert_dropped_no_owner",
+                provider=alert.provider.value,
+                issue_type=alert.issue_type,
+            )
+            return
+
+        provider_label = alert.provider.value.upper()
+        issue_title = {
+            "billing": "Billing/Credit issue detected",
+            "auth": "Authentication issue detected",
+            "rate_limit": "Rate-limit pressure detected",
+        }.get(alert.issue_type, "Provider issue detected")
+        action_hint = {
+            "billing": "Top up credits or update billing on this provider.",
+            "auth": "Rotate/reapply API key and verify permissions.",
+            "rate_limit": "Increase limits or adjust routing/traffic.",
+        }.get(alert.issue_type, "Review provider status and credentials.")
+
+        truncated_error = (alert.error or "").strip()
+        if len(truncated_error) > 500:
+            truncated_error = f"{truncated_error[:500]}..."
+
+        body = "\n".join(
+            [
+                f"**{issue_title}**",
+                f"Provider: `{provider_label}`",
+                f"Task: `{alert.task_type}`",
+                f"Model: `{alert.model or 'n/a'}`",
+                f"Failures observed: `{alert.fail_count}`",
+                f"Action: {action_hint}",
+                "",
+                f"Latest error: `{truncated_error or 'unknown'}`",
+            ]
+        )
+
+        try:
+            user = self.get_user(owner_id)
+            if user is None:
+                user = await self.fetch_user(owner_id)
+            if user is None:
+                log.warning("provider_issue_alert_user_not_found", owner_id=owner_id)
+                return
+            await user.send(body)
+            log.info(
+                "provider_issue_alert_sent",
+                owner_id=owner_id,
+                provider=alert.provider.value,
+                issue_type=alert.issue_type,
+            )
+        except Exception:
+            log.exception(
+                "provider_issue_alert_send_failed",
+                owner_id=owner_id,
+                provider=alert.provider.value,
+            )
+
+    async def _provider_watch_loop(self) -> None:
+        """Background task to proactively probe paid-provider readiness."""
+        await asyncio.sleep(30)
+        while True:
+            interval = get_dynamic(
+                "notifications",
+                "provider_probe_interval_seconds",
+                get_settings().provider_probe_interval_seconds,
+            )
+            sleep_seconds = interval if isinstance(interval, int) and interval > 0 else 1800
+
+            try:
+                enabled = get_dynamic(
+                    "notifications",
+                    "provider_probe_enabled",
+                    get_settings().provider_probe_enabled,
+                )
+                if isinstance(enabled, bool) and enabled and self._agent is not None:
+                    broker = getattr(self._agent, "_inference_broker", None)
+                    if broker is not None and hasattr(broker, "probe_paid_providers"):
+                        await broker.probe_paid_providers()
+            except Exception as exc:
+                log.warning("provider_probe_cycle_failed", error=str(exc))
+
+            await asyncio.sleep(sleep_seconds)
+
     async def close(self) -> None:
         """Clean up resources when bot is closing."""
         # Stop heartbeat scheduler first so no new queue tasks are generated.
@@ -356,6 +497,13 @@ class ZetherionAIBot(discord.Client):
             with contextlib.suppress(asyncio.CancelledError):
                 await task
             log.info("keep_warm_task_stopped")
+
+        probe_task = self._provider_watch_task
+        if probe_task is not None and not probe_task.done():
+            probe_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await probe_task
+            log.info("provider_probe_task_stopped")
 
         # Clean up agent resources
         if (
