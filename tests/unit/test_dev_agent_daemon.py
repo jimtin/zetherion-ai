@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Tests for dev-agent autopilot daemon orchestration."""
 
 from __future__ import annotations
