@@ -46,6 +46,45 @@ async def _bootstrap_dynamic_model_settings(
             )
 
 
+async def _bootstrap_dynamic_dev_agent_settings(
+    settings_mgr: SettingsManager,
+    settings: Any,
+) -> None:
+    """Seed dev-agent runtime defaults (only when keys are absent)."""
+    owner_id = getattr(settings, "owner_user_id", None)
+    updated_by = owner_id if isinstance(owner_id, int) else None
+
+    defaults: tuple[tuple[str, Any, str], ...] = (
+        ("enabled", getattr(settings, "dev_agent_enabled", False), "bool"),
+        ("service_url", getattr(settings, "dev_agent_service_url", ""), "string"),
+        ("cleanup_hour", getattr(settings, "dev_agent_cleanup_hour", 2), "int"),
+        ("cleanup_minute", getattr(settings, "dev_agent_cleanup_minute", 30), "int"),
+        (
+            "approval_reprompt_hours",
+            getattr(settings, "dev_agent_approval_reprompt_hours", 24),
+            "int",
+        ),
+        ("discord_channel_id", getattr(settings, "dev_agent_discord_channel_id", ""), "string"),
+        ("discord_guild_id", getattr(settings, "dev_agent_discord_guild_id", ""), "string"),
+        (
+            "webhook_name",
+            getattr(settings, "dev_agent_webhook_name", "zetherion-dev-agent"),
+            "string",
+        ),
+        ("webhook_id", getattr(settings, "dev_agent_webhook_id", ""), "string"),
+    )
+
+    for key, value, data_type in defaults:
+        await settings_mgr.seed_if_missing(
+            "dev_agent",
+            key,
+            value,
+            data_type=data_type,
+            description="Bootstrapped from environment defaults at startup",
+            updated_by=updated_by,
+        )
+
+
 async def main() -> None:
     """Main application entry point."""
     setup_logging()
@@ -80,6 +119,7 @@ async def main() -> None:
         await settings_mgr.initialize(user_manager._pool)
         set_settings_manager(settings_mgr)
         await _bootstrap_dynamic_model_settings(settings_mgr, settings)
+        await _bootstrap_dynamic_dev_agent_settings(settings_mgr, settings)
         log.info("settings_manager_initialized")
 
     # Initialize encrypted secrets manager (shares DB + encryptor)

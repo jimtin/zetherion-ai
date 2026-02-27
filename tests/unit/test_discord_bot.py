@@ -1,10 +1,16 @@
 """Unit tests for Discord bot layer."""
 
+import asyncio
+import time
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
+import httpx
 import pytest
+from aiohttp import web
+from aiohttp.test_utils import TestServer
 
 from zetherion_ai.discord.bot import ZetherionAIBot
 from zetherion_ai.memory.qdrant import QdrantMemory
@@ -89,6 +95,36 @@ def mock_interaction():
     interaction.response = AsyncMock()
     interaction.followup = AsyncMock()
     return interaction
+
+
+def _dev_settings(base_url: str, **overrides):
+    """Build a minimal settings object for dev-watcher tests."""
+    defaults = {
+        "owner_user_id": 123456789,
+        "dev_agent_service_url": base_url,
+        "dev_agent_bootstrap_secret": "bootstrap-secret",
+        "dev_agent_cleanup_hour": 2,
+        "dev_agent_cleanup_minute": 30,
+        "dev_agent_approval_reprompt_hours": 24,
+        "dev_agent_webhook_name": "zetherion-dev-agent",
+        "dev_agent_enabled": True,
+        "dev_agent_discord_guild_id": "",
+        "dev_agent_discord_channel_id": "",
+        "auto_update_repo": "owner/repo",
+        "updater_service_url": "http://updater:9090",
+        "updater_secret": "",
+        "updater_secret_path": "/tmp/not-used",
+        "github_token": None,
+        "updater_verify_signatures": True,
+        "updater_verify_identity": "https://example.com/workflows/release.yml@refs/tags/*",
+        "updater_verify_oidc_issuer": "https://token.actions.githubusercontent.com",
+        "updater_verify_rekor_url": "https://rekor.sigstore.dev",
+        "updater_release_manifest_asset": "release-manifest.json",
+        "updater_release_signature_asset": "release-manifest.sig",
+        "updater_release_certificate_asset": "release-manifest.pem",
+    }
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
 
 
 class TestBotInitialization:
@@ -1427,7 +1463,11 @@ class TestWebhookDetection:
                     dev_agent_webhook_name="zetherion-dev-agent",
                     allow_bot_messages=False,
                 )
-                await bot.on_message(mock_message)
+                with patch(
+                    "zetherion_ai.discord.bot.get_dynamic",
+                    side_effect=lambda _ns, _key, default=None: default,
+                ):
+                    await bot.on_message(mock_message)
 
             mock_handler.assert_called_once_with(mock_message)
 
@@ -1442,7 +1482,11 @@ class TestWebhookDetection:
                 dev_agent_webhook_name="zetherion-dev-agent",
                 allow_bot_messages=False,
             )
-            await bot.on_message(mock_message)
+            with patch(
+                "zetherion_ai.discord.bot.get_dynamic",
+                side_effect=lambda _ns, _key, default=None: default,
+            ):
+                await bot.on_message(mock_message)
 
         # Should not call generate_response — the message is dropped
         if bot._agent:
@@ -1463,7 +1507,11 @@ class TestWebhookDetection:
                     dev_agent_webhook_id="444555666",
                     allow_bot_messages=False,
                 )
-                await bot.on_message(mock_message)
+                with patch(
+                    "zetherion_ai.discord.bot.get_dynamic",
+                    side_effect=lambda _ns, _key, default=None: default,
+                ):
+                    await bot.on_message(mock_message)
 
             mock_handler.assert_not_called()
 
@@ -1482,7 +1530,11 @@ class TestWebhookDetection:
                     dev_agent_webhook_id="111222333",
                     allow_bot_messages=False,
                 )
-                await bot.on_message(mock_message)
+                with patch(
+                    "zetherion_ai.discord.bot.get_dynamic",
+                    side_effect=lambda _ns, _key, default=None: default,
+                ):
+                    await bot.on_message(mock_message)
 
             mock_handler.assert_called_once_with(mock_message)
 
@@ -1498,3 +1550,894 @@ class TestWebhookDetection:
             await bot.on_message(mock_message)
 
             mock_handler.assert_not_called()
+
+
+class TestDevWatcherDmWizard:
+    """Tests for owner DM dev-watcher provisioning routing."""
+
+    @pytest.mark.asyncio
+    async def test_trigger_phrase_routes_to_wizard(self, bot, mock_dm_message, mock_agent):
+        bot._agent = mock_agent
+        mock_dm_message.content = "please implement dev watcher"
+
+        with (
+            patch.object(
+                bot._user_manager,
+                "is_allowed",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(bot._rate_limiter, "check", return_value=(True, None)),
+            patch.object(bot, "_start_dev_watcher_wizard", new_callable=AsyncMock) as start_wizard,
+            patch("zetherion_ai.discord.bot.detect_prompt_injection", return_value=False),
+        ):
+            await bot.on_message(mock_dm_message)
+
+        start_wizard.assert_awaited_once_with(mock_dm_message)
+        mock_agent.generate_response.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_status_phrase_routes_to_status_handler(self, bot, mock_dm_message, mock_agent):
+        bot._agent = mock_agent
+        mock_dm_message.content = "dev watcher status"
+
+        with (
+            patch.object(
+                bot._user_manager,
+                "is_allowed",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(bot._rate_limiter, "check", return_value=(True, None)),
+            patch.object(
+                bot,
+                "_handle_dev_watcher_status_dm",
+                new_callable=AsyncMock,
+            ) as status_handler,
+            patch("zetherion_ai.discord.bot.detect_prompt_injection", return_value=False),
+        ):
+            await bot.on_message(mock_dm_message)
+
+        status_handler.assert_awaited_once_with(mock_dm_message)
+        mock_agent.generate_response.assert_not_called()
+
+
+class TestDevWatcherWizardDetails:
+    """Covers wizard state machine and provisioning helpers."""
+
+    @pytest.mark.asyncio
+    async def test_start_wizard_rejects_non_admin(self, bot, mock_dm_message):
+        with patch.object(bot, "_is_owner_or_admin", new_callable=AsyncMock, return_value=False):
+            await bot._start_dev_watcher_wizard(mock_dm_message)
+
+        mock_dm_message.reply.assert_awaited_once()
+        assert "owner/admin only" in mock_dm_message.reply.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_start_wizard_no_manageable_guilds(self, bot, mock_dm_message):
+        with (
+            patch.object(bot, "_is_owner_or_admin", new_callable=AsyncMock, return_value=True),
+            patch.object(
+                bot,
+                "_select_manageable_guilds",
+                new_callable=AsyncMock,
+                return_value=([], ["My Guild: missing Manage Channels"]),
+            ),
+        ):
+            await bot._start_dev_watcher_wizard(mock_dm_message)
+
+        mock_dm_message.reply.assert_awaited_once()
+        reply = mock_dm_message.reply.call_args[0][0]
+        assert "Manage Channels" in reply
+        assert "Manage Webhooks" in reply
+
+    @pytest.mark.asyncio
+    async def test_start_wizard_single_guild_runs_provisioning(self, bot, mock_dm_message):
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = 111
+        guild.name = "Single Guild"
+
+        with (
+            patch.object(bot, "_is_owner_or_admin", new_callable=AsyncMock, return_value=True),
+            patch.object(
+                bot,
+                "_select_manageable_guilds",
+                new_callable=AsyncMock,
+                return_value=([guild], []),
+            ),
+            patch.object(
+                bot,
+                "_run_dev_watcher_provisioning",
+                new_callable=AsyncMock,
+            ) as run_provisioning,
+        ):
+            await bot._start_dev_watcher_wizard(mock_dm_message)
+
+        run_provisioning.assert_awaited_once_with(mock_dm_message, guild)
+
+    @pytest.mark.asyncio
+    async def test_start_wizard_multiple_guilds_stores_session(self, bot, mock_dm_message):
+        guild_a = MagicMock(spec=discord.Guild)
+        guild_a.id = 1001
+        guild_a.name = "Guild A"
+        guild_b = MagicMock(spec=discord.Guild)
+        guild_b.id = 1002
+        guild_b.name = "Guild B"
+
+        with (
+            patch.object(bot, "_is_owner_or_admin", new_callable=AsyncMock, return_value=True),
+            patch.object(
+                bot,
+                "_select_manageable_guilds",
+                new_callable=AsyncMock,
+                return_value=([guild_a, guild_b], []),
+            ),
+            patch.object(bot, "_send_long_reply", new_callable=AsyncMock) as send_long,
+        ):
+            await bot._start_dev_watcher_wizard(mock_dm_message)
+
+        session = bot._dev_watcher_wizards[mock_dm_message.author.id]
+        assert session["state"] == "awaiting_guild_selection"
+        assert session["guild_ids"] == [1001, 1002]
+        send_long.assert_awaited_once()
+        menu_text = send_long.call_args[0][1]
+        assert "1. Guild A (`1001`)" in menu_text
+        assert "2. Guild B (`1002`)" in menu_text
+
+    @pytest.mark.asyncio
+    async def test_continue_wizard_timeout(self, bot, mock_dm_message):
+        bot._dev_watcher_wizards[mock_dm_message.author.id] = {
+            "state": "awaiting_guild_selection",
+            "guild_ids": [1001],
+            "started_at": time.time() - (bot._DEV_WATCHER_WIZARD_TIMEOUT_SECONDS + 10),
+        }
+
+        handled = await bot._continue_dev_watcher_wizard(mock_dm_message, "1")
+        assert handled is True
+        assert mock_dm_message.author.id not in bot._dev_watcher_wizards
+        assert "timed out" in mock_dm_message.reply.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_continue_wizard_cancel(self, bot, mock_dm_message):
+        bot._dev_watcher_wizards[mock_dm_message.author.id] = {
+            "state": "awaiting_guild_selection",
+            "guild_ids": [1001, 1002],
+            "started_at": time.time(),
+        }
+
+        handled = await bot._continue_dev_watcher_wizard(mock_dm_message, "cancel")
+        assert handled is True
+        assert mock_dm_message.author.id not in bot._dev_watcher_wizards
+        assert "cancelled" in mock_dm_message.reply.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_continue_wizard_invalid_selection(self, bot, mock_dm_message):
+        bot._dev_watcher_wizards[mock_dm_message.author.id] = {
+            "state": "awaiting_guild_selection",
+            "guild_ids": [1001],
+            "started_at": time.time(),
+        }
+
+        handled = await bot._continue_dev_watcher_wizard(mock_dm_message, "not-a-number")
+        assert handled is True
+        assert mock_dm_message.author.id in bot._dev_watcher_wizards
+        assert "valid guild number" in mock_dm_message.reply.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_continue_wizard_runs_selected_guild(self, bot, mock_dm_message):
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = 1002
+        guild.name = "Guild B"
+        bot._dev_watcher_wizards[mock_dm_message.author.id] = {
+            "state": "awaiting_guild_selection",
+            "guild_ids": [1001, 1002],
+            "started_at": time.time(),
+        }
+
+        with (
+            patch.object(bot, "get_guild", return_value=guild),
+            patch.object(
+                bot,
+                "_run_dev_watcher_provisioning",
+                new_callable=AsyncMock,
+            ) as run_provisioning,
+        ):
+            handled = await bot._continue_dev_watcher_wizard(mock_dm_message, "2")
+
+        assert handled is True
+        assert mock_dm_message.author.id not in bot._dev_watcher_wizards
+        run_provisioning.assert_awaited_once_with(mock_dm_message, guild)
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_dev_agent_success(self, bot):
+        state: dict[str, object] = {}
+
+        async def handle_bootstrap(request: web.Request) -> web.Response:
+            state["header"] = request.headers.get("X-Bootstrap-Secret")
+            state["payload"] = await request.json()
+            return web.json_response({"ok": True, "api_token": "api-token"})
+
+        app = web.Application()
+        app.router.add_post("/v1/bootstrap", handle_bootstrap)
+        server = TestServer(app)
+        await server.start_server()
+        try:
+            settings = _dev_settings(str(server.make_url("")).rstrip("/"))
+            with (
+                patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+                patch(
+                    "zetherion_ai.discord.bot.get_dynamic",
+                    side_effect=lambda _ns, _key, default=None: default,
+                ),
+            ):
+                result = await bot._bootstrap_dev_agent(
+                    webhook_url="https://discord.test/hook",
+                    webhook_name="zetherion-dev-agent",
+                )
+        finally:
+            await server.close()
+
+        assert result["ok"] is True
+        assert result["api_token"] == "api-token"
+        assert state["header"] == "bootstrap-secret"
+        payload = state["payload"]
+        assert isinstance(payload, dict)
+        assert payload["webhook_url"] == "https://discord.test/hook"
+        assert payload["agent_name"] == "zetherion-dev-agent"
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_409_reuses_existing_token(self, bot):
+        async def handle_bootstrap(_request: web.Request) -> web.Response:
+            return web.json_response({"error": "already bootstrapped"}, status=409)
+
+        app = web.Application()
+        app.router.add_post("/v1/bootstrap", handle_bootstrap)
+        server = TestServer(app)
+        await server.start_server()
+        try:
+            settings = _dev_settings(str(server.make_url("")).rstrip("/"))
+            with (
+                patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+                patch(
+                    "zetherion_ai.discord.bot.get_dynamic",
+                    side_effect=lambda _ns, _key, default=None: default,
+                ),
+                patch("zetherion_ai.discord.bot.get_secret", return_value="stored-token"),
+            ):
+                result = await bot._bootstrap_dev_agent(
+                    webhook_url="https://discord.test/hook",
+                    webhook_name="zetherion-dev-agent",
+                )
+        finally:
+            await server.close()
+
+        assert result["ok"] is True
+        assert result["reused"] is True
+        assert result["api_token"] == "stored-token"
+
+    @pytest.mark.asyncio
+    async def test_run_provisioning_persists_runtime_and_reports(self, bot, mock_dm_message):
+        settings = _dev_settings("http://dev-agent.local:8787")
+        bot._settings_manager = AsyncMock()
+        bot._settings_manager.set = AsyncMock()
+
+        skills_client = AsyncMock()
+        skills_client.put_secret = AsyncMock()
+        bot._agent = AsyncMock()
+        bot._agent._get_skills_client = AsyncMock(return_value=skills_client)
+
+        category = MagicMock(spec=discord.CategoryChannel)
+        category.name = "Zetherion Ops"
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id = 202
+        channel.name = "dev-watcher"
+        webhook = MagicMock(spec=discord.Webhook)
+        webhook.id = 303
+        webhook.name = "zetherion-dev-agent"
+        webhook.url = "https://discord.test/webhook"
+
+        guild = MagicMock(spec=discord.Guild)
+        guild.id = 404
+        guild.name = "My Guild"
+
+        mock_dm_message.channel.send = AsyncMock()
+
+        with (
+            patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+            patch(
+                "zetherion_ai.discord.bot.get_dynamic",
+                side_effect=lambda _ns, _key, default=None: default,
+            ),
+            patch.object(
+                bot,
+                "_ensure_dev_agent_available",
+                new_callable=AsyncMock,
+                return_value=(True, "dev-agent healthy"),
+            ),
+            patch.object(
+                bot,
+                "_ensure_dev_watcher_discord_assets",
+                new_callable=AsyncMock,
+                return_value=(category, channel, webhook),
+            ),
+            patch.object(
+                bot,
+                "_bootstrap_dev_agent",
+                new_callable=AsyncMock,
+                return_value={"ok": True, "api_token": "api-token"},
+            ),
+            patch.object(
+                bot,
+                "_trigger_initial_discovery",
+                new_callable=AsyncMock,
+                return_value={
+                    "projects_discovered": ["proj-a", "proj-b"],
+                    "pending_approvals": [{"project_id": "proj-a"}],
+                },
+            ),
+            patch.object(bot, "_send_long_message", new_callable=AsyncMock) as send_long,
+        ):
+            await bot._run_dev_watcher_provisioning(mock_dm_message, guild)
+
+        assert bot._settings_manager.set.await_count >= 9
+        skills_client.put_secret.assert_awaited_once()
+        send_long.assert_awaited_once()
+        summary = send_long.call_args[0][1]
+        assert "Dev watcher setup complete." in summary
+        assert "Projects discovered: `2`" in summary
+        assert "Pending approvals: `1`" in summary
+
+    @pytest.mark.asyncio
+    async def test_status_dm_includes_project_and_pending_counts(self, bot, mock_dm_message):
+        async def handle_projects(request: web.Request) -> web.Response:
+            assert request.headers.get("Authorization") == "Bearer api-token"
+            return web.json_response({"projects": [{"project_id": "a"}, {"project_id": "b"}]})
+
+        async def handle_pending(request: web.Request) -> web.Response:
+            assert request.headers.get("Authorization") == "Bearer api-token"
+            return web.json_response({"pending": [{"project_id": "a"}]})
+
+        app = web.Application()
+        app.router.add_get("/v1/projects", handle_projects)
+        app.router.add_get("/v1/approvals/pending", handle_pending)
+        server = TestServer(app)
+        await server.start_server()
+
+        settings = _dev_settings(
+            str(server.make_url("")).rstrip("/"),
+            dev_agent_enabled=True,
+            dev_agent_discord_guild_id="404",
+            dev_agent_discord_channel_id="202",
+        )
+        try:
+            with (
+                patch.object(bot, "_is_owner_or_admin", new_callable=AsyncMock, return_value=True),
+                patch.object(
+                    bot,
+                    "_dev_agent_healthcheck",
+                    new_callable=AsyncMock,
+                    return_value=True,
+                ),
+                patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+                patch(
+                    "zetherion_ai.discord.bot.get_dynamic",
+                    side_effect=lambda _ns, _key, default=None: default,
+                ),
+                patch("zetherion_ai.discord.bot.get_secret", return_value="api-token"),
+                patch.object(bot, "_send_long_reply", new_callable=AsyncMock) as send_reply,
+            ):
+                await bot._handle_dev_watcher_status_dm(mock_dm_message)
+        finally:
+            await server.close()
+
+        send_reply.assert_awaited_once()
+        status_message = send_reply.call_args[0][1]
+        assert "Projects discovered: `2`" in status_message
+        assert "Pending approvals: `1`" in status_message
+        assert "Stored API token: `yes`" in status_message
+
+    @pytest.mark.asyncio
+    async def test_ensure_dev_agent_available_short_circuits_when_healthy(self, bot):
+        with patch.object(bot, "_dev_agent_healthcheck", new_callable=AsyncMock, return_value=True):
+            ok, detail = await bot._ensure_dev_agent_available()
+        assert ok is True
+        assert detail == "dev-agent healthy"
+
+    @pytest.mark.asyncio
+    async def test_ensure_dev_agent_available_requires_repo(self, bot):
+        with (
+            patch.object(bot, "_dev_agent_healthcheck", new_callable=AsyncMock, return_value=False),
+            patch(
+                "zetherion_ai.discord.bot.get_settings",
+                return_value=_dev_settings("http://dev-agent.local:8787", auto_update_repo=""),
+            ),
+        ):
+            ok, detail = await bot._ensure_dev_agent_available()
+        assert ok is False
+        assert "AUTO_UPDATE_REPO" in detail
+
+    @pytest.mark.asyncio
+    async def test_ensure_dev_watcher_discord_assets_returns_none_when_members_missing(self, bot):
+        guild = MagicMock(spec=discord.Guild)
+        guild.me = None
+        guild.get_member.return_value = None
+
+        with (
+            patch.object(bot, "_resolve_guild_member", new_callable=AsyncMock, return_value=None),
+            patch(
+                "zetherion_ai.discord.bot.get_settings",
+                return_value=_dev_settings("http://dev-agent"),
+            ),
+            patch(
+                "zetherion_ai.discord.bot.get_dynamic",
+                side_effect=lambda _ns, _key, default=None: default,
+            ),
+        ):
+            result = await bot._ensure_dev_watcher_discord_assets(guild=guild, user_id=123456789)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_ensure_dev_watcher_discord_assets_creates_category_channel_webhook(self, bot):
+        bot_member = MagicMock(name="bot-member")
+        owner_member = MagicMock(name="owner-member")
+        default_role = MagicMock(name="default-role")
+
+        category = SimpleNamespace(id=101, name="Zetherion Ops")
+        webhook = MagicMock(spec=discord.Webhook)
+        webhook.name = "zetherion-dev-agent"
+        webhook.id = 404
+        webhook.url = "https://discord.test/webhook"
+
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id = 202
+        channel.name = "dev-watcher"
+        channel.category_id = 101
+        channel.webhooks = AsyncMock(return_value=[])
+        channel.create_webhook = AsyncMock(return_value=webhook)
+
+        guild = MagicMock(spec=discord.Guild)
+        guild.me = bot_member
+        guild.default_role = default_role
+        guild.categories = []
+        guild.text_channels = []
+        guild.create_category = AsyncMock(return_value=category)
+        guild.create_text_channel = AsyncMock(return_value=channel)
+
+        with (
+            patch.object(
+                bot,
+                "_resolve_guild_member",
+                new_callable=AsyncMock,
+                return_value=owner_member,
+            ),
+            patch(
+                "zetherion_ai.discord.bot.get_settings",
+                return_value=_dev_settings("http://dev-agent"),
+            ),
+            patch(
+                "zetherion_ai.discord.bot.get_dynamic",
+                side_effect=lambda _ns, _key, default=None: default,
+            ),
+        ):
+            result = await bot._ensure_dev_watcher_discord_assets(guild=guild, user_id=123456789)
+
+        guild.create_category.assert_awaited_once()
+        guild.create_text_channel.assert_awaited_once()
+        channel.create_webhook.assert_awaited_once_with(
+            name="zetherion-dev-agent",
+            reason="Dev watcher onboarding",
+        )
+        assert result == (category, channel, webhook)
+
+    @pytest.mark.asyncio
+    async def test_ensure_dev_watcher_discord_assets_reuses_existing_assets(self, bot):
+        bot_member = MagicMock(name="bot-member")
+        owner_member = MagicMock(name="owner-member")
+
+        category = SimpleNamespace(id=303, name="Zetherion Ops")
+        webhook = MagicMock(spec=discord.Webhook)
+        webhook.name = "zetherion-dev-agent"
+
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id = 202
+        channel.name = "dev-watcher"
+        channel.category_id = 303
+        channel.webhooks = AsyncMock(return_value=[webhook])
+        channel.create_webhook = AsyncMock()
+
+        guild = MagicMock(spec=discord.Guild)
+        guild.me = bot_member
+        guild.default_role = MagicMock()
+        guild.categories = [category]
+        guild.text_channels = [channel]
+        guild.create_category = AsyncMock()
+        guild.create_text_channel = AsyncMock()
+
+        with (
+            patch.object(
+                bot,
+                "_resolve_guild_member",
+                new_callable=AsyncMock,
+                return_value=owner_member,
+            ),
+            patch(
+                "zetherion_ai.discord.bot.get_settings",
+                return_value=_dev_settings("http://dev-agent"),
+            ),
+            patch(
+                "zetherion_ai.discord.bot.get_dynamic",
+                side_effect=lambda _ns, _key, default=None: default,
+            ),
+        ):
+            result = await bot._ensure_dev_watcher_discord_assets(guild=guild, user_id=123456789)
+
+        guild.create_category.assert_not_awaited()
+        guild.create_text_channel.assert_not_awaited()
+        channel.create_webhook.assert_not_awaited()
+        assert result == (category, channel, webhook)
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_dev_agent_handles_request_error(self, bot):
+        settings = _dev_settings("http://dev-agent.local:8787")
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(side_effect=httpx.ConnectError("connection refused"))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+            patch(
+                "zetherion_ai.discord.bot.get_dynamic",
+                side_effect=lambda _ns, _key, default=None: default,
+            ),
+            patch("httpx.AsyncClient", return_value=mock_client),
+        ):
+            result = await bot._bootstrap_dev_agent(
+                webhook_url="https://discord.test/hook",
+                webhook_name="zetherion-dev-agent",
+            )
+
+        assert result["ok"] is False
+        assert "bootstrap request failed" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_dev_agent_handles_non_object_success_response(self, bot):
+        settings = _dev_settings("http://dev-agent.local:8787")
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = ["unexpected", "shape"]
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+            patch(
+                "zetherion_ai.discord.bot.get_dynamic",
+                side_effect=lambda _ns, _key, default=None: default,
+            ),
+            patch("httpx.AsyncClient", return_value=mock_client),
+        ):
+            result = await bot._bootstrap_dev_agent(
+                webhook_url="https://discord.test/hook",
+                webhook_name="zetherion-dev-agent",
+            )
+
+        assert result == {"ok": False, "error": "bootstrap response was not JSON"}
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_dev_agent_409_without_stored_token_fails(self, bot):
+        settings = _dev_settings("http://dev-agent.local:8787")
+        response = MagicMock()
+        response.status_code = 409
+        response.json.return_value = {"error": "already bootstrapped"}
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch("zetherion_ai.discord.bot.get_settings", return_value=settings),
+            patch(
+                "zetherion_ai.discord.bot.get_dynamic",
+                side_effect=lambda _ns, _key, default=None: default,
+            ),
+            patch("zetherion_ai.discord.bot.get_secret", return_value=""),
+            patch("httpx.AsyncClient", return_value=mock_client),
+        ):
+            result = await bot._bootstrap_dev_agent(
+                webhook_url="https://discord.test/hook",
+                webhook_name="zetherion-dev-agent",
+            )
+
+        assert result["ok"] is False
+        assert "no stored API token" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_persist_dev_agent_secret_requires_agent(self, bot):
+        bot._agent = None
+        with pytest.raises(RuntimeError, match="Agent is not ready"):
+            await bot._persist_dev_agent_secret(changed_by=1, token="dev-token")
+
+    @pytest.mark.asyncio
+    async def test_persist_dev_agent_secret_requires_skills_client(self, bot):
+        bot._agent = AsyncMock()
+        bot._agent._get_skills_client = AsyncMock(return_value=None)
+        with pytest.raises(RuntimeError, match="Skills service is unavailable"):
+            await bot._persist_dev_agent_secret(changed_by=1, token="dev-token")
+
+    @pytest.mark.asyncio
+    async def test_trigger_initial_discovery_handles_request_error(self, bot):
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(side_effect=httpx.ConnectError("connect failed"))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await bot._trigger_initial_discovery("api-token")
+
+        assert result["projects_discovered"] == []
+        assert result["pending_approvals"] == []
+        assert "connect failed" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_trigger_initial_discovery_handles_http_error(self, bot):
+        response = MagicMock()
+        response.status_code = 500
+        response.json.return_value = {"error": "server error"}
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await bot._trigger_initial_discovery("api-token")
+
+        assert result["projects_discovered"] == []
+        assert result["pending_approvals"] == []
+        assert result["error"] == "HTTP 500"
+
+    @pytest.mark.asyncio
+    async def test_trigger_initial_discovery_handles_invalid_json(self, bot):
+        response = MagicMock()
+        response.status_code = 200
+        response.json.side_effect = ValueError("bad json")
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await bot._trigger_initial_discovery("api-token")
+
+        assert result["projects_discovered"] == []
+        assert result["pending_approvals"] == []
+        assert result["error"] == "invalid JSON"
+
+    @pytest.mark.asyncio
+    async def test_trigger_initial_discovery_handles_non_object_payload(self, bot):
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = ["unexpected", "shape"]
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await bot._trigger_initial_discovery("api-token")
+
+        assert result == {"projects_discovered": [], "pending_approvals": []}
+
+    @pytest.mark.asyncio
+    async def test_status_dm_rejects_non_admin(self, bot, mock_dm_message):
+        with patch.object(bot, "_is_owner_or_admin", new_callable=AsyncMock, return_value=False):
+            await bot._handle_dev_watcher_status_dm(mock_dm_message)
+
+        mock_dm_message.reply.assert_awaited_once()
+        assert "owner/admin only" in mock_dm_message.reply.call_args[0][0]
+
+
+class TestBotRuntimeHelpers:
+    """Coverage for runtime helper methods in discord bot layer."""
+
+    def test_parse_clock_time(self):
+        nine_thirty = datetime.strptime("09:30", "%H:%M").time()
+        twenty_three_fifty_nine = datetime.strptime("23:59", "%H:%M").time()
+        assert ZetherionAIBot._parse_clock_time("09:30") == nine_thirty
+        assert ZetherionAIBot._parse_clock_time(" 23:59 ") == twenty_three_fifty_nine
+        assert ZetherionAIBot._parse_clock_time("   ") is None
+        assert ZetherionAIBot._parse_clock_time("24:00") is None
+        assert ZetherionAIBot._parse_clock_time("not-a-time") is None
+        assert ZetherionAIBot._parse_clock_time(123) is None
+
+    @pytest.mark.asyncio
+    async def test_resolve_quiet_hours_from_preferences(self, bot):
+        bot._user_manager = AsyncMock()
+        bot._user_manager.get_personal_profile = AsyncMock(
+            return_value={
+                "timezone": "Australia/Sydney",
+                "preferences": {"quiet_hours": {"start": "22:00", "end": "07:00", "enabled": True}},
+            }
+        )
+
+        window = await bot._resolve_quiet_hours("123")
+
+        assert window is not None
+        assert window.start.hour == 22
+        assert window.end.hour == 7
+        assert window.timezone == "Australia/Sydney"
+        assert window.enabled is True
+
+    @pytest.mark.asyncio
+    async def test_resolve_quiet_hours_falls_back_to_working_hours(self, bot):
+        bot._user_manager = AsyncMock()
+        bot._user_manager.get_personal_profile = AsyncMock(
+            return_value={
+                "timezone": "America/New_York",
+                "preferences": "{bad-json",
+                "working_hours": {"start": "09:00", "end": "17:00"},
+            }
+        )
+
+        window = await bot._resolve_quiet_hours("123")
+
+        assert window is not None
+        assert window.start.hour == 17
+        assert window.end.hour == 9
+        assert window.timezone == "America/New_York"
+        assert window.enabled is True
+
+    @pytest.mark.asyncio
+    async def test_resolve_quiet_hours_returns_none_for_invalid_user_or_profile(self, bot):
+        bot._user_manager = None
+        assert await bot._resolve_quiet_hours("abc") is None
+        assert await bot._resolve_quiet_hours("123") is None
+
+        bot._user_manager = AsyncMock()
+        bot._user_manager.get_personal_profile = AsyncMock(return_value=None)
+        assert await bot._resolve_quiet_hours("123") is None
+
+    @pytest.mark.asyncio
+    async def test_resolve_quiet_hours_returns_none_when_no_valid_windows(self, bot):
+        bot._user_manager = AsyncMock()
+        bot._user_manager.get_personal_profile = AsyncMock(
+            return_value={
+                "timezone": "UTC",
+                "preferences": {"quiet_hours": {"start": "bad", "end": "also-bad"}},
+                "working_hours": {"start": "bad", "end": "still-bad"},
+            }
+        )
+
+        assert await bot._resolve_quiet_hours("123") is None
+
+    @pytest.mark.asyncio
+    async def test_resolve_owner_alert_user_id_prefers_owner_setting(self, bot):
+        with patch(
+            "zetherion_ai.discord.bot.get_settings",
+            return_value=SimpleNamespace(owner_user_id=123456789),
+        ):
+            owner_id = await bot._resolve_owner_alert_user_id()
+        assert owner_id == 123456789
+
+    @pytest.mark.asyncio
+    async def test_resolve_owner_alert_user_id_falls_back_to_user_manager(self, bot):
+        bot._user_manager = AsyncMock()
+        bot._user_manager.list_users = AsyncMock(
+            return_value=[
+                {"discord_user_id": 111, "role": "admin"},
+                {"discord_user_id": 222, "role": "owner"},
+            ]
+        )
+        with patch(
+            "zetherion_ai.discord.bot.get_settings",
+            return_value=SimpleNamespace(owner_user_id=0),
+        ):
+            owner_id = await bot._resolve_owner_alert_user_id()
+        assert owner_id == 222
+
+    @pytest.mark.asyncio
+    async def test_resolve_owner_alert_user_id_handles_user_manager_error(self, bot):
+        bot._user_manager = AsyncMock()
+        bot._user_manager.list_users = AsyncMock(side_effect=RuntimeError("db down"))
+        with patch(
+            "zetherion_ai.discord.bot.get_settings",
+            return_value=SimpleNamespace(owner_user_id=0),
+        ):
+            owner_id = await bot._resolve_owner_alert_user_id()
+        assert owner_id is None
+
+    @pytest.mark.asyncio
+    async def test_handle_provider_issue_alert_sends_owner_dm(self, bot):
+        alert = SimpleNamespace(
+            provider=SimpleNamespace(value="openai"),
+            issue_type="billing",
+            task_type="chat",
+            model="gpt-4o",
+            fail_count=3,
+            error="Payment required",
+        )
+        user = AsyncMock()
+        user.send = AsyncMock()
+
+        with (
+            patch.object(bot, "is_ready", return_value=True),
+            patch.object(
+                bot,
+                "_resolve_owner_alert_user_id",
+                new_callable=AsyncMock,
+                return_value=42,
+            ),
+            patch.object(bot, "get_user", return_value=user),
+        ):
+            await bot._handle_provider_issue_alert(alert)
+
+        user.send.assert_awaited_once()
+        sent_message = user.send.call_args[0][0]
+        assert "Billing/Credit issue detected" in sent_message
+        assert "Provider: `OPENAI`" in sent_message
+        assert "Top up credits" in sent_message
+
+    @pytest.mark.asyncio
+    async def test_handle_provider_issue_alert_skips_when_owner_missing(self, bot):
+        alert = SimpleNamespace(
+            provider=SimpleNamespace(value="openai"),
+            issue_type="auth",
+            task_type="chat",
+            model="gpt-4o",
+            fail_count=1,
+            error="invalid token",
+        )
+        with (
+            patch.object(bot, "is_ready", return_value=True),
+            patch.object(
+                bot,
+                "_resolve_owner_alert_user_id",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+        ):
+            await bot._handle_provider_issue_alert(alert)
+
+    @pytest.mark.asyncio
+    async def test_close_stops_runtime_components(self, bot):
+        scheduler = AsyncMock()
+        scheduler.stop = AsyncMock()
+        bot._heartbeat_scheduler = scheduler
+
+        queue_manager = AsyncMock()
+        queue_manager.stop = AsyncMock()
+        bot._queue_manager = queue_manager
+
+        async def _wait_forever():
+            await asyncio.sleep(3600)
+
+        keep_warm_task = asyncio.create_task(_wait_forever())
+        provider_task = asyncio.create_task(_wait_forever())
+        bot._keep_warm_task = keep_warm_task
+        bot._provider_watch_task = provider_task
+
+        broker = AsyncMock()
+        broker.close = AsyncMock()
+        bot._agent = SimpleNamespace(_inference_broker=broker)
+        security_ai_analyzer = AsyncMock()
+        security_ai_analyzer.close = AsyncMock()
+        bot._security_ai_analyzer = security_ai_analyzer
+
+        with patch.object(discord.Client, "close", new_callable=AsyncMock) as client_close:
+            await bot.close()
+
+        scheduler.stop.assert_awaited_once()
+        queue_manager.stop.assert_awaited_once()
+        broker.close.assert_awaited_once()
+        security_ai_analyzer.close.assert_awaited_once()
+        client_close.assert_awaited_once()
+        assert keep_warm_task.cancelled() is True
+        assert provider_task.cancelled() is True

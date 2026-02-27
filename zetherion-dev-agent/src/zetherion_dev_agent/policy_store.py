@@ -81,6 +81,12 @@ class PolicyStore:
                 success      INTEGER NOT NULL,
                 error        TEXT
             );
+
+            CREATE TABLE IF NOT EXISTS runtime_meta (
+                key          TEXT PRIMARY KEY,
+                value        TEXT NOT NULL,
+                updated_at   TEXT NOT NULL
+            );
             """
         )
         self._conn.commit()
@@ -334,3 +340,31 @@ class PolicyStore:
                 }
             )
         return records
+
+    # ------------------------------------------------------------------
+    # Runtime metadata
+    # ------------------------------------------------------------------
+
+    def get_meta(self, key: str, default: str | None = None) -> str | None:
+        """Fetch a runtime metadata value by key."""
+        row = self._conn.execute(
+            "SELECT value FROM runtime_meta WHERE key = ?",
+            (key,),
+        ).fetchone()
+        if row is None:
+            return default
+        return str(row["value"])
+
+    def set_meta(self, key: str, value: str) -> None:
+        """Persist a runtime metadata value."""
+        self._conn.execute(
+            """
+            INSERT INTO runtime_meta (key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = excluded.updated_at
+            """,
+            (key, value, self._now_iso()),
+        )
+        self._conn.commit()

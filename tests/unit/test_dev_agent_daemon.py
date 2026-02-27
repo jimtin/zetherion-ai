@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -110,4 +111,78 @@ async def test_cleanup_cycle_runs_auto_clean_projects(tmp_path: Path) -> None:
     history = daemon.store.list_cleanup_runs(limit=5)
     assert len(history) == 1
     assert history[0]["project_id"] == "proj-b"
+    await daemon.close()
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_requires_secret_and_is_single_use(tmp_path: Path) -> None:
+    project = ProjectSnapshot(project_id="proj-c", containers=[])
+    config = AgentConfig(
+        webhook_url="",
+        repos=[],
+        database_path=str(tmp_path / "daemon.db"),
+        bootstrap_secret="bootstrap-secret",
+        bootstrap_require_once=True,
+    )
+    daemon = DevAutopilotDaemon(
+        config,
+        monitor=_FakeMonitor(project, CleanupResult("proj-c", True)),
+    )
+
+    request = MagicMock()
+    request.headers = {"X-Bootstrap-Secret": "bootstrap-secret"}
+    request.json = AsyncMock(
+        return_value={
+            "webhook_url": "https://discord.test/webhook",
+            "agent_name": "zetherion-dev-agent",
+            "rotate_api_token": True,
+        }
+    )
+    first = await daemon._handle_bootstrap(request)  # noqa: SLF001
+    first_payload = json.loads(first.text)
+    assert first.status == 200
+    assert first_payload["ok"] is True
+    assert isinstance(first_payload.get("api_token"), str)
+
+    second = await daemon._handle_bootstrap(request)  # noqa: SLF001
+    second_payload = json.loads(second.text)
+    assert second.status == 409
+    assert second_payload["already_bootstrapped"] is True
+    await daemon.close()
+
+
+@pytest.mark.asyncio
+async def test_discovery_run_endpoint_returns_pending_approvals(tmp_path: Path) -> None:
+    project = ProjectSnapshot(
+        project_id="proj-d",
+        containers=[
+            ContainerSnapshot(
+                container_id="abc",
+                name="proj-d-web-1",
+                image="img:latest",
+                state="running",
+                status="Up 1 minute",
+                project_id="proj-d",
+                labels={},
+            )
+        ],
+    )
+    config = AgentConfig(
+        webhook_url="",
+        repos=[],
+        database_path=str(tmp_path / "daemon.db"),
+        api_token="token",
+    )
+    daemon = DevAutopilotDaemon(
+        config,
+        monitor=_FakeMonitor(project, CleanupResult("proj-d", True)),
+    )
+    with patch("zetherion_dev_agent.daemon.send_event", new_callable=AsyncMock) as send_mock:
+        send_mock.return_value = True
+        response = await daemon._handle_discovery_run(MagicMock())  # noqa: SLF001
+    payload = json.loads(response.text)
+    assert response.status == 200
+    assert payload["ok"] is True
+    assert payload["projects_discovered"] == ["proj-d"]
+    assert payload["pending_approvals"][0]["project_id"] == "proj-d"
     await daemon.close()

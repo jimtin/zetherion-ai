@@ -140,7 +140,7 @@ tags = ["password", "url"]
 id = "env-file-secrets"
 description = "Secrets in .env files (not .env.example)"
 regex = '''(?i)(password|secret|token|api[_-]?key)[\s]*=[\s]*[^\s\n]{8,}'''
-paths = ['''^\.env$''']  # Only check .env, not .env.example
+path = '''^\.env$'''  # Only check .env, not .env.example
 tags = ["env", "password"]
 [rules.allowlist]
 regexes = [
@@ -152,6 +152,7 @@ regexes = [
     '''test_(token|key)''',
 ]
 paths = [
+    '''\.env\.example$''',
     '''README\.md''',
     '''docs/''',
     '''src/.*\.py$''',  # Allow source code (not actual secrets)
