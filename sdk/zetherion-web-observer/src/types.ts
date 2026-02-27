@@ -30,8 +30,11 @@ export interface ReplayChunkInput {
 }
 
 export interface ZetherionObserverOptions {
+  provider?: "zetherion" | "cgs";
   apiBaseUrl: string;
-  sessionToken: string;
+  sessionToken?: string;
+  authToken?: string;
+  conversationId?: string;
   externalUserId?: string;
   contactId?: string;
   webSessionId?: string;

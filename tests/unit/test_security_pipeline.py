@@ -265,7 +265,7 @@ class TestTier1Regex:
         assert any(s.pattern_name == "data_uri" for s in signals)
 
     def test_ip_url(self) -> None:
-        signals = check_all_patterns("visit http://192.168.1.1/admin")
+        signals = check_all_patterns("visit http://203.0.113.1/admin")
         assert any(s.pattern_name == "ip_url" for s in signals)
 
     # --- False positive guards for new patterns ---

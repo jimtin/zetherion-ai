@@ -12,7 +12,7 @@
     .\scripts\verify-windows-host.ps1
 
     # Run remotely via SSH from macOS:
-    ssh -i ~/.ssh/zetherion_windows james@192.168.0.157 "cd C:\ZetherionAI; powershell -File scripts\verify-windows-host.ps1"
+    ssh -i ~/.ssh/zetherion_windows james@<WINDOWS_HOST_IP> "cd C:\ZetherionAI; powershell -File scripts\verify-windows-host.ps1"
 #>
 
 param(

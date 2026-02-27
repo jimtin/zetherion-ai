@@ -5,11 +5,19 @@ http:
         - skills
       rule: "PathPrefix(`/`)"
       service: skills-blue
+      priority: 10
+    cgs-api:
+      entryPoints:
+        - api
+      rule: "PathPrefix(`/service/ai/v1`)"
+      service: cgs-api-blue
+      priority: 20
     api:
       entryPoints:
         - api
       rule: "PathPrefix(`/`)"
       service: api-blue
+      priority: 10
   services:
     skills-blue:
       loadBalancer:
@@ -27,3 +35,11 @@ http:
       loadBalancer:
         servers:
           - url: "http://zetherion-ai-api-green:8443"
+    cgs-api-blue:
+      loadBalancer:
+        servers:
+          - url: "http://zetherion-ai-cgs-gateway-blue:8443"
+    cgs-api-green:
+      loadBalancer:
+        servers:
+          - url: "http://zetherion-ai-cgs-gateway-green:8443"

@@ -265,6 +265,7 @@ class TestSecretResolverCascade:
             "github_token",
             "skills_api_secret",
             "api_jwt_secret",
+            "zetherion_skills_api_secret",
         }
         assert set(_SETTINGS_FIELD_MAP.keys()) == expected
 

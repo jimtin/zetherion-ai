@@ -3,7 +3,7 @@
 # DO NOT commit windows-remote.yml to git!
 
 windows:
-  host: ""                        # e.g., 192.168.0.157 or windows-pc.local
+  host: ""                        # e.g., <WINDOWS_HOST_IP> or windows-pc.local
   ssh_port: 22
   ssh_user: ""                    # e.g., james
   ssh_key_path: ""                # e.g., ~/.ssh/zetherion_windows

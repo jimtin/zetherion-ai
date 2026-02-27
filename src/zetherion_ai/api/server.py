@@ -1,8 +1,8 @@
 """Public API server for multi-tenant client websites.
 
 Runs as a separate aiohttp process from the internal skills server.
-Provides tenant management, session handling, and (in future phases)
-chat and CRM endpoints.
+Provides tenant/session runtime APIs, analytics endpoints, and tenant-scoped
+CRM reporting reads.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from zetherion_ai.api.middleware import (
 )
 from zetherion_ai.api.routes.analytics import (
     handle_analytics_events,
+    handle_get_funnel,
     handle_get_recommendations,
     handle_get_replay_chunk,
     handle_recommendation_feedback,
@@ -34,6 +35,7 @@ from zetherion_ai.api.routes.analytics import (
     handle_session_end,
 )
 from zetherion_ai.api.routes.chat import handle_chat, handle_chat_history, handle_chat_stream
+from zetherion_ai.api.routes.crm import handle_get_contacts, handle_get_interactions
 from zetherion_ai.api.routes.health import handle_health
 from zetherion_ai.api.routes.sessions import (
     handle_create_session,
@@ -138,10 +140,16 @@ class PublicAPIServer:
         )
         app.router.add_post("/api/v1/analytics/sessions/end", handle_session_end)
         app.router.add_get("/api/v1/analytics/recommendations", handle_get_recommendations)
+        app.router.add_get("/api/v1/analytics/recommendations/tenant", handle_get_recommendations)
+        app.router.add_get("/api/v1/analytics/funnel", handle_get_funnel)
         app.router.add_post(
             "/api/v1/analytics/recommendations/{recommendation_id}/feedback",
             handle_recommendation_feedback,
         )
+
+        # CRM read routes (API-key auth)
+        app.router.add_get("/api/v1/crm/contacts", handle_get_contacts)
+        app.router.add_get("/api/v1/crm/interactions", handle_get_interactions)
 
         # CI/deploy marker ingest (API-key auth)
         app.router.add_post("/api/v1/releases/markers", handle_release_marker)

@@ -1,8 +1,8 @@
 # Windows Remote Installation Log
 
 **Date**: 2026-02-10
-**Source Machine**: macOS (192.168.0.168)
-**Target Machine**: Windows 11 - "Computer-of-awesome" (192.168.0.157)
+**Source Machine**: macOS (<SOURCE_HOST_IP>)
+**Target Machine**: Windows 11 - "Computer-of-awesome" (<WINDOWS_HOST_IP>)
 **Windows User**: james
 **Method**: SSH remoting from macOS to Windows PowerShell
 **Result**: SUCCESS - All 6 services healthy, bot connected to Discord
@@ -73,7 +73,7 @@
 
 All commands below use this SSH prefix (abbreviated as `SSH` in examples):
 ```bash
-SSH="ssh -i ~/.ssh/zetherion_windows -o ConnectTimeout=10 james@192.168.0.157"
+SSH="ssh -i ~/.ssh/zetherion_windows -o ConnectTimeout=10 james@<WINDOWS_HOST_IP>"
 ```
 
 ### Step 1: Start Docker Desktop (if not running)
@@ -98,7 +98,7 @@ $SSH "git clone https://github.com/jimtin/zetherion-ai.git C:\ZetherionAI"
 ### Step 4: Configure Environment
 Option A - Copy .env from existing installation:
 ```bash
-scp -i ~/.ssh/zetherion_windows /path/to/local/.env james@192.168.0.157:C:/ZetherionAI/.env
+scp -i ~/.ssh/zetherion_windows /path/to/local/.env james@<WINDOWS_HOST_IP>:C:/ZetherionAI/.env
 ```
 
 Option B - Create from template and edit:
@@ -203,10 +203,10 @@ Expected: All 5 tests pass. Router and generation should respond in <3 seconds e
 ## Issues Encountered and Fixes
 
 ### Issue 1: SSH Connection Timeout
-- **Symptom**: `ssh: connect to host 192.168.0.157 port 22: Operation timed out`
+- **Symptom**: `ssh: connect to host <WINDOWS_HOST_IP> port 22: Operation timed out`
 - **Cause**: Windows network profile was set to "Public", which blocks inbound connections
 - **Fix**: Changed network profile to "Private" in Windows Settings > Network & Internet
-- **Note**: Even on the same subnet (both `192.168.0.x`), Public profile blocks all inbound traffic
+- **Note**: Even on the same subnet (both `<WINDOWS_HOST_SUBNET>.x`), Public profile blocks all inbound traffic
 
 ### Issue 2: PowerShell `&&` Operator Not Supported
 - **Symptom**: `The token '&&' is not a valid statement separator in this version`

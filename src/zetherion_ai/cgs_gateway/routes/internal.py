@@ -1,0 +1,337 @@
+"""Internal CGS operator routes for tenant lifecycle and release markers."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from aiohttp import web
+from pydantic import ValidationError
+
+from zetherion_ai.cgs_gateway.errors import GatewayError, success_response
+from zetherion_ai.cgs_gateway.middleware import principal_is_operator
+from zetherion_ai.cgs_gateway.models import (
+    ConfigureTenantRequest,
+    CreateTenantRequest,
+    ReleaseMarkerRequest,
+)
+from zetherion_ai.cgs_gateway.routes._utils import (
+    canonical_upstream_headers,
+    json_object,
+    principal,
+    request_id,
+    resolve_active_mapping,
+)
+
+
+def _extract_skill_data(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    data = payload.get("data")
+    if isinstance(data, dict):
+        return data
+    return payload
+
+
+def _ensure_internal_access(request: web.Request) -> None:
+    p = principal(request)
+    if not principal_is_operator(p):
+        raise GatewayError(
+            code="AI_AUTH_FORBIDDEN",
+            message="Operator scope is required for internal endpoints",
+            status=403,
+        )
+
+
+async def handle_internal_list_tenants(request: web.Request) -> web.Response:
+    """GET /service/ai/v1/internal/tenants."""
+    _ensure_internal_access(request)
+    rid = request_id(request)
+    storage = request.app["cgs_storage"]
+    include_inactive = request.query.get("include_inactive", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    rows = await storage.list_tenant_mappings(active_only=not include_inactive)
+    return success_response(rid, {"tenants": rows, "count": len(rows)})
+
+
+async def handle_internal_create_tenant(request: web.Request) -> web.Response:
+    """POST /service/ai/v1/internal/tenants."""
+    _ensure_internal_access(request)
+    rid = request_id(request)
+    raw = await json_object(request)
+    try:
+        payload = CreateTenantRequest.model_validate(raw)
+    except ValidationError as exc:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="Validation failed",
+            status=400,
+            details={"errors": exc.errors()},
+        ) from exc
+
+    skills_client = request.app["cgs_skills_client"]
+    storage = request.app["cgs_storage"]
+
+    status, skill_response = await skills_client.handle_intent(
+        intent="client_create",
+        user_id=str(principal(request).sub),
+        message="",
+        request_id=rid,
+        context={
+            "name": payload.name,
+            "domain": payload.domain,
+            "config": payload.config or {},
+        },
+    )
+    if status >= 400:
+        raise GatewayError(
+            code="AI_SKILLS_UPSTREAM_ERROR",
+            message="Skills API tenant creation failed",
+            status=502,
+            details={"upstream_status": status, "upstream": skill_response},
+        )
+
+    skill_data = _extract_skill_data(skill_response)
+    zetherion_tenant_id = str(skill_data.get("tenant_id", ""))
+    api_key = str(skill_data.get("api_key", ""))
+    if not zetherion_tenant_id or not api_key:
+        raise GatewayError(
+            code="AI_SKILLS_UPSTREAM_ERROR",
+            message="Skills API response missing tenant_id/api_key",
+            status=502,
+            details={"upstream": skill_response},
+        )
+
+    mapping = await storage.upsert_tenant_mapping(
+        cgs_tenant_id=payload.cgs_tenant_id,
+        zetherion_tenant_id=zetherion_tenant_id,
+        name=payload.name,
+        domain=payload.domain,
+        zetherion_api_key=api_key,
+        metadata={
+            "source": "cgs_internal_create",
+            "config": payload.config or {},
+        },
+    )
+
+    response_data = {
+        "cgs_tenant_id": mapping["cgs_tenant_id"],
+        "zetherion_tenant_id": str(mapping["zetherion_tenant_id"]),
+        "name": mapping["name"],
+        "domain": mapping.get("domain"),
+        "api_key": api_key,
+        "key_version": mapping["key_version"],
+    }
+    return success_response(rid, response_data, status=201)
+
+
+async def handle_internal_update_tenant(request: web.Request) -> web.Response:
+    """PATCH /service/ai/v1/internal/tenants/{tenant_id}."""
+    _ensure_internal_access(request)
+    rid = request_id(request)
+    cgs_tenant_id = request.match_info["tenant_id"]
+
+    raw = await json_object(request)
+    try:
+        payload = ConfigureTenantRequest.model_validate(raw)
+    except ValidationError as exc:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="Validation failed",
+            status=400,
+            details={"errors": exc.errors()},
+        ) from exc
+
+    mapping = await resolve_active_mapping(request.app["cgs_storage"], cgs_tenant_id)
+
+    status, skill_response = await request.app["cgs_skills_client"].handle_intent(
+        intent="client_configure",
+        user_id=str(principal(request).sub),
+        message="",
+        request_id=rid,
+        context={
+            "tenant_id": str(mapping["zetherion_tenant_id"]),
+            "name": payload.name,
+            "domain": payload.domain,
+            "config": payload.config,
+        },
+    )
+    if status >= 400:
+        raise GatewayError(
+            code="AI_SKILLS_UPSTREAM_ERROR",
+            message="Skills API tenant update failed",
+            status=502,
+            details={"upstream_status": status, "upstream": skill_response},
+        )
+
+    updated = await request.app["cgs_storage"].update_tenant_profile(
+        cgs_tenant_id=cgs_tenant_id,
+        name=payload.name,
+        domain=payload.domain,
+        metadata={"config": payload.config} if payload.config is not None else None,
+    )
+    if updated is None:
+        raise GatewayError(
+            code="AI_TENANT_NOT_FOUND",
+            message="Tenant mapping not found",
+            status=404,
+        )
+
+    return success_response(
+        rid,
+        {
+            "cgs_tenant_id": cgs_tenant_id,
+            "zetherion_tenant_id": str(updated["zetherion_tenant_id"]),
+            "updated": True,
+        },
+    )
+
+
+async def handle_internal_deactivate_tenant(request: web.Request) -> web.Response:
+    """POST /service/ai/v1/internal/tenants/{tenant_id}/deactivate."""
+    _ensure_internal_access(request)
+    rid = request_id(request)
+    cgs_tenant_id = request.match_info["tenant_id"]
+
+    mapping = await resolve_active_mapping(request.app["cgs_storage"], cgs_tenant_id)
+
+    status, skill_response = await request.app["cgs_skills_client"].handle_intent(
+        intent="client_deactivate",
+        user_id=str(principal(request).sub),
+        message="",
+        request_id=rid,
+        context={"tenant_id": str(mapping["zetherion_tenant_id"])},
+    )
+    if status >= 400:
+        raise GatewayError(
+            code="AI_SKILLS_UPSTREAM_ERROR",
+            message="Skills API tenant deactivate failed",
+            status=502,
+            details={"upstream_status": status, "upstream": skill_response},
+        )
+
+    await request.app["cgs_storage"].deactivate_tenant_mapping(cgs_tenant_id)
+    return success_response(rid, {"cgs_tenant_id": cgs_tenant_id, "deactivated": True})
+
+
+async def handle_internal_rotate_key(request: web.Request) -> web.Response:
+    """POST /service/ai/v1/internal/tenants/{tenant_id}/keys/rotate."""
+    _ensure_internal_access(request)
+    rid = request_id(request)
+    cgs_tenant_id = request.match_info["tenant_id"]
+
+    mapping = await resolve_active_mapping(request.app["cgs_storage"], cgs_tenant_id)
+
+    status, skill_response = await request.app["cgs_skills_client"].handle_intent(
+        intent="client_rotate_key",
+        user_id=str(principal(request).sub),
+        message="",
+        request_id=rid,
+        context={"tenant_id": str(mapping["zetherion_tenant_id"])},
+    )
+    if status >= 400:
+        raise GatewayError(
+            code="AI_SKILLS_UPSTREAM_ERROR",
+            message="Skills API key rotation failed",
+            status=502,
+            details={"upstream_status": status, "upstream": skill_response},
+        )
+
+    skill_data = _extract_skill_data(skill_response)
+    new_api_key = str(skill_data.get("api_key", ""))
+    if not new_api_key:
+        raise GatewayError(
+            code="AI_SKILLS_UPSTREAM_ERROR",
+            message="Skills API response missing api_key",
+            status=502,
+            details={"upstream": skill_response},
+        )
+
+    updated = await request.app["cgs_storage"].rotate_tenant_api_key(
+        cgs_tenant_id=cgs_tenant_id,
+        new_api_key=new_api_key,
+    )
+    if updated is None:
+        raise GatewayError(
+            code="AI_TENANT_NOT_FOUND",
+            message="Tenant mapping not found",
+            status=404,
+        )
+
+    return success_response(
+        rid,
+        {
+            "cgs_tenant_id": cgs_tenant_id,
+            "api_key": new_api_key,
+            "key_version": updated["key_version"],
+        },
+    )
+
+
+async def handle_internal_release_marker(request: web.Request) -> web.Response:
+    """POST /service/ai/v1/internal/tenants/{tenant_id}/release-markers."""
+    _ensure_internal_access(request)
+    rid = request_id(request)
+    cgs_tenant_id = request.match_info["tenant_id"]
+
+    raw = await json_object(request, required=False)
+    try:
+        payload = ReleaseMarkerRequest.model_validate(raw)
+    except ValidationError as exc:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="Validation failed",
+            status=400,
+            details={"errors": exc.errors()},
+        ) from exc
+
+    mapping = await resolve_active_mapping(request.app["cgs_storage"], cgs_tenant_id)
+
+    status, upstream, _ = await request.app["cgs_public_client"].request_json(
+        "POST",
+        "/api/v1/releases/markers",
+        headers=canonical_upstream_headers(
+            request_id_value=rid,
+            api_key=str(mapping["zetherion_api_key"]),
+        ),
+        json_body=payload.model_dump(mode="json"),
+    )
+    if status >= 400:
+        raise GatewayError(
+            code="AI_UPSTREAM_ERROR",
+            message="Failed to publish release marker",
+            status=502,
+            details={"upstream_status": status, "upstream": upstream},
+        )
+
+    return success_response(
+        rid,
+        {
+            "cgs_tenant_id": cgs_tenant_id,
+            "marker": upstream,
+        },
+        status=201,
+    )
+
+
+def register_internal_routes(app: web.Application) -> None:
+    """Register internal tenant lifecycle routes."""
+    prefix = "/service/ai/v1/internal"
+
+    app.router.add_get(prefix + "/tenants", handle_internal_list_tenants)
+    app.router.add_post(prefix + "/tenants", handle_internal_create_tenant)
+    app.router.add_patch(prefix + "/tenants/{tenant_id}", handle_internal_update_tenant)
+    app.router.add_post(
+        prefix + "/tenants/{tenant_id}/deactivate",
+        handle_internal_deactivate_tenant,
+    )
+    app.router.add_post(
+        prefix + "/tenants/{tenant_id}/keys/rotate",
+        handle_internal_rotate_key,
+    )
+    app.router.add_post(
+        prefix + "/tenants/{tenant_id}/release-markers",
+        handle_internal_release_marker,
+    )

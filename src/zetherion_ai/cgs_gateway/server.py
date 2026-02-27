@@ -1,0 +1,282 @@
+"""CGS gateway service exposing /service/ai/v1 contract."""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import time
+from contextlib import suppress
+from typing import Any
+
+from aiohttp import web
+
+from zetherion_ai.cgs_gateway.errors import from_exception
+from zetherion_ai.cgs_gateway.middleware import (
+    JWTVerifier,
+    create_auth_middleware,
+    create_cors_middleware,
+    create_request_context_middleware,
+)
+from zetherion_ai.cgs_gateway.routes.internal import register_internal_routes
+from zetherion_ai.cgs_gateway.routes.reporting import register_reporting_routes
+from zetherion_ai.cgs_gateway.routes.runtime import register_runtime_routes
+from zetherion_ai.cgs_gateway.storage import CGSGatewayStorage
+from zetherion_ai.cgs_gateway.upstream.public_api_client import PublicAPIClient
+from zetherion_ai.cgs_gateway.upstream.skills_client import SkillsClient
+from zetherion_ai.config import get_settings
+from zetherion_ai.logging import get_logger
+from zetherion_ai.security.encryption import FieldEncryptor
+from zetherion_ai.security.keys import KeyManager
+
+log = get_logger("zetherion_ai.cgs_gateway.server")
+
+
+def _split_csv(value: str) -> list[str]:
+    return [v.strip() for v in value.split(",") if v.strip()]
+
+
+def create_error_middleware() -> Any:
+    """Catch route exceptions and emit standard envelope errors."""
+
+    @web.middleware
+    async def error_middleware(request: web.Request, handler: Any) -> web.Response:
+        try:
+            return await handler(request)  # type: ignore[no-any-return]
+        except Exception as exc:
+            return from_exception(str(request.get("request_id", "")), exc)
+
+    return error_middleware
+
+
+def create_request_logging_middleware() -> Any:
+    """Persist lightweight request logs for attribution."""
+
+    @web.middleware
+    async def request_logging_middleware(request: web.Request, handler: Any) -> web.Response:
+        started = time.monotonic()
+        response = await handler(request)
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+
+        storage: CGSGatewayStorage | None = request.app.get("cgs_storage")
+        if storage is not None:
+            details: dict[str, Any] = {}
+            for key in ("tenant_id", "conversation_id"):
+                val = request.match_info.get(key)
+                if val:
+                    details[key] = val
+            with suppress(Exception):
+                await storage.log_request(
+                    request_id=str(request.get("request_id", "")),
+                    cgs_tenant_id=request.match_info.get("tenant_id"),
+                    conversation_id=request.match_info.get("conversation_id"),
+                    endpoint=request.path,
+                    method=request.method.upper(),
+                    upstream_status=None,
+                    duration_ms=elapsed_ms,
+                    error_code=None if response.status < 400 else "HTTP_ERROR",
+                    details=details,
+                )
+
+        return response
+
+    return request_logging_middleware
+
+
+async def handle_health(_: web.Request) -> web.Response:
+    """GET /service/ai/v1/health."""
+    return web.json_response(
+        {
+            "status": "healthy",
+            "service": "cgs-gateway",
+        }
+    )
+
+
+class CGSGatewayServer:
+    """Aiohttp server for CGS API provider layer."""
+
+    def __init__(
+        self,
+        *,
+        host: str,
+        port: int,
+        allowed_origins: list[str] | None,
+        jwt_verifier: JWTVerifier,
+        storage: CGSGatewayStorage,
+        public_client: PublicAPIClient,
+        skills_client: SkillsClient,
+    ) -> None:
+        self._host = host
+        self._port = port
+        self._allowed_origins = allowed_origins
+        self._jwt_verifier = jwt_verifier
+        self._storage = storage
+        self._public_client = public_client
+        self._skills_client = skills_client
+        self._app: web.Application | None = None
+        self._runner: web.AppRunner | None = None
+
+    def create_app(self) -> web.Application:
+        middlewares: list[Any] = [
+            create_request_context_middleware(),
+            create_error_middleware(),
+        ]
+        if self._allowed_origins:
+            middlewares.append(create_cors_middleware(self._allowed_origins))
+        middlewares.append(create_auth_middleware(self._jwt_verifier))
+        middlewares.append(create_request_logging_middleware())
+
+        app = web.Application(middlewares=middlewares)
+        app["cgs_storage"] = self._storage
+        app["cgs_public_client"] = self._public_client
+        app["cgs_skills_client"] = self._skills_client
+
+        app.router.add_get("/service/ai/v1/health", handle_health)
+        register_runtime_routes(app)
+        register_internal_routes(app)
+        register_reporting_routes(app)
+
+        self._app = app
+        return app
+
+    async def start(self) -> None:
+        await self._storage.initialize()
+        await self._public_client.start()
+        await self._skills_client.start()
+
+        if self._app is None:
+            self.create_app()
+        if self._app is None:  # pragma: no cover
+            raise RuntimeError("create_app() must be called first")
+
+        self._runner = web.AppRunner(self._app)
+        await self._runner.setup()
+        site = web.TCPSite(self._runner, self._host, self._port)
+        await site.start()
+        log.info("cgs_gateway_started", host=self._host, port=self._port)
+
+    async def stop(self) -> None:
+        if self._runner is not None:
+            await self._runner.cleanup()
+            self._runner = None
+
+        await self._skills_client.close()
+        await self._public_client.close()
+        await self._storage.close()
+        log.info("cgs_gateway_stopped")
+
+
+async def run_server(
+    *,
+    host: str,
+    port: int,
+    allowed_origins: list[str] | None,
+    jwks_url: str,
+    issuer: str | None,
+    audience: str | None,
+    postgres_dsn: str,
+    encryption_passphrase: str,
+    encryption_salt_path: str,
+    zetherion_public_api_base_url: str,
+    zetherion_skills_api_base_url: str,
+    zetherion_skills_api_secret: str,
+) -> None:
+    """Create and run CGS gateway server until cancelled."""
+    key_manager = KeyManager(encryption_passphrase, encryption_salt_path)
+    encryptor = FieldEncryptor(key=key_manager.key)
+
+    storage = CGSGatewayStorage(dsn=postgres_dsn, encryptor=encryptor)
+    public_client = PublicAPIClient(base_url=zetherion_public_api_base_url)
+    skills_client = SkillsClient(
+        base_url=zetherion_skills_api_base_url,
+        api_secret=zetherion_skills_api_secret,
+    )
+    verifier = JWTVerifier(jwks_url=jwks_url, issuer=issuer, audience=audience)
+
+    server = CGSGatewayServer(
+        host=host,
+        port=port,
+        allowed_origins=allowed_origins,
+        jwt_verifier=verifier,
+        storage=storage,
+        public_client=public_client,
+        skills_client=skills_client,
+    )
+
+    await server.start()
+    try:
+        while True:
+            await asyncio.sleep(3600)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        await server.stop()
+
+
+def main() -> None:
+    """CLI entry point for the CGS gateway service."""
+    settings = get_settings()
+
+    default_gateway_host = "0.0.0.0"  # nosec B104 - service binds all interfaces in container runtime
+    host = os.environ.get(
+        "CGS_GATEWAY_HOST",
+        getattr(settings, "cgs_gateway_host", default_gateway_host),
+    )
+    port = int(os.environ.get("CGS_GATEWAY_PORT", str(getattr(settings, "cgs_gateway_port", 8743))))
+
+    allowed_origins_raw = os.environ.get(
+        "CGS_GATEWAY_ALLOWED_ORIGINS",
+        getattr(settings, "cgs_gateway_allowed_origins", ""),
+    )
+    allowed_origins = _split_csv(allowed_origins_raw)
+
+    jwks_url = os.environ.get("CGS_AUTH_JWKS_URL", getattr(settings, "cgs_auth_jwks_url", ""))
+    issuer = os.environ.get("CGS_AUTH_ISSUER", getattr(settings, "cgs_auth_issuer", ""))
+    audience = os.environ.get("CGS_AUTH_AUDIENCE", getattr(settings, "cgs_auth_audience", ""))
+
+    z_public = os.environ.get(
+        "ZETHERION_PUBLIC_API_BASE_URL",
+        getattr(settings, "zetherion_public_api_base_url", "http://zetherion-ai-traefik:8443"),
+    )
+    z_skills = os.environ.get(
+        "ZETHERION_SKILLS_API_BASE_URL",
+        getattr(settings, "zetherion_skills_api_base_url", "http://zetherion-ai-traefik:8080"),
+    )
+
+    z_skills_secret = os.environ.get("ZETHERION_SKILLS_API_SECRET", "")
+    if not z_skills_secret and settings.skills_api_secret is not None:
+        z_skills_secret = settings.skills_api_secret.get_secret_value()
+
+    if not settings.postgres_dsn:
+        log.error("POSTGRES_DSN is required for CGS gateway")
+        raise SystemExit(1)
+    if not jwks_url.strip():
+        log.error("CGS_AUTH_JWKS_URL is required for CGS gateway")
+        raise SystemExit(1)
+    if not z_skills_secret.strip():
+        log.error("ZETHERION_SKILLS_API_SECRET (or SKILLS_API_SECRET) is required")
+        raise SystemExit(1)
+
+    try:
+        asyncio.run(
+            run_server(
+                host=host,
+                port=port,
+                allowed_origins=allowed_origins or None,
+                jwks_url=jwks_url,
+                issuer=issuer or None,
+                audience=audience or None,
+                postgres_dsn=settings.postgres_dsn,
+                encryption_passphrase=settings.encryption_passphrase.get_secret_value(),
+                encryption_salt_path=settings.encryption_salt_path,
+                zetherion_public_api_base_url=z_public,
+                zetherion_skills_api_base_url=z_skills,
+                zetherion_skills_api_secret=z_skills_secret,
+            )
+        )
+    except KeyboardInterrupt:
+        log.info("cgs_gateway_shutdown")
+
+
+if __name__ == "__main__":
+    main()
