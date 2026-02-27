@@ -8,4 +8,35 @@ REPO_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$REPO_DIR"
 
-exec ./scripts/test-full.sh "$@"
+remote_name="${1:-}"
+remote_url="${2:-}"
+
+# Capture ref updates from stdin.
+updates=()
+while IFS= read -r line; do
+    updates+=("$line")
+done
+
+# Skip full validation when push only deletes remote refs.
+# Pre-push lines are:
+#   <local-ref> <local-oid> <remote-ref> <remote-oid>
+# Deletions have local-ref "(delete)" and/or local-oid all zeros.
+if [ "${#updates[@]}" -gt 0 ]; then
+    delete_only=true
+    for update in "${updates[@]}"; do
+        # shellcheck disable=SC2086
+        set -- $update
+        local_ref="${1:-}"
+        local_oid="${2:-}"
+        if [ "$local_ref" != "(delete)" ] && [ "$local_oid" != "0000000000000000000000000000000000000000" ]; then
+            delete_only=false
+            break
+        fi
+    done
+    if [ "$delete_only" = true ]; then
+        echo "[pre-push] Delete-only push to ${remote_name:-<unknown>} (${remote_url:-<unknown>}); skipping full test gate."
+        exit 0
+    fi
+fi
+
+exec ./scripts/test-full.sh "$remote_name" "$remote_url"
