@@ -708,6 +708,9 @@ class ZetherionAIBot(discord.Client):
                 "tag": "dev_ingest_tag",
                 "deploy": "dev_ingest_deploy",
                 "ci_result": "dev_ingest_ci_result",
+                "container_project": "dev_ingest_container_project",
+                "cleanup_approval": "dev_ingest_cleanup_approval",
+                "cleanup_report": "dev_ingest_cleanup_report",
             }
             intent = intent_map.get(event_type, "dev_ingest_commit")
 

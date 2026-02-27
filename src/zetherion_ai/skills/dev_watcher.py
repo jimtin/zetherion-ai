@@ -3,11 +3,12 @@
 Passively monitors development activity via Discord webhook events from the
 zetherion-dev-agent and builds a queryable development journal.
 
-Capabilities:
-- Ingest commits, annotations, Claude Code sessions, and tags
-- Ingest deploy and CI result markers
-- Query development status, ideas, journal, and summaries
-- Heartbeat: daily summaries, idea reminders, stale annotation alerts
+    Capabilities:
+    - Ingest commits, annotations, Claude Code sessions, and tags
+    - Ingest deploy and CI result markers
+    - Ingest local container project discovery and cleanup autopilot signals
+    - Query development status, ideas, journal, and summaries
+    - Heartbeat: daily summaries, idea reminders, stale annotation alerts
 """
 
 import hashlib
@@ -124,6 +125,9 @@ class DevWatcherSkill(Skill):
         "dev_ingest_tag",
         "dev_ingest_deploy",
         "dev_ingest_ci_result",
+        "dev_ingest_container_project",
+        "dev_ingest_cleanup_approval",
+        "dev_ingest_cleanup_report",
     ]
 
     QUERY_INTENTS = [
@@ -184,6 +188,9 @@ class DevWatcherSkill(Skill):
             "dev_ingest_tag": self._handle_ingest_tag,
             "dev_ingest_deploy": self._handle_ingest_deploy,
             "dev_ingest_ci_result": self._handle_ingest_ci_result,
+            "dev_ingest_container_project": self._handle_ingest_container_project,
+            "dev_ingest_cleanup_approval": self._handle_ingest_cleanup_approval,
+            "dev_ingest_cleanup_report": self._handle_ingest_cleanup_report,
             # Queries
             "dev_status": self._handle_status,
             "dev_next": self._handle_next,
@@ -349,6 +356,74 @@ class DevWatcherSkill(Skill):
             return SkillResponse(request_id=request.id, message="Duplicate CI result ignored.")
         await self._store_entry(entry)
         return SkillResponse(request_id=request.id, message="Ingested CI result")
+
+    async def _handle_ingest_container_project(self, request: SkillRequest) -> SkillResponse:
+        """Store local container project discovery event."""
+        ctx = request.context
+        project = ctx.get("project", ctx.get("project_id", ""))
+        entry = DevEntry(
+            user_id=request.user_id,
+            entry_type="container_project",
+            project=project,
+            title=f"Container project discovered: {project or 'unknown'}",
+            content=request.message,
+            metadata={
+                "total_containers": ctx.get("containers", ctx.get("total_containers", "0")),
+                "running_containers": ctx.get("running", ctx.get("running_containers", "0")),
+                "reason": ctx.get("reason", ""),
+            },
+        )
+        entry.fingerprint = self._build_fingerprint(entry)
+        if await self._is_duplicate_entry(entry):
+            return SkillResponse(request_id=request.id, message="Duplicate project discovery ignored.")
+        await self._store_entry(entry)
+        return SkillResponse(request_id=request.id, message="Ingested container project signal")
+
+    async def _handle_ingest_cleanup_approval(self, request: SkillRequest) -> SkillResponse:
+        """Store cleanup approval prompt signal for project tracking."""
+        ctx = request.context
+        project = ctx.get("project", ctx.get("project_id", ""))
+        entry = DevEntry(
+            user_id=request.user_id,
+            entry_type="cleanup_approval",
+            project=project,
+            title=f"Cleanup approval requested: {project or 'unknown'}",
+            content=request.message,
+            metadata={
+                "reason": ctx.get("reason", ""),
+                "containers": ctx.get("containers", "0"),
+                "running": ctx.get("running", "0"),
+            },
+        )
+        entry.fingerprint = self._build_fingerprint(entry)
+        if await self._is_duplicate_entry(entry):
+            return SkillResponse(request_id=request.id, message="Duplicate cleanup approval signal ignored.")
+        await self._store_entry(entry)
+        return SkillResponse(request_id=request.id, message="Ingested cleanup approval signal")
+
+    async def _handle_ingest_cleanup_report(self, request: SkillRequest) -> SkillResponse:
+        """Store cleanup execution report signal."""
+        ctx = request.context
+        project = ctx.get("project", ctx.get("project_id", ""))
+        entry = DevEntry(
+            user_id=request.user_id,
+            entry_type="cleanup_report",
+            project=project,
+            title=f"Cleanup report: {project or 'unknown'}",
+            content=request.message,
+            metadata={
+                "dry_run": ctx.get("dry_run", "false"),
+                "actions": ctx.get("actions", "0"),
+                "successful_actions": ctx.get("successful_actions", "0"),
+                "status": ctx.get("status", "unknown"),
+                "error": ctx.get("error", ""),
+            },
+        )
+        entry.fingerprint = self._build_fingerprint(entry)
+        if await self._is_duplicate_entry(entry):
+            return SkillResponse(request_id=request.id, message="Duplicate cleanup report ignored.")
+        await self._store_entry(entry)
+        return SkillResponse(request_id=request.id, message="Ingested cleanup report")
 
     # ------------------------------------------------------------------
     # Query handlers (active)
@@ -880,5 +955,8 @@ def _entry_type_icon(entry_type: str) -> str:
         "idea": "[idea]",
         "deploy": "[deploy]",
         "ci_result": "[ci]",
+        "container_project": "[container]",
+        "cleanup_approval": "[approval]",
+        "cleanup_report": "[cleanup]",
     }
     return icons.get(entry_type, "[?]")
