@@ -140,6 +140,13 @@ class UpdateManager:
         updater_secret: str = "",  # noqa: S107  # nosec B107 — not a real password
         health_url: str = "http://localhost:8080/health",
         github_token: str | None = None,
+        verify_signatures: bool = False,
+        verify_identity: str = "",
+        verify_oidc_issuer: str = "https://token.actions.githubusercontent.com",
+        verify_rekor_url: str = "https://rekor.sigstore.dev",
+        release_manifest_asset: str = "release-manifest.json",
+        release_signature_asset: str = "release-manifest.sig",
+        release_certificate_asset: str = "release-manifest.pem",
     ) -> None:
         self._repo = github_repo
         self._storage = storage
@@ -147,6 +154,19 @@ class UpdateManager:
         self._updater_secret = updater_secret
         self._health_url = health_url
         self._github_token = github_token
+        self._verify_signatures = verify_signatures
+        self._verify_identity = verify_identity.strip() or self._default_verify_identity()
+        self._verify_oidc_issuer = verify_oidc_issuer
+        self._verify_rekor_url = verify_rekor_url
+        self._release_manifest_asset = release_manifest_asset
+        self._release_signature_asset = release_signature_asset
+        self._release_certificate_asset = release_certificate_asset
+
+    def _default_verify_identity(self) -> str:
+        repo = self._repo.strip()
+        if not repo:
+            return ""
+        return f"https://github.com/{repo}/.github/workflows/release.yml@refs/tags/*"
 
     @property
     def current_version(self) -> str:
@@ -267,6 +287,15 @@ class UpdateManager:
                     json={
                         "tag": release.tag,
                         "version": release.version,
+                        "verify_signatures": self._verify_signatures,
+                        "github_repo": self._repo,
+                        "github_token": self._github_token or "",
+                        "verify_identity": self._verify_identity,
+                        "verify_oidc_issuer": self._verify_oidc_issuer,
+                        "verify_rekor_url": self._verify_rekor_url,
+                        "manifest_asset_name": self._release_manifest_asset,
+                        "signature_asset_name": self._release_signature_asset,
+                        "certificate_asset_name": self._release_certificate_asset,
                     },
                     headers=headers,
                 )

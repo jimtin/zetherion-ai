@@ -192,6 +192,13 @@ class TestInitialize:
             github_token="tok123",
             updater_url="http://updater:9090",
             updater_secret="s3cret",
+            verify_signatures=False,
+            verify_identity="",
+            verify_oidc_issuer="https://token.actions.githubusercontent.com",
+            verify_rekor_url="https://rekor.sigstore.dev",
+            release_manifest_asset="release-manifest.json",
+            release_signature_asset="release-manifest.sig",
+            release_certificate_asset="release-manifest.pem",
         )
 
     @pytest.mark.asyncio

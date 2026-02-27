@@ -122,6 +122,38 @@ class Settings(BaseSettings):
     )
 
     # Dev Agent Configuration
+    dev_agent_enabled: bool = Field(
+        default=False,
+        description="Enable Docker dev-agent monitoring and cleanup automation",
+    )
+    dev_agent_service_url: str = Field(
+        default="http://zetherion-ai-dev-agent:8787",
+        description="Base URL for the dev-agent sidecar API",
+    )
+    dev_agent_bootstrap_secret: str = Field(
+        default="",
+        description="One-time bootstrap secret for dev-agent provisioning",
+    )
+    dev_agent_cleanup_hour: int = Field(
+        default=2,
+        description="Local cleanup schedule hour (0-23) for dev-agent",
+    )
+    dev_agent_cleanup_minute: int = Field(
+        default=30,
+        description="Local cleanup schedule minute (0-59) for dev-agent",
+    )
+    dev_agent_approval_reprompt_hours: int = Field(
+        default=24,
+        description="Hours before re-prompting for pending project cleanup approvals",
+    )
+    dev_agent_discord_channel_id: str = Field(
+        default="",
+        description="Discord channel ID used by dev-agent for events/prompts",
+    )
+    dev_agent_discord_guild_id: str = Field(
+        default="",
+        description="Discord guild ID used by dev-agent for events/prompts",
+    )
     dev_agent_webhook_name: str = Field(
         default="zetherion-dev-agent",
         description="Webhook username for the local dev agent",
@@ -457,6 +489,34 @@ class Settings(BaseSettings):
         default="/app/data/updater-state.json",
         description="Updater sidecar state file path for color/pause metadata",
     )
+    updater_verify_signatures: bool = Field(
+        default=True,
+        description="Require release signature verification before applying updates",
+    )
+    updater_verify_identity: str = Field(
+        default="",
+        description="Expected Cosign certificate identity for release signatures",
+    )
+    updater_verify_oidc_issuer: str = Field(
+        default="https://token.actions.githubusercontent.com",
+        description="Expected OIDC issuer for Cosign keyless verification",
+    )
+    updater_verify_rekor_url: str = Field(
+        default="https://rekor.sigstore.dev",
+        description="Rekor transparency log URL for signature verification",
+    )
+    updater_release_manifest_asset: str = Field(
+        default="release-manifest.json",
+        description="Release asset name for signed update manifest",
+    )
+    updater_release_signature_asset: str = Field(
+        default="release-manifest.sig",
+        description="Release asset name for manifest signature",
+    )
+    updater_release_certificate_asset: str = Field(
+        default="release-manifest.pem",
+        description="Release asset name for signing certificate",
+    )
 
     # Telemetry Configuration (Phase 10C)
     telemetry_sharing_enabled: bool = Field(
@@ -674,12 +734,20 @@ class Settings(BaseSettings):
             raise ValueError(f"budget_warning_pct must be between 0 and 100, got: {v}")
         return v
 
-    @field_validator("daily_summary_hour")
+    @field_validator("daily_summary_hour", "dev_agent_cleanup_hour")
     @classmethod
     def validate_daily_summary_hour(cls, v: int) -> int:
-        """Validate daily summary hour is between 0 and 23."""
+        """Validate hour values are between 0 and 23."""
         if not 0 <= v <= 23:
-            raise ValueError(f"daily_summary_hour must be between 0 and 23, got: {v}")
+            raise ValueError(f"hour value must be between 0 and 23, got: {v}")
+        return v
+
+    @field_validator("dev_agent_cleanup_minute")
+    @classmethod
+    def validate_minute_0_59(cls, v: int) -> int:
+        """Validate minute values are between 0 and 59."""
+        if not 0 <= v <= 59:
+            raise ValueError(f"minute value must be between 0 and 59, got: {v}")
         return v
 
     @field_validator(

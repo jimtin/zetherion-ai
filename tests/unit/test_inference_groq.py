@@ -98,6 +98,7 @@ async def test_call_groq_returns_inference_result(
     mock_get_settings.return_value = _mock_settings()
 
     broker = InferenceBroker()
+    broker._groq_client = MagicMock()
 
     # Mock the Groq client's create method
     mock_response = MagicMock()
@@ -105,7 +106,8 @@ async def test_call_groq_returns_inference_result(
     mock_response.choices[0].message.content = '{"category": "work_client"}'
     mock_response.usage.prompt_tokens = 100
     mock_response.usage.completion_tokens = 50
-    broker._groq_client.chat.completions.create = AsyncMock(return_value=mock_response)
+    mock_create = AsyncMock(return_value=mock_response)
+    broker._groq_client.chat.completions.create = mock_create
 
     result = await broker._call_groq(
         prompt="Classify this email",
@@ -124,8 +126,8 @@ async def test_call_groq_returns_inference_result(
     assert result.output_tokens == 50
 
     # Verify the API call
-    broker._groq_client.chat.completions.create.assert_awaited_once()
-    call_kwargs = broker._groq_client.chat.completions.create.await_args.kwargs
+    mock_create.assert_awaited_once()
+    call_kwargs = mock_create.await_args.kwargs
     assert call_kwargs["model"] == "llama-3.3-70b-versatile"
     assert call_kwargs["temperature"] == 0.1
     assert call_kwargs["max_tokens"] == 500
@@ -141,13 +143,15 @@ async def test_call_groq_includes_system_prompt(
     """_call_groq includes system prompt in messages."""
     mock_get_settings.return_value = _mock_settings()
     broker = InferenceBroker()
+    broker._groq_client = MagicMock()
 
     mock_response = MagicMock()
     mock_response.choices = [MagicMock()]
     mock_response.choices[0].message.content = "{}"
     mock_response.usage.prompt_tokens = 50
     mock_response.usage.completion_tokens = 10
-    broker._groq_client.chat.completions.create = AsyncMock(return_value=mock_response)
+    mock_create = AsyncMock(return_value=mock_response)
+    broker._groq_client.chat.completions.create = mock_create
 
     await broker._call_groq(
         prompt="test",
@@ -158,7 +162,7 @@ async def test_call_groq_includes_system_prompt(
         temperature=0.1,
     )
 
-    call_kwargs = broker._groq_client.chat.completions.create.await_args.kwargs
+    call_kwargs = mock_create.await_args.kwargs
     api_messages = call_kwargs["messages"]
     assert api_messages[0]["role"] == "system"
     assert api_messages[0]["content"] == "Be precise"
@@ -221,12 +225,14 @@ async def test_groq_health_check_calls_models_list(
     """Health check for Groq calls models.list()."""
     mock_get_settings.return_value = _mock_settings()
     broker = InferenceBroker()
-    broker._groq_client.models.list = AsyncMock()
+    broker._groq_client = MagicMock()
+    mock_list = AsyncMock()
+    broker._groq_client.models.list = mock_list
 
     result = await broker.health_check(Provider.GROQ)
 
     assert result is True
-    broker._groq_client.models.list.assert_awaited_once()
+    mock_list.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -254,6 +260,7 @@ async def test_stream_groq_yields_chunks(
     """_stream_groq yields StreamChunks and a final done chunk."""
     mock_get_settings.return_value = _mock_settings()
     broker = InferenceBroker()
+    broker._groq_client = MagicMock()
 
     # Build mock streaming response
     chunk1 = MagicMock()
@@ -277,7 +284,8 @@ async def test_stream_groq_yields_chunks(
         for c in [chunk1, chunk2, chunk_final]:
             yield c
 
-    broker._groq_client.chat.completions.create = AsyncMock(return_value=_mock_stream())
+    mock_create = AsyncMock(return_value=_mock_stream())
+    broker._groq_client.chat.completions.create = mock_create
 
     chunks = []
     async for chunk in broker._stream_groq(
@@ -309,13 +317,15 @@ async def test_call_groq_with_messages_list(
     """_call_groq passes through a messages list correctly."""
     mock_get_settings.return_value = _mock_settings()
     broker = InferenceBroker()
+    broker._groq_client = MagicMock()
 
     mock_response = MagicMock()
     mock_response.choices = [MagicMock()]
     mock_response.choices[0].message.content = '{"result":"ok"}'
     mock_response.usage.prompt_tokens = 80
     mock_response.usage.completion_tokens = 20
-    broker._groq_client.chat.completions.create = AsyncMock(return_value=mock_response)
+    mock_create = AsyncMock(return_value=mock_response)
+    broker._groq_client.chat.completions.create = mock_create
 
     result = await broker._call_groq(
         prompt="final question",
@@ -331,7 +341,7 @@ async def test_call_groq_with_messages_list(
 
     assert result.content == '{"result":"ok"}'
 
-    call_kwargs = broker._groq_client.chat.completions.create.await_args.kwargs
+    call_kwargs = mock_create.await_args.kwargs
     api_messages = call_kwargs["messages"]
     # system + 2 conversation + final user prompt
     assert len(api_messages) == 4

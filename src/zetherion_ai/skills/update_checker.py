@@ -54,6 +54,13 @@ class UpdateCheckerSkill(Skill):
         updater_url: str = "",
         updater_secret: str = "",  # noqa: S107  # nosec B107 — not a real password
         check_every_n_beats: int = _DEFAULT_CHECK_EVERY_N_BEATS,
+        verify_signatures: bool = False,
+        verify_identity: str = "",
+        verify_oidc_issuer: str = "https://token.actions.githubusercontent.com",
+        verify_rekor_url: str = "https://rekor.sigstore.dev",
+        release_manifest_asset: str = "release-manifest.json",
+        release_signature_asset: str = "release-manifest.sig",
+        release_certificate_asset: str = "release-manifest.pem",
     ) -> None:
         super().__init__(memory)
         self._db_pool = db_pool
@@ -64,6 +71,13 @@ class UpdateCheckerSkill(Skill):
         self._updater_url = updater_url
         self._updater_secret = updater_secret
         self._check_every_n_beats = max(1, int(check_every_n_beats))
+        self._verify_signatures = verify_signatures
+        self._verify_identity = verify_identity
+        self._verify_oidc_issuer = verify_oidc_issuer
+        self._verify_rekor_url = verify_rekor_url
+        self._release_manifest_asset = release_manifest_asset
+        self._release_signature_asset = release_signature_asset
+        self._release_certificate_asset = release_certificate_asset
 
         # Lazily initialised
         self._manager: UpdateManager | None = None
@@ -120,6 +134,13 @@ class UpdateCheckerSkill(Skill):
             github_token=self._github_token,
             updater_url=self._updater_url,
             updater_secret=self._updater_secret,
+            verify_signatures=self._verify_signatures,
+            verify_identity=self._verify_identity,
+            verify_oidc_issuer=self._verify_oidc_issuer,
+            verify_rekor_url=self._verify_rekor_url,
+            release_manifest_asset=self._release_manifest_asset,
+            release_signature_asset=self._release_signature_asset,
+            release_certificate_asset=self._release_certificate_asset,
         )
 
         log.info("update_checker_initialized", repo=self._github_repo)

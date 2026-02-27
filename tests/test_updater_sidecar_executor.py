@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -318,3 +318,231 @@ class TestDiagnosticsAndCommands:
 
         fail = await ex._run_cmd("exit 1")
         assert fail is None
+
+
+class TestSignatureVerification:
+    """Tests for signed release verification in apply path."""
+
+    @staticmethod
+    def _mock_release_lookup(
+        release_payload: dict[str, object],
+        status_code: int = 200,
+    ) -> AsyncMock:
+        """Mock httpx.AsyncClient for GitHub release metadata lookup."""
+        response = Mock()
+        response.status_code = status_code
+        response.json = Mock(return_value=release_payload)
+
+        client = AsyncMock()
+        client.get = AsyncMock(return_value=response)
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        return client
+
+    @staticmethod
+    async def _write_assets(
+        *,
+        urls: dict[Path, str],
+        manifest: dict[str, object],
+    ) -> str | None:
+        """Helper to emulate asset download into temp files."""
+        for path in urls:
+            if path.name.endswith(".json"):
+                path.write_text(json.dumps(manifest), encoding="utf-8")
+            else:
+                path.write_bytes(b"dummy")
+        return None
+
+    @pytest.mark.asyncio
+    async def test_verify_signature_success(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
+        release_payload = {
+            "assets": [
+                {
+                    "name": "release-manifest.json",
+                    "browser_download_url": "https://example/manifest",
+                },
+                {"name": "release-manifest.sig", "browser_download_url": "https://example/sig"},
+                {"name": "release-manifest.pem", "browser_download_url": "https://example/pem"},
+            ]
+        }
+
+        async def _download_assets_side_effect(
+            *,
+            urls: dict[Path, str],
+            headers: dict[str, str],
+        ) -> str | None:
+            del headers
+            return await self._write_assets(
+                urls=urls,
+                manifest={"repo": "owner/repo", "tag": "v1.2.3", "version": "1.2.3"},
+            )
+
+        with (
+            patch(
+                "httpx.AsyncClient",
+                return_value=self._mock_release_lookup(release_payload),
+            ),
+            patch.object(
+                ex,
+                "_download_assets",
+                new_callable=AsyncMock,
+                side_effect=_download_assets_side_effect,
+            ),
+            patch.object(ex, "_run_cmd", new_callable=AsyncMock, return_value="verified"),
+        ):
+            err = await ex._verify_release_signature(
+                tag="v1.2.3",
+                version="1.2.3",
+                github_repo="owner/repo",
+                github_token="",
+                verify_identity="https://github.com/owner/repo/.github/workflows/release.yml@refs/tags/*",
+                verify_oidc_issuer="https://token.actions.githubusercontent.com",
+                verify_rekor_url="https://rekor.sigstore.dev",
+                manifest_asset_name="release-manifest.json",
+                signature_asset_name="release-manifest.sig",
+                certificate_asset_name="release-manifest.pem",
+            )
+
+        assert err is None
+
+    @pytest.mark.asyncio
+    async def test_verify_signature_rejects_manifest_repo_mismatch(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
+        release_payload = {
+            "assets": [
+                {
+                    "name": "release-manifest.json",
+                    "browser_download_url": "https://example/manifest",
+                },
+                {"name": "release-manifest.sig", "browser_download_url": "https://example/sig"},
+                {"name": "release-manifest.pem", "browser_download_url": "https://example/pem"},
+            ]
+        }
+
+        async def _download_assets_side_effect(
+            *,
+            urls: dict[Path, str],
+            headers: dict[str, str],
+        ) -> str | None:
+            del headers
+            return await self._write_assets(
+                urls=urls,
+                manifest={"repo": "wrong/repo", "tag": "v1.2.3", "version": "1.2.3"},
+            )
+
+        with (
+            patch(
+                "httpx.AsyncClient",
+                return_value=self._mock_release_lookup(release_payload),
+            ),
+            patch.object(
+                ex,
+                "_download_assets",
+                new_callable=AsyncMock,
+                side_effect=_download_assets_side_effect,
+            ),
+            patch.object(ex, "_run_cmd", new_callable=AsyncMock, return_value="verified"),
+        ):
+            err = await ex._verify_release_signature(
+                tag="v1.2.3",
+                version="1.2.3",
+                github_repo="owner/repo",
+                github_token="",
+                verify_identity="https://github.com/owner/repo/.github/workflows/release.yml@refs/tags/*",
+                verify_oidc_issuer="https://token.actions.githubusercontent.com",
+                verify_rekor_url="https://rekor.sigstore.dev",
+                manifest_asset_name="release-manifest.json",
+                signature_asset_name="release-manifest.sig",
+                certificate_asset_name="release-manifest.pem",
+            )
+
+        assert err is not None
+        assert "manifest repo mismatch" in err
+
+    @pytest.mark.asyncio
+    async def test_verify_signature_rejects_missing_release_assets(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
+        release_payload = {
+            "assets": [
+                {
+                    "name": "release-manifest.json",
+                    "browser_download_url": "https://example/manifest",
+                },
+                {"name": "release-manifest.sig", "browser_download_url": "https://example/sig"},
+            ]
+        }
+
+        with patch(
+            "httpx.AsyncClient",
+            return_value=self._mock_release_lookup(release_payload),
+        ):
+            err = await ex._verify_release_signature(
+                tag="v1.2.3",
+                version="1.2.3",
+                github_repo="owner/repo",
+                github_token="",
+                verify_identity="https://github.com/owner/repo/.github/workflows/release.yml@refs/tags/*",
+                verify_oidc_issuer="https://token.actions.githubusercontent.com",
+                verify_rekor_url="https://rekor.sigstore.dev",
+                manifest_asset_name="release-manifest.json",
+                signature_asset_name="release-manifest.sig",
+                certificate_asset_name="release-manifest.pem",
+            )
+
+        assert err is not None
+        assert "missing required assets" in err
+
+    @pytest.mark.asyncio
+    async def test_verify_signature_fails_when_cosign_fails(self, tmp_path: Path) -> None:
+        ex = _make_executor(tmp_path)
+        release_payload = {
+            "assets": [
+                {
+                    "name": "release-manifest.json",
+                    "browser_download_url": "https://example/manifest",
+                },
+                {"name": "release-manifest.sig", "browser_download_url": "https://example/sig"},
+                {"name": "release-manifest.pem", "browser_download_url": "https://example/pem"},
+            ]
+        }
+
+        async def _download_assets_side_effect(
+            *,
+            urls: dict[Path, str],
+            headers: dict[str, str],
+        ) -> str | None:
+            del headers
+            return await self._write_assets(
+                urls=urls,
+                manifest={"repo": "owner/repo", "tag": "v1.2.3", "version": "1.2.3"},
+            )
+
+        with (
+            patch(
+                "httpx.AsyncClient",
+                return_value=self._mock_release_lookup(release_payload),
+            ),
+            patch.object(
+                ex,
+                "_download_assets",
+                new_callable=AsyncMock,
+                side_effect=_download_assets_side_effect,
+            ),
+            patch.object(ex, "_run_cmd", new_callable=AsyncMock, return_value=None),
+        ):
+            err = await ex._verify_release_signature(
+                tag="v1.2.3",
+                version="1.2.3",
+                github_repo="owner/repo",
+                github_token="",
+                verify_identity="https://github.com/owner/repo/.github/workflows/release.yml@refs/tags/*",
+                verify_oidc_issuer="https://token.actions.githubusercontent.com",
+                verify_rekor_url="https://rekor.sigstore.dev",
+                manifest_asset_name="release-manifest.json",
+                signature_asset_name="release-manifest.sig",
+                certificate_asset_name="release-manifest.pem",
+            )
+
+        assert err is not None
+        assert "cosign verify-blob returned non-zero" in err

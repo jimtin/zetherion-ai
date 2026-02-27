@@ -13,6 +13,15 @@ class UpdateRequest:
 
     tag: str
     version: str
+    verify_signatures: bool = False
+    github_repo: str = ""
+    github_token: str = ""
+    verify_identity: str = ""
+    verify_oidc_issuer: str = ""
+    verify_rekor_url: str = ""
+    manifest_asset_name: str = "release-manifest.json"
+    signature_asset_name: str = "release-manifest.sig"
+    certificate_asset_name: str = "release-manifest.pem"
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> UpdateRequest:
@@ -24,7 +33,26 @@ class UpdateRequest:
         if not version:
             msg = "Missing required field: version"
             raise ValueError(msg)
-        return cls(tag=tag, version=version)
+        raw_verify = data.get("verify_signatures", False)
+        if isinstance(raw_verify, bool):
+            verify_signatures = raw_verify
+        elif isinstance(raw_verify, str):
+            verify_signatures = raw_verify.strip().lower() in {"1", "true", "yes", "on"}
+        else:
+            verify_signatures = bool(raw_verify)
+        return cls(
+            tag=tag,
+            version=version,
+            verify_signatures=verify_signatures,
+            github_repo=str(data.get("github_repo", "")).strip(),
+            github_token=str(data.get("github_token", "")).strip(),
+            verify_identity=str(data.get("verify_identity", "")).strip(),
+            verify_oidc_issuer=str(data.get("verify_oidc_issuer", "")).strip(),
+            verify_rekor_url=str(data.get("verify_rekor_url", "")).strip(),
+            manifest_asset_name=str(data.get("manifest_asset_name", "release-manifest.json")),
+            signature_asset_name=str(data.get("signature_asset_name", "release-manifest.sig")),
+            certificate_asset_name=str(data.get("certificate_asset_name", "release-manifest.pem")),
+        )
 
 
 @dataclass

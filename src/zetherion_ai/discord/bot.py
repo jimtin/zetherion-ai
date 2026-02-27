@@ -5,16 +5,18 @@ import contextlib
 import json
 import time
 from datetime import time as clock_time
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 import discord
+import httpx
 import structlog
 from discord import app_commands
 
 from zetherion_ai.agent.core import Agent
 from zetherion_ai.agent.inference import ProviderIssueAlert
-from zetherion_ai.config import get_dynamic, get_settings
+from zetherion_ai.config import get_dynamic, get_secret, get_settings
 from zetherion_ai.constants import KEEP_WARM_INTERVAL_SECONDS, MAX_DISCORD_MESSAGE_LENGTH
 from zetherion_ai.discord.security import (
     RateLimiter,
@@ -37,6 +39,24 @@ log = get_logger("zetherion_ai.discord.bot")
 
 class ZetherionAIBot(discord.Client):
     """Zetherion AI Discord bot."""
+
+    _DEV_WATCHER_TRIGGER_PHRASES = (
+        "implement dev watcher",
+        "please implement dev watcher",
+        "setup dev watcher",
+        "set up dev watcher",
+        "enable dev watcher",
+    )
+    _DEV_WATCHER_STATUS_PHRASES = (
+        "dev watcher status",
+        "dev watcher health",
+        "status dev watcher",
+    )
+    _DEV_WATCHER_HELP_PHRASES = (
+        "dev watcher help",
+        "help dev watcher",
+    )
+    _DEV_WATCHER_WIZARD_TIMEOUT_SECONDS = 900
 
     def __init__(
         self,
@@ -72,6 +92,7 @@ class ZetherionAIBot(discord.Client):
         self._security_ai_analyzer: SecurityAIAnalyzer | None = None
         self._heartbeat_scheduler: HeartbeatScheduler | None = None
         self._last_message_time: float = 0.0
+        self._dev_watcher_wizards: dict[int, dict[str, Any]] = {}
 
         self._setup_commands()
 
@@ -536,10 +557,18 @@ class ZetherionAIBot(discord.Client):
         # Handle dev-agent webhook messages (before the general bot filter)
         if message.webhook_id is not None:
             settings = get_settings()
-            webhook_name = getattr(settings, "dev_agent_webhook_name", "zetherion-dev-agent")
+            webhook_name = get_dynamic(
+                "dev_agent",
+                "webhook_name",
+                getattr(settings, "dev_agent_webhook_name", "zetherion-dev-agent"),
+            )
             if not isinstance(webhook_name, str):
                 webhook_name = "zetherion-dev-agent"
-            webhook_id = getattr(settings, "dev_agent_webhook_id", "")
+            webhook_id = get_dynamic(
+                "dev_agent",
+                "webhook_id",
+                getattr(settings, "dev_agent_webhook_id", ""),
+            )
             if not isinstance(webhook_id, str):
                 webhook_id = ""
 
@@ -583,19 +612,6 @@ class ZetherionAIBot(discord.Client):
                     await message.reply(warning, mention_author=True)
                 return
 
-            # Check for prompt injection
-            if await self._is_security_blocked(
-                content=message.content,
-                user_id=message.author.id,
-                channel_id=message.channel.id,
-            ):
-                await message.reply(
-                    "I noticed some unusual patterns in your message. "
-                    "Could you rephrase your question?",
-                    mention_author=True,
-                )
-                return
-
             # Prepare clean content
             content = message.content
             if is_mention and self.user:
@@ -604,6 +620,23 @@ class ZetherionAIBot(discord.Client):
             if not content:
                 await message.reply(
                     "How can I help you?",
+                    mention_author=True,
+                )
+                return
+
+            # Owner-only DM wizard for secure dev-agent provisioning.
+            if is_dm and await self._maybe_handle_dev_watcher_dm(message, content):
+                return
+
+            # Check for prompt injection
+            if await self._is_security_blocked(
+                content=content,
+                user_id=message.author.id,
+                channel_id=message.channel.id,
+            ):
+                await message.reply(
+                    "I noticed some unusual patterns in your message. "
+                    "Could you rephrase your question?",
                     mention_author=True,
                 )
                 return
@@ -743,6 +776,682 @@ class ZetherionAIBot(discord.Client):
                     log.warning("dev_event_skipped_no_skills_client")
             except Exception:
                 log.exception("dev_event_ingestion_failed", event_type=event_type)
+
+    async def _maybe_handle_dev_watcher_dm(
+        self,
+        message: discord.Message,
+        content: str,
+    ) -> bool:
+        """Handle owner-only dev-watcher DM commands and wizard flow."""
+        lowered = content.strip().lower()
+        if not lowered:
+            return False
+
+        if await self._continue_dev_watcher_wizard(message, lowered):
+            return True
+
+        if any(phrase in lowered for phrase in self._DEV_WATCHER_STATUS_PHRASES):
+            await self._handle_dev_watcher_status_dm(message)
+            return True
+
+        if any(phrase in lowered for phrase in self._DEV_WATCHER_HELP_PHRASES):
+            await message.reply(
+                "Dev watcher DM commands:\n"
+                "- `implement dev watcher` to run setup\n"
+                "- `dev watcher status` to check health and approvals\n"
+                "- `cancel` while selecting a guild to stop the wizard",
+                mention_author=True,
+            )
+            return True
+
+        if any(phrase in lowered for phrase in self._DEV_WATCHER_TRIGGER_PHRASES):
+            await self._start_dev_watcher_wizard(message)
+            return True
+
+        return False
+
+    async def _is_owner_or_admin(self, user_id: int) -> bool:
+        """Return True when user has owner/admin privileges."""
+        settings = get_settings()
+        if settings.owner_user_id is not None and settings.owner_user_id == user_id:
+            return True
+        if self._user_manager is None:
+            return False
+        role = await self._user_manager.get_role(user_id)
+        return role is not None and ROLE_HIERARCHY.get(role, 0) >= ROLE_HIERARCHY["admin"]
+
+    async def _start_dev_watcher_wizard(self, message: discord.Message) -> None:
+        """Start owner-only provisioning wizard for dev watcher."""
+        if not await self._is_owner_or_admin(message.author.id):
+            await message.reply(
+                "Dev watcher provisioning is owner/admin only.",
+                mention_author=True,
+            )
+            return
+
+        manageable, blocked = await self._select_manageable_guilds(message.author.id)
+        if not manageable:
+            details = "\n".join(f"- {item}" for item in blocked) if blocked else "- none found"
+            await message.reply(
+                "I could not find a guild where I can create channels/webhooks for you.\n"
+                "Required bot permissions: `Manage Channels` and `Manage Webhooks`.\n"
+                f"Guild checks:\n{details}",
+                mention_author=True,
+            )
+            return
+
+        if len(manageable) == 1:
+            await self._run_dev_watcher_provisioning(message, manageable[0])
+            return
+
+        guild_ids = [g.id for g in manageable]
+        self._dev_watcher_wizards[message.author.id] = {
+            "state": "awaiting_guild_selection",
+            "guild_ids": guild_ids,
+            "started_at": time.time(),
+        }
+        lines = ["Choose a guild for dev watcher setup by replying with a number:"]
+        for idx, guild in enumerate(manageable, start=1):
+            lines.append(f"{idx}. {guild.name} (`{guild.id}`)")
+        lines.append("Reply `cancel` to abort.")
+        await self._send_long_reply(message, "\n".join(lines), mention_author=True)
+
+    async def _continue_dev_watcher_wizard(
+        self,
+        message: discord.Message,
+        lowered_content: str,
+    ) -> bool:
+        """Continue guild-selection wizard when a session is active."""
+        session = self._dev_watcher_wizards.get(message.author.id)
+        if session is None:
+            return False
+
+        started_at = float(session.get("started_at", 0))
+        if time.time() - started_at > self._DEV_WATCHER_WIZARD_TIMEOUT_SECONDS:
+            self._dev_watcher_wizards.pop(message.author.id, None)
+            await message.reply("Dev watcher setup timed out. Send `implement dev watcher` again.")
+            return True
+
+        if session.get("state") != "awaiting_guild_selection":
+            self._dev_watcher_wizards.pop(message.author.id, None)
+            return False
+
+        if lowered_content in {"cancel", "stop", "abort"}:
+            self._dev_watcher_wizards.pop(message.author.id, None)
+            await message.reply("Dev watcher setup cancelled.", mention_author=True)
+            return True
+
+        guild_ids = [int(gid) for gid in session.get("guild_ids", []) if isinstance(gid, int)]
+        if not guild_ids:
+            self._dev_watcher_wizards.pop(message.author.id, None)
+            await message.reply("Dev watcher setup state was invalid. Start again.")
+            return True
+
+        selected_id: int | None = None
+        if lowered_content.isdigit():
+            numeric = int(lowered_content)
+            if 1 <= numeric <= len(guild_ids):
+                selected_id = guild_ids[numeric - 1]
+            elif numeric in guild_ids:
+                selected_id = numeric
+
+        if selected_id is None:
+            await message.reply("Please reply with a valid guild number (or `cancel`).")
+            return True
+
+        guild = self.get_guild(selected_id)
+        if guild is None:
+            self._dev_watcher_wizards.pop(message.author.id, None)
+            await message.reply("Selected guild is no longer available. Start again.")
+            return True
+
+        self._dev_watcher_wizards.pop(message.author.id, None)
+        await self._run_dev_watcher_provisioning(message, guild)
+        return True
+
+    async def _select_manageable_guilds(
+        self,
+        user_id: int,
+    ) -> tuple[list[discord.Guild], list[str]]:
+        """Return guilds where the user is present and bot has setup permissions."""
+        manageable: list[discord.Guild] = []
+        blocked: list[str] = []
+        for guild in self.guilds:
+            member = await self._resolve_guild_member(guild, user_id)
+            if member is None:
+                continue
+
+            bot_member = guild.me
+            if bot_member is None and self.user is not None:
+                bot_member = guild.get_member(self.user.id)
+            if bot_member is None:
+                blocked.append(f"{guild.name}: bot membership unavailable")
+                continue
+
+            perms = bot_member.guild_permissions
+            missing: list[str] = []
+            if not perms.manage_channels:
+                missing.append("Manage Channels")
+            if not perms.manage_webhooks:
+                missing.append("Manage Webhooks")
+            if missing:
+                blocked.append(f"{guild.name}: missing {', '.join(missing)}")
+                continue
+
+            manageable.append(guild)
+        return manageable, blocked
+
+    async def _resolve_guild_member(
+        self,
+        guild: discord.Guild,
+        user_id: int,
+    ) -> discord.Member | None:
+        """Resolve a user as a member of a guild."""
+        member = guild.get_member(user_id)
+        if member is not None:
+            return member
+        try:
+            return await guild.fetch_member(user_id)
+        except Exception:
+            return None
+
+    async def _run_dev_watcher_provisioning(
+        self,
+        message: discord.Message,
+        guild: discord.Guild,
+    ) -> None:
+        """Execute end-to-end dev-watcher provisioning for one guild."""
+        await message.reply(
+            f"Starting dev watcher provisioning for **{guild.name}**.",
+            mention_author=True,
+        )
+
+        available, availability_detail = await self._ensure_dev_agent_available()
+        if not available:
+            await message.channel.send(f"Provisioning halted: {availability_detail}")
+            return
+
+        await message.channel.send("Creating or reusing Discord category/channel/webhook.")
+        try:
+            discord_assets = await self._ensure_dev_watcher_discord_assets(guild, message.author.id)
+        except Exception:
+            log.exception("dev_watcher_discord_asset_provision_failed", guild_id=guild.id)
+            await message.channel.send("Provisioning halted: failed while creating Discord assets.")
+            return
+        if discord_assets is None:
+            await message.channel.send(
+                "Provisioning halted: could not create Discord assets. "
+                "Check bot permissions in the selected guild."
+            )
+            return
+        category, channel, webhook = discord_assets
+
+        await message.channel.send("Bootstrapping dev-agent sidecar and rotating API token.")
+        bootstrap = await self._bootstrap_dev_agent(
+            webhook_url=webhook.url,
+            webhook_name=webhook.name or "zetherion-dev-agent",
+        )
+        if not bootstrap.get("ok"):
+            await message.channel.send(
+                f"Provisioning halted during bootstrap: {bootstrap.get('error', 'unknown error')}"
+            )
+            return
+
+        api_token = str(bootstrap.get("api_token", "")).strip()
+        if not api_token:
+            await message.channel.send(
+                "Provisioning halted: bootstrap did not return an API token."
+            )
+            return
+
+        try:
+            await self._persist_dev_watcher_runtime(
+                changed_by=message.author.id,
+                guild=guild,
+                channel=channel,
+                webhook=webhook,
+                api_token=api_token,
+            )
+        except Exception as exc:
+            log.exception("dev_watcher_runtime_persist_failed")
+            await message.channel.send(
+                f"Provisioning halted while saving runtime settings/secrets: {exc}"
+            )
+            return
+
+        await message.channel.send("Running first discovery cycle.")
+        discovery = await self._trigger_initial_discovery(api_token)
+        pending = discovery.get("pending_approvals", [])
+        discovered = discovery.get("projects_discovered", [])
+
+        summary_lines = [
+            "Dev watcher setup complete.",
+            f"- Guild: **{guild.name}**",
+            f"- Category: **{category.name}**",
+            f"- Channel: <#{channel.id}>",
+            f"- Webhook: `{webhook.name}`",
+            f"- Projects discovered: `{len(discovered)}`",
+            f"- Pending approvals: `{len(pending)}`",
+            "",
+            "New projects will continue to be discovered automatically. "
+            "Cleanup remains policy-gated (`ask`, `auto_clean`, `never_clean`).",
+        ]
+        await self._send_long_message(message.channel, "\n".join(summary_lines))
+
+    def _dev_agent_base_url(self) -> str:
+        """Resolve dev-agent API base URL from dynamic settings/env."""
+        settings = get_settings()
+        raw = get_dynamic("dev_agent", "service_url", settings.dev_agent_service_url)
+        if not isinstance(raw, str):
+            return "http://zetherion-ai-dev-agent:8787"
+        return raw.rstrip("/")
+
+    async def _dev_agent_healthcheck(self) -> bool:
+        """Check dev-agent health endpoint reachability."""
+        url = f"{self._dev_agent_base_url()}/v1/health"
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(url)
+            return resp.status_code == 200
+        except httpx.RequestError:
+            return False
+
+    def _resolve_updater_secret(self) -> str:
+        """Resolve updater secret from env or shared secret file."""
+        settings = get_settings()
+        if settings.updater_secret.strip():
+            return settings.updater_secret.strip()
+        secret_path = Path(settings.updater_secret_path).expanduser()
+        if not secret_path.exists():
+            return ""
+        try:
+            return secret_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+
+    async def _ensure_dev_agent_available(self) -> tuple[bool, str]:
+        """Ensure dev-agent service is available, attempting signed update if needed."""
+        if await self._dev_agent_healthcheck():
+            return True, "dev-agent healthy"
+
+        settings = get_settings()
+        if not settings.auto_update_repo.strip():
+            return (
+                False,
+                "dev-agent service is unavailable and AUTO_UPDATE_REPO is not configured",
+            )
+
+        from zetherion_ai.updater.manager import UpdateManager, UpdateStatus
+
+        manager = UpdateManager(
+            github_repo=settings.auto_update_repo,
+            updater_url=settings.updater_service_url,
+            updater_secret=self._resolve_updater_secret(),
+            github_token=(
+                settings.github_token.get_secret_value()
+                if settings.github_token is not None
+                else None
+            ),
+            verify_signatures=settings.updater_verify_signatures,
+            verify_identity=settings.updater_verify_identity,
+            verify_oidc_issuer=settings.updater_verify_oidc_issuer,
+            verify_rekor_url=settings.updater_verify_rekor_url,
+            release_manifest_asset=settings.updater_release_manifest_asset,
+            release_signature_asset=settings.updater_release_signature_asset,
+            release_certificate_asset=settings.updater_release_certificate_asset,
+        )
+
+        release = await manager.check_for_update()
+        if release is None:
+            return False, "dev-agent service is unavailable and no newer signed release was found"
+
+        result = await manager.apply_update(release)
+        if result.status != UpdateStatus.SUCCESS:
+            return False, f"update failed: {result.error or 'unknown error'}"
+
+        for _ in range(12):
+            if await self._dev_agent_healthcheck():
+                return True, f"updated to {release.version}"
+            await asyncio.sleep(10)
+        return False, "update succeeded but dev-agent service did not become healthy"
+
+    async def _ensure_dev_watcher_discord_assets(
+        self,
+        guild: discord.Guild,
+        user_id: int,
+    ) -> tuple[discord.CategoryChannel, discord.TextChannel, discord.Webhook] | None:
+        """Ensure private ops category, channel, and webhook exist."""
+        bot_member = guild.me
+        if bot_member is None and self.user is not None:
+            bot_member = guild.get_member(self.user.id)
+        member = await self._resolve_guild_member(guild, user_id)
+        if bot_member is None or member is None:
+            return None
+
+        category_name = "Zetherion Ops"
+        channel_name = "dev-watcher"
+        settings = get_settings()
+        webhook_name = get_dynamic(
+            "dev_agent",
+            "webhook_name",
+            settings.dev_agent_webhook_name,
+        )
+        if not isinstance(webhook_name, str) or not webhook_name.strip():
+            webhook_name = "zetherion-dev-agent"
+
+        category = discord.utils.get(guild.categories, name=category_name)
+        if category is None:
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                bot_member: discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    read_message_history=True,
+                    manage_channels=True,
+                    manage_webhooks=True,
+                ),
+                member: discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    read_message_history=True,
+                ),
+            }
+            category = await guild.create_category(
+                category_name,
+                overwrites=overwrites,
+                reason="Dev watcher onboarding",
+            )
+
+        channel = next(
+            (
+                ch
+                for ch in guild.text_channels
+                if ch.name == channel_name and ch.category_id == category.id
+            ),
+            None,
+        )
+        if channel is None:
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                bot_member: discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    read_message_history=True,
+                    manage_webhooks=True,
+                ),
+                member: discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    read_message_history=True,
+                ),
+            }
+            channel = await guild.create_text_channel(
+                channel_name,
+                category=category,
+                overwrites=overwrites,
+                topic="Zetherion dev watcher events and approval prompts",
+                reason="Dev watcher onboarding",
+            )
+
+        webhooks = await channel.webhooks()
+        webhook = next((item for item in webhooks if item.name == webhook_name), None)
+        if webhook is None:
+            webhook = await channel.create_webhook(
+                name=webhook_name,
+                reason="Dev watcher onboarding",
+            )
+
+        return category, channel, webhook
+
+    async def _bootstrap_dev_agent(
+        self,
+        *,
+        webhook_url: str,
+        webhook_name: str,
+    ) -> dict[str, Any]:
+        """Bootstrap dev-agent with webhook and schedule configuration."""
+        settings = get_settings()
+        bootstrap_secret = settings.dev_agent_bootstrap_secret.strip()
+        if not bootstrap_secret:
+            return {"ok": False, "error": "DEV_AGENT_BOOTSTRAP_SECRET is not configured"}
+
+        cleanup_hour = int(
+            get_dynamic("dev_agent", "cleanup_hour", settings.dev_agent_cleanup_hour)
+        )
+        cleanup_minute = int(
+            get_dynamic("dev_agent", "cleanup_minute", settings.dev_agent_cleanup_minute)
+        )
+        reprompt_hours = int(
+            get_dynamic(
+                "dev_agent",
+                "approval_reprompt_hours",
+                settings.dev_agent_approval_reprompt_hours,
+            )
+        )
+
+        payload = {
+            "webhook_url": webhook_url,
+            "agent_name": webhook_name,
+            "cleanup_hour": cleanup_hour,
+            "cleanup_minute": cleanup_minute,
+            "approval_reprompt_hours": reprompt_hours,
+            "container_monitor_enabled": True,
+            "cleanup_enabled": True,
+            "rotate_api_token": bool(webhook_url or webhook_name),
+        }
+
+        url = f"{self._dev_agent_base_url()}/v1/bootstrap"
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    url,
+                    json=payload,
+                    headers={"X-Bootstrap-Secret": bootstrap_secret},
+                )
+        except httpx.RequestError as exc:
+            return {"ok": False, "error": f"bootstrap request failed: {exc}"}
+
+        try:
+            data = resp.json()
+        except Exception:
+            data = {}
+
+        if resp.status_code == 200:
+            if isinstance(data, dict):
+                return {"ok": True, **data}
+            return {"ok": False, "error": "bootstrap response was not JSON"}
+
+        if resp.status_code == 409:
+            existing_token = (get_secret("dev_agent_api_token", "") or "").strip()
+            if existing_token:
+                return {"ok": True, "api_token": existing_token, "reused": True}
+            err = "bootstrap already completed and no stored API token was found"
+            return {"ok": False, "error": err}
+
+        error_detail = data.get("error") if isinstance(data, dict) else f"HTTP {resp.status_code}"
+        return {"ok": False, "error": str(error_detail)}
+
+    async def _persist_dev_watcher_runtime(
+        self,
+        *,
+        changed_by: int,
+        guild: discord.Guild,
+        channel: discord.TextChannel,
+        webhook: discord.Webhook,
+        api_token: str,
+    ) -> None:
+        """Persist dev-agent settings and API token."""
+        settings = get_settings()
+        cleanup_hour = int(
+            get_dynamic("dev_agent", "cleanup_hour", settings.dev_agent_cleanup_hour)
+        )
+        cleanup_minute = int(
+            get_dynamic("dev_agent", "cleanup_minute", settings.dev_agent_cleanup_minute)
+        )
+        reprompt_hours = int(
+            get_dynamic(
+                "dev_agent",
+                "approval_reprompt_hours",
+                settings.dev_agent_approval_reprompt_hours,
+            )
+        )
+
+        if self._settings_manager is not None:
+            await self._settings_manager.set(  # type: ignore[attr-defined]
+                namespace="dev_agent",
+                key="enabled",
+                value=True,
+                changed_by=changed_by,
+                data_type="bool",
+            )
+            await self._settings_manager.set(  # type: ignore[attr-defined]
+                namespace="dev_agent",
+                key="cleanup_hour",
+                value=cleanup_hour,
+                changed_by=changed_by,
+                data_type="int",
+            )
+            await self._settings_manager.set(  # type: ignore[attr-defined]
+                namespace="dev_agent",
+                key="cleanup_minute",
+                value=cleanup_minute,
+                changed_by=changed_by,
+                data_type="int",
+            )
+            await self._settings_manager.set(  # type: ignore[attr-defined]
+                namespace="dev_agent",
+                key="approval_reprompt_hours",
+                value=reprompt_hours,
+                changed_by=changed_by,
+                data_type="int",
+            )
+            await self._settings_manager.set(  # type: ignore[attr-defined]
+                namespace="dev_agent",
+                key="discord_channel_id",
+                value=str(channel.id),
+                changed_by=changed_by,
+                data_type="string",
+            )
+            await self._settings_manager.set(  # type: ignore[attr-defined]
+                namespace="dev_agent",
+                key="discord_guild_id",
+                value=str(guild.id),
+                changed_by=changed_by,
+                data_type="string",
+            )
+            await self._settings_manager.set(  # type: ignore[attr-defined]
+                namespace="dev_agent",
+                key="webhook_name",
+                value=str(webhook.name or "zetherion-dev-agent"),
+                changed_by=changed_by,
+                data_type="string",
+            )
+            await self._settings_manager.set(  # type: ignore[attr-defined]
+                namespace="dev_agent",
+                key="webhook_id",
+                value=str(webhook.id),
+                changed_by=changed_by,
+                data_type="string",
+            )
+            await self._settings_manager.set(  # type: ignore[attr-defined]
+                namespace="dev_agent",
+                key="service_url",
+                value=self._dev_agent_base_url(),
+                changed_by=changed_by,
+                data_type="string",
+            )
+
+        await self._persist_dev_agent_secret(changed_by=changed_by, token=api_token)
+
+    async def _persist_dev_agent_secret(self, *, changed_by: int, token: str) -> None:
+        """Persist dev-agent API token in encrypted secrets storage."""
+        if self._agent is None:
+            raise RuntimeError("Agent is not ready")
+        client = await self._agent._get_skills_client()
+        if client is None:
+            raise RuntimeError("Skills service is unavailable for secret storage")
+        await client.put_secret(
+            name="dev_agent_api_token",
+            value=token,
+            changed_by=changed_by,
+            description="Dev-agent bearer token provisioned by Discord onboarding",
+        )
+
+    async def _trigger_initial_discovery(self, api_token: str) -> dict[str, Any]:
+        """Run one discovery cycle via dev-agent API."""
+        url = f"{self._dev_agent_base_url()}/v1/discovery/run"
+        headers = {"Authorization": f"Bearer {api_token}"}
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(url, headers=headers, json={})
+        except httpx.RequestError as exc:
+            return {"projects_discovered": [], "pending_approvals": [], "error": str(exc)}
+        if resp.status_code != 200:
+            return {
+                "projects_discovered": [],
+                "pending_approvals": [],
+                "error": f"HTTP {resp.status_code}",
+            }
+        try:
+            data = resp.json()
+        except Exception:
+            return {"projects_discovered": [], "pending_approvals": [], "error": "invalid JSON"}
+        if isinstance(data, dict):
+            return data
+        return {"projects_discovered": [], "pending_approvals": []}
+
+    async def _handle_dev_watcher_status_dm(self, message: discord.Message) -> None:
+        """Return status summary for dev watcher onboarding/runtime."""
+        if not await self._is_owner_or_admin(message.author.id):
+            await message.reply("Dev watcher status is owner/admin only.", mention_author=True)
+            return
+
+        health = await self._dev_agent_healthcheck()
+        token = (get_secret("dev_agent_api_token", "") or "").strip()
+        projects_count = 0
+        pending_count = 0
+        if health and token:
+            try:
+                async with httpx.AsyncClient(timeout=15) as client:
+                    projects_resp = await client.get(
+                        f"{self._dev_agent_base_url()}/v1/projects",
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+                    pending_resp = await client.get(
+                        f"{self._dev_agent_base_url()}/v1/approvals/pending",
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+                if projects_resp.status_code == 200:
+                    payload = projects_resp.json()
+                    if isinstance(payload, dict) and isinstance(payload.get("projects"), list):
+                        projects_count = len(payload["projects"])
+                if pending_resp.status_code == 200:
+                    payload = pending_resp.json()
+                    if isinstance(payload, dict) and isinstance(payload.get("pending"), list):
+                        pending_count = len(payload["pending"])
+            except Exception:
+                log.exception("dev_watcher_status_fetch_failed")
+
+        settings = get_settings()
+        guild_id = get_dynamic("dev_agent", "discord_guild_id", settings.dev_agent_discord_guild_id)
+        channel_id = get_dynamic(
+            "dev_agent",
+            "discord_channel_id",
+            settings.dev_agent_discord_channel_id,
+        )
+        enabled = bool(get_dynamic("dev_agent", "enabled", settings.dev_agent_enabled))
+
+        lines = [
+            "**Dev Watcher Status**",
+            f"- Enabled: `{enabled}`",
+            f"- API health: `{'ok' if health else 'unreachable'}`",
+            f"- Stored API token: `{'yes' if bool(token) else 'no'}`",
+            f"- Guild ID: `{guild_id or 'unset'}`",
+            f"- Channel ID: `{channel_id or 'unset'}`",
+            f"- Projects discovered: `{projects_count}`",
+            f"- Pending approvals: `{pending_count}`",
+        ]
+        await self._send_long_reply(message, "\n".join(lines), mention_author=True)
 
     async def _check_security(
         self,

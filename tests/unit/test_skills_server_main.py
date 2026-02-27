@@ -24,6 +24,20 @@ def _configure_mock_settings(mock_get_settings: MagicMock) -> MagicMock:
     mock_settings = MagicMock()
     mock_settings.telemetry_central_mode = False
     mock_settings.postgres_dsn = ""  # No Postgres by default
+    mock_settings.auto_update_repo = ""
+    mock_settings.auto_update_enabled = False
+    mock_settings.update_require_approval = True
+    mock_settings.auto_update_check_interval_minutes = 15
+    mock_settings.updater_service_url = "http://updater:9090"
+    mock_settings.updater_secret = ""
+    mock_settings.updater_verify_signatures = True
+    mock_settings.updater_verify_identity = ""
+    mock_settings.updater_verify_oidc_issuer = "https://token.actions.githubusercontent.com"
+    mock_settings.updater_verify_rekor_url = "https://rekor.sigstore.dev"
+    mock_settings.updater_release_manifest_asset = "release-manifest.json"
+    mock_settings.updater_release_signature_asset = "release-manifest.sig"
+    mock_settings.updater_release_certificate_asset = "release-manifest.pem"
+    mock_settings.github_token = None
     mock_get_settings.return_value = mock_settings
     return mock_settings
 

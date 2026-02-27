@@ -880,6 +880,13 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             updater_url=settings.updater_service_url,
             updater_secret=updater_secret,
             check_every_n_beats=check_every_n_beats,
+            verify_signatures=settings.updater_verify_signatures,
+            verify_identity=settings.updater_verify_identity,
+            verify_oidc_issuer=settings.updater_verify_oidc_issuer,
+            verify_rekor_url=settings.updater_verify_rekor_url,
+            release_manifest_asset=settings.updater_release_manifest_asset,
+            release_signature_asset=settings.updater_release_signature_asset,
+            release_certificate_asset=settings.updater_release_certificate_asset,
         )
     )
 
