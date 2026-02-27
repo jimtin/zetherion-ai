@@ -351,7 +351,7 @@ For the full testing guide, patterns, fixtures, and mocking strategies, see [Tes
 pytest tests/ -m "not integration and not discord_e2e"
 
 # Production-parity validation (recommended before merge)
-bash scripts/pre-push-tests.sh
+bash scripts/test-full.sh
 
 # All tests except Discord E2E (includes integration)
 pytest tests/ -m "not discord_e2e"

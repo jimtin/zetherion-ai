@@ -1,5 +1,7 @@
 """Tests for skills server."""
 
+import os
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -14,7 +16,13 @@ from zetherion_ai.skills.base import (
     SkillResponse,
 )
 from zetherion_ai.skills.registry import SkillRegistry
-from zetherion_ai.skills.server import SkillsServer
+from zetherion_ai.skills.server import (
+    SkillsServer,
+    _build_google_oauth_authorize_handler,
+    _build_google_oauth_handler,
+    _resolve_google_oauth,
+    _resolve_updater_secret,
+)
 
 
 @pytest.fixture
@@ -805,3 +813,484 @@ class TestSecretsEndpoints:
             assert resp.status == 501
             data = await resp.json()
             assert "error" in data
+
+    async def test_put_secret_returns_501_when_manager_is_none(self, mock_registry):
+        """PUT /secrets/{name} should return 501 when secrets_manager is None."""
+        server = SkillsServer(registry=mock_registry, secrets_manager=None)
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as test_client:
+            resp = await test_client.put(
+                "/secrets/google_client_secret",
+                json={"value": "v", "changed_by": 1},
+            )
+            assert resp.status == 501
+
+    async def test_delete_secret_returns_501_when_manager_is_none(self, mock_registry):
+        """DELETE /secrets/{name} should return 501 when secrets_manager is None."""
+        server = SkillsServer(registry=mock_registry, secrets_manager=None)
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as test_client:
+            resp = await test_client.delete(
+                "/secrets/google_client_secret",
+                params={"deleted_by": "1"},
+            )
+            assert resp.status == 501
+
+    async def test_put_secret_missing_value_returns_400(self, client_with_secrets):
+        """PUT /secrets/{name} should reject empty secret values."""
+        resp = await client_with_secrets.put(
+            "/secrets/google_client_secret",
+            json={"value": "", "changed_by": 1},
+        )
+        assert resp.status == 400
+        data = await resp.json()
+        assert "Missing non-empty secret" in data["error"]
+
+    async def test_delete_secret_invalid_deleted_by_returns_400(self, client_with_secrets):
+        """DELETE /secrets/{name} should validate deleted_by as int."""
+        resp = await client_with_secrets.delete(
+            "/secrets/google_client_secret",
+            params={"deleted_by": "not-int"},
+        )
+        assert resp.status == 400
+
+
+class TestServerHelperFunctions:
+    """Tests for standalone skills.server helper functions."""
+
+    def test_resolve_updater_secret_prefers_env(self, tmp_path):
+        """Explicit UPDATER_SECRET should override file fallback."""
+        secret_path = tmp_path / ".updater-secret"
+        secret_path.write_text("file-secret", encoding="utf-8")
+        with patch.dict(
+            os.environ,
+            {"UPDATER_SECRET": "env-secret", "UPDATER_SECRET_PATH": str(secret_path)},
+            clear=False,
+        ):
+            assert _resolve_updater_secret() == "env-secret"
+
+    def test_resolve_updater_secret_reads_file(self, tmp_path):
+        """When env is absent, updater secret should be loaded from file."""
+        secret_path = tmp_path / ".updater-secret"
+        secret_path.write_text("file-secret", encoding="utf-8")
+        with patch.dict(
+            os.environ,
+            {"UPDATER_SECRET": "", "UPDATER_SECRET_PATH": str(secret_path)},
+            clear=False,
+        ):
+            assert _resolve_updater_secret() == "file-secret"
+
+    def test_resolve_updater_secret_missing_file_returns_empty(self, tmp_path):
+        """Missing fallback secret file should return an empty secret."""
+        secret_path = tmp_path / ".missing-updater-secret"
+        with patch.dict(
+            os.environ,
+            {"UPDATER_SECRET": "", "UPDATER_SECRET_PATH": str(secret_path)},
+            clear=False,
+        ):
+            assert _resolve_updater_secret() == ""
+
+    def test_resolve_updater_secret_read_error_returns_empty(self, tmp_path):
+        """Read errors from secret file should fail closed to empty string."""
+        secret_path = tmp_path / ".updater-secret"
+        secret_path.write_text("file-secret", encoding="utf-8")
+        with (
+            patch.dict(
+                os.environ,
+                {"UPDATER_SECRET": "", "UPDATER_SECRET_PATH": str(secret_path)},
+                clear=False,
+            ),
+            patch("pathlib.Path.read_text", side_effect=OSError("read failed")),
+        ):
+            assert _resolve_updater_secret() == ""
+
+    def test_resolve_google_oauth_success(self):
+        """Google OAuth resolver should merge dynamic settings and secrets."""
+        secret_obj = MagicMock()
+        secret_obj.get_secret_value.return_value = "env-secret"
+        settings = SimpleNamespace(
+            google_client_id="env-client-id",
+            google_redirect_uri="https://env.example/callback",
+            google_client_secret=secret_obj,
+        )
+
+        def _dynamic(_namespace: str, key: str, default=None):
+            if key == "google_client_id":
+                return "dynamic-client-id"
+            if key == "google_redirect_uri":
+                return "https://dynamic.example/callback"
+            return default
+
+        with (
+            patch("zetherion_ai.config.get_dynamic", side_effect=_dynamic),
+            patch("zetherion_ai.config.get_secret", return_value="dynamic-secret"),
+            patch("zetherion_ai.skills.gmail.auth.GmailAuth") as mock_auth_cls,
+        ):
+            auth = _resolve_google_oauth(settings=settings)
+
+        assert auth is mock_auth_cls.return_value
+        mock_auth_cls.assert_called_once_with(
+            client_id="dynamic-client-id",
+            client_secret="dynamic-secret",
+            redirect_uri="https://dynamic.example/callback",
+        )
+
+    def test_resolve_google_oauth_missing_client_id(self):
+        """Missing client id should raise a clear ValueError."""
+        settings = SimpleNamespace(
+            google_client_id="",
+            google_redirect_uri="https://example/callback",
+            google_client_secret=SimpleNamespace(get_secret_value=lambda: "env-secret"),
+        )
+        with (
+            patch(
+                "zetherion_ai.config.get_dynamic",
+                side_effect=(
+                    lambda _n, key, default=None: "" if key == "google_client_id" else default
+                ),
+            ),
+            patch("zetherion_ai.config.get_secret", return_value="dynamic-secret"),
+            pytest.raises(ValueError, match="client id"),
+        ):
+            _resolve_google_oauth(settings=settings)
+
+    def test_resolve_google_oauth_missing_secret(self):
+        """Missing client secret should raise a clear ValueError."""
+        settings = SimpleNamespace(
+            google_client_id="client-id",
+            google_redirect_uri="https://example/callback",
+            google_client_secret=SimpleNamespace(get_secret_value=lambda: None),
+        )
+        with (
+            patch(
+                "zetherion_ai.config.get_dynamic",
+                side_effect=lambda _n, _k, default=None: default,
+            ),
+            patch("zetherion_ai.config.get_secret", return_value=""),
+            pytest.raises(ValueError, match="client secret"),
+        ):
+            _resolve_google_oauth(settings=settings)
+
+    def test_resolve_google_oauth_missing_redirect(self):
+        """Missing redirect URI should raise a clear ValueError."""
+        settings = SimpleNamespace(
+            google_client_id="client-id",
+            google_redirect_uri="",
+            google_client_secret=SimpleNamespace(get_secret_value=lambda: "env-secret"),
+        )
+        with (
+            patch(
+                "zetherion_ai.config.get_dynamic",
+                side_effect=lambda _n, _k, default=None: default,
+            ),
+            patch("zetherion_ai.config.get_secret", return_value="dynamic-secret"),
+            pytest.raises(ValueError, match="redirect URI"),
+        ):
+            _resolve_google_oauth(settings=settings)
+
+    async def test_google_oauth_authorize_handler_success(self):
+        """Authorize handler should return provider URL/state payload."""
+        auth = MagicMock()
+        auth.generate_auth_url.return_value = ("https://example.test/auth", "state-123")
+        handler = _build_google_oauth_authorize_handler(auth_resolver=lambda: auth)
+
+        request = MagicMock()
+        request.query = {"user_id": "42"}
+        result = await handler(request)
+
+        assert result["ok"] is True
+        assert result["provider"] == "google"
+        assert result["user_id"] == 42
+        assert result["auth_url"] == "https://example.test/auth"
+        assert result["state"] == "state-123"
+
+    async def test_google_oauth_authorize_handler_requires_user_id(self):
+        """Authorize handler should require a user_id query parameter."""
+        handler = _build_google_oauth_authorize_handler(auth_resolver=lambda: MagicMock())
+        request = MagicMock()
+        request.query = {}
+        with pytest.raises(ValueError, match="Missing user_id"):
+            await handler(request)
+
+    async def test_google_oauth_authorize_handler_rejects_invalid_user_id(self):
+        """Authorize handler should validate user_id as integer."""
+        handler = _build_google_oauth_authorize_handler(auth_resolver=lambda: MagicMock())
+        request = MagicMock()
+        request.query = {"user_id": "abc"}
+        with pytest.raises(ValueError, match="Invalid user_id"):
+            await handler(request)
+
+    async def test_google_oauth_callback_handler_success_with_refresh_fallback(self):
+        """Callback handler should reuse existing refresh token when omitted."""
+        auth = MagicMock()
+        auth.validate_state_token.return_value = 77
+        auth.exchange_code = AsyncMock(
+            return_value={
+                "access_token": "access-token",
+                "expires_in": 1800,
+                "scope": "email profile",
+            }
+        )
+        auth.get_user_email = AsyncMock(return_value="dev@example.com")
+
+        account_manager = AsyncMock()
+        account_manager.get_account_by_email = AsyncMock(
+            return_value=SimpleNamespace(refresh_token="existing-refresh-token")
+        )
+        account_manager.add_account = AsyncMock(return_value=1001)
+
+        integration_storage = AsyncMock()
+        handler = _build_google_oauth_handler(
+            auth_resolver=lambda: auth,
+            account_manager=account_manager,
+            integration_storage=integration_storage,
+        )
+
+        request = MagicMock()
+        request.query = {"code": "auth-code", "state": "state-token"}
+        result = await handler(request)
+
+        assert result["ok"] is True
+        assert result["provider"] == "google"
+        assert result["user_id"] == 77
+        assert result["account_email"] == "dev@example.com"
+        assert result["account_id"] == 1001
+
+        kwargs = account_manager.add_account.call_args.kwargs
+        assert kwargs["refresh_token"] == "existing-refresh-token"
+        assert kwargs["scopes"] == ["email", "profile"]
+        integration_storage.upsert_account.assert_awaited_once()
+        integration_storage.upsert_destination.assert_awaited_once()
+
+    async def test_google_oauth_callback_handler_rejects_oauth_error(self):
+        """Callback handler should surface provider-side OAuth errors."""
+        auth = MagicMock()
+        handler = _build_google_oauth_handler(
+            auth_resolver=lambda: auth,
+            account_manager=AsyncMock(),
+            integration_storage=AsyncMock(),
+        )
+        request = MagicMock()
+        request.query = {"error": "access_denied"}
+        with pytest.raises(ValueError, match="Google OAuth failed"):
+            await handler(request)
+
+    async def test_google_oauth_callback_handler_requires_code_and_state(self):
+        """Callback handler should require both code and state."""
+        auth = MagicMock()
+        handler = _build_google_oauth_handler(
+            auth_resolver=lambda: auth,
+            account_manager=AsyncMock(),
+            integration_storage=AsyncMock(),
+        )
+        request = MagicMock()
+        request.query = {"code": "", "state": ""}
+        with pytest.raises(ValueError, match="Missing OAuth code/state"):
+            await handler(request)
+
+    async def test_google_oauth_callback_handler_requires_access_token(self):
+        """Callback handler should fail when access_token is missing."""
+        auth = MagicMock()
+        auth.validate_state_token.return_value = 1
+        auth.exchange_code = AsyncMock(return_value={"refresh_token": "refresh-token"})
+        handler = _build_google_oauth_handler(
+            auth_resolver=lambda: auth,
+            account_manager=AsyncMock(),
+            integration_storage=AsyncMock(),
+        )
+        request = MagicMock()
+        request.query = {"code": "auth-code", "state": "state-token"}
+        with pytest.raises(ValueError, match="access_token"):
+            await handler(request)
+
+    async def test_google_oauth_callback_handler_requires_email(self):
+        """Callback handler should fail when account email is missing."""
+        auth = MagicMock()
+        auth.validate_state_token.return_value = 1
+        auth.exchange_code = AsyncMock(
+            return_value={"access_token": "token", "refresh_token": "refresh"}
+        )
+        auth.get_user_email = AsyncMock(return_value="")
+        handler = _build_google_oauth_handler(
+            auth_resolver=lambda: auth,
+            account_manager=AsyncMock(),
+            integration_storage=AsyncMock(),
+        )
+        request = MagicMock()
+        request.query = {"code": "auth-code", "state": "state-token"}
+        with pytest.raises(ValueError, match="account email"):
+            await handler(request)
+
+    async def test_google_oauth_callback_handler_requires_refresh_token(self):
+        """Callback handler should fail when refresh token cannot be resolved."""
+        auth = MagicMock()
+        auth.validate_state_token.return_value = 1
+        auth.exchange_code = AsyncMock(return_value={"access_token": "token", "refresh_token": ""})
+        auth.get_user_email = AsyncMock(return_value="dev@example.com")
+
+        account_manager = AsyncMock()
+        account_manager.get_account_by_email = AsyncMock(return_value=None)
+
+        handler = _build_google_oauth_handler(
+            auth_resolver=lambda: auth,
+            account_manager=account_manager,
+            integration_storage=AsyncMock(),
+        )
+        request = MagicMock()
+        request.query = {"code": "auth-code", "state": "state-token"}
+        with pytest.raises(ValueError, match="refresh_token"):
+            await handler(request)
+
+
+class TestAdditionalEndpointBranches:
+    """Additional branch coverage for OAuth and manager-not-configured paths."""
+
+    async def test_oauth_callback_value_error_returns_400(self, mock_registry):
+        """Provider callback ValueError should map to HTTP 400."""
+        handler = AsyncMock(side_effect=ValueError("bad oauth request"))
+        server = SkillsServer(registry=mock_registry, oauth_handlers={"google": handler})
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/oauth/google/callback", params={"code": "c", "state": "s"})
+            assert resp.status == 400
+            data = await resp.json()
+            assert "bad oauth request" in data["error"]
+
+    async def test_oauth_callback_exception_returns_500(self, mock_registry):
+        """Provider callback exceptions should map to HTTP 500."""
+        handler = AsyncMock(side_effect=RuntimeError("unexpected"))
+        server = SkillsServer(registry=mock_registry, oauth_handlers={"google": handler})
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/oauth/google/callback", params={"code": "c", "state": "s"})
+            assert resp.status == 500
+            data = await resp.json()
+            assert "OAuth callback failed" in data["error"]
+
+    async def test_oauth_authorize_value_error_returns_400(self, mock_registry):
+        """Provider authorize ValueError should map to HTTP 400."""
+        authorizer = AsyncMock(side_effect=ValueError("bad authorize request"))
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="test-secret",
+            oauth_authorizers={"google": authorizer},
+        )
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/oauth/google/authorize",
+                params={"user_id": "1"},
+                headers={"X-API-Secret": "test-secret"},
+            )
+            assert resp.status == 400
+            data = await resp.json()
+            assert "bad authorize request" in data["error"]
+
+    async def test_oauth_authorize_exception_returns_500(self, mock_registry):
+        """Provider authorize exceptions should map to HTTP 500."""
+        authorizer = AsyncMock(side_effect=RuntimeError("unexpected"))
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="test-secret",
+            oauth_authorizers={"google": authorizer},
+        )
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/oauth/google/authorize",
+                params={"user_id": "1"},
+                headers={"X-API-Secret": "test-secret"},
+            )
+            assert resp.status == 500
+            data = await resp.json()
+            assert "OAuth authorize failed" in data["error"]
+
+    async def test_handle_oauth_callback_missing_provider_returns_400(self, mock_registry):
+        """Missing provider path segment should return HTTP 400."""
+        server = SkillsServer(registry=mock_registry)
+        request = MagicMock()
+        request.match_info = {"provider": " "}
+        resp = await server.handle_oauth_callback(request)
+        assert resp.status == 400
+
+    async def test_handle_oauth_authorize_missing_provider_returns_400(self, mock_registry):
+        """Missing provider path segment should return HTTP 400."""
+        server = SkillsServer(registry=mock_registry)
+        request = MagicMock()
+        request.match_info = {"provider": " "}
+        resp = await server.handle_oauth_authorize(request)
+        assert resp.status == 400
+
+    async def test_gmail_alias_value_error_returns_400(self, mock_registry):
+        """Legacy /gmail/callback should map ValueError to HTTP 400."""
+        handler = AsyncMock(side_effect=ValueError("invalid grant"))
+        server = SkillsServer(registry=mock_registry, oauth_handlers={"google": handler})
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/gmail/callback", params={"code": "c", "state": "s"})
+            assert resp.status == 400
+            data = await resp.json()
+            assert "invalid grant" in data["error"]
+
+    async def test_gmail_alias_exception_returns_500(self, mock_registry):
+        """Legacy /gmail/callback should map unexpected errors to HTTP 500."""
+        handler = AsyncMock(side_effect=RuntimeError("boom"))
+        server = SkillsServer(registry=mock_registry, oauth_handlers={"google": handler})
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/gmail/callback", params={"code": "c", "state": "s"})
+            assert resp.status == 500
+            data = await resp.json()
+            assert "OAuth callback failed" in data["error"]
+
+    async def test_handle_request_rejects_non_object_json(self, mock_registry):
+        """POST /handle should reject JSON arrays and return HTTP 400."""
+        server = SkillsServer(registry=mock_registry)
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post("/handle", json=["not", "an", "object"])
+            assert resp.status == 400
+            data = await resp.json()
+            assert "JSON body must be an object" in data["error"]
+
+    async def test_heartbeat_rejects_non_object_json(self, mock_registry):
+        """POST /heartbeat should reject JSON arrays and return HTTP 400."""
+        server = SkillsServer(registry=mock_registry)
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post("/heartbeat", json=["not", "an", "object"])
+            assert resp.status == 400
+            data = await resp.json()
+            assert "JSON body must be an object" in data["error"]
+
+    async def test_user_routes_return_501_when_manager_missing(self, mock_registry):
+        """User routes should fail with 501 when user manager is not configured."""
+        server = SkillsServer(registry=mock_registry, user_manager=None)
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as client:
+            add_resp = await client.post(
+                "/users",
+                json={"user_id": 1, "added_by": 1, "role": "user"},
+            )
+            del_resp = await client.delete("/users/1", params={"removed_by": "1"})
+            role_resp = await client.patch("/users/1/role", json={"role": "admin", "changed_by": 1})
+            audit_resp = await client.get("/users/audit")
+            assert add_resp.status == 501
+            assert del_resp.status == 501
+            assert role_resp.status == 501
+            assert audit_resp.status == 501
+
+    async def test_settings_routes_return_501_when_manager_missing(self, mock_registry):
+        """Settings routes should fail with 501 when settings manager is missing."""
+        server = SkillsServer(registry=mock_registry, settings_manager=None)
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as client:
+            get_resp = await client.get("/settings/models/key")
+            put_resp = await client.put(
+                "/settings/models/key",
+                json={"value": "x", "changed_by": 1, "data_type": "string"},
+            )
+            del_resp = await client.delete("/settings/models/key", params={"deleted_by": "1"})
+            assert get_resp.status == 501
+            assert put_resp.status == 501
+            assert del_resp.status == 501
