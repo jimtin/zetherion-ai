@@ -65,7 +65,7 @@ Critical-path integration coverage in canonical runs must include both:
 Every successful GitHub push must be followed by a Windows host update and runtime verification.
 
 1. Use the local runbook at `.agent-handoff/GITHUB_PUSH_AND_WINDOWS_DEPLOY_RUNBOOK.md`.
-2. SSH to `james@192.168.0.157`, update `C:\ZetherionAI` to the pushed ref, and record the resulting commit hash.
+2. Use the runbook-defined SSH target (user/host) to update `C:\ZetherionAI` to the pushed ref, and record the resulting commit hash.
 3. Apply the Docker credential fix from the runbook when needed, then run `docker compose up -d --build`.
 4. Verify deployment health with:
    - `docker compose ps`
