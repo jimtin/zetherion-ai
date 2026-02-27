@@ -1,69 +1,69 @@
-# Skills REST API Reference
+# Skills API Reference (Internal)
 
 ## Overview
 
-The Skills Service exposes a REST API on port 8080, accessible only within the internal Docker network. This API is consumed by the bot service to dispatch skill requests, trigger heartbeat actions, manage users, and query skill state. All endpoints except `/health` require authentication via the `X-API-Secret` header.
+The Skills API runs on port `8080` and is designed for trusted internal callers
+(bot service, internal operators, and routed internal tooling).
 
-**Base URL:** `http://zetherion-ai-skills:8080` (Docker internal network only)
+**Base URL:** `http://zetherion-ai-skills:8080` (or the routed internal URL set by `SKILLS_SERVICE_URL`)
 
-## Authentication
-
-All endpoints except `/health` require the `X-API-Secret` header. The value is compared against the configured secret using HMAC constant-time comparison to prevent timing attacks.
-
-```
-X-API-Secret: your-skills-api-secret
-```
-
-Configure the secret via the `SKILLS_API_SECRET` environment variable in your `.env` file. Requests without a valid secret receive a `401 Unauthorized` response.
+For external app integrations, use the [Public API Reference](public-api-reference.md).
 
 ---
 
-## Health and Status
+## Authentication
+
+All endpoints require `X-API-Secret` except:
+
+- `GET /health`
+- `GET /oauth/{provider}/callback`
+- `GET /gmail/callback`
+
+```http
+X-API-Secret: <skills-shared-secret>
+```
+
+If `SKILLS_API_SECRET` is unset, auth is effectively disabled for this internal service.
+
+---
+
+## Health and Registry
 
 ### GET /health
 
-Returns service health status. Does not require authentication. Used by Docker HEALTHCHECK and load balancers.
+Service health probe.
 
 **Response 200:**
 
 ```json
 {
   "status": "healthy",
-  "skills_ready": 5,
-  "skills_total": 5
+  "skills_ready": 8,
+  "skills_total": 12
 }
 ```
 
-If any skills failed to initialize, `skills_ready` will be less than `skills_total`. The endpoint still returns 200 as long as the service itself is running.
-
----
-
 ### GET /status
 
-Returns detailed status information for each registered skill.
+Registry status summary.
 
 **Response 200:**
 
 ```json
 {
-  "status": "running",
-  "skills": {
-    "task_manager": "ready",
-    "calendar": "ready",
-    "profile": "ready",
-    "gmail": "ready",
-    "github_management": "ready"
-  }
+  "total_skills": 12,
+  "total_intents": 80,
+  "by_status": {
+    "ready": ["task_manager", "calendar", "email"]
+  },
+  "ready_count": 12,
+  "error_count": 0
 }
 ```
 
-Possible skill statuses: `ready`, `initializing`, `failed`, `disabled`.
-
----
-
 ### GET /skills
 
-List all registered skills with their metadata.
+List registered skills.
 
 **Response 200:**
 
@@ -72,117 +72,104 @@ List all registered skills with their metadata.
   "skills": [
     {
       "name": "task_manager",
-      "description": "Track tasks and todos",
+      "description": "...",
       "version": "1.0.0",
-      "intents": ["create_task", "list_tasks", "complete_task", "delete_task", "task_summary"]
-    },
-    {
-      "name": "gmail",
-      "description": "Email management with multi-account support",
-      "version": "1.0.0",
-      "intents": ["email_check", "email_unread", "email_drafts", "email_digest", "email_status", "email_search", "email_calendar"]
-    },
-    {
-      "name": "github_management",
-      "description": "GitHub repository management with configurable autonomy",
-      "version": "1.0.0",
-      "intents": ["list_issues", "get_issue", "create_issue", "update_issue", "close_issue", "reopen_issue", "add_label", "remove_label", "add_comment", "list_prs", "get_pr", "get_pr_diff", "merge_pr", "list_workflows", "rerun_workflow", "get_repo_info", "set_autonomy", "get_autonomy"]
+      "author": "Zetherion AI",
+      "permissions": ["READ_MEMORIES"],
+      "collections": [],
+      "intents": ["create_task", "list_tasks"]
     }
+  ]
+}
+```
+
+### GET /skills/{name}
+
+Get one skill metadata entry.
+
+**Response 200:** skill metadata object
+
+**Response 404:**
+
+```json
+{
+  "error": "Skill not found"
+}
+```
+
+### GET /intents
+
+List intent-to-skill mappings.
+
+**Response 200:**
+
+```json
+{
+  "intents": {
+    "create_task": "task_manager",
+    "email_route": "email"
+  }
+}
+```
+
+### GET /prompt-fragments?user_id=<id>
+
+Get aggregated skill prompt fragments for one user.
+
+**Response 200:**
+
+```json
+{
+  "fragments": [
+    "[Tasks: 3 open, 1 overdue]"
   ]
 }
 ```
 
 ---
 
-### GET /skills/{name}
-
-Get metadata for a specific skill by name.
-
-**Response 200:**
-
-```json
-{
-  "name": "task_manager",
-  "description": "Track tasks and todos",
-  "version": "1.0.0",
-  "intents": ["create_task", "list_tasks", "complete_task", "delete_task", "task_summary"]
-}
-```
-
-**Response 404:**
-
-```json
-{
-  "error": "Skill not found: unknown_skill"
-}
-```
-
----
-
-## Skill Handling
+## Skill Execution
 
 ### POST /handle
 
-Execute a skill request. This is the primary endpoint used by the bot service to dispatch classified user intents to the appropriate skill.
+Dispatch one request to the mapped skill.
 
 **Request:**
 
 ```json
 {
-  "skill_name": "gmail",
+  "id": "optional-uuid",
   "user_id": "123456789",
-  "params": {
-    "intent": "email_check",
-    "message": "check my email"
+  "intent": "email_route",
+  "message": "route unread email",
+  "context": {
+    "skill_name": "email",
+    "provider": "google",
+    "limit": 20
   }
 }
 ```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `skill_name` | string | Yes | Target skill identifier |
-| `user_id` | string | Yes | Discord user ID of the requester |
-| `params.intent` | string | Yes | Classified intent name |
-| `params.message` | string | Yes | Original user message |
 
 **Response 200:**
 
 ```json
 {
-  "skill_name": "gmail",
-  "status": "success",
-  "result": {
-    "message": "You have 3 new emails since your last check.",
-    "data": {
-      "total_emails": 15,
-      "unread_count": 3
-    }
-  }
+  "request_id": "...",
+  "success": true,
+  "message": "Processed 2 unread email(s) via google.",
+  "data": {},
+  "error": null,
+  "actions": []
 }
 ```
 
-**Response 404 (skill not found):**
+**Response 400:** invalid JSON or request shape
 
-```json
-{
-  "error": "Skill not found: unknown_skill"
-}
-```
-
-**Response 500 (skill error):**
-
-```json
-{
-  "error": "Internal server error",
-  "detail": "Gmail API connection timed out"
-}
-```
-
----
+**Response 500:** unexpected internal failure
 
 ### POST /heartbeat
 
-Trigger heartbeat actions for the specified users. The scheduler calls this endpoint periodically. Each skill's `on_heartbeat()` method is invoked, and resulting actions are aggregated and returned sorted by priority.
+Run heartbeat actions for provided users.
 
 **Request:**
 
@@ -191,10 +178,6 @@ Trigger heartbeat actions for the specified users. The scheduler calls this endp
   "user_ids": ["123456789", "987654321"]
 }
 ```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `user_ids` | list[string] | Yes | Discord user IDs to generate actions for |
 
 **Response 200:**
 
@@ -206,94 +189,56 @@ Trigger heartbeat actions for the specified users. The scheduler calls this endp
       "action_type": "send_message",
       "user_id": "123456789",
       "data": {
-        "type": "email_digest",
-        "summary": "3 unread emails in your primary inbox"
+        "message": "Email digest is ready."
       },
       "priority": 3
-    },
-    {
-      "skill_name": "task_manager",
-      "action_type": "send_message",
-      "user_id": "123456789",
-      "data": {
-        "type": "overdue_reminder",
-        "task_count": 2
-      },
-      "priority": 2
     }
   ]
 }
 ```
 
-Actions are returned sorted by priority (1 = highest). The bot service is responsible for executing the actions (e.g., sending Discord messages) and respecting quiet hours.
+Actions are returned in descending priority order (higher number first).
 
 ---
 
-## Intent and Context
+## OAuth Endpoints
 
-### GET /intents
+### GET /oauth/{provider}/authorize?user_id=<id>
 
-List all registered intents and their skill mappings. Useful for debugging routing and verifying that skills are correctly registered.
+Create an OAuth authorization URL for configured providers.
 
 **Response 200:**
 
 ```json
 {
-  "intents": {
-    "email_check": "gmail",
-    "email_unread": "gmail",
-    "email_drafts": "gmail",
-    "email_digest": "gmail",
-    "email_status": "gmail",
-    "email_search": "gmail",
-    "email_calendar": "gmail",
-    "list_issues": "github_management",
-    "get_issue": "github_management",
-    "create_issue": "github_management",
-    "create_task": "task_manager",
-    "list_tasks": "task_manager",
-    "complete_task": "task_manager",
-    "delete_task": "task_manager",
-    "task_summary": "task_manager",
-    "check_schedule": "calendar",
-    "work_hours": "calendar",
-    "availability": "calendar",
-    "show_profile": "profile",
-    "update_profile": "profile",
-    "delete_profile": "profile",
-    "export_data": "profile"
-  }
+  "ok": true,
+  "provider": "google",
+  "user_id": 123456789,
+  "auth_url": "https://accounts.google.com/...",
+  "state": "..."
 }
 ```
 
----
+### GET /oauth/{provider}/callback
 
-### GET /prompt-fragments
-
-Get system prompt context contributions from all skills for a specific user.
-
-**Query Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `user_id` | string | Yes | The user ID to generate fragments for |
-
-**Example:** `GET /prompt-fragments?user_id=123456789`
+Provider callback endpoint.
 
 **Response 200:**
 
 ```json
 {
-  "fragments": [
-    "[GitHub: 2 action(s) pending confirmation]",
-    "[Tasks: 3 open, 1 overdue]",
-    "[Gmail: 5 unread across 2 accounts]",
-    "[Calendar: Next meeting in 45 minutes]"
-  ]
+  "ok": true,
+  "provider": "google",
+  "user_id": 123456789,
+  "account_email": "user@example.com",
+  "account_id": 42
 }
 ```
 
-Skills that return `None` from `get_system_prompt_fragment()` are excluded from the response.
+### GET /gmail/callback
+
+Backward-compatible alias for the Google provider callback
+(`GET /oauth/{provider}/callback` with `provider=google`).
 
 ---
 
@@ -301,42 +246,11 @@ Skills that return `None` from `get_system_prompt_fragment()` are excluded from 
 
 ### GET /users
 
-List registered users. Supports optional role filtering.
-
-**Query Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `role` | string | No | Filter by role (`admin`, `user`) |
-
-**Example:** `GET /users?role=admin`
-
-**Response 200:**
-
-```json
-{
-  "users": [
-    {
-      "user_id": "123456789",
-      "role": "admin",
-      "added_at": "2026-01-15T10:30:00Z",
-      "added_by": "system"
-    },
-    {
-      "user_id": "987654321",
-      "role": "user",
-      "added_at": "2026-02-01T14:00:00Z",
-      "added_by": "123456789"
-    }
-  ]
-}
-```
-
----
+List users, optional `role` query filter.
 
 ### POST /users
 
-Add a new user to the system.
+Add a user.
 
 **Request:**
 
@@ -348,12 +262,6 @@ Add a new user to the system.
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `user_id` | string | Yes | Discord user ID to add |
-| `role` | string | Yes | Role assignment (`admin` or `user`) |
-| `added_by` | string | Yes | Discord user ID of the admin performing the action |
-
 **Response 201:**
 
 ```json
@@ -362,49 +270,13 @@ Add a new user to the system.
 }
 ```
 
-**Response 409 (user already exists):**
+### DELETE /users/{user_id}?removed_by=<id>
 
-```json
-{
-  "error": "User already exists: 123456789"
-}
-```
-
----
-
-### DELETE /users/{user_id}
-
-Remove a user from the system.
-
-**Query Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `removed_by` | string | Yes | Discord user ID of the admin performing the removal |
-
-**Example:** `DELETE /users/123456789?removed_by=987654321`
-
-**Response 200:**
-
-```json
-{
-  "ok": true
-}
-```
-
-**Response 404:**
-
-```json
-{
-  "error": "User not found: 123456789"
-}
-```
-
----
+Remove a user.
 
 ### PATCH /users/{user_id}/role
 
-Change a user's role.
+Change a user role.
 
 **Request:**
 
@@ -415,233 +287,135 @@ Change a user's role.
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `role` | string | Yes | New role (`admin` or `user`) |
-| `changed_by` | string | Yes | Discord user ID of the admin making the change |
-
 **Response 200:**
 
 ```json
 {
-  "ok": true,
-  "user_id": "123456789",
-  "role": "admin"
+  "ok": true
 }
 ```
 
----
+### GET /users/audit?limit=<n>
 
-### GET /users/audit
-
-Get recent audit log entries for user management actions.
-
-**Query Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `limit` | integer | No | Maximum entries to return (default: 50, max: 500) |
-
-**Example:** `GET /users/audit?limit=50`
-
-**Response 200:**
-
-```json
-{
-  "entries": [
-    {
-      "timestamp": "2026-02-07T14:30:00Z",
-      "action": "role_change",
-      "user_id": "123456789",
-      "performed_by": "987654321",
-      "details": {
-        "old_role": "user",
-        "new_role": "admin"
-      }
-    },
-    {
-      "timestamp": "2026-02-07T10:00:00Z",
-      "action": "user_added",
-      "user_id": "555666777",
-      "performed_by": "987654321",
-      "details": {
-        "role": "user"
-      }
-    }
-  ]
-}
-```
+Retrieve recent RBAC/settings audit entries.
 
 ---
 
-## Settings Management
+## Runtime Settings
 
 ### GET /settings
 
-List all settings. Supports optional namespace filtering.
-
-**Query Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `namespace` | string | No | Filter by settings namespace (e.g., `gmail`, `github`, `cost_tracking`) |
-
-**Example:** `GET /settings?namespace=gmail`
-
-**Response 200:**
-
-```json
-{
-  "settings": [
-    {
-      "namespace": "gmail",
-      "key": "digest_enabled",
-      "value": "true",
-      "data_type": "bool",
-      "updated_at": "2026-02-07T10:00:00Z",
-      "updated_by": "123456789"
-    },
-    {
-      "namespace": "gmail",
-      "key": "digest_hour",
-      "value": "9",
-      "data_type": "int",
-      "updated_at": "2026-02-05T08:00:00Z",
-      "updated_by": "123456789"
-    }
-  ]
-}
-```
-
----
+List runtime settings, optional `namespace` filter.
 
 ### GET /settings/{namespace}/{key}
 
-Get a specific setting value.
-
-**Example:** `GET /settings/gmail/digest_enabled`
+Read one setting.
 
 **Response 200:**
 
 ```json
 {
-  "namespace": "gmail",
-  "key": "digest_enabled",
-  "value": "true",
-  "data_type": "bool",
-  "updated_at": "2026-02-07T10:00:00Z",
-  "updated_by": "123456789"
+  "namespace": "security",
+  "key": "block_threshold",
+  "value": 0.7
 }
 ```
-
-**Response 404:**
-
-```json
-{
-  "error": "Setting not found: gmail/unknown_key"
-}
-```
-
----
 
 ### PUT /settings/{namespace}/{key}
 
-Update a setting value. Creates the setting if it does not exist.
+Create/update one setting.
 
 **Request:**
 
 ```json
 {
-  "value": "true",
+  "value": 0.7,
   "changed_by": "123456789",
-  "data_type": "bool"
+  "data_type": "float"
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `value` | string | Yes | Setting value (stored as string, interpreted by `data_type`) |
-| `changed_by` | string | Yes | Discord user ID making the change |
-| `data_type` | string | Yes | Value type: `str`, `int`, `float`, `bool`, `json` |
+**Response 200:**
+
+```json
+{
+  "ok": true
+}
+```
+
+### DELETE /settings/{namespace}/{key}?deleted_by=<id>
+
+Delete one runtime override.
 
 **Response 200:**
 
 ```json
 {
   "ok": true,
-  "namespace": "gmail",
-  "key": "digest_enabled",
-  "value": "true"
+  "existed": true
 }
 ```
 
 ---
 
-### DELETE /settings/{namespace}/{key}
+## Runtime Secrets
 
-Remove a setting override, reverting to its default value.
+### GET /secrets
 
-**Query Parameters:**
+List secret metadata only (never returns secret values).
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `deleted_by` | string | Yes | Discord user ID performing the deletion |
+### PUT /secrets/{name}
 
-**Example:** `DELETE /settings/gmail/digest_enabled?deleted_by=123456789`
+Set one encrypted secret.
+
+**Request:**
+
+```json
+{
+  "value": "secret-value",
+  "changed_by": "123456789",
+  "description": "Google OAuth client secret"
+}
+```
+
+**Response 200:**
+
+```json
+{
+  "ok": true
+}
+```
+
+### DELETE /secrets/{name}?deleted_by=<id>
+
+Delete one stored secret.
 
 **Response 200:**
 
 ```json
 {
   "ok": true,
-  "reverted_to_default": true
-}
-```
-
-**Response 404:**
-
-```json
-{
-  "error": "Setting not found: gmail/unknown_key"
+  "existed": true
 }
 ```
 
 ---
 
-## Error Responses
+## Error Model
 
-All error responses follow a consistent format:
-
-| Status Code | Meaning | Example |
-|-------------|---------|---------|
-| 401 | Missing or invalid `X-API-Secret` header | `{"error": "Unauthorized"}` |
-| 404 | Requested resource not found | `{"error": "Skill not found: xyz"}` |
-| 409 | Conflict (e.g., duplicate user) | `{"error": "User already exists: 123456789"}` |
-| 422 | Invalid request body | `{"error": "Validation error", "detail": "skill_name is required"}` |
-| 500 | Internal server error | `{"error": "Internal server error", "detail": "Connection refused"}` |
-
-All 4xx and 5xx responses include an `error` field. The `detail` field is included when additional context is available.
-
----
-
-## Rate Limits
-
-The API does not enforce its own rate limits, but the bot service applies rate limiting at the user level before making API calls. Refer to the bot configuration for rate limit settings:
-
-```env
-RATE_LIMIT_MESSAGES=5
-RATE_LIMIT_WINDOW=60
-```
+| Status | Meaning | Typical shape |
+|---|---|---|
+| 400 | Invalid input | `{"error":"..."}` |
+| 401 | Missing/invalid `X-API-Secret` | `{"error":"Unauthorized"}` |
+| 403 | Permission/role failure | `{"ok":false,"error":"..."}` |
+| 404 | Resource not found | `{"error":"..."}` |
+| 500 | Internal server error | `{"error":"Internal server error"}` |
+| 501 | Feature not configured | `{"error":"... not configured"}` |
 
 ---
 
 ## Related Docs
 
-- [skills-framework.md](skills-framework.md) -- Skill architecture, lifecycle, and development guide
-- [architecture.md](architecture.md) -- Overall system architecture and service topology
-- [security.md](security.md) -- Authentication, secrets management, and access control
-
----
-
-**Last Updated:** 2026-02-10
-**Version:** 4.0.0 (Skills REST API)
+- [Public API Reference](public-api-reference.md)
+- [Skills Framework](skills-framework.md)
+- [Architecture](architecture.md)

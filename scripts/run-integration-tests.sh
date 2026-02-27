@@ -1,114 +1,12 @@
-#!/bin/bash
-# Integration test runner for Zetherion AI
-set -e
+#!/usr/bin/env bash
+# Compatibility wrapper: canonical full gate now owns integration execution.
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+set -euo pipefail
 
-echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
-echo -e "${BLUE}  Zetherion AI Integration Tests${NC}"
-echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
-echo ""
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Check if .env exists
-if [ ! -f .env ]; then
-    echo -e "${RED}✗ .env file not found${NC}"
-    echo "Please create a .env file with required configuration"
-    exit 1
-fi
+cd "$REPO_DIR"
 
-# Load environment variables
-set -a
-source .env
-set +a
-
-# Check required environment variables
-REQUIRED_VARS=("GEMINI_API_KEY" "DISCORD_TOKEN")
-MISSING_VARS=()
-
-for var in "${REQUIRED_VARS[@]}"; do
-    if [ -z "${!var}" ]; then
-        MISSING_VARS+=("$var")
-    fi
-done
-
-if [ ${#MISSING_VARS[@]} -gt 0 ]; then
-    echo -e "${RED}✗ Missing required environment variables:${NC}"
-    for var in "${MISSING_VARS[@]}"; do
-        echo "  - $var"
-    done
-    echo ""
-    echo "Please add these to your .env file"
-    exit 1
-fi
-
-echo -e "${GREEN}✓ Environment variables validated${NC}"
-echo ""
-
-# Check if Docker is running
-if ! docker info >/dev/null 2>&1; then
-    echo -e "${RED}✗ Docker is not running${NC}"
-    echo "Please start Docker Desktop and try again"
-    exit 1
-fi
-
-echo -e "${GREEN}✓ Docker is running${NC}"
-echo ""
-
-# Clean up any existing test containers
-echo -e "${BLUE}Cleaning up any existing test containers...${NC}"
-docker compose -p zetherion_ai-test down -v >/dev/null 2>&1 || true
-echo -e "${GREEN}✓ Cleanup complete${NC}"
-echo ""
-
-# Activate virtual environment if it exists
-if [ -d ".venv" ]; then
-    echo -e "${BLUE}Activating virtual environment...${NC}"
-    source .venv/bin/activate
-    echo -e "${GREEN}✓ Virtual environment activated${NC}"
-    echo ""
-elif [ -d "venv" ]; then
-    echo -e "${BLUE}Activating virtual environment...${NC}"
-    source venv/bin/activate
-    echo -e "${GREEN}✓ Virtual environment activated${NC}"
-    echo ""
-fi
-
-# Install test dependencies if needed
-if ! python -c "import pytest" 2>/dev/null || ! python -c "import pytest_cov" 2>/dev/null; then
-    echo -e "${YELLOW}Installing test dependencies...${NC}"
-    pip install -q pytest pytest-asyncio pytest-cov
-    echo -e "${GREEN}✓ Test dependencies installed${NC}"
-    echo ""
-fi
-
-# Run integration tests
-echo -e "${BLUE}Running integration tests...${NC}"
-echo -e "${YELLOW}Note: This will start Docker containers and may take 2-3 minutes${NC}"
-echo ""
-
-# Set Python path
-export PYTHONPATH="${PWD}/src:${PYTHONPATH}"
-
-# Run pytest with integration marker (tests both Gemini and Ollama backends)
-if pytest tests/integration/test_e2e.py -v -s -m integration --tb=short; then
-    echo ""
-    echo -e "${GREEN}═══════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}  All Integration Tests Passed! ✓${NC}"
-    echo -e "${GREEN}═══════════════════════════════════════════════${NC}"
-    exit 0
-else
-    echo ""
-    echo -e "${RED}═══════════════════════════════════════════════${NC}"
-    echo -e "${RED}  Integration Tests Failed ✗${NC}"
-    echo -e "${RED}═══════════════════════════════════════════════${NC}"
-    echo ""
-    echo -e "${YELLOW}Tip: Check Docker logs for more details:${NC}"
-    echo "  docker compose -p zetherion_ai-test logs zetherion_ai"
-    echo "  docker compose -p zetherion_ai-test logs qdrant"
-    exit 1
-fi
+echo "[run-integration-tests] Delegating to canonical full pipeline (includes integration + E2E)."
+exec "$SCRIPT_DIR/test-full.sh" "$@"

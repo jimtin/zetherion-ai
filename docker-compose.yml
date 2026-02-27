@@ -469,6 +469,13 @@ services:
       - UPDATER_STATE_PATH=/app/data/updater-state.json
       - UPDATER_TRAEFIK_DYNAMIC_PATH=/project/config/traefik/dynamic/updater-routes.yml
       - AUTO_UPDATE_PAUSE_ON_FAILURE=${AUTO_UPDATE_PAUSE_ON_FAILURE:-true}
+      - UPDATER_VERIFY_SIGNATURES=${UPDATER_VERIFY_SIGNATURES:-true}
+      - UPDATER_VERIFY_IDENTITY=${UPDATER_VERIFY_IDENTITY:-}
+      - UPDATER_VERIFY_OIDC_ISSUER=${UPDATER_VERIFY_OIDC_ISSUER:-https://token.actions.githubusercontent.com}
+      - UPDATER_VERIFY_REKOR_URL=${UPDATER_VERIFY_REKOR_URL:-https://rekor.sigstore.dev}
+      - UPDATER_RELEASE_MANIFEST_ASSET=${UPDATER_RELEASE_MANIFEST_ASSET:-release-manifest.json}
+      - UPDATER_RELEASE_SIGNATURE_ASSET=${UPDATER_RELEASE_SIGNATURE_ASSET:-release-manifest.sig}
+      - UPDATER_RELEASE_CERTIFICATE_ASSET=${UPDATER_RELEASE_CERTIFICATE_ASSET:-release-manifest.pem}
     volumes:
       # Docker socket — READ/WRITE (required for build + restart)
       - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock
@@ -477,6 +484,52 @@ services:
       # Shared data volume — for auto-generated secret
       - ./data:/app/data
       # Persistent logs
+      - ./logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - zetherion-ai-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 64M
+
+  # Dev Agent Sidecar — monitors Docker projects and runs policy-gated cleanup.
+  zetherion-ai-dev-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev-agent
+    container_name: zetherion-ai-dev-agent
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    environment:
+      - ZETHERION_DEV_AGENT_HOME=/app/data/dev-agent
+      - DEV_AGENT_API_HOST=0.0.0.0
+      - DEV_AGENT_API_PORT=8787
+      - DEV_AGENT_DATABASE_PATH=/app/data/dev-agent/daemon.db
+      - DEV_AGENT_BOOTSTRAP_SECRET=${DEV_AGENT_BOOTSTRAP_SECRET:-}
+      - DEV_AGENT_BOOTSTRAP_REQUIRE_ONCE=true
+      - DEV_AGENT_CONTAINER_MONITOR_ENABLED=true
+      - DEV_AGENT_CLEANUP_ENABLED=true
+      - DEV_AGENT_CLEANUP_HOUR=${DEV_AGENT_CLEANUP_HOUR:-2}
+      - DEV_AGENT_CLEANUP_MINUTE=${DEV_AGENT_CLEANUP_MINUTE:-30}
+      - DEV_AGENT_APPROVAL_REPROMPT_HOURS=${DEV_AGENT_APPROVAL_REPROMPT_HOURS:-24}
+      - DEV_AGENT_WEBHOOK_URL=
+      - DEV_AGENT_NAME=${DEV_AGENT_WEBHOOK_NAME:-zetherion-dev-agent}
+    command: ["zetherion-dev-agent", "daemon"]
+    volumes:
+      - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock
+      - ./data:/app/data
       - ./logs:/app/logs
     logging:
       driver: json-file

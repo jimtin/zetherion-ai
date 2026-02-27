@@ -373,3 +373,128 @@ class PersonalLearning(BaseModel):
             confirmed=row.get("confirmed", False),
             created_at=row.get("created_at", datetime.now()),
         )
+
+
+# ---------------------------------------------------------------------------
+# Aggregated personality profile models
+# ---------------------------------------------------------------------------
+
+MAX_LIST_ITEMS = 20
+
+
+class AggregatedWritingStyle(BaseModel):
+    """Aggregated writing patterns from multiple observations."""
+
+    formality_distribution: dict[str, int] = Field(default_factory=dict)
+    formality_mode: str = Field(default="semi_formal")
+    avg_sentence_length_distribution: dict[str, int] = Field(default_factory=dict)
+    avg_sentence_length_mode: str = Field(default="medium")
+    greeting_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    greeting_styles: list[str] = Field(default_factory=list)
+    signoff_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    signoff_styles: list[str] = Field(default_factory=list)
+    emoji_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    bullet_point_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    vocabulary_level_distribution: dict[str, int] = Field(default_factory=dict)
+    vocabulary_level_mode: str = Field(default="standard")
+
+
+class AggregatedCommunication(BaseModel):
+    """Aggregated communication profile from multiple observations."""
+
+    primary_trait_distribution: dict[str, int] = Field(default_factory=dict)
+    primary_trait_mode: str = Field(default="direct")
+    secondary_trait_distribution: dict[str, int] = Field(default_factory=dict)
+    emotional_tone_distribution: dict[str, int] = Field(default_factory=dict)
+    emotional_tone_mode: str = Field(default="neutral")
+    assertiveness_ema: float = Field(default=0.5, ge=0.0, le=1.0)
+    responsiveness_signals: list[str] = Field(default_factory=list)
+
+
+class AggregatedRelationship(BaseModel):
+    """Aggregated relationship dynamics from multiple observations."""
+
+    familiarity_ema: float = Field(default=0.5, ge=0.0, le=1.0)
+    power_dynamic_distribution: dict[str, int] = Field(default_factory=dict)
+    power_dynamic_mode: str = Field(default="peer")
+    trust_level_ema: float = Field(default=0.5, ge=0.0, le=1.0)
+    rapport_indicators: list[str] = Field(default_factory=list)
+
+
+class PersonalityProfile(BaseModel):
+    """Aggregated per-person personality profile built from N signal observations."""
+
+    id: int | None = Field(default=None, description="DB primary key")
+    user_id: int = Field(description="Owner's user ID")
+    subject_email: str = Field(description="Whose profile this is")
+    subject_role: str = Field(default="contact", description="'owner' or 'contact'")
+    observation_count: int = Field(default=0, ge=0)
+    writing_style: AggregatedWritingStyle = Field(default_factory=AggregatedWritingStyle)
+    communication: AggregatedCommunication = Field(default_factory=AggregatedCommunication)
+    relationship: AggregatedRelationship = Field(default_factory=AggregatedRelationship)
+    commitments: list[str] = Field(default_factory=list)
+    expectations: list[str] = Field(default_factory=list)
+    preferences: list[str] = Field(default_factory=list)
+    schedule_signals: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    first_observed: datetime = Field(default_factory=datetime.now)
+    last_observed: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    def to_db_row(self) -> dict[str, Any]:
+        """Convert to a flat dict suitable for PostgreSQL insertion."""
+        return {
+            "user_id": self.user_id,
+            "subject_email": self.subject_email,
+            "subject_role": self.subject_role,
+            "observation_count": self.observation_count,
+            "writing_style": self.writing_style.model_dump(),
+            "communication": self.communication.model_dump(),
+            "relationship": self.relationship.model_dump(),
+            "commitments": self.commitments,
+            "expectations": self.expectations,
+            "preferences": self.preferences,
+            "schedule_signals": self.schedule_signals,
+            "confidence": self.confidence,
+            "first_observed": self.first_observed,
+            "last_observed": self.last_observed,
+        }
+
+    @classmethod
+    def from_db_row(cls, row: dict[str, Any]) -> PersonalityProfile:
+        """Create from a PostgreSQL row dict."""
+        import json as _json
+
+        def _parse_jsonb(val: Any, fallback: dict[str, Any] | list[Any]) -> Any:
+            if isinstance(val, str):
+                return _json.loads(val)
+            return val if val is not None else fallback
+
+        ws_data = _parse_jsonb(row.get("writing_style"), {})
+        comm_data = _parse_jsonb(row.get("communication"), {})
+        rel_data = _parse_jsonb(row.get("relationship"), {})
+
+        return cls(
+            id=row.get("id"),
+            user_id=row["user_id"],
+            subject_email=row["subject_email"],
+            subject_role=row.get("subject_role", "contact"),
+            observation_count=row.get("observation_count", 0),
+            writing_style=(
+                AggregatedWritingStyle(**ws_data) if ws_data else AggregatedWritingStyle()
+            ),
+            communication=(
+                AggregatedCommunication(**comm_data) if comm_data else AggregatedCommunication()
+            ),
+            relationship=(
+                AggregatedRelationship(**rel_data) if rel_data else AggregatedRelationship()
+            ),
+            commitments=_parse_jsonb(row.get("commitments"), []),
+            expectations=_parse_jsonb(row.get("expectations"), []),
+            preferences=_parse_jsonb(row.get("preferences"), []),
+            schedule_signals=_parse_jsonb(row.get("schedule_signals"), []),
+            confidence=row.get("confidence", 0.0),
+            first_observed=row.get("first_observed", datetime.now()),
+            last_observed=row.get("last_observed", datetime.now()),
+            updated_at=row.get("updated_at", datetime.now()),
+        )

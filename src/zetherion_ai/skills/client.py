@@ -307,6 +307,72 @@ class SkillsClient:
             log.error("skills_prompt_failed", error=str(e))
             raise SkillsClientError(f"Get prompt fragments failed: {e}") from e
 
+    async def put_setting(
+        self,
+        *,
+        namespace: str,
+        key: str,
+        value: Any,
+        changed_by: int,
+        data_type: str = "string",
+    ) -> None:
+        """Create/update a runtime setting via the skills service API."""
+        try:
+            client = await self._get_client()
+            response = await client.put(
+                f"/settings/{namespace}/{key}",
+                json={
+                    "value": value,
+                    "changed_by": changed_by,
+                    "data_type": data_type,
+                },
+            )
+
+            if response.status_code == 401:
+                raise SkillsAuthError("Authentication failed")
+            if response.status_code == 403:
+                raise SkillsAuthError("Authorization failed")
+
+            response.raise_for_status()
+        except httpx.ConnectError as e:
+            log.error("skills_setting_connection_failed", error=str(e))
+            raise SkillsConnectionError(f"Unable to connect to skills service: {e}") from e
+        except httpx.RequestError as e:
+            log.error("skills_setting_failed", error=str(e))
+            raise SkillsClientError(f"Update setting failed: {e}") from e
+
+    async def put_secret(
+        self,
+        *,
+        name: str,
+        value: str,
+        changed_by: int,
+        description: str | None = None,
+    ) -> None:
+        """Create/update an encrypted secret via the skills service API."""
+        try:
+            client = await self._get_client()
+            payload: dict[str, Any] = {
+                "value": value,
+                "changed_by": changed_by,
+            }
+            if description:
+                payload["description"] = description
+            response = await client.put(f"/secrets/{name}", json=payload)
+
+            if response.status_code == 401:
+                raise SkillsAuthError("Authentication failed")
+            if response.status_code == 403:
+                raise SkillsAuthError("Authorization failed")
+
+            response.raise_for_status()
+        except httpx.ConnectError as e:
+            log.error("skills_secret_connection_failed", error=str(e))
+            raise SkillsConnectionError(f"Unable to connect to skills service: {e}") from e
+        except httpx.RequestError as e:
+            log.error("skills_secret_failed", error=str(e))
+            raise SkillsClientError(f"Update secret failed: {e}") from e
+
 
 async def create_skills_client(
     base_url: str | None = None,

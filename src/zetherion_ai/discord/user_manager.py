@@ -289,8 +289,20 @@ class UserManager:
     async def initialize(self) -> None:
         """Create the connection pool, ensure the schema exists, and bootstrap seed users."""
         try:
-            self._pool = await asyncpg.create_pool(dsn=self._dsn)
-            log.info("postgres_pool_created", dsn=self._dsn.split("@")[-1])
+            settings = get_settings()
+            pool_min = max(1, int(settings.postgres_pool_min_size))
+            pool_max = max(pool_min, int(settings.postgres_pool_max_size))
+            self._pool = await asyncpg.create_pool(
+                dsn=self._dsn,
+                min_size=pool_min,
+                max_size=pool_max,
+            )
+            log.info(
+                "postgres_pool_created",
+                dsn=self._dsn.split("@")[-1],
+                min_size=pool_min,
+                max_size=pool_max,
+            )
         except (asyncpg.PostgresError, OSError) as exc:
             log.error("postgres_pool_creation_failed", error=str(exc))
             raise

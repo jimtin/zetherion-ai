@@ -115,7 +115,12 @@ _INJECTION_PATTERNS: list[tuple[re.Pattern[str], float, str]] = [
         "indirect_instruction",
     ),
     (
-        re.compile(r"(?:assistant|model|AI)\s*:\s*(?:Sure|Of course|I'?ll|Yes|OK)", re.IGNORECASE),
+        re.compile(
+            r"(?:assistant|model|AI|Bot(?:\s+response)?)\s*:\s*"
+            r"(?:Sure|Of course|I'?(?:ll|ve|m)|Yes|OK|Here|Let me|Absolutely|"
+            r"I\s+(?:extracted|will|can|have))",
+            re.IGNORECASE,
+        ),
         0.75,
         "completion_attack",
     ),
@@ -123,6 +128,38 @@ _INJECTION_PATTERNS: list[tuple[re.Pattern[str], float, str]] = [
         re.compile(r"```(?:system|instruction|hidden)[\s\S]*?```", re.IGNORECASE),
         0.70,
         "format_injection",
+    ),
+    # HTML comment with suspicious keywords
+    (
+        re.compile(
+            r"<!--[\s\S]*?"
+            r"(?:ADMIN|SYSTEM|OVERRIDE|HIDDEN|INSTRUCTION|IGNORE|BYPASS|UNRESTRICT)"
+            r"[\s\S]*?-->",
+            re.IGNORECASE,
+        ),
+        0.70,
+        "html_comment_injection",
+    ),
+    # Markdown comment with suspicious keywords
+    (
+        re.compile(
+            r"\[//\]:\s*#\s*\(.*?"
+            r"(?:ADMIN|SYSTEM|OVERRIDE|HIDDEN|INSTRUCTION|IGNORE|BYPASS)"
+            r".*?\)",
+            re.IGNORECASE,
+        ),
+        0.70,
+        "markdown_comment_injection",
+    ),
+    # JSON with override/admin keys (conservative score — FLAG only, not BLOCK alone)
+    (
+        re.compile(
+            r'\{[^}]*?(?:"override"\s*:\s*true|"__(?:hidden|admin)__"'
+            r'|"create_task"|"action"\s*:\s*"reply_urgent")[^}]*?\}',
+            re.IGNORECASE,
+        ),
+        0.55,
+        "json_override_injection",
     ),
 ]
 

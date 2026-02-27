@@ -5,8 +5,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from zetherion_ai.agent.providers import Provider
 from zetherion_ai.agent.router import (
     GeminiRouterBackend,
+    GroqRouterBackend,
     MessageIntent,
     MessageRouter,
     RoutingDecision,
@@ -595,3 +597,41 @@ class TestMessageRouter:
 
         mock_backend.health_check.assert_called_once()
         assert is_healthy is True
+
+
+class TestGroqRouterBackend:
+    """Tests for GroqRouterBackend."""
+
+    @pytest.mark.asyncio
+    async def test_classify_uses_inference_broker(self):
+        settings = MagicMock()
+        settings.groq_model = "llama-3.3-70b-versatile"
+        inference = MagicMock()
+        inference_result = MagicMock()
+        inference_result.content = json.dumps(
+            {"intent": "simple_query", "confidence": 0.9, "reasoning": "quick question"}
+        )
+        inference_result.provider.value = "groq"
+        inference_result.model = "llama-3.3-70b-versatile"
+        inference.infer = AsyncMock(return_value=inference_result)
+
+        with patch("zetherion_ai.agent.router.get_settings", return_value=settings):
+            backend = GroqRouterBackend(inference=inference)
+            decision = await backend.classify("what time is it?")
+
+        assert decision.intent == MessageIntent.SIMPLE_QUERY
+        inference.infer.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_health_check_uses_groq_provider(self):
+        settings = MagicMock()
+        settings.groq_model = "llama-3.3-70b-versatile"
+        inference = MagicMock()
+        inference.health_check = AsyncMock(return_value=True)
+
+        with patch("zetherion_ai.agent.router.get_settings", return_value=settings):
+            backend = GroqRouterBackend(inference=inference)
+            healthy = await backend.health_check()
+
+        assert healthy is True
+        inference.health_check.assert_awaited_once_with(Provider.GROQ)

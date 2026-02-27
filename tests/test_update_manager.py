@@ -661,6 +661,40 @@ class TestApplyUpdate:
         headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers", {})
         assert "X-Updater-Secret" not in headers
 
+    async def test_apply_includes_signature_verification_payload(self) -> None:
+        mgr = UpdateManager(
+            github_repo="owner/repo",
+            updater_url="http://test-updater:9090",
+            updater_secret="test-secret",
+            verify_signatures=True,
+            verify_identity="https://github.com/owner/repo/.github/workflows/release.yml@refs/tags/*",
+            verify_oidc_issuer="https://token.actions.githubusercontent.com",
+            verify_rekor_url="https://rekor.sigstore.dev",
+            release_manifest_asset="release-manifest.json",
+            release_signature_asset="release-manifest.sig",
+            release_certificate_asset="release-manifest.pem",
+        )
+        release = _make_release()
+        sidecar_response = {
+            "status": "success",
+            "previous_sha": "abc",
+            "new_sha": "def",
+            "steps_completed": [],
+        }
+        mock_client = self._mock_sidecar_post(200, sidecar_response)
+
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch.object(mgr, "_record_update", new_callable=AsyncMock),
+        ):
+            await mgr.apply_update(release)
+
+        call_kwargs = mock_client.post.call_args
+        payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json", {})
+        assert payload["verify_signatures"] is True
+        assert payload["github_repo"] == "owner/repo"
+        assert payload["verify_oidc_issuer"] == "https://token.actions.githubusercontent.com"
+
     async def test_unauthorized_401_sets_actionable_error(self) -> None:
         mgr = _make_manager()
         release = _make_release()
@@ -702,6 +736,42 @@ class TestApplyUpdate:
 
         assert result.status == UpdateStatus.FAILED
         assert "sidecar_error" in (result.error or "")
+
+    async def test_sidecar_400_sets_sidecar_error(self) -> None:
+        mgr = _make_manager()
+        release = _make_release()
+
+        mock_client = self._mock_sidecar_post(400, {"error": "bad request"})
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch.object(mgr, "_record_update", new_callable=AsyncMock),
+        ):
+            result = await mgr.apply_update(release)
+
+        assert result.status == UpdateStatus.FAILED
+        assert "sidecar_error" in (result.error or "")
+
+    async def test_apply_update_handles_non_json_success_payload(self) -> None:
+        mgr = _make_manager()
+        release = _make_release()
+
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.side_effect = ValueError("invalid json")
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch("httpx.AsyncClient", return_value=mock_client),
+            patch.object(mgr, "_record_update", new_callable=AsyncMock),
+        ):
+            result = await mgr.apply_update(release)
+
+        assert result.status == UpdateStatus.FAILED
+        assert result.error == "unknown error"
 
 
 # ---------------------------------------------------------------------------
@@ -806,6 +876,20 @@ class TestRollback:
             result = await mgr.rollback("abc123")
         assert result is False
 
+    async def test_rollback_conflict_409_returns_false(self) -> None:
+        mgr = _make_manager()
+        mock_client = self._mock_sidecar_post(409, {"error": "busy"})
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await mgr.rollback("abc123")
+        assert result is False
+
+    async def test_rollback_http_error_returns_false(self) -> None:
+        mgr = _make_manager()
+        mock_client = self._mock_sidecar_post(500, {"error": "internal"})
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await mgr.rollback("abc123")
+        assert result is False
+
 
 # ---------------------------------------------------------------------------
 # TestSidecarControl
@@ -841,6 +925,21 @@ class TestSidecarControl:
 
         assert ok is False
 
+    async def test_unpause_rollouts_without_updater_url_returns_false(self) -> None:
+        mgr = UpdateManager(github_repo="owner/repo", updater_url="", updater_secret="")
+        ok = await mgr.unpause_rollouts()
+        assert ok is False
+
+    async def test_unpause_rollouts_network_error_returns_false(self) -> None:
+        mgr = _make_manager()
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(side_effect=httpx.ConnectError("connection refused"))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            ok = await mgr.unpause_rollouts()
+        assert ok is False
+
     async def test_get_sidecar_status(self) -> None:
         mgr = _make_manager()
         payload = {"state": "idle", "paused": False}
@@ -853,6 +952,39 @@ class TestSidecarControl:
             data = await mgr.get_sidecar_status()
 
         assert data == payload
+
+    async def test_get_sidecar_status_no_url_returns_none(self) -> None:
+        mgr = UpdateManager(github_repo="owner/repo", updater_url="", updater_secret="")
+        assert await mgr.get_sidecar_status() is None
+
+    async def test_get_sidecar_status_non_200_returns_none(self) -> None:
+        mgr = _make_manager()
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=_mock_http_response(503, {"error": "unavailable"}))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            assert await mgr.get_sidecar_status() is None
+
+    async def test_get_sidecar_status_non_object_payload_returns_none(self) -> None:
+        mgr = _make_manager()
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=_mock_http_response(200, {"ignored": True}))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            response = mock_client.get.return_value
+            response.json.return_value = ["not", "an", "object"]
+            assert await mgr.get_sidecar_status() is None
+
+    async def test_get_sidecar_status_request_error_returns_none(self) -> None:
+        mgr = _make_manager()
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=httpx.ConnectError("connection refused"))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            assert await mgr.get_sidecar_status() is None
 
 
 # ---------------------------------------------------------------------------
@@ -1074,6 +1206,9 @@ class TestUpdateManagerInit:
         assert mgr._updater_secret == "s3cret"
         assert mgr._health_url == "http://localhost:9090/health"
         assert mgr._github_token == "ghp_token"
+        assert mgr._verify_identity == (
+            "https://github.com/owner/repo/.github/workflows/release.yml@refs/tags/*"
+        )
 
     def test_defaults(self) -> None:
         mgr = UpdateManager(github_repo="owner/repo")
@@ -1083,6 +1218,27 @@ class TestUpdateManagerInit:
         assert mgr._updater_secret == ""
         assert mgr._health_url == "http://localhost:8080/health"
         assert mgr._github_token is None
+        assert mgr._verify_signatures is False
+
+    def test_default_verify_identity_empty_repo(self) -> None:
+        mgr = UpdateManager(github_repo="   ")
+        assert mgr._verify_identity == ""
+
+    def test_current_version_preserves_non_semver(self) -> None:
+        with patch("zetherion_ai.updater.manager.__version__", "dev-build"):
+            mgr = UpdateManager(github_repo="owner/repo")
+            assert mgr.current_version == "dev-build"
+
+
+class TestExtractSidecarError:
+    """Tests for sidecar error payload extraction helper."""
+
+    def test_extract_sidecar_error_uses_response_text_when_json_fails(self) -> None:
+        resp = MagicMock()
+        resp.json.side_effect = ValueError("not json")
+        resp.text = "  plain text error  "
+        detail = UpdateManager._extract_sidecar_error(resp)
+        assert detail == "plain text error"
 
 
 # ---------------------------------------------------------------------------

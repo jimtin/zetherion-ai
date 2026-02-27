@@ -5,16 +5,53 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  schedule:
+    - cron: "30 2 * * *"
   workflow_dispatch:  # Allow manual triggering
   workflow_call:  # Allow reuse by release.yml
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      docs: ${{ steps.filter.outputs.docs }}
+      integration: ${{ steps.filter.outputs.integration }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - name: Filter changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            docs:
+              - 'docs/**'
+              - 'README.md'
+              - 'mkdocs.yml'
+            integration:
+              - 'src/**'
+              - 'updater_sidecar/**'
+              - 'tests/integration/**'
+              - 'docker-compose*.yml'
+              - 'Dockerfile*'
+              - 'requirements*.txt'
+              - 'pyproject.toml'
+
   # ============================================================================
   # Code Quality Jobs
   # ============================================================================
   lint:
     name: Linting & Formatting
     runs-on: ubuntu-latest
+    needs: [detect-changes]
     permissions:
       contents: read
     steps:
@@ -41,6 +78,7 @@ jobs:
   type-check:
     name: Type Checking
     runs-on: ubuntu-latest
+    needs: [detect-changes]
     permissions:
       contents: read
     steps:
@@ -69,6 +107,7 @@ jobs:
   security:
     name: Security Scanning (Bandit)
     runs-on: ubuntu-latest
+    needs: [detect-changes]
     permissions:
       contents: read
     steps:
@@ -92,6 +131,8 @@ jobs:
   semgrep:
     name: SAST (Semgrep)
     runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: read
       security-events: write
@@ -118,6 +159,7 @@ jobs:
   dependency-audit:
     name: Dependency Vulnerability Audit
     runs-on: ubuntu-latest
+    needs: [detect-changes]
     permissions:
       contents: read
     steps:
@@ -139,6 +181,8 @@ jobs:
   license-check:
     name: License Compliance
     runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: read
     steps:
@@ -169,6 +213,8 @@ jobs:
   pre-commit:
     name: Pre-commit Checks
     runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: read
     steps:
@@ -184,18 +230,69 @@ jobs:
       - name: Run pre-commit
         uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd  # v3.0.1
 
+  docs-contract:
+    name: Documentation Contracts
+    runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.docs == 'true' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install docs dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mkdocs-material
+
+      - name: Run docs contract checks
+        run: |
+          scripts/check-docs-nav.py
+          scripts/check-docs-links.py
+          scripts/check-route-doc-parity.py
+          scripts/check-env-doc-parity.py
+
+      - name: Build docs (strict)
+        run: mkdocs build --strict
+
+  pipeline-contract:
+    name: Pipeline Contract
+    runs-on: ubuntu-latest
+    needs: [detect-changes]
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Validate pipeline contract mapping
+        run: python scripts/check_pipeline_contract.py
+
   # ============================================================================
   # Test Jobs
   # ============================================================================
   unit-test:
     name: Unit Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: ${{ !matrix.heavy_only || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.12', '3.13']
+        include:
+          - python-version: '3.12'
+            heavy_only: false
+          - python-version: '3.13'
+            heavy_only: true
 
     steps:
       - name: Checkout code
@@ -245,6 +342,8 @@ jobs:
   integration-test:
     name: Integration (${{ matrix.shard.name }})
     runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.integration == 'true' }}
     permissions:
       contents: read
     strategy:
@@ -269,6 +368,7 @@ jobs:
           - name: feature-http
             files: >-
               tests/integration/test_dev_watcher_e2e.py
+              tests/integration/test_dev_watcher_onboarding_integration.py
               tests/integration/test_milestone_e2e.py
               tests/integration/test_youtube_http.py
     steps:
@@ -307,6 +407,7 @@ jobs:
       contents: read
     needs:
       [
+        detect-changes,
         lint,
         type-check,
         security,
@@ -314,6 +415,8 @@ jobs:
         dependency-audit,
         license-check,
         pre-commit,
+        docs-contract,
+        pipeline-contract,
         unit-test,
         integration-test,
       ]
@@ -321,21 +424,39 @@ jobs:
     steps:
       - name: Check all jobs
         run: |
-          # Allow optional jobs to be skipped
+          # Allow optional jobs to be skipped by policy.
           PRE_COMMIT_RESULT="${{ needs.pre-commit.result }}"
           if [[ "$PRE_COMMIT_RESULT" == "skipped" ]]; then
             PRE_COMMIT_RESULT="success"
+          fi
+          SEMGREP_RESULT="${{ needs.semgrep.result }}"
+          if [[ "$SEMGREP_RESULT" == "skipped" ]]; then
+            SEMGREP_RESULT="success"
+          fi
+          LICENSE_RESULT="${{ needs.license-check.result }}"
+          if [[ "$LICENSE_RESULT" == "skipped" ]]; then
+            LICENSE_RESULT="success"
+          fi
+          DOCS_RESULT="${{ needs.docs-contract.result }}"
+          if [[ "$DOCS_RESULT" == "skipped" ]]; then
+            DOCS_RESULT="success"
+          fi
+          INTEGRATION_RESULT="${{ needs.integration-test.result }}"
+          if [[ "$INTEGRATION_RESULT" == "skipped" ]]; then
+            INTEGRATION_RESULT="success"
           fi
 
           if [[ "${{ needs.lint.result }}" == "success" ]] && \
              [[ "${{ needs.type-check.result }}" == "success" ]] && \
              [[ "${{ needs.security.result }}" == "success" ]] && \
-             [[ "${{ needs.semgrep.result }}" == "success" ]] && \
+             [[ "$SEMGREP_RESULT" == "success" ]] && \
              [[ "${{ needs.dependency-audit.result }}" == "success" ]] && \
-             [[ "${{ needs.license-check.result }}" == "success" ]] && \
+             [[ "$LICENSE_RESULT" == "success" ]] && \
              [[ "$PRE_COMMIT_RESULT" == "success" ]] && \
+             [[ "$DOCS_RESULT" == "success" ]] && \
+             [[ "${{ needs.pipeline-contract.result }}" == "success" ]] && \
              [[ "${{ needs.unit-test.result }}" == "success" ]] && \
-             [[ "${{ needs.integration-test.result }}" == "success" ]]; then
+             [[ "$INTEGRATION_RESULT" == "success" ]]; then
             echo "✅ All CI checks passed!"
             exit 0
           else
@@ -343,12 +464,14 @@ jobs:
             echo "  Lint: ${{ needs.lint.result }}"
             echo "  Type Check: ${{ needs.type-check.result }}"
             echo "  Security (Bandit): ${{ needs.security.result }}"
-            echo "  SAST (Semgrep): ${{ needs.semgrep.result }}"
+            echo "  SAST (Semgrep): ${SEMGREP_RESULT} (raw=${{ needs.semgrep.result }})"
             echo "  Dependency Audit: ${{ needs.dependency-audit.result }}"
-            echo "  License Check: ${{ needs.license-check.result }}"
+            echo "  License Check: ${LICENSE_RESULT} (raw=${{ needs.license-check.result }})"
             echo "  Pre-commit: ${{ needs.pre-commit.result }}"
+            echo "  Docs Contracts: ${DOCS_RESULT} (raw=${{ needs.docs-contract.result }})"
+            echo "  Pipeline Contract: ${{ needs.pipeline-contract.result }}"
             echo "  Unit Tests: ${{ needs.unit-test.result }}"
-            echo "  Integration Tests: ${{ needs.integration-test.result }}"
+            echo "  Integration Tests: ${INTEGRATION_RESULT} (raw=${{ needs.integration-test.result }})"
             exit 1
           fi
 
@@ -366,7 +489,47 @@ jobs:
           echo "| Dependency Audit | ${{ needs.dependency-audit.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| License Check | ${{ needs.license-check.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Pre-commit | ${{ needs.pre-commit.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docs Contracts | ${{ needs.docs-contract.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Pipeline Contract | ${{ needs.pipeline-contract.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Unit Tests | ${{ needs.unit-test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Integration Tests | ${{ needs.integration-test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Security Scanning**: Semgrep (SAST), Bandit (Python), pip-audit (dependencies)" >> $GITHUB_STEP_SUMMARY
+
+  failure-attribution:
+    name: CI Failure Attribution
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    needs:
+      [
+        lint,
+        type-check,
+        security,
+        semgrep,
+        dependency-audit,
+        license-check,
+        pre-commit,
+        docs-contract,
+        pipeline-contract,
+        unit-test,
+        integration-test,
+      ]
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Attribute local-vs-CI failure causes
+        run: |
+          python scripts/ci_failure_attribution.py \
+            --output ci-failure-attribution.json \
+            --job-results "lint=${{ needs.lint.result }},type-check=${{ needs.type-check.result }},security=${{ needs.security.result }},semgrep=${{ needs.semgrep.result }},dependency-audit=${{ needs.dependency-audit.result }},license-check=${{ needs.license-check.result }},pre-commit=${{ needs.pre-commit.result }},docs-contract=${{ needs.docs-contract.result }},pipeline-contract=${{ needs.pipeline-contract.result }},unit-test=${{ needs.unit-test.result }},integration-test=${{ needs.integration-test.result }}"
+
+      - name: Upload attribution artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        if: always()
+        with:
+          name: ci-failure-attribution
+          path: ci-failure-attribution.json
+          retention-days: 30

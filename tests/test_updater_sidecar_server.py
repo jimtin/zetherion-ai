@@ -137,7 +137,7 @@ class TestApplyEndpoint:
 
     async def test_apply_success(self) -> None:
         ex = _make_mock_executor()
-        ex.apply_update = AsyncMock(
+        ex.apply_update_with_verification = AsyncMock(
             return_value=UpdateResult(status="success", previous_sha="abc", new_sha="def")
         )
         client = await _make_client(executor=ex)
@@ -149,13 +149,13 @@ class TestApplyEndpoint:
             assert resp.status == 200
             data = await resp.json()
             assert data["status"] == "success"
-            ex.apply_update.assert_awaited_once_with("v1.0.0", "1.0.0")
+            ex.apply_update_with_verification.assert_awaited_once()
         finally:
             await client.close()
 
     async def test_apply_returns_500_on_failure(self) -> None:
         ex = _make_mock_executor()
-        ex.apply_update = AsyncMock(
+        ex.apply_update_with_verification = AsyncMock(
             return_value=UpdateResult(status="failed", error="git fetch failed")
         )
         client = await _make_client(executor=ex)
@@ -185,7 +185,7 @@ class TestApplyEndpoint:
 
     async def test_apply_with_valid_auth(self) -> None:
         ex = _make_mock_executor()
-        ex.apply_update = AsyncMock(return_value=UpdateResult(status="success"))
+        ex.apply_update_with_verification = AsyncMock(return_value=UpdateResult(status="success"))
         client = await _make_client(executor=ex, secret="my-secret")
         try:
             resp = await client.post(
@@ -278,7 +278,7 @@ class TestApplyEndpoint:
 
     async def test_apply_records_history(self) -> None:
         ex = _make_mock_executor()
-        ex.apply_update = AsyncMock(return_value=UpdateResult(status="success"))
+        ex.apply_update_with_verification = AsyncMock(return_value=UpdateResult(status="success"))
         client = await _make_client(executor=ex)
         try:
             await client.post(
@@ -426,7 +426,7 @@ class TestHistoryEndpoint:
 
     async def test_history_accumulates(self) -> None:
         ex = _make_mock_executor()
-        ex.apply_update = AsyncMock(return_value=UpdateResult(status="success"))
+        ex.apply_update_with_verification = AsyncMock(return_value=UpdateResult(status="success"))
         client = await _make_client(executor=ex)
         try:
             # Apply two updates
