@@ -1,6 +1,7 @@
 """Main entry point for Zetherion AI."""
 
 import asyncio
+from typing import Any
 
 from zetherion_ai.config import get_settings, set_secret_resolver, set_settings_manager
 from zetherion_ai.discord.bot import ZetherionAIBot
@@ -15,6 +16,34 @@ from zetherion_ai.security.keys import KeyManager
 from zetherion_ai.security.secret_resolver import SecretResolver
 from zetherion_ai.security.secrets import SecretsManager
 from zetherion_ai.settings_manager import SettingsManager
+
+
+async def _bootstrap_dynamic_model_settings(
+    settings_mgr: SettingsManager,
+    settings: Any,
+) -> None:
+    """Seed dynamic model settings from env values only when DB keys are absent."""
+    owner_id = getattr(settings, "owner_user_id", None)
+    updated_by = owner_id if isinstance(owner_id, int) else None
+
+    defaults = (
+        ("openai_model", getattr(settings, "openai_model", None)),
+        ("claude_model", getattr(settings, "claude_model", None)),
+        ("groq_model", getattr(settings, "groq_model", None)),
+        ("router_model", getattr(settings, "router_model", None)),
+        ("ollama_generation_model", getattr(settings, "ollama_generation_model", None)),
+    )
+
+    for key, value in defaults:
+        if isinstance(value, str) and value.strip():
+            await settings_mgr.seed_if_missing(
+                "models",
+                key,
+                value.strip(),
+                data_type="string",
+                description="Bootstrapped from environment defaults at startup",
+                updated_by=updated_by,
+            )
 
 
 async def main() -> None:
@@ -50,6 +79,7 @@ async def main() -> None:
     if user_manager._pool:
         await settings_mgr.initialize(user_manager._pool)
         set_settings_manager(settings_mgr)
+        await _bootstrap_dynamic_model_settings(settings_mgr, settings)
         log.info("settings_manager_initialized")
 
     # Initialize encrypted secrets manager (shares DB + encryptor)
