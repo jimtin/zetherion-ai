@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -116,6 +117,7 @@ class DevAutopilotDaemon:
         self._projects = self._monitor.discover_projects()
 
         for project_id, project in sorted(self._projects.items()):
+            await self._emit_project_discovery(project)
             should_prompt = self._store.record_project_discovery(project_id)
             if should_prompt:
                 await self._emit_approval_prompt(project, reason="new_project")
@@ -227,7 +229,9 @@ class DevAutopilotDaemon:
         app = web.Application(middlewares=[self._auth_middleware])
         app["daemon"] = self
         app.router.add_get("/v1/health", self._handle_health)
+        app.router.add_post("/v1/bootstrap", self._handle_bootstrap)
         app.router.add_get("/v1/projects", self._handle_projects)
+        app.router.add_post("/v1/discovery/run", self._handle_discovery_run)
         app.router.add_get("/v1/approvals/pending", self._handle_pending_approvals)
         app.router.add_post("/v1/projects/{project_id}/policy", self._handle_set_policy)
         app.router.add_post("/v1/cleanup/run", self._handle_cleanup_run)
@@ -245,7 +249,7 @@ class DevAutopilotDaemon:
 
     @web.middleware
     async def _auth_middleware(self, request: web.Request, handler: Any) -> web.StreamResponse:
-        if request.path == "/v1/health":
+        if request.path in {"/v1/health", "/v1/bootstrap"}:
             return await handler(request)
 
         expected = self._config.api_token
@@ -261,6 +265,107 @@ class DevAutopilotDaemon:
 
     async def _handle_health(self, _request: web.Request) -> web.Response:
         return _json_response({"status": "ok"})
+
+    async def _handle_bootstrap(self, request: web.Request) -> web.Response:
+        bootstrap_secret = (self._config.bootstrap_secret or "").strip()
+        if not bootstrap_secret:
+            return _json_response({"error": "Bootstrap is not enabled"}, status=403)
+
+        provided = request.headers.get("X-Bootstrap-Secret", "").strip()
+        if provided != bootstrap_secret:
+            return _json_response({"error": "Unauthorized bootstrap secret"}, status=401)
+
+        if self._config.bootstrap_require_once:
+            bootstrapped_at = self._store.get_meta("bootstrap_completed_at")
+            if bootstrapped_at:
+                return _json_response(
+                    {
+                        "error": "Bootstrap already completed",
+                        "already_bootstrapped": True,
+                        "bootstrap_completed_at": bootstrapped_at,
+                        "api_base_url": (
+                            f"http://{self._config.api_host}:{int(self._config.api_port)}/v1"
+                        ),
+                    },
+                    status=409,
+                )
+
+        try:
+            data = await request.json()
+        except Exception:
+            return _json_response({"error": "Invalid JSON body"}, status=400)
+        if not isinstance(data, dict):
+            return _json_response({"error": "JSON body must be an object"}, status=400)
+
+        webhook_url = str(data.get("webhook_url", "")).strip()
+        if webhook_url:
+            self._config.webhook_url = webhook_url
+        agent_name = str(data.get("agent_name", "")).strip()
+        if agent_name:
+            self._config.agent_name = agent_name
+
+        repos = data.get("repos")
+        if isinstance(repos, list):
+            normalized: list[str] = []
+            for item in repos:
+                value = str(item).strip()
+                if value:
+                    normalized.append(value)
+            self._config.repos = normalized
+
+        for key, attr in (
+            ("cleanup_hour", "cleanup_hour"),
+            ("cleanup_minute", "cleanup_minute"),
+            ("approval_reprompt_hours", "approval_reprompt_hours"),
+            ("scan_interval", "scan_interval"),
+        ):
+            raw = data.get(key)
+            if raw is None:
+                continue
+            try:
+                setattr(self._config, attr, int(raw))
+            except (TypeError, ValueError):
+                return _json_response({"error": f"{key} must be an integer"}, status=400)
+
+        for key, attr in (
+            ("container_monitor_enabled", "container_monitor_enabled"),
+            ("cleanup_enabled", "cleanup_enabled"),
+            ("git_enabled", "git_enabled"),
+            ("annotations_enabled", "annotations_enabled"),
+            ("claude_code_enabled", "claude_code_enabled"),
+        ):
+            raw = data.get(key)
+            if raw is None:
+                continue
+            if isinstance(raw, bool):
+                setattr(self._config, attr, raw)
+            else:
+                return _json_response({"error": f"{key} must be a boolean"}, status=400)
+
+        rotate_api_token = bool(data.get("rotate_api_token", False))
+        if rotate_api_token or not self._config.api_token:
+            self._config.api_token = secrets.token_urlsafe(32)
+
+        self._config.save()
+        completed_at = datetime.now(UTC).isoformat()
+        self._store.set_meta("bootstrap_completed_at", completed_at)
+        await self._publish_event(
+            {
+                "type": "bootstrap_completed",
+                "at": completed_at,
+                "agent_name": self._config.agent_name,
+            }
+        )
+        return _json_response(
+            {
+                "ok": True,
+                "api_token": self._config.api_token,
+                "api_base_url": (
+                    f"http://{self._config.api_host}:{int(self._config.api_port)}/v1"
+                ),
+                "bootstrap_completed_at": completed_at,
+            }
+        )
 
     async def _handle_projects(self, _request: web.Request) -> web.Response:
         projects = self._monitor.discover_projects()
@@ -295,6 +400,24 @@ class DevAutopilotDaemon:
                 }
             )
         return _json_response({"projects": payload})
+
+    async def _handle_discovery_run(self, _request: web.Request) -> web.Response:
+        await self.discovery_cycle()
+        pending = self._store.list_pending_approvals()
+        return _json_response(
+            {
+                "ok": True,
+                "projects_discovered": sorted(self._projects),
+                "pending_approvals": [
+                    {
+                        "project_id": item.project_id,
+                        "first_seen_at": item.first_seen_at,
+                        "prompt_count": item.prompt_count,
+                    }
+                    for item in pending
+                ],
+            }
+        )
 
     async def _handle_pending_approvals(self, _request: web.Request) -> web.Response:
         approvals = [
@@ -421,6 +544,35 @@ class DevAutopilotDaemon:
                 "reason": reason,
                 "containers": project.total_containers,
                 "running": project.running_containers,
+                "at": datetime.now(UTC).isoformat(),
+            }
+        )
+
+    async def _emit_project_discovery(self, project: ProjectSnapshot) -> None:
+        """Emit project-discovery events for journal ingestion."""
+        fields = {
+            "project": project.project_id,
+            "total_containers": str(project.total_containers),
+            "running_containers": str(project.running_containers),
+        }
+        message = (
+            f"Container project discovered: {project.project_id} "
+            f"({project.total_containers} container(s), {project.running_containers} running)."
+        )
+        if self._config.webhook_url:
+            await send_event(
+                self._config.webhook_url,
+                self._config.agent_name,
+                "container_project",
+                message,
+                fields,
+            )
+        await self._publish_event(
+            {
+                "type": "project_discovery",
+                "project_id": project.project_id,
+                "total_containers": project.total_containers,
+                "running_containers": project.running_containers,
                 "at": datetime.now(UTC).isoformat(),
             }
         )

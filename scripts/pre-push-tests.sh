@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pre-push hook: runs the full test suite before allowing a push.
+# Full local gate: runs the full test suite before allowing a push.
 # Any failure exits non-zero, blocking the push.
 #
 # Pipeline structure:
@@ -45,9 +45,34 @@ STRICT_REQUIRED_TESTS="${STRICT_REQUIRED_TESTS:-true}"
 RUN_OPTIONAL_E2E="${RUN_OPTIONAL_E2E:-false}"
 SKIP_OLLAMA_PULLS="${SKIP_OLLAMA_PULLS:-false}"
 PRESERVE_TEST_VOLUMES="${PRESERVE_TEST_VOLUMES:-false}"
-RUN_DISCORD_E2E_REQUIRED="${RUN_DISCORD_E2E_REQUIRED:-false}"
+RUN_DISCORD_E2E_REQUIRED="${RUN_DISCORD_E2E_REQUIRED:-true}"
+MYPY_TIMEOUT_SECONDS="${MYPY_TIMEOUT_SECONDS:-600}"
+PIPAUDIT_TIMEOUT_SECONDS="${PIPAUDIT_TIMEOUT_SECONDS:-300}"
 
 ts() { date "+%H:%M:%S"; }
+
+require_env_var() {
+    local var_name="$1"
+    if [ -z "${!var_name:-}" ]; then
+        echo "[$(ts)] ERROR: Required environment variable '$var_name' is not set."
+        return 1
+    fi
+    return 0
+}
+
+can_bind_local_socket() {
+    python - <<'PY' >/dev/null 2>&1
+import socket
+
+sock = socket.socket()
+try:
+    sock.bind(("127.0.0.1", 0))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
+}
 
 compose_down() {
     if [ "$PRESERVE_TEST_VOLUMES" = "true" ]; then
@@ -81,6 +106,35 @@ start_static_check() {
     STATIC_PIDS+=($!)
     STATIC_NAMES+=("$name")
     STATIC_LOGS+=("$log_file")
+}
+
+wait_for_background_task() {
+    local pid="$1"
+    local name="$2"
+    local timeout_seconds="$3"
+    local start_seconds="$SECONDS"
+    local last_heartbeat="$SECONDS"
+
+    while kill -0 "$pid" 2>/dev/null; do
+        local elapsed=$((SECONDS - start_seconds))
+        if [ "$elapsed" -ge "$timeout_seconds" ]; then
+            echo "[$(ts)] ERROR: ${name} timed out after ${timeout_seconds}s."
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            return 124
+        fi
+
+        if [ $((SECONDS - last_heartbeat)) -ge 30 ]; then
+            echo "[$(ts)]   ...waiting for ${name} (${elapsed}s elapsed)"
+            last_heartbeat="$SECONDS"
+        fi
+        sleep 2
+    done
+
+    if wait "$pid"; then
+        return 0
+    fi
+    return $?
 }
 
 cleanup() {
@@ -232,6 +286,26 @@ echo "  Pre-push: Full test suite"
 echo "  Started at $(ts)"
 echo "========================================"
 
+if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
+    if [ -f ".env" ]; then
+        set -a
+        # shellcheck disable=SC1091
+        source .env
+        set +a
+    fi
+    require_env_var "TEST_DISCORD_BOT_TOKEN"
+    require_env_var "TEST_DISCORD_CHANNEL_ID"
+fi
+
+if [ "${SKIP_LOCAL_SOCKET_PREFLIGHT:-false}" != "true" ]; then
+    if ! can_bind_local_socket; then
+        echo "[$(ts)] ERROR: Local TCP socket bind preflight failed."
+        echo "[$(ts)] This environment blocks localhost binds, so aiohttp/HTTP integration tests cannot run."
+        echo "[$(ts)] Re-run outside sandbox restrictions or set SKIP_LOCAL_SOCKET_PREFLIGHT=true if you know what you are doing."
+        exit 1
+    fi
+fi
+
 # ═══════════════════════════════════════════════════════════════════
 # Phase A: Start Docker in background, run fast tests in foreground
 # ═══════════════════════════════════════════════════════════════════
@@ -271,7 +345,7 @@ fi
 if docker image inspect ghcr.io/hadolint/hadolint:latest >/dev/null 2>&1 || docker info >/dev/null 2>&1; then
     start_static_check \
         "hadolint" \
-        "docker run --rm -v \"$(pwd):/work\" -w /work ghcr.io/hadolint/hadolint:latest hadolint --ignore DL3007 --ignore DL3008 --ignore DL3009 Dockerfile Dockerfile.updater"
+        "docker run --rm -v \"$(pwd):/work\" -w /work ghcr.io/hadolint/hadolint:latest hadolint --ignore DL3007 --ignore DL3008 --ignore DL3009 Dockerfile Dockerfile.updater Dockerfile.dev-agent"
 else
     echo "  [skip] hadolint requires Docker (Docker not available yet)"
 fi
@@ -344,7 +418,16 @@ python -m pytest tests/ \
     --tb=short -q
 
 # Wait for mypy
-if ! wait "$MYPY_PID"; then
+mypy_status=0
+wait_for_background_task "$MYPY_PID" "mypy" "$MYPY_TIMEOUT_SECONDS" || mypy_status=$?
+if [ "$mypy_status" -ne 0 ]; then
+    if [ "$mypy_status" -eq 124 ]; then
+        echo ""
+        echo "mypy FAILED due to timeout:"
+        cat "$MYPY_LOG"
+        rm -f "$MYPY_LOG" "$PIPAUDIT_LOG"
+        exit 1
+    fi
     if rg -q "Error reading JSON file; you likely have a bad cache" "$MYPY_LOG"; then
         echo "[$(ts)]   mypy cache is corrupted; clearing .mypy_cache and retrying once..."
         rm -rf .mypy_cache
@@ -367,7 +450,16 @@ echo "[$(ts)]   mypy passed."
 
 # Wait for pip-audit
 if [ -n "$PIPAUDIT_PID" ]; then
-    if ! wait "$PIPAUDIT_PID"; then
+    pipaudit_status=0
+    wait_for_background_task "$PIPAUDIT_PID" "pip-audit" "$PIPAUDIT_TIMEOUT_SECONDS" || pipaudit_status=$?
+    if [ "$pipaudit_status" -ne 0 ]; then
+        if [ "$pipaudit_status" -eq 124 ]; then
+            echo ""
+            echo "pip-audit FAILED due to timeout:"
+            cat "$PIPAUDIT_LOG"
+            rm -f "$MYPY_LOG" "$PIPAUDIT_LOG"
+            exit 1
+        fi
         echo ""
         echo "pip-audit FAILED:"
         cat "$PIPAUDIT_LOG"
@@ -400,6 +492,7 @@ if ! python -m pytest \
     tests/integration/test_telemetry_http.py \
     tests/integration/test_api_http.py \
     tests/integration/test_dev_watcher_e2e.py \
+    tests/integration/test_dev_watcher_onboarding_integration.py \
     tests/integration/test_milestone_e2e.py \
     tests/integration/test_youtube_http.py \
     -m "integration and not optional_e2e" \

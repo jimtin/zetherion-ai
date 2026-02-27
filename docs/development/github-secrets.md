@@ -210,10 +210,10 @@ ANTHROPIC_API_KEY=<your-claude-api-key>
 OPENAI_API_KEY=<your-openai-api-key>
 ```
 
-Run with:
+Run with canonical full gate:
 
 ```bash
-./scripts/run-integration-tests.sh
+./scripts/test-full.sh
 ```
 
 ### For Discord E2E Tests
