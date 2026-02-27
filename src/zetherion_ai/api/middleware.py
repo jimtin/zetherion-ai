@@ -39,9 +39,7 @@ def _requires_session_auth(path: str) -> bool:
         return True
     if path.startswith("/api/v1/analytics/replay/chunks/"):
         return True
-    if path.startswith("/api/v1/analytics/recommendations/") and path.endswith("/feedback"):
-        return True
-    return False
+    return path.startswith("/api/v1/analytics/recommendations/") and path.endswith("/feedback")
 
 
 def create_cors_middleware(allowed_origins: list[str] | None = None) -> Any:

@@ -53,6 +53,4 @@ async def handle_get_interactions(request: web.Request) -> web.Response:
         interaction_type=request.query.get("interaction_type"),
         limit=limit,
     )
-    return web.json_response(
-        {"interactions": [_serialise(r) for r in rows], "count": len(rows)}
-    )
+    return web.json_response({"interactions": [_serialise(r) for r in rows], "count": len(rows)})
