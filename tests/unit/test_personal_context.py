@@ -12,10 +12,14 @@ import pytest
 
 from zetherion_ai.personal.context import DecisionContext, DecisionContextBuilder
 from zetherion_ai.personal.models import (
+    AggregatedCommunication,
+    AggregatedRelationship,
+    AggregatedWritingStyle,
     CommunicationStyle,
     LearningCategory,
     LearningSource,
     PersonalContact,
+    PersonalityProfile,
     PersonalLearning,
     PersonalPolicy,
     PersonalProfile,
@@ -35,6 +39,8 @@ def _make_storage() -> AsyncMock:
     storage.list_contacts = AsyncMock(return_value=[])
     storage.list_policies = AsyncMock(return_value=[])
     storage.list_learnings = AsyncMock(return_value=[])
+    storage.list_personality_profiles = AsyncMock(return_value=[])
+    storage.get_personality_profile = AsyncMock(return_value=None)
     return storage
 
 
@@ -559,3 +565,140 @@ class TestDecisionContextBuilder:
         # Should only fetch first 5
         assert len(ctx.relevant_contacts) == 5
         assert storage.get_contact.await_count == 5
+
+    @pytest.mark.asyncio
+    async def test_build_includes_owner_personality(self) -> None:
+        """build populates owner_personality from personality_profiles table."""
+        storage = _make_storage()
+        owner_profile = PersonalityProfile(
+            user_id=123,
+            subject_email="me@example.com",
+            subject_role="owner",
+            observation_count=5,
+            writing_style=AggregatedWritingStyle(
+                formality_mode="formal",
+                formality_distribution={"formal": 5},
+            ),
+            communication=AggregatedCommunication(
+                primary_trait_mode="direct",
+                assertiveness_ema=0.7,
+            ),
+        )
+        storage.list_personality_profiles.return_value = [owner_profile]
+
+        builder = DecisionContextBuilder(storage)
+        ctx = await builder.build(123)
+
+        assert ctx.owner_personality
+        assert ctx.owner_personality["subject_email"] == "me@example.com"
+        assert ctx.owner_personality["subject_role"] == "owner"
+        storage.list_personality_profiles.assert_awaited_once_with(
+            123,
+            subject_role="owner",
+            limit=1,
+        )
+
+    @pytest.mark.asyncio
+    async def test_build_includes_contact_personalities(self) -> None:
+        """build populates contact_personalities for mentioned emails."""
+        storage = _make_storage()
+        contact_profile = PersonalityProfile(
+            user_id=123,
+            subject_email="bob@example.com",
+            subject_role="contact",
+            observation_count=3,
+            relationship=AggregatedRelationship(
+                familiarity_ema=0.8,
+                power_dynamic_mode="peer",
+            ),
+        )
+        storage.get_personality_profile.return_value = contact_profile
+
+        builder = DecisionContextBuilder(storage)
+        ctx = await builder.build(
+            123,
+            mentioned_emails=["bob@example.com"],
+        )
+
+        assert len(ctx.contact_personalities) == 1
+        assert ctx.contact_personalities[0]["subject_email"] == "bob@example.com"
+        storage.get_personality_profile.assert_awaited_once_with(
+            123,
+            "bob@example.com",
+            "contact",
+        )
+
+    @pytest.mark.asyncio
+    async def test_build_no_personality_profiles_leaves_empty(self) -> None:
+        """build with no personality profiles leaves fields empty."""
+        storage = _make_storage()
+
+        builder = DecisionContextBuilder(storage)
+        ctx = await builder.build(123)
+
+        assert ctx.owner_personality == {}
+        assert ctx.contact_personalities == []
+
+
+class TestDecisionContextPersonality:
+    """Tests for personality fields on DecisionContext."""
+
+    def test_is_empty_false_with_owner_personality(self) -> None:
+        ctx = DecisionContext(owner_personality={"subject_email": "me@example.com"})
+        assert ctx.is_empty is False
+
+    def test_is_empty_false_with_contact_personalities(self) -> None:
+        ctx = DecisionContext(contact_personalities=[{"subject_email": "bob@example.com"}])
+        assert ctx.is_empty is False
+
+    def test_prompt_fragment_renders_owner_personality(self) -> None:
+        ctx = DecisionContext(
+            owner_personality={
+                "writing_style": {"formality_mode": "formal"},
+                "communication": {
+                    "primary_trait_mode": "direct",
+                    "assertiveness_ema": 0.72,
+                },
+            }
+        )
+        fragment = ctx.to_prompt_fragment()
+        assert "Owner style:" in fragment
+        assert "formal formality" in fragment
+        assert "direct communication" in fragment
+        assert "0.72" in fragment
+
+    def test_prompt_fragment_renders_contact_personalities(self) -> None:
+        ctx = DecisionContext(
+            contact_personalities=[
+                {
+                    "subject_email": "bob@example.com",
+                    "relationship": {
+                        "familiarity_ema": 0.85,
+                        "power_dynamic_mode": "peer",
+                    },
+                    "observation_count": 7,
+                },
+            ]
+        )
+        fragment = ctx.to_prompt_fragment()
+        assert "Contact bob@example.com:" in fragment
+        assert "familiarity=0.85" in fragment
+        assert "dynamic=peer" in fragment
+        assert "obs=7" in fragment
+
+    def test_prompt_fragment_limits_contact_personalities_to_3(self) -> None:
+        ctx = DecisionContext(
+            contact_personalities=[
+                {
+                    "subject_email": f"c{i}@example.com",
+                    "relationship": {"familiarity_ema": 0.5, "power_dynamic_mode": "peer"},
+                    "observation_count": i,
+                }
+                for i in range(5)
+            ]
+        )
+        fragment = ctx.to_prompt_fragment()
+        assert "c0@example.com" in fragment
+        assert "c1@example.com" in fragment
+        assert "c2@example.com" in fragment
+        assert "c3@example.com" not in fragment

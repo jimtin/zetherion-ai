@@ -131,6 +131,12 @@ class TestObservationPipelineConstructor:
         pipe = ObservationPipeline(policy_provider=policy)
         assert pipe._dispatcher._policy_provider is policy
 
+    def test_email_router_passed_to_dispatcher(self):
+        """Email router is forwarded to the internal Dispatcher."""
+        email_router = AsyncMock()
+        pipe = ObservationPipeline(email_router=email_router)
+        assert pipe._dispatcher._email_router is email_router
+
 
 # -------------------------------------------------------------------
 # observe() — Tier 1 only (no LLM providers)
@@ -674,6 +680,105 @@ class TestObserveDispatch:
             event = _make_event("TODO: task A by Friday")
             out = await pipe.observe(event)
             assert len(out) == 2
+
+
+# -------------------------------------------------------------------
+# observe() — email router path
+# -------------------------------------------------------------------
+
+
+class TestObserveEmailRouterPath:
+    """Email observations use shared EmailRouter before extractor tiers."""
+
+    @pytest.mark.asyncio
+    async def test_gmail_source_uses_email_router_and_skips_extraction(self):
+        """Gmail events short-circuit to dispatcher email routing."""
+        email_router = AsyncMock()
+        pipe = ObservationPipeline(email_router=email_router)
+        event = ObservationEvent(
+            source="gmail",
+            source_id="g-1",
+            user_id=12345,
+            author="sender@example.com",
+            author_is_owner=False,
+            content="Subject: Test\nPlease follow up",
+            context={
+                "provider": "google",
+                "account_ref": "primary-account",
+                "external_id": "g-1",
+                "subject": "Test",
+                "body_text": "Please follow up",
+            },
+        )
+        expected = [
+            _make_dispatch_result(
+                _make_item(
+                    item_type=ItemType.TASK,
+                    content="router result",
+                    confidence=0.9,
+                )
+            )
+        ]
+
+        with (
+            patch.object(
+                pipe._dispatcher,
+                "dispatch_email_event",
+                new_callable=AsyncMock,
+                return_value=expected,
+            ) as mock_email_dispatch,
+            patch(
+                "zetherion_ai.observation.pipeline.extract_tier1",
+            ) as mock_tier1,
+        ):
+            results = await pipe.observe(event)
+
+        assert results == expected
+        mock_email_dispatch.assert_awaited_once_with(event, user_id=12345)
+        mock_tier1.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_email_source_without_router_falls_back_to_extractors(self):
+        """Email source still uses extractor path when email router is unavailable."""
+        pipe = ObservationPipeline()
+        event = ObservationEvent(
+            source="email",
+            source_id="e-1",
+            user_id=12345,
+            author="sender@example.com",
+            author_is_owner=False,
+            content="Subject: Fallback\nTODO: follow up",
+        )
+        item = _make_item(confidence=0.8)
+
+        with (
+            patch.object(
+                pipe._dispatcher,
+                "dispatch_email_event",
+                new_callable=AsyncMock,
+                return_value=[],
+            ) as mock_email_dispatch,
+            patch(
+                "zetherion_ai.observation.pipeline.extract_tier1",
+                return_value=[item],
+            ) as mock_tier1,
+            patch(
+                "zetherion_ai.observation.pipeline.merge_extractions",
+                return_value=[item],
+            ),
+            patch.object(
+                pipe._dispatcher,
+                "dispatch",
+                new_callable=AsyncMock,
+                return_value=[_make_dispatch_result(item)],
+            ) as mock_dispatch,
+        ):
+            results = await pipe.observe(event)
+
+        assert len(results) == 1
+        mock_email_dispatch.assert_awaited_once_with(event, user_id=12345)
+        mock_tier1.assert_called_once_with(event)
+        mock_dispatch.assert_awaited_once_with([item], user_id=12345)
 
 
 # -------------------------------------------------------------------

@@ -150,7 +150,7 @@ tests/
 
 ```bash
 # Full production-style validation (recommended before merge)
-bash scripts/pre-push-tests.sh
+bash scripts/test-full.sh
 
 # All unit tests (fast, ~60s) -- excludes integration and Discord E2E
 pytest tests/ -m "not integration and not discord_e2e"
@@ -179,7 +179,7 @@ pytest tests/ -m "not discord_e2e" -v
 
 ### Production-Parity Test Run
 
-`scripts/pre-push-tests.sh` is the canonical full validation path. It:
+`scripts/test-full.sh` is the canonical full validation path. It:
 
 1. Runs static gates (ruff, bandit, gitleaks, hadolint, licenses, syntax checks)
 2. Runs unit tests with coverage gate (`>=90%`) plus `mypy` and `pip-audit`

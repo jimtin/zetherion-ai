@@ -20,8 +20,9 @@ log = get_logger("zetherion_ai.api.middleware")
 # Paths that don't require any authentication
 PUBLIC_PATHS = frozenset({"/api/v1/health"})
 
-# Paths that require session token (Bearer) auth instead of API key
-SESSION_AUTH_PATHS = frozenset({"/api/v1/chat", "/api/v1/chat/stream", "/api/v1/chat/history"})
+# Path prefixes that require session token (Bearer) auth instead of API key.
+# Includes dynamic routes such as recommendations/{id}/feedback.
+SESSION_AUTH_PATH_PREFIXES = ("/api/v1/chat", "/api/v1/analytics")
 
 
 def create_cors_middleware(allowed_origins: list[str] | None = None) -> Any:
@@ -80,8 +81,8 @@ def create_auth_middleware(jwt_secret: str) -> Any:
         if tenant_manager is None:
             return web.json_response({"error": "Service unavailable"}, status=503)
 
-        # Session token auth (for chat endpoints)
-        if path in SESSION_AUTH_PATHS:
+        # Session token auth (for chat + analytics endpoints)
+        if path.startswith(SESSION_AUTH_PATH_PREFIXES):
             auth_header = request.headers.get("Authorization", "")
             if not auth_header.startswith("Bearer "):
                 return web.json_response(

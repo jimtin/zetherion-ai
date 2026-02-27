@@ -1,7 +1,6 @@
-"""Embeddings client supporting both Ollama (local) and Gemini (cloud).
+"""Embeddings client supporting OpenAI, Gemini, and Ollama backends.
 
-Default is Ollama for local-first, privacy-preserving operation.
-Falls back to Gemini if Ollama is unavailable.
+Default is OpenAI for highest-quality cloud embeddings.
 """
 
 import asyncio
@@ -172,9 +171,15 @@ class OpenAIEmbeddings(EmbeddingsClient):
 def get_embeddings_client() -> EmbeddingsClient:
     """Factory function to get the configured embeddings client.
 
-    Returns Ollama by default (local-first), falls back to Gemini if configured.
+    Returns configured backend. Default path prefers OpenAI, then Gemini, then Ollama.
     """
     settings = get_settings()
+
+    if settings.embeddings_backend == "openai":
+        return OpenAIEmbeddings()
+
+    if settings.embeddings_backend == "gemini":
+        return GeminiEmbeddings()
 
     if settings.embeddings_backend == "ollama":
         try:
@@ -183,26 +188,17 @@ def get_embeddings_client() -> EmbeddingsClient:
             log.warning(
                 "ollama_embeddings_failed",
                 error=str(e),
-                fallback="gemini",
+                fallback="openai",
             )
+            if settings.openai_api_key:
+                return OpenAIEmbeddings()
             if settings.gemini_api_key:
                 return GeminiEmbeddings()
             raise
 
-    elif settings.embeddings_backend == "gemini":
-        return GeminiEmbeddings()
-
-    elif settings.embeddings_backend == "openai":
+    # Defensive fallback for unknown/legacy values.
+    if settings.openai_api_key:
         return OpenAIEmbeddings()
-
-    else:
-        # Default: try Ollama first, fall back to Gemini
-        try:
-            return OllamaEmbeddings()
-        except Exception as e:
-            log.warning(
-                "ollama_embeddings_unavailable",
-                error=str(e),
-                fallback="gemini",
-            )
-            return GeminiEmbeddings()
+    if settings.gemini_api_key:
+        return GeminiEmbeddings()
+    return OllamaEmbeddings()

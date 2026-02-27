@@ -29,7 +29,7 @@ The GitHub Actions CI/CD pipeline runs the following jobs without any secrets:
 - Type checking (Mypy strict mode)
 - Security scanning (Bandit)
 - Unit tests (Python 3.12 and 3.13) -- 3,000+ tests, coverage gate >=90%
-- Docker build verification (all 6 services)
+- Docker build verification (current compose topology services)
 
 These will pass out of the box on any fork or clone.
 
@@ -210,10 +210,10 @@ ANTHROPIC_API_KEY=<your-claude-api-key>
 OPENAI_API_KEY=<your-openai-api-key>
 ```
 
-Run with:
+Run with canonical full gate:
 
 ```bash
-./scripts/run-integration-tests.sh
+./scripts/test-full.sh
 ```
 
 ### For Discord E2E Tests

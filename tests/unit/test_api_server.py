@@ -63,6 +63,22 @@ class TestPublicAPIServerCreateApp:
         assert app["youtube_storage"] is storage
         assert app["youtube_intelligence"] is skill
 
+    def test_create_app_registers_analytics_and_release_routes(self) -> None:
+        server = PublicAPIServer(
+            tenant_manager=MagicMock(),
+            jwt_secret="test-secret",
+        )
+        app = server.create_app()
+
+        paths = {route.resource.canonical for route in app.router.routes()}
+        assert "/api/v1/analytics/events" in paths
+        assert "/api/v1/analytics/replay/chunks" in paths
+        assert "/api/v1/analytics/replay/chunks/{web_session_id}/{sequence_no}" in paths
+        assert "/api/v1/analytics/sessions/end" in paths
+        assert "/api/v1/analytics/recommendations" in paths
+        assert "/api/v1/analytics/recommendations/{recommendation_id}/feedback" in paths
+        assert "/api/v1/releases/markers" in paths
+
 
 class TestPublicAPIServerLifecycle:
     """Tests for start/stop lifecycle methods."""

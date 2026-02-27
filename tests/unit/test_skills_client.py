@@ -376,6 +376,65 @@ class TestSkillsClient:
                 params={"user_id": "user123"},
             )
 
+    @pytest.mark.asyncio
+    async def test_put_setting_success(self) -> None:
+        """put_setting() should call the settings endpoint with typed payload."""
+        client = SkillsClient()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.put = AsyncMock(return_value=mock_response)
+            mock_get.return_value = mock_http_client
+
+            await client.put_setting(
+                namespace="dev_agent",
+                key="enabled",
+                value=True,
+                changed_by=123,
+                data_type="bool",
+            )
+
+            mock_http_client.put.assert_called_once_with(
+                "/settings/dev_agent/enabled",
+                json={
+                    "value": True,
+                    "changed_by": 123,
+                    "data_type": "bool",
+                },
+            )
+
+    @pytest.mark.asyncio
+    async def test_put_secret_success(self) -> None:
+        """put_secret() should call the encrypted secret endpoint."""
+        client = SkillsClient()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.put = AsyncMock(return_value=mock_response)
+            mock_get.return_value = mock_http_client
+
+            await client.put_secret(
+                name="dev_agent_api_token",
+                value="token-123",
+                changed_by=123,
+                description="test token",
+            )
+
+            mock_http_client.put.assert_called_once_with(
+                "/secrets/dev_agent_api_token",
+                json={
+                    "value": "token-123",
+                    "changed_by": 123,
+                    "description": "test token",
+                },
+            )
+
 
 class TestCreateSkillsClient:
     """Tests for create_skills_client factory function."""
@@ -523,6 +582,46 @@ class TestSkillsClientAuthErrors:
 
             with pytest.raises(SkillsAuthError, match="Authentication failed"):
                 await client.get_prompt_fragments("user1")
+
+    @pytest.mark.asyncio
+    async def test_put_setting_auth_error(self) -> None:
+        """put_setting() should raise SkillsAuthError on 401."""
+        client = SkillsClient()
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.put = AsyncMock(return_value=mock_response)
+            mock_get.return_value = mock_http_client
+
+            with pytest.raises(SkillsAuthError, match="Authentication failed"):
+                await client.put_setting(
+                    namespace="dev_agent",
+                    key="enabled",
+                    value=True,
+                    changed_by=1,
+                    data_type="bool",
+                )
+
+    @pytest.mark.asyncio
+    async def test_put_secret_auth_error(self) -> None:
+        """put_secret() should raise SkillsAuthError on 401."""
+        client = SkillsClient()
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.put = AsyncMock(return_value=mock_response)
+            mock_get.return_value = mock_http_client
+
+            with pytest.raises(SkillsAuthError, match="Authentication failed"):
+                await client.put_secret(
+                    name="dev_agent_api_token",
+                    value="token",
+                    changed_by=1,
+                )
 
 
 class TestSkillsClientConnectionErrors:

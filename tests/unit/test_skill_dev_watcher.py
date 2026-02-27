@@ -118,6 +118,48 @@ def _make_tag_request(
     )
 
 
+def _make_deploy_request(
+    user_id: str = "user123",
+    project: str = "zetherion-ai",
+    commit_sha: str = "abc1234def5678",
+) -> SkillRequest:
+    return _make_request(
+        intent="dev_ingest_deploy",
+        message=f"Deploy candidate: {commit_sha[:7]} on main",
+        user_id=user_id,
+        context={
+            "project": project,
+            "environment": "production",
+            "source": "heuristic_commit",
+            "commit_sha": commit_sha,
+            "branch": "main",
+            "status": "candidate",
+            "title": "Deploy candidate (main)",
+        },
+    )
+
+
+def _make_ci_request(
+    user_id: str = "user123",
+    project: str = "zetherion-ai",
+    pipeline: str = "build-and-test",
+    status: str = "failed",
+) -> SkillRequest:
+    return _make_request(
+        intent="dev_ingest_ci_result",
+        message=f"{pipeline}: {status}",
+        user_id=user_id,
+        context={
+            "project": project,
+            "pipeline": pipeline,
+            "status": status,
+            "url": "https://ci.example/build/123",
+            "sha": "abc1234def5678",
+            "title": "CI result",
+        },
+    )
+
+
 async def _seed_skill(skill: DevWatcherSkill, user_id: str = "user123") -> None:
     """Seed the skill with a variety of entries for query tests."""
     await skill.handle(_make_commit_request(user_id=user_id))
@@ -139,6 +181,8 @@ async def _seed_skill(skill: DevWatcherSkill, user_id: str = "user123") -> None:
     )
     await skill.handle(_make_session_request(user_id=user_id))
     await skill.handle(_make_tag_request(user_id=user_id))
+    await skill.handle(_make_deploy_request(user_id=user_id))
+    await skill.handle(_make_ci_request(user_id=user_id))
 
 
 # ===================================================================
@@ -295,11 +339,17 @@ class TestDevWatcherMetadata:
             "dev_ingest_annotation",
             "dev_ingest_session",
             "dev_ingest_tag",
+            "dev_ingest_deploy",
+            "dev_ingest_ci_result",
+            "dev_ingest_container_project",
+            "dev_ingest_cleanup_approval",
+            "dev_ingest_cleanup_report",
             "dev_status",
             "dev_next",
             "dev_ideas",
             "dev_journal",
             "dev_summary",
+            "dev_release_summary",
         ]
         assert skill.metadata.intents == expected
 
@@ -602,7 +652,160 @@ class TestDevWatcherIngestTag:
 
 
 # ===================================================================
-# 9. TestDevWatcherQueryStatus
+# 9. TestDevWatcherDeployAndCI
+# ===================================================================
+
+
+class TestDevWatcherDeployAndCI:
+    """Tests for deploy/CI ingest intents and release summary."""
+
+    @pytest.mark.asyncio
+    async def test_ingest_deploy_marker(self) -> None:
+        skill = DevWatcherSkill()
+        await skill.safe_initialize()
+        resp = await skill.handle(_make_deploy_request())
+        assert resp.success is True
+        assert "deploy marker" in resp.message.lower()
+        entry = next(iter(skill._entries_cache["user123"].values()))
+        assert entry.entry_type == "deploy"
+        assert entry.metadata["environment"] == "production"
+        assert entry.metadata["branch"] == "main"
+
+    @pytest.mark.asyncio
+    async def test_ingest_ci_result(self) -> None:
+        skill = DevWatcherSkill()
+        await skill.safe_initialize()
+        resp = await skill.handle(_make_ci_request(status="passed"))
+        assert resp.success is True
+        assert "CI result" in resp.message
+        entry = next(iter(skill._entries_cache["user123"].values()))
+        assert entry.entry_type == "ci_result"
+        assert entry.metadata["pipeline"] == "build-and-test"
+        assert entry.metadata["status"] == "passed"
+
+    @pytest.mark.asyncio
+    async def test_release_summary_reports_ci_status_counts(self) -> None:
+        skill = DevWatcherSkill()
+        await skill.safe_initialize()
+        await skill.handle(_make_deploy_request(commit_sha="aaa1111"))
+        await skill.handle(_make_ci_request(pipeline="pipeline-a", status="passed"))
+        await skill.handle(_make_ci_request(pipeline="pipeline-b", status="failed"))
+
+        resp = await skill.handle(_make_request(intent="dev_release_summary"))
+        assert resp.success is True
+        assert "Release Summary" in resp.message
+        assert resp.data["ci_status"]["passed"] == 1
+        assert resp.data["ci_status"]["failed"] == 1
+
+
+# ===================================================================
+# 10. TestDevWatcherCleanupSignals
+# ===================================================================
+
+
+class TestDevWatcherCleanupSignals:
+    """Tests for local cleanup-related ingest intents."""
+
+    @pytest.mark.asyncio
+    async def test_ingest_container_project(self) -> None:
+        skill = DevWatcherSkill()
+        await skill.safe_initialize()
+        resp = await skill.handle(
+            _make_request(
+                intent="dev_ingest_container_project",
+                message="Discovered container project",
+                context={
+                    "project": "proj-a",
+                    "containers": "3",
+                    "running": "1",
+                    "reason": "new_project",
+                },
+            )
+        )
+        assert resp.success is True
+        entry = next(iter(skill._entries_cache["user123"].values()))
+        assert entry.entry_type == "container_project"
+        assert entry.project == "proj-a"
+        assert entry.metadata["total_containers"] == "3"
+
+    @pytest.mark.asyncio
+    async def test_ingest_cleanup_approval_signal(self) -> None:
+        skill = DevWatcherSkill()
+        await skill.safe_initialize()
+        resp = await skill.handle(
+            _make_request(
+                intent="dev_ingest_cleanup_approval",
+                message="Approve cleanup?",
+                context={"project": "proj-a", "reason": "reminder"},
+            )
+        )
+        assert resp.success is True
+        entry = next(iter(skill._entries_cache["user123"].values()))
+        assert entry.entry_type == "cleanup_approval"
+        assert entry.metadata["reason"] == "reminder"
+
+    @pytest.mark.asyncio
+    async def test_ingest_cleanup_report_signal(self) -> None:
+        skill = DevWatcherSkill()
+        await skill.safe_initialize()
+        resp = await skill.handle(
+            _make_request(
+                intent="dev_ingest_cleanup_report",
+                message="Cleanup report",
+                context={
+                    "project": "proj-a",
+                    "dry_run": "false",
+                    "actions": "2",
+                    "successful_actions": "2",
+                    "status": "success",
+                },
+            )
+        )
+        assert resp.success is True
+        entry = next(iter(skill._entries_cache["user123"].values()))
+        assert entry.entry_type == "cleanup_report"
+        assert entry.metadata["actions"] == "2"
+        assert entry.metadata["status"] == "success"
+
+
+# ===================================================================
+# 11. TestDevWatcherIdempotency
+# ===================================================================
+
+
+class TestDevWatcherIdempotency:
+    """Tests duplicate suppression via entry fingerprints."""
+
+    @pytest.mark.asyncio
+    async def test_duplicate_commit_is_ignored(self) -> None:
+        skill = DevWatcherSkill()
+        await skill.safe_initialize()
+        req = _make_commit_request()
+
+        first = await skill.handle(req)
+        second = await skill.handle(req)
+
+        assert first.success is True
+        assert second.success is True
+        assert "Duplicate commit ignored." in second.message
+        assert len(skill._entries_cache["user123"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_duplicate_annotation_is_ignored(self) -> None:
+        skill = DevWatcherSkill()
+        await skill.safe_initialize()
+        req = _make_annotation_request(message="Fix auth edge case")
+
+        await skill.handle(req)
+        second = await skill.handle(req)
+
+        assert second.success is True
+        assert "Duplicate annotation ignored." in second.message
+        assert len(skill._entries_cache["user123"]) == 1
+
+
+# ===================================================================
+# 11. TestDevWatcherQueryStatus
 # ===================================================================
 
 
@@ -1361,6 +1564,12 @@ class TestHelperFunctions:
 
     def test_entry_type_icon_idea(self) -> None:
         assert _entry_type_icon("idea") == "[idea]"
+
+    def test_entry_type_icon_deploy(self) -> None:
+        assert _entry_type_icon("deploy") == "[deploy]"
+
+    def test_entry_type_icon_ci_result(self) -> None:
+        assert _entry_type_icon("ci_result") == "[ci]"
 
     def test_entry_type_icon_unknown(self) -> None:
         assert _entry_type_icon("something_else") == "[?]"

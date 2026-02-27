@@ -14,7 +14,7 @@ Before connecting Gmail to Zetherion AI, you need:
 
 - A Gmail account with API access enabled
 - OAuth 2.0 credentials configured for the Zetherion AI application (see the deployment guide for setup instructions)
-- The Zetherion AI bot running with all 6 Docker services operational
+- The Zetherion AI stack running in the current compose topology (check with `docker compose ps`)
 
 ### Connecting Your Account
 
@@ -194,7 +194,7 @@ Automatic digests are configured through the bot's scheduling system. Common con
 - **Evening digest** -- Sent at end of day with a summary of the day's email activity.
 - **Weekly digest** -- Sent once per week (e.g., Monday morning) with a high-level summary of the past week.
 
-Digest times and frequency are configurable in the bot's environment settings. The heartbeat scheduler runs as part of the 6 Docker services that make up the Zetherion AI deployment.
+Digest times and frequency are configurable in the bot's environment settings. The heartbeat scheduler runs as part of the current compose topology used by Zetherion AI.
 
 ---
 
