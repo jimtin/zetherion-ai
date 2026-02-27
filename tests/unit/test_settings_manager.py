@@ -360,6 +360,63 @@ class TestSettingsManagerDelete:
 
 
 # ------------------------------------------------------------------
+# TestSettingsManagerSeedIfMissing
+# ------------------------------------------------------------------
+
+
+class TestSettingsManagerSeedIfMissing:
+    """Tests for SettingsManager.seed_if_missing."""
+
+    @pytest.mark.asyncio
+    async def test_seed_if_missing_inserts_once_and_updates_cache(self):
+        """seed_if_missing() inserts a default row when missing."""
+        pool, conn = _make_mock_pool()
+        conn.execute.return_value = "INSERT 1"
+        mgr = SettingsManager()
+        mgr._pool = pool
+
+        inserted = await mgr.seed_if_missing(
+            "models",
+            "openai_model",
+            "gpt-5.2",
+            data_type="string",
+            updated_by=7,
+        )
+
+        assert inserted is True
+        assert mgr._cache[("models", "openai_model")] == "gpt-5.2"
+        call = conn.execute.call_args
+        assert call.args[1] == "models"
+        assert call.args[2] == "openai_model"
+        assert call.args[6] == 7
+
+    @pytest.mark.asyncio
+    async def test_seed_if_missing_returns_false_when_existing(self):
+        """seed_if_missing() is a no-op when row already exists."""
+        pool, conn = _make_mock_pool()
+        conn.execute.return_value = "INSERT 0"
+        mgr = SettingsManager()
+        mgr._pool = pool
+
+        inserted = await mgr.seed_if_missing("models", "openai_model", "gpt-5.2")
+
+        assert inserted is False
+
+    @pytest.mark.asyncio
+    async def test_seed_if_missing_short_circuits_when_cached(self):
+        """seed_if_missing() should not hit DB when key already in cache."""
+        pool, conn = _make_mock_pool()
+        mgr = SettingsManager()
+        mgr._pool = pool
+        mgr._cache[("models", "openai_model")] = "gpt-5.2"
+
+        inserted = await mgr.seed_if_missing("models", "openai_model", "gpt-5.2")
+
+        assert inserted is False
+        conn.execute.assert_not_called()
+
+
+# ------------------------------------------------------------------
 # TestCoerceValue
 # ------------------------------------------------------------------
 

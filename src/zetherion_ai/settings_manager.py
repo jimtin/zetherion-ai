@@ -315,6 +315,75 @@ class SettingsManager:
             raise
 
     # ------------------------------------------------------------------
+    # Bootstrap helpers
+    # ------------------------------------------------------------------
+
+    async def seed_if_missing(
+        self,
+        namespace: str,
+        key: str,
+        value: Any,
+        *,
+        data_type: str = "string",
+        description: str | None = None,
+        updated_by: int | None = None,
+    ) -> bool:
+        """Insert a default setting only when it does not already exist.
+
+        This is intended for startup bootstrap where environment values should
+        initialize dynamic settings exactly once, while preserving operator
+        overrides stored in PostgreSQL.
+
+        Returns:
+            True when a new row was inserted, False when the setting already existed.
+        """
+        if namespace not in VALID_NAMESPACES:
+            raise ValueError(
+                f"Invalid namespace {namespace!r}. Must be one of {sorted(VALID_NAMESPACES)}"
+            )
+
+        if (namespace, key) in self._cache:
+            return False
+
+        str_value = json.dumps(value) if data_type == "json" else str(value)
+
+        try:
+            async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+                result = await conn.execute(
+                    """
+                        INSERT INTO settings (
+                            namespace,
+                            key,
+                            value,
+                            data_type,
+                            description,
+                            updated_by
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6)
+                        ON CONFLICT (namespace, key) DO NOTHING
+                        """,
+                    namespace,
+                    key,
+                    str_value,
+                    data_type,
+                    description,
+                    updated_by,
+                )
+
+            inserted = result == "INSERT 1"
+            if inserted:
+                self._cache[(namespace, key)] = self._coerce_value(str_value, data_type)
+                log.info("settings_manager.seeded_default", namespace=namespace, key=key)
+            return inserted
+        except Exception:
+            log.exception(
+                "settings_manager.seed_if_missing_failed",
+                namespace=namespace,
+                key=key,
+            )
+            raise
+
+    # ------------------------------------------------------------------
     # Type coercion
     # ------------------------------------------------------------------
 
