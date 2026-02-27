@@ -47,6 +47,8 @@ class EmailMessage:
     labels: list[str] = field(default_factory=list)
     is_read: bool = False
     snippet: str = ""
+    has_attachments: bool = False
+    attachment_filenames: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -62,6 +64,8 @@ class EmailMessage:
             "labels": self.labels,
             "is_read": self.is_read,
             "snippet": self.snippet,
+            "has_attachments": self.has_attachments,
+            "attachment_filenames": self.attachment_filenames,
         }
 
 
@@ -317,6 +321,7 @@ class GmailClient:
 
         # Parse body
         body_text, body_html = self._extract_body(payload)
+        has_attachments, attachment_filenames = self._extract_attachments(payload)
 
         # Parse date
         received_at = None
@@ -341,6 +346,8 @@ class GmailClient:
             labels=label_ids,
             is_read=is_read,
             snippet=data.get("snippet", ""),
+            has_attachments=has_attachments,
+            attachment_filenames=attachment_filenames,
         )
 
     def _extract_body(self, payload: dict[str, Any]) -> tuple[str, str]:
@@ -370,6 +377,31 @@ class GmailClient:
                         html_body = inner_html
 
         return text_body, html_body
+
+    def _extract_attachments(self, payload: dict[str, Any]) -> tuple[bool, list[str]]:
+        """Detect message attachments and collect non-empty filenames."""
+        filenames: list[str] = []
+        has_attachments = False
+
+        def _walk(part: dict[str, Any]) -> None:
+            nonlocal has_attachments
+            body = part.get("body", {})
+            attachment_id = body.get("attachmentId")
+            filename = str(part.get("filename", "")).strip()
+            if attachment_id:
+                has_attachments = True
+                if filename:
+                    filenames.append(filename)
+
+            for child in part.get("parts", []) or []:
+                if isinstance(child, dict):
+                    _walk(child)
+
+        _walk(payload)
+
+        # Preserve order while removing duplicates.
+        deduped = list(dict.fromkeys(filenames))
+        return has_attachments, deduped
 
     def _decode_body_data(self, body: dict[str, Any]) -> str:
         """Decode base64url-encoded body data."""

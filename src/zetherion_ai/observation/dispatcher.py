@@ -7,11 +7,17 @@ system based on item type and the user's action policies.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, Protocol
 
 from zetherion_ai.logging import get_logger
 from zetherion_ai.observation.models import ExtractedItem, ItemType
+from zetherion_ai.routing.models import (
+    NormalizedEmail,
+    RouteDecision,
+    RouteTag,
+)
 
 log = get_logger("zetherion_ai.observation.dispatcher")
 
@@ -137,9 +143,13 @@ class Dispatcher:
         *,
         handlers: dict[ActionTarget, ActionHandler] | None = None,
         policy_provider: PolicyProvider | None = None,
+        email_router: Any | None = None,
+        email_provider_default: str = "google",
     ) -> None:
         self._handlers = handlers or {}
         self._policy_provider = policy_provider
+        self._email_router = email_router
+        self._email_provider_default = email_provider_default
 
     async def dispatch(self, items: list[ExtractedItem], *, user_id: int) -> list[DispatchResult]:
         """Dispatch a list of extracted items to their action targets.
@@ -168,6 +178,28 @@ class Dispatcher:
         )
 
         return results
+
+    async def dispatch_email_event(
+        self,
+        event: Any,
+        *,
+        user_id: int,
+    ) -> list[DispatchResult]:
+        """Route an email observation event via the shared EmailRouter."""
+        if self._email_router is None:
+            return []
+
+        context = event.context if isinstance(event.context, dict) else {}
+        provider = str(context.get("provider") or self._email_provider_default).lower()
+        account_ref = str(context.get("account_ref") or context.get("account_email") or "default")
+        email = self._event_to_normalized_email(event)
+        decision: RouteDecision = await self._email_router.process_email(
+            user_id=user_id,
+            provider=provider,
+            account_ref=account_ref,
+            email=email,
+        )
+        return [self._decision_to_dispatch_result(event, decision)]
 
     async def _dispatch_single(self, item: ExtractedItem, *, user_id: int) -> DispatchResult:
         """Dispatch a single item."""
@@ -274,3 +306,68 @@ class Dispatcher:
                 success=False,
                 message=f"Handler error: {exc}",
             )
+
+    def _event_to_normalized_email(self, event: Any) -> NormalizedEmail:
+        context = event.context if isinstance(event.context, dict) else {}
+        received_at = event.timestamp if isinstance(event.timestamp, datetime) else datetime.now()
+        external_id = str(context.get("external_id") or event.source_id or "")
+        subject = str(context.get("subject") or "")
+        body_text = str(context.get("body_text") or event.content or "")
+        from_email = str(context.get("from_email") or event.author or "")
+        to_emails_raw = context.get("to_emails")
+        to_emails = (
+            [str(v) for v in to_emails_raw if isinstance(v, str)]
+            if isinstance(to_emails_raw, list)
+            else []
+        )
+        return NormalizedEmail(
+            external_id=external_id,
+            thread_id=str(context.get("thread_id") or ""),
+            subject=subject,
+            body_text=body_text,
+            from_email=from_email,
+            to_emails=to_emails,
+            received_at=received_at,
+            metadata={
+                "source": event.source,
+                "source_id": event.source_id,
+                "provider": context.get("provider"),
+                "account_ref": context.get("account_ref"),
+                "account_email": context.get("account_email"),
+            },
+        )
+
+    def _decision_to_dispatch_result(self, event: Any, decision: RouteDecision) -> DispatchResult:
+        context = event.context if isinstance(event.context, dict) else {}
+        route_item_type = {
+            RouteTag.TASK_CANDIDATE: ItemType.TASK,
+            RouteTag.CALENDAR_CANDIDATE: ItemType.MEETING,
+            RouteTag.REPLY_CANDIDATE: ItemType.ACTION_ITEM,
+            RouteTag.DIGEST_ONLY: ItemType.FACT,
+            RouteTag.IGNORE: ItemType.FACT,
+        }.get(decision.route_tag, ItemType.FACT)
+
+        target = {
+            RouteTag.TASK_CANDIDATE: ActionTarget.TASK_MANAGER,
+            RouteTag.CALENDAR_CANDIDATE: ActionTarget.CALENDAR,
+            RouteTag.REPLY_CANDIDATE: ActionTarget.NOTIFICATION,
+            RouteTag.DIGEST_ONLY: ActionTarget.MEMORY,
+            RouteTag.IGNORE: ActionTarget.MEMORY,
+        }.get(decision.route_tag, ActionTarget.MEMORY)
+
+        extracted = ExtractedItem(
+            item_type=route_item_type,
+            content=str(context.get("subject") or event.content or "(email)"),
+            confidence=1.0,
+            metadata=decision.to_dict(),
+            source_event=event,
+        )
+        success = decision.mode.value not in {"block"}
+        return DispatchResult(
+            item=extracted,
+            target=target,
+            mode=decision.mode.value,
+            success=success,
+            message=decision.reason,
+            data=decision.to_dict(),
+        )

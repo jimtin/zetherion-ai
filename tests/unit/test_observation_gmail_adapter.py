@@ -121,6 +121,27 @@ class TestAdaptBasic:
         assert ctx["labels"] == ["INBOX", "UNREAD"]
         assert ctx["is_read"] is False
 
+    def test_context_sets_provider_default_and_account_ref(self):
+        """Context includes provider='google' and account_ref defaults to account email."""
+        adapter = _make_adapter()
+        email = _make_email()
+        event = adapter.adapt(email, ACCOUNT_EMAIL)
+        assert event.context["provider"] == "google"
+        assert event.context["account_ref"] == ACCOUNT_EMAIL
+
+    def test_context_accepts_provider_and_account_ref_override(self):
+        """Caller can override provider/account_ref for provider-neutral routing."""
+        adapter = _make_adapter()
+        email = _make_email()
+        event = adapter.adapt(
+            email,
+            ACCOUNT_EMAIL,
+            provider="outlook",
+            account_ref="acct-42",
+        )
+        assert event.context["provider"] == "outlook"
+        assert event.context["account_ref"] == "acct-42"
+
     def test_user_id_set_to_owner(self):
         """Event user_id is set to the adapter's owner_user_id."""
         adapter = _make_adapter(owner_user_id=42)

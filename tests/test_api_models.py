@@ -6,12 +6,16 @@ import pytest
 from pydantic import ValidationError
 
 from zetherion_ai.api.models import (
+    AnalyticsEventBatchRequest,
     ChatHistoryResponse,
     ChatMessage,
     ChatRequest,
     ChatResponse,
     HealthResponse,
+    RecommendationFeedbackRequest,
+    ReplayChunkRequest,
     SessionCreate,
+    SessionEndRequest,
     SessionInfo,
     SessionResponse,
     TenantCreate,
@@ -135,3 +139,39 @@ class TestHealthModel:
     def test_health_response_custom_version(self):
         h = HealthResponse(status="ok", version="2.0.0")
         assert h.version == "2.0.0"
+
+
+class TestAnalyticsModels:
+    def test_analytics_event_batch_minimal(self):
+        payload = AnalyticsEventBatchRequest(
+            events=[{"event_type": "page_view", "event_name": "page_view"}]
+        )
+        assert len(payload.events) == 1
+        assert payload.consent_replay is False
+
+    def test_analytics_event_batch_requires_events(self):
+        with pytest.raises(ValidationError):
+            AnalyticsEventBatchRequest(events=[])
+
+    def test_replay_chunk_request(self):
+        req = ReplayChunkRequest(
+            web_session_id="ws-1",
+            sequence_no=0,
+            object_key="replay/chunk-0.bin",
+            chunk_size_bytes=512,
+            chunk_base64="YQ==",
+            consent=True,
+            sampled=True,
+        )
+        assert req.sequence_no == 0
+        assert req.chunk_size_bytes == 512
+        assert req.chunk_base64 == "YQ=="
+
+    def test_session_end_request_defaults(self):
+        req = SessionEndRequest()
+        assert req.web_session_id is None
+        assert req.metadata == {}
+
+    def test_recommendation_feedback_request(self):
+        req = RecommendationFeedbackRequest(feedback_type="accepted", actor="op:test")
+        assert req.feedback_type == "accepted"

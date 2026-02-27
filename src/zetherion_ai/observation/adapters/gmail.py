@@ -46,6 +46,8 @@ class GmailObservationAdapter:
         email_msg: EmailMessage,
         account_email: str,
         *,
+        account_ref: str | None = None,
+        provider: str = "google",
         thread_messages: list[str] | None = None,
     ) -> ObservationEvent:
         """Convert a Gmail email to an ObservationEvent.
@@ -77,9 +79,13 @@ class GmailObservationAdapter:
 
         # Build context
         context: dict[str, Any] = {
+            "provider": provider,
+            "account_ref": account_ref or account_email,
             "account_email": account_email,
+            "external_id": email_msg.gmail_id,
             "thread_id": email_msg.thread_id,
             "subject": email_msg.subject,
+            "body_text": body,
             "from_email": email_msg.from_email,
             "to_emails": email_msg.to_emails,
             "cc_emails": email_msg.cc_emails,

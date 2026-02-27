@@ -23,14 +23,17 @@ def _settings(
     anthropic_key: str | None = None,
     openai_key: str | None = None,
     gemini_key: str | None = None,
+    groq_key: str | None = None,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         anthropic_api_key=_secret(anthropic_key) if anthropic_key else None,
         openai_api_key=_secret(openai_key) if openai_key else None,
         gemini_api_key=_secret(gemini_key) if gemini_key else None,
+        groq_api_key=_secret(groq_key) if groq_key else None,
         claude_model="claude-test",
         openai_model="gpt-test",
         router_model="gemini-test",
+        groq_model="llama-3.3-70b-versatile",
         ollama_generation_model="llama3.1:8b",
         ollama_url="http://ollama:11434",
         ollama_timeout=30,

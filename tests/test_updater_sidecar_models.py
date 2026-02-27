@@ -52,6 +52,25 @@ class TestUpdateRequest:
         assert req.tag == "v2.0.0"
         assert req.version == "2.0.0"
 
+    def test_from_dict_parses_signature_verification_fields(self) -> None:
+        req = UpdateRequest.from_dict(
+            {
+                "tag": "v2.1.0",
+                "version": "2.1.0",
+                "verify_signatures": True,
+                "github_repo": "owner/repo",
+                "verify_identity": "https://github.com/owner/repo/.github/workflows/release.yml@refs/tags/*",
+                "verify_oidc_issuer": "https://token.actions.githubusercontent.com",
+                "verify_rekor_url": "https://rekor.sigstore.dev",
+                "manifest_asset_name": "release-manifest.json",
+                "signature_asset_name": "release-manifest.sig",
+                "certificate_asset_name": "release-manifest.pem",
+            }
+        )
+        assert req.verify_signatures is True
+        assert req.github_repo == "owner/repo"
+        assert req.verify_oidc_issuer == "https://token.actions.githubusercontent.com"
+
 
 # ---------------------------------------------------------------------------
 # TestRollbackRequest

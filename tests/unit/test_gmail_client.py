@@ -504,6 +504,28 @@ class TestParseMessage:
         msg = client._parse_message(data)
         assert msg.cc_emails == ["cc1@example.com", "cc2@example.com"]
 
+    def test_detects_attachments(self, client):
+        data = {
+            "id": "pm7",
+            "threadId": "t7",
+            "labelIds": [],
+            "snippet": "",
+            "payload": {
+                "headers": [],
+                "mimeType": "multipart/mixed",
+                "parts": [
+                    {
+                        "mimeType": "application/pdf",
+                        "filename": "agenda.pdf",
+                        "body": {"attachmentId": "att-1"},
+                    }
+                ],
+            },
+        }
+        msg = client._parse_message(data)
+        assert msg.has_attachments is True
+        assert msg.attachment_filenames == ["agenda.pdf"]
+
 
 # ===================================================================
 # 9. _extract_body tests

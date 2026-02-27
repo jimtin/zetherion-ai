@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from zetherion_ai.security.secret_resolver import SecretResolver
     from zetherion_ai.settings_manager import SettingsManager
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,6 +44,16 @@ class Settings(BaseSettings):
         default="postgresql://zetherion:password@postgres:5432/zetherion",
         description="PostgreSQL connection string",
     )
+    postgres_pool_min_size: int = Field(
+        default=1,
+        ge=1,
+        description="Minimum asyncpg pool size per service pool",
+    )
+    postgres_pool_max_size: int = Field(
+        default=5,
+        ge=1,
+        description="Maximum asyncpg pool size per service pool",
+    )
 
     @property
     def allowed_user_ids(self) -> list[int]:
@@ -65,6 +75,17 @@ class Settings(BaseSettings):
 
     # OpenAI (optional, alternative LLM)
     openai_api_key: SecretStr | None = Field(default=None, description="OpenAI API key")
+
+    # Groq (optional, for fast cloud inference via OpenAI-compatible API)
+    groq_api_key: SecretStr | None = Field(default=None, description="Groq API key")
+    groq_model: str = Field(
+        default="llama-3.3-70b-versatile",
+        description="Groq model for email classification",
+    )
+    groq_base_url: str = Field(
+        default="https://api.groq.com/openai/v1",
+        description="Groq OpenAI-compatible API base URL",
+    )
 
     # Qdrant
     qdrant_host: str = Field(default="qdrant", description="Qdrant server host")
@@ -101,9 +122,49 @@ class Settings(BaseSettings):
     )
 
     # Dev Agent Configuration
+    dev_agent_enabled: bool = Field(
+        default=False,
+        description="Enable Docker dev-agent monitoring and cleanup automation",
+    )
+    dev_agent_service_url: str = Field(
+        default="http://zetherion-ai-dev-agent:8787",
+        description="Base URL for the dev-agent sidecar API",
+    )
+    dev_agent_bootstrap_secret: str = Field(
+        default="",
+        description="One-time bootstrap secret for dev-agent provisioning",
+    )
+    dev_agent_cleanup_hour: int = Field(
+        default=2,
+        description="Local cleanup schedule hour (0-23) for dev-agent",
+    )
+    dev_agent_cleanup_minute: int = Field(
+        default=30,
+        description="Local cleanup schedule minute (0-59) for dev-agent",
+    )
+    dev_agent_approval_reprompt_hours: int = Field(
+        default=24,
+        description="Hours before re-prompting for pending project cleanup approvals",
+    )
+    dev_agent_discord_channel_id: str = Field(
+        default="",
+        description="Discord channel ID used by dev-agent for events/prompts",
+    )
+    dev_agent_discord_guild_id: str = Field(
+        default="",
+        description="Discord guild ID used by dev-agent for events/prompts",
+    )
     dev_agent_webhook_name: str = Field(
         default="zetherion-dev-agent",
         description="Webhook username for the local dev agent",
+    )
+    dev_agent_webhook_id: str = Field(
+        default="",
+        description="Optional Discord webhook ID to validate dev-agent ingestion source",
+    )
+    dev_journal_retention_days: int = Field(
+        default=120,
+        description="Days to retain dev journal entries before pruning",
     )
 
     @property
@@ -137,7 +198,7 @@ class Settings(BaseSettings):
 
     # Router Backend Configuration
     router_backend: str = Field(
-        default="gemini", description="Router backend: 'gemini' or 'ollama'"
+        default="gemini", description="Router backend: 'gemini', 'ollama', or 'groq'"
     )
 
     # Ollama Configuration (Generation Container)
@@ -164,8 +225,8 @@ class Settings(BaseSettings):
 
     # Embeddings Backend Configuration
     embeddings_backend: str = Field(
-        default="ollama",
-        description="Embeddings backend: ollama (default), gemini, or openai",
+        default="openai",
+        description="Embeddings backend: openai (default), gemini, or ollama",
     )
     openai_embedding_model: str = Field(
         default="text-embedding-3-large", description="OpenAI embedding model"
@@ -241,6 +302,24 @@ class Settings(BaseSettings):
         default=False, description="Send daily cost summary notification"
     )
     daily_summary_hour: int = Field(default=9, description="Hour (0-23) to send daily cost summary")
+    provider_issue_alerts_enabled: bool = Field(
+        default=True,
+        description=(
+            "Send proactive alerts when paid providers fail due to " "auth/billing/rate-limits"
+        ),
+    )
+    provider_issue_alert_cooldown_seconds: int = Field(
+        default=3600,
+        description="Minimum interval between repeated alerts for the same provider issue",
+    )
+    provider_probe_enabled: bool = Field(
+        default=True,
+        description="Enable periodic low-cost paid-provider readiness probes",
+    )
+    provider_probe_interval_seconds: int = Field(
+        default=1800,
+        description="Seconds between periodic paid-provider readiness probes",
+    )
 
     # Profile System Configuration (Phase 5C)
     profile_inference_enabled: bool = Field(
@@ -334,6 +413,25 @@ class Settings(BaseSettings):
         default="http://localhost:8080/gmail/callback",
         description="OAuth2 callback URL for Gmail",
     )
+    work_router_enabled: bool = Field(
+        default=False,
+        description="Enable provider-agnostic email/task/calendar router",
+    )
+    provider_outlook_enabled: bool = Field(
+        default=False,
+        description="Enable Outlook provider adapter (scaffold/feature-flagged)",
+    )
+    email_security_gate_enabled: bool = Field(
+        default=True,
+        description="Run the mandatory security gate for inbound email ingestion",
+    )
+    local_extraction_required: bool = Field(
+        default=False,
+        description=(
+            "Require larger local extraction path; when disabled, cloud-first extraction "
+            "runs with local as final fallback"
+        ),
+    )
 
     # GitHub Skill Configuration (Phase 7)
     github_token: SecretStr | None = Field(
@@ -391,6 +489,34 @@ class Settings(BaseSettings):
         default="/app/data/updater-state.json",
         description="Updater sidecar state file path for color/pause metadata",
     )
+    updater_verify_signatures: bool = Field(
+        default=True,
+        description="Require release signature verification before applying updates",
+    )
+    updater_verify_identity: str = Field(
+        default="",
+        description="Expected Cosign certificate identity for release signatures",
+    )
+    updater_verify_oidc_issuer: str = Field(
+        default="https://token.actions.githubusercontent.com",
+        description="Expected OIDC issuer for Cosign keyless verification",
+    )
+    updater_verify_rekor_url: str = Field(
+        default="https://rekor.sigstore.dev",
+        description="Rekor transparency log URL for signature verification",
+    )
+    updater_release_manifest_asset: str = Field(
+        default="release-manifest.json",
+        description="Release asset name for signed update manifest",
+    )
+    updater_release_signature_asset: str = Field(
+        default="release-manifest.sig",
+        description="Release asset name for manifest signature",
+    )
+    updater_release_certificate_asset: str = Field(
+        default="release-manifest.pem",
+        description="Release asset name for signing certificate",
+    )
 
     # Telemetry Configuration (Phase 10C)
     telemetry_sharing_enabled: bool = Field(
@@ -411,6 +537,96 @@ class Settings(BaseSettings):
     )
     telemetry_report_interval: int = Field(
         default=86400, description="Seconds between telemetry reports (default 24h)"
+    )
+
+    # Analytics / App Watcher Configuration
+    analytics_event_retention_days: int = Field(
+        default=90, description="Days to retain raw web analytics events"
+    )
+    analytics_replay_retention_days: int = Field(
+        default=14, description="Days to retain session replay chunks"
+    )
+    analytics_replay_enabled_default: bool = Field(
+        default=False, description="Default replay capture setting for tenants"
+    )
+    analytics_replay_sample_rate_default: float = Field(
+        default=0.1, description="Default replay sampling rate for tenants (0.0-1.0)"
+    )
+    analytics_jobs_enabled: bool = Field(
+        default=True, description="Enable periodic analytics aggregation and retention jobs"
+    )
+    analytics_hourly_job_interval_seconds: int = Field(
+        default=3600, description="Interval for hourly analytics job loop"
+    )
+    analytics_daily_job_interval_seconds: int = Field(
+        default=86400, description="Interval for daily analytics job loop"
+    )
+
+    object_storage_backend: str = Field(
+        default="local",
+        validation_alias=AliasChoices("OBJECT_STORAGE_BACKEND", "REPLAY_STORAGE_BACKEND"),
+        description="Replay chunk storage backend: none, local, s3",
+    )
+    object_storage_local_path: str = Field(
+        default="data/replay_chunks",
+        validation_alias=AliasChoices("OBJECT_STORAGE_LOCAL_PATH", "REPLAY_STORAGE_LOCAL_PATH"),
+        description="Local object storage path for replay chunks",
+    )
+    object_storage_bucket: str = Field(
+        default="",
+        validation_alias=AliasChoices("OBJECT_STORAGE_BUCKET", "REPLAY_STORAGE_BUCKET"),
+        description="Object storage bucket for replay chunks when object_storage_backend=s3",
+    )
+    object_storage_region: str = Field(
+        default="",
+        validation_alias=AliasChoices("OBJECT_STORAGE_REGION", "REPLAY_STORAGE_REGION"),
+        description="Object storage region for replay chunks",
+    )
+    object_storage_endpoint: str = Field(
+        default="",
+        validation_alias=AliasChoices("OBJECT_STORAGE_ENDPOINT", "REPLAY_STORAGE_ENDPOINT"),
+        description="Optional custom S3-compatible object storage endpoint",
+    )
+    object_storage_access_key_id: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "OBJECT_STORAGE_ACCESS_KEY_ID", "REPLAY_STORAGE_ACCESS_KEY_ID"
+        ),
+        description="Optional object storage access key ID for replay chunks",
+    )
+    object_storage_secret_access_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "OBJECT_STORAGE_SECRET_ACCESS_KEY", "REPLAY_STORAGE_SECRET_ACCESS_KEY"
+        ),
+        description="Optional object storage secret access key for replay chunks",
+    )
+    object_storage_force_path_style: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "OBJECT_STORAGE_FORCE_PATH_STYLE", "REPLAY_STORAGE_FORCE_PATH_STYLE"
+        ),
+        description="Force path-style addressing for S3-compatible object storage",
+    )
+
+    release_marker_signing_secret: SecretStr | None = Field(
+        default=None,
+        description="Optional shared secret for signed release marker ingestion",
+    )
+    release_marker_signature_ttl_seconds: int = Field(
+        default=300,
+        description="Allowed clock skew/age window for signed release marker requests",
+    )
+
+    app_watcher_trust_mode: str = Field(
+        default="recommend_only",
+        description="Autonomy mode: recommend_only, guarded_autopilot, full_autonomous",
+    )
+    app_watcher_autopilot_enabled: bool = Field(
+        default=False, description="Enable guarded autopilot rollout path"
+    )
+    app_watcher_global_kill_switch: bool = Field(
+        default=False, description="Disable all autonomous app-watcher actions"
     )
 
     # Security Pipeline Configuration (Phase 13)
@@ -456,6 +672,7 @@ class Settings(BaseSettings):
         "default_verbosity",
         "default_proactivity",
         "trust_evolution_rate",
+        "analytics_replay_sample_rate_default",
     )
     @classmethod
     def validate_float_0_1(cls, v: float) -> float:
@@ -464,11 +681,29 @@ class Settings(BaseSettings):
             raise ValueError(f"Value must be between 0 and 1, got: {v}")
         return v
 
+    @field_validator("app_watcher_trust_mode")
+    @classmethod
+    def validate_app_watcher_trust_mode(cls, v: str) -> str:
+        """Validate app watcher trust mode."""
+        valid_modes = ["recommend_only", "guarded_autopilot", "full_autonomous"]
+        if v not in valid_modes:
+            raise ValueError(f"app_watcher_trust_mode must be one of {valid_modes}, got: {v}")
+        return v
+
+    @field_validator("object_storage_backend")
+    @classmethod
+    def validate_object_storage_backend(cls, v: str) -> str:
+        """Validate object storage backend choice."""
+        valid_backends = ["none", "local", "s3"]
+        if v not in valid_backends:
+            raise ValueError(f"object_storage_backend must be one of {valid_backends}, got: {v}")
+        return v
+
     @field_validator("router_backend")
     @classmethod
     def validate_router_backend(cls, v: str) -> str:
         """Validate router backend choice."""
-        valid_backends = ["gemini", "ollama"]
+        valid_backends = ["gemini", "ollama", "groq"]
         if v not in valid_backends:
             raise ValueError(f"router_backend must be one of {valid_backends}, got: {v}")
         return v
@@ -499,12 +734,34 @@ class Settings(BaseSettings):
             raise ValueError(f"budget_warning_pct must be between 0 and 100, got: {v}")
         return v
 
-    @field_validator("daily_summary_hour")
+    @field_validator("daily_summary_hour", "dev_agent_cleanup_hour")
     @classmethod
     def validate_daily_summary_hour(cls, v: int) -> int:
-        """Validate daily summary hour is between 0 and 23."""
+        """Validate hour values are between 0 and 23."""
         if not 0 <= v <= 23:
-            raise ValueError(f"daily_summary_hour must be between 0 and 23, got: {v}")
+            raise ValueError(f"hour value must be between 0 and 23, got: {v}")
+        return v
+
+    @field_validator("dev_agent_cleanup_minute")
+    @classmethod
+    def validate_minute_0_59(cls, v: int) -> int:
+        """Validate minute values are between 0 and 59."""
+        if not 0 <= v <= 59:
+            raise ValueError(f"minute value must be between 0 and 59, got: {v}")
+        return v
+
+    @field_validator(
+        "analytics_hourly_job_interval_seconds",
+        "analytics_daily_job_interval_seconds",
+        "release_marker_signature_ttl_seconds",
+        "provider_issue_alert_cooldown_seconds",
+        "provider_probe_interval_seconds",
+    )
+    @classmethod
+    def validate_positive_seconds(cls, v: int) -> int:
+        """Validate second-based durations are positive."""
+        if v <= 0:
+            raise ValueError(f"Duration must be > 0, got: {v}")
         return v
 
     @model_validator(mode="after")
@@ -539,6 +796,39 @@ class Settings(BaseSettings):
         """Get the full Qdrant URL."""
         scheme = "https" if self.qdrant_use_tls else "http"
         return f"{scheme}://{self.qdrant_host}:{self.qdrant_port}"
+
+    # Backward-compatible accessors (deprecated): prefer object_storage_*.
+    @property
+    def replay_storage_backend(self) -> str:
+        return self.object_storage_backend
+
+    @property
+    def replay_storage_local_path(self) -> str:
+        return self.object_storage_local_path
+
+    @property
+    def replay_storage_bucket(self) -> str:
+        return self.object_storage_bucket
+
+    @property
+    def replay_storage_region(self) -> str:
+        return self.object_storage_region
+
+    @property
+    def replay_storage_endpoint(self) -> str:
+        return self.object_storage_endpoint
+
+    @property
+    def replay_storage_access_key_id(self) -> str:
+        return self.object_storage_access_key_id
+
+    @property
+    def replay_storage_secret_access_key(self) -> SecretStr | None:
+        return self.object_storage_secret_access_key
+
+    @property
+    def replay_storage_force_path_style(self) -> bool:
+        return self.object_storage_force_path_style
 
 
 @lru_cache

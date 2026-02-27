@@ -10,12 +10,15 @@ is delegated to ``ClientChatSkill``.
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any
 
 from aiohttp import web
 
 from zetherion_ai.logging import get_logger
+from zetherion_ai.skills.base import SkillRequest
 from zetherion_ai.skills.client_chat import ClientChatSkill
+from zetherion_ai.skills.tenant_intelligence import TenantIntelligenceSkill
 
 log = get_logger("zetherion_ai.api.routes.chat")
 
@@ -48,6 +51,68 @@ def _get_chat_skill(request: web.Request) -> ClientChatSkill:
         return skill  # type: ignore[no-any-return]
     broker = request.app.get("inference_broker")
     return ClientChatSkill(inference_broker=broker)
+
+
+async def _get_tenant_intelligence_skill(request: web.Request) -> TenantIntelligenceSkill:
+    """Get or lazily create a TenantIntelligenceSkill from app dependencies."""
+    cached_skill = request.app.get("tenant_intelligence_skill")
+    if isinstance(cached_skill, TenantIntelligenceSkill):
+        return cached_skill
+
+    broker = request.app.get("inference_broker")
+    tenant_manager = request.app.get("tenant_manager")
+    skill = TenantIntelligenceSkill(
+        inference_broker=broker,
+        tenant_manager=tenant_manager,
+    )
+    await skill.safe_initialize()
+    request.app["tenant_intelligence_skill"] = skill
+    return skill
+
+
+def _schedule_background(coro: Any, *, label: str) -> None:
+    """Run a background task and log exceptions safely."""
+    import asyncio
+
+    task = asyncio.create_task(coro)
+
+    def _done_callback(t: asyncio.Task[Any]) -> None:
+        try:
+            t.result()
+        except Exception:
+            log.exception("chat_background_task_failed", label=label)
+
+    task.add_done_callback(_done_callback)
+
+
+async def _dispatch_message_extraction(
+    request: web.Request,
+    *,
+    tenant_id: str,
+    session_id: str,
+    message: str,
+) -> None:
+    """Dispatch async L1b message extraction for CRM enrichment."""
+    skill = await _get_tenant_intelligence_skill(request)
+    extraction_request = SkillRequest(
+        id=uuid.uuid4(),
+        user_id=f"tenant:{tenant_id}",
+        intent="extract_message_entities",
+        message=message,
+        context={
+            "tenant_id": tenant_id,
+            "session_id": session_id,
+            "message": message,
+        },
+    )
+    response = await skill.safe_handle(extraction_request)
+    if not response.success:
+        log.warning(
+            "tenant_intelligence_extract_failed",
+            tenant_id=tenant_id,
+            session_id=session_id,
+            error=response.error,
+        )
 
 
 async def handle_chat(request: web.Request) -> web.Response:
@@ -118,6 +183,17 @@ async def handle_chat(request: web.Request) -> web.Response:
     response = _serialise(assistant_msg)
     if model_used:
         response["model"] = model_used
+
+    # Async post-response extraction for tenant CRM (L1b).
+    _schedule_background(
+        _dispatch_message_extraction(
+            request,
+            tenant_id=tenant_id,
+            session_id=session_id,
+            message=message,
+        ),
+        label="tenant_intelligence_extract",
+    )
 
     return web.json_response(response, status=200)
 
@@ -269,6 +345,17 @@ async def handle_chat_stream(request: web.Request) -> web.StreamResponse:
     if model_used:
         done_payload["model"] = model_used
     await response.write(f"data: {json.dumps(done_payload)}\n\n".encode())
+
+    # Async post-response extraction for tenant CRM (L1b).
+    _schedule_background(
+        _dispatch_message_extraction(
+            request,
+            tenant_id=tenant_id,
+            session_id=session_id,
+            message=message,
+        ),
+        label="tenant_intelligence_extract_stream",
+    )
 
     await response.write_eof()
     return response

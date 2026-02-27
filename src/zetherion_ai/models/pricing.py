@@ -75,6 +75,13 @@ PRICING: dict[str, dict[str, float]] = {
     "gemini-1.5-pro": {"input": 1.25, "output": 5.00},
     "gemini-1.0-pro": {"input": 0.50, "output": 1.50},
     "gemini-pro": {"input": 0.50, "output": 1.50},
+    # Groq cloud models (OpenAI-compatible API)
+    "llama-3.3-70b-versatile": {"input": 0.59, "output": 0.79},
+    "llama-4-maverick-17b-128e": {"input": 0.20, "output": 0.60},
+    "llama-3.1-8b-instant": {"input": 0.05, "output": 0.08},
+    # Google Gemini 2.5 models
+    "gemini-2.5-flash": {"input": 0.15, "output": 0.60},
+    "gemini-2.5-pro": {"input": 1.25, "output": 10.00},
     # Ollama models (free - local inference)
     "llama3.1:8b": {"input": 0.0, "output": 0.0},
     "llama3.1:70b": {"input": 0.0, "output": 0.0},
@@ -107,7 +114,8 @@ _PROVIDER_PREFIXES = {
     "gpt": "openai",
     "o1": "openai",
     "gemini": "google",
-    "llama": "ollama",
+    "llama-": "groq",  # Groq llama models use hyphens (llama-3.3-70b-versatile)
+    "llama": "ollama",  # Ollama llama models use dots (llama3.1:8b)
     "phi": "ollama",
     "mistral": "ollama",
     "qwen": "ollama",
