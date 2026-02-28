@@ -137,6 +137,60 @@ def test_jwt_verifier_invalid_token(monkeypatch: pytest.MonkeyPatch) -> None:
         verifier.verify("bad-token")
 
 
+def test_jwt_verifier_handles_roles_list_and_optional_scope_shapes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class DummyJWKClient:
+        def __init__(self, _: str) -> None:
+            pass
+
+        def get_signing_key_from_jwt(self, _: str) -> SimpleNamespace:
+            return SimpleNamespace(key="public-key")
+
+    monkeypatch.setattr(middleware_mod.jwt, "PyJWKClient", DummyJWKClient)
+    monkeypatch.setattr(
+        middleware_mod.jwt,
+        "decode",
+        lambda *_args, **_kwargs: {
+            "sub": "user-2",
+            "cgs_tenant_id": "tenant-b",
+            "roles": ["viewer", 7],
+            "scope": ["unexpected-shape"],
+            "scopes": "unexpected-shape",
+        },
+    )
+
+    verifier = JWTVerifier(jwks_url="https://issuer/jwks")
+    principal = verifier.verify("token-2")
+
+    assert principal.sub == "user-2"
+    assert principal.tenant_id == "tenant-b"
+    assert principal.roles == ["viewer", "7"]
+    assert principal.scopes == []
+
+
+def test_jwt_verifier_handles_non_collection_roles(monkeypatch: pytest.MonkeyPatch) -> None:
+    class DummyJWKClient:
+        def __init__(self, _: str) -> None:
+            pass
+
+        def get_signing_key_from_jwt(self, _: str) -> SimpleNamespace:
+            return SimpleNamespace(key="public-key")
+
+    monkeypatch.setattr(middleware_mod.jwt, "PyJWKClient", DummyJWKClient)
+    monkeypatch.setattr(
+        middleware_mod.jwt,
+        "decode",
+        lambda *_args, **_kwargs: {"sub": "user-3", "roles": {"admin": True}},
+    )
+
+    verifier = JWTVerifier(jwks_url="https://issuer/jwks")
+    principal = verifier.verify("token-3")
+
+    assert principal.sub == "user-3"
+    assert principal.roles == []
+
+
 @pytest.mark.asyncio
 async def test_request_context_middleware_sets_and_propagates_request_id() -> None:
     app = web.Application(middlewares=[create_request_context_middleware()])
@@ -166,6 +220,17 @@ async def test_cors_middleware_adds_headers_and_handles_options() -> None:
         options_resp = await client.options("/ok", headers={"Origin": "https://app.example"})
         assert options_resp.status == 204
         assert options_resp.headers["Access-Control-Allow-Origin"] == "https://app.example"
+
+
+@pytest.mark.asyncio
+async def test_cors_middleware_without_allowed_origins_omits_headers() -> None:
+    app = web.Application(middlewares=[create_cors_middleware(None)])
+    app.router.add_get("/ok", lambda _: web.json_response({"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        get_resp = await client.get("/ok", headers={"Origin": "https://app.example"})
+        assert get_resp.status == 200
+        assert "Access-Control-Allow-Origin" not in get_resp.headers
 
 
 @pytest.mark.asyncio
@@ -204,6 +269,33 @@ async def test_auth_middleware_missing_and_valid_token() -> None:
         )
         assert authed.status == 200
         verifier.verify.assert_called_once_with("good-token")
+
+
+@pytest.mark.asyncio
+async def test_auth_middleware_surfaces_gateway_error_from_verifier() -> None:
+    verifier = MagicMock()
+    verifier.verify.side_effect = GatewayError(
+        code="AI_AUTH_INVALID_TOKEN",
+        message="Invalid or expired auth token",
+        status=401,
+    )
+
+    app = web.Application(
+        middlewares=[
+            create_request_context_middleware(),
+            create_auth_middleware(verifier),
+        ]
+    )
+    app.router.add_get("/service/ai/v1/private", lambda _: web.json_response({"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.get(
+            "/service/ai/v1/private",
+            headers={"Authorization": "Bearer bad-token"},
+        )
+        assert resp.status == 401
+        body = await resp.json()
+        assert body["error"]["code"] == "AI_AUTH_INVALID_TOKEN"
 
 
 def test_principal_is_operator_role_or_scope() -> None:

@@ -28,6 +28,7 @@ This is the only supported full local gate. Do not substitute ad-hoc pytest comm
 8. If required env vars for Discord E2E are missing, stop and surface that explicitly.
 9. Local socket-bind preflight must pass; if it fails, run the canonical gate outside sandbox restrictions.
 10. Background jobs (`mypy`, `pip-audit`) must never run indefinitely; canonical timeouts/heartbeat logging are mandatory.
+11. Canonical validation must run against repo-local virtualenv tooling (`.venv`/`venv`), not an unrelated active shell virtualenv.
 
 ## Script Policy
 

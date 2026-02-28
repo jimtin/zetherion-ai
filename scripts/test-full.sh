@@ -25,6 +25,38 @@ pick_python() {
     return 1
 }
 
+venv_has_required_modules() {
+    python - <<'PY' >/dev/null 2>&1
+import importlib.util
+
+required = (
+    "pytest",
+    "pytest_asyncio",
+    "pytest_timeout",
+    "ruff",
+    "mypy",
+    "bandit",
+    "pip_audit",
+)
+missing = [name for name in required if importlib.util.find_spec(name) is None]
+raise SystemExit(1 if missing else 0)
+PY
+}
+
+is_repo_virtualenv() {
+    local active_venv="$1"
+    [ -n "$active_venv" ] || return 1
+    local resolved_active
+    resolved_active="$(cd "$active_venv" 2>/dev/null && pwd -P)" || return 1
+    for candidate in "$REPO_DIR/.venv" "$REPO_DIR/venv"; do
+        [ -d "$candidate" ] || continue
+        if [ "$resolved_active" = "$(cd "$candidate" 2>/dev/null && pwd -P)" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 validate_existing_venv() {
     local venv_dir="$1"
     [ -x "$venv_dir/bin/python" ] || return 1
@@ -41,13 +73,18 @@ bootstrap_venv() {
 
     source .venv/bin/activate
 
-    if ! python -c "import pytest, pytest_asyncio, pytest_timeout" >/dev/null 2>&1; then
+    if ! venv_has_required_modules; then
         log "Installing dev dependencies in .venv"
         python -m pip install --upgrade pip
         python -m pip install -r requirements-dev.txt
         python -m pip install -e .
     fi
 }
+
+if [ -n "${VIRTUAL_ENV:-}" ] && ! is_repo_virtualenv "$VIRTUAL_ENV"; then
+    log "Ignoring external virtualenv at ${VIRTUAL_ENV}; using repo-local venv."
+    unset VIRTUAL_ENV
+fi
 
 if [ -z "${VIRTUAL_ENV:-}" ]; then
     if [ -d ".venv" ] && validate_existing_venv ".venv"; then
@@ -73,7 +110,7 @@ if [ -z "${VIRTUAL_ENV:-}" ]; then
     fi
 fi
 
-if ! python -c "import pytest" >/dev/null 2>&1; then
+if ! venv_has_required_modules; then
     log "Active virtualenv does not have test dependencies."
     log "Run: python -m pip install -r requirements-dev.txt && python -m pip install -e ."
     exit 1

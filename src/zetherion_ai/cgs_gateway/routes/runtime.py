@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from aiohttp import web
 from pydantic import ValidationError
@@ -19,6 +19,7 @@ from zetherion_ai.cgs_gateway.routes._utils import (
     request_id,
     resolve_active_mapping,
 )
+from zetherion_ai.cgs_gateway.storage import CGSGatewayStorage
 
 
 def _map_upstream_error(status: int, payload: Any) -> GatewayError:
@@ -245,7 +246,7 @@ async def handle_create_conversation(request: web.Request) -> web.Response:
 async def _load_conversation_for_access(
     request: web.Request, conversation_id: str
 ) -> dict[str, Any]:
-    storage = request.app["cgs_storage"]
+    storage = cast(CGSGatewayStorage, request.app["cgs_storage"])
     principal_obj = principal(request)
 
     conversation = await storage.get_conversation(conversation_id)

@@ -1141,7 +1141,10 @@ class ZetherionAIBot(discord.Client):
 
         category = discord.utils.get(guild.categories, name=category_name)
         if category is None:
-            overwrites = {
+            overwrites: dict[
+                discord.Role | discord.Member | discord.Object,
+                discord.PermissionOverwrite,
+            ] = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False),
                 bot_member: discord.PermissionOverwrite(
                     view_channel=True,
@@ -1171,7 +1174,10 @@ class ZetherionAIBot(discord.Client):
             None,
         )
         if channel is None:
-            overwrites = {
+            channel_overwrites: dict[
+                discord.Role | discord.Member | discord.Object,
+                discord.PermissionOverwrite,
+            ] = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False),
                 bot_member: discord.PermissionOverwrite(
                     view_channel=True,
@@ -1188,7 +1194,7 @@ class ZetherionAIBot(discord.Client):
             channel = await guild.create_text_channel(
                 channel_name,
                 category=category,
-                overwrites=overwrites,
+                overwrites=channel_overwrites,
                 topic="Zetherion dev watcher events and approval prompts",
                 reason="Dev watcher onboarding",
             )

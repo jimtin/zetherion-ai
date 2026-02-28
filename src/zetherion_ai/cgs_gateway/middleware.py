@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import jwt  # type: ignore[import-not-found]
@@ -12,6 +13,7 @@ from zetherion_ai.cgs_gateway.errors import GatewayError, error_response
 from zetherion_ai.cgs_gateway.models import AuthPrincipal
 
 PUBLIC_PATHS = frozenset({"/service/ai/v1/health"})
+RequestHandler = Callable[[web.Request], Awaitable[web.StreamResponse]]
 
 
 class JWTVerifier:
@@ -96,7 +98,7 @@ def create_request_context_middleware() -> Any:
     """Attach request id and mirror it in response headers."""
 
     @web.middleware
-    async def request_context(request: web.Request, handler: Any) -> web.Response:
+    async def request_context(request: web.Request, handler: RequestHandler) -> web.StreamResponse:
         request_id = request.headers.get("X-Request-Id", "").strip()
         if not request_id:
             request_id = f"req_{uuid.uuid4().hex[:20]}"
@@ -113,9 +115,9 @@ def create_cors_middleware(allowed_origins: list[str] | None = None) -> Any:
     """Create CORS middleware for browser-based CGS apps."""
 
     @web.middleware
-    async def cors_middleware(request: web.Request, handler: Any) -> web.Response:
+    async def cors_middleware(request: web.Request, handler: RequestHandler) -> web.StreamResponse:
         if request.method == "OPTIONS":
-            response = web.Response(status=204)
+            response: web.StreamResponse = web.Response(status=204)
         else:
             response = await handler(request)
 
@@ -140,10 +142,10 @@ def create_auth_middleware(verifier: JWTVerifier) -> Any:
     """Require JWT auth for all non-public gateway routes."""
 
     @web.middleware
-    async def auth_middleware(request: web.Request, handler: Any) -> web.Response:
+    async def auth_middleware(request: web.Request, handler: RequestHandler) -> web.StreamResponse:
         path = request.path
         if path in PUBLIC_PATHS or not path.startswith("/service/ai/v1"):
-            return await handler(request)  # type: ignore[no-any-return]
+            return await handler(request)
 
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
@@ -167,7 +169,7 @@ def create_auth_middleware(verifier: JWTVerifier) -> Any:
             )
 
         request["principal"] = principal
-        return await handler(request)  # type: ignore[no-any-return]
+        return await handler(request)
 
     return auth_middleware
 

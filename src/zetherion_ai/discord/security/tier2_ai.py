@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from collections.abc import Awaitable, Callable
+from typing import Any, cast
 
 from zetherion_ai.agent.inference import InferenceBroker, InferenceResult
 from zetherion_ai.agent.providers import Provider, TaskType
@@ -126,10 +127,14 @@ class SecurityAIAnalyzer:
             except Exception:
                 log.debug("tier2_key_refresh_failed")
 
-        call_provider = getattr(self._inference, "_call_provider", None)
-        if not callable(call_provider):
+        call_provider_raw = getattr(self._inference, "_call_provider", None)
+        if not callable(call_provider_raw):
             log.warning("tier2_provider_call_unavailable")
             return None
+        call_provider = cast(
+            Callable[..., Awaitable[InferenceResult]],
+            call_provider_raw,
+        )
 
         provider_order = (Provider.GROQ, Provider.GEMINI)
         available = self._inference.available_providers
@@ -175,7 +180,10 @@ class SecurityAIAnalyzer:
             if inline:
                 text = inline.group(0)
 
-        return json.loads(text)
+        payload = json.loads(text)
+        if not isinstance(payload, dict):
+            raise ValueError("tier2 response must be a JSON object")
+        return cast(dict[str, Any], payload)
 
     async def close(self) -> None:
         """Close internal resources when analyzer owns the broker."""

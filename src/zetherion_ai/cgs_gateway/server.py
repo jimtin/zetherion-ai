@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from typing import Any
 
@@ -29,6 +30,7 @@ from zetherion_ai.security.encryption import FieldEncryptor
 from zetherion_ai.security.keys import KeyManager
 
 log = get_logger("zetherion_ai.cgs_gateway.server")
+RequestHandler = Callable[[web.Request], Awaitable[web.StreamResponse]]
 
 
 def _split_csv(value: str) -> list[str]:
@@ -39,9 +41,9 @@ def create_error_middleware() -> Any:
     """Catch route exceptions and emit standard envelope errors."""
 
     @web.middleware
-    async def error_middleware(request: web.Request, handler: Any) -> web.Response:
+    async def error_middleware(request: web.Request, handler: RequestHandler) -> web.StreamResponse:
         try:
-            return await handler(request)  # type: ignore[no-any-return]
+            return await handler(request)
         except Exception as exc:
             return from_exception(str(request.get("request_id", "")), exc)
 
@@ -52,7 +54,9 @@ def create_request_logging_middleware() -> Any:
     """Persist lightweight request logs for attribution."""
 
     @web.middleware
-    async def request_logging_middleware(request: web.Request, handler: Any) -> web.Response:
+    async def request_logging_middleware(
+        request: web.Request, handler: RequestHandler
+    ) -> web.StreamResponse:
         started = time.monotonic()
         response = await handler(request)
         elapsed_ms = int((time.monotonic() - started) * 1000)

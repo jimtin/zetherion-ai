@@ -371,7 +371,7 @@ class SettingsManager:
                     updated_by,
                 )
 
-            inserted = result == "INSERT 1"
+            inserted = str(result) == "INSERT 1"
             if inserted:
                 self._cache[(namespace, key)] = self._coerce_value(str_value, data_type)
                 log.info("settings_manager.seeded_default", namespace=namespace, key=key)

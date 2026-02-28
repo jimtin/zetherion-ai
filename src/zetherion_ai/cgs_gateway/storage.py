@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any
+from collections.abc import Mapping
+from typing import Any, cast
 
 import asyncpg  # type: ignore[import-not-found,import-untyped]
 
@@ -175,7 +176,9 @@ class CGSGatewayStorage:
             key_version,
             json.dumps(metadata or {}),
         )
-        return dict(row)
+        if row is None:
+            raise RuntimeError("Upsert tenant mapping returned no row")
+        return dict(cast(Mapping[str, Any], row))
 
     async def get_tenant_mapping(self, cgs_tenant_id: str) -> dict[str, Any] | None:
         """Fetch one tenant mapping including decrypted API key."""
@@ -340,7 +343,9 @@ class CGSGatewayStorage:
             self._encrypt(zetherion_session_token),
             json.dumps(metadata or {}),
         )
-        return dict(row)
+        if row is None:
+            raise RuntimeError("Create conversation returned no row")
+        return dict(cast(Mapping[str, Any], row))
 
     async def get_conversation(self, conversation_id: str) -> dict[str, Any] | None:
         """Fetch conversation mapping with decrypted session token and API key."""
@@ -483,10 +488,12 @@ class CGSGatewayStorage:
         if self._pool is None:
             raise RuntimeError("CGS gateway storage is not initialized")
         async with self._pool.acquire() as conn:
-            return await conn.fetch(query, *args)
+            rows = await conn.fetch(query, *args)
+            return cast(list[asyncpg.Record], rows)
 
     async def _execute(self, query: str, *args: Any) -> str:
         if self._pool is None:
             raise RuntimeError("CGS gateway storage is not initialized")
         async with self._pool.acquire() as conn:
-            return await conn.execute(query, *args)
+            result = await conn.execute(query, *args)
+            return cast(str, result)

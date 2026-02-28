@@ -149,6 +149,21 @@ async def test_storage_tenant_mapping_methods() -> None:
 
 
 @pytest.mark.asyncio
+async def test_storage_upsert_tenant_mapping_raises_when_no_row() -> None:
+    storage = CGSGatewayStorage(dsn="postgres://test", encryptor=_DummyEncryptor())
+    storage._fetchrow = AsyncMock(return_value=None)
+
+    with pytest.raises(RuntimeError, match="Upsert tenant mapping returned no row"):
+        await storage.upsert_tenant_mapping(
+            cgs_tenant_id="tenant-a",
+            zetherion_tenant_id="11111111-1111-1111-1111-111111111111",
+            name="Tenant A",
+            domain="tenant.example",
+            zetherion_api_key="sk-live",
+        )
+
+
+@pytest.mark.asyncio
 async def test_storage_conversation_methods() -> None:
     storage = CGSGatewayStorage(dsn="postgres://test", encryptor=_DummyEncryptor())
     storage._fetchrow = AsyncMock(
@@ -206,6 +221,23 @@ async def test_storage_conversation_methods() -> None:
     assert loaded["zetherion_api_key"] == "sk-live"
 
     assert await storage.close_conversation("cgs_conv_abc") is True
+
+
+@pytest.mark.asyncio
+async def test_storage_create_conversation_raises_when_no_row() -> None:
+    storage = CGSGatewayStorage(dsn="postgres://test", encryptor=_DummyEncryptor())
+    storage._fetchrow = AsyncMock(return_value=None)
+
+    with pytest.raises(RuntimeError, match="Create conversation returned no row"):
+        await storage.create_conversation(
+            cgs_tenant_id="tenant-a",
+            zetherion_session_id="11111111-1111-1111-1111-111111111111",
+            zetherion_session_token="sess-token",
+            app_user_id="app-user",
+            external_user_id="ext-user",
+            metadata={"source": "test"},
+            conversation_id="cgs_conv_abc",
+        )
 
 
 @pytest.mark.asyncio
