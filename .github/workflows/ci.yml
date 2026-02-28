@@ -282,7 +282,6 @@ jobs:
     name: Unit Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     needs: [detect-changes]
-    if: ${{ !matrix.heavy_only || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: read
     strategy:

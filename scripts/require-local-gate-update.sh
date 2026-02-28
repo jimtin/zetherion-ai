@@ -17,6 +17,7 @@ EOF
 }
 
 SHA=""
+TARGET_SHA=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -42,6 +43,14 @@ if [[ -z "$SHA" ]]; then
   exit 1
 fi
 
+TARGET_SHA="$SHA"
+if [[ ${#SHA} -lt 40 ]]; then
+  resolved="$(git rev-parse "$SHA" 2>/dev/null || true)"
+  if [[ -n "$resolved" ]]; then
+    TARGET_SHA="$resolved"
+  fi
+fi
+
 for tool in gh jq git; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     echo "ERROR: required tool missing: $tool"
@@ -49,16 +58,24 @@ for tool in gh jq git; do
   fi
 done
 
-RUNS_JSON="$(gh run list \
-  --workflow "CI/CD Pipeline" \
-  --commit "$SHA" \
+ALL_RUNS_JSON="$(gh run list \
   --limit 30 \
-  --json databaseId,headSha,status,conclusion,createdAt,url)"
+  --json databaseId,workflowName,headSha,status,conclusion,createdAt,url)"
+
+RUNS_JSON="$(
+  jq -c '
+    map(select(
+      .workflowName == "CI/CD Pipeline"
+      or .workflowName == ".github/workflows/ci.yml"
+      or .workflowName == "ci.yml"
+    ))
+  ' <<<"$ALL_RUNS_JSON"
+)"
 
 FAILED_RUN_ID="$(
-  jq -r --arg sha "$SHA" '
+  jq -r --arg sha "$TARGET_SHA" --arg sha_short "$SHA" '
     map(select(
-      .headSha == $sha
+      (.headSha == $sha or (.headSha | startswith($sha_short)))
       and .status == "completed"
       and (.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral")
     ))
@@ -69,7 +86,7 @@ FAILED_RUN_ID="$(
 )"
 
 if [[ -z "$FAILED_RUN_ID" ]]; then
-  echo "No failed CI/CD Pipeline run found for $SHA. No local gate update required."
+  echo "No failed CI/CD Pipeline run found for $TARGET_SHA. No local gate update required."
   exit 0
 fi
 
@@ -102,7 +119,7 @@ NEEDS_CONTRACT_UPDATE="$(
 )"
 
 if [[ "$NEEDS_LOCAL_GATE_UPDATE" != "true" && "$NEEDS_CONTRACT_UPDATE" != "true" ]]; then
-  echo "Attribution does not require local gate updates for $SHA."
+  echo "Attribution does not require local gate updates for $TARGET_SHA."
   exit 0
 fi
 

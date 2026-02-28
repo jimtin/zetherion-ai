@@ -15,6 +15,7 @@ EOF
 
 SHA=""
 REF=""
+TARGET_SHA=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -44,6 +45,14 @@ if [[ -z "$SHA" ]]; then
   exit 1
 fi
 
+TARGET_SHA="$SHA"
+if [[ ${#SHA} -lt 40 ]]; then
+  resolved="$(git rev-parse "$SHA" 2>/dev/null || true)"
+  if [[ -n "$resolved" ]]; then
+    TARGET_SHA="$resolved"
+  fi
+fi
+
 if [[ -z "$REF" ]]; then
   REF="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 fi
@@ -58,16 +67,24 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-CI_RUNS_JSON="$(gh run list \
-  --workflow "CI/CD Pipeline" \
-  --commit "$SHA" \
-  --limit 30 \
-  --json databaseId,headSha,headBranch,status,conclusion,createdAt,url)"
+ALL_RUNS_JSON="$(gh run list \
+  --limit 100 \
+  --json databaseId,workflowName,headSha,headBranch,status,conclusion,createdAt,url)"
+
+CI_RUNS_JSON="$(
+  jq -c '
+    map(select(
+      .workflowName == "CI/CD Pipeline"
+      or .workflowName == ".github/workflows/ci.yml"
+      or .workflowName == "ci.yml"
+    ))
+  ' <<<"$ALL_RUNS_JSON"
+)"
 
 CI_RUN_ID="$(
-  jq -r --arg sha "$SHA" '
+  jq -r --arg sha "$TARGET_SHA" --arg sha_short "$SHA" '
     map(select(
-      .headSha == $sha
+      (.headSha == $sha or (.headSha | startswith($sha_short)))
       and .status == "completed"
       and .conclusion == "success"
     ))
@@ -78,7 +95,7 @@ CI_RUN_ID="$(
 )"
 
 if [[ -z "$CI_RUN_ID" ]]; then
-  echo "ERROR: No successful CI/CD Pipeline run found for commit $SHA."
+  echo "ERROR: No successful CI/CD Pipeline run found for commit $TARGET_SHA."
   echo "$CI_RUNS_JSON" | jq -r '.[] | "- run=\(.databaseId) branch=\(.headBranch) status=\(.status) conclusion=\(.conclusion)"'
   exit 1
 fi
@@ -95,22 +112,26 @@ if [[ -z "$EFFECTIVE_REF" || "$EFFECTIVE_REF" == "HEAD" ]]; then
   EFFECTIVE_REF="$CI_BRANCH"
 fi
 
-echo "CI success verified: run_id=$CI_RUN_ID sha=$SHA ref=$EFFECTIVE_REF"
+echo "CI success verified: run_id=$CI_RUN_ID sha=$TARGET_SHA ref=$EFFECTIVE_REF"
 
 if [[ "$EFFECTIVE_REF" != "main" && "$EFFECTIVE_REF" != "refs/heads/main" ]]; then
   exit 0
 fi
 
-DEPLOY_RUNS_JSON="$(gh run list \
-  --workflow "Deploy Windows" \
-  --commit "$SHA" \
-  --limit 30 \
-  --json databaseId,headSha,headBranch,status,conclusion,createdAt,url)"
+DEPLOY_RUNS_JSON="$(
+  jq -c '
+    map(select(
+      .workflowName == "Deploy Windows"
+      or .workflowName == ".github/workflows/deploy-windows.yml"
+      or .workflowName == "deploy-windows.yml"
+    ))
+  ' <<<"$ALL_RUNS_JSON"
+)"
 
 DEPLOY_RUN_ID="$(
-  jq -r --arg sha "$SHA" '
+  jq -r --arg sha "$TARGET_SHA" --arg sha_short "$SHA" '
     map(select(
-      .headSha == $sha
+      (.headSha == $sha or (.headSha | startswith($sha_short)))
       and .status == "completed"
       and .conclusion == "success"
     ))
@@ -121,7 +142,7 @@ DEPLOY_RUN_ID="$(
 )"
 
 if [[ -z "$DEPLOY_RUN_ID" ]]; then
-  echo "ERROR: main requires successful Deploy Windows run for commit $SHA."
+  echo "ERROR: main requires successful Deploy Windows run for commit $TARGET_SHA."
   echo "$DEPLOY_RUNS_JSON" | jq -r '.[] | "- run=\(.databaseId) branch=\(.headBranch) status=\(.status) conclusion=\(.conclusion)"'
   exit 1
 fi
@@ -144,10 +165,10 @@ if [[ -z "$RECEIPT_PATH" ]]; then
 fi
 
 IS_VALID="$(
-  jq -r --arg sha "$SHA" '
+  jq -r --arg sha "$TARGET_SHA" --arg sha_short "$SHA" '
     .status == "success"
-    and .target_sha == $sha
-    and .deployed_sha == $sha
+    and (.target_sha == $sha or (.target_sha | startswith($sha_short)))
+    and (.deployed_sha == $sha or (.deployed_sha | startswith($sha_short)))
     and .checks.containers_healthy == true
     and .checks.bot_startup_markers == true
     and .checks.postgres_model_keys == true
