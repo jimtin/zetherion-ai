@@ -12,6 +12,18 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Invoke-Git {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    & git @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+    }
+}
+
 function Write-RollbackResult {
     param(
         [object]$Result,
@@ -60,8 +72,12 @@ try {
 
     Push-Location $DeployPath
     try {
-        git fetch origin --tags --prune
-        git checkout --detach $lastGoodSha
+        # Normalize worktree before rollback checkout.
+        Invoke-Git @("reset", "--hard", "HEAD")
+        Invoke-Git @("clean", "-ffdx")
+        Invoke-Git @("fetch", "--prune", "--force", "origin")
+        Invoke-Git @("fetch", "--depth=1", "--force", "origin", $lastGoodSha)
+        Invoke-Git @("checkout", "--detach", "--force", $lastGoodSha)
         docker compose up -d --build
     } finally {
         Pop-Location

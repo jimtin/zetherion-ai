@@ -14,6 +14,18 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function Invoke-Git {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    & git @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+    }
+}
+
 function Write-DeployResult {
     param(
         [object]$Result,
@@ -56,14 +68,24 @@ try {
 
     Push-Location $DeployPath
     try {
-        git rev-parse --is-inside-work-tree | Out-Null
-        $previousSha = (git rev-parse HEAD).Trim()
+        Invoke-Git @("rev-parse", "--is-inside-work-tree")
+        $previousSha = (& git rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0) {
+            throw "Unable to resolve current deploy SHA."
+        }
         $result.previous_sha = $previousSha
 
-        git fetch origin --tags --prune
-        git checkout --detach $TargetSha
+        # Normalize worktree state before checkout to avoid drift from hotfixes/manual edits.
+        Invoke-Git @("reset", "--hard", "HEAD")
+        Invoke-Git @("clean", "-ffdx")
+        Invoke-Git @("fetch", "--prune", "--force", "origin")
+        Invoke-Git @("fetch", "--depth=1", "--force", "origin", $TargetSha)
+        Invoke-Git @("checkout", "--detach", "--force", $TargetSha)
 
-        $deployedSha = (git rev-parse HEAD).Trim()
+        $deployedSha = (& git rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0) {
+            throw "Unable to resolve deployed SHA after checkout."
+        }
         if ($deployedSha -ne $TargetSha) {
             throw "Resolved deployed SHA '$deployedSha' did not match target '$TargetSha'."
         }
