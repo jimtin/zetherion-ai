@@ -341,7 +341,7 @@ class QdrantMemory:
         )
 
         points: list[Any] = []
-        offset: str | int | None = None
+        offset: qdrant_models.ExtendedPointId | None = None
         max_scan = max(limit * 10, 200)
 
         while True:

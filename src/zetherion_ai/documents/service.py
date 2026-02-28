@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from zetherion_ai.agent.inference import InferenceBroker
@@ -87,7 +87,7 @@ class DocumentService:
             metadata=normalize_metadata(metadata),
             expires_at=expires_at,
         )
-        return upload
+        return cast(dict[str, Any], upload)
 
     async def complete_upload(
         self,
@@ -154,7 +154,7 @@ class DocumentService:
         await self.index_document(tenant_id=tenant_id, document_id=document_id)
 
         latest = await self._tenant_manager.get_document(tenant_id, document_id)
-        return latest or document
+        return cast(dict[str, Any], latest or document)
 
     async def index_document(self, *, tenant_id: str, document_id: str) -> dict[str, Any]:
         """Extract text and index document chunks into vector store."""
@@ -264,7 +264,7 @@ class DocumentService:
             raise
 
         latest = await self._tenant_manager.get_document(tenant_id, document_id)
-        return latest or document
+        return cast(dict[str, Any], latest or document)
 
     async def query(
         self,

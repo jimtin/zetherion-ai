@@ -5,9 +5,10 @@ from __future__ import annotations
 import base64
 import json
 from html import escape
-from typing import Any
+from typing import Any, cast
 
 from aiohttp import web
+from aiohttp.multipart import BodyPartReader
 
 from zetherion_ai.documents.processing import infer_file_kind
 from zetherion_ai.documents.service import DocumentService
@@ -100,6 +101,8 @@ async def _read_upload_payload(request: web.Request) -> tuple[bytes, dict[str, A
         meta: dict[str, Any] = {}
 
         async for part in reader:
+            if not isinstance(part, BodyPartReader):
+                continue
             if part.name == "file":
                 file_bytes = await part.read(decode=False)
             elif part.name == "metadata":
@@ -148,7 +151,10 @@ async def _read_upload_payload(request: web.Request) -> tuple[bytes, dict[str, A
             content_type="application/json",
         ) from exc
 
-    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    raw_metadata = payload.get("metadata")
+    metadata: dict[str, Any] = (
+        cast(dict[str, Any], raw_metadata) if isinstance(raw_metadata, dict) else {}
+    )
     return data, metadata
 
 
