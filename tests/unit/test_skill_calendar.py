@@ -673,10 +673,10 @@ class TestCalendarSkillExtended:
         skill = CalendarSkill()
         await skill.safe_initialize()
 
-        # Schedule two events for today
-        now = datetime.now()
-        later = now + timedelta(hours=1)
-        earlier = now + timedelta(minutes=30)
+        # Use fixed same-day times to avoid crossing midnight in late-hour runs.
+        today_noon = datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
+        earlier = today_noon + timedelta(minutes=30)
+        later = today_noon + timedelta(hours=1)
 
         for t, title in [(later, "Later Event"), (earlier, "Earlier Event")]:
             request = SkillRequest(

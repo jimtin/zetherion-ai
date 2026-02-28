@@ -2,7 +2,11 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$DeployPath,
     [Parameter(Mandatory = $false)]
-    [string]$OutputPath = "verify-result.json"
+    [string]$OutputPath = "verify-result.json",
+    [Parameter(Mandatory = $false)]
+    [int]$StartupWaitSeconds = 180,
+    [Parameter(Mandatory = $false)]
+    [int]$RetryIntervalSeconds = 5
 )
 
 Set-StrictMode -Version Latest
@@ -42,6 +46,71 @@ function Write-VerifyResult {
         New-Item -ItemType Directory -Path $parent -Force | Out-Null
     }
     $payload | ConvertTo-Json -Depth 8 | Out-File $Path -Encoding utf8
+}
+
+function Wait-ForBotStartupMarkers {
+    param(
+        [int]$TimeoutSeconds,
+        [int]$IntervalSeconds,
+        [string[]]$RequiredMarkers
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $lastLogs = ""
+    while ((Get-Date) -lt $deadline) {
+        $botLogs = docker compose logs zetherion-ai-bot --tail 400
+        $lastLogs = ($botLogs | Out-String)
+
+        $allMarkersPresent = $true
+        foreach ($marker in $RequiredMarkers) {
+            if ($lastLogs -notmatch [Regex]::Escape($marker)) {
+                $allMarkersPresent = $false
+                break
+            }
+        }
+
+        if ($allMarkersPresent) {
+            return [pscustomobject]@{
+                passed = $true
+                logs = $lastLogs
+            }
+        }
+
+        Start-Sleep -Seconds $IntervalSeconds
+    }
+
+    return [pscustomobject]@{
+        passed = $false
+        logs = $lastLogs
+    }
+}
+
+function Wait-ForFallbackProbe {
+    param(
+        [int]$TimeoutSeconds,
+        [int]$IntervalSeconds,
+        [string]$ProbeScript
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $lastOutput = ""
+    while ((Get-Date) -lt $deadline) {
+        $probeOutput = docker exec zetherion-ai-bot python -c $ProbeScript 2>&1
+        $lastOutput = ($probeOutput | Out-String).Trim()
+        if ($LASTEXITCODE -eq 0 -and $lastOutput -match "provider=") {
+            return [pscustomobject]@{
+                passed = $true
+                output = $lastOutput
+            }
+        }
+
+        Start-Sleep -Seconds $IntervalSeconds
+    }
+
+    return [pscustomobject]@{
+        passed = $false
+        output = $lastOutput
+    }
 }
 
 try {
@@ -110,24 +179,20 @@ try {
             $details.container_health = "One or more monitored services were unhealthy or not running."
         }
 
-        $botLogs = docker compose logs zetherion-ai-bot --tail 400
         $requiredMarkers = @(
             "settings_manager_initialized",
             "provider_issue_alerts_wired",
             "provider_probe_task_started"
         )
-        $allMarkersPresent = $true
-        foreach ($marker in $requiredMarkers) {
-            if ($botLogs -notmatch [Regex]::Escape($marker)) {
-                $allMarkersPresent = $false
-                break
-            }
-        }
-        $checks.bot_startup_markers = $allMarkersPresent
-        if ($allMarkersPresent) {
+        $markerCheck = Wait-ForBotStartupMarkers `
+            -TimeoutSeconds $StartupWaitSeconds `
+            -IntervalSeconds $RetryIntervalSeconds `
+            -RequiredMarkers $requiredMarkers
+        $checks.bot_startup_markers = [bool]$markerCheck.passed
+        if ($checks.bot_startup_markers) {
             $details.bot_marker_check = "All required startup markers were found in bot logs."
         } else {
-            $details.bot_marker_check = "Missing one or more startup markers in bot logs."
+            $details.bot_marker_check = "Missing one or more startup markers in bot logs after waiting for readiness."
         }
 
         $pgRaw = docker exec zetherion-ai-postgres psql -U zetherion -d zetherion -t -A -c "SELECT key FROM settings WHERE namespace='models' ORDER BY key;"
@@ -165,11 +230,12 @@ try:
 finally:
     asyncio.run(broker.close())
 "@
-        $probeOutput = docker exec zetherion-ai-bot python -c $probeScript 2>&1
-        $details.fallback_probe_output = ($probeOutput | Out-String).Trim()
-        if ($LASTEXITCODE -eq 0 -and $probeOutput -match "provider=") {
-            $checks.fallback_probe = $true
-        }
+        $probeCheck = Wait-ForFallbackProbe `
+            -TimeoutSeconds $StartupWaitSeconds `
+            -IntervalSeconds $RetryIntervalSeconds `
+            -ProbeScript $probeScript
+        $details.fallback_probe_output = [string]$probeCheck.output
+        $checks.fallback_probe = [bool]$probeCheck.passed
     } finally {
         Pop-Location
     }

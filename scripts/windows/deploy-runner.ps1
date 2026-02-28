@@ -86,7 +86,7 @@ function Get-EnvValueFromFile {
 function Set-OrAddEnvLine {
     param(
         [Parameter(Mandatory = $true)]
-        [System.Collections.Generic.List[string]]$Lines,
+        [System.Collections.IList]$Lines,
         [Parameter(Mandatory = $true)]
         [string]$Key,
         [Parameter(Mandatory = $true)]
@@ -169,7 +169,7 @@ function Ensure-RequiredRuntimeEnv {
         Set-Content -Path $rootEnvPath -Value $lines -Encoding utf8
     }
 
-    return @($updatedKeys)
+    return [string[]]$updatedKeys.ToArray()
 }
 
 function Sync-CgsSharedSecret {
@@ -247,7 +247,7 @@ try {
         Invoke-Git @("fetch", "--prune", "--force", "origin")
         Invoke-Git @("fetch", "--depth=1", "--force", "origin", $TargetSha)
         Invoke-Git @("checkout", "--detach", "--force", $TargetSha)
-        $bootstrappedKeys = Ensure-RequiredRuntimeEnv -RepositoryPath $DeployPath
+        $bootstrappedKeys = @(Ensure-RequiredRuntimeEnv -RepositoryPath $DeployPath)
         if ($bootstrappedKeys.Count -gt 0) {
             Write-Output "Bootstrapped runtime env keys: $($bootstrappedKeys -join ', ')"
         }

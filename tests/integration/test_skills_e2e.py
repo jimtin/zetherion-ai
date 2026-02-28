@@ -222,7 +222,9 @@ async def test_calendar_schedule_event(registry: SkillRegistry) -> None:
 async def test_calendar_today_schedule(registry: SkillRegistry) -> None:
     """today_schedule intent should return today's events."""
     # Seed an event happening today
-    now_plus_1h = (datetime.now() + timedelta(hours=1)).isoformat()
+    today_event_time = (
+        datetime.now().replace(hour=12, minute=30, second=0, microsecond=0).isoformat()
+    )
     await registry.handle_request(
         SkillRequest(
             user_id=TEST_USER,
@@ -230,7 +232,7 @@ async def test_calendar_today_schedule(registry: SkillRegistry) -> None:
             message="Today event",
             context={
                 "title": "Today event",
-                "start_time": now_plus_1h,
+                "start_time": today_event_time,
             },
         )
     )
