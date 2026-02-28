@@ -206,6 +206,27 @@ try {
         -and $dockerService.Status.ToString() -eq "Running" `
         -and $details.network_service_in_docker_users
     )
+
+    $allowServiceFallback = $false
+    $fallbackRaw = [string]($env:WINDOWS_RESILIENCE_ALLOW_SERVICE_FALLBACK)
+    if ($fallbackRaw) {
+        $normalized = $fallbackRaw.Trim().ToLowerInvariant()
+        $allowServiceFallback = @("1", "true", "yes", "on") -contains $normalized
+    }
+
+    # Some hardened Windows runners cannot register scheduled tasks (access denied)
+    # but still provide durable recovery through persistent runner/docker services.
+    if (
+        -not $checks.recovery_tasks_registered `
+        -and $allowServiceFallback `
+        -and -not $details.startup_task.exists `
+        -and -not $details.watchdog_task.exists `
+        -and $checks.runner_service_persistent `
+        -and $checks.docker_service_persistent
+    ) {
+        $checks.recovery_tasks_registered = $true
+        $details.recovery_tasks_fallback = "service_persistence"
+    }
 }
 catch {
     # Keep defaults false and include error string in payload.
