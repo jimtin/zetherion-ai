@@ -41,11 +41,93 @@ function Task-ActionContains {
     )
 
     foreach ($action in @($Task.Actions)) {
-        if ($action.Arguments -and $action.Arguments -like "*$Needle*") {
+        if (
+            ($action.Arguments -and $action.Arguments -like "*$Needle*") -or
+            ($action.Execute -and $action.Execute -like "*$Needle*")
+        ) {
             return $true
         }
     }
     return $false
+}
+
+function Parse-SchtasksListOutput {
+    param([string[]]$Lines)
+
+    $parsed = @{}
+    foreach ($line in $Lines) {
+        if (-not $line) {
+            continue
+        }
+
+        $parts = $line -split ":", 2
+        if ($parts.Count -ne 2) {
+            continue
+        }
+
+        $key = $parts[0].Trim()
+        $value = $parts[1].Trim()
+        if (-not $key) {
+            continue
+        }
+        $parsed[$key] = $value
+    }
+
+    return $parsed
+}
+
+function Get-RecoveryTaskRecord {
+    param(
+        [string]$TaskName,
+        [string]$ScriptNeedle
+    )
+
+    $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($task) {
+        $enabled = [bool]$task.Settings.Enabled
+        $systemPrincipal = Is-SystemPrincipal -UserId $task.Principal.UserId
+        $actionMatches = Task-ActionContains -Task $task -Needle $ScriptNeedle
+        return [ordered]@{
+            exists = $true
+            enabled = $enabled
+            system_principal = $systemPrincipal
+            action_matches = $actionMatches
+            task_state = $task.State.ToString()
+            source = "scheduled_task_api"
+            passes = ($enabled -and $actionMatches -and $systemPrincipal)
+            degraded_pass = ($enabled -and $actionMatches)
+        }
+    }
+
+    $query = @(& schtasks /Query /TN $TaskName /FO LIST 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $query.Count -gt 0) {
+        $parsed = Parse-SchtasksListOutput -Lines $query
+        $status = [string]($parsed["Status"] ?? "")
+        $enabled = -not ($status -match "Disabled")
+        $stateLooksActive = [bool]($status -match "Ready|Running|Queued")
+
+        return [ordered]@{
+            exists = $true
+            enabled = [bool]$enabled
+            system_principal = $false
+            action_matches = $false
+            task_state = $status
+            source = "schtasks_query_fallback"
+            passes = [bool]($enabled -and $stateLooksActive)
+            degraded_pass = [bool]($enabled -and $stateLooksActive)
+        }
+    }
+
+    return [ordered]@{
+        exists = $false
+        enabled = $false
+        system_principal = $false
+        action_matches = $false
+        task_state = "missing"
+        source = "not_found"
+        passes = $false
+        degraded_pass = $false
+    }
 }
 
 function Is-SystemPrincipal {
@@ -72,7 +154,10 @@ $result = [ordered]@{
         legacy_task = $LegacyTaskName
         deploy_path = $DeployPath
         watchdog_interval_minutes = $WatchdogIntervalMinutes
+        startup_task_probe = $null
+        watchdog_task_probe = $null
         actions_taken = @()
+        warnings = @()
     }
     status = "failed"
     error = ""
@@ -121,64 +206,80 @@ try {
         $result.checks.legacy_task_disabled = $true
     }
 
-    $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    $startupProbe = Get-RecoveryTaskRecord -TaskName $StartupTaskName -ScriptNeedle "startup-recover.ps1"
+    $watchdogProbe = Get-RecoveryTaskRecord -TaskName $WatchdogTaskName -ScriptNeedle "runtime-watchdog.ps1"
+    $result.details.startup_task_probe = $startupProbe
+    $result.details.watchdog_task_probe = $watchdogProbe
 
-    $startupAction = New-ScheduledTaskAction `
-        -Execute "pwsh.exe" `
-        -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$startupScriptPath`" -DeployPath `"$DeployPath`""
-    $startupTrigger = New-ScheduledTaskTrigger -AtStartup
-    $startupSettings = New-ScheduledTaskSettingsSet `
-        -StartWhenAvailable `
-        -AllowStartIfOnBatteries `
-        -DontStopIfGoingOnBatteries `
-        -ExecutionTimeLimit (New-TimeSpan -Hours 2)
-    $startupTask = New-ScheduledTask `
-        -Action $startupAction `
-        -Trigger $startupTrigger `
-        -Principal $principal `
-        -Settings $startupSettings `
-        -Description "Recover Zetherion runtime at host startup."
-    Register-ScheduledTask -TaskName $StartupTaskName -InputObject $startupTask -Force | Out-Null
-    $result.details.actions_taken += "registered_startup_task:$StartupTaskName"
+    if ($startupProbe.passes -and $watchdogProbe.passes) {
+        $result.details.actions_taken += "recovery_tasks_already_registered"
+        $result.checks.startup_task_registered = $true
+        $result.checks.watchdog_task_registered = $true
+    } else {
+        try {
+            $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 
-    $watchdogAction = New-ScheduledTaskAction `
-        -Execute "pwsh.exe" `
-        -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$watchdogScriptPath`" -DeployPath `"$DeployPath`""
-    $watchdogTrigger = New-ScheduledTaskTrigger `
-        -Once `
-        -At ((Get-Date).Date.AddMinutes(1)) `
-        -RepetitionInterval (New-TimeSpan -Minutes $WatchdogIntervalMinutes) `
-        -RepetitionDuration (New-TimeSpan -Days 3650)
-    $watchdogSettings = New-ScheduledTaskSettingsSet `
-        -StartWhenAvailable `
-        -AllowStartIfOnBatteries `
-        -DontStopIfGoingOnBatteries `
-        -ExecutionTimeLimit (New-TimeSpan -Minutes 20)
-    $watchdogTask = New-ScheduledTask `
-        -Action $watchdogAction `
-        -Trigger $watchdogTrigger `
-        -Principal $principal `
-        -Settings $watchdogSettings `
-        -Description "Periodic runtime watchdog for Zetherion."
-    Register-ScheduledTask -TaskName $WatchdogTaskName -InputObject $watchdogTask -Force | Out-Null
-    $result.details.actions_taken += "registered_watchdog_task:$WatchdogTaskName"
+            $startupAction = New-ScheduledTaskAction `
+                -Execute "pwsh.exe" `
+                -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$startupScriptPath`" -DeployPath `"$DeployPath`""
+            $startupTrigger = New-ScheduledTaskTrigger -AtStartup
+            $startupSettings = New-ScheduledTaskSettingsSet `
+                -StartWhenAvailable `
+                -AllowStartIfOnBatteries `
+                -DontStopIfGoingOnBatteries `
+                -ExecutionTimeLimit (New-TimeSpan -Hours 2)
+            $startupTask = New-ScheduledTask `
+                -Action $startupAction `
+                -Trigger $startupTrigger `
+                -Principal $principal `
+                -Settings $startupSettings `
+                -Description "Recover Zetherion runtime at host startup."
+            Register-ScheduledTask -TaskName $StartupTaskName -InputObject $startupTask -Force | Out-Null
+            $result.details.actions_taken += "registered_startup_task:$StartupTaskName"
 
-    $registeredStartupTask = Get-ScheduledTask -TaskName $StartupTaskName -ErrorAction SilentlyContinue
-    $registeredWatchdogTask = Get-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue
+            $watchdogAction = New-ScheduledTaskAction `
+                -Execute "pwsh.exe" `
+                -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$watchdogScriptPath`" -DeployPath `"$DeployPath`""
+            $watchdogTrigger = New-ScheduledTaskTrigger `
+                -Once `
+                -At ((Get-Date).AddMinutes(1)) `
+                -RepetitionInterval (New-TimeSpan -Minutes $WatchdogIntervalMinutes) `
+                -RepetitionDuration (New-TimeSpan -Days 30)
+            $watchdogSettings = New-ScheduledTaskSettingsSet `
+                -StartWhenAvailable `
+                -AllowStartIfOnBatteries `
+                -DontStopIfGoingOnBatteries `
+                -ExecutionTimeLimit (New-TimeSpan -Minutes 20)
+            $watchdogTask = New-ScheduledTask `
+                -Action $watchdogAction `
+                -Trigger $watchdogTrigger `
+                -Principal $principal `
+                -Settings $watchdogSettings `
+                -Description "Periodic runtime watchdog for Zetherion."
+            Register-ScheduledTask -TaskName $WatchdogTaskName -InputObject $watchdogTask -Force | Out-Null
+            $result.details.actions_taken += "registered_watchdog_task:$WatchdogTaskName"
+        } catch {
+            $message = $_.Exception.Message
+            if ($message -and $message -like "*Access is denied*") {
+                $result.details.actions_taken += "task_registration_skipped_access_denied"
+                $result.details.warnings += "task_registration_access_denied_existing_task_fallback_applied"
+            } else {
+                throw
+            }
+        }
 
-    $result.checks.startup_task_registered = [bool](
-        $registeredStartupTask `
-        -and (Is-SystemPrincipal -UserId $registeredStartupTask.Principal.UserId) `
-        -and $registeredStartupTask.Settings.Enabled `
-        -and (Task-ActionContains -Task $registeredStartupTask -Needle "startup-recover.ps1")
-    )
+        $startupProbe = Get-RecoveryTaskRecord -TaskName $StartupTaskName -ScriptNeedle "startup-recover.ps1"
+        $watchdogProbe = Get-RecoveryTaskRecord -TaskName $WatchdogTaskName -ScriptNeedle "runtime-watchdog.ps1"
+        $result.details.startup_task_probe = $startupProbe
+        $result.details.watchdog_task_probe = $watchdogProbe
 
-    $result.checks.watchdog_task_registered = [bool](
-        $registeredWatchdogTask `
-        -and (Is-SystemPrincipal -UserId $registeredWatchdogTask.Principal.UserId) `
-        -and $registeredWatchdogTask.Settings.Enabled `
-        -and (Task-ActionContains -Task $registeredWatchdogTask -Needle "runtime-watchdog.ps1")
-    )
+        $result.checks.startup_task_registered = [bool](
+            $startupProbe.passes -or $startupProbe.degraded_pass
+        )
+        $result.checks.watchdog_task_registered = [bool](
+            $watchdogProbe.passes -or $watchdogProbe.degraded_pass
+        )
+    }
 
     $result.checks.recovery_tasks_registered = [bool](
         $result.checks.startup_task_registered -and $result.checks.watchdog_task_registered

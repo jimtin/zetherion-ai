@@ -296,6 +296,20 @@ jobs:
           path: ${{ steps.receipt.outputs.receipt_path }}
           retention-days: 30
 
+      - name: Upload deploy diagnostics artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: deploy-windows-diagnostics
+          path: |
+            resilience-registration.json
+            resilience-ready.json
+            deploy-result.json
+            verify-result.json
+            rollback-result.json
+          if-no-files-found: ignore
+          retention-days: 30
+
       - name: Enforce receipt success gate
         if: always()
         shell: pwsh

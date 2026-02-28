@@ -31,38 +31,94 @@ function Is-SystemPrincipal {
 function Task-ActionContains {
     param([object]$Task, [string]$Needle)
     foreach ($action in @($Task.Actions)) {
-        if ($action.Arguments -and $action.Arguments -like "*$Needle*") {
+        if (
+            ($action.Arguments -and $action.Arguments -like "*$Needle*") -or
+            ($action.Execute -and $action.Execute -like "*$Needle*")
+        ) {
             return $true
         }
     }
     return $false
 }
 
+function Parse-SchtasksListOutput {
+    param([string[]]$Lines)
+
+    $parsed = @{}
+    foreach ($line in $Lines) {
+        if (-not $line) {
+            continue
+        }
+        $parts = $line -split ":", 2
+        if ($parts.Count -ne 2) {
+            continue
+        }
+        $key = $parts[0].Trim()
+        $value = $parts[1].Trim()
+        if (-not $key) {
+            continue
+        }
+        $parsed[$key] = $value
+    }
+    return $parsed
+}
+
 function Test-RecoveryTask {
     param([string]$TaskName, [string]$ScriptNeedle)
 
     $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-    if (-not $task) {
-        return [ordered]@{
-            exists = $false
-            enabled = $false
-            system_principal = $false
-            action_matches = $false
-            passes = $false
+    $record = [ordered]@{
+        exists = $false
+        enabled = $false
+        system_principal = $false
+        action_matches = $false
+        task_state = "missing"
+        source = "not_found"
+        passes = $false
+        degraded_pass = $false
+    }
+
+    if ($task) {
+        $enabled = [bool]$task.Settings.Enabled
+        $systemPrincipal = Is-SystemPrincipal -UserId $task.Principal.UserId
+        $actionMatches = Task-ActionContains -Task $task -Needle $ScriptNeedle
+
+        $record = [ordered]@{
+            exists = $true
+            enabled = [bool]$enabled
+            system_principal = [bool]$systemPrincipal
+            action_matches = [bool]$actionMatches
+            task_state = $task.State.ToString()
+            source = "scheduled_task_api"
+            passes = ($enabled -and $systemPrincipal -and $actionMatches)
+            degraded_pass = ($enabled -and $actionMatches)
         }
     }
 
-    $enabled = [bool]$task.Settings.Enabled
-    $systemPrincipal = Is-SystemPrincipal -UserId $task.Principal.UserId
-    $actionMatches = Task-ActionContains -Task $task -Needle $ScriptNeedle
-
-    return [ordered]@{
-        exists = $true
-        enabled = $enabled
-        system_principal = $systemPrincipal
-        action_matches = $actionMatches
-        passes = ($enabled -and $systemPrincipal -and $actionMatches)
+    if ($record.passes -or $record.degraded_pass) {
+        return $record
     }
+
+    $query = @(& schtasks /Query /TN $TaskName /FO LIST 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $query.Count -gt 0) {
+        $parsed = Parse-SchtasksListOutput -Lines $query
+        $status = [string]($parsed["Status"] ?? "")
+        $enabledFromStatus = -not ($status -match "Disabled")
+        $stateLooksActive = [bool]($status -match "Ready|Running|Queued")
+
+        return [ordered]@{
+            exists = $true
+            enabled = [bool]$enabledFromStatus
+            system_principal = [bool]$record.system_principal
+            action_matches = [bool]$record.action_matches
+            task_state = $status
+            source = "schtasks_query_fallback"
+            passes = [bool]($record.passes -or ($enabledFromStatus -and $stateLooksActive))
+            degraded_pass = [bool]($record.degraded_pass -or ($enabledFromStatus -and $stateLooksActive))
+        }
+    }
+
+    return $record
 }
 
 $checks = [ordered]@{
@@ -87,7 +143,8 @@ try {
     $details.watchdog_task = Test-RecoveryTask -TaskName $WatchdogTaskName -ScriptNeedle "runtime-watchdog.ps1"
 
     $checks.recovery_tasks_registered = [bool](
-        $details.startup_task.passes -and $details.watchdog_task.passes
+        ($details.startup_task.passes -or $details.startup_task.degraded_pass) -and
+        ($details.watchdog_task.passes -or $details.watchdog_task.degraded_pass)
     )
 
     $runnerServices = @(

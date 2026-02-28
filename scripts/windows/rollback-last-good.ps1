@@ -102,6 +102,74 @@ function Set-OrAddEnvLine {
     $Lines.Add("$Key=$Value")
 }
 
+function New-RandomUrlSafeSecret {
+    param([int]$NumBytes = 48)
+
+    if ($NumBytes -lt 16) {
+        $NumBytes = 16
+    }
+
+    $bytes = New-Object byte[] $NumBytes
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+    } finally {
+        $rng.Dispose()
+    }
+
+    $value = [Convert]::ToBase64String($bytes).TrimEnd("=")
+    return $value.Replace("+", "-").Replace("/", "_")
+}
+
+function Ensure-RequiredRuntimeEnv {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepositoryPath
+    )
+
+    $rootEnvPath = Join-Path $RepositoryPath ".env"
+    if (-not (Test-Path $rootEnvPath)) {
+        throw "Required env file not found: $rootEnvPath"
+    }
+
+    $lines = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($line in Get-Content -Path $rootEnvPath) {
+        $lines.Add($line)
+    }
+
+    $updatedKeys = New-Object 'System.Collections.Generic.List[string]'
+
+    $apiJwtSecret = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("API_JWT_SECRET")
+    if (-not $apiJwtSecret) {
+        Set-OrAddEnvLine -Lines $lines -Key "API_JWT_SECRET" -Value (New-RandomUrlSafeSecret)
+        $updatedKeys.Add("API_JWT_SECRET")
+    }
+
+    $cgsJwks = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("CGS_AUTH_JWKS_URL")
+    if (-not $cgsJwks) {
+        Set-OrAddEnvLine -Lines $lines -Key "CGS_AUTH_JWKS_URL" -Value "https://example.com/.well-known/jwks.json"
+        $updatedKeys.Add("CGS_AUTH_JWKS_URL")
+    }
+
+    $cgsIssuer = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("CGS_AUTH_ISSUER")
+    if (-not $cgsIssuer) {
+        Set-OrAddEnvLine -Lines $lines -Key "CGS_AUTH_ISSUER" -Value "cgs-placeholder-issuer"
+        $updatedKeys.Add("CGS_AUTH_ISSUER")
+    }
+
+    $cgsAudience = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("CGS_AUTH_AUDIENCE")
+    if (-not $cgsAudience) {
+        Set-OrAddEnvLine -Lines $lines -Key "CGS_AUTH_AUDIENCE" -Value "cgs-placeholder-audience"
+        $updatedKeys.Add("CGS_AUTH_AUDIENCE")
+    }
+
+    if ($updatedKeys.Count -gt 0) {
+        Set-Content -Path $rootEnvPath -Value $lines -Encoding utf8
+    }
+
+    return @($updatedKeys)
+}
+
 function Sync-CgsSharedSecret {
     param(
         [Parameter(Mandatory = $true)]
@@ -176,6 +244,10 @@ try {
         Invoke-Git @("fetch", "--prune", "--force", "origin")
         Invoke-Git @("fetch", "--depth=1", "--force", "origin", $lastGoodSha)
         Invoke-Git @("checkout", "--detach", "--force", $lastGoodSha)
+        $bootstrappedKeys = Ensure-RequiredRuntimeEnv -RepositoryPath $DeployPath
+        if ($bootstrappedKeys.Count -gt 0) {
+            Write-Output "Bootstrapped runtime env keys during rollback: $($bootstrappedKeys -join ', ')"
+        }
         Sync-CgsSharedSecret -RepositoryPath $DeployPath
         docker compose up -d --build
     } finally {

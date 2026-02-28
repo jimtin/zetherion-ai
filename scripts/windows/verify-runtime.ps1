@@ -20,6 +20,9 @@ $details = [ordered]@{
     bot_marker_check = ""
     postgres_keys = @()
     fallback_probe_output = ""
+    optional_services_skipped = @()
+    monitored_services = @()
+    unhealthy_services = @()
 }
 
 function Write-VerifyResult {
@@ -54,16 +57,57 @@ try {
             $services = @($services)
         }
 
-        $badServices = @(
+        $optionalServices = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+        $envPath = Join-Path $DeployPath ".env"
+        $cloudflareToken = ""
+        if (Test-Path $envPath) {
+            $envLines = Get-Content -Path $envPath
+            for ($i = $envLines.Count - 1; $i -ge 0; $i--) {
+                $line = $envLines[$i]
+                if ($line -match "^\s*#") {
+                    continue
+                }
+                if ($line -notmatch "^\s*CLOUDFLARE_TUNNEL_TOKEN\s*=") {
+                    continue
+                }
+
+                $separatorIndex = $line.IndexOf("=")
+                if ($separatorIndex -lt 0) {
+                    continue
+                }
+                $cloudflareToken = $line.Substring($separatorIndex + 1).Trim()
+                break
+            }
+        }
+
+        if (-not $cloudflareToken) {
+            $optionalServices.Add("cloudflared") | Out-Null
+        }
+
+        $monitoredServices = @(
             $services | Where-Object {
+                $serviceName = [string]($_.Service ?? "")
+                $containerName = [string]($_.Name ?? "")
+                -not ($optionalServices.Contains($serviceName) -or $optionalServices.Contains($containerName))
+            }
+        )
+        $details.optional_services_skipped = @($optionalServices)
+        $details.monitored_services = @($monitoredServices | ForEach-Object { [string]($_.Service ?? $_.Name) })
+
+        $badServices = @(
+            $monitoredServices | Where-Object {
                 ($_.Status -match "Exited|Restarting|Dead|Created|unhealthy")
             }
         )
-        if ($services.Count -gt 0 -and $badServices.Count -eq 0) {
+        $details.unhealthy_services = @(
+            $badServices | ForEach-Object { [string]($_.Service ?? $_.Name) }
+        )
+
+        if ($monitoredServices.Count -gt 0 -and $badServices.Count -eq 0) {
             $checks.containers_healthy = $true
-            $details.container_health = "All services reported non-failing status."
+            $details.container_health = "All monitored services reported non-failing status."
         } else {
-            $details.container_health = "One or more services were unhealthy or not running."
+            $details.container_health = "One or more monitored services were unhealthy or not running."
         }
 
         $botLogs = docker compose logs zetherion-ai-bot --tail 400
