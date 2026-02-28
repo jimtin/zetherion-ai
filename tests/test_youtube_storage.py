@@ -7,12 +7,17 @@ connection is needed.
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 from uuid import UUID, uuid4
 
 import pytest
 
-from zetherion_ai.skills.youtube.storage import _SCHEMA_SQL, YouTubeStorage, _json_str
+from zetherion_ai.skills.youtube.storage import (
+    _SCHEMA_LOCK_KEY,
+    _SCHEMA_SQL,
+    YouTubeStorage,
+    _json_str,
+)
 
 # ------------------------------------------------------------------
 # Fixtures
@@ -24,6 +29,10 @@ def mock_pool():
     """Create a mock asyncpg pool that yields an async connection context."""
     pool = MagicMock()
     conn = AsyncMock()
+    tx = MagicMock()
+    tx.__aenter__ = AsyncMock(return_value=None)
+    tx.__aexit__ = AsyncMock(return_value=False)
+    conn.transaction = MagicMock(return_value=tx)
     ctx = AsyncMock()
     ctx.__aenter__ = AsyncMock(return_value=conn)
     ctx.__aexit__ = AsyncMock(return_value=False)
@@ -126,7 +135,12 @@ class TestInitialize:
         await s.initialize()
 
         assert s._pool is pool
-        conn.execute.assert_awaited_once_with(_SCHEMA_SQL)
+        conn.execute.assert_has_awaits(
+            [
+                call("SELECT pg_advisory_xact_lock($1::bigint)", _SCHEMA_LOCK_KEY),
+                call(_SCHEMA_SQL),
+            ]
+        )
 
     @pytest.mark.asyncio
     async def test_initialize_creates_pool_from_dsn(self, mock_pool):
@@ -145,7 +159,12 @@ class TestInitialize:
                 max_size=5,
             )
             assert s._pool is pool
-            conn.execute.assert_awaited_once_with(_SCHEMA_SQL)
+            conn.execute.assert_has_awaits(
+                [
+                    call("SELECT pg_advisory_xact_lock($1::bigint)", _SCHEMA_LOCK_KEY),
+                    call(_SCHEMA_SQL),
+                ]
+            )
 
     @pytest.mark.asyncio
     async def test_initialize_schema_contains_all_tables(self, mock_pool):
@@ -155,7 +174,7 @@ class TestInitialize:
 
         await s.initialize()
 
-        schema_sql = conn.execute.call_args[0][0]
+        schema_sql = conn.execute.await_args_list[-1][0][0]
         assert "CREATE TABLE IF NOT EXISTS youtube_channels" in schema_sql
         assert "CREATE TABLE IF NOT EXISTS youtube_videos" in schema_sql
         assert "CREATE TABLE IF NOT EXISTS youtube_comments" in schema_sql

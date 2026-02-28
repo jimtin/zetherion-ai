@@ -397,6 +397,7 @@ async def test_bot_handles_complex_query(discord_test_client: DiscordTestClient)
 
 
 @pytest.mark.discord_e2e
+@pytest.mark.optional_e2e
 @pytest.mark.skipif(SKIP_DISCORD_E2E, reason=SKIP_REASON)
 @pytest.mark.asyncio
 async def test_bot_remembers_information(discord_test_client: DiscordTestClient) -> None:

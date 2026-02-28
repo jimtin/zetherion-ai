@@ -190,6 +190,9 @@ CREATE INDEX IF NOT EXISTS idx_yt_docs_channel
     ON youtube_channel_documents (channel_id);
 """
 
+# Serialize schema DDL across services (API + Skills) sharing the same DB.
+_SCHEMA_LOCK_KEY = 758320114209604113
+
 
 class YouTubeStorage:
     """PostgreSQL + Qdrant storage backend for all YouTube skills."""
@@ -230,7 +233,11 @@ class YouTubeStorage:
                 min_size=pool_min,
                 max_size=pool_max,
             )
-        async with self._db.acquire() as conn:
+        async with self._db.acquire() as conn, conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock($1::bigint)",
+                _SCHEMA_LOCK_KEY,
+            )
             await conn.execute(_SCHEMA_SQL)
         log.info("youtube_storage_initialized")
 

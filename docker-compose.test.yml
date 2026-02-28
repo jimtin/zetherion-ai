@@ -113,6 +113,7 @@ services:
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - CGS_GATEWAY_HOST=0.0.0.0
       - CGS_GATEWAY_PORT=8443
+      - ENCRYPTION_SALT_PATH=/app/data/salt.bin
       - CGS_AUTH_JWKS_URL=https://example.com/.well-known/jwks.json
       - CGS_AUTH_ISSUER=test-issuer
       - CGS_AUTH_AUDIENCE=test-audience
@@ -120,6 +121,8 @@ services:
       - ZETHERION_SKILLS_API_BASE_URL=http://zetherion-ai-skills:8080
       - ZETHERION_SKILLS_API_SECRET=${ZETHERION_SKILLS_API_SECRET:-${SKILLS_API_SECRET:-test-skills-secret}}
       - ENVIRONMENT=test
+    volumes:
+      - ./data:/app/data
     ports:
       - "28444:8443"
     networks:

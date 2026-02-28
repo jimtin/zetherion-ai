@@ -246,6 +246,7 @@ start_docker_background() {
     local stale_containers=(
         "${PROJECT}-bot"
         "${PROJECT}-api"
+        "${PROJECT}-cgs-gateway"
         "${PROJECT}-skills"
         "${PROJECT}-postgres"
         "${PROJECT}-qdrant"
@@ -269,22 +270,23 @@ start_docker_background() {
         ollama_router=$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-ollama-router" 2>/dev/null || echo "missing")
         skills=$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-skills" 2>/dev/null || echo "missing")
         api=$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-api" 2>/dev/null || echo "missing")
+        cgs_gateway=$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-cgs-gateway" 2>/dev/null || echo "missing")
         bot=$(docker inspect --format='{{.State.Status}}' "${PROJECT}-bot" 2>/dev/null || echo "missing")
 
-        if [ "$postgres" = "healthy" ] && [ "$qdrant" = "healthy" ] && [ "$ollama" = "healthy" ] && [ "$ollama_router" = "healthy" ] && [ "$skills" = "healthy" ] && [ "$api" = "healthy" ] && [ "$bot" = "running" ]; then
+        if [ "$postgres" = "healthy" ] && [ "$qdrant" = "healthy" ] && [ "$ollama" = "healthy" ] && [ "$ollama_router" = "healthy" ] && [ "$skills" = "healthy" ] && [ "$api" = "healthy" ] && [ "$cgs_gateway" = "healthy" ] && [ "$bot" = "running" ]; then
             echo "[$(ts)] [docker] All services ready."
             break
         fi
         if [ "$i" -eq 90 ]; then
             echo "[$(ts)] [docker] ERROR: Services failed to become healthy within 4.5 minutes."
-            echo "  postgres=$postgres qdrant=$qdrant ollama=$ollama router=$ollama_router skills=$skills api=$api bot=$bot"
+            echo "  postgres=$postgres qdrant=$qdrant ollama=$ollama router=$ollama_router skills=$skills api=$api cgs_gateway=$cgs_gateway bot=$bot"
             docker compose -f "$COMPOSE_FILE" -p "$PROJECT" logs --tail=30
             echo "DOCKER_ERROR: Services failed to become healthy" > "$DOCKER_LOG"
             return 1
         fi
         # Log progress every 15 seconds (every 5th iteration at 3s interval)
         if [ $((i % 5)) -eq 0 ]; then
-            echo "[$(ts)] [docker]   ...waiting (pg=$postgres qd=$qdrant ol=$ollama rt=$ollama_router sk=$skills api=$api bot=$bot)"
+            echo "[$(ts)] [docker]   ...waiting (pg=$postgres qd=$qdrant ol=$ollama rt=$ollama_router sk=$skills api=$api cgs=$cgs_gateway bot=$bot)"
         fi
         sleep 3
     done
