@@ -3,6 +3,7 @@ info:
   title: Zetherion Public API
   version: 1.0.0
   description: Public `/api/v1` contract used by external clients and CGS gateway integrations.
+  x-maintenance-note: "2026-03-01: Internal document route typing/multipart parsing hardening only; no public contract changes."
 servers:
   - url: https://{host}
     variables:
