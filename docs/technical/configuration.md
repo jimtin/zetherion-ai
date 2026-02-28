@@ -36,6 +36,14 @@ cp .env.example .env
 | `ALLOW_BOT_MESSAGES` | `false` | Accept bot-origin messages (testing) |
 | `DEV_AGENT_WEBHOOK_NAME` | `zetherion-dev-agent` | Trusted dev webhook sender |
 | `DEV_AGENT_WEBHOOK_ID` | empty | Optional Discord webhook ID allowlist for dev-agent ingestion |
+| `DEV_AGENT_ENABLED` | `false` | Enable dev-agent monitoring and cleanup automation |
+| `DEV_AGENT_SERVICE_URL` | `http://zetherion-ai-dev-agent:8787` | Dev-agent sidecar base URL |
+| `DEV_AGENT_BOOTSTRAP_SECRET` | empty | One-time bootstrap secret for dev-agent provisioning |
+| `DEV_AGENT_CLEANUP_HOUR` | `2` | Daily cleanup hour (0-23) for dev-agent tasks |
+| `DEV_AGENT_CLEANUP_MINUTE` | `30` | Daily cleanup minute (0-59) for dev-agent tasks |
+| `DEV_AGENT_APPROVAL_REPROMPT_HOURS` | `24` | Re-prompt interval for pending cleanup approvals |
+| `DEV_AGENT_DISCORD_CHANNEL_ID` | empty | Discord channel ID used by dev-agent prompts/events |
+| `DEV_AGENT_DISCORD_GUILD_ID` | empty | Discord guild ID used by dev-agent prompts/events |
 | `DEV_JOURNAL_RETENTION_DAYS` | `120` | Days to retain dev journal entries |
 
 ---
@@ -80,6 +88,8 @@ cp .env.example .env
 | Variable | Default | Description |
 |---|---|---|
 | `POSTGRES_DSN` | `postgresql://zetherion:password@postgres:5432/zetherion` | PostgreSQL DSN |
+| `POSTGRES_POOL_MIN_SIZE` | `1` | Minimum asyncpg pool size per service |
+| `POSTGRES_POOL_MAX_SIZE` | `5` | Maximum asyncpg pool size per service |
 | `QDRANT_HOST` | `qdrant` | Qdrant host |
 | `QDRANT_PORT` | `6333` | Qdrant port |
 | `QDRANT_USE_TLS` | `false` | Enable TLS for Qdrant |
@@ -160,6 +170,10 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `NOTIFY_ON_MISSING_PRICING` | `false` | Notify on missing pricing |
 | `DAILY_SUMMARY_ENABLED` | `false` | Daily summary toggle |
 | `DAILY_SUMMARY_HOUR` | `9` | Daily summary hour |
+| `PROVIDER_ISSUE_ALERTS_ENABLED` | `true` | Alert on provider auth/billing/rate-limit failures |
+| `PROVIDER_ISSUE_ALERT_COOLDOWN_SECONDS` | `3600` | Cooldown between repeated provider issue alerts |
+| `PROVIDER_PROBE_ENABLED` | `true` | Enable periodic paid-provider readiness probes |
+| `PROVIDER_PROBE_INTERVAL_SECONDS` | `1800` | Seconds between provider readiness probes |
 
 ---
 
@@ -228,6 +242,15 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `API_HOST` | `0.0.0.0` | Public API bind host |
 | `API_PORT` | `8443` | Public API port |
 | `API_JWT_SECRET` | unset | Session JWT signing secret |
+| `CGS_GATEWAY_HOST` | `0.0.0.0` | CGS gateway bind host |
+| `CGS_GATEWAY_PORT` | `8743` | CGS gateway bind port |
+| `CGS_GATEWAY_ALLOWED_ORIGINS` | empty | Comma-separated CORS origins for CGS gateway |
+| `CGS_AUTH_JWKS_URL` | empty | JWKS URL for validating CGS JWT bearer tokens |
+| `CGS_AUTH_ISSUER` | empty | Expected JWT issuer for CGS auth tokens |
+| `CGS_AUTH_AUDIENCE` | empty | Expected JWT audience for CGS auth tokens |
+| `ZETHERION_PUBLIC_API_BASE_URL` | `http://zetherion-ai-traefik:8443` | Upstream Zetherion public API base URL for CGS gateway |
+| `ZETHERION_SKILLS_API_BASE_URL` | `http://zetherion-ai-traefik:8080` | Upstream Zetherion skills API base URL for CGS gateway |
+| `ZETHERION_SKILLS_API_SECRET` | unset | Optional override secret for CGS gateway -> skills API calls |
 | `ANALYTICS_EVENT_RETENTION_DAYS` | `90` | Retention window for raw web events |
 | `ANALYTICS_REPLAY_RETENTION_DAYS` | `14` | Retention window for replay chunk metadata |
 | `ANALYTICS_REPLAY_ENABLED_DEFAULT` | `false` | Default replay ingest policy for tenants |
@@ -260,6 +283,13 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `UPDATER_SECRET` | empty | Updater shared secret |
 | `UPDATER_SECRET_PATH` | `/app/data/.updater-secret` | Shared secret file path |
 | `UPDATER_STATE_PATH` | `/app/data/updater-state.json` | Updater state file |
+| `UPDATER_VERIFY_SIGNATURES` | `true` | Require signed release verification before update apply |
+| `UPDATER_VERIFY_IDENTITY` | empty | Expected Cosign certificate identity for signatures |
+| `UPDATER_VERIFY_OIDC_ISSUER` | `https://token.actions.githubusercontent.com` | Expected OIDC issuer for Cosign keyless verification |
+| `UPDATER_VERIFY_REKOR_URL` | `https://rekor.sigstore.dev` | Rekor transparency log URL for signature verification |
+| `UPDATER_RELEASE_MANIFEST_ASSET` | `release-manifest.json` | Release asset name for signed update manifest |
+| `UPDATER_RELEASE_SIGNATURE_ASSET` | `release-manifest.sig` | Release asset name for update manifest signature |
+| `UPDATER_RELEASE_CERTIFICATE_ASSET` | `release-manifest.pem` | Release asset name for signing certificate |
 | `UPDATER_TRAEFIK_DYNAMIC_PATH` | `/project/config/traefik/dynamic/updater-routes.yml` | Traefik route file |
 | `TELEMETRY_SHARING_ENABLED` | `false` | Outbound telemetry toggle |
 | `TELEMETRY_CONSENT_CATEGORIES` | empty | Allowed telemetry categories |
