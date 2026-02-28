@@ -1076,6 +1076,118 @@
   
   
     <li class="md-nav__item">
+      <a href="../../technical/api-auth-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Auth Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/api-error-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Error Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/frontend-route-wiring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Frontend Route Wiring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/openapi-contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenAPI Contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../technical/ai-agent-integration/" class="md-nav__link">
         
   
@@ -1422,6 +1534,17 @@
     <span class="md-ellipsis">
       
         Workflow Triggers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#additional-main-branch-automation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Additional Main-Branch Automation
       
     </span>
   </a>
@@ -2016,6 +2139,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#additional-main-branch-automation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Additional Main-Branch Automation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#jobs" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2422,6 +2556,45 @@
 </tr>
 </tbody>
 </table>
+<h3 id="additional-main-branch-automation">Additional Main-Branch Automation<a class="headerlink" href="#additional-main-branch-automation" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Workflow</th>
+<th>Trigger</th>
+<th>Contract</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>docs.yml</code> (<code>Deploy Documentation</code>)</td>
+<td>every push to <code>main</code></td>
+<td>Rebuild + republish full docs suite on each <code>main</code> merge</td>
+</tr>
+<tr>
+<td><code>post-deploy-promotions.yml</code> (<code>Post-Deploy Promotions</code>)</td>
+<td>successful <code>Deploy Windows</code> completion on <code>main</code></td>
+<td>Validate deployment receipt, auto-increment GitHub release, generate+publish CGS blog</td>
+</tr>
+</tbody>
+</table>
+<p>Post-deploy promotion gates:</p>
+<ol>
+<li><code>deployment-receipt.json</code> must be <code>status=success</code>.</li>
+<li><code>target_sha == deployed_sha</code> and must match triggering SHA.</li>
+<li>Required receipt checks must all be <code>true</code>:</li>
+<li><code>containers_healthy</code></li>
+<li><code>bot_startup_markers</code></li>
+<li><code>postgres_model_keys</code></li>
+<li><code>fallback_probe</code></li>
+<li><code>recovery_tasks_registered</code></li>
+<li><code>runner_service_persistent</code></li>
+<li><code>docker_service_persistent</code></li>
+<li>Blog generation requires high-tier models only:</li>
+<li>draft: <code>gpt-5.2</code></li>
+<li>refine: <code>claude-sonnet-4-6</code></li>
+<li>no lower-tier fallback</li>
+</ol>
 <h3 id="jobs">Jobs<a class="headerlink" href="#jobs" title="Permanent link">&para;</a></h3>
 <p>The pipeline runs the following jobs. Jobs without dependency arrows run in parallel.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>+------------------+    +-------------------+    +-------------------+

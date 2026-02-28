@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://jimtin.github.io/zetherion-ai/technical/gmail-architecture/">
+        <link rel="canonical" href="https://jimtin.github.io/zetherion-ai/technical/frontend-route-wiring/">
       
       
-        <link rel="prev" href="../skills-framework/">
+        <link rel="prev" href="../api-error-matrix/">
       
       
-        <link rel="next" href="../observation-pipeline/">
+        <link rel="next" href="../openapi-contracts/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Gmail Architecture - Zetherion AI</title>
+        <title>Frontend Route Wiring - Zetherion AI</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#gmail-architecture" class="md-skip">
+        <a href="#frontend-route-to-screen-wiring-guide" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Gmail Architecture
+              Frontend Route Wiring
             
           </span>
         </div>
@@ -908,37 +908,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Gmail Architecture
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../gmail-architecture/" class="md-nav__link">
         
   
   
@@ -954,214 +927,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Overview
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#module-structure" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Module Structure
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#trust-system" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Trust System
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Trust System">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#two-dimensional-trust" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Two-Dimensional Trust
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#effective-trust-calculation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Effective Trust Calculation
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#trust-evolution" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Trust Evolution
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#reply-type-ceilings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reply Type Ceilings
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#auto-send-decision" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Auto-Send Decision
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#database-schema" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Database Schema
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#reply-pipeline" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reply Pipeline
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#account-management" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Account Management
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Account Management">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#database-schema_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Database Schema
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#digest-generation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Digest Generation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#analytics" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Analytics
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#heartbeat-integration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Heartbeat Integration
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#related-docs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Related Docs
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1367,10 +1132,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../frontend-route-wiring/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Frontend Route Wiring
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1386,6 +1178,103 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#document-center-screens" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Document Center Screens
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#retrieval-assistant-panel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Retrieval Assistant Panel
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#conversation-screens-existing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conversation Screens (Existing)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#expected-request-envelope-behavior" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Expected Request Envelope Behavior
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#upload-ux-sequence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upload UX Sequence
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#download-ux-sequence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Download UX Sequence
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-handling-ux-hints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Handling UX Hints
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1827,10 +1716,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#document-center-screens" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview
+        Document Center Screens
       
     </span>
   </a>
@@ -1838,10 +1727,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#module-structure" class="md-nav__link">
+  <a href="#retrieval-assistant-panel" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Module Structure
+        Retrieval Assistant Panel
       
     </span>
   </a>
@@ -1849,93 +1738,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#trust-system" class="md-nav__link">
+  <a href="#conversation-screens-existing" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Trust System
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Trust System">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#two-dimensional-trust" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Two-Dimensional Trust
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#effective-trust-calculation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Effective Trust Calculation
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#trust-evolution" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Trust Evolution
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#reply-type-ceilings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reply Type Ceilings
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#auto-send-decision" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Auto-Send Decision
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#database-schema" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Database Schema
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#reply-pipeline" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reply Pipeline
+        Conversation Screens (Existing)
       
     </span>
   </a>
@@ -1943,38 +1749,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#account-management" class="md-nav__link">
+  <a href="#expected-request-envelope-behavior" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Account Management
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Account Management">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#database-schema_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Database Schema
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#digest-generation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Digest Generation
+        Expected Request Envelope Behavior
       
     </span>
   </a>
@@ -1982,10 +1760,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#analytics" class="md-nav__link">
+  <a href="#upload-ux-sequence" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Analytics
+        Upload UX Sequence
       
     </span>
   </a>
@@ -1993,10 +1771,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#heartbeat-integration" class="md-nav__link">
+  <a href="#download-ux-sequence" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Heartbeat Integration
+        Download UX Sequence
       
     </span>
   </a>
@@ -2004,10 +1782,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#related-docs" class="md-nav__link">
+  <a href="#error-handling-ux-hints" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Related Docs
+        Error Handling UX Hints
       
     </span>
   </a>
@@ -2034,209 +1812,153 @@
   
 
 
-<h1 id="gmail-architecture">Gmail Architecture<a class="headerlink" href="#gmail-architecture" title="Permanent link">&para;</a></h1>
-<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>The Gmail integration is a 12-file module (src/zetherion_ai/skills/gmail/) providing email management with a progressive trust system for reply automation.</p>
-<h2 id="module-structure">Module Structure<a class="headerlink" href="#module-structure" title="Permanent link">&para;</a></h2>
+<h1 id="frontend-route-to-screen-wiring-guide">Frontend Route-to-Screen Wiring Guide<a class="headerlink" href="#frontend-route-to-screen-wiring-guide" title="Permanent link">&para;</a></h1>
+<p>This guide maps CGS <code>/service/ai/v1</code> routes to expected frontend flows.</p>
+<h2 id="document-center-screens">Document Center Screens<a class="headerlink" href="#document-center-screens" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
-<th>File</th>
-<th>Purpose</th>
+<th>Screen</th>
+<th>Route(s)</th>
+<th>Method</th>
+<th>Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>skill.py</td>
-<td>Entry point, intent routing (7 intents)</td>
+<td>Document list</td>
+<td><code>/service/ai/v1/documents?tenant_id={tenant_id}</code></td>
+<td><code>GET</code></td>
+<td>Shows status (<code>uploaded</code>, <code>processing</code>, <code>indexed</code>, <code>failed</code>)</td>
 </tr>
 <tr>
-<td>trust.py</td>
-<td>Per-contact and per-type trust scoring</td>
+<td>Upload modal - start</td>
+<td><code>/service/ai/v1/documents/uploads</code></td>
+<td><code>POST</code></td>
+<td>Returns <code>upload_id</code> + complete route</td>
 </tr>
 <tr>
-<td>accounts.py</td>
-<td>Multi-account management with encrypted tokens</td>
+<td>Upload modal - complete</td>
+<td><code>/service/ai/v1/documents/uploads/{upload_id}/complete</code></td>
+<td><code>POST</code></td>
+<td>Send <code>tenant_id</code>, <code>file_base64</code>, optional metadata</td>
 </tr>
 <tr>
-<td>inbox.py</td>
-<td>Unified inbox aggregation</td>
+<td>Document detail</td>
+<td><code>/service/ai/v1/documents/{document_id}?tenant_id={tenant_id}</code></td>
+<td><code>GET</code></td>
+<td>Metadata + ingestion/index state</td>
 </tr>
 <tr>
-<td>digest.py</td>
-<td>Morning/evening/weekly digest generation</td>
+<td>Preview pane</td>
+<td><code>/service/ai/v1/documents/{document_id}/preview?tenant_id={tenant_id}</code></td>
+<td><code>GET</code></td>
+<td>Render inline PDF/HTML/text response</td>
 </tr>
 <tr>
-<td>replies.py</td>
-<td>AI-powered reply generation and classification</td>
+<td>Download action</td>
+<td><code>/service/ai/v1/documents/{document_id}/download?tenant_id={tenant_id}</code></td>
+<td><code>GET</code></td>
+<td>Browser file download</td>
 </tr>
 <tr>
-<td>analytics.py</td>
-<td>Email analytics and relationship scoring</td>
-</tr>
-<tr>
-<td>auth.py</td>
-<td>OAuth2 authentication</td>
-</tr>
-<tr>
-<td>client.py</td>
-<td>Gmail API client</td>
-</tr>
-<tr>
-<td>sync.py</td>
-<td>Email synchronization</td>
-</tr>
-<tr>
-<td>calendar_sync.py</td>
-<td>Calendar integration</td>
-</tr>
-<tr>
-<td>conflicts.py</td>
-<td>Calendar conflict detection</td>
+<td>Re-index button</td>
+<td><code>/service/ai/v1/documents/{document_id}/index</code></td>
+<td><code>POST</code></td>
+<td>Body requires <code>tenant_id</code></td>
 </tr>
 </tbody>
 </table>
-<h2 id="trust-system">Trust System<a class="headerlink" href="#trust-system" title="Permanent link">&para;</a></h2>
-<h3 id="two-dimensional-trust">Two-Dimensional Trust<a class="headerlink" href="#two-dimensional-trust" title="Permanent link">&para;</a></h3>
-<p>Trust is tracked along two dimensions:
-1. <strong>Type Trust</strong>: Per reply type (e.g., how much to trust acknowledgment replies globally)
-2. <strong>Contact Trust</strong>: Per sender (e.g., how much to trust replies to your manager)</p>
-<h3 id="effective-trust-calculation">Effective Trust Calculation<a class="headerlink" href="#effective-trust-calculation" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>effective_trust = min(type_trust, contact_trust, reply_type_ceiling)
-</code></pre></div>
-<h3 id="trust-evolution">Trust Evolution<a class="headerlink" href="#trust-evolution" title="Permanent link">&para;</a></h3>
+<h2 id="retrieval-assistant-panel">Retrieval Assistant Panel<a class="headerlink" href="#retrieval-assistant-panel" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
-<th>Event</th>
-<th>Delta</th>
+<th>Screen Element</th>
+<th>Route</th>
+<th>Method</th>
+<th>Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>User approves draft</td>
-<td>+0.05</td>
+<td>Provider/model selector preload</td>
+<td><code>/service/ai/v1/models/providers?tenant_id={tenant_id}</code></td>
+<td><code>GET</code></td>
+<td>Build provider + model dropdown options</td>
 </tr>
 <tr>
-<td>User makes minor edit</td>
-<td>-0.02</td>
+<td>Ask-on-documents submit</td>
+<td><code>/service/ai/v1/rag/query</code></td>
+<td><code>POST</code></td>
+<td>Body: <code>tenant_id</code>, <code>query</code>, optional <code>top_k</code>, <code>provider</code>, <code>model</code></td>
 </tr>
 <tr>
-<td>User makes major edit</td>
-<td>-0.10</td>
-</tr>
-<tr>
-<td>User rejects draft</td>
-<td>-0.20</td>
-</tr>
-<tr>
-<td>Floor</td>
-<td>0.00</td>
-</tr>
-<tr>
-<td>Global cap</td>
-<td>0.95</td>
+<td>Citation click-through</td>
+<td><code>/service/ai/v1/documents/{document_id}?tenant_id={tenant_id}</code></td>
+<td><code>GET</code></td>
+<td>Resolve source document metadata</td>
 </tr>
 </tbody>
 </table>
-<h3 id="reply-type-ceilings">Reply Type Ceilings<a class="headerlink" href="#reply-type-ceilings" title="Permanent link">&para;</a></h3>
+<h2 id="conversation-screens-existing">Conversation Screens (Existing)<a class="headerlink" href="#conversation-screens-existing" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
-<th>Reply Type</th>
-<th>Ceiling</th>
-<th>Rationale</th>
+<th>Screen</th>
+<th>Route</th>
+<th>Method</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>ACKNOWLEDGMENT</td>
-<td>0.95</td>
-<td>Low risk, formulaic</td>
+<td>New chat session</td>
+<td><code>/service/ai/v1/conversations</code></td>
+<td><code>POST</code></td>
 </tr>
 <tr>
-<td>MEETING_CONFIRM</td>
-<td>0.90</td>
-<td>Simple confirmation</td>
+<td>Send message</td>
+<td><code>/service/ai/v1/conversations/{conversation_id}/messages</code></td>
+<td><code>POST</code></td>
 </tr>
 <tr>
-<td>MEETING_DECLINE</td>
-<td>0.80</td>
-<td>Needs care with wording</td>
+<td>Stream response</td>
+<td><code>/service/ai/v1/conversations/{conversation_id}/messages/stream</code></td>
+<td><code>POST</code></td>
 </tr>
 <tr>
-<td>INFO_REQUEST</td>
-<td>0.75</td>
-<td>Content-dependent</td>
-</tr>
-<tr>
-<td>TASK_UPDATE</td>
-<td>0.70</td>
-<td>Context-dependent</td>
-</tr>
-<tr>
-<td>GENERAL</td>
-<td>0.60</td>
-<td>Variable risk</td>
-</tr>
-<tr>
-<td>NEGOTIATION</td>
-<td>0.50</td>
-<td>High stakes</td>
-</tr>
-<tr>
-<td>SENSITIVE</td>
-<td>0.30</td>
-<td>Highest risk</td>
+<td>History</td>
+<td><code>/service/ai/v1/conversations/{conversation_id}/messages</code></td>
+<td><code>GET</code></td>
 </tr>
 </tbody>
 </table>
-<h3 id="auto-send-decision">Auto-Send Decision<a class="headerlink" href="#auto-send-decision" title="Permanent link">&para;</a></h3>
-<p>A reply is auto-sent when BOTH conditions are met:
-- effective_trust &gt;= 0.85
-- confidence &gt;= 0.85</p>
-<h3 id="database-schema">Database Schema<a class="headerlink" href="#database-schema" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">gmail_type_trust</span><span class="w"> </span><span class="p">(</span><span class="n">user_id</span><span class="p">,</span><span class="w"> </span><span class="n">reply_type</span><span class="p">,</span><span class="w"> </span><span class="n">score</span><span class="p">,</span><span class="w"> </span><span class="n">approvals</span><span class="p">,</span><span class="w"> </span><span class="n">rejections</span><span class="p">,</span><span class="w"> </span><span class="n">edits</span><span class="p">,</span><span class="w"> </span><span class="n">total_interactions</span><span class="p">)</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">gmail_contact_trust</span><span class="w"> </span><span class="p">(</span><span class="n">user_id</span><span class="p">,</span><span class="w"> </span><span class="n">contact_email</span><span class="p">,</span><span class="w"> </span><span class="n">score</span><span class="p">,</span><span class="w"> </span><span class="n">approvals</span><span class="p">,</span><span class="w"> </span><span class="n">rejections</span><span class="p">,</span><span class="w"> </span><span class="n">edits</span><span class="p">,</span><span class="w"> </span><span class="n">total_interactions</span><span class="p">)</span>
-</code></pre></div>
-<h2 id="reply-pipeline">Reply Pipeline<a class="headerlink" href="#reply-pipeline" title="Permanent link">&para;</a></h2>
+<h2 id="expected-request-envelope-behavior">Expected Request Envelope Behavior<a class="headerlink" href="#expected-request-envelope-behavior" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Success responses return <code>request_id</code>, <code>data</code>, <code>error: null</code>.</li>
+<li>Failure responses return <code>request_id</code>, <code>data: null</code>, and typed <code>error</code> with <code>code</code>.</li>
+<li>Non-JSON preview/download routes stream raw bytes and preserve upstream <code>Content-Type</code> + <code>Content-Disposition</code> headers.</li>
+</ul>
+<h2 id="upload-ux-sequence">Upload UX Sequence<a class="headerlink" href="#upload-ux-sequence" title="Permanent link">&para;</a></h2>
 <ol>
-<li>Email received and classified by ReplyClassifier (keyword matching)</li>
-<li>Reply type determined (8 types from ACKNOWLEDGMENT to SENSITIVE)</li>
-<li>ReplyGenerator creates draft using InferenceBroker with type-specific templates</li>
-<li>Confidence score calculated: (ceiling * 0.7) + bonuses - penalties</li>
-<li>Trust check: if effective_trust &gt;= 0.85 AND confidence &gt;= 0.85, auto-send</li>
-<li>Otherwise, draft stored as PENDING for user review</li>
-<li>User approves/edits/rejects, trust evolves accordingly</li>
+<li>User selects file in browser.</li>
+<li>Frontend calls create upload route with file metadata.</li>
+<li>Frontend reads file bytes and calls complete upload route.</li>
+<li>Poll document list/detail until status transitions to <code>indexed</code> or <code>failed</code>.</li>
+<li>On <code>indexed</code>, enable retrieval and citation experience.</li>
 </ol>
-<h2 id="account-management">Account Management<a class="headerlink" href="#account-management" title="Permanent link">&para;</a></h2>
+<h2 id="download-ux-sequence">Download UX Sequence<a class="headerlink" href="#download-ux-sequence" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Frontend calls download route for selected document.</li>
+<li>Browser receives attachment headers.</li>
+<li>Client saves file using filename from <code>Content-Disposition</code>.</li>
+</ol>
+<h2 id="error-handling-ux-hints">Error Handling UX Hints<a class="headerlink" href="#error-handling-ux-hints" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Multi-account support (first account = primary)</li>
-<li>OAuth tokens encrypted with AES-256-GCM before storage</li>
-<li>Token refresh handled automatically</li>
-<li>Sync state tracked per account (history_id, last sync timestamps)</li>
+<li><code>AI_BAD_REQUEST</code>: show inline validation errors (tenant missing, query empty, payload invalid).</li>
+<li><code>AI_UPSTREAM_429</code>: show retry/backoff indicator.</li>
+<li><code>AI_UPSTREAM_5XX</code> or <code>AI_INTERNAL_ERROR</code>: show transient service outage and retry CTA.</li>
+<li>Document status <code>failed</code>: surface <code>error_message</code> from document detail endpoint.</li>
 </ul>
-<h3 id="database-schema_1">Database Schema<a class="headerlink" href="#database-schema_1" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">gmail_accounts</span><span class="w"> </span><span class="p">(</span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">user_id</span><span class="p">,</span><span class="w"> </span><span class="n">email</span><span class="p">,</span><span class="w"> </span><span class="n">access_token_encrypted</span><span class="p">,</span><span class="w"> </span><span class="n">refresh_token_encrypted</span><span class="p">,</span><span class="w"> </span><span class="n">token_expiry</span><span class="p">,</span><span class="w"> </span><span class="n">scopes</span><span class="p">,</span><span class="w"> </span><span class="n">is_primary</span><span class="p">,</span><span class="w"> </span><span class="n">last_sync</span><span class="p">)</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">gmail_sync_state</span><span class="w"> </span><span class="p">(</span><span class="n">account_id</span><span class="p">,</span><span class="w"> </span><span class="n">history_id</span><span class="p">,</span><span class="w"> </span><span class="n">last_full_sync</span><span class="p">,</span><span class="w"> </span><span class="n">last_partial_sync</span><span class="p">)</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">gmail_drafts</span><span class="w"> </span><span class="p">(</span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">email_id</span><span class="p">,</span><span class="w"> </span><span class="n">account_id</span><span class="p">,</span><span class="w"> </span><span class="n">draft_text</span><span class="p">,</span><span class="w"> </span><span class="n">reply_type</span><span class="p">,</span><span class="w"> </span><span class="n">confidence</span><span class="p">,</span><span class="w"> </span><span class="n">status</span><span class="p">,</span><span class="w"> </span><span class="n">sent_at</span><span class="p">)</span>
-</code></pre></div>
-<h2 id="digest-generation">Digest Generation<a class="headerlink" href="#digest-generation" title="Permanent link">&para;</a></h2>
-<p>Three digest types:
-- <strong>Morning</strong>: Unread summary by classification, today's volume, pending drafts
-- <strong>Evening</strong>: Day summary, drafted count, neglected threads (&gt;2 days)
-- <strong>Weekly</strong>: 7-day volume trends, top 5 contacts, classification breakdown, neglected threads (&gt;5 days)</p>
-<h2 id="analytics">Analytics<a class="headerlink" href="#analytics" title="Permanent link">&para;</a></h2>
-<ul>
-<li>Contact relationship scoring: volume (log scale, 0.4 max) + recency (0.3 max) + response time (0.2 max)</li>
-<li>Period statistics: received/sent/drafted counts, average response time</li>
-<li>Top senders identification</li>
-<li>Neglected thread detection</li>
-</ul>
-<h2 id="heartbeat-integration">Heartbeat Integration<a class="headerlink" href="#heartbeat-integration" title="Permanent link">&para;</a></h2>
-<p>The Gmail skill provides heartbeat actions for periodic digest generation. When users have connected accounts, the scheduler triggers email_digest at configured intervals.</p>
-<h2 id="related-docs">Related Docs<a class="headerlink" href="#related-docs" title="Permanent link">&para;</a></h2>
-<p>Links to: architecture.md, security.md (OAuth, trust), configuration.md (Gmail vars)</p>
 
 
 

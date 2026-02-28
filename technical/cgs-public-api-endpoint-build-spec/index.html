@@ -1070,6 +1070,118 @@
   
   
     <li class="md-nav__item">
+      <a href="../api-auth-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Auth Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api-error-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Error Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../frontend-route-wiring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Frontend Route Wiring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../openapi-contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenAPI Contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../ai-agent-integration/" class="md-nav__link">
         
   
@@ -1831,10 +1943,120 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#83-internal-operator-endpoints" class="md-nav__link">
+  <a href="#83-document-intelligence-endpoints" class="md-nav__link">
     <span class="md-ellipsis">
       
-        8.3 Internal Operator Endpoints
+        8.3 Document Intelligence Endpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-serviceaiv1documentsuploads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /service/ai/v1/documents/uploads
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-serviceaiv1documentsuploadsupload_idcomplete" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /service/ai/v1/documents/uploads/{upload_id}/complete
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-serviceaiv1documentstenant_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /service/ai/v1/documents?tenant_id=...
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-serviceaiv1documentsdocument_idtenant_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /service/ai/v1/documents/{document_id}?tenant_id=...
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-serviceaiv1documentsdocument_idpreviewtenant_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /service/ai/v1/documents/{document_id}/preview?tenant_id=...
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-serviceaiv1documentsdocument_iddownloadtenant_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /service/ai/v1/documents/{document_id}/download?tenant_id=...
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-serviceaiv1documentsdocument_idindex" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /service/ai/v1/documents/{document_id}/index
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-serviceaiv1ragquery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /service/ai/v1/rag/query
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-serviceaiv1modelsproviderstenant_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /service/ai/v1/models/providers?tenant_id=...
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#84-internal-operator-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.4 Internal Operator Endpoints
       
     </span>
   </a>
@@ -1908,10 +2130,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#84-tenant-reporting-endpoints" class="md-nav__link">
+  <a href="#85-tenant-reporting-endpoints" class="md-nav__link">
     <span class="md-ellipsis">
       
-        8.4 Tenant Reporting Endpoints
+        8.5 Tenant Reporting Endpoints
       
     </span>
   </a>
@@ -2317,7 +2539,74 @@
 <ul>
 <li><code>/api/v1/analytics/recommendations/{recommendation_id}/feedback</code></li>
 </ul>
-<h3 id="83-internal-operator-endpoints">8.3 Internal Operator Endpoints<a class="headerlink" href="#83-internal-operator-endpoints" title="Permanent link">&para;</a></h3>
+<h3 id="83-document-intelligence-endpoints">8.3 Document Intelligence Endpoints<a class="headerlink" href="#83-document-intelligence-endpoints" title="Permanent link">&para;</a></h3>
+<p>All document endpoints require bearer auth and explicit tenant-scoping.
+For list/detail/preview/download/providers endpoints, <code>tenant_id</code> is required as a query param.
+For mutating endpoints, <code>tenant_id</code> is required in request JSON body.</p>
+<h3 id="post-serviceaiv1documentsuploads"><code>POST /service/ai/v1/documents/uploads</code><a class="headerlink" href="#post-serviceaiv1documentsuploads" title="Permanent link">&para;</a></h3>
+<p>Create upload intent (maps to <code>POST /api/v1/documents/uploads</code>).</p>
+<p>Request:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">{</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">&quot;tenant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tenant-a&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">&quot;file_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;proposal.pdf&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span><span class="nt">&quot;mime_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;application/pdf&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span><span class="nt">&quot;size_bytes&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">123456</span><span class="p">,</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">  </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;portal&quot;</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="p">}</span>
+</code></pre></div>
+<p>Response envelope status <code>201</code> with upstream payload in <code>data</code>.</p>
+<h3 id="post-serviceaiv1documentsuploadsupload_idcomplete"><code>POST /service/ai/v1/documents/uploads/{upload_id}/complete</code><a class="headerlink" href="#post-serviceaiv1documentsuploadsupload_idcomplete" title="Permanent link">&para;</a></h3>
+<p>Complete upload (maps to <code>POST /api/v1/documents/uploads/{upload_id}/complete</code>).</p>
+<p>Request:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="p">{</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">&quot;tenant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tenant-a&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">&quot;file_base64&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;base64&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span><span class="nt">&quot;customer&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;acme&quot;</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="p">}</span>
+</code></pre></div>
+<p>Response envelope status <code>201</code>.</p>
+<h3 id="get-serviceaiv1documentstenant_id"><code>GET /service/ai/v1/documents?tenant_id=...</code><a class="headerlink" href="#get-serviceaiv1documentstenant_id" title="Permanent link">&para;</a></h3>
+<p>Maps to <code>GET /api/v1/documents</code>.
+Response envelope contains <code>{documents,count}</code> payload.</p>
+<h3 id="get-serviceaiv1documentsdocument_idtenant_id"><code>GET /service/ai/v1/documents/{document_id}?tenant_id=...</code><a class="headerlink" href="#get-serviceaiv1documentsdocument_idtenant_id" title="Permanent link">&para;</a></h3>
+<p>Maps to <code>GET /api/v1/documents/{document_id}</code>.
+Response envelope contains document metadata and status lifecycle:
+<code>uploaded</code>, <code>processing</code>, <code>indexed</code>, <code>failed</code>.</p>
+<h3 id="get-serviceaiv1documentsdocument_idpreviewtenant_id"><code>GET /service/ai/v1/documents/{document_id}/preview?tenant_id=...</code><a class="headerlink" href="#get-serviceaiv1documentsdocument_idpreviewtenant_id" title="Permanent link">&para;</a></h3>
+<p>Binary passthrough to <code>GET /api/v1/documents/{document_id}/preview</code>.
+Gateway preserves relevant content headers:
+- <code>Content-Type</code>
+- <code>Content-Disposition</code>
+- <code>Cache-Control</code></p>
+<h3 id="get-serviceaiv1documentsdocument_iddownloadtenant_id"><code>GET /service/ai/v1/documents/{document_id}/download?tenant_id=...</code><a class="headerlink" href="#get-serviceaiv1documentsdocument_iddownloadtenant_id" title="Permanent link">&para;</a></h3>
+<p>Binary passthrough to <code>GET /api/v1/documents/{document_id}/download</code> with same header behavior.</p>
+<h3 id="post-serviceaiv1documentsdocument_idindex"><code>POST /service/ai/v1/documents/{document_id}/index</code><a class="headerlink" href="#post-serviceaiv1documentsdocument_idindex" title="Permanent link">&para;</a></h3>
+<p>Request:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="p">{</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">&quot;tenant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tenant-a&quot;</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="p">}</span>
+</code></pre></div>
+<p>Maps to <code>POST /api/v1/documents/{document_id}/index</code>.</p>
+<h3 id="post-serviceaiv1ragquery"><code>POST /service/ai/v1/rag/query</code><a class="headerlink" href="#post-serviceaiv1ragquery" title="Permanent link">&para;</a></h3>
+<p>Request:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="p">{</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">&quot;tenant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tenant-a&quot;</span><span class="p">,</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="nt">&quot;query&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Summarize implementation risks in the proposal&quot;</span><span class="p">,</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">&quot;top_k&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">6</span><span class="p">,</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="nt">&quot;provider&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;groq&quot;</span><span class="p">,</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llama-3.3-70b-versatile&quot;</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="p">}</span>
+</code></pre></div>
+<p>Maps to <code>POST /api/v1/rag/query</code>.
+Response envelope includes <code>answer</code>, <code>citations</code>, <code>provider</code>, <code>model</code>.</p>
+<h3 id="get-serviceaiv1modelsproviderstenant_id"><code>GET /service/ai/v1/models/providers?tenant_id=...</code><a class="headerlink" href="#get-serviceaiv1modelsproviderstenant_id" title="Permanent link">&para;</a></h3>
+<p>Maps to <code>GET /api/v1/models/providers</code>.
+Used by frontend provider/model selector UI.</p>
+<h3 id="84-internal-operator-endpoints">8.4 Internal Operator Endpoints<a class="headerlink" href="#84-internal-operator-endpoints" title="Permanent link">&para;</a></h3>
 <p>Prefix: <code>/service/ai/v1/internal</code></p>
 <h3 id="get-internaltenants"><code>GET /internal/tenants</code><a class="headerlink" href="#get-internaltenants" title="Permanent link">&para;</a></h3>
 <p>Query:</p>
@@ -2328,12 +2617,12 @@
 <h3 id="post-internaltenants"><code>POST /internal/tenants</code><a class="headerlink" href="#post-internaltenants" title="Permanent link">&para;</a></h3>
 <p>Creates tenant in Zetherion via Skills API intent <code>client_create</code>, then upserts mapping.</p>
 <p>Request body:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">{</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">&quot;cgs_tenant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tenant-a&quot;</span><span class="p">,</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Tenant A&quot;</span><span class="p">,</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span><span class="nt">&quot;domain&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tenant-a.example&quot;</span><span class="p">,</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span><span class="nt">&quot;config&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p">{</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">&quot;cgs_tenant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tenant-a&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Tenant A&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">  </span><span class="nt">&quot;domain&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tenant-a.example&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">  </span><span class="nt">&quot;config&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="p">}</span>
 </code></pre></div>
 <p>Returns (201) with <code>api_key</code> and mapping details.</p>
 <h3 id="patch-internaltenantstenant_id"><code>PATCH /internal/tenants/{tenant_id}</code><a class="headerlink" href="#patch-internaltenantstenant_id" title="Permanent link">&para;</a></h3>
@@ -2353,7 +2642,7 @@
 <li><code>environment</code> (default <code>production</code>)</li>
 <li><code>commit_sha</code>, <code>branch</code>, <code>tag_name</code>, <code>deployed_at</code>, <code>metadata</code></li>
 </ul>
-<h3 id="84-tenant-reporting-endpoints">8.4 Tenant Reporting Endpoints<a class="headerlink" href="#84-tenant-reporting-endpoints" title="Permanent link">&para;</a></h3>
+<h3 id="85-tenant-reporting-endpoints">8.5 Tenant Reporting Endpoints<a class="headerlink" href="#85-tenant-reporting-endpoints" title="Permanent link">&para;</a></h3>
 <p>Prefix: <code>/service/ai/v1/tenants/{tenant_id}</code></p>
 <h3 id="get-crmcontacts"><code>GET /crm/contacts</code><a class="headerlink" href="#get-crmcontacts" title="Permanent link">&para;</a></h3>
 <p>Forwards to <code>/api/v1/crm/contacts</code></p>
@@ -2366,7 +2655,7 @@
 <h2 id="9-upstream-mapping-summary">9. Upstream Mapping Summary<a class="headerlink" href="#9-upstream-mapping-summary" title="Permanent link">&para;</a></h2>
 <p>Runtime endpoints map to Zetherion Public API using:</p>
 <ul>
-<li><code>X-API-Key</code> (tenant-level operations: sessions/reporting/release markers)</li>
+<li><code>X-API-Key</code> (tenant-level operations: sessions, documents, RAG, reporting, release markers)</li>
 <li><code>Authorization: Bearer &lt;session_token&gt;</code> (session-scoped chat/analytics paths)</li>
 </ul>
 <p>Internal lifecycle maps to Skills API <code>/handle</code> with intents:</p>
@@ -2389,6 +2678,12 @@
 <li><code>CGS_AUTH_ISSUER</code></li>
 <li><code>CGS_AUTH_AUDIENCE</code></li>
 <li><code>CGS_GATEWAY_ALLOWED_ORIGINS</code></li>
+<li><code>CGS_BLOG_PUBLISH_URL</code></li>
+<li><code>CGS_BLOG_PUBLISH_TOKEN</code></li>
+<li><code>BLOG_MODEL_PRIMARY=gpt-5.2</code></li>
+<li><code>BLOG_MODEL_SECONDARY=claude-sonnet-4-6</code></li>
+<li><code>BLOG_PUBLISH_ENABLED=true</code></li>
+<li><code>RELEASE_AUTO_INCREMENT_ENABLED=true</code></li>
 </ul>
 <p>Defaults:</p>
 <ul>

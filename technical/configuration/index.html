@@ -1335,6 +1335,118 @@
   
   
     <li class="md-nav__item">
+      <a href="../api-auth-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Auth Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api-error-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Error Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../frontend-route-wiring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Frontend Route Wiring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../openapi-contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenAPI Contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../ai-agent-integration/" class="md-nav__link">
         
   
@@ -2216,6 +2328,16 @@
 <td><code>3072</code></td>
 <td>OpenAI embedding dimensions</td>
 </tr>
+<tr>
+<td><code>RAG_ALLOWED_PROVIDERS</code></td>
+<td><code>groq,openai,claude</code></td>
+<td>Allowed providers for <code>/api/v1/rag/query</code> provider override</td>
+</tr>
+<tr>
+<td><code>RAG_ALLOWED_MODELS</code></td>
+<td>empty</td>
+<td>Optional model allow-list for <code>/api/v1/rag/query</code> model override</td>
+</tr>
 </tbody>
 </table>
 <hr />
@@ -2791,6 +2913,36 @@ in <code>config.py</code>.</p>
 <td><code>ZETHERION_SKILLS_API_SECRET</code></td>
 <td>unset</td>
 <td>Optional override secret for CGS gateway -&gt; skills API calls</td>
+</tr>
+<tr>
+<td><code>CGS_BLOG_PUBLISH_URL</code></td>
+<td>empty</td>
+<td>CGS publish adapter URL used by post-deploy blog workflow</td>
+</tr>
+<tr>
+<td><code>CGS_BLOG_PUBLISH_TOKEN</code></td>
+<td>unset</td>
+<td>Auth token used to publish generated blog posts to CGS</td>
+</tr>
+<tr>
+<td><code>BLOG_MODEL_PRIMARY</code></td>
+<td><code>gpt-5.2</code></td>
+<td>Required OpenAI model for initial post-deploy draft generation</td>
+</tr>
+<tr>
+<td><code>BLOG_MODEL_SECONDARY</code></td>
+<td><code>claude-sonnet-4-6</code></td>
+<td>Required Claude model for humanizing/refinement pass</td>
+</tr>
+<tr>
+<td><code>BLOG_PUBLISH_ENABLED</code></td>
+<td><code>true</code></td>
+<td>Enable post-deploy blog generation/publish workflow</td>
+</tr>
+<tr>
+<td><code>RELEASE_AUTO_INCREMENT_ENABLED</code></td>
+<td><code>true</code></td>
+<td>Enable mandatory post-deploy GitHub release patch increment</td>
 </tr>
 <tr>
 <td><code>ANALYTICS_EVENT_RETENTION_DAYS</code></td>

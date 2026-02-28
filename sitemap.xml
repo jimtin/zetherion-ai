@@ -69,6 +69,14 @@
          <lastmod>2026-02-28</lastmod>
     </url>
     <url>
+         <loc>https://jimtin.github.io/zetherion-ai/technical/api-auth-matrix/</loc>
+         <lastmod>2026-02-28</lastmod>
+    </url>
+    <url>
+         <loc>https://jimtin.github.io/zetherion-ai/technical/api-error-matrix/</loc>
+         <lastmod>2026-02-28</lastmod>
+    </url>
+    <url>
          <loc>https://jimtin.github.io/zetherion-ai/technical/api-reference/</loc>
          <lastmod>2026-02-28</lastmod>
     </url>
@@ -97,11 +105,19 @@
          <lastmod>2026-02-28</lastmod>
     </url>
     <url>
+         <loc>https://jimtin.github.io/zetherion-ai/technical/frontend-route-wiring/</loc>
+         <lastmod>2026-02-28</lastmod>
+    </url>
+    <url>
          <loc>https://jimtin.github.io/zetherion-ai/technical/gmail-architecture/</loc>
          <lastmod>2026-02-28</lastmod>
     </url>
     <url>
          <loc>https://jimtin.github.io/zetherion-ai/technical/observation-pipeline/</loc>
+         <lastmod>2026-02-28</lastmod>
+    </url>
+    <url>
+         <loc>https://jimtin.github.io/zetherion-ai/technical/openapi-contracts/</loc>
          <lastmod>2026-02-28</lastmod>
     </url>
     <url>

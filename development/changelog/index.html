@@ -1076,6 +1076,118 @@
   
   
     <li class="md-nav__item">
+      <a href="../../technical/api-auth-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Auth Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/api-error-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Error Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/frontend-route-wiring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Frontend Route Wiring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/openapi-contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenAPI Contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../technical/ai-agent-integration/" class="md-nav__link">
         
   
@@ -1378,6 +1490,17 @@
   
     <nav class="md-nav" aria-label="[Unreleased]">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added-document-intelligence-post-deploy-promotions-2026-02-28" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Document Intelligence + Post-Deploy Promotions (2026-02-28)
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#added-phase-9-2026-02-08" class="md-nav__link">
@@ -2105,6 +2228,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#added-document-intelligence-post-deploy-promotions-2026-02-28" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Document Intelligence + Post-Deploy Promotions (2026-02-28)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added-phase-9-2026-02-08" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2689,6 +2823,40 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 </blockquote>
 <hr />
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="added-document-intelligence-post-deploy-promotions-2026-02-28">Added - Document Intelligence + Post-Deploy Promotions (2026-02-28)<a class="headerlink" href="#added-document-intelligence-post-deploy-promotions-2026-02-28" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Tenant-scoped document intelligence API endpoints:</li>
+<li><code>POST /api/v1/documents/uploads</code></li>
+<li><code>POST /api/v1/documents/uploads/{upload_id}/complete</code></li>
+<li><code>GET /api/v1/documents</code></li>
+<li><code>GET /api/v1/documents/{document_id}</code></li>
+<li><code>GET /api/v1/documents/{document_id}/preview</code></li>
+<li><code>GET /api/v1/documents/{document_id}/download</code></li>
+<li><code>POST /api/v1/documents/{document_id}/index</code></li>
+<li><code>POST /api/v1/rag/query</code></li>
+<li><code>GET /api/v1/models/providers</code></li>
+<li>New tenant document persistence schema:</li>
+<li><code>tenant_documents</code></li>
+<li><code>tenant_document_uploads</code></li>
+<li><code>document_ingestion_jobs</code></li>
+<li>Document ingestion pipeline for PDF/DOCX/text extraction, chunking, embedding, and indexing into <code>tenant_documents</code> Qdrant collection.</li>
+<li>CGS gateway runtime routes for document upload/list/detail/preview/download/re-index/RAG/provider catalog under <code>/service/ai/v1</code>.</li>
+<li>Provider/model override support in inference broker call path to support Groq/OpenAI/Claude routing for document RAG.</li>
+<li>Security and reliability hardening for Discord message alignment:</li>
+<li>intent-aware memory-store handling in Tier 2 security path to reduce benign false positives</li>
+<li>deterministic recent-context retrieval ordering in Qdrant</li>
+<li>queue serialization guard for <code>discord_message</code> tasks by <code>(user_id, channel_id)</code></li>
+<li>strict reply-reference matching in Discord E2E waiter logic</li>
+<li>CI docs-contract enforcement additions:</li>
+<li>endpoint doc-bundle checker (<code>scripts/check-endpoint-doc-bundle.py</code>)</li>
+<li>pipeline contract job now runs endpoint docs bundle checks with full git history</li>
+<li>Documentation deployment now republishes on every <code>main</code> push (no docs-only path filter).</li>
+<li>Post-deploy promotions workflow (<code>.github/workflows/post-deploy-promotions.yml</code>) added:</li>
+<li>gated by successful <code>Deploy Windows</code> completion and deployment receipt validation</li>
+<li>mandatory SemVer patch release auto-increment/idempotency per deployed SHA</li>
+<li>mandatory CGS blog generation/publish using <code>gpt-5.2</code> + <code>claude-sonnet-4-6</code> only</li>
+<li>publishes release/blog receipts as workflow artifacts</li>
+</ul>
 <h3 id="added-phase-9-2026-02-08">Added - Phase 9 (2026-02-08)<a class="headerlink" href="#added-phase-9-2026-02-08" title="Permanent link">&para;</a></h3>
 <h4 id="phase-9-personal-understanding-system">Phase 9: Personal Understanding System<a class="headerlink" href="#phase-9-personal-understanding-system" title="Permanent link">&para;</a></h4>
 <ul>

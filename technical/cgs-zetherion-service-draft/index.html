@@ -1070,6 +1070,118 @@
   
   
     <li class="md-nav__item">
+      <a href="../api-auth-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Auth Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api-error-matrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Error Matrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../frontend-route-wiring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Frontend Route Wiring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../openapi-contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenAPI Contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../ai-agent-integration/" class="md-nav__link">
         
   
@@ -1769,10 +1881,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#713-post-serviceaiv1internaltenants" class="md-nav__link">
+  <a href="#713-post-serviceaiv1documentsuploads" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7.13 POST /service/ai/v1/internal/tenants
+        7.13 POST /service/ai/v1/documents/uploads
       
     </span>
   </a>
@@ -1780,10 +1892,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#714-patch-serviceaiv1internaltenantstenant_id" class="md-nav__link">
+  <a href="#714-post-serviceaiv1documentsuploadsupload_idcomplete" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7.14 PATCH /service/ai/v1/internal/tenants/{tenant_id}
+        7.14 POST /service/ai/v1/documents/uploads/{upload_id}/complete
       
     </span>
   </a>
@@ -1791,10 +1903,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#715-post-serviceaiv1internaltenantstenant_iddeactivate" class="md-nav__link">
+  <a href="#715-get-serviceaiv1documents-get-serviceaiv1documentsdocument_id" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7.15 POST /service/ai/v1/internal/tenants/{tenant_id}/deactivate
+        7.15 GET /service/ai/v1/documents, GET /service/ai/v1/documents/{document_id}
       
     </span>
   </a>
@@ -1802,10 +1914,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#716-post-serviceaiv1internaltenantstenant_idkeysrotate" class="md-nav__link">
+  <a href="#716-get-serviceaiv1documentsdocument_idpreview-get-serviceaiv1documentsdocument_iddownload" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7.16 POST /service/ai/v1/internal/tenants/{tenant_id}/keys/rotate
+        7.16 GET /service/ai/v1/documents/{document_id}/preview, GET /service/ai/v1/documents/{document_id}/download
       
     </span>
   </a>
@@ -1813,10 +1925,65 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#717-post-serviceaiv1internaltenantstenant_idrelease-markers" class="md-nav__link">
+  <a href="#717-post-serviceaiv1ragquery-get-serviceaiv1modelsproviders" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7.17 POST /service/ai/v1/internal/tenants/{tenant_id}/release-markers
+        7.17 POST /service/ai/v1/rag/query, GET /service/ai/v1/models/providers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#718-post-serviceaiv1internaltenants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.18 POST /service/ai/v1/internal/tenants
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#719-patch-serviceaiv1internaltenantstenant_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.19 PATCH /service/ai/v1/internal/tenants/{tenant_id}
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#720-post-serviceaiv1internaltenantstenant_iddeactivate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.20 POST /service/ai/v1/internal/tenants/{tenant_id}/deactivate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#721-post-serviceaiv1internaltenantstenant_idkeysrotate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.21 POST /service/ai/v1/internal/tenants/{tenant_id}/keys/rotate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#722-post-serviceaiv1internaltenantstenant_idrelease-markers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.22 POST /service/ai/v1/internal/tenants/{tenant_id}/release-markers
       
     </span>
   </a>
@@ -2152,6 +2319,69 @@ Owners: <code>Catalyst Group Solutions (CGS) Platform</code>, <code>Zetherion Ba
 <td><code>POST /api/v1/analytics/recommendations/{recommendation_id}/feedback</code></td>
 <td>Ready</td>
 </tr>
+<tr>
+<td><code>/documents/uploads</code></td>
+<td><code>POST</code></td>
+<td>Create tenant document upload intent</td>
+<td><code>POST /api/v1/documents/uploads</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/documents/uploads/{upload_id}/complete</code></td>
+<td><code>POST</code></td>
+<td>Complete tenant document upload</td>
+<td><code>POST /api/v1/documents/uploads/{upload_id}/complete</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/documents</code></td>
+<td><code>GET</code></td>
+<td>List tenant documents</td>
+<td><code>GET /api/v1/documents</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/documents/{document_id}</code></td>
+<td><code>GET</code></td>
+<td>Get tenant document metadata</td>
+<td><code>GET /api/v1/documents/{document_id}</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/documents/{document_id}/preview</code></td>
+<td><code>GET</code></td>
+<td>Inline document preview stream</td>
+<td><code>GET /api/v1/documents/{document_id}/preview</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/documents/{document_id}/download</code></td>
+<td><code>GET</code></td>
+<td>Raw document download stream</td>
+<td><code>GET /api/v1/documents/{document_id}/download</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/documents/{document_id}/index</code></td>
+<td><code>POST</code></td>
+<td>Re-index a tenant document</td>
+<td><code>POST /api/v1/documents/{document_id}/index</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/rag/query</code></td>
+<td><code>POST</code></td>
+<td>Query tenant vector store + generate answer</td>
+<td><code>POST /api/v1/rag/query</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/models/providers</code></td>
+<td><code>GET</code></td>
+<td>Retrieve provider/model catalog</td>
+<td><code>GET /api/v1/models/providers</code></td>
+<td>Ready</td>
+</tr>
 </tbody>
 </table>
 <h3 id="62-internal-operator-endpoints-cgs-only">6.2 Internal Operator Endpoints (CGS only)<a class="headerlink" href="#62-internal-operator-endpoints-cgs-only" title="Permanent link">&para;</a></h3>
@@ -2406,44 +2636,91 @@ Owners: <code>Catalyst Group Solutions (CGS) Platform</code>, <code>Zetherion Ba
 <a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">&quot;actor&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ops_manager&quot;</span>
 <a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="p">}</span>
 </code></pre></div>
-<h2 id="713-post-serviceaiv1internaltenants">7.13 <code>POST /service/ai/v1/internal/tenants</code><a class="headerlink" href="#713-post-serviceaiv1internaltenants" title="Permanent link">&para;</a></h2>
-<p>Internal CGS operator endpoint.</p>
+<h2 id="713-post-serviceaiv1documentsuploads">7.13 <code>POST /service/ai/v1/documents/uploads</code><a class="headerlink" href="#713-post-serviceaiv1documentsuploads" title="Permanent link">&para;</a></h2>
+<p>Creates tenant document upload intent.</p>
 <p>Request:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p">{</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Acme Client&quot;</span><span class="p">,</span>
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="nt">&quot;domain&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;acme.com&quot;</span><span class="p">,</span>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">  </span><span class="nt">&quot;config&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">    </span><span class="nt">&quot;system_prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;You are Acme support assistant.&quot;</span>
-<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">  </span><span class="p">}</span>
-<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="p">}</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">&quot;tenant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tenant-a&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="nt">&quot;file_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;proposal.pdf&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">  </span><span class="nt">&quot;mime_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;application/pdf&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">  </span><span class="nt">&quot;size_bytes&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">123456</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="p">}</span>
+</code></pre></div>
+<p>CGS behavior:
+- Validate principal tenant access to <code>tenant_id</code>.
+- Forward request to <code>POST /api/v1/documents/uploads</code> with mapped <code>X-API-Key</code>.
+- Return standard envelope with upstream payload.</p>
+<h2 id="714-post-serviceaiv1documentsuploadsupload_idcomplete">7.14 <code>POST /service/ai/v1/documents/uploads/{upload_id}/complete</code><a class="headerlink" href="#714-post-serviceaiv1documentsuploadsupload_idcomplete" title="Permanent link">&para;</a></h2>
+<p>Completes upload with base64 payload.</p>
+<p>Request:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="p">{</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">&quot;tenant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tenant-a&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">&quot;file_base64&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;base64-bytes&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">    </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;portal&quot;</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="p">}</span>
+</code></pre></div>
+<h2 id="715-get-serviceaiv1documents-get-serviceaiv1documentsdocument_id">7.15 <code>GET /service/ai/v1/documents</code>, <code>GET /service/ai/v1/documents/{document_id}</code><a class="headerlink" href="#715-get-serviceaiv1documents-get-serviceaiv1documentsdocument_id" title="Permanent link">&para;</a></h2>
+<p>Document list/detail endpoints requiring <code>tenant_id</code> query parameter.</p>
+<p>CGS behavior:
+- enforce tenant ownership from principal + query tenant
+- proxy to upstream metadata endpoints
+- wrap in standard envelope</p>
+<h2 id="716-get-serviceaiv1documentsdocument_idpreview-get-serviceaiv1documentsdocument_iddownload">7.16 <code>GET /service/ai/v1/documents/{document_id}/preview</code>, <code>GET /service/ai/v1/documents/{document_id}/download</code><a class="headerlink" href="#716-get-serviceaiv1documentsdocument_idpreview-get-serviceaiv1documentsdocument_iddownload" title="Permanent link">&para;</a></h2>
+<p>Binary passthrough endpoints for browser preview/download.</p>
+<p>CGS behavior:
+- stream raw bytes without envelope
+- preserve upstream content headers (<code>Content-Type</code>, <code>Content-Disposition</code>)</p>
+<h2 id="717-post-serviceaiv1ragquery-get-serviceaiv1modelsproviders">7.17 <code>POST /service/ai/v1/rag/query</code>, <code>GET /service/ai/v1/models/providers</code><a class="headerlink" href="#717-post-serviceaiv1ragquery-get-serviceaiv1modelsproviders" title="Permanent link">&para;</a></h2>
+<p>RAG query + provider catalog endpoints for document intelligence UI.</p>
+<p>Request (<code>POST /service/ai/v1/rag/query</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="p">{</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span><span class="nt">&quot;tenant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tenant-a&quot;</span><span class="p">,</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span><span class="nt">&quot;query&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Summarize rollout risks from this proposal&quot;</span><span class="p">,</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">  </span><span class="nt">&quot;top_k&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">6</span><span class="p">,</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">  </span><span class="nt">&quot;provider&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;groq&quot;</span><span class="p">,</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llama-3.3-70b-versatile&quot;</span>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="p">}</span>
+</code></pre></div>
+<h2 id="718-post-serviceaiv1internaltenants">7.18 <code>POST /service/ai/v1/internal/tenants</code><a class="headerlink" href="#718-post-serviceaiv1internaltenants" title="Permanent link">&para;</a></h2>
+<p>Internal CGS operator endpoint.</p>
+<p>Request:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="p">{</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Acme Client&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span><span class="nt">&quot;domain&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;acme.com&quot;</span><span class="p">,</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">  </span><span class="nt">&quot;config&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">    </span><span class="nt">&quot;system_prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;You are Acme support assistant.&quot;</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="p">}</span>
 </code></pre></div>
 <p>CGS behavior:
 - Call Zetherion Skills API <code>/handle</code> with intent <code>client_create</code>.
 - Persist returned tenant ID and API key in CGS tenant registry.</p>
-<h2 id="714-patch-serviceaiv1internaltenantstenant_id">7.14 <code>PATCH /service/ai/v1/internal/tenants/{tenant_id}</code><a class="headerlink" href="#714-patch-serviceaiv1internaltenantstenant_id" title="Permanent link">&para;</a></h2>
+<h2 id="719-patch-serviceaiv1internaltenantstenant_id">7.19 <code>PATCH /service/ai/v1/internal/tenants/{tenant_id}</code><a class="headerlink" href="#719-patch-serviceaiv1internaltenantstenant_id" title="Permanent link">&para;</a></h2>
 <p>Internal update endpoint:
 - Maps to <code>client_configure</code>.</p>
-<h2 id="715-post-serviceaiv1internaltenantstenant_iddeactivate">7.15 <code>POST /service/ai/v1/internal/tenants/{tenant_id}/deactivate</code><a class="headerlink" href="#715-post-serviceaiv1internaltenantstenant_iddeactivate" title="Permanent link">&para;</a></h2>
+<h2 id="720-post-serviceaiv1internaltenantstenant_iddeactivate">7.20 <code>POST /service/ai/v1/internal/tenants/{tenant_id}/deactivate</code><a class="headerlink" href="#720-post-serviceaiv1internaltenantstenant_iddeactivate" title="Permanent link">&para;</a></h2>
 <p>Internal deactivation endpoint:
 - Maps to <code>client_deactivate</code>.</p>
-<h2 id="716-post-serviceaiv1internaltenantstenant_idkeysrotate">7.16 <code>POST /service/ai/v1/internal/tenants/{tenant_id}/keys/rotate</code><a class="headerlink" href="#716-post-serviceaiv1internaltenantstenant_idkeysrotate" title="Permanent link">&para;</a></h2>
+<h2 id="721-post-serviceaiv1internaltenantstenant_idkeysrotate">7.21 <code>POST /service/ai/v1/internal/tenants/{tenant_id}/keys/rotate</code><a class="headerlink" href="#721-post-serviceaiv1internaltenantstenant_idkeysrotate" title="Permanent link">&para;</a></h2>
 <p>Internal key rotation endpoint:
 - Maps to <code>client_rotate_key</code>.
 - Must update encrypted key record atomically.</p>
-<h2 id="717-post-serviceaiv1internaltenantstenant_idrelease-markers">7.17 <code>POST /service/ai/v1/internal/tenants/{tenant_id}/release-markers</code><a class="headerlink" href="#717-post-serviceaiv1internaltenantstenant_idrelease-markers" title="Permanent link">&para;</a></h2>
+<h2 id="722-post-serviceaiv1internaltenantstenant_idrelease-markers">7.22 <code>POST /service/ai/v1/internal/tenants/{tenant_id}/release-markers</code><a class="headerlink" href="#722-post-serviceaiv1internaltenantstenant_idrelease-markers" title="Permanent link">&para;</a></h2>
 <p>Publish deployment markers to Zetherion for regression detection.</p>
 <p>Request:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="p">{</span>
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cgs-deploy&quot;</span><span class="p">,</span>
-<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">&quot;environment&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;production&quot;</span><span class="p">,</span>
-<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">&quot;commit_sha&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;abc123&quot;</span><span class="p">,</span>
-<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">  </span><span class="nt">&quot;branch&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;main&quot;</span><span class="p">,</span>
-<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">  </span><span class="nt">&quot;tag_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;v1.2.3&quot;</span><span class="p">,</span>
-<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">  </span><span class="nt">&quot;deployed_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-02-27T15:10:00Z&quot;</span><span class="p">,</span>
-<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">  </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">    </span><span class="nt">&quot;service&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;portal-web&quot;</span>
-<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="w">  </span><span class="p">}</span>
-<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="p">{</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cgs-deploy&quot;</span><span class="p">,</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">  </span><span class="nt">&quot;environment&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;production&quot;</span><span class="p">,</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">  </span><span class="nt">&quot;commit_sha&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;abc123&quot;</span><span class="p">,</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">  </span><span class="nt">&quot;branch&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;main&quot;</span><span class="p">,</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">  </span><span class="nt">&quot;tag_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;v1.2.3&quot;</span><span class="p">,</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">  </span><span class="nt">&quot;deployed_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-02-27T15:10:00Z&quot;</span><span class="p">,</span>
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="w">  </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="w">    </span><span class="nt">&quot;service&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;portal-web&quot;</span>
+<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a><span class="p">}</span>
 </code></pre></div>
 <p>If <code>RELEASE_MARKER_SIGNING_SECRET</code> is enabled in Zetherion:
 - CGS must set:
@@ -2521,6 +2798,51 @@ Owners: <code>Catalyst Group Solutions (CGS) Platform</code>, <code>Zetherion Ba
 <td><code>POST /conversations/{id}/recommendations/{rid}/feedback</code></td>
 <td><code>POST /api/v1/analytics/recommendations/{rid}/feedback</code></td>
 <td><code>Bearer zt_sess_</code></td>
+</tr>
+<tr>
+<td><code>POST /documents/uploads</code></td>
+<td><code>POST /api/v1/documents/uploads</code></td>
+<td><code>X-API-Key</code></td>
+</tr>
+<tr>
+<td><code>POST /documents/uploads/{upload_id}/complete</code></td>
+<td><code>POST /api/v1/documents/uploads/{upload_id}/complete</code></td>
+<td><code>X-API-Key</code></td>
+</tr>
+<tr>
+<td><code>GET /documents</code></td>
+<td><code>GET /api/v1/documents</code></td>
+<td><code>X-API-Key</code></td>
+</tr>
+<tr>
+<td><code>GET /documents/{document_id}</code></td>
+<td><code>GET /api/v1/documents/{document_id}</code></td>
+<td><code>X-API-Key</code></td>
+</tr>
+<tr>
+<td><code>GET /documents/{document_id}/preview</code></td>
+<td><code>GET /api/v1/documents/{document_id}/preview</code></td>
+<td><code>X-API-Key</code></td>
+</tr>
+<tr>
+<td><code>GET /documents/{document_id}/download</code></td>
+<td><code>GET /api/v1/documents/{document_id}/download</code></td>
+<td><code>X-API-Key</code></td>
+</tr>
+<tr>
+<td><code>POST /documents/{document_id}/index</code></td>
+<td><code>POST /api/v1/documents/{document_id}/index</code></td>
+<td><code>X-API-Key</code></td>
+</tr>
+<tr>
+<td><code>POST /rag/query</code></td>
+<td><code>POST /api/v1/rag/query</code></td>
+<td><code>X-API-Key</code></td>
+</tr>
+<tr>
+<td><code>GET /models/providers</code></td>
+<td><code>GET /api/v1/models/providers</code></td>
+<td><code>X-API-Key</code></td>
 </tr>
 <tr>
 <td><code>POST /service/ai/v1/internal/tenants/{tenant_id}/release-markers</code></td>
@@ -2632,20 +2954,20 @@ Owners: <code>Catalyst Group Solutions (CGS) Platform</code>, <code>Zetherion Ba
 - Public API idempotency support via <code>Idempotency-Key</code>.
 - Env/config wiring for allowed CORS origins in API bootstrap.</p>
 <h2 id="14-example-end-to-end-flow">14. Example End-to-End Flow<a class="headerlink" href="#14-example-end-to-end-flow" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>sequenceDiagram
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>  participant App as CGS App
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>  participant CGS as CGS AI Service
-<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>  participant ZAPI as Zetherion Public API
-<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>
-<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>  App-&gt;&gt;CGS: POST /conversations
-<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>  CGS-&gt;&gt;ZAPI: POST /api/v1/sessions (X-API-Key)
-<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>  ZAPI--&gt;&gt;CGS: session_id + zt_sess token
-<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>  CGS--&gt;&gt;App: conversation_id
-<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>
-<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>  App-&gt;&gt;CGS: POST /conversations/{id}/messages
-<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a>  CGS-&gt;&gt;ZAPI: POST /api/v1/chat (Bearer zt_sess)
-<a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>  ZAPI--&gt;&gt;CGS: assistant message
-<a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a>  CGS--&gt;&gt;App: normalized response
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>sequenceDiagram
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>  participant App as CGS App
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>  participant CGS as CGS AI Service
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>  participant ZAPI as Zetherion Public API
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>  App-&gt;&gt;CGS: POST /conversations
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>  CGS-&gt;&gt;ZAPI: POST /api/v1/sessions (X-API-Key)
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>  ZAPI--&gt;&gt;CGS: session_id + zt_sess token
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>  CGS--&gt;&gt;App: conversation_id
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a>
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>  App-&gt;&gt;CGS: POST /conversations/{id}/messages
+<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a>  CGS-&gt;&gt;ZAPI: POST /api/v1/chat (Bearer zt_sess)
+<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a>  ZAPI--&gt;&gt;CGS: assistant message
+<a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a>  CGS--&gt;&gt;App: normalized response
 </code></pre></div>
 <h2 id="15-definition-of-done">15. Definition of Done<a class="headerlink" href="#15-definition-of-done" title="Permanent link">&para;</a></h2>
 <p>This draft is considered implemented when:

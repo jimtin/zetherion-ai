@@ -1,0 +1,393 @@
+openapi: 3.1.0
+info:
+  title: CGS AI Gateway API
+  version: 1.0.0
+  description: CGS `/service/ai/v1` gateway contract mapped to Zetherion upstream APIs.
+servers:
+  - url: https://{host}
+    variables:
+      host:
+        default: cgs-api.example.com
+security:
+  - CgsBearerAuth: []
+paths:
+  /service/ai/v1/health:
+    get:
+      summary: Gateway health check
+      security: []
+      responses:
+        '200':
+          description: Healthy service status
+  /service/ai/v1/conversations:
+    post:
+      summary: Create conversation mapped to Zetherion session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConversationRequest'
+      responses:
+        '201':
+          description: Conversation created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeConversationCreated'
+  /service/ai/v1/conversations/{conversation_id}:
+    get:
+      summary: Get conversation metadata
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200':
+          description: Conversation metadata
+    delete:
+      summary: Close conversation
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200':
+          description: Conversation closed
+  /service/ai/v1/conversations/{conversation_id}/messages:
+    post:
+      summary: Send message via mapped conversation
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '200':
+          description: Assistant response envelope
+    get:
+      summary: Get conversation messages
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200':
+          description: Message history envelope
+  /service/ai/v1/conversations/{conversation_id}/messages/stream:
+    post:
+      summary: Stream message response (SSE passthrough)
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200':
+          description: SSE stream
+  /service/ai/v1/conversations/{conversation_id}/analytics/events:
+    post:
+      summary: Proxy analytics events
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200':
+          description: Accepted
+  /service/ai/v1/conversations/{conversation_id}/analytics/replay/chunks:
+    post:
+      summary: Proxy replay chunk upload
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200':
+          description: Accepted
+  /service/ai/v1/conversations/{conversation_id}/analytics/replay/chunks/{web_session_id}/{sequence_no}:
+    get:
+      summary: Proxy replay chunk retrieval
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+        - name: web_session_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sequence_no
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Replay chunk metadata/data envelope
+  /service/ai/v1/conversations/{conversation_id}/analytics/end:
+    post:
+      summary: End analytics session
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200':
+          description: Session closed
+  /service/ai/v1/conversations/{conversation_id}/recommendations:
+    get:
+      summary: Get recommendation candidates
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200':
+          description: Recommendation list
+  /service/ai/v1/conversations/{conversation_id}/recommendations/{recommendation_id}/feedback:
+    post:
+      summary: Send recommendation feedback
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+        - name: recommendation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Feedback accepted
+
+  /service/ai/v1/documents/uploads:
+    post:
+      summary: Create tenant-scoped document upload intent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentUploadRequest'
+      responses:
+        '201':
+          description: Upload created
+  /service/ai/v1/documents/uploads/{upload_id}/complete:
+    post:
+      summary: Complete tenant document upload
+      parameters:
+        - $ref: '#/components/parameters/UploadId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentUploadCompleteRequest'
+      responses:
+        '201':
+          description: Document created and indexed
+  /service/ai/v1/documents:
+    get:
+      summary: List tenant documents
+      parameters:
+        - name: tenant_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tenant document list envelope
+  /service/ai/v1/documents/{document_id}:
+    get:
+      summary: Get one tenant document metadata record
+      parameters:
+        - name: tenant_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Tenant document envelope
+  /service/ai/v1/documents/{document_id}/preview:
+    get:
+      summary: Proxy inline document preview
+      parameters:
+        - name: tenant_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Raw preview bytes streamed with upstream content headers
+  /service/ai/v1/documents/{document_id}/download:
+    get:
+      summary: Proxy document download
+      parameters:
+        - name: tenant_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Raw document bytes streamed with upstream content headers
+  /service/ai/v1/documents/{document_id}/index:
+    post:
+      summary: Trigger tenant document re-index
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentReindexRequest'
+      responses:
+        '200':
+          description: Updated document envelope
+  /service/ai/v1/rag/query:
+    post:
+      summary: Query tenant document vectors with provider/model override
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentQueryRequest'
+      responses:
+        '200':
+          description: RAG result envelope
+  /service/ai/v1/models/providers:
+    get:
+      summary: Get provider/model catalog for tenant UI selectors
+      parameters:
+        - name: tenant_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Provider catalog envelope
+
+components:
+  securitySchemes:
+    CgsBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ConversationId:
+      name: conversation_id
+      in: path
+      required: true
+      schema:
+        type: string
+    UploadId:
+      name: upload_id
+      in: path
+      required: true
+      schema:
+        type: string
+    DocumentId:
+      name: document_id
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    EnvelopeBase:
+      type: object
+      properties:
+        request_id:
+          type: string
+        data:
+          type: object
+          nullable: true
+        error:
+          type: object
+          nullable: true
+      required: [request_id, data, error]
+    CreateConversationRequest:
+      type: object
+      required: [tenant_id]
+      properties:
+        tenant_id:
+          type: string
+        app_user_id:
+          type: string
+          nullable: true
+        external_user_id:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+    EnvelopeConversationCreated:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                conversation_id:
+                  type: string
+                tenant_id:
+                  type: string
+                session_id:
+                  type: string
+                created_at:
+                  type: string
+                expires_at:
+                  type: string
+    SendMessageRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        metadata:
+          type: object
+          additionalProperties: true
+    DocumentUploadRequest:
+      type: object
+      required: [tenant_id, file_name]
+      properties:
+        tenant_id:
+          type: string
+        file_name:
+          type: string
+        mime_type:
+          type: string
+        size_bytes:
+          type: integer
+          minimum: 0
+        metadata:
+          type: object
+          additionalProperties: true
+    DocumentUploadCompleteRequest:
+      type: object
+      required: [tenant_id, file_base64]
+      properties:
+        tenant_id:
+          type: string
+        file_base64:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    DocumentReindexRequest:
+      type: object
+      required: [tenant_id]
+      properties:
+        tenant_id:
+          type: string
+    DocumentQueryRequest:
+      type: object
+      required: [tenant_id, query]
+      properties:
+        tenant_id:
+          type: string
+        query:
+          type: string
+        top_k:
+          type: integer
+          minimum: 1
+          maximum: 20
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
