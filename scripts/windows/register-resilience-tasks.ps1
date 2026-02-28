@@ -83,10 +83,28 @@ try {
     $watchdogScriptPath = Join-Path $DeployPath "scripts\windows\runtime-watchdog.ps1"
 
     if (-not (Test-Path $startupScriptPath)) {
-        throw "Startup recovery script not found at $startupScriptPath"
+        $sourceStartupScriptPath = Join-Path $PSScriptRoot "startup-recover.ps1"
+        if (-not (Test-Path $sourceStartupScriptPath)) {
+            throw "Startup recovery script not found at $startupScriptPath or $sourceStartupScriptPath"
+        }
+        $startupParent = Split-Path -Parent $startupScriptPath
+        if ($startupParent -and -not (Test-Path $startupParent)) {
+            New-Item -ItemType Directory -Path $startupParent -Force | Out-Null
+        }
+        Copy-Item -Path $sourceStartupScriptPath -Destination $startupScriptPath -Force
+        $result.details.actions_taken += "bootstrapped_recovery_script:startup-recover.ps1"
     }
     if (-not (Test-Path $watchdogScriptPath)) {
-        throw "Runtime watchdog script not found at $watchdogScriptPath"
+        $sourceWatchdogScriptPath = Join-Path $PSScriptRoot "runtime-watchdog.ps1"
+        if (-not (Test-Path $sourceWatchdogScriptPath)) {
+            throw "Runtime watchdog script not found at $watchdogScriptPath or $sourceWatchdogScriptPath"
+        }
+        $watchdogParent = Split-Path -Parent $watchdogScriptPath
+        if ($watchdogParent -and -not (Test-Path $watchdogParent)) {
+            New-Item -ItemType Directory -Path $watchdogParent -Force | Out-Null
+        }
+        Copy-Item -Path $sourceWatchdogScriptPath -Destination $watchdogScriptPath -Force
+        $result.details.actions_taken += "bootstrapped_recovery_script:runtime-watchdog.ps1"
     }
 
     $legacyTask = Get-ScheduledTask -TaskName $LegacyTaskName -ErrorAction SilentlyContinue

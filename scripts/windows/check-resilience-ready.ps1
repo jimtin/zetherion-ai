@@ -91,7 +91,7 @@ try {
     )
 
     $runnerServices = @(
-        Get-Service | Where-Object { $_.Name -like "actions.runner*" }
+        Get-Service -Name "actions.runner*" -ErrorAction SilentlyContinue
     )
     $details.runner_services = @(
         $runnerServices | ForEach-Object {
