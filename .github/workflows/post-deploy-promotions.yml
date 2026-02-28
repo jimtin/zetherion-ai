@@ -24,7 +24,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: post-deploy-promotions-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.sha }}
+  group: "post-deploy-promotions-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}"
   cancel-in-progress: false
 
 jobs:
@@ -109,12 +109,12 @@ jobs:
         run: |
           set -euo pipefail
           TAG="$(python - <<'PY'
-import json
-from pathlib import Path
-receipt = json.loads(Path('release-receipt.json').read_text(encoding='utf-8'))
-print(receipt.get('tag', ''))
-PY
-)"
+          import json
+          from pathlib import Path
+          receipt = json.loads(Path('release-receipt.json').read_text(encoding='utf-8'))
+          print(receipt.get('tag', ''))
+          PY
+          )"
           if [[ -z "$TAG" ]]; then
             echo "Release tag missing in release receipt" >&2
             cat release-receipt.json
