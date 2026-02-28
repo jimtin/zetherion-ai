@@ -72,9 +72,10 @@ try {
 
     Push-Location $DeployPath
     try {
-        # Normalize worktree before rollback checkout.
+        # Normalize tracked files and only clean drift-prone script paths.
+        # Do not wipe runtime state such as .env, data/, or logs/.
         Invoke-Git @("reset", "--hard", "HEAD")
-        Invoke-Git @("clean", "-ffdx")
+        Invoke-Git @("clean", "-ffdx", "--", "scripts/windows")
         Invoke-Git @("fetch", "--prune", "--force", "origin")
         Invoke-Git @("fetch", "--depth=1", "--force", "origin", $lastGoodSha)
         Invoke-Git @("checkout", "--detach", "--force", $lastGoodSha)

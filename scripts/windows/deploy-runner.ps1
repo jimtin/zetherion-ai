@@ -75,9 +75,10 @@ try {
         }
         $result.previous_sha = $previousSha
 
-        # Normalize worktree state before checkout to avoid drift from hotfixes/manual edits.
+        # Normalize tracked files and only clean drift-prone script paths.
+        # Do not wipe runtime state such as .env, data/, or logs/.
         Invoke-Git @("reset", "--hard", "HEAD")
-        Invoke-Git @("clean", "-ffdx")
+        Invoke-Git @("clean", "-ffdx", "--", "scripts/windows")
         Invoke-Git @("fetch", "--prune", "--force", "origin")
         Invoke-Git @("fetch", "--depth=1", "--force", "origin", $TargetSha)
         Invoke-Git @("checkout", "--detach", "--force", $TargetSha)
