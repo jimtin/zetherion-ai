@@ -1503,6 +1503,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#changed-windows-deploy-resilience-fallback-2026-03-01" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Windows Deploy Resilience Fallback (2026-03-01)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added-document-intelligence-post-deploy-promotions-2026-02-28" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2250,6 +2261,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#changed-windows-deploy-resilience-fallback-2026-03-01" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Windows Deploy Resilience Fallback (2026-03-01)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added-document-intelligence-post-deploy-promotions-2026-02-28" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2849,6 +2871,11 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 <ul>
 <li>Internal typing and multipart parsing hardening in <code>src/zetherion_ai/api/routes/documents.py</code>.</li>
 <li>No API surface changes: no path/method/auth/error/schema contract changes for document endpoints.</li>
+</ul>
+<h3 id="changed-windows-deploy-resilience-fallback-2026-03-01">Changed - Windows Deploy Resilience Fallback (2026-03-01)<a class="headerlink" href="#changed-windows-deploy-resilience-fallback-2026-03-01" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added controlled fallback in Windows resilience readiness checks for hardened runners where scheduled task registration is access-denied.</li>
+<li>Deployment receipt now treats persistent runner/docker service recovery as valid fallback when recovery tasks are missing and explicit fallback is enabled.</li>
 </ul>
 <h3 id="added-document-intelligence-post-deploy-promotions-2026-02-28">Added - Document Intelligence + Post-Deploy Promotions (2026-02-28)<a class="headerlink" href="#added-document-intelligence-post-deploy-promotions-2026-02-28" title="Permanent link">&para;</a></h3>
 <ul>
