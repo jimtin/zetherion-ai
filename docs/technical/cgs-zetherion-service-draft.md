@@ -1,8 +1,12 @@
 # CGS and Zetherion Integration Service Draft
 
 Version: `v1.0-draft`  
-Date: `2026-02-27`  
+Date: `2026-03-01`  
 Owners: `Catalyst Group Solutions (CGS) Platform`, `Zetherion Backend`
+
+Maintenance note (2026-03-01):
+- Internal document route typing/multipart parsing hardening was applied.
+- Public + gateway service contracts defined in this draft remain unchanged.
 
 ## 1. Purpose
 

@@ -438,6 +438,8 @@ echo "[$(ts)]   Launching static checks in parallel..."
 start_static_check "ruff lint" "ruff check $SRC_DIRS"
 start_static_check "ruff format" "ruff format --check $SRC_DIRS"
 start_static_check "bandit" "bandit -c pyproject.toml -r $LINT_DIRS -q"
+start_static_check "pipeline contract" "python scripts/check_pipeline_contract.py"
+start_static_check "endpoint docs bundle" "python scripts/check-endpoint-doc-bundle.py"
 
 if command -v gitleaks >/dev/null 2>&1; then
     start_static_check "gitleaks" "gitleaks detect --no-git --redact --config=.gitleaks.toml"

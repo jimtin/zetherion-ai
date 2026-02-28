@@ -2,6 +2,11 @@
 
 This guide maps CGS `/service/ai/v1` routes to expected frontend flows.
 
+## Maintenance Note (2026-03-01)
+
+- Internal document route hardening introduced no route, payload, or screen-mapping changes.
+- Existing frontend upload/list/detail/preview/download wiring remains valid.
+
 ## Document Center Screens
 
 | Screen | Route(s) | Method | Notes |

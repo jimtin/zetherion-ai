@@ -6,6 +6,11 @@ This document is the implementation handoff for Catalyst Group Solutions (CGS) t
 
 It is based on the code currently implemented in this repository (not only draft design docs).
 
+## Maintenance Note (2026-03-01)
+
+- Internal hardening landed in upstream document upload route parsing/typing.
+- CGS endpoint contracts and mappings are unchanged by this maintenance patch.
+
 ## 2. Scope
 
 In scope:

@@ -1145,7 +1145,7 @@ class ZetherionAIBot(discord.Client):
         category = discord.utils.get(guild.categories, name=category_name)
         if category is None:
             overwrites: dict[
-                discord.Role | discord.Member | discord.Object,
+                Any,
                 discord.PermissionOverwrite,
             ] = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -1178,7 +1178,7 @@ class ZetherionAIBot(discord.Client):
         )
         if channel is None:
             channel_overwrites: dict[
-                discord.Role | discord.Member | discord.Object,
+                Any,
                 discord.PermissionOverwrite,
             ] = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False),

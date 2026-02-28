@@ -2,6 +2,11 @@
 
 Authentication and authorization matrix for both API surfaces.
 
+## Maintenance Note (2026-03-01)
+
+- Internal document route typing/multipart parsing was hardened.
+- Auth requirements are unchanged across both public and CGS gateway document routes.
+
 ## Public API (`/api/v1`)
 
 | Endpoint Group | Auth Mode | Header | Tenant Scope Source |
