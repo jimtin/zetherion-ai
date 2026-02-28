@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://jimtin.github.io/zetherion-ai/technical/observation-pipeline/">
+        <link rel="canonical" href="https://jimtin.github.io/zetherion-ai/technical/ai-agent-integration/">
       
       
-        <link rel="prev" href="../gmail-architecture/">
+        <link rel="prev" href="../public-api-reference/">
       
       
-        <link rel="next" href="../personal-understanding/">
+        <link rel="next" href="../../development/setup/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Observation Pipeline - Zetherion AI</title>
+        <title>AI Agent Integration - Zetherion AI</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#observation-pipeline" class="md-skip">
+        <a href="#ai-agent-integration-guide" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Observation Pipeline
+              AI Agent Integration
             
           </span>
         </div>
@@ -936,37 +936,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Observation Pipeline
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../observation-pipeline/" class="md-nav__link">
         
   
   
@@ -982,170 +955,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Overview
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#architecture" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Architecture
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#extraction-tiers" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Extraction Tiers
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Extraction Tiers">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#tier-1-pattern-based-regex" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tier 1: Pattern-Based (Regex)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#tier-2-llm-based" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Tier 2: LLM-Based
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#learning-categories" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Learning Categories
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#learning-sources" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Learning Sources
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#confidence-scoring" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Confidence Scoring
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Confidence Scoring">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#confirmation-flow" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Confirmation Flow
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#storage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Storage
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#integration-points" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Integration Points
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#related-docs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Related Docs
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1267,10 +1076,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../ai-agent-integration/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Agent Integration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1286,6 +1122,352 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#why-zetherion-exists" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why Zetherion Exists
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#integration-surfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Integration Surfaces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#public-api-contract-app-integrations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Public API Contract (App Integrations)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Public API Contract (App Integrations)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#auth-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auth model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#core-flow-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core flow (recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#chat-behaviors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chat behaviors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tenant-rate-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tenant rate limits
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#youtube-api-surface-tenant-scoped" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        YouTube API Surface (Tenant-Scoped)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#skills-api-contract-internal-control-plane" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skills API Contract (Internal Control Plane)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-zetherion-can-do" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Zetherion Can Do
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#crm-and-tenant-intelligence-important" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CRM and Tenant Intelligence (Important)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CRM and Tenant Intelligence (Important)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tenant-crm-intelligence-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tenant CRM intelligence pipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#portfolio-intelligence-for-operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Portfolio intelligence for operators
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tenant-lifecycle-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tenant lifecycle operations
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#personal-profiling-and-adaptive-behavior-important" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Personal Profiling and Adaptive Behavior (Important)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#observation-driven-learning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observation-Driven Learning
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-zetherion-does-not-do" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Zetherion Does Not Do
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#operational-capabilities-often-missed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operational Capabilities Often Missed
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exposure-boundaries-critical-for-integrators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exposure Boundaries (Critical for Integrators)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#capability-gates-you-must-model-in-your-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Capability Gates You Must Model In Your Agent
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recommended-integration-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended Integration Patterns
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Recommended Integration Patterns">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pattern-a-embedded-customer-chat-in-a-saas-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pattern A: Embedded customer chat in a SaaS app
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pattern-b-internal-automation-orchestrator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pattern B: Internal automation orchestrator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pattern-c-email-to-work-routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pattern C: Email-to-work routing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#minimal-public-api-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Minimal Public API Example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#operational-requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operational Requirements
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#positioning-for-other-ai-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Positioning For Other AI Agents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#source-pointers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source Pointers
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1671,10 +1853,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#why-zetherion-exists" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview
+        Why Zetherion Exists
       
     </span>
   </a>
@@ -1682,10 +1864,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#architecture" class="md-nav__link">
+  <a href="#integration-surfaces" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Architecture
+        Integration Surfaces
       
     </span>
   </a>
@@ -1693,22 +1875,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#extraction-tiers" class="md-nav__link">
+  <a href="#public-api-contract-app-integrations" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Extraction Tiers
+        Public API Contract (App Integrations)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Extraction Tiers">
+    <nav class="md-nav" aria-label="Public API Contract (App Integrations)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#tier-1-pattern-based-regex" class="md-nav__link">
+  <a href="#auth-model" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Tier 1: Pattern-Based (Regex)
+        Auth model
       
     </span>
   </a>
@@ -1716,10 +1898,32 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#tier-2-llm-based" class="md-nav__link">
+  <a href="#core-flow-recommended" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Tier 2: LLM-Based
+        Core flow (recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#chat-behaviors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chat behaviors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tenant-rate-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tenant rate limits
       
     </span>
   </a>
@@ -1732,10 +1936,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#learning-categories" class="md-nav__link">
+  <a href="#youtube-api-surface-tenant-scoped" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Learning Categories
+        YouTube API Surface (Tenant-Scoped)
       
     </span>
   </a>
@@ -1743,10 +1947,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#learning-sources" class="md-nav__link">
+  <a href="#skills-api-contract-internal-control-plane" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Learning Sources
+        Skills API Contract (Internal Control Plane)
       
     </span>
   </a>
@@ -1754,22 +1958,55 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#confidence-scoring" class="md-nav__link">
+  <a href="#what-zetherion-can-do" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Confidence Scoring
+        What Zetherion Can Do
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Confidence Scoring">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#crm-and-tenant-intelligence-important" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CRM and Tenant Intelligence (Important)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CRM and Tenant Intelligence (Important)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#confirmation-flow" class="md-nav__link">
+  <a href="#tenant-crm-intelligence-pipeline" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Confirmation Flow
+        Tenant CRM intelligence pipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#portfolio-intelligence-for-operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Portfolio intelligence for operators
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tenant-lifecycle-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tenant lifecycle operations
       
     </span>
   </a>
@@ -1782,10 +2019,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#storage" class="md-nav__link">
+  <a href="#personal-profiling-and-adaptive-behavior-important" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Storage
+        Personal Profiling and Adaptive Behavior (Important)
       
     </span>
   </a>
@@ -1793,10 +2030,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#integration-points" class="md-nav__link">
+  <a href="#observation-driven-learning" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Integration Points
+        Observation-Driven Learning
       
     </span>
   </a>
@@ -1804,10 +2041,137 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#related-docs" class="md-nav__link">
+  <a href="#what-zetherion-does-not-do" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Related Docs
+        What Zetherion Does Not Do
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#operational-capabilities-often-missed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operational Capabilities Often Missed
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exposure-boundaries-critical-for-integrators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exposure Boundaries (Critical for Integrators)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#capability-gates-you-must-model-in-your-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Capability Gates You Must Model In Your Agent
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recommended-integration-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended Integration Patterns
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Recommended Integration Patterns">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pattern-a-embedded-customer-chat-in-a-saas-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pattern A: Embedded customer chat in a SaaS app
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pattern-b-internal-automation-orchestrator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pattern B: Internal automation orchestrator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pattern-c-email-to-work-routing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pattern C: Email-to-work routing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#minimal-public-api-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Minimal Public API Example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#operational-requirements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operational Requirements
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#positioning-for-other-ai-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Positioning For Other AI Agents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#source-pointers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source Pointers
       
     </span>
   </a>
@@ -1834,151 +2198,303 @@
   
 
 
-<h1 id="observation-pipeline">Observation Pipeline<a class="headerlink" href="#observation-pipeline" title="Permanent link">&para;</a></h1>
-<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>The observation pipeline passively extracts facts, preferences, and context from user interactions. It operates alongside explicit commands, building understanding without requiring users to explicitly tell the bot everything.</p>
-<h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>User Input
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    |
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    v
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>+---[Extraction]---+
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>|  Tier 1: Regex   |---&gt; High confidence patterns
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>|  Tier 2: LLM     |---&gt; Deeper context understanding
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>+--------+---------+
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>         |
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>         v
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>+---[Classification]---+
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>|  Category assignment  |
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>|  Confidence scoring   |
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>+--------+-------------+
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>         |
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>         v
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>+---[Storage]----------+
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>|  PersonalLearning    |
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>|  (PostgreSQL)        |
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>+--------+-------------+
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>         |
-<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>         v
-<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>+---[Integration]------+
-<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>|  Profile building    |
-<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>|  Context enrichment  |
-<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>|  Response adaptation |
-<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>+-----------------------+
-</code></pre></div>
-<h2 id="extraction-tiers">Extraction Tiers<a class="headerlink" href="#extraction-tiers" title="Permanent link">&para;</a></h2>
-<h3 id="tier-1-pattern-based-regex">Tier 1: Pattern-Based (Regex)<a class="headerlink" href="#tier-1-pattern-based-regex" title="Permanent link">&para;</a></h3>
-<p>Fast, high-confidence extraction for explicit statements:
-- "My name is X" -&gt; Identity.name (confidence: 0.95)
-- "I prefer X" -&gt; Preferences (confidence: 0.85)
-- "I work at X" / "I'm from X" -&gt; Identity (confidence: 0.80)
-- "I'm working on X" -&gt; Projects (confidence: 0.75)</p>
-<p>Configure: PROFILE_TIER1_ONLY=true to disable LLM extraction.</p>
-<h3 id="tier-2-llm-based">Tier 2: LLM-Based<a class="headerlink" href="#tier-2-llm-based" title="Permanent link">&para;</a></h3>
-<p>Deeper understanding via InferenceBroker:
-- Inferred preferences from conversation patterns
-- Relationship extraction from mentions
-- Schedule patterns from activity
-- Lower confidence, requires confirmation</p>
-<h2 id="learning-categories">Learning Categories<a class="headerlink" href="#learning-categories" title="Permanent link">&para;</a></h2>
+<h1 id="ai-agent-integration-guide">AI Agent Integration Guide<a class="headerlink" href="#ai-agent-integration-guide" title="Permanent link">&para;</a></h1>
+<h2 id="why-zetherion-exists">Why Zetherion Exists<a class="headerlink" href="#why-zetherion-exists" title="Permanent link">&para;</a></h2>
+<p>Zetherion is built as an execution layer for AI agents that need to do more
+than answer questions. It combines:</p>
+<ul>
+<li>multi-provider inference routing (local + cloud),</li>
+<li>tenant/user-scoped memory and state,</li>
+<li>policy-aware action routing (email/tasks/calendar),</li>
+<li>and production-facing APIs for app integration.</li>
+</ul>
+<p>The practical story is simple: use Zetherion when you want an AI system that
+can reason, remember, and act across real workflows without giving up
+boundaries like tenancy, authentication, and security gating.</p>
+<hr />
+<h2 id="integration-surfaces">Integration Surfaces<a class="headerlink" href="#integration-surfaces" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
-<th>Category</th>
-<th>Description</th>
-<th>Example</th>
+<th>Surface</th>
+<th>Audience</th>
+<th>Auth</th>
+<th>Purpose</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>PREFERENCE</td>
-<td>User preferences</td>
-<td>"Prefers Python"</td>
+<td>Public API (<code>:8443</code>)</td>
+<td>External apps/websites</td>
+<td><code>X-API-Key</code> + Bearer session token</td>
+<td>Tenant chat sessions, chat history, streaming responses, YouTube tenant routes</td>
 </tr>
 <tr>
-<td>CONTACT</td>
-<td>Relationship info</td>
-<td>"Works with Sarah"</td>
+<td>Skills API (<code>:8080</code>, internal)</td>
+<td>Trusted internal services</td>
+<td><code>X-API-Secret</code></td>
+<td>Skill execution, heartbeat actions, OAuth callbacks, runtime settings/secrets</td>
 </tr>
 <tr>
-<td>SCHEDULE</td>
-<td>Time patterns</td>
-<td>"Available mornings"</td>
-</tr>
-<tr>
-<td>POLICY</td>
-<td>Action permissions</td>
-<td>"Auto-reply to team"</td>
-</tr>
-<tr>
-<td>CORRECTION</td>
-<td>User corrections</td>
-<td>"Actually, I meant Go"</td>
-</tr>
-<tr>
-<td>FACT</td>
-<td>General knowledge</td>
-<td>"Has AWS certification"</td>
+<td>Discord bot gateway</td>
+<td>Human operators</td>
+<td>Discord identity + allowlist/RBAC</td>
+<td>Natural-language control plane for skills and operations</td>
 </tr>
 </tbody>
 </table>
-<h2 id="learning-sources">Learning Sources<a class="headerlink" href="#learning-sources" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Source</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>EXPLICIT</td>
-<td>User directly stated</td>
-</tr>
-<tr>
-<td>INFERRED</td>
-<td>Derived from behavior</td>
-</tr>
-<tr>
-<td>EMAIL</td>
-<td>Extracted from Gmail data</td>
-</tr>
-<tr>
-<td>CALENDAR</td>
-<td>From calendar events</td>
-</tr>
-<tr>
-<td>DISCORD</td>
-<td>From Discord messages</td>
-</tr>
-</tbody>
-</table>
-<h2 id="confidence-scoring">Confidence Scoring<a class="headerlink" href="#confidence-scoring" title="Permanent link">&para;</a></h2>
-<ul>
-<li>Explicit statements: 0.90-0.95</li>
-<li>Direct answers: 0.80-0.90</li>
-<li>Contextual mentions: 0.65-0.80</li>
-<li>Inferred from behavior: 0.40-0.60</li>
-</ul>
-<h3 id="confirmation-flow">Confirmation Flow<a class="headerlink" href="#confirmation-flow" title="Permanent link">&para;</a></h3>
-<ul>
-<li>High confidence (&gt;= 0.90): Auto-applied</li>
-<li>Medium confidence (0.60-0.90): Applied, may request confirmation</li>
-<li>Low confidence (&lt; 0.60): Stored as pending, bot asks for confirmation</li>
-<li>Unconfirmed learnings expire after PROFILE_CONFIRMATION_EXPIRY_HOURS (default 72h)</li>
-</ul>
-<h2 id="storage">Storage<a class="headerlink" href="#storage" title="Permanent link">&para;</a></h2>
-<p>Learnings stored in PostgreSQL personal_learnings table:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">personal_learnings</span><span class="w"> </span><span class="p">(</span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">user_id</span><span class="p">,</span><span class="w"> </span><span class="n">category</span><span class="p">,</span><span class="w"> </span><span class="n">content</span><span class="p">,</span><span class="w"> </span><span class="n">confidence</span><span class="p">,</span><span class="w"> </span><span class="k">source</span><span class="p">,</span><span class="w"> </span><span class="n">confirmed</span><span class="p">,</span><span class="w"> </span><span class="n">created_at</span><span class="p">)</span>
-</code></pre></div></p>
-<h2 id="integration-points">Integration Points<a class="headerlink" href="#integration-points" title="Permanent link">&para;</a></h2>
+<hr />
+<h2 id="public-api-contract-app-integrations">Public API Contract (App Integrations)<a class="headerlink" href="#public-api-contract-app-integrations" title="Permanent link">&para;</a></h2>
+<p>Base path: <code>/api/v1</code></p>
+<h3 id="auth-model">Auth model<a class="headerlink" href="#auth-model" title="Permanent link">&para;</a></h3>
 <ol>
-<li><strong>Profile Building</strong>: Confirmed learnings update PersonalProfile</li>
-<li><strong>Context Enrichment</strong>: Learnings added to LLM context for personalized responses</li>
-<li><strong>Response Adaptation</strong>: Communication style adjusts based on learned preferences</li>
-<li><strong>Proactive Actions</strong>: Schedule learnings inform heartbeat timing</li>
+<li><code>X-API-Key</code> for tenant-scoped control calls (session creation, YouTube routes).</li>
+<li>Bearer session token for chat calls (<code>Authorization: Bearer zt_sess_...</code>).</li>
+<li>Session tokens are JWT-based and default to 24-hour expiry.</li>
 </ol>
-<h2 id="related-docs">Related Docs<a class="headerlink" href="#related-docs" title="Permanent link">&para;</a></h2>
-<p>Links to: personal-understanding.md, architecture.md, configuration.md</p>
+<h3 id="core-flow-recommended">Core flow (recommended)<a class="headerlink" href="#core-flow-recommended" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Create session (server side):
+   <code>POST /api/v1/sessions</code> with <code>X-API-Key</code>.</li>
+<li>Receive <code>session_token</code>.</li>
+<li>Use token from frontend/backend for chat:
+   <code>POST /api/v1/chat</code> or <code>POST /api/v1/chat/stream</code>.</li>
+<li>Optional history retrieval:
+   <code>GET /api/v1/chat/history?limit=50</code>.</li>
+</ol>
+<h3 id="chat-behaviors">Chat behaviors<a class="headerlink" href="#chat-behaviors" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Max message size: 10,000 chars.</li>
+<li>History default page size: 50, max 100.</li>
+<li>Streaming uses SSE with <code>token</code> and <code>done</code> events.</li>
+<li>If inference is unavailable, API returns safe fallback text instead of hard-crashing.</li>
+</ul>
+<h3 id="tenant-rate-limits">Tenant rate limits<a class="headerlink" href="#tenant-rate-limits" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Per-tenant in-memory token bucket.</li>
+<li>Default limit: 60 requests/minute (configurable per tenant).</li>
+<li>Over limit: HTTP <code>429</code> with retry hint.</li>
+</ul>
+<hr />
+<h2 id="youtube-api-surface-tenant-scoped">YouTube API Surface (Tenant-Scoped)<a class="headerlink" href="#youtube-api-surface-tenant-scoped" title="Permanent link">&para;</a></h2>
+<p>When YouTube storage/skills are enabled, the Public API also exposes tenant
+routes under <code>/api/v1/youtube</code>, including:</p>
+<ul>
+<li>channel registration/listing,</li>
+<li>data ingestion (videos/comments/stats/documents),</li>
+<li>intelligence reports and history,</li>
+<li>management configuration/reply review,</li>
+<li>strategy generation/history,</li>
+<li>assumptions list/update/validation.</li>
+</ul>
+<p>All routes enforce tenant ownership checks before returning or mutating data.</p>
+<hr />
+<h2 id="skills-api-contract-internal-control-plane">Skills API Contract (Internal Control Plane)<a class="headerlink" href="#skills-api-contract-internal-control-plane" title="Permanent link">&para;</a></h2>
+<p>Base path: <code>/</code></p>
+<p>Primary endpoints:</p>
+<ul>
+<li><code>POST /handle</code> for direct skill execution.</li>
+<li><code>POST /heartbeat</code> for periodic proactive actions.</li>
+<li><code>GET /skills</code>, <code>GET /skills/{name}</code>, <code>GET /intents</code>, <code>GET /status</code>.</li>
+<li><code>GET /oauth/{provider}/authorize</code>, <code>GET /oauth/{provider}/callback</code>.</li>
+<li><code>GET/PUT/DELETE /settings/{namespace}/{key}</code>.</li>
+<li><code>GET/PUT/DELETE /secrets...</code> for encrypted secret management.</li>
+</ul>
+<p>This API is designed for trusted network contexts and is not the public
+internet integration path.</p>
+<hr />
+<h2 id="what-zetherion-can-do">What Zetherion Can Do<a class="headerlink" href="#what-zetherion-can-do" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Run tenant-isolated chat for external products with sessionized auth.</li>
+<li>Route inference across local/cloud models by task type and availability.</li>
+<li>Execute provider-agnostic email/task/calendar routing via normalized models.</li>
+<li>Enforce a security gate before automated routing writes.</li>
+<li>Detect calendar conflicts across multiple connected calendars.</li>
+<li>Operate with progressive autonomy modes (<code>auto</code>, <code>ask</code>, <code>draft</code>, <code>review</code>, <code>block</code>).</li>
+<li>Persist structured user and tenant intelligence in PostgreSQL.</li>
+<li>Expose deterministic operational APIs for settings, skills, and integrations.</li>
+</ol>
+<hr />
+<h2 id="crm-and-tenant-intelligence-important">CRM and Tenant Intelligence (Important)<a class="headerlink" href="#crm-and-tenant-intelligence-important" title="Permanent link">&para;</a></h2>
+<p>Zetherion has a real CRM-oriented intelligence layer that was under-described in
+the first draft of this guide.</p>
+<h3 id="tenant-crm-intelligence-pipeline">Tenant CRM intelligence pipeline<a class="headerlink" href="#tenant-crm-intelligence-pipeline" title="Permanent link">&para;</a></h3>
+<ol>
+<li><code>client_chat</code> handles runtime tenant conversations and inline critical signals.</li>
+<li><code>tenant_intelligence</code> performs asynchronous extraction:</li>
+<li>per-message entities (contact, intent, sentiment, purchase signals),</li>
+<li>per-session summaries (outcome, topics, unmet needs, follow-up actions).</li>
+<li>Extracted data is persisted into tenant-scoped CRM tables:</li>
+<li><code>tenant_contacts</code>,</li>
+<li><code>tenant_interactions</code>.</li>
+</ol>
+<h3 id="portfolio-intelligence-for-operators">Portfolio intelligence for operators<a class="headerlink" href="#portfolio-intelligence-for-operators" title="Permanent link">&para;</a></h3>
+<p><code>client_insights</code> aggregates tenant interaction data into owner-facing portfolio
+signals:</p>
+<ul>
+<li>client health indicators,</li>
+<li>escalation-rate alerts,</li>
+<li>cross-tenant trend analysis and recommendations,</li>
+<li>heartbeat-driven proactive notifications.</li>
+</ul>
+<h3 id="tenant-lifecycle-operations">Tenant lifecycle operations<a class="headerlink" href="#tenant-lifecycle-operations" title="Permanent link">&para;</a></h3>
+<p><code>client_provisioning</code> supports tenant creation/configuration/deactivation and
+API key rotation for managed client environments.</p>
+<hr />
+<h2 id="personal-profiling-and-adaptive-behavior-important">Personal Profiling and Adaptive Behavior (Important)<a class="headerlink" href="#personal-profiling-and-adaptive-behavior-important" title="Permanent link">&para;</a></h2>
+<p>Zetherion also includes a user-level personal understanding model:</p>
+<ol>
+<li>Profile state:
+   identity, timezone/locale, goals, communication style, working hours.</li>
+<li>Relationship graph:
+   contact records with relationship type, importance, and interaction history.</li>
+<li>Policy model:
+   per-domain autonomy policies (<code>AUTO</code>, <code>DRAFT</code>, <code>ASK</code>, <code>NEVER</code>) with trust scores.</li>
+<li>Learning memory:
+   explicit/inferred/email/calendar/discord learnings with category, confidence,
+   and confirmation status.</li>
+</ol>
+<p>This model powers adaptive behavior (how the assistant responds and when it can
+act) and exposes management intents such as summary/update/forget/export/policy
+inspection.</p>
+<hr />
+<h2 id="observation-driven-learning">Observation-Driven Learning<a class="headerlink" href="#observation-driven-learning" title="Permanent link">&para;</a></h2>
+<p>Beyond direct commands, Zetherion has a tiered observation pipeline:</p>
+<ol>
+<li>Ingest observation events from conversation and integration sources.</li>
+<li>Run Tier 1/2/3 extraction and merge/deduplicate results.</li>
+<li>Dispatch structured outputs to action targets and memory/policy systems.</li>
+<li>Route email-origin observations through the shared provider-agnostic email
+   router when configured.</li>
+</ol>
+<p>This is how the system accumulates context over time instead of acting as a
+stateless chat endpoint.</p>
+<hr />
+<h2 id="what-zetherion-does-not-do">What Zetherion Does Not Do<a class="headerlink" href="#what-zetherion-does-not-do" title="Permanent link">&para;</a></h2>
+<ol>
+<li>It does not provide anonymous/public chat access without tenant credentials.</li>
+<li>It does not expose tenant provisioning as a public endpoint on <code>/api/v1</code>
+   (provisioning is an internal/operator workflow).</li>
+<li>It does not treat flagged/blocked malicious routing content as auto-actionable.</li>
+<li>It does not provide native WebSocket chat transport; streaming is SSE.</li>
+<li>It does not fully enable Outlook parity by default (Outlook adapter is feature-flagged scaffold).</li>
+<li>It does not process email attachments in routing by default
+   (<code>attachment_handling_enabled=False</code>).</li>
+<li>It does not allow cross-tenant data reads in normal API flows.</li>
+</ol>
+<hr />
+<h2 id="operational-capabilities-often-missed">Operational Capabilities Often Missed<a class="headerlink" href="#operational-capabilities-often-missed" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Runtime settings and secret rotation without service restart
+   (<code>/settings</code>, <code>/secrets</code> on Skills API).</li>
+<li>OAuth provider authorization/callback orchestration from the Skills service.</li>
+<li>Integration ingestion queue + dead-letter handling for fail-closed router
+   dependency outages.</li>
+<li>Health analysis and anomaly-driven self-healing recommendations.</li>
+<li>Model/provider cost tracking and report generation.</li>
+</ol>
+<hr />
+<h2 id="exposure-boundaries-critical-for-integrators">Exposure Boundaries (Critical for Integrators)<a class="headerlink" href="#exposure-boundaries-critical-for-integrators" title="Permanent link">&para;</a></h2>
+<p>Some capabilities are implemented but not yet first-class public API resources:</p>
+<ol>
+<li>Tenant provisioning workflows are internal skill/control-plane operations.</li>
+<li>CRM extraction outputs are persisted and available via tenant-scoped public
+   read endpoints (<code>/api/v1/crm/*</code> and <code>/api/v1/analytics/funnel</code>) using
+   API-key auth.</li>
+<li>Personal profile and policy controls are skill-facing; external app exposure
+   should be mediated through trusted service layers.</li>
+</ol>
+<hr />
+<h2 id="capability-gates-you-must-model-in-your-agent">Capability Gates You Must Model In Your Agent<a class="headerlink" href="#capability-gates-you-must-model-in-your-agent" title="Permanent link">&para;</a></h2>
+<p>When integrating from another agent framework, assume these gates:</p>
+<ol>
+<li>Auth gate:
+   no valid key/token means no action.</li>
+<li>Security gate:
+   malicious content can force <code>block</code> or <code>review</code>.</li>
+<li>Policy gate:
+   conflict and route policy can downgrade from <code>auto</code> to <code>ask</code>/<code>draft</code>.</li>
+<li>Dependency gate:
+   router/model unavailability can queue work instead of executing immediately.</li>
+</ol>
+<p>Agent integrations should be built to handle these outcomes explicitly instead
+of assuming one-shot success.</p>
+<hr />
+<h2 id="recommended-integration-patterns">Recommended Integration Patterns<a class="headerlink" href="#recommended-integration-patterns" title="Permanent link">&para;</a></h2>
+<h3 id="pattern-a-embedded-customer-chat-in-a-saas-app">Pattern A: Embedded customer chat in a SaaS app<a class="headerlink" href="#pattern-a-embedded-customer-chat-in-a-saas-app" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Backend stores tenant API key (never expose to browser).</li>
+<li>Backend mints session via <code>/api/v1/sessions</code>.</li>
+<li>Frontend uses Bearer session token for <code>/chat</code> or <code>/chat/stream</code>.</li>
+<li>Frontend handles <code>401</code>, <code>403</code>, <code>429</code>, and stream completion events.</li>
+</ol>
+<h3 id="pattern-b-internal-automation-orchestrator">Pattern B: Internal automation orchestrator<a class="headerlink" href="#pattern-b-internal-automation-orchestrator" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Run inside trusted network.</li>
+<li>Use Skills API <code>/handle</code> for deterministic skill requests.</li>
+<li>Use <code>/heartbeat</code> for scheduled task collection.</li>
+<li>Manage runtime OAuth/settings/secrets via settings/secrets endpoints.</li>
+</ol>
+<h3 id="pattern-c-email-to-work-routing">Pattern C: Email-to-work routing<a class="headerlink" href="#pattern-c-email-to-work-routing" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Enable <code>WORK_ROUTER_ENABLED=true</code>.</li>
+<li>Connect provider accounts (Google fully wired; Outlook optional/scaffold).</li>
+<li>Route unread with <code>email_route</code>.</li>
+<li>Handle non-auto outcomes (<code>ask</code>, <code>draft</code>, <code>review</code>, queued-unavailable).</li>
+</ol>
+<hr />
+<h2 id="minimal-public-api-example">Minimal Public API Example<a class="headerlink" href="#minimal-public-api-example" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># 1) Create a session</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>curl<span class="w"> </span>-sS<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;http://localhost:8443/api/v1/sessions&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;X-API-Key: sk_live_...&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;external_user_id&quot;:&quot;user-42&quot;,&quot;metadata&quot;:{&quot;app&quot;:&quot;web-chat&quot;}}&#39;</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># 2) Send chat message</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>curl<span class="w"> </span>-sS<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;http://localhost:8443/api/v1/chat&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer zt_sess_...&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;message&quot;:&quot;I need help with my order&quot;}&#39;</span>
+</code></pre></div>
+<hr />
+<h2 id="operational-requirements">Operational Requirements<a class="headerlink" href="#operational-requirements" title="Permanent link">&para;</a></h2>
+<p>For reliable cross-app integration, ensure:</p>
+<ol>
+<li><code>API_JWT_SECRET</code> is set (required for public API sessions).</li>
+<li>PostgreSQL is reachable for tenant/session/message persistence.</li>
+<li>Inference providers are configured for your expected workloads.</li>
+<li>If using work routing:
+   <code>WORK_ROUTER_ENABLED=true</code> plus provider credentials.</li>
+<li>If using internet exposure:
+   Cloudflare tunnel and API host/port are configured.</li>
+</ol>
+<hr />
+<h2 id="positioning-for-other-ai-agents">Positioning For Other AI Agents<a class="headerlink" href="#positioning-for-other-ai-agents" title="Permanent link">&para;</a></h2>
+<p>Use this framing when presenting Zetherion to agent systems:</p>
+<p>"Zetherion is a policy-aware AI operations layer. It gives agents a secure way
+to talk, remember, classify, and act across tenant-scoped workflows using
+deterministic APIs and explicit action modes. It is not just a model wrapper;
+it is an execution fabric with guardrails."</p>
+<hr />
+<h2 id="source-pointers">Source Pointers<a class="headerlink" href="#source-pointers" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Public API server: <code>src/zetherion_ai/api/server.py</code></li>
+<li>Public API auth/middleware: <code>src/zetherion_ai/api/auth.py</code>, <code>src/zetherion_ai/api/middleware.py</code></li>
+<li>Tenant/session/chat persistence: <code>src/zetherion_ai/api/tenant.py</code></li>
+<li>Chat routes: <code>src/zetherion_ai/api/routes/chat.py</code></li>
+<li>YouTube API routes: <code>src/zetherion_ai/api/routes/youtube.py</code></li>
+<li>Tenant provisioning skill: <code>src/zetherion_ai/skills/client_provisioning.py</code></li>
+<li>Tenant CRM intelligence skill: <code>src/zetherion_ai/skills/tenant_intelligence.py</code></li>
+<li>Portfolio insights skill: <code>src/zetherion_ai/skills/client_insights.py</code></li>
+<li>Skills server/control plane: <code>src/zetherion_ai/skills/server.py</code></li>
+<li>Provider-agnostic email router: <code>src/zetherion_ai/routing/email_router.py</code></li>
+<li>Task/calendar router: <code>src/zetherion_ai/routing/task_calendar_router.py</code></li>
+<li>Routing models/contracts: <code>src/zetherion_ai/routing/models.py</code></li>
+<li>Personal model skill: <code>src/zetherion_ai/skills/personal_model.py</code></li>
+<li>Personal model schema/models: <code>src/zetherion_ai/personal/models.py</code></li>
+<li>Observation pipeline: <code>src/zetherion_ai/observation/pipeline.py</code></li>
+<li>Integration storage/queueing: <code>src/zetherion_ai/integrations/storage.py</code></li>
+</ul>
 
 
 

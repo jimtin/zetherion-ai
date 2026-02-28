@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
     
     
       
@@ -463,6 +463,34 @@
     
   
     Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user/auto-update/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Update
   
 
     
@@ -999,7 +1027,63 @@
   <span class="md-ellipsis">
     
   
-    API Reference
+    Skills API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/public-api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/ai-agent-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Agent Integration
   
 
     
@@ -1284,21 +1368,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#lightweight-git-hook-git-hookspre-push" class="md-nav__link">
+  <a href="#production-parity-pipeline-scriptstest-fullsh" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Lightweight Git Hook (.git-hooks/pre-push)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#production-parity-pipeline-scriptspre-push-testssh" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Production-Parity Pipeline (scripts/pre-push-tests.sh)
+        Production-Parity Pipeline (scripts/test-full.sh)
       
     </span>
   </a>
@@ -1882,21 +1955,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#lightweight-git-hook-git-hookspre-push" class="md-nav__link">
+  <a href="#production-parity-pipeline-scriptstest-fullsh" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Lightweight Git Hook (.git-hooks/pre-push)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#production-parity-pipeline-scriptspre-push-testssh" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Production-Parity Pipeline (scripts/pre-push-tests.sh)
+        Production-Parity Pipeline (scripts/test-full.sh)
       
     </span>
   </a>
@@ -2188,8 +2250,8 @@
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>+---------------------------------------------------------------+
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>|  Tier 2: Local Push Gates                                      |
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>|  Runs: on every git push (hook) and pre-merge validation       |
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>|  Checks: lightweight pre-push hook + full production-parity     |
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>|          pipeline via scripts/pre-push-tests.sh                |
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>|  Checks: canonical full production-parity pipeline via          |
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>|          scripts/test-full.sh                                   |
 <a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>|  Effect: blocks push/merge if checks fail                      |
 <a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>+---------------------------------------------------------------+
 <a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>                             |
@@ -2308,39 +2370,12 @@
 </code></pre></div>
 <p>Bypassing hooks is discouraged. If you bypass locally, GitHub Actions CI will still enforce the same checks and block the PR.</p>
 <h2 id="pre-push-and-pre-merge-validation">Pre-Push and Pre-Merge Validation<a class="headerlink" href="#pre-push-and-pre-merge-validation" title="Permanent link">&para;</a></h2>
-<p>Zetherion AI has two local validation paths:</p>
+<p>Zetherion AI uses one canonical local validation path:</p>
 <ol>
-<li><code>.git-hooks/pre-push</code> (automatic on <code>git push</code>) for fast feedback.</li>
-<li><code>scripts/pre-push-tests.sh</code> (manual/CI-style) for production-parity validation.</li>
+<li><code>.git-hooks/pre-push</code> (automatic on <code>git push</code>) executes <code>scripts/test-full.sh</code>.</li>
+<li><code>scripts/test-full.sh</code> can be run directly for manual full validation.</li>
 </ol>
-<h3 id="lightweight-git-hook-git-hookspre-push">Lightweight Git Hook (<code>.git-hooks/pre-push</code>)<a class="headerlink" href="#lightweight-git-hook-git-hookspre-push" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Step</th>
-<th>Command</th>
-<th>What It Checks</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>1</td>
-<td><code>ruff check src/ tests/</code></td>
-<td>Linting</td>
-</tr>
-<tr>
-<td>2</td>
-<td><code>mypy src/zetherion_ai --config-file=pyproject.toml</code></td>
-<td>Type checking</td>
-</tr>
-<tr>
-<td>3</td>
-<td><code>pytest tests/ -m "not integration" ... --cov=src/zetherion_ai</code></td>
-<td>Unit suite + coverage gate</td>
-</tr>
-</tbody>
-</table>
-<h3 id="production-parity-pipeline-scriptspre-push-testssh">Production-Parity Pipeline (<code>scripts/pre-push-tests.sh</code>)<a class="headerlink" href="#production-parity-pipeline-scriptspre-push-testssh" title="Permanent link">&para;</a></h3>
+<h3 id="production-parity-pipeline-scriptstest-fullsh">Production-Parity Pipeline (<code>scripts/test-full.sh</code>)<a class="headerlink" href="#production-parity-pipeline-scriptstest-fullsh" title="Permanent link">&para;</a></h3>
 <p>This script is the canonical full local gate before merge. It performs:</p>
 <ol>
 <li>Static analysis (<code>ruff</code>, <code>bandit</code>, <code>gitleaks</code>, <code>hadolint</code>, license checks)</li>
@@ -2350,7 +2385,7 @@
 <li>Full Docker E2E and Discord E2E suites</li>
 </ol>
 <p>Run it directly:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>bash<span class="w"> </span>scripts/pre-push-tests.sh
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>bash<span class="w"> </span>scripts/test-full.sh
 </code></pre></div>
 <h3 id="setup_1">Setup<a class="headerlink" href="#setup_1" title="Permanent link">&para;</a></h3>
 <p>The pre-push hook is installed as a symlink:</p>
@@ -2587,7 +2622,7 @@
 <td>Lightweight pre-push hook (lint, type-check, unit tests)</td>
 </tr>
 <tr>
-<td><code>scripts/pre-push-tests.sh</code></td>
+<td><code>scripts/test-full.sh</code></td>
 <td>Full production-parity test pipeline (unit + integration + Docker E2E + Discord E2E)</td>
 </tr>
 <tr>
@@ -2654,7 +2689,7 @@
 <a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration and not discord_e2e&quot;</span><span class="w"> </span>-v<span class="w"> </span>--tb<span class="o">=</span>long
 <a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
 <a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="c1"># Full production-parity path</span>
-<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>bash<span class="w"> </span>scripts/pre-push-tests.sh
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>bash<span class="w"> </span>scripts/test-full.sh
 <a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>
 <a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="c1"># Run only the failing test with debug output</span>
 <a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>pytest<span class="w"> </span>tests/unit/test_agent_core.py::test_failing_case<span class="w"> </span>-s<span class="w"> </span>-vv

@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://jimtin.github.io/zetherion-ai/user/commands/">
       
       
-        <link rel="prev" href="../getting-started/">
+        <link rel="prev" href="../auto-update/">
       
       
         <link rel="next" href="../gmail/">
@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
     
     
       
@@ -483,6 +483,34 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../auto-update/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Update
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -779,6 +807,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#email-router-commands-provider-agnostic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Email Router Commands (Provider-Agnostic)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#github-commands" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -805,6 +844,28 @@
     <span class="md-ellipsis">
       
         Profile Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Update Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#health-dev-watcher-milestone-youtube-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Health / Dev Watcher / Milestone / YouTube Commands
       
     </span>
   </a>
@@ -1436,7 +1497,63 @@
   <span class="md-ellipsis">
     
   
-    API Reference
+    Skills API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/public-api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/ai-agent-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Agent Integration
   
 
     
@@ -2063,6 +2180,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#email-router-commands-provider-agnostic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Email Router Commands (Provider-Agnostic)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#github-commands" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2089,6 +2217,28 @@
     <span class="md-ellipsis">
       
         Profile Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#update-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Update Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#health-dev-watcher-milestone-youtube-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Health / Dev Watcher / Milestone / YouTube Commands
       
     </span>
   </a>
@@ -2376,6 +2526,24 @@
 <td>Semantic memory search</td>
 <td><code>Search for my project notes</code></td>
 </tr>
+<tr>
+<td>"Check for updates"</td>
+<td>Natural Language</td>
+<td>Check update status/version</td>
+<td><code>@Zetherion AI check for updates</code></td>
+</tr>
+<tr>
+<td>"Email queue status"</td>
+<td>Natural Language</td>
+<td>Show email router queue status</td>
+<td><code>@Zetherion AI email queue status</code></td>
+</tr>
+<tr>
+<td>"Analyze my channel"</td>
+<td>Natural Language</td>
+<td>Trigger YouTube analysis/report paths</td>
+<td><code>@Zetherion AI analyze my channel</code></td>
+</tr>
 </tbody>
 </table>
 <hr />
@@ -2397,7 +2565,7 @@
 <ul>
 <li>The router classifies your query by intent and complexity, then dispatches to the provider you've configured for that task type</li>
 <li>You choose between local inference (Ollama) and cloud providers (Gemini, Claude, OpenAI) -- see the LLM Provider Configuration section in the README</li>
-<li>Routing classification can use Gemini Flash (cloud) or Ollama Llama 3.2 1B (local), depending on your setup</li>
+<li>Routing classification can use Gemini Flash (cloud) or Ollama Llama 3.2 3B (local), depending on your setup</li>
 <li>The bot searches recent conversation history and relevant memories to provide context</li>
 </ul>
 <p><strong>Expected response time:</strong>
@@ -2506,7 +2674,7 @@
 </code></pre></div></p>
 <p><strong>Routing logic:</strong></p>
 <ul>
-<li>The router classifies your message by intent and complexity (using Gemini Flash or local Llama 3.2 1B, depending on your configuration)</li>
+<li>The router classifies your message by intent and complexity (using Gemini Flash or local Llama 3.2 3B, depending on your configuration)</li>
 <li>If the query is classified as complex, it is dispatched to your configured reasoning provider</li>
 <li>Simple queries go to your configured fast provider</li>
 <li>You control which providers handle which task types -- see the LLM Provider Configuration section in the README</li>
@@ -2567,122 +2735,204 @@ Triggers the <code>email_status</code> intent. Shows connected accounts and last
 </code></pre></div>
 Triggers the <code>email_search</code> intent. Searches by subject and sender across connected accounts.</p>
 <hr />
+<h3 id="email-router-commands-provider-agnostic">Email Router Commands (Provider-Agnostic)<a class="headerlink" href="#email-router-commands-provider-agnostic" title="Permanent link">&para;</a></h3>
+<p>These commands target the shared <code>email</code> skill path used by the work router.</p>
+<p><strong>Connect an account:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>Connect gmail
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>Connect email account
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>Link email
+</code></pre></div>
+Triggers <code>email_connect</code>.</p>
+<p><strong>Disconnect an account:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>Disconnect gmail
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>Unlink email
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>Stop monitoring this mailbox
+</code></pre></div>
+Triggers <code>email_disconnect</code>.</p>
+<p><strong>Route unread email now:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>Route unread email
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>Process unread emails
+</code></pre></div>
+Triggers <code>email_route</code>.</p>
+<p><strong>Queue status / resume:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>Email queue status
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>Routing queue status
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>Resume email queue
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>Retry queued emails
+</code></pre></div>
+Triggers <code>email_queue_status</code> or <code>email_queue_resume</code>.</p>
+<p><strong>Primary destination controls:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>Set primary calendar to my work calendar
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>Set primary task list to Inbox
+</code></pre></div>
+Triggers <code>email_set_primary_calendar</code> and <code>email_set_primary_task_list</code>.</p>
+<hr />
 <h3 id="github-commands">GitHub Commands<a class="headerlink" href="#github-commands" title="Permanent link">&para;</a></h3>
 <p>Zetherion AI integrates with GitHub to manage issues, pull requests, and CI workflows directly from Discord.</p>
 <p><strong>List issues:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>List issues
-<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>Show open issues
-<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>What issues are open?
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>List issues
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>Show open issues
+<a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a>What issues are open?
 </code></pre></div>
 Triggers the <code>list_issues</code> action. Lists open issues in the configured repository.</p>
 <p><strong>View a specific issue:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>Show issue #42
-<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>What&#39;s issue #42 about?
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>Show issue #42
+<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a>What&#39;s issue #42 about?
 </code></pre></div>
 Triggers the <code>get_issue</code> action. Displays the issue title, body, labels, and status.</p>
 <p><strong>Create an issue:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>Create issue: Fix login button alignment
-<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>Create issue: Add dark mode support
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>Create issue: Fix login button alignment
+<a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a>Create issue: Add dark mode support
 </code></pre></div>
 Triggers the <code>create_issue</code> action. Requires confirmation unless autonomy is set to autonomous for this action.</p>
 <p><strong>Close an issue:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>Close issue #42
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>Close issue #42
 </code></pre></div>
 Triggers the <code>close_issue</code> action.</p>
 <p><strong>List pull requests:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>List PRs
-<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>Show pull requests
-<a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a>What PRs are open?
+<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>List PRs
+<a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a>Show pull requests
+<a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a>What PRs are open?
 </code></pre></div>
 Triggers the <code>list_prs</code> action.</p>
 <p><strong>View a pull request:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>Show PR #10
-<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>What&#39;s PR #10 about?
+<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>Show PR #10
+<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a>What&#39;s PR #10 about?
 </code></pre></div>
 Triggers the <code>get_pr</code> action. Displays the PR title, description, review status, and merge status.</p>
 <p><strong>View a PR diff:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>Show PR diff #10
-<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a>What changed in PR #10?
+<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>Show PR diff #10
+<a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a>What changed in PR #10?
 </code></pre></div>
 Triggers the <code>get_pr_diff</code> action. Displays the file changes in the pull request.</p>
 <p><strong>Merge a pull request:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>Merge PR #10
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>Merge PR #10
 </code></pre></div>
 Triggers the <code>merge_pr</code> action. This always requires explicit confirmation, regardless of autonomy settings.</p>
 <p><strong>List workflows / CI status:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>List workflows
-<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>Show CI status
-<a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a>What&#39;s the build status?
+<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>List workflows
+<a id="__codelineno-33-2" name="__codelineno-33-2" href="#__codelineno-33-2"></a>Show CI status
+<a id="__codelineno-33-3" name="__codelineno-33-3" href="#__codelineno-33-3"></a>What&#39;s the build status?
 </code></pre></div>
 Triggers the <code>list_workflows</code> action.</p>
 <p><strong>Repository info:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>Repo info
-<a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a>Show repository information
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a>Repo info
+<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a>Show repository information
 </code></pre></div>
 Triggers the <code>get_repo_info</code> action.</p>
 <p><strong>Set autonomy level:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>Set autonomy for create_issue to autonomous
-<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a>Set autonomy for close_issue to confirm
+<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a>Set autonomy for create_issue to autonomous
+<a id="__codelineno-35-2" name="__codelineno-35-2" href="#__codelineno-35-2"></a>Set autonomy for close_issue to confirm
 </code></pre></div>
 Triggers the <code>set_autonomy</code> action. Controls whether actions require confirmation.</p>
 <p><strong>View autonomy settings:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>Show autonomy settings
-<a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a>What are my autonomy settings?
+<div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a>Show autonomy settings
+<a id="__codelineno-36-2" name="__codelineno-36-2" href="#__codelineno-36-2"></a>What are my autonomy settings?
 </code></pre></div>
 Triggers the <code>get_autonomy</code> action.</p>
 <hr />
 <h3 id="task-commands">Task Commands<a class="headerlink" href="#task-commands" title="Permanent link">&para;</a></h3>
 <p>Manage personal tasks and to-do items through Discord.</p>
 <p><strong>Create a task:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>Add task: Review PR #123
-<a id="__codelineno-32-2" name="__codelineno-32-2" href="#__codelineno-32-2"></a>Add task: Update documentation
-<a id="__codelineno-32-3" name="__codelineno-32-3" href="#__codelineno-32-3"></a>Create task: Deploy to staging
+<div class="highlight"><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a>Add task: Review PR #123
+<a id="__codelineno-37-2" name="__codelineno-37-2" href="#__codelineno-37-2"></a>Add task: Update documentation
+<a id="__codelineno-37-3" name="__codelineno-37-3" href="#__codelineno-37-3"></a>Create task: Deploy to staging
 </code></pre></div></p>
 <p><strong>List tasks:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>List my tasks
-<a id="__codelineno-33-2" name="__codelineno-33-2" href="#__codelineno-33-2"></a>Show my to-do list
-<a id="__codelineno-33-3" name="__codelineno-33-3" href="#__codelineno-33-3"></a>What tasks do I have?
+<div class="highlight"><pre><span></span><code><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a>List my tasks
+<a id="__codelineno-38-2" name="__codelineno-38-2" href="#__codelineno-38-2"></a>Show my to-do list
+<a id="__codelineno-38-3" name="__codelineno-38-3" href="#__codelineno-38-3"></a>What tasks do I have?
 </code></pre></div></p>
 <p><strong>Complete a task:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a>Complete task 1
-<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a>Mark task 1 as done
-<a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a>Finish task 1
+<div class="highlight"><pre><span></span><code><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a>Complete task 1
+<a id="__codelineno-39-2" name="__codelineno-39-2" href="#__codelineno-39-2"></a>Mark task 1 as done
+<a id="__codelineno-39-3" name="__codelineno-39-3" href="#__codelineno-39-3"></a>Finish task 1
 </code></pre></div></p>
 <p><strong>Delete a task:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a>Delete task 2
-<a id="__codelineno-35-2" name="__codelineno-35-2" href="#__codelineno-35-2"></a>Remove task 2
+<div class="highlight"><pre><span></span><code><a id="__codelineno-40-1" name="__codelineno-40-1" href="#__codelineno-40-1"></a>Delete task 2
+<a id="__codelineno-40-2" name="__codelineno-40-2" href="#__codelineno-40-2"></a>Remove task 2
 </code></pre></div></p>
 <hr />
 <h3 id="profile-commands">Profile Commands<a class="headerlink" href="#profile-commands" title="Permanent link">&para;</a></h3>
 <p>Zetherion AI learns about you over time. You can view, update, and manage your profile data.</p>
 <p><strong>View your profile:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a>Show my profile
-<a id="__codelineno-36-2" name="__codelineno-36-2" href="#__codelineno-36-2"></a>What do you know about me?
-<a id="__codelineno-36-3" name="__codelineno-36-3" href="#__codelineno-36-3"></a>Display my profile info
+<div class="highlight"><pre><span></span><code><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a>Show my profile
+<a id="__codelineno-41-2" name="__codelineno-41-2" href="#__codelineno-41-2"></a>What do you know about me?
+<a id="__codelineno-41-3" name="__codelineno-41-3" href="#__codelineno-41-3"></a>Display my profile info
 </code></pre></div>
 Displays all learned information the bot has stored about you (name, location, preferences, and more).</p>
 <p><strong>Update profile fields:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a>Update my name to James
-<a id="__codelineno-37-2" name="__codelineno-37-2" href="#__codelineno-37-2"></a>Set my timezone to PST
-<a id="__codelineno-37-3" name="__codelineno-37-3" href="#__codelineno-37-3"></a>My location is London
+<div class="highlight"><pre><span></span><code><a id="__codelineno-42-1" name="__codelineno-42-1" href="#__codelineno-42-1"></a>Update my name to James
+<a id="__codelineno-42-2" name="__codelineno-42-2" href="#__codelineno-42-2"></a>Set my timezone to PST
+<a id="__codelineno-42-3" name="__codelineno-42-3" href="#__codelineno-42-3"></a>My location is London
 </code></pre></div></p>
 <p><strong>Remove profile data:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a>Forget my location
-<a id="__codelineno-38-2" name="__codelineno-38-2" href="#__codelineno-38-2"></a>Remove my timezone
-<a id="__codelineno-38-3" name="__codelineno-38-3" href="#__codelineno-38-3"></a>Clear my name
+<div class="highlight"><pre><span></span><code><a id="__codelineno-43-1" name="__codelineno-43-1" href="#__codelineno-43-1"></a>Forget my location
+<a id="__codelineno-43-2" name="__codelineno-43-2" href="#__codelineno-43-2"></a>Remove my timezone
+<a id="__codelineno-43-3" name="__codelineno-43-3" href="#__codelineno-43-3"></a>Clear my name
 </code></pre></div></p>
 <p><strong>Export your data (GDPR):</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a>Export my data
-<a id="__codelineno-39-2" name="__codelineno-39-2" href="#__codelineno-39-2"></a>Download my data
-<a id="__codelineno-39-3" name="__codelineno-39-3" href="#__codelineno-39-3"></a>Give me all my data
+<div class="highlight"><pre><span></span><code><a id="__codelineno-44-1" name="__codelineno-44-1" href="#__codelineno-44-1"></a>Export my data
+<a id="__codelineno-44-2" name="__codelineno-44-2" href="#__codelineno-44-2"></a>Download my data
+<a id="__codelineno-44-3" name="__codelineno-44-3" href="#__codelineno-44-3"></a>Give me all my data
 </code></pre></div>
 Generates a full export of all data the bot holds about you.</p>
 <p><strong>Delete all your data:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-40-1" name="__codelineno-40-1" href="#__codelineno-40-1"></a>Delete all my data
-<a id="__codelineno-40-2" name="__codelineno-40-2" href="#__codelineno-40-2"></a>Erase everything about me
-<a id="__codelineno-40-3" name="__codelineno-40-3" href="#__codelineno-40-3"></a>Remove all my information
+<div class="highlight"><pre><span></span><code><a id="__codelineno-45-1" name="__codelineno-45-1" href="#__codelineno-45-1"></a>Delete all my data
+<a id="__codelineno-45-2" name="__codelineno-45-2" href="#__codelineno-45-2"></a>Erase everything about me
+<a id="__codelineno-45-3" name="__codelineno-45-3" href="#__codelineno-45-3"></a>Remove all my information
 </code></pre></div>
 Permanently deletes all stored data. This action requires confirmation before proceeding.</p>
+<hr />
+<h3 id="update-commands">Update Commands<a class="headerlink" href="#update-commands" title="Permanent link">&para;</a></h3>
+<p>These commands target the updater skill path:</p>
+<p><strong>Check status/version:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-46-1" name="__codelineno-46-1" href="#__codelineno-46-1"></a>Check for updates
+<a id="__codelineno-46-2" name="__codelineno-46-2" href="#__codelineno-46-2"></a>What version are you?
+<a id="__codelineno-46-3" name="__codelineno-46-3" href="#__codelineno-46-3"></a>Update status
+</code></pre></div></p>
+<p><strong>Apply update:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-47-1" name="__codelineno-47-1" href="#__codelineno-47-1"></a>Apply update
+<a id="__codelineno-47-2" name="__codelineno-47-2" href="#__codelineno-47-2"></a>Install latest update
+<a id="__codelineno-47-3" name="__codelineno-47-3" href="#__codelineno-47-3"></a>Update now
+</code></pre></div></p>
+<p><strong>Rollback:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-48-1" name="__codelineno-48-1" href="#__codelineno-48-1"></a>Rollback update
+<a id="__codelineno-48-2" name="__codelineno-48-2" href="#__codelineno-48-2"></a>Revert to previous version
+</code></pre></div></p>
+<p><strong>Unpause updates:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-49-1" name="__codelineno-49-1" href="#__codelineno-49-1"></a>Resume updates
+<a id="__codelineno-49-2" name="__codelineno-49-2" href="#__codelineno-49-2"></a>Unpause updates
+</code></pre></div></p>
+<hr />
+<h3 id="health-dev-watcher-milestone-youtube-commands">Health / Dev Watcher / Milestone / YouTube Commands<a class="headerlink" href="#health-dev-watcher-milestone-youtube-commands" title="Permanent link">&para;</a></h3>
+<p>These capabilities are available through natural-language intents when the
+corresponding skills are enabled.</p>
+<p><strong>Health analyzer examples:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-50-1" name="__codelineno-50-1" href="#__codelineno-50-1"></a>Health check
+<a id="__codelineno-50-2" name="__codelineno-50-2" href="#__codelineno-50-2"></a>System status
+<a id="__codelineno-50-3" name="__codelineno-50-3" href="#__codelineno-50-3"></a>Health report
+</code></pre></div></p>
+<p><strong>Dev watcher examples:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-51-1" name="__codelineno-51-1" href="#__codelineno-51-1"></a>What should I work on next?
+<a id="__codelineno-51-2" name="__codelineno-51-2" href="#__codelineno-51-2"></a>Show my dev ideas
+<a id="__codelineno-51-3" name="__codelineno-51-3" href="#__codelineno-51-3"></a>Dev journal this week
+<a id="__codelineno-51-4" name="__codelineno-51-4" href="#__codelineno-51-4"></a>Dev summary
+</code></pre></div></p>
+<p><strong>Milestone tracker examples:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-52-1" name="__codelineno-52-1" href="#__codelineno-52-1"></a>Show milestones
+<a id="__codelineno-52-2" name="__codelineno-52-2" href="#__codelineno-52-2"></a>Show milestone drafts
+<a id="__codelineno-52-3" name="__codelineno-52-3" href="#__codelineno-52-3"></a>Approve this milestone post
+<a id="__codelineno-52-4" name="__codelineno-52-4" href="#__codelineno-52-4"></a>Milestone settings
+</code></pre></div></p>
+<p><strong>YouTube examples:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-53-1" name="__codelineno-53-1" href="#__codelineno-53-1"></a>Analyze my channel
+<a id="__codelineno-53-2" name="__codelineno-53-2" href="#__codelineno-53-2"></a>Show channel intelligence history
+<a id="__codelineno-53-3" name="__codelineno-53-3" href="#__codelineno-53-3"></a>Review pending replies
+<a id="__codelineno-53-4" name="__codelineno-53-4" href="#__codelineno-53-4"></a>Show tag recommendations
+<a id="__codelineno-53-5" name="__codelineno-53-5" href="#__codelineno-53-5"></a>Generate a new channel strategy
+<a id="__codelineno-53-6" name="__codelineno-53-6" href="#__codelineno-53-6"></a>Show strategy history
+</code></pre></div></p>
 <hr />
 <h3 id="cost-commands">Cost Commands<a class="headerlink" href="#cost-commands" title="Permanent link">&para;</a></h3>
 <p>Cost tracking is handled automatically by the system and is not triggered by direct user commands. Costs are tracked per-model and per-user. Information about costs appears in:</p>
@@ -2691,7 +2941,7 @@ Permanently deletes all stored data. This action requires confirmation before pr
 <li>Admin dashboards and logs</li>
 <li>Per-request metadata (visible in debug mode)</li>
 </ul>
-<p>The 6 Docker services that make up Zetherion AI each contribute to overall resource usage, and cost tracking covers all external API calls to Claude Sonnet 4.5, GPT-5.2, and Gemini 2.5 Flash.</p>
+<p>The current compose topology contributes to overall resource usage, and cost tracking covers external API calls across configured providers.</p>
 <hr />
 <h2 id="direct-messages">Direct Messages<a class="headerlink" href="#direct-messages" title="Permanent link">&para;</a></h2>
 <p>You can message Zetherion AI directly for a private conversation.</p>
@@ -2705,24 +2955,24 @@ Permanently deletes all stored data. This action requires confirmation before pr
 - Conversation history is maintained across sessions.
 - DMs are more private than server messages.</p>
 <p><strong>Examples:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a>Hello!
-<a id="__codelineno-41-2" name="__codelineno-41-2" href="#__codelineno-41-2"></a>What can you help me with?
-<a id="__codelineno-41-3" name="__codelineno-41-3" href="#__codelineno-41-3"></a>Remember that I prefer Python 3.12
-<a id="__codelineno-41-4" name="__codelineno-41-4" href="#__codelineno-41-4"></a>Check my email
-<a id="__codelineno-41-5" name="__codelineno-41-5" href="#__codelineno-41-5"></a>List issues
-<a id="__codelineno-41-6" name="__codelineno-41-6" href="#__codelineno-41-6"></a>Show my profile
+<div class="highlight"><pre><span></span><code><a id="__codelineno-54-1" name="__codelineno-54-1" href="#__codelineno-54-1"></a>Hello!
+<a id="__codelineno-54-2" name="__codelineno-54-2" href="#__codelineno-54-2"></a>What can you help me with?
+<a id="__codelineno-54-3" name="__codelineno-54-3" href="#__codelineno-54-3"></a>Remember that I prefer Python 3.12
+<a id="__codelineno-54-4" name="__codelineno-54-4" href="#__codelineno-54-4"></a>Check my email
+<a id="__codelineno-54-5" name="__codelineno-54-5" href="#__codelineno-54-5"></a>List issues
+<a id="__codelineno-54-6" name="__codelineno-54-6" href="#__codelineno-54-6"></a>Show my profile
 </code></pre></div></p>
 <hr />
 <h2 id="mentions">Mentions<a class="headerlink" href="#mentions" title="Permanent link">&para;</a></h2>
 <p>In server channels, mention the bot to get its attention.</p>
 <p><strong>Syntax:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-42-1" name="__codelineno-42-1" href="#__codelineno-42-1"></a>@Zetherion AI &lt;your message&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-55-1" name="__codelineno-55-1" href="#__codelineno-55-1"></a>@Zetherion AI &lt;your message&gt;
 </code></pre></div></p>
 <p><strong>Examples:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-43-1" name="__codelineno-43-1" href="#__codelineno-43-1"></a>@Zetherion AI what&#39;s the best way to learn Python?
-<a id="__codelineno-43-2" name="__codelineno-43-2" href="#__codelineno-43-2"></a>@Zetherion AI remember our team meeting is every Monday
-<a id="__codelineno-43-3" name="__codelineno-43-3" href="#__codelineno-43-3"></a>@Zetherion AI check my email
-<a id="__codelineno-43-4" name="__codelineno-43-4" href="#__codelineno-43-4"></a>@Zetherion AI show open issues
+<div class="highlight"><pre><span></span><code><a id="__codelineno-56-1" name="__codelineno-56-1" href="#__codelineno-56-1"></a>@Zetherion AI what&#39;s the best way to learn Python?
+<a id="__codelineno-56-2" name="__codelineno-56-2" href="#__codelineno-56-2"></a>@Zetherion AI remember our team meeting is every Monday
+<a id="__codelineno-56-3" name="__codelineno-56-3" href="#__codelineno-56-3"></a>@Zetherion AI check my email
+<a id="__codelineno-56-4" name="__codelineno-56-4" href="#__codelineno-56-4"></a>@Zetherion AI show open issues
 </code></pre></div></p>
 <p><strong>Behavior:</strong>
 - The bot only responds when explicitly mentioned.
@@ -2730,7 +2980,7 @@ Permanently deletes all stored data. This action requires confirmation before pr
 - Responses are public (visible to everyone in the channel).
 - All functionality is the same as via DM or slash commands.</p>
 <p><strong>Empty mention:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-44-1" name="__codelineno-44-1" href="#__codelineno-44-1"></a>@Zetherion AI
+<div class="highlight"><pre><span></span><code><a id="__codelineno-57-1" name="__codelineno-57-1" href="#__codelineno-57-1"></a>@Zetherion AI
 </code></pre></div>
 The bot will respond with a prompt asking how it can help.</p>
 <hr />
@@ -2764,7 +3014,7 @@ The bot will respond with a prompt asking how it can help.</p>
 3. Additional messages within the 30-second warning cooldown are silently blocked.
 4. After 60 seconds from the first message, the counter resets.</p>
 <p>If you are rate limited, the bot will respond with:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-45-1" name="__codelineno-45-1" href="#__codelineno-45-1"></a>You&#39;re sending messages too quickly. Please wait a moment before trying again.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-58-1" name="__codelineno-58-1" href="#__codelineno-58-1"></a>You&#39;re sending messages too quickly. Please wait a moment before trying again.
 </code></pre></div></p>
 <hr />
 <h2 id="permissions">Permissions<a class="headerlink" href="#permissions" title="Permanent link">&para;</a></h2>
@@ -2824,11 +3074,11 @@ The bot will respond with a prompt asking how it can help.</p>
 </table>
 <h3 id="allowlist">Allowlist<a class="headerlink" href="#allowlist" title="Permanent link">&para;</a></h3>
 <p>By default, all users can interact with the bot. To restrict access:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-46-1" name="__codelineno-46-1" href="#__codelineno-46-1"></a><span class="c1"># In .env -- comma-separated Discord user IDs</span>
-<a id="__codelineno-46-2" name="__codelineno-46-2" href="#__codelineno-46-2"></a><span class="nv">ALLOWED_USER_IDS</span><span class="o">=</span><span class="m">123456789</span>,987654321
+<div class="highlight"><pre><span></span><code><a id="__codelineno-59-1" name="__codelineno-59-1" href="#__codelineno-59-1"></a><span class="c1"># In .env -- comma-separated Discord user IDs</span>
+<a id="__codelineno-59-2" name="__codelineno-59-2" href="#__codelineno-59-2"></a><span class="nv">ALLOWED_USER_IDS</span><span class="o">=</span><span class="m">123456789</span>,987654321
 </code></pre></div>
 <p>Leave the value empty to allow all users:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-47-1" name="__codelineno-47-1" href="#__codelineno-47-1"></a><span class="nv">ALLOWED_USER_IDS</span><span class="o">=</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-60-1" name="__codelineno-60-1" href="#__codelineno-60-1"></a><span class="nv">ALLOWED_USER_IDS</span><span class="o">=</span>
 </code></pre></div></p>
 <hr />
 <h2 id="security-notes">Security Notes<a class="headerlink" href="#security-notes" title="Permanent link">&para;</a></h2>

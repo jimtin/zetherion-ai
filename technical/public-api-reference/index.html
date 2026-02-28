@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://jimtin.github.io/zetherion-ai/technical/cost-tracking/">
+        <link rel="canonical" href="https://jimtin.github.io/zetherion-ai/technical/public-api-reference/">
       
       
-        <link rel="prev" href="../personal-understanding/">
+        <link rel="prev" href="../api-reference/">
       
       
-        <link rel="next" href="../api-reference/">
+        <link rel="next" href="../ai-agent-integration/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Cost Tracking - Zetherion AI</title>
+        <title>Public API Reference - Zetherion AI</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#cost-tracking" class="md-skip">
+        <a href="#public-api-reference" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Cost Tracking
+              Public API Reference
             
           </span>
         </div>
@@ -992,37 +992,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Cost Tracking
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../cost-tracking/" class="md-nav__link">
         
   
   
@@ -1038,453 +1011,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Overview
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Overview">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#how-it-works" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        How It Works
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Configuration
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Configuration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#enable-cost-tracking" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Enable Cost Tracking
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#set-budgets" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Set Budgets
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#enable-notifications" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Enable Notifications
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#provider-pricing" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Provider Pricing
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Provider Pricing">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#token-estimation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Token Estimation
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#typical-query-costs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Typical Query Costs
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#cost-by-task-type" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cost by Task Type
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#budget-management" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Budget Management
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Budget Management">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#daily-budgets" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Daily Budgets
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#monthly-budgets" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Monthly Budgets
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#budget-notifications" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Budget Notifications
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#budget-actions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Budget Actions
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#cost-reports" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cost Reports
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Cost Reports">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#daily-summary" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Daily Summary
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#monthly-summary" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Monthly Summary
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#querying-cost-data" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Querying Cost Data
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#export-cost-data" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Export Cost Data
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#optimization-strategies" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Optimization Strategies
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Optimization Strategies">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#1-use-free-tiers-effectively" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1. Use Free Tiers Effectively
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#2-optimize-context-window" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        2. Optimize Context Window
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#3-use-ollama-for-routing" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. Use Ollama for Routing
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#4-choose-cost-effective-models" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        4. Choose Cost-Effective Models
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#5-rate-limiting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        5. Rate Limiting
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#6-hybrid-approach" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        6. Hybrid Approach
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#cost-comparison-strategies" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cost Comparison: Strategies
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#database-schema" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Database Schema
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#troubleshooting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Troubleshooting
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Troubleshooting">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#costs-higher-than-expected" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Costs Higher Than Expected
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#budget-not-enforcing" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Budget Not Enforcing
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#notifications-not-sending" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Notifications Not Sending
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#database-issues" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Database Issues
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#related-docs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Related Docs
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1522,10 +1048,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../public-api-reference/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public API Reference
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1541,6 +1094,492 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authentication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Authentication">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#api-key-auth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Key auth
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#session-token-auth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Session token auth
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Health
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Health">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/health
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sessions-api-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sessions (API Key)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Sessions (API Key)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1sessions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/sessions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1sessionssession_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/sessions/{session_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete-apiv1sessionssession_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DELETE /api/v1/sessions/{session_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chat-session-token" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chat (Session Token)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Chat (Session Token)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1chat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/chat
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1chatstream" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/chat/stream
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1chathistory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/chat/history
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#analytics-session-token" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Analytics (Session Token)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Analytics (Session Token)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1analyticsevents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/analytics/events
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1analyticsreplaychunks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/analytics/replay/chunks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1analyticsreplaychunksweb_session_idsequence_no" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/analytics/replay/chunks/{web_session_id}/{sequence_no}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1analyticssessionsend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/analytics/sessions/end
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1analyticsrecommendations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/analytics/recommendations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1analyticsrecommendationsrecommendation_idfeedback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/analytics/recommendations/{recommendation_id}/feedback
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1analyticsrecommendationstenant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/analytics/recommendations/tenant
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1analyticsfunnel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/analytics/funnel
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#crm-read-api-api-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CRM Read API (API Key)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CRM Read API (API Key)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1crmcontacts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/crm/contacts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1crminteractions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/crm/interactions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#release-markers-api-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Release Markers (API Key)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Release Markers (API Key)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1releasesmarkers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/releases/markers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#youtube-api-api-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        YouTube API (API Key)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="YouTube API (API Key)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#channels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Channels
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ingestion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ingestion
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#intelligence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Intelligence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Management
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#assumptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Assumptions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limits-and-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limits and Validation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-responses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Responses
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related Docs
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1962,14 +2001,36 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Overview">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authentication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Authentication">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#how-it-works" class="md-nav__link">
+  <a href="#api-key-auth" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How It Works
+        API Key auth
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#session-token-auth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Session token auth
       
     </span>
   </a>
@@ -1982,44 +2043,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#configuration" class="md-nav__link">
+  <a href="#health" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Configuration
+        Health
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Configuration">
+    <nav class="md-nav" aria-label="Health">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#enable-cost-tracking" class="md-nav__link">
+  <a href="#get-apiv1health" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Enable Cost Tracking
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#set-budgets" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Set Budgets
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#enable-notifications" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Enable Notifications
+        GET /api/v1/health
       
     </span>
   </a>
@@ -2032,22 +2071,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#provider-pricing" class="md-nav__link">
+  <a href="#sessions-api-key" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Provider Pricing
+        Sessions (API Key)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Provider Pricing">
+    <nav class="md-nav" aria-label="Sessions (API Key)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#token-estimation" class="md-nav__link">
+  <a href="#post-apiv1sessions" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Token Estimation
+        POST /api/v1/sessions
       
     </span>
   </a>
@@ -2055,10 +2094,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#typical-query-costs" class="md-nav__link">
+  <a href="#get-apiv1sessionssession_id" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Typical Query Costs
+        GET /api/v1/sessions/{session_id}
       
     </span>
   </a>
@@ -2066,10 +2105,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#cost-by-task-type" class="md-nav__link">
+  <a href="#delete-apiv1sessionssession_id" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Cost by Task Type
+        DELETE /api/v1/sessions/{session_id}
       
     </span>
   </a>
@@ -2082,22 +2121,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#budget-management" class="md-nav__link">
+  <a href="#chat-session-token" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Budget Management
+        Chat (Session Token)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Budget Management">
+    <nav class="md-nav" aria-label="Chat (Session Token)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#daily-budgets" class="md-nav__link">
+  <a href="#post-apiv1chat" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Daily Budgets
+        POST /api/v1/chat
       
     </span>
   </a>
@@ -2105,10 +2144,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#monthly-budgets" class="md-nav__link">
+  <a href="#post-apiv1chatstream" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Monthly Budgets
+        POST /api/v1/chat/stream
       
     </span>
   </a>
@@ -2116,21 +2155,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#budget-notifications" class="md-nav__link">
+  <a href="#get-apiv1chathistory" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Budget Notifications
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#budget-actions" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Budget Actions
+        GET /api/v1/chat/history
       
     </span>
   </a>
@@ -2143,22 +2171,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#cost-reports" class="md-nav__link">
+  <a href="#analytics-session-token" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Cost Reports
+        Analytics (Session Token)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Cost Reports">
+    <nav class="md-nav" aria-label="Analytics (Session Token)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#daily-summary" class="md-nav__link">
+  <a href="#post-apiv1analyticsevents" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Daily Summary
+        POST /api/v1/analytics/events
       
     </span>
   </a>
@@ -2166,10 +2194,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#monthly-summary" class="md-nav__link">
+  <a href="#post-apiv1analyticsreplaychunks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Monthly Summary
+        POST /api/v1/analytics/replay/chunks
       
     </span>
   </a>
@@ -2177,10 +2205,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#querying-cost-data" class="md-nav__link">
+  <a href="#get-apiv1analyticsreplaychunksweb_session_idsequence_no" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Querying Cost Data
+        GET /api/v1/analytics/replay/chunks/{web_session_id}/{sequence_no}
       
     </span>
   </a>
@@ -2188,10 +2216,54 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#export-cost-data" class="md-nav__link">
+  <a href="#post-apiv1analyticssessionsend" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Export Cost Data
+        POST /api/v1/analytics/sessions/end
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1analyticsrecommendations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/analytics/recommendations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1analyticsrecommendationsrecommendation_idfeedback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/analytics/recommendations/{recommendation_id}/feedback
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1analyticsrecommendationstenant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/analytics/recommendations/tenant
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-apiv1analyticsfunnel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /api/v1/analytics/funnel
       
     </span>
   </a>
@@ -2204,22 +2276,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#optimization-strategies" class="md-nav__link">
+  <a href="#crm-read-api-api-key" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Optimization Strategies
+        CRM Read API (API Key)
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Optimization Strategies">
+    <nav class="md-nav" aria-label="CRM Read API (API Key)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#1-use-free-tiers-effectively" class="md-nav__link">
+  <a href="#get-apiv1crmcontacts" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Use Free Tiers Effectively
+        GET /api/v1/crm/contacts
       
     </span>
   </a>
@@ -2227,65 +2299,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-optimize-context-window" class="md-nav__link">
+  <a href="#get-apiv1crminteractions" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Optimize Context Window
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#3-use-ollama-for-routing" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. Use Ollama for Routing
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#4-choose-cost-effective-models" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        4. Choose Cost-Effective Models
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#5-rate-limiting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        5. Rate Limiting
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#6-hybrid-approach" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        6. Hybrid Approach
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#cost-comparison-strategies" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Cost Comparison: Strategies
+        GET /api/v1/crm/interactions
       
     </span>
   </a>
@@ -2298,66 +2315,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#database-schema" class="md-nav__link">
+  <a href="#release-markers-api-key" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Database Schema
+        Release Markers (API Key)
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#troubleshooting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Troubleshooting
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Troubleshooting">
+    <nav class="md-nav" aria-label="Release Markers (API Key)">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#costs-higher-than-expected" class="md-nav__link">
+  <a href="#post-apiv1releasesmarkers" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Costs Higher Than Expected
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#budget-not-enforcing" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Budget Not Enforcing
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#notifications-not-sending" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Notifications Not Sending
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#database-issues" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Database Issues
+        POST /api/v1/releases/markers
       
     </span>
   </a>
@@ -2366,6 +2339,111 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#youtube-api-api-key" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        YouTube API (API Key)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="YouTube API (API Key)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#channels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Channels
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ingestion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ingestion
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#intelligence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Intelligence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Management
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#assumptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Assumptions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limits-and-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limits and Validation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#error-responses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Error Responses
+      
+    </span>
+  </a>
   
 </li>
       
@@ -2400,480 +2478,341 @@
   
 
 
-<h1 id="cost-tracking">Cost Tracking<a class="headerlink" href="#cost-tracking" title="Permanent link">&para;</a></h1>
+<h1 id="public-api-reference">Public API Reference<a class="headerlink" href="#public-api-reference" title="Permanent link">&para;</a></h1>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>Monitor, budget, and optimize your LLM API spending with Zetherion AI's built-in cost tracking system. The system monitors every API call to LLM providers and provides:</p>
+<p>The Public API runs on port <code>8443</code> and is intended for external applications.
+It exposes tenant-scoped session and chat endpoints under <code>/api/v1</code>, plus
+optional tenant-scoped YouTube endpoints.</p>
+<p><strong>Base URL:</strong> <code>http://&lt;host&gt;:8443/api/v1</code></p>
+<p>This API is distinct from the internal Skills API (<code>:8080</code>).</p>
+<hr />
+<h2 id="authentication">Authentication<a class="headerlink" href="#authentication" title="Permanent link">&para;</a></h2>
+<p>The API uses two auth modes:</p>
+<ol>
+<li><code>X-API-Key</code> for tenant control-plane calls (sessions, release markers, and YouTube routes)</li>
+<li><code>Authorization: Bearer zt_sess_...</code> for session-scoped calls (chat and analytics)</li>
+</ol>
+<h3 id="api-key-auth">API Key auth<a class="headerlink" href="#api-key-auth" title="Permanent link">&para;</a></h3>
+<p>Provide a tenant API key for non-chat routes:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="err">X-API-Key: sk_live_...</span>
+</code></pre></div>
+<h3 id="session-token-auth">Session token auth<a class="headerlink" href="#session-token-auth" title="Permanent link">&para;</a></h3>
+<p>Session tokens are JWTs prefixed with <code>zt_sess_</code> and default to 24-hour expiry.
+Use them for:</p>
 <ul>
-<li><strong>Real-time spending tracking</strong> per provider and task type</li>
-<li><strong>Budget enforcement</strong> with configurable daily and monthly limits</li>
-<li><strong>Threshold alerts</strong> before you exceed budgets</li>
-<li><strong>Spending reports</strong> for daily and monthly analysis</li>
-<li><strong>History storage</strong> in SQLite for querying and export</li>
+<li><code>POST /api/v1/chat</code></li>
+<li><code>POST /api/v1/chat/stream</code></li>
+<li><code>GET /api/v1/chat/history</code></li>
+<li><code>POST /api/v1/analytics/events</code></li>
+<li><code>POST /api/v1/analytics/replay/chunks</code></li>
+<li><code>GET /api/v1/analytics/replay/chunks/{web_session_id}/{sequence_no}</code></li>
+<li><code>POST /api/v1/analytics/sessions/end</code></li>
+<li><code>GET /api/v1/analytics/recommendations</code></li>
+<li><code>POST /api/v1/analytics/recommendations/{recommendation_id}/feedback</code></li>
 </ul>
-<h3 id="how-it-works">How It Works<a class="headerlink" href="#how-it-works" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>API Request -&gt; InferenceBroker -&gt; Cost Calculation -&gt; Budget Check -&gt; Storage
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>                                        |
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>                                Alert if threshold reached
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="err">Authorization: Bearer zt_sess_...</span>
 </code></pre></div>
-<h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
-<h3 id="enable-cost-tracking">Enable Cost Tracking<a class="headerlink" href="#enable-cost-tracking" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a># Enable the cost tracking system
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>COST_TRACKING_ENABLED=true
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a># Storage location
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>COST_DB_PATH=data/costs.db
+<hr />
+<h2 id="health">Health<a class="headerlink" href="#health" title="Permanent link">&para;</a></h2>
+<h3 id="get-apiv1health">GET /api/v1/health<a class="headerlink" href="#get-apiv1health" title="Permanent link">&para;</a></h3>
+<p>Public health probe. No authentication required.</p>
+<p><strong>Response 200:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;healthy&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">&quot;service&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;public-api&quot;</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="p">}</span>
 </code></pre></div>
-<h3 id="set-budgets">Set Budgets<a class="headerlink" href="#set-budgets" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a># Daily spending limit (USD)
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>DAILY_BUDGET_USD=5.00
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a># Monthly spending limit (USD)
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>MONTHLY_BUDGET_USD=50.00
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a># Warning threshold (percentage)
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>BUDGET_WARNING_PCT=80.0
+<hr />
+<h2 id="sessions-api-key">Sessions (API Key)<a class="headerlink" href="#sessions-api-key" title="Permanent link">&para;</a></h2>
+<h3 id="post-apiv1sessions">POST /api/v1/sessions<a class="headerlink" href="#post-apiv1sessions" title="Permanent link">&para;</a></h3>
+<p>Create a tenant session and return a session token.</p>
+<p><strong>Headers:</strong> <code>X-API-Key</code></p>
+<p><strong>Request:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">&quot;external_user_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user_123&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;web&quot;</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="p">}</span>
 </code></pre></div>
-<h3 id="enable-notifications">Enable Notifications<a class="headerlink" href="#enable-notifications" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a># Enable notifications for cost alerts
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>NOTIFICATIONS_ENABLED=true
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a># Daily summary at 8 PM
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>DAILY_SUMMARY_ENABLED=true
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>DAILY_SUMMARY_HOUR=20
+<p><strong>Response 201:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">{</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">&quot;session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">&quot;tenant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">&quot;external_user_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user_123&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-02-24T18:00:00+00:00&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span><span class="nt">&quot;session_token&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;zt_sess_...&quot;</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="p">}</span>
 </code></pre></div>
-<h2 id="provider-pricing">Provider Pricing<a class="headerlink" href="#provider-pricing" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Provider</th>
-<th>Model</th>
-<th>Input (per 1M tokens)</th>
-<th>Output (per 1M tokens)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Anthropic</strong></td>
-<td>Claude Sonnet 4.5</td>
-<td>$3.00</td>
-<td>$15.00</td>
-</tr>
-<tr>
-<td><strong>Anthropic</strong></td>
-<td>Claude Haiku 4.5</td>
-<td>$0.25</td>
-<td>$1.25</td>
-</tr>
-<tr>
-<td><strong>OpenAI</strong></td>
-<td>GPT-5.2</td>
-<td>$2.50</td>
-<td>$10.00</td>
-</tr>
-<tr>
-<td><strong>Google</strong></td>
-<td>Gemini 2.5 Flash</td>
-<td>Free tier</td>
-<td>Free tier</td>
-</tr>
-<tr>
-<td><strong>Ollama</strong></td>
-<td>Local models (Llama, etc.)</td>
-<td>$0.00</td>
-<td>$0.00</td>
-</tr>
-</tbody>
-</table>
-<p><em>Prices as of February 2026. Check provider websites for current rates.</em></p>
-<h3 id="token-estimation">Token Estimation<a class="headerlink" href="#token-estimation" title="Permanent link">&para;</a></h3>
-<p>Approximate token counts:
-- <strong>1 word</strong> -- approximately 1.3 tokens
-- <strong>100 words</strong> -- approximately 130 tokens
-- <strong>1 page of text</strong> -- approximately 500-700 tokens</p>
-<h3 id="typical-query-costs">Typical Query Costs<a class="headerlink" href="#typical-query-costs" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Query Type</th>
-<th>Input Tokens</th>
-<th>Output Tokens</th>
-<th>Estimated Cost (Claude Sonnet 4.5)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Simple question</td>
-<td>~50</td>
-<td>~100</td>
-<td>$0.0016</td>
-</tr>
-<tr>
-<td>Code review</td>
-<td>~500</td>
-<td>~300</td>
-<td>$0.006</td>
-</tr>
-<tr>
-<td>Complex analysis</td>
-<td>~1000</td>
-<td>~500</td>
-<td>$0.01</td>
-</tr>
-<tr>
-<td>Long conversation</td>
-<td>~2000</td>
-<td>~1000</td>
-<td>$0.02</td>
-</tr>
-</tbody>
-</table>
-<h3 id="cost-by-task-type">Cost by Task Type<a class="headerlink" href="#cost-by-task-type" title="Permanent link">&para;</a></h3>
-<p>The system tracks costs by task type:</p>
-<table>
-<thead>
-<tr>
-<th>Task Type</th>
-<th>Typical Provider</th>
-<th>Avg Cost/Query</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Simple Query</td>
-<td>Gemini 2.5 Flash</td>
-<td>$0.00 (free)</td>
-</tr>
-<tr>
-<td>Memory Search</td>
-<td>Gemini 2.5 Flash</td>
-<td>$0.00 (free)</td>
-</tr>
-<tr>
-<td>Complex Reasoning</td>
-<td>Claude Sonnet 4.5</td>
-<td>$0.005</td>
-</tr>
-<tr>
-<td>Code Generation</td>
-<td>Claude Sonnet 4.5</td>
-<td>$0.008</td>
-</tr>
-<tr>
-<td>Creative Writing</td>
-<td>GPT-5.2</td>
-<td>$0.006</td>
-</tr>
-</tbody>
-</table>
-<h2 id="budget-management">Budget Management<a class="headerlink" href="#budget-management" title="Permanent link">&para;</a></h2>
-<h3 id="daily-budgets">Daily Budgets<a class="headerlink" href="#daily-budgets" title="Permanent link">&para;</a></h3>
-<p>Daily budgets reset at midnight (local time).</p>
-<p><strong>Workflow:</strong>
-1. Each API call adds to daily total
-2. At 80% (configurable), warning notification sent
-3. At 100%, exceeded notification sent
-4. Complex queries may be limited (uses cheaper provider)</p>
-<h3 id="monthly-budgets">Monthly Budgets<a class="headerlink" href="#monthly-budgets" title="Permanent link">&para;</a></h3>
-<p>Monthly budgets reset on the 1st of each month.</p>
-<p><strong>Workflow:</strong>
-1. Each API call adds to monthly total
-2. At 80%, warning notification sent
-3. At 100%, exceeded notification sent
-4. Daily budget may be reduced automatically</p>
-<h3 id="budget-notifications">Budget Notifications<a class="headerlink" href="#budget-notifications" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Budget Warning (80% reached)
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>Daily Spending: $4.00 / $5.00 (80%)
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>Monthly Spending: $35.00 / $50.00 (70%)
-<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>Top spending:
-<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>- Claude Sonnet 4.5: $2.50 (62%)
-<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>- GPT-5.2: $1.20 (30%)
-<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>- Gemini 2.5 Flash: $0.00 (0%)
-<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>
-<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>Remaining today: $1.00
+<h3 id="get-apiv1sessionssession_id">GET /api/v1/sessions/{session_id}<a class="headerlink" href="#get-apiv1sessionssession_id" title="Permanent link">&para;</a></h3>
+<p>Get session metadata for the authenticated tenant.</p>
+<p><strong>Headers:</strong> <code>X-API-Key</code></p>
+<p><strong>Response 200:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">&quot;session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">&quot;tenant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">&quot;external_user_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user_123&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-02-24T18:00:00+00:00&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="nt">&quot;updated_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-02-24T18:05:00+00:00&quot;</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="p">}</span>
 </code></pre></div>
-<h3 id="budget-actions">Budget Actions<a class="headerlink" href="#budget-actions" title="Permanent link">&para;</a></h3>
-<p>When budgets are exceeded:</p>
-<table>
-<thead>
-<tr>
-<th>Level</th>
-<th>Action</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>80% Warning</strong></td>
-<td>Notification only, no restrictions</td>
-</tr>
-<tr>
-<td><strong>100% Daily</strong></td>
-<td>Prefer cheaper providers, limit complex queries</td>
-</tr>
-<tr>
-<td><strong>100% Monthly</strong></td>
-<td>Strict limits, may require manual override</td>
-</tr>
-</tbody>
-</table>
-<h2 id="cost-reports">Cost Reports<a class="headerlink" href="#cost-reports" title="Permanent link">&para;</a></h2>
-<h3 id="daily-summary">Daily Summary<a class="headerlink" href="#daily-summary" title="Permanent link">&para;</a></h3>
-<p>Automatically sent at configured hour (default: 8 PM):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Daily Cost Summary (Feb 10, 2026)
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>Total Spent Today: $3.45
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>By Provider:
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>  Claude Sonnet 4.5: $2.10 (61%)
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>  GPT-5.2: $1.05 (30%)
-<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>  Gemini 2.5 Flash: $0.00 (0%)
-<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>  Ollama (Llama): $0.00 (0%)
-<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
-<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>By Task Type:
-<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>  Complex Reasoning: $1.50 (43%)
-<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>  Code Generation: $1.20 (35%)
-<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>  Simple Queries: $0.00 (0%)
-<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>  Memory Operations: $0.00 (0%)
-<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>
-<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>Queries: 47 total
-<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>  - Successful: 45 (96%)
-<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a>  - Rate Limited: 2 (4%)
-<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a>
-<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a>Budget Status:
-<a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a>  Daily: $3.45 / $5.00 (69%)
-<a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a>  Monthly: $28.45 / $50.00 (57%)
+<h3 id="delete-apiv1sessionssession_id">DELETE /api/v1/sessions/{session_id}<a class="headerlink" href="#delete-apiv1sessionssession_id" title="Permanent link">&para;</a></h3>
+<p>Delete a session for the authenticated tenant.</p>
+<p><strong>Headers:</strong> <code>X-API-Key</code></p>
+<p><strong>Response 200:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">{</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">&quot;ok&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="p">}</span>
 </code></pre></div>
-<h3 id="monthly-summary">Monthly Summary<a class="headerlink" href="#monthly-summary" title="Permanent link">&para;</a></h3>
-<p>Sent on the 1st of each month:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>Monthly Cost Summary (January 2026)
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>Total Spent: $42.50
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>By Provider:
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>  Claude Sonnet 4.5: $28.00 (66%)
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>  GPT-5.2: $12.50 (29%)
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>  Gemini 2.5 Flash: $0.00 (0%)
-<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>  Ollama (Llama): $0.00 (0%)
-<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>
-<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>Daily Average: $1.37
-<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>Peak Day: Jan 15 ($4.80)
-<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>Lowest Day: Jan 3 ($0.12)
-<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>
-<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>Total Queries: 1,247
-<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>Average Cost/Query: $0.034
-<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>
-<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>Budget: $42.50 / $50.00 (85%)
+<hr />
+<h2 id="chat-session-token">Chat (Session Token)<a class="headerlink" href="#chat-session-token" title="Permanent link">&para;</a></h2>
+<h3 id="post-apiv1chat">POST /api/v1/chat<a class="headerlink" href="#post-apiv1chat" title="Permanent link">&para;</a></h3>
+<p>Send one message and receive one assistant message.</p>
+<p><strong>Headers:</strong> <code>Authorization: Bearer zt_sess_...</code></p>
+<p><strong>Request:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="p">{</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;What changed in this release?&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span><span class="nt">&quot;channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;web&quot;</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="p">}</span>
 </code></pre></div>
-<h3 id="querying-cost-data">Querying Cost Data<a class="headerlink" href="#querying-cost-data" title="Permanent link">&para;</a></h3>
-<p>Access cost data programmatically:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># View SQLite database</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-bot<span class="w"> </span>sqlite3<span class="w"> </span>/app/data/costs.db<span class="w"> </span><span class="s2">&quot;</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="s2">  SELECT date(timestamp), SUM(cost_usd) as daily_cost</span>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="s2">  FROM usage_records</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="s2">  GROUP BY date(timestamp)</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="s2">  ORDER BY date(timestamp) DESC</span>
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="s2">  LIMIT 7;</span>
-<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="s2">&quot;</span>
+<p><strong>Response 200:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="p">{</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">&quot;message_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span><span class="nt">&quot;session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;assistant&quot;</span><span class="p">,</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">  </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-02-24T18:10:00+00:00&quot;</span><span class="p">,</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="p">}</span>
 </code></pre></div>
-<h3 id="export-cost-data">Export Cost Data<a class="headerlink" href="#export-cost-data" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Export to CSV</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-bot<span class="w"> </span>sqlite3<span class="w"> </span>-header<span class="w"> </span>-csv<span class="w"> </span>/app/data/costs.db<span class="w"> </span><span class="s2">&quot;</span>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="s2">  SELECT * FROM usage_records</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="s2">  WHERE timestamp &gt; datetime(&#39;now&#39;, &#39;-30 days&#39;);</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="s2">&quot;</span><span class="w"> </span>&gt;<span class="w"> </span>costs_last_30_days.csv
-</code></pre></div>
-<h2 id="optimization-strategies">Optimization Strategies<a class="headerlink" href="#optimization-strategies" title="Permanent link">&para;</a></h2>
-<h3 id="1-use-free-tiers-effectively">1. Use Free Tiers Effectively<a class="headerlink" href="#1-use-free-tiers-effectively" title="Permanent link">&para;</a></h3>
-<p><strong>Gemini 2.5 Flash Free Tier:</strong>
-- 15 requests/minute
-- 1,500 requests/day
-- Use for routing, simple queries, embeddings</p>
-<p><strong>Strategy:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a># Route simple queries to Gemini
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>ROUTER_BACKEND=gemini
-</code></pre></div></p>
-<h3 id="2-optimize-context-window">2. Optimize Context Window<a class="headerlink" href="#2-optimize-context-window" title="Permanent link">&para;</a></h3>
-<p>Reduce tokens sent per request:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a># Fewer messages in context
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>CONTEXT_WINDOW_SIZE=5  # Default: 10
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a># Fewer memory search results
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>MEMORY_SEARCH_LIMIT=3  # Default: 5
-</code></pre></div>
-<p><strong>Savings:</strong> ~30-50% reduction in input tokens</p>
-<h3 id="3-use-ollama-for-routing">3. Use Ollama for Routing<a class="headerlink" href="#3-use-ollama-for-routing" title="Permanent link">&para;</a></h3>
-<p>Local routing with Llama models means zero API costs:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>ROUTER_BACKEND=ollama
-<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>OLLAMA_ROUTER_MODEL=llama3.1:8b
-</code></pre></div>
-<p><strong>Savings:</strong> 100% of routing costs (typically 10-20% of total)</p>
-<h3 id="4-choose-cost-effective-models">4. Choose Cost-Effective Models<a class="headerlink" href="#4-choose-cost-effective-models" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Need</th>
-<th>Expensive</th>
-<th>Cost-Effective</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Simple Q&amp;A</td>
-<td>Claude Sonnet 4.5</td>
-<td>Gemini 2.5 Flash</td>
-</tr>
-<tr>
-<td>Code Review</td>
-<td>GPT-5.2</td>
-<td>Claude Haiku 4.5</td>
-</tr>
-<tr>
-<td>Summarization</td>
-<td>Claude Sonnet 4.5</td>
-<td>Claude Haiku 4.5</td>
-</tr>
-</tbody>
-</table>
-<h3 id="5-rate-limiting">5. Rate Limiting<a class="headerlink" href="#5-rate-limiting" title="Permanent link">&para;</a></h3>
-<p>Prevent runaway costs:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a># Limit messages per user
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>RATE_LIMIT_MESSAGES=5
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>RATE_LIMIT_WINDOW=60
-</code></pre></div>
-<h3 id="6-hybrid-approach">6. Hybrid Approach<a class="headerlink" href="#6-hybrid-approach" title="Permanent link">&para;</a></h3>
-<p>Best of both worlds:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a># Free routing
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>ROUTER_BACKEND=gemini
-<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
-<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a># Quality for complex tasks only
-<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>ANTHROPIC_API_KEY=sk-ant-...
-<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>
-<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a># Skip OpenAI (redundant with Claude)
-<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>OPENAI_API_KEY=
-<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>
-<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a># Strict budget
-<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>DAILY_BUDGET_USD=3.00
-</code></pre></div>
-<p><strong>Expected Monthly Cost:</strong> $20-40</p>
-<h3 id="cost-comparison-strategies">Cost Comparison: Strategies<a class="headerlink" href="#cost-comparison-strategies" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Strategy</th>
-<th>Monthly Cost</th>
-<th>Quality</th>
-<th>Privacy</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>All Cloud (Claude Sonnet 4.5 + GPT-5.2)</td>
-<td>$50-100</td>
-<td>Best</td>
-<td>Low</td>
-</tr>
-<tr>
-<td>Gemini 2.5 Flash Only</td>
-<td>$0 (free tier)</td>
-<td>Good</td>
-<td>Low</td>
-</tr>
-<tr>
-<td>Ollama Only (Llama models)</td>
-<td>$0 (electricity)</td>
-<td>Good</td>
-<td>High</td>
-</tr>
-<tr>
-<td>Hybrid (Gemini 2.5 Flash + Claude Sonnet 4.5)</td>
-<td>$20-40</td>
-<td>Very Good</td>
-<td>Medium</td>
-</tr>
-<tr>
-<td>Hybrid (Ollama Llama + Claude Sonnet 4.5)</td>
-<td>$15-30</td>
-<td>Very Good</td>
-<td>High</td>
-</tr>
-</tbody>
-</table>
-<h2 id="database-schema">Database Schema<a class="headerlink" href="#database-schema" title="Permanent link">&para;</a></h2>
-<p>The cost database uses SQLite with this schema:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">usage_records</span><span class="w"> </span><span class="p">(</span>
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">    </span><span class="n">id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span>
-<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">    </span><span class="k">timestamp</span><span class="w"> </span><span class="n">DATETIME</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span><span class="p">,</span>
-<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">    </span><span class="n">provider</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
-<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">    </span><span class="n">model</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
-<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">    </span><span class="n">task_type</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span>
-<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">    </span><span class="n">input_tokens</span><span class="w"> </span><span class="nb">INTEGER</span><span class="p">,</span>
-<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="w">    </span><span class="n">output_tokens</span><span class="w"> </span><span class="nb">INTEGER</span><span class="p">,</span>
-<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="w">    </span><span class="n">cost_usd</span><span class="w"> </span><span class="nb">REAL</span><span class="p">,</span>
-<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a><span class="w">    </span><span class="n">latency_ms</span><span class="w"> </span><span class="nb">INTEGER</span><span class="p">,</span>
-<a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a><span class="w">    </span><span class="n">success</span><span class="w"> </span><span class="nb">BOOLEAN</span><span class="p">,</span>
-<a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a><span class="w">    </span><span class="n">error_message</span><span class="w"> </span><span class="nb">TEXT</span>
-<a id="__codelineno-14-13" name="__codelineno-14-13" href="#__codelineno-14-13"></a><span class="p">);</span>
-<a id="__codelineno-14-14" name="__codelineno-14-14" href="#__codelineno-14-14"></a>
-<a id="__codelineno-14-15" name="__codelineno-14-15" href="#__codelineno-14-15"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">idx_timestamp</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">usage_records</span><span class="p">(</span><span class="k">timestamp</span><span class="p">);</span>
-<a id="__codelineno-14-16" name="__codelineno-14-16" href="#__codelineno-14-16"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">idx_provider</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">usage_records</span><span class="p">(</span><span class="n">provider</span><span class="p">);</span>
-</code></pre></div>
-<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
-<h3 id="costs-higher-than-expected">Costs Higher Than Expected<a class="headerlink" href="#costs-higher-than-expected" title="Permanent link">&para;</a></h3>
-<p><strong>Check usage patterns:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># Top cost queries today</span>
-<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-bot<span class="w"> </span>sqlite3<span class="w"> </span>/app/data/costs.db<span class="w"> </span><span class="s2">&quot;</span>
-<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="s2">  SELECT provider, task_type, COUNT(*) as count, SUM(cost_usd) as total</span>
-<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="s2">  FROM usage_records</span>
-<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="s2">  WHERE date(timestamp) = date(&#39;now&#39;)</span>
-<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="s2">  GROUP BY provider, task_type</span>
-<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a><span class="s2">  ORDER BY total DESC;</span>
-<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="s2">&quot;</span>
-</code></pre></div></p>
-<p><strong>Common causes:</strong>
-1. Long conversations (high context window)
-2. Complex queries routed to expensive models
-3. Retry loops on failed requests
-4. Memory search returning too many results</p>
-<h3 id="budget-not-enforcing">Budget Not Enforcing<a class="headerlink" href="#budget-not-enforcing" title="Permanent link">&para;</a></h3>
-<p><strong>Check configuration:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="c1"># Verify settings loaded</span>
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-bot<span class="w"> </span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;</span>
-<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="s2">from zetherion_ai.config import get_settings</span>
-<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="s2">s = get_settings()</span>
-<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="s2">print(f&#39;Daily: {s.daily_budget_usd}&#39;)</span>
-<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="s2">print(f&#39;Monthly: {s.monthly_budget_usd}&#39;)</span>
-<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="s2">print(f&#39;Cost tracking: {s.cost_tracking_enabled}&#39;)</span>
-<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="s2">&quot;</span>
-</code></pre></div></p>
-<p><strong>Ensure InferenceBroker enabled:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>INFERENCE_BROKER_ENABLED=true
-<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>COST_TRACKING_ENABLED=true
-</code></pre></div></p>
-<h3 id="notifications-not-sending">Notifications Not Sending<a class="headerlink" href="#notifications-not-sending" title="Permanent link">&para;</a></h3>
-<p><strong>Check notification configuration:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>NOTIFICATIONS_ENABLED=true
-<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>BUDGET_WARNING_PCT=80.0
-</code></pre></div></p>
-<p><strong>Verify Discord connection:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>docker-compose<span class="w"> </span>logs<span class="w"> </span>zetherion-ai-bot<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>notification
-</code></pre></div></p>
-<h3 id="database-issues">Database Issues<a class="headerlink" href="#database-issues" title="Permanent link">&para;</a></h3>
-<p><strong>Reset cost database (lose history):</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-bot<span class="w"> </span>rm<span class="w"> </span>/app/data/costs.db
-<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>docker-compose<span class="w"> </span>restart<span class="w"> </span>zetherion-ai-bot
-</code></pre></div></p>
-<p><strong>Backup before reset:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>docker<span class="w"> </span>cp<span class="w"> </span>zetherion-ai-bot:/app/data/costs.db<span class="w"> </span>./costs_backup.db
-</code></pre></div></p>
-<h2 id="related-docs">Related Docs<a class="headerlink" href="#related-docs" title="Permanent link">&para;</a></h2>
+<h3 id="post-apiv1chatstream">POST /api/v1/chat/stream<a class="headerlink" href="#post-apiv1chatstream" title="Permanent link">&para;</a></h3>
+<p>Stream assistant output via Server-Sent Events.</p>
+<p><strong>Headers:</strong> <code>Authorization: Bearer zt_sess_...</code></p>
+<p>Event payloads:</p>
 <ul>
-<li><a href="../configuration/">configuration.md</a> -- All environment variables and settings</li>
-<li><a href="../architecture/">architecture.md</a> -- System architecture and service topology</li>
+<li><code>{"type":"token","content":"..."}</code> repeated</li>
+<li><code>{"type":"done","message_id":"...","model":"..."}</code> final</li>
+</ul>
+<h3 id="get-apiv1chathistory">GET /api/v1/chat/history<a class="headerlink" href="#get-apiv1chathistory" title="Permanent link">&para;</a></h3>
+<p>Retrieve conversation history for the authenticated session.</p>
+<p><strong>Headers:</strong> <code>Authorization: Bearer zt_sess_...</code></p>
+<p><strong>Query params:</strong></p>
+<ul>
+<li><code>limit</code> (default <code>50</code>, max <code>100</code>)</li>
+<li><code>before</code> (optional cursor)</li>
+</ul>
+<p><strong>Response 200:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="p">{</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">&quot;session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="nt">&quot;messages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">      </span><span class="nt">&quot;message_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">      </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user&quot;</span><span class="p">,</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hello&quot;</span><span class="p">,</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">      </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-02-24T18:09:00+00:00&quot;</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">  </span><span class="p">]</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="p">}</span>
+</code></pre></div>
+<hr />
+<h2 id="analytics-session-token">Analytics (Session Token)<a class="headerlink" href="#analytics-session-token" title="Permanent link">&para;</a></h2>
+<p>These routes power web behavior analytics and app-watcher recommendation feedback.
+All analytics routes require <code>Authorization: Bearer zt_sess_...</code>.</p>
+<h3 id="post-apiv1analyticsevents">POST /api/v1/analytics/events<a class="headerlink" href="#post-apiv1analyticsevents" title="Permanent link">&para;</a></h3>
+<p>Ingest batched browser/app events for the active session.</p>
+<p><strong>Response 201:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p">{</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">&quot;ok&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="nt">&quot;web_session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">  </span><span class="nt">&quot;ingested&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">12</span><span class="p">,</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">  </span><span class="nt">&quot;replay_enabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">  </span><span class="nt">&quot;replay_sampled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="p">}</span>
+</code></pre></div>
+<h3 id="post-apiv1analyticsreplaychunks">POST /api/v1/analytics/replay/chunks<a class="headerlink" href="#post-apiv1analyticsreplaychunks" title="Permanent link">&para;</a></h3>
+<p>Upload replay chunk metadata when replay capture is enabled and consented.</p>
+<p><strong>Response 201 (accepted):</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="p">{</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">&quot;ok&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">&quot;accepted&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">&quot;chunk&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="p">}</span>
+</code></pre></div>
+<p>When replay object storage is configured, you can optionally include <code>chunk_base64</code>
+in the request body to upload the actual chunk payload alongside metadata.</p>
+<h3 id="get-apiv1analyticsreplaychunksweb_session_idsequence_no">GET /api/v1/analytics/replay/chunks/{web_session_id}/{sequence_no}<a class="headerlink" href="#get-apiv1analyticsreplaychunksweb_session_idsequence_no" title="Permanent link">&para;</a></h3>
+<p>Get replay chunk metadata. Add <code>?include_data=true</code> to include <code>data_base64</code>
+when object storage is configured.</p>
+<h3 id="post-apiv1analyticssessionsend">POST /api/v1/analytics/sessions/end<a class="headerlink" href="#post-apiv1analyticssessionsend" title="Permanent link">&para;</a></h3>
+<p>Close a tracked web session, compute behavior summary, and generate recommendations.</p>
+<h3 id="get-apiv1analyticsrecommendations">GET /api/v1/analytics/recommendations<a class="headerlink" href="#get-apiv1analyticsrecommendations" title="Permanent link">&para;</a></h3>
+<p>List recommendation candidates for the current tenant/session context.</p>
+<p>Query params:</p>
+<ul>
+<li><code>status</code> (optional)</li>
+<li><code>limit</code> (default <code>50</code>, max <code>200</code>)</li>
+</ul>
+<h3 id="post-apiv1analyticsrecommendationsrecommendation_idfeedback">POST /api/v1/analytics/recommendations/{recommendation_id}/feedback<a class="headerlink" href="#post-apiv1analyticsrecommendationsrecommendation_idfeedback" title="Permanent link">&para;</a></h3>
+<p>Attach feedback to one recommendation.</p>
+<h3 id="get-apiv1analyticsrecommendationstenant">GET /api/v1/analytics/recommendations/tenant<a class="headerlink" href="#get-apiv1analyticsrecommendationstenant" title="Permanent link">&para;</a></h3>
+<p>Tenant-level recommendation list for reporting/control-plane use.</p>
+<p><strong>Headers:</strong> <code>X-API-Key</code></p>
+<p>Query params:</p>
+<ul>
+<li><code>status</code> (optional)</li>
+<li><code>limit</code> (default <code>50</code>, max <code>200</code>)</li>
+</ul>
+<h3 id="get-apiv1analyticsfunnel">GET /api/v1/analytics/funnel<a class="headerlink" href="#get-apiv1analyticsfunnel" title="Permanent link">&para;</a></h3>
+<p>Tenant-level funnel rows for reporting/control-plane use.</p>
+<p><strong>Headers:</strong> <code>X-API-Key</code></p>
+<p>Query params:</p>
+<ul>
+<li><code>metric_date</code> (optional, <code>YYYY-MM-DD</code>)</li>
+<li><code>limit</code> (default <code>200</code>, max <code>500</code>)</li>
 </ul>
 <hr />
-<p><strong>Last Updated:</strong> 2026-02-10
-<strong>Version:</strong> 4.0.0 (Cost Tracking)</p>
+<h2 id="crm-read-api-api-key">CRM Read API (API Key)<a class="headerlink" href="#crm-read-api-api-key" title="Permanent link">&para;</a></h2>
+<p>Tenant-scoped CRM read endpoints for reporting/control-plane use.</p>
+<h3 id="get-apiv1crmcontacts">GET /api/v1/crm/contacts<a class="headerlink" href="#get-apiv1crmcontacts" title="Permanent link">&para;</a></h3>
+<p>List contacts for the authenticated tenant.</p>
+<p><strong>Headers:</strong> <code>X-API-Key</code></p>
+<p>Query params:</p>
+<ul>
+<li><code>email</code> (optional exact-match filter)</li>
+<li><code>limit</code> (default <code>50</code>, max <code>200</code>)</li>
+</ul>
+<h3 id="get-apiv1crminteractions">GET /api/v1/crm/interactions<a class="headerlink" href="#get-apiv1crminteractions" title="Permanent link">&para;</a></h3>
+<p>List interactions for the authenticated tenant.</p>
+<p><strong>Headers:</strong> <code>X-API-Key</code></p>
+<p>Query params:</p>
+<ul>
+<li><code>contact_id</code> (optional)</li>
+<li><code>session_id</code> (optional)</li>
+<li><code>interaction_type</code> (optional)</li>
+<li><code>limit</code> (default <code>50</code>, max <code>200</code>)</li>
+</ul>
+<hr />
+<h2 id="release-markers-api-key">Release Markers (API Key)<a class="headerlink" href="#release-markers-api-key" title="Permanent link">&para;</a></h2>
+<h3 id="post-apiv1releasesmarkers">POST /api/v1/releases/markers<a class="headerlink" href="#post-apiv1releasesmarkers" title="Permanent link">&para;</a></h3>
+<p>Store deployment/release markers for tenant-scoped regression analysis.</p>
+<p><strong>Headers:</strong> <code>X-API-Key</code></p>
+<p>Optional hardened signing headers (required when <code>RELEASE_MARKER_SIGNING_SECRET</code> is configured):</p>
+<ul>
+<li><code>X-Release-Timestamp</code>: unix epoch seconds</li>
+<li><code>X-Release-Nonce</code>: unique nonce per request</li>
+<li><code>X-Release-Signature</code>: hex HMAC-SHA256 of<br />
+<code>&lt;tenant_id&gt;.&lt;timestamp&gt;.&lt;nonce&gt;.&lt;raw_json_body&gt;</code></li>
+</ul>
+<p><strong>Response 201:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="p">{</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span><span class="nt">&quot;ok&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span><span class="nt">&quot;marker&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="p">}</span>
+</code></pre></div>
+<hr />
+<h2 id="youtube-api-api-key">YouTube API (API Key)<a class="headerlink" href="#youtube-api-api-key" title="Permanent link">&para;</a></h2>
+<p>YouTube routes are registered only when YouTube storage/skills initialize.
+All routes require <code>X-API-Key</code> and enforce tenant ownership checks.</p>
+<p>Base prefix: <code>/api/v1/youtube</code></p>
+<h3 id="channels">Channels<a class="headerlink" href="#channels" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>POST /api/v1/youtube/channels</code></li>
+<li><code>GET /api/v1/youtube/channels</code></li>
+</ul>
+<h3 id="ingestion">Ingestion<a class="headerlink" href="#ingestion" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>POST /api/v1/youtube/channels/{channel_id}/videos</code></li>
+<li><code>POST /api/v1/youtube/channels/{channel_id}/comments</code></li>
+<li><code>POST /api/v1/youtube/channels/{channel_id}/stats</code></li>
+<li><code>POST /api/v1/youtube/channels/{channel_id}/documents</code></li>
+</ul>
+<h3 id="intelligence">Intelligence<a class="headerlink" href="#intelligence" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>POST /api/v1/youtube/channels/{channel_id}/intelligence/analyze</code></li>
+<li><code>GET /api/v1/youtube/channels/{channel_id}/intelligence</code></li>
+<li><code>GET /api/v1/youtube/channels/{channel_id}/intelligence/history</code></li>
+</ul>
+<h3 id="management">Management<a class="headerlink" href="#management" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>GET /api/v1/youtube/channels/{channel_id}/management</code></li>
+<li><code>POST /api/v1/youtube/channels/{channel_id}/management/configure</code></li>
+<li><code>GET /api/v1/youtube/channels/{channel_id}/management/replies</code></li>
+<li><code>PATCH /api/v1/youtube/channels/{channel_id}/management/replies/{reply_id}</code></li>
+<li><code>GET /api/v1/youtube/channels/{channel_id}/management/tags</code></li>
+<li><code>GET /api/v1/youtube/channels/{channel_id}/management/health</code></li>
+</ul>
+<h3 id="strategy">Strategy<a class="headerlink" href="#strategy" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>POST /api/v1/youtube/channels/{channel_id}/strategy/generate</code></li>
+<li><code>GET /api/v1/youtube/channels/{channel_id}/strategy</code></li>
+<li><code>GET /api/v1/youtube/channels/{channel_id}/strategy/history</code></li>
+</ul>
+<h3 id="assumptions">Assumptions<a class="headerlink" href="#assumptions" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>GET /api/v1/youtube/channels/{channel_id}/assumptions</code></li>
+<li><code>PATCH /api/v1/youtube/channels/{channel_id}/assumptions/{assumption_id}</code></li>
+<li><code>POST /api/v1/youtube/channels/{channel_id}/assumptions/validate</code></li>
+</ul>
+<hr />
+<h2 id="limits-and-validation">Limits and Validation<a class="headerlink" href="#limits-and-validation" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Tenant rate limit is token-bucket based, default <code>60</code> requests/minute.</li>
+<li>Chat message size max is <code>10,000</code> characters.</li>
+<li>Chat history max page size is <code>100</code>.</li>
+<li>Over limit responses return <code>429</code> with a retry hint.</li>
+</ul>
+<hr />
+<h2 id="error-responses">Error Responses<a class="headerlink" href="#error-responses" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>400</td>
+<td>Invalid request body or parameters</td>
+<td><code>{"error":"Invalid JSON body"}</code></td>
+</tr>
+<tr>
+<td>401</td>
+<td>Missing/invalid auth header or expired session token</td>
+<td><code>{"error":"Invalid or expired session token"}</code></td>
+</tr>
+<tr>
+<td>403</td>
+<td>Tenant inactive or session/tenant mismatch</td>
+<td><code>{"error":"Tenant not found or inactive"}</code></td>
+</tr>
+<tr>
+<td>404</td>
+<td>Tenant-scoped resource not found</td>
+<td><code>{"error":"Session not found"}</code></td>
+</tr>
+<tr>
+<td>429</td>
+<td>Tenant rate limit exceeded</td>
+<td><code>{"error":"Rate limit exceeded","retry_after":60}</code></td>
+</tr>
+<tr>
+<td>503</td>
+<td>Service dependency unavailable</td>
+<td><code>{"error":"Service unavailable"}</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="related-docs">Related Docs<a class="headerlink" href="#related-docs" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../ai-agent-integration/">AI Agent Integration</a></li>
+<li><a href="../api-reference/">Skills API Reference</a></li>
+<li><a href="../architecture/">Architecture</a></li>
+</ul>
 
 
 

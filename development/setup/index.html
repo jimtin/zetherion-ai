@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://jimtin.github.io/zetherion-ai/development/setup/">
       
       
-        <link rel="prev" href="../../technical/api-reference/">
+        <link rel="prev" href="../../technical/ai-agent-integration/">
       
       
         <link rel="next" href="../testing/">
@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
     
     
       
@@ -463,6 +463,34 @@
     
   
     Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user/auto-update/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Update
   
 
     
@@ -999,7 +1027,63 @@
   <span class="md-ellipsis">
     
   
-    API Reference
+    Skills API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/public-api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/ai-agent-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Agent Integration
   
 
     
@@ -2571,7 +2655,7 @@
 <li><strong>Prerequisites check</strong> -- installs Docker Desktop and Git via <code>winget</code> if not present</li>
 <li><strong>Hardware assessment</strong> -- detects CPU, RAM, GPU and recommends an Ollama model</li>
 <li><strong>Configuration wizard</strong> -- interactive <code>.env</code> setup if no config file exists</li>
-<li><strong>Docker build and deploy</strong> -- builds containers, starts 6 Docker services, waits for health checks</li>
+<li><strong>Docker build and deploy</strong> -- builds containers, starts the current compose topology, waits for health checks</li>
 <li><strong>Model download</strong> -- pulls the recommended Ollama model if the Ollama backend is selected</li>
 <li><strong>Verification</strong> -- tests Qdrant and Ollama connectivity, displays container status</li>
 </ol>
@@ -2652,7 +2736,7 @@
 <a id="__codelineno-5-58" name="__codelineno-5-58" href="#__codelineno-5-58"></a>    constants.py                    # Project-wide constants
 <a id="__codelineno-5-59" name="__codelineno-5-59" href="#__codelineno-5-59"></a>    utils.py                        # Shared utilities
 <a id="__codelineno-5-60" name="__codelineno-5-60" href="#__codelineno-5-60"></a>    settings_manager.py             # Runtime settings CRUD
-<a id="__codelineno-5-61" name="__codelineno-5-61" href="#__codelineno-5-61"></a>tests/                              # 3,000+ tests, &gt;=90% coverage gate
+<a id="__codelineno-5-61" name="__codelineno-5-61" href="#__codelineno-5-61"></a>tests/                              # 5,000+ tests, &gt;=90% coverage gate
 <a id="__codelineno-5-62" name="__codelineno-5-62" href="#__codelineno-5-62"></a>    unit/                           # Fast, isolated tests (~24s)
 <a id="__codelineno-5-63" name="__codelineno-5-63" href="#__codelineno-5-63"></a>    integration/                    # Full-stack tests (~2 min)
 <a id="__codelineno-5-64" name="__codelineno-5-64" href="#__codelineno-5-64"></a>    conftest.py                     # Shared fixtures
@@ -2697,7 +2781,7 @@
 </tbody>
 </table>
 <h3 id="docker-services">Docker Services<a class="headerlink" href="#docker-services" title="Permanent link">&para;</a></h3>
-<p>The production <code>docker-compose.yml</code> defines 6 services:</p>
+<p>The production <code>docker-compose.yml</code> currently defines a blue/green-ready topology:</p>
 <table>
 <thead>
 <tr>
@@ -2711,8 +2795,24 @@
 <td>Agent core -- input gateway, security, routing, inference</td>
 </tr>
 <tr>
-<td><code>zetherion-ai-skills</code></td>
-<td>Skills REST API server</td>
+<td><code>zetherion-ai-skills-blue/green</code></td>
+<td>Internal skills control plane</td>
+</tr>
+<tr>
+<td><code>zetherion-ai-api-blue/green</code></td>
+<td>Public API application</td>
+</tr>
+<tr>
+<td><code>zetherion-ai-traefik</code></td>
+<td>Internal traffic switch for API/skills</td>
+</tr>
+<tr>
+<td><code>zetherion-ai-updater</code></td>
+<td>Update/rollback sidecar</td>
+</tr>
+<tr>
+<td><code>zetherion-ai-cloudflared</code></td>
+<td>Optional secure public API tunnel</td>
 </tr>
 <tr>
 <td><code>ollama</code></td>
@@ -2732,6 +2832,8 @@
 </tr>
 </tbody>
 </table>
+<p>If helper scripts disagree with container names (legacy single-skills checks),
+use <code>docker compose ps</code> as source of truth.</p>
 <hr />
 <h2 id="development-workflow">Development Workflow<a class="headerlink" href="#development-workflow" title="Permanent link">&para;</a></h2>
 <h3 id="branch-strategy">Branch Strategy<a class="headerlink" href="#branch-strategy" title="Permanent link">&para;</a></h3>
@@ -2909,14 +3011,14 @@
 </code></pre></div>
 <hr />
 <h2 id="testing">Testing<a class="headerlink" href="#testing" title="Permanent link">&para;</a></h2>
-<p>Zetherion AI maintains 3,000+ tests with an enforced overall coverage gate of <code>&gt;=90%</code>.</p>
+<p>Zetherion AI maintains 5,000+ tests with an enforced overall coverage gate of <code>&gt;=90%</code>.</p>
 <p>For the full testing guide, patterns, fixtures, and mocking strategies, see <a href="../testing/">Testing</a>.</p>
 <h3 id="key-commands">Key Commands<a class="headerlink" href="#key-commands" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Unit tests only (fast, ~24s)</span>
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration and not discord_e2e&quot;</span>
 <a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
 <a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="c1"># Production-parity validation (recommended before merge)</span>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>bash<span class="w"> </span>scripts/pre-push-tests.sh
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>bash<span class="w"> </span>scripts/test-full.sh
 <a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>
 <a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="c1"># All tests except Discord E2E (includes integration)</span>
 <a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not discord_e2e&quot;</span>

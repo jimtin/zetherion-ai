@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
     
     
       
@@ -483,6 +483,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../user/auto-update/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Update
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../user/commands/" class="md-nav__link">
         
   
@@ -811,14 +839,58 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Overview">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#high-level-topology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        High-Level Topology
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#service-inventory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Service Inventory
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#api-surfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Surfaces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="API Surfaces">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#key-design-principles" class="md-nav__link">
+  <a href="#internal-skills-api-8080" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Key Design Principles
+        Internal Skills API (:8080)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#public-api-8443" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Public API (:8443)
       
     </span>
   </a>
@@ -831,33 +903,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#architecture-diagram" class="md-nav__link">
+  <a href="#runtime-flows" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Architecture Diagram
+        Runtime Flows
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#service-architecture" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Service Architecture
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Service Architecture">
+    <nav class="md-nav" aria-label="Runtime Flows">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#bot-service" class="md-nav__link">
+  <a href="#1-discord-bot-flow" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Bot Service
+        1. Discord Bot Flow
       
     </span>
   </a>
@@ -865,10 +926,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#skills-service" class="md-nav__link">
+  <a href="#2-skillsheartbeat-flow" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Skills Service
+        2. Skills/Heartbeat Flow
       
     </span>
   </a>
@@ -876,43 +937,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#qdrant" class="md-nav__link">
+  <a href="#3-public-api-chat-flow" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Qdrant
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#postgresql" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        PostgreSQL
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#ollama-generation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Ollama (Generation)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#ollama-router" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Ollama Router
+        3. Public API Chat Flow
       
     </span>
   </a>
@@ -925,10 +953,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#request-flow" class="md-nav__link">
+  <a href="#data-architecture" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Request Flow
+        Data Architecture
       
     </span>
   </a>
@@ -936,49 +964,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#data-flow" class="md-nav__link">
+  <a href="#inference-and-routing" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Data Flow
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Data Flow">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#storage-responsibilities" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Storage Responsibilities
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#configuration-cascade" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Configuration Cascade
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#security-architecture" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Security Architecture
+        Inference and Routing
       
     </span>
   </a>
@@ -986,10 +975,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#related-documentation" class="md-nav__link">
+  <a href="#update-and-rollback-architecture" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Related Documentation
+        Update and Rollback Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-script-drift" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known Script Drift
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related Docs
       
     </span>
   </a>
@@ -1243,7 +1254,63 @@
   <span class="md-ellipsis">
     
   
-    API Reference
+    Skills API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../public-api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ai-agent-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Agent Integration
   
 
     
@@ -1645,14 +1712,58 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Overview">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#high-level-topology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        High-Level Topology
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#service-inventory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Service Inventory
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#api-surfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Surfaces
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="API Surfaces">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#key-design-principles" class="md-nav__link">
+  <a href="#internal-skills-api-8080" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Key Design Principles
+        Internal Skills API (:8080)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#public-api-8443" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Public API (:8443)
       
     </span>
   </a>
@@ -1665,33 +1776,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#architecture-diagram" class="md-nav__link">
+  <a href="#runtime-flows" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Architecture Diagram
+        Runtime Flows
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#service-architecture" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Service Architecture
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Service Architecture">
+    <nav class="md-nav" aria-label="Runtime Flows">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#bot-service" class="md-nav__link">
+  <a href="#1-discord-bot-flow" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Bot Service
+        1. Discord Bot Flow
       
     </span>
   </a>
@@ -1699,10 +1799,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#skills-service" class="md-nav__link">
+  <a href="#2-skillsheartbeat-flow" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Skills Service
+        2. Skills/Heartbeat Flow
       
     </span>
   </a>
@@ -1710,43 +1810,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#qdrant" class="md-nav__link">
+  <a href="#3-public-api-chat-flow" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Qdrant
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#postgresql" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        PostgreSQL
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#ollama-generation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Ollama (Generation)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#ollama-router" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Ollama Router
+        3. Public API Chat Flow
       
     </span>
   </a>
@@ -1759,10 +1826,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#request-flow" class="md-nav__link">
+  <a href="#data-architecture" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Request Flow
+        Data Architecture
       
     </span>
   </a>
@@ -1770,49 +1837,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#data-flow" class="md-nav__link">
+  <a href="#inference-and-routing" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Data Flow
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Data Flow">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#storage-responsibilities" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Storage Responsibilities
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#configuration-cascade" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Configuration Cascade
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#security-architecture" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Security Architecture
+        Inference and Routing
       
     </span>
   </a>
@@ -1820,10 +1848,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#related-documentation" class="md-nav__link">
+  <a href="#update-and-rollback-architecture" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Related Documentation
+        Update and Rollback Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-script-drift" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known Script Drift
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related Docs
       
     </span>
   </a>
@@ -1852,369 +1902,238 @@
 
 <h1 id="system-architecture">System Architecture<a class="headerlink" href="#system-architecture" title="Permanent link">&para;</a></h1>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>Zetherion AI is a source-agnostic personal AI assistant built on a microservice architecture with 6 Docker services. The system accepts input from any source (Discord is the first interface, with REST API, email sync, and webhooks also available) and provides user-controlled multi-provider LLM routing, AES-256-GCM encrypted semantic memory, Gmail integration, GitHub management, and deep personal understanding through passive observation, proactive prompting, and explicit learning.</p>
-<p>The codebase is heavily tested (3,000+ tests) with a repository-enforced coverage gate of <code>&gt;=90%</code>. The architecture prioritizes security, modularity, and cost-efficient inference by routing queries to the most appropriate LLM provider based on complexity, privacy requirements, and task type.</p>
-<h3 id="key-design-principles">Key Design Principles<a class="headerlink" href="#key-design-principles" title="Permanent link">&para;</a></h3>
-<ol>
-<li><strong>Security-First</strong> -- Defense in depth from container to application layer</li>
-<li><strong>Modularity</strong> -- Clean separation across services (Bot, Skills, Storage)</li>
-<li><strong>Cost Efficiency</strong> -- Intelligent routing sends simple queries to cheap/local models</li>
-<li><strong>Privacy-Aware</strong> -- Local inference via Ollama for sensitive operations</li>
-<li><strong>Resilience</strong> -- Fallback chains, retry logic, graceful degradation</li>
-<li><strong>Async-First</strong> -- Non-blocking I/O throughout the entire stack</li>
-</ol>
+<p>Zetherion AI is a source-agnostic assistant with two API surfaces:</p>
+<ul>
+<li><strong>Internal Skills API</strong> (<code>:8080</code>) for bot/service orchestration</li>
+<li><strong>Public API</strong> (<code>:8443</code>) for tenant-scoped external integrations</li>
+</ul>
+<p>The current Docker compose topology supports blue/green switching for both
+skills and public API services, with Traefik as the internal switch and an
+updater sidecar handling rollout/rollback orchestration.</p>
+<p>The project enforces <code>&gt;=90%</code> coverage in test configuration and currently
+contains 5,000+ tests.</p>
 <hr />
-<h2 id="architecture-diagram">Architecture Diagram<a class="headerlink" href="#architecture-diagram" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Any Input Source
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>(Discord / REST API / Email / Webhooks)
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    |
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    v
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>+---[Bot Service]---+
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>|  Security Layer   |---&gt; Tiered Injection Defense (regex + optional AI)
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>|  (rate limit,     |---&gt; User Allowlist / RBAC
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>|   auth)           |
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>|                   |
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>|  Agent Core       |---&gt; InferenceBroker
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>|   - Router        |     |-&gt; Gemini 2.5 Flash      (simple/routing)
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>|   - Providers     |     |-&gt; Claude Sonnet 4.5      (complex reasoning)
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>|   - Context       |     |-&gt; GPT-5.2               (alternative complex)
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>|                   |     |-&gt; Ollama llama3.1:8b     (local/private)
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>|                   |     |-&gt; Ollama llama3.2:3b     (router classification)
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>+--------+----------+
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>         |
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    +----+----+
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>    |         |
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>    v         v
-<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>+-------+  +--------+
-<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>|Skills |  |Memory  |
-<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>|Service|  |Layer   |
-<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>+---+---+  +---+----+
-<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>    |          |
-<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>    v          v
-<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>+-------+  +-------+  +----------+
-<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>|Gmail  |  |Qdrant |  |PostgreSQL|
-<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>|GitHub |  |(vectors|  |(users,   |
-<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>|Tasks  |  | memory)|  | contacts,|
-<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>|Calendar| |        |  | policies)|
-<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>|Profile|  +-------+  +----------+
-<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>+-------+
+<h2 id="high-level-topology">High-Level Topology<a class="headerlink" href="#high-level-topology" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Discord Gateway / External App Clients
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>            |
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>            v
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>+-------------------------------+
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>| zetherion-ai-bot              |
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>| - Security pipeline           |
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>| - Router + inference broker   |
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>| - Skills client               |
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>+---------------+---------------+
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                |
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>                v
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>      +---------------------+
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>      | zetherion-ai-traefik|
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>      +---+-------------+---+
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>          |             |
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>          v             v
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>+----------------+  +----------------+
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>| skills-blue    |  | skills-green   |
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>| :8080 internal |  | :8080 internal |
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>+----------------+  +----------------+
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>Public API path (tenant integrations):
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>External Client -&gt; Cloudflared (optional) -&gt; Traefik -&gt; api-blue/api-green
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>Data plane:
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>- PostgreSQL (RBAC, settings, integrations, tenant/session data)
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>- Qdrant (vector memory)
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>- Ollama (generation/embeddings)
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>- Ollama Router (classification)
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>Update plane:
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>- updater sidecar performs blue/green rollout and rollback
 </code></pre></div>
 <hr />
-<h2 id="service-architecture">Service Architecture<a class="headerlink" href="#service-architecture" title="Permanent link">&para;</a></h2>
-<h3 id="bot-service">Bot Service<a class="headerlink" href="#bot-service" title="Permanent link">&para;</a></h3>
-<p>The Bot Service is the primary entry point for user interactions. Discord is the first supported interface, but the service orchestrates the entire request lifecycle independently of the input source. The agent core, security layer, router, and inference broker all operate on messages regardless of origin.</p>
-<p><strong>Core Responsibilities:</strong></p>
-<ul>
-<li>
-<p><strong>Input Gateway</strong> -- Currently connects to Discord via the gateway protocol using <code>discord.py</code>. Handles direct messages, @mentions, and slash commands. The architecture supports additional input sources (REST API, email, webhooks) through the same agent pipeline.</p>
-</li>
-<li>
-<p><strong>Security Layer</strong> -- Defense-in-depth applied to every incoming message before processing:</p>
-</li>
-<li><em>User Allowlist</em>: Only pre-authorized Discord user IDs may interact with the bot. Supports RBAC with owner, admin, and user roles stored in PostgreSQL.</li>
-<li><em>Rate Limiting</em>: Per-user message throttling (configurable, default 10 messages per 60 seconds) to prevent abuse and runaway API costs.</li>
-<li>
-<p><em>Security Pipeline</em>: Tier 1 regex/heuristic detection plus optional Tier 2 AI analysis, with dynamic flag/block thresholds and a safe regex fallback path if Tier 2 fails.</p>
-</li>
-<li>
-<p><strong>Priority Queue</strong> -- Incoming Discord work is enqueued and processed by two worker pools:</p>
-</li>
-<li><em>Interactive workers</em> process P0-P1 tasks (<code>INTERACTIVE</code>, <code>NEAR_INTERACTIVE</code>) with fast polling.</li>
-<li><em>Background workers</em> process P2-P3 tasks (<code>SCHEDULED</code>, <code>BULK</code>) for heartbeat and bulk ingestion.</li>
-<li>
-<p>Queue retries use staged backoff and stale in-flight recovery to keep throughput stable.</p>
-</li>
-<li>
-<p><strong>Agent Core</strong> -- Manages the full conversation flow: context assembly, provider selection, response generation, and post-response observation. Handles retry logic with exponential backoff (max 3 retries) for transient API failures.</p>
-</li>
-<li>
-<p><strong>Router</strong> -- Classifies each incoming query by intent and complexity. The router can operate through multiple backends: Gemini Flash (cloud, fast), Ollama llama3.2:3b (local, dedicated container), or local regex fallback. Classification categories include <code>simple_query</code>, <code>complex_task</code>, <code>memory_store</code>, <code>memory_recall</code>, <code>task_management</code>, and others.</p>
-</li>
-<li>
-<p><strong>InferenceBroker</strong> -- Multi-provider routing engine with fallback chains and cost tracking. Selects the optimal LLM provider based on task type, privacy requirements, cost constraints, and availability. Tracks per-request costs in a local SQLite database.</p>
-</li>
-</ul>
-<p><strong>LLM Providers:</strong></p>
+<h2 id="service-inventory">Service Inventory<a class="headerlink" href="#service-inventory" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
-<th>Provider</th>
-<th>Model</th>
-<th>Use Case</th>
+<th>Service</th>
+<th>Role</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Google Gemini</td>
-<td>gemini-2.5-flash</td>
-<td>Simple queries, routing, fast responses</td>
+<td><code>zetherion-ai-bot</code></td>
+<td>Discord runtime and main orchestration path</td>
 </tr>
 <tr>
-<td>Anthropic Claude</td>
-<td>claude-sonnet-4-5-20250929 (Sonnet 4.5)</td>
-<td>Complex reasoning, code, analysis</td>
+<td><code>zetherion-ai-skills-blue/green</code></td>
+<td>Internal skills control plane</td>
 </tr>
 <tr>
-<td>OpenAI</td>
-<td>gpt-5.2</td>
-<td>Alternative complex tasks</td>
+<td><code>zetherion-ai-api-blue/green</code></td>
+<td>Public <code>/api/v1</code> service</td>
 </tr>
 <tr>
-<td>Ollama (local)</td>
-<td>llama3.1:8b</td>
-<td>Privacy-sensitive operations</td>
+<td><code>zetherion-ai-traefik</code></td>
+<td>Internal routing/switch layer</td>
 </tr>
 <tr>
-<td>Ollama (local)</td>
-<td>llama3.2:3b</td>
-<td>Fast query classification (router)</td>
+<td><code>zetherion-ai-updater</code></td>
+<td>Rollout/rollback sidecar</td>
+</tr>
+<tr>
+<td><code>zetherion-ai-cloudflared</code></td>
+<td>Optional secure tunnel for public API exposure</td>
+</tr>
+<tr>
+<td><code>postgres</code></td>
+<td>Relational persistence</td>
+</tr>
+<tr>
+<td><code>qdrant</code></td>
+<td>Vector memory persistence</td>
+</tr>
+<tr>
+<td><code>ollama</code></td>
+<td>Local generation + embeddings</td>
+</tr>
+<tr>
+<td><code>ollama-router</code></td>
+<td>Local routing model</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Embedding Providers:</strong></p>
-<table>
-<thead>
-<tr>
-<th>Provider</th>
-<th>Model</th>
-<th>Dimensions</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Google Gemini</td>
-<td>text-embedding-004</td>
-<td>768</td>
-</tr>
-<tr>
-<td>Ollama</td>
-<td>nomic-embed-text</td>
-<td>768</td>
-</tr>
-<tr>
-<td>OpenAI</td>
-<td>text-embedding-3-large</td>
-<td>3072</td>
-</tr>
-</tbody>
-</table>
-<h3 id="skills-service">Skills Service<a class="headerlink" href="#skills-service" title="Permanent link">&para;</a></h3>
-<p>The Skills Service is an independent aiohttp REST API running on port 8080 (internal network only, not exposed to the host). It provides a pluggable skill framework with lifecycle management.</p>
-<p><strong>Core Responsibilities:</strong></p>
-<ul>
-<li>
-<p><strong>Skill Registry</strong> -- Manages registration, initialization, and shutdown of skill modules. Each skill implements a standard interface with <code>initialize()</code>, <code>execute()</code>, and <code>cleanup()</code> lifecycle methods.</p>
-</li>
-<li>
-<p><strong>Built-in Skills:</strong></p>
-</li>
-<li><em>TaskManager</em> -- Create, update, complete, and query tasks with priority and due date support.</li>
-<li><em>Calendar</em> -- Schedule events, check availability, and receive proactive reminders.</li>
-<li><em>Profile</em> -- Manage personal data, preferences, and contacts. Supports passive learning from conversations.</li>
-<li><em>Gmail</em> -- Read, search, draft, and send emails. Includes trust scoring for senders and sync state management.</li>
-<li>
-<p><em>GitHub</em> -- Repository management, issue tracking, PR reviews, and audit logging with configurable autonomy levels.</p>
-</li>
-<li>
-<p><strong>Heartbeat Scheduler</strong> -- A background scheduler that triggers proactive actions such as daily summaries, upcoming event reminders, and email digest notifications. Runs on configurable intervals.</p>
-</li>
-<li>
-<p><strong>Authentication</strong> -- All requests from the Bot Service must include an <code>X-API-Secret</code> header with an HMAC-based token. Requests without valid authentication are rejected.</p>
-</li>
-</ul>
-<h3 id="qdrant">Qdrant<a class="headerlink" href="#qdrant" title="Permanent link">&para;</a></h3>
-<p>Qdrant serves as the vector database for semantic memory storage and retrieval.</p>
-<ul>
-<li><strong>Collections</strong>: <code>long_term_memory</code> and <code>conversation_history</code>, with per-user filtering via metadata payloads.</li>
-<li><strong>Embeddings</strong>: Supports three embedding providers with different dimensionalities -- 768-dim (Gemini text-embedding-004), 768-dim (Ollama nomic-embed-text), or 3072-dim (OpenAI text-embedding-3-large).</li>
-<li><strong>Encryption</strong>: All memory content undergoes AES-256-GCM field-level encryption before being stored in Qdrant payloads. Encryption keys are derived using PBKDF2 from a master secret and per-record salt.</li>
-<li><strong>Search</strong>: Cosine similarity with configurable <code>top_k</code> (default 5). Results are decrypted, ranked, and returned as context fragments.</li>
-</ul>
-<h3 id="postgresql">PostgreSQL<a class="headerlink" href="#postgresql" title="Permanent link">&para;</a></h3>
-<p>PostgreSQL provides persistent relational storage for structured data that does not benefit from vector search.</p>
-<ul>
-<li><strong>User Management</strong> -- RBAC system with three roles: owner (full control), admin (manage users and settings), and user (standard interaction). User records include Discord ID, role, and metadata.</li>
-<li><strong>Dynamic Settings</strong> -- Namespace/key/value store with full audit trail. Supports runtime configuration changes without restarts. Falls back to environment variables when database values are not set.</li>
-<li><strong>Personal Understanding:</strong></li>
-<li><em>Profiles</em>: User preferences, communication style, timezone, interests.</li>
-<li><em>Contacts</em>: People the user mentions, with relationship context and interaction frequency.</li>
-<li><em>Policies</em>: User-defined rules (e.g., "always respond formally", "never mention competitor X").</li>
-<li><em>Learnings</em>: Passively observed facts extracted from conversations by the observation pipeline.</li>
-<li><strong>Gmail Integration</strong> -- Account registration, OAuth state, sync cursors, message metadata, trust scores per sender, and draft management.</li>
-<li><strong>GitHub Integration</strong> -- Audit log of all actions taken, autonomy configuration per repository, and webhook state.</li>
-</ul>
-<h3 id="ollama-generation">Ollama (Generation)<a class="headerlink" href="#ollama-generation" title="Permanent link">&para;</a></h3>
-<p>A dedicated Ollama container for privacy-sensitive LLM operations and local embedding generation.</p>
-<ul>
-<li><strong>Default Model</strong>: llama3.1:8b (8 billion parameters). Provides capable text generation for queries that should not leave the local network.</li>
-<li><strong>Embeddings</strong>: Also serves <code>nomic-embed-text</code> for local embedding generation, ensuring that sensitive text never reaches external APIs.</li>
-<li><strong>Resource Allocation</strong>: 2G-8G memory, 1-4 CPU cores. The model remains loaded in memory to eliminate cold-start latency.</li>
-<li><strong>Port</strong>: Exposed on 11434 to the host for debugging and direct model interaction.</li>
-</ul>
-<h3 id="ollama-router">Ollama Router<a class="headerlink" href="#ollama-router" title="Permanent link">&para;</a></h3>
-<p>A separate, lightweight Ollama container dedicated exclusively to fast query classification.</p>
-<ul>
-<li><strong>Default Model</strong>: llama3.2:3b (3 billion parameters). Small enough to classify queries in under 500ms on CPU.</li>
-<li><strong>Purpose</strong>: Eliminates the 2-10 second model-swapping delay that would occur if routing and generation shared a single Ollama instance. Each container keeps exactly one model loaded in memory at all times.</li>
-<li><strong>Classification Output</strong>: Returns structured JSON with intent category, confidence score, and provider recommendation.</li>
-<li><strong>Resource Allocation</strong>: 1.5G-3G memory, 0.5-2 CPU cores. Minimal footprint due to the small model size.</li>
-<li><strong>Network</strong>: Internal only, no port exposed to host.</li>
-</ul>
 <hr />
-<h2 id="request-flow">Request Flow<a class="headerlink" href="#request-flow" title="Permanent link">&para;</a></h2>
-<p>A complete request lifecycle from incoming message to response:</p>
+<h2 id="api-surfaces">API Surfaces<a class="headerlink" href="#api-surfaces" title="Permanent link">&para;</a></h2>
+<h3 id="internal-skills-api-8080">Internal Skills API (<code>:8080</code>)<a class="headerlink" href="#internal-skills-api-8080" title="Permanent link">&para;</a></h3>
+<p>Primary uses:</p>
+<ul>
+<li>skill execution (<code>/handle</code>)</li>
+<li>heartbeat actions (<code>/heartbeat</code>)</li>
+<li>runtime RBAC/settings/secrets operations</li>
+<li>OAuth authorization/callback handling</li>
+</ul>
+<p>Auth model:</p>
+<ul>
+<li><code>X-API-Secret</code> required for most routes</li>
+<li>health and OAuth callback routes are exempt by design</li>
+</ul>
+<p>See <a href="../api-reference/">Skills API Reference</a>.</p>
+<h3 id="public-api-8443">Public API (<code>:8443</code>)<a class="headerlink" href="#public-api-8443" title="Permanent link">&para;</a></h3>
+<p>Primary uses:</p>
+<ul>
+<li>tenant session lifecycle (<code>/api/v1/sessions</code>)</li>
+<li>session-token chat (<code>/api/v1/chat</code>, <code>/chat/stream</code>, <code>/chat/history</code>)</li>
+<li>optional tenant-scoped YouTube endpoints (<code>/api/v1/youtube/...</code>)</li>
+</ul>
+<p>Auth model:</p>
+<ul>
+<li><code>X-API-Key</code> for tenant control-plane routes</li>
+<li>Bearer session token for chat routes</li>
+<li>per-tenant in-memory rate limiting</li>
+</ul>
+<p>See <a href="../public-api-reference/">Public API Reference</a>.</p>
+<hr />
+<h2 id="runtime-flows">Runtime Flows<a class="headerlink" href="#runtime-flows" title="Permanent link">&para;</a></h2>
+<h3 id="1-discord-bot-flow">1. Discord Bot Flow<a class="headerlink" href="#1-discord-bot-flow" title="Permanent link">&para;</a></h3>
 <ol>
-<li>
-<p><strong>Message received</strong> -- The Bot Service receives a message from an input source (currently Discord via the gateway WebSocket, but the pipeline is source-agnostic).</p>
-</li>
-<li>
-<p><strong>Security checks</strong> -- Three sequential checks are applied:</p>
-</li>
-<li>Allowlist check (reject if the user's Discord ID is not authorized).</li>
-<li>Rate limit verification (reject if user has exceeded their message quota).</li>
-<li>
-<p>Security pipeline analysis (Tier 1 regex/heuristics + optional Tier 2 AI). If pipeline initialization or analysis fails, the bot falls back to regex-only injection detection.</p>
-</li>
-<li>
-<p><strong>Router classification</strong> -- The message is sent to the router for intent classification. The router attempts Gemini Flash first, falls back to Ollama llama3.2:3b, and finally to local regex patterns if both external calls fail.</p>
-</li>
-<li>
-<p><strong>Skill dispatch</strong> -- If the router identifies a skill-related intent (e.g., <code>task_management</code>, <code>email_read</code>, <code>github_action</code>), the Bot Service forwards the request to the Skills Service via an internal HTTP call to <code>http://zetherion-ai-skills:8080</code>.</p>
-</li>
-<li>
-<p><strong>Provider selection</strong> -- The InferenceBroker selects an LLM provider based on the routing classification and user configuration. You control which providers handle which task types:</p>
-</li>
-<li>Simple queries can route to Gemini 2.5 Flash or Ollama (your choice).</li>
-<li>Complex reasoning can route to Claude Sonnet 4.5, GPT-5.2, or local Ollama (your choice).</li>
-<li>Privacy-sensitive queries can be restricted to Ollama llama3.1:8b (local inference, never leaves your machine).</li>
-<li>
-<p>Fallback chains ensure a response even if the primary provider is unavailable.</p>
-</li>
-<li>
-<p><strong>Context assembly</strong> -- The system builds a rich context window by combining:</p>
-</li>
-<li>Recent conversation history (last N messages from the current session).</li>
-<li>Semantic memory search results from Qdrant (top-k similar memories).</li>
-<li>User profile data from PostgreSQL (preferences, communication style).</li>
-<li>
-<p>Skill-specific context fragments (e.g., upcoming tasks, recent emails).</p>
-</li>
-<li>
-<p><strong>LLM generation</strong> -- The assembled prompt is sent to the selected LLM provider. The response is streamed or returned as a complete message depending on provider capabilities.</p>
-</li>
-<li>
-<p><strong>Observation pipeline</strong> -- After generating the response, a passive observation step extracts learnings from the conversation (e.g., "user mentioned they prefer Python over JavaScript") and stores them in PostgreSQL for future context enrichment.</p>
-</li>
-<li>
-<p><strong>Response delivery</strong> -- The response is sent back to the originating input source. For Discord, messages exceeding 2,000 characters are split into safe chunks (including long single-line responses).</p>
-</li>
-<li>
-<p><strong>Cost tracking</strong> -- The token usage and estimated cost for the request are recorded in a local SQLite database (<code>costs.db</code>) for monitoring and budget management.</p>
-</li>
+<li>Message arrives from Discord gateway.</li>
+<li>Bot security checks run (allowlist/RBAC, rate limits, content security).</li>
+<li>Router classifies intent and complexity.</li>
+<li>Bot either:</li>
+<li>handles direct inference path, or</li>
+<li>dispatches to Skills API (<code>/handle</code>), depending on intent.</li>
+<li>Memory/profile context is merged as needed.</li>
+<li>Response is returned to Discord.</li>
+</ol>
+<h3 id="2-skillsheartbeat-flow">2. Skills/Heartbeat Flow<a class="headerlink" href="#2-skillsheartbeat-flow" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Scheduler triggers heartbeat cycle.</li>
+<li>Skills service aggregates <code>on_heartbeat</code> actions.</li>
+<li>Actions are prioritized and returned to bot.</li>
+<li>Bot executes actions with quiet-hours/rate-limit safeguards.</li>
+</ol>
+<h3 id="3-public-api-chat-flow">3. Public API Chat Flow<a class="headerlink" href="#3-public-api-chat-flow" title="Permanent link">&para;</a></h3>
+<ol>
+<li>External app creates session with tenant API key.</li>
+<li>API returns prefixed JWT session token.</li>
+<li>Client calls chat endpoints with bearer token.</li>
+<li>API validates tenant + session, applies tenant rate limits.</li>
+<li>Chat skill/inference path generates response.</li>
+<li>Messages are persisted to tenant session history.</li>
 </ol>
 <hr />
-<h2 id="data-flow">Data Flow<a class="headerlink" href="#data-flow" title="Permanent link">&para;</a></h2>
-<h3 id="storage-responsibilities">Storage Responsibilities<a class="headerlink" href="#storage-responsibilities" title="Permanent link">&para;</a></h3>
+<h2 id="data-architecture">Data Architecture<a class="headerlink" href="#data-architecture" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
-<th>Data Type</th>
-<th>Storage</th>
-<th>Details</th>
+<th>Data</th>
+<th>Store</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Conversation context</td>
-<td>Qdrant + in-memory</td>
-<td>Last N messages held in memory; semantic history in Qdrant vectors</td>
+<td>Tenant/session/chat records</td>
+<td>PostgreSQL</td>
 </tr>
 <tr>
-<td>Long-term memory</td>
+<td>RBAC users + audit log</td>
+<td>PostgreSQL</td>
+</tr>
+<tr>
+<td>Runtime settings + encrypted secrets metadata</td>
+<td>PostgreSQL</td>
+</tr>
+<tr>
+<td>Integrations/work router state</td>
+<td>PostgreSQL</td>
+</tr>
+<tr>
+<td>Personal/profile/contact/policy records</td>
+<td>PostgreSQL</td>
+</tr>
+<tr>
+<td>Vectorized memory and docs-knowledge embeddings</td>
 <td>Qdrant</td>
-<td>Encrypted vector embeddings with metadata payloads</td>
 </tr>
 <tr>
-<td>User profiles</td>
-<td>PostgreSQL</td>
-<td>personal_profiles, personal_contacts, personal_policies tables</td>
-</tr>
-<tr>
-<td>Gmail data</td>
-<td>PostgreSQL</td>
-<td>gmail_accounts, gmail_messages, gmail_drafts, gmail_trust tables</td>
-</tr>
-<tr>
-<td>GitHub data</td>
-<td>PostgreSQL</td>
-<td>github_audit_log, github_autonomy_config tables</td>
-</tr>
-<tr>
-<td>User/role data</td>
-<td>PostgreSQL</td>
-<td>users table with RBAC roles</td>
-</tr>
-<tr>
-<td>Dynamic settings</td>
-<td>PostgreSQL</td>
-<td>settings table with namespace/key/value and audit trail</td>
-</tr>
-<tr>
-<td>Cost tracking</td>
-<td>SQLite</td>
-<td>costs.db in ./data directory</td>
-</tr>
-<tr>
-<td>Application logs</td>
-<td>Filesystem</td>
-<td>Structured JSON logs in ./logs with rotation</td>
-</tr>
-<tr>
-<td>Encryption salt</td>
-<td>Filesystem</td>
-<td>Persistent salt file in ./data</td>
+<td>Cost tracking operational DB</td>
+<td>SQLite (<code>data/costs.db</code>)</td>
 </tr>
 </tbody>
 </table>
-<h3 id="configuration-cascade">Configuration Cascade<a class="headerlink" href="#configuration-cascade" title="Permanent link">&para;</a></h3>
-<p>Settings are resolved in the following priority order:</p>
-<ol>
-<li>PostgreSQL dynamic settings (highest priority, runtime-changeable)</li>
-<li>Environment variables (set in docker-compose.yml or .env)</li>
-<li>Default values in Pydantic Settings (lowest priority, compile-time)</li>
-</ol>
 <hr />
-<h2 id="security-architecture">Security Architecture<a class="headerlink" href="#security-architecture" title="Permanent link">&para;</a></h2>
-<p>Security is implemented as defense in depth across every layer of the stack. For comprehensive details, see <a href="../security/">security.md</a>.</p>
-<p><strong>Container Security:</strong>
-- Distroless base images for bot and skills services (no shell, minimal attack surface)
-- Read-only root filesystems with tmpfs mounts for writable temporary directories
-- <code>no-new-privileges</code> flag on all 6 containers prevents privilege escalation
-- Resource limits (CPU and memory quotas) on every service prevent denial-of-service</p>
-<p><strong>Network Security:</strong>
-- All services communicate over an internal Docker bridge network (<code>zetherion-ai-net</code>)
-- Only Qdrant (6333) and Ollama generation (11434) expose ports to the host
-- The Skills Service, PostgreSQL, and Ollama Router are entirely internal</p>
-<p><strong>Application Security:</strong>
-- AES-256-GCM encryption with PBKDF2 key derivation for all stored memories
-- User allowlist with RBAC (owner/admin/user roles)
-- Rate limiting per user to prevent abuse
-- Tiered prompt-injection defense (Tier 1 regex/heuristics + optional Tier 2 AI)
-- Pydantic <code>SecretStr</code> for all credentials (never logged or serialized)
-- HMAC-based service-to-service authentication</p>
-<p><strong>Supply Chain Security:</strong>
-- Pinned Docker image digests for Qdrant and Ollama (Dependabot auto-updates)
-- Gitleaks pre-commit hook for secret scanning
-- CodeQL weekly static analysis scans
-- Dependabot weekly dependency updates
-- Bandit security scanning in CI pipeline</p>
-<hr />
-<h2 id="related-documentation">Related Documentation<a class="headerlink" href="#related-documentation" title="Permanent link">&para;</a></h2>
+<h2 id="inference-and-routing">Inference and Routing<a class="headerlink" href="#inference-and-routing" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="../docker/">Docker Services and Deployment</a> -- Service configuration, resource limits, and deployment procedures</li>
-<li><a href="../security/">Security Architecture</a> -- Comprehensive security controls, threat model, and hardening measures</li>
-<li><a href="../configuration/">Configuration Guide</a> -- Environment variables, settings hierarchy, and secrets management</li>
-<li><a href="../skills-framework/">Skills Framework</a> -- Building and registering custom skills</li>
+<li>Router backend is configurable: <code>gemini</code>, <code>ollama</code>, or <code>groq</code>.</li>
+<li>Inference broker supports provider-aware task routing across local and cloud models.</li>
+<li>Dedicated Ollama router model avoids generation model swap latency.</li>
+<li>Work router/email routing path supports provider-agnostic ingestion and policy gates.</li>
+</ul>
+<hr />
+<h2 id="update-and-rollback-architecture">Update and Rollback Architecture<a class="headerlink" href="#update-and-rollback-architecture" title="Permanent link">&para;</a></h2>
+<p>Updater sidecar coordinates zero-downtime style swaps for API/skills services:</p>
+<ol>
+<li>Build inactive color</li>
+<li>Health-check inactive services</li>
+<li>Flip Traefik routing to inactive color</li>
+<li>Restart bot with graceful reconnect path</li>
+<li>Stop old color</li>
+</ol>
+<p>On failure, sidecar rolls back and can pause future rollouts until unpaused.
+State is persisted in <code>UPDATER_STATE_PATH</code>.</p>
+<p>See <a href="../docker/">Docker &amp; Services</a> and <a href="../../user/auto-update/">Auto-Update</a>.</p>
+<hr />
+<h2 id="known-script-drift">Known Script Drift<a class="headerlink" href="#known-script-drift" title="Permanent link">&para;</a></h2>
+<p><code>start.sh</code> and <code>status.sh</code> still contain a few legacy checks using old
+single-service names (for example <code>zetherion-ai-skills</code>).</p>
+<p>When script output disagrees with live topology, use <code>docker compose ps</code> as
+canonical runtime state.</p>
+<hr />
+<h2 id="related-docs">Related Docs<a class="headerlink" href="#related-docs" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../docker/">Docker &amp; Services</a></li>
+<li><a href="../security/">Security</a></li>
+<li><a href="../api-reference/">Skills API Reference</a></li>
+<li><a href="../public-api-reference/">Public API Reference</a></li>
+<li><a href="../ai-agent-integration/">AI Agent Integration</a></li>
 </ul>
 
 

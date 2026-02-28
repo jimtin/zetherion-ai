@@ -16,14 +16,14 @@
         <link rel="prev" href="../..">
       
       
-        <link rel="next" href="../commands/">
+        <link rel="next" href="../auto-update/">
       
       
         
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
     
     
       
@@ -713,6 +713,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#known-drift-temporary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known Drift (Temporary)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#troubleshooting" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -743,6 +754,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../auto-update/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Update
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -1271,7 +1310,63 @@
   <span class="md-ellipsis">
     
   
-    API Reference
+    Skills API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/public-api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/ai-agent-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Agent Integration
   
 
     
@@ -1860,6 +1955,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#known-drift-temporary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known Drift (Temporary)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#troubleshooting" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1923,7 +2029,7 @@ are up and running in under ten minutes.</p>
 <tbody>
 <tr>
 <td>Docker Desktop 4.0+</td>
-<td>Required. Zetherion AI runs as 6 Docker services.</td>
+<td>Required. Zetherion AI runs via the current compose topology (bot, blue/green app+skills, routing, updater, and data services).</td>
 </tr>
 <tr>
 <td>Discord bot token</td>
@@ -1931,7 +2037,7 @@ are up and running in under ten minutes.</p>
 </tr>
 <tr>
 <td>Gemini API key</td>
-<td>Optional. Free tier from Google AI Studio (1,500 requests/day). Enables cloud routing and simple queries.</td>
+<td>Required by default runtime configuration. Free tier from Google AI Studio (1,500 requests/day).</td>
 </tr>
 <tr>
 <td>Anthropic API key</td>
@@ -2019,8 +2125,8 @@ are up and running in under ten minutes.</p>
 <li><strong>Ollama</strong> (local) -- private, roughly 9 minutes. Downloads and runs
      <code>llama3.2:3b</code> for routing and <code>llama3.1:8b</code> for local generation. All
      inference stays on your machine.</li>
-<li><strong>Builds and starts all 6 Docker services</strong>: <code>bot</code>, <code>skills</code>, <code>qdrant</code>,
-   <code>postgres</code>, <code>ollama</code>, and <code>ollama-router</code>.</li>
+<li><strong>Builds and starts the current compose topology</strong>: bot runtime, skills/app
+   blue/green deployments, routing/update services, and storage services.</li>
 <li><strong>Downloads Ollama models</strong> if you selected the local backend.</li>
 </ol>
 <p>You do not need to edit any configuration files manually. The script generates
@@ -2051,14 +2157,18 @@ everything for you.</p>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Windows</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>.<span class="se">\s</span>tatus.ps1
 </code></pre></div>
-<p>You should see all 6 services reported as <strong>healthy</strong>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>bot            healthy
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>skills         healthy
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>qdrant         healthy
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>postgres       healthy
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>ollama         healthy
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>ollama-router  healthy
+<p>Check health with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>ps
 </code></pre></div>
+<p>You should see healthy/running state for core services including:</p>
+<ul>
+<li><code>zetherion-ai-bot</code></li>
+<li><code>zetherion-ai-skills-blue</code> and <code>zetherion-ai-skills-green</code></li>
+<li><code>zetherion-ai-api-blue</code> and <code>zetherion-ai-api-green</code></li>
+<li><code>zetherion-ai-traefik</code></li>
+<li><code>zetherion-ai-updater</code></li>
+<li><code>postgres</code>, <code>qdrant</code>, <code>ollama</code>, <code>ollama-router</code></li>
+</ul>
 <h3 id="test-in-discord">Test in Discord<a class="headerlink" href="#test-in-discord" title="Permanent link">&para;</a></h3>
 <p>In any channel where the bot has access, send:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>@Zetherion AI hello
@@ -2152,6 +2262,10 @@ browser to verify the vector database is running and accessible.</p>
 </tr>
 </tbody>
 </table>
+<h3 id="known-drift-temporary">Known Drift (Temporary)<a class="headerlink" href="#known-drift-temporary" title="Permanent link">&para;</a></h3>
+<p><code>start.sh</code> and <code>status.sh</code> still include some legacy single-service checks
+(for example, <code>zetherion-ai-skills</code>). If script output and compose output
+conflict, use <code>docker compose ps</code> as the source of truth.</p>
 <h3 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h3>
 <p>If a service fails to start:</p>
 <ol>

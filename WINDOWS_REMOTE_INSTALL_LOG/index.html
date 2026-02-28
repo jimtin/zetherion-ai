@@ -19,7 +19,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
     
     
       
@@ -457,6 +457,34 @@
     
   
     Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user/auto-update/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Update
   
 
     
@@ -993,7 +1021,63 @@
   <span class="md-ellipsis">
     
   
-    API Reference
+    Skills API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/public-api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technical/ai-agent-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Agent Integration
   
 
     
@@ -1740,7 +1824,7 @@
 
 <h1 id="windows-remote-installation-log">Windows Remote Installation Log<a class="headerlink" href="#windows-remote-installation-log" title="Permanent link">&para;</a></h1>
 <p><strong>Date</strong>: 2026-02-10
-<strong>Source Machine</strong>: macOS (<WINDOWS_HOST_IP_OLD>)
+<strong>Source Machine</strong>: macOS (<SOURCE_HOST_IP>)
 <strong>Target Machine</strong>: Windows 11 - "Computer-of-awesome" (<WINDOWS_HOST_IP>)
 <strong>Windows User</strong>: james
 <strong>Method</strong>: SSH remoting from macOS to Windows PowerShell
@@ -1810,7 +1894,7 @@
 <hr />
 <h2 id="installation-steps">Installation Steps<a class="headerlink" href="#installation-steps" title="Permanent link">&para;</a></h2>
 <p>All commands below use this SSH prefix (abbreviated as <code>SSH</code> in examples):
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nv">SSH</span><span class="o">=</span><span class="s2">&quot;ssh -i ~/.ssh/zetherion_windows -o ConnectTimeout=10 james@<WINDOWS_HOST_IP>&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nv">SSH</span><span class="o">=</span><span class="s2">&quot;ssh -i ~/.ssh/zetherion_windows -o ConnectTimeout=10 james@&lt;WINDOWS_HOST_IP&gt;&quot;</span>
 </code></pre></div></p>
 <h3 id="step-1-start-docker-desktop-if-not-running">Step 1: Start Docker Desktop (if not running)<a class="headerlink" href="#step-1-start-docker-desktop-if-not-running" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nv">$SSH</span><span class="w"> </span><span class="s2">&quot;Start-Process &#39;C:\Program Files\Docker\Docker\Docker Desktop.exe&#39;&quot;</span>
@@ -1827,7 +1911,7 @@
 </code></pre></div>
 <h3 id="step-4-configure-environment">Step 4: Configure Environment<a class="headerlink" href="#step-4-configure-environment" title="Permanent link">&para;</a></h3>
 <p>Option A - Copy .env from existing installation:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>scp<span class="w"> </span>-i<span class="w"> </span>~/.ssh/zetherion_windows<span class="w"> </span>/path/to/local/.env<span class="w"> </span>james@<WINDOWS_HOST_IP>:C:/ZetherionAI/.env
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>scp<span class="w"> </span>-i<span class="w"> </span>~/.ssh/zetherion_windows<span class="w"> </span>/path/to/local/.env<span class="w"> </span>james@&lt;WINDOWS_HOST_IP&gt;:C:/ZetherionAI/.env
 </code></pre></div></p>
 <p>Option B - Create from template and edit:
 <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="nv">$SSH</span><span class="w"> </span><span class="s2">&quot;Copy-Item C:\ZetherionAI\.env.example C:\ZetherionAI\.env&quot;</span>
@@ -1909,10 +1993,10 @@ Look for: <code>"event": "bot_ready"</code> with your bot's username and guild c
 <h2 id="issues-encountered-and-fixes">Issues Encountered and Fixes<a class="headerlink" href="#issues-encountered-and-fixes" title="Permanent link">&para;</a></h2>
 <h3 id="issue-1-ssh-connection-timeout">Issue 1: SSH Connection Timeout<a class="headerlink" href="#issue-1-ssh-connection-timeout" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Symptom</strong>: <code>ssh: connect to host <WINDOWS_HOST_IP> port 22: Operation timed out</code></li>
+<li><strong>Symptom</strong>: <code>ssh: connect to host &lt;WINDOWS_HOST_IP&gt; port 22: Operation timed out</code></li>
 <li><strong>Cause</strong>: Windows network profile was set to "Public", which blocks inbound connections</li>
 <li><strong>Fix</strong>: Changed network profile to "Private" in Windows Settings &gt; Network &amp; Internet</li>
-<li><strong>Note</strong>: Even on the same subnet (both <code><WINDOWS_HOST_SUBNET>.x</code>), Public profile blocks all inbound traffic</li>
+<li><strong>Note</strong>: Even on the same subnet (both <code>&lt;WINDOWS_HOST_SUBNET&gt;.x</code>), Public profile blocks all inbound traffic</li>
 </ul>
 <h3 id="issue-2-powershell-operator-not-supported">Issue 2: PowerShell <code>&amp;&amp;</code> Operator Not Supported<a class="headerlink" href="#issue-2-powershell-operator-not-supported" title="Permanent link">&para;</a></h3>
 <ul>

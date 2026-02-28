@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
     
     
       
@@ -463,6 +463,34 @@
     
   
     Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user/auto-update/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Update
   
 
     
@@ -999,7 +1027,63 @@
   <span class="md-ellipsis">
     
   
-    API Reference
+    Skills API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/public-api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/ai-agent-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Agent Integration
   
 
     
@@ -2258,7 +2342,7 @@
 <li>Type checking (Mypy strict mode)</li>
 <li>Security scanning (Bandit)</li>
 <li>Unit tests (Python 3.12 and 3.13) -- 3,000+ tests, coverage gate &gt;=90%</li>
-<li>Docker build verification (all 6 services)</li>
+<li>Docker build verification (current compose topology services)</li>
 </ul>
 <p>These will pass out of the box on any fork or clone.</p>
 <p>See <a href="../../technical/architecture/"><code>../technical/architecture.md</code></a> for how these jobs fit into the overall system.</p>
@@ -2403,8 +2487,8 @@
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="nv">ANTHROPIC_API_KEY</span><span class="o">=</span>&lt;your-claude-api-key&gt;
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="nv">OPENAI_API_KEY</span><span class="o">=</span>&lt;your-openai-api-key&gt;
 </code></pre></div>
-<p>Run with:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./scripts/run-integration-tests.sh
+<p>Run with canonical full gate:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>./scripts/test-full.sh
 </code></pre></div>
 <h3 id="for-discord-e2e-tests">For Discord E2E Tests<a class="headerlink" href="#for-discord-e2e-tests" title="Permanent link">&para;</a></h3>
 <p>Add these additional variables to your <code>.env</code> file:</p>

@@ -21,7 +21,7 @@
       
       
       <link rel="icon" href="assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
     
     
       
@@ -633,6 +633,34 @@
   
   
     <li class="md-nav__item">
+      <a href="user/auto-update/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Update
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="user/commands/" class="md-nav__link">
         
   
@@ -1149,7 +1177,63 @@
   <span class="md-ellipsis">
     
   
-    API Reference
+    Skills API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="technical/public-api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="technical/ai-agent-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Agent Integration
   
 
     
@@ -1668,7 +1752,7 @@
 
 
 <h1 id="zetherion-ai-documentation">Zetherion AI Documentation<a class="headerlink" href="#zetherion-ai-documentation" title="Permanent link">&para;</a></h1>
-<p>Zetherion AI is a privacy-first personal AI assistant featuring encrypted memory, smart LLM routing, Gmail integration, and deep personal understanding. It runs as a Discord bot backed by 6 Docker services, designed to learn your preferences and adapt over time while keeping your data secure.</p>
+<p>Zetherion AI is a privacy-first personal AI assistant featuring encrypted memory, smart LLM routing, Gmail integration, and deep personal understanding. It runs as a Discord bot with a blue/green-ready container topology (bot, skills/api pairs, internal routing, updater, and data services), designed to learn your preferences and adapt over time while keeping your data secure.</p>
 <hr />
 <h2 id="feature-matrix">Feature Matrix<a class="headerlink" href="#feature-matrix" title="Permanent link">&para;</a></h2>
 <table>
@@ -1766,6 +1850,10 @@
 <td>Prerequisites, setup, first interaction</td>
 </tr>
 <tr>
+<td><a href="user/auto-update/">Auto-Update</a></td>
+<td>Blue/green rollout, rollback, and unpause runbook</td>
+</tr>
+<tr>
 <td><a href="user/commands/">Commands</a></td>
 <td>Complete Discord command reference</td>
 </tr>
@@ -1811,7 +1899,7 @@
 </tr>
 <tr>
 <td><a href="technical/docker/">Docker &amp; Services</a></td>
-<td>6-service container architecture</td>
+<td>Current compose topology and blue/green routing</td>
 </tr>
 <tr>
 <td><a href="technical/security/">Security</a></td>
@@ -1842,8 +1930,16 @@
 <td>Budget management and reporting</td>
 </tr>
 <tr>
-<td><a href="technical/api-reference/">API Reference</a></td>
-<td>Skills REST API endpoints</td>
+<td><a href="technical/api-reference/">Skills API Reference</a></td>
+<td>Internal skills REST API endpoints</td>
+</tr>
+<tr>
+<td><a href="technical/public-api-reference/">Public API Reference</a></td>
+<td>External <code>/api/v1</code> contract for sessions/chat/YouTube</td>
+</tr>
+<tr>
+<td><a href="technical/ai-agent-integration/">AI Agent Integration</a></td>
+<td>Integration contract and capability boundaries for external agents</td>
 </tr>
 </tbody>
 </table>
@@ -1914,7 +2010,7 @@
 <tbody>
 <tr>
 <td>Tests</td>
-<td>3,000+</td>
+<td>5,000+</td>
 </tr>
 <tr>
 <td>Coverage Gate</td>
@@ -1930,7 +2026,7 @@
 </tr>
 <tr>
 <td>Docker Services</td>
-<td>6</td>
+<td>Current compose topology (blue/green app + skills + routing + updater + data services)</td>
 </tr>
 <tr>
 <td>Configuration Fields</td>
@@ -1942,7 +2038,7 @@
 </tr>
 <tr>
 <td>Skills</td>
-<td>7 (task, calendar, profile, gmail, github, personal model, observation)</td>
+<td>10+ built-in and optional skills (tasks, calendar, profile, gmail/email router, github, personal model, health, updater, dev watcher, milestone, YouTube when enabled)</td>
 </tr>
 </tbody>
 </table>

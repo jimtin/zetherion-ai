@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
     
     
       
@@ -486,6 +486,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../auto-update/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Update
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../commands/" class="md-nav__link">
         
   
@@ -927,6 +955,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compose-drift-temporary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compose Drift (Temporary)
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1577,7 +1616,63 @@
   <span class="md-ellipsis">
     
   
-    API Reference
+    Skills API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/public-api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/ai-agent-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Agent Integration
   
 
     
@@ -2188,6 +2283,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#compose-drift-temporary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compose Drift (Temporary)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ollama-issues" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2628,7 +2734,7 @@
 </code></pre></div></p>
 <p>Kill the conflicting process or change the port in your <code>.env</code> file.</p>
 <h3 id="out-of-memory">Out of Memory<a class="headerlink" href="#out-of-memory" title="Permanent link">&para;</a></h3>
-<p>Docker Desktop may not have enough memory allocated for all 6 services (bot, skills, qdrant, postgres, ollama, ollama-router). Increase the allocation in Docker Desktop under Settings &gt; Resources &gt; Advanced.</p>
+<p>Docker Desktop may not have enough memory allocated for the current compose topology (bot, API/skills blue-green services, routing, updater, and data services). Increase the allocation in Docker Desktop under Settings &gt; Resources &gt; Advanced.</p>
 <p>Recommended memory allocation:
 - <strong>Gemini backend:</strong> 4GB minimum (no local inference)
 - <strong>Ollama with Llama 3.1 8B:</strong> 8GB minimum
@@ -2680,10 +2786,8 @@
 <li>
 <p><strong>Verify settings in <code>.env</code>:</strong></p>
 </li>
-<li><code>POSTGRES_HOST</code> -- use <code>localhost</code> for local development, <code>postgres</code> for Docker Compose</li>
-<li><code>POSTGRES_PORT</code> -- default is 5432</li>
 <li>
-<p><code>POSTGRES_DB</code> -- the database name</p>
+<p><code>POSTGRES_DSN</code> -- default is <code>postgresql://zetherion:password@postgres:5432/zetherion</code></p>
 </li>
 <li>
 <p><strong>Check container logs:</strong>
@@ -2702,6 +2806,14 @@
 </code></pre></div></p>
 <p>If migrations fail, check that the PostgreSQL container is fully initialized before the bot starts. The health check in Docker Compose should handle this, but on slow systems you may need to restart the bot after PostgreSQL is ready.</p>
 <hr />
+<h2 id="compose-drift-temporary">Compose Drift (Temporary)<a class="headerlink" href="#compose-drift-temporary" title="Permanent link">&para;</a></h2>
+<p><code>start.sh</code> and <code>status.sh</code> still include some legacy checks that reference the
+old single skills service name (<code>zetherion-ai-skills</code>). When those checks
+disagree with runtime state, use:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>docker<span class="w"> </span>compose<span class="w"> </span>ps
+</code></pre></div>
+<p>Treat compose output as canonical until script checks are fully updated.</p>
+<hr />
 <h2 id="ollama-issues">Ollama Issues<a class="headerlink" href="#ollama-issues" title="Permanent link">&para;</a></h2>
 <h3 id="model-download-fails">Model Download Fails<a class="headerlink" href="#model-download-fails" title="Permanent link">&para;</a></h3>
 <p><strong>Symptoms:</strong> Ollama cannot pull the required model during startup.</p>
@@ -2711,12 +2823,12 @@
 </li>
 <li>
 <p><strong>Manually pull the model:</strong>
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-ollama<span class="w"> </span>ollama<span class="w"> </span>pull<span class="w"> </span>llama3.1:8b
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-ollama<span class="w"> </span>ollama<span class="w"> </span>pull<span class="w"> </span>llama3.1:8b
 </code></pre></div></p>
 </li>
 <li>
 <p><strong>Fallback to Gemini:</strong> If local models are not working, switch to the cloud backend:
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>ROUTER_BACKEND=gemini
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>ROUTER_BACKEND=gemini
 </code></pre></div></p>
 </li>
 </ol>
@@ -2725,11 +2837,11 @@
 <ol>
 <li>
 <p><strong>Check Docker memory.</strong> If the model exceeds available memory, it will swap to disk and become extremely slow.
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>docker<span class="w"> </span>stats<span class="w"> </span>zetherion-ai-ollama
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>docker<span class="w"> </span>stats<span class="w"> </span>zetherion-ai-ollama
 </code></pre></div></p>
 </li>
 <li>
-<p><strong>Try a smaller model.</strong> Llama 3.2 1B is used for routing and should be fast. If generation with Llama 3.1 8B is too slow, consider switching to Gemini for generation.</p>
+<p><strong>Try a smaller model.</strong> Llama 3.2 3B is used for routing and should be fast. If generation with Llama 3.1 8B is too slow, consider switching to Gemini for generation.</p>
 </li>
 <li>
 <p><strong>GPU acceleration</strong> is automatic on NVIDIA GPUs (with Docker GPU support) and Apple Silicon Macs (via Metal).</p>
@@ -2737,7 +2849,7 @@
 </ol>
 <h3 id="out-of-memory_1">Out of Memory<a class="headerlink" href="#out-of-memory_1" title="Permanent link">&para;</a></h3>
 <p><strong>Error:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>Error: llama runner process has terminated: signal: killed
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>Error: llama runner process has terminated: signal: killed
 </code></pre></div></p>
 <p>The model requires more memory than Docker has allocated. The <code>./start.sh</code> script detects this and offers to increase allocation automatically. To fix manually, increase Docker Desktop memory under Settings &gt; Resources &gt; Advanced.</p>
 <hr />
@@ -2752,44 +2864,44 @@
 </ul>
 <h3 id="no-accounts-connected">No Accounts Connected<a class="headerlink" href="#no-accounts-connected" title="Permanent link">&para;</a></h3>
 <p>Connect a Gmail account by sending:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>@Zetherion AI connect gmail
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>@Zetherion AI connect gmail
 </code></pre></div>
 The bot will provide an authorization link. Follow the link to grant access.</p>
 <h3 id="sync-issues">Sync Issues<a class="headerlink" href="#sync-issues" title="Permanent link">&para;</a></h3>
 <p>Check the status of your connected account:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>@Zetherion AI gmail status
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>@Zetherion AI gmail status
 </code></pre></div></p>
 <p>If the OAuth token has expired, you may need to reconnect. The bot will prompt you if re-authorization is needed.</p>
 <hr />
 <h2 id="github-issues">GitHub Issues<a class="headerlink" href="#github-issues" title="Permanent link">&para;</a></h2>
 <h3 id="github-client-not-initialized">"GitHub client not initialized"<a class="headerlink" href="#github-client-not-initialized" title="Permanent link">&para;</a></h3>
 <p>The GitHub integration requires a personal access token. Set it in your <code>.env</code> file:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>GITHUB_TOKEN=ghp_your_token_here
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>GITHUB_TOKEN=ghp_your_token_here
 </code></pre></div></p>
 <h3 id="authentication-failed">Authentication Failed<a class="headerlink" href="#authentication-failed" title="Permanent link">&para;</a></h3>
 <p>Your token may be expired or missing required scopes. Generate a new token at GitHub &gt; Settings &gt; Developer settings &gt; Personal access tokens. Ensure it has the <code>repo</code> scope at minimum.</p>
 <h3 id="no-repository-specified">"No repository specified"<a class="headerlink" href="#no-repository-specified" title="Permanent link">&para;</a></h3>
 <p>Set a default repository in your <code>.env</code> file:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>GITHUB_DEFAULT_REPO=owner/repo
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>GITHUB_DEFAULT_REPO=owner/repo
 </code></pre></div></p>
 <p>Alternatively, specify the repository directly in your command:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>@Zetherion AI list issues in owner/repo
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>@Zetherion AI list issues in owner/repo
 </code></pre></div></p>
 <hr />
 <h2 id="api-key-issues">API Key Issues<a class="headerlink" href="#api-key-issues" title="Permanent link">&para;</a></h2>
 <h3 id="invalid-discord-token">Invalid Discord Token<a class="headerlink" href="#invalid-discord-token" title="Permanent link">&para;</a></h3>
 <p><strong>Error:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>discord.errors.LoginFailure: Improper token has been passed
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>discord.errors.LoginFailure: Improper token has been passed
 </code></pre></div></p>
 <p>Regenerate your token at the Discord Developer Portal &gt; Bot &gt; Reset Token. Copy the new token immediately and update your <code>.env</code> file.</p>
 <h3 id="invalid-gemini-key">Invalid Gemini Key<a class="headerlink" href="#invalid-gemini-key" title="Permanent link">&para;</a></h3>
 <p><strong>Error:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>google.api_core.exceptions.PermissionDenied: 403 API key not valid
+<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>google.api_core.exceptions.PermissionDenied: 403 API key not valid
 </code></pre></div></p>
 <p>Verify your key at <a href="https://aistudio.google.com/app/apikey">Google AI Studio</a>. Ensure the Gemini API is enabled for your project.</p>
 <h3 id="rate-limiting-429-errors">Rate Limiting (429 Errors)<a class="headerlink" href="#rate-limiting-429-errors" title="Permanent link">&para;</a></h3>
 <p><strong>Error:</strong>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>429 Too Many Requests
+<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>429 Too Many Requests
 </code></pre></div></p>
 <p>The bot has automatic retry with exponential backoff. Wait 1-2 minutes before trying again. Check your API dashboards for quota limits:</p>
 <ul>
@@ -2811,7 +2923,7 @@ The bot will provide an authorization link. Follow the link to grant access.</p>
 - Ensure Qdrant is running on an SSD for fast vector lookups.</p>
 <h3 id="high-memory-usage">High Memory Usage<a class="headerlink" href="#high-memory-usage" title="Permanent link">&para;</a></h3>
 <p>Check container resource consumption:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>docker<span class="w"> </span>stats
+<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>docker<span class="w"> </span>stats
 </code></pre></div></p>
 <p>If Qdrant is using excessive memory, you can limit it with the <code>--memory</code> flag when running the container manually. For Docker Compose deployments, set memory limits in the <code>docker-compose.yml</code> file.</p>
 <hr />
@@ -2821,12 +2933,12 @@ The bot will provide an authorization link. Follow the link to grant access.</p>
 <ol>
 <li>
 <p><strong>Check that PostgreSQL is running</strong> -- the observation pipeline stores data in PostgreSQL.
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>docker<span class="w"> </span>ps<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>postgres
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>docker<span class="w"> </span>ps<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>postgres
 </code></pre></div></p>
 </li>
 <li>
 <p><strong>Check bot logs for errors:</strong>
-   <div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>docker-compose<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>zetherion-ai-bot<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>observation
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>docker-compose<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>zetherion-ai-bot<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>observation
 </code></pre></div></p>
 </li>
 <li>
@@ -2838,14 +2950,14 @@ The bot will provide an authorization link. Follow the link to grant access.</p>
 <hr />
 <h2 id="debug-information">Debug Information<a class="headerlink" href="#debug-information" title="Permanent link">&para;</a></h2>
 <p>Use these commands to gather diagnostic information:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>./status.sh<span class="w">                              </span><span class="c1"># Overall system status</span>
-<a id="__codelineno-33-2" name="__codelineno-33-2" href="#__codelineno-33-2"></a>docker-compose<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>zetherion-ai-bot<span class="w">  </span><span class="c1"># Bot logs (live follow)</span>
-<a id="__codelineno-33-3" name="__codelineno-33-3" href="#__codelineno-33-3"></a>docker<span class="w"> </span>stats<span class="w">                             </span><span class="c1"># Container resource usage</span>
-<a id="__codelineno-33-4" name="__codelineno-33-4" href="#__codelineno-33-4"></a>curl<span class="w"> </span>http://localhost:6333/healthz<span class="w">       </span><span class="c1"># Qdrant health check</span>
-<a id="__codelineno-33-5" name="__codelineno-33-5" href="#__codelineno-33-5"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-postgres<span class="w"> </span>pg_isready<span class="w">  </span><span class="c1"># PostgreSQL health check</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a>./status.sh<span class="w">                              </span><span class="c1"># Overall system status</span>
+<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a>docker-compose<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>zetherion-ai-bot<span class="w">  </span><span class="c1"># Bot logs (live follow)</span>
+<a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a>docker<span class="w"> </span>stats<span class="w">                             </span><span class="c1"># Container resource usage</span>
+<a id="__codelineno-34-4" name="__codelineno-34-4" href="#__codelineno-34-4"></a>curl<span class="w"> </span>http://localhost:6333/healthz<span class="w">       </span><span class="c1"># Qdrant health check</span>
+<a id="__codelineno-34-5" name="__codelineno-34-5" href="#__codelineno-34-5"></a>docker<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>zetherion-ai-postgres<span class="w"> </span>pg_isready<span class="w">  </span><span class="c1"># PostgreSQL health check</span>
 </code></pre></div>
 <p>To enable verbose logging, set the log level in your <code>.env</code> file:
-<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a>LOG_LEVEL=DEBUG
+<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a>LOG_LEVEL=DEBUG
 </code></pre></div></p>
 <p>Then restart the bot: <code>./stop.sh &amp;&amp; ./start.sh</code></p>
 <hr />

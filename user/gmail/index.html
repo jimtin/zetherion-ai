@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
     
     
       
@@ -466,6 +466,34 @@
     
   
     Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../auto-update/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Update
   
 
     
@@ -1365,7 +1393,63 @@
   <span class="md-ellipsis">
     
   
-    API Reference
+    Skills API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/public-api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/ai-agent-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Agent Integration
   
 
     
@@ -2104,7 +2188,7 @@
 <ul>
 <li>A Gmail account with API access enabled</li>
 <li>OAuth 2.0 credentials configured for the Zetherion AI application (see the deployment guide for setup instructions)</li>
-<li>The Zetherion AI bot running with all 6 Docker services operational</li>
+<li>The Zetherion AI stack running in the current compose topology (check with <code>docker compose ps</code>)</li>
 </ul>
 <h3 id="connecting-your-account">Connecting Your Account<a class="headerlink" href="#connecting-your-account" title="Permanent link">&para;</a></h3>
 <p>To start the OAuth flow, send the following command in Discord:</p>
@@ -2234,7 +2318,7 @@ At the highest trust level, the bot can send replies on your behalf for specific
 <li><strong>Evening digest</strong> -- Sent at end of day with a summary of the day's email activity.</li>
 <li><strong>Weekly digest</strong> -- Sent once per week (e.g., Monday morning) with a high-level summary of the past week.</li>
 </ul>
-<p>Digest times and frequency are configurable in the bot's environment settings. The heartbeat scheduler runs as part of the 6 Docker services that make up the Zetherion AI deployment.</p>
+<p>Digest times and frequency are configurable in the bot's environment settings. The heartbeat scheduler runs as part of the current compose topology used by Zetherion AI.</p>
 <hr />
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
 <h3 id="oauth-errors">OAuth Errors<a class="headerlink" href="#oauth-errors" title="Permanent link">&para;</a></h3>

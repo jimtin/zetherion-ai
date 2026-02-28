@@ -1,0 +1,2735 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Privacy-first personal AI assistant with encrypted memory, smart LLM routing, and Gmail integration">
+      
+      
+      
+        <link rel="canonical" href="https://jimtin.github.io/zetherion-ai/technical/cgs-zetherion-service-draft/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.3">
+    
+    
+      
+        <title>CGS and Zetherion Integration Service Draft - Zetherion AI</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#cgs-and-zetherion-integration-service-draft" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Zetherion AI" class="md-header__button md-logo" aria-label="Zetherion AI" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Zetherion AI
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              CGS and Zetherion Integration Service Draft
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/jimtin/zetherion-ai" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    jimtin/zetherion-ai
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+    
+      
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../user/getting-started/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+  Technical
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../development/setup/" class="md-tabs__link">
+          
+  
+  
+  Development
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../project/roadmap/" class="md-tabs__link">
+          
+  
+  
+  Project
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+    
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Zetherion AI" class="md-nav__button md-logo" aria-label="Zetherion AI" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Zetherion AI
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/jimtin/zetherion-ai" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    jimtin/zetherion-ai
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user/getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user/auto-update/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Update
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user/gmail/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gmail
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user/github-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user/tasks-and-calendar/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tasks & Calendar
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user/memory-and-profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Memory & Profiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user/faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Technical
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Technical
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker & Services
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../skills-framework/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Skills Framework
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gmail-architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Gmail Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../observation-pipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observation Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../personal-understanding/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Personal Understanding
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cost-tracking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cost Tracking
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Skills API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../public-api-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Public API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ai-agent-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Agent Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Setup & Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/ci-cd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CI/CD Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/github-secrets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GitHub Secrets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/adding-a-skill/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding a Skill
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../project/roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../project/design-decisions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Decisions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-purpose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Purpose
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-current-state-audit-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Current State Audit Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-target-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Target Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-auth-and-security-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Auth and Security Model
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Auth and Security Model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-app-to-cgs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 App to CGS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-cgs-to-zetherion-public-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 CGS to Zetherion Public API
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-cgs-to-zetherion-skills-api-internal-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 CGS to Zetherion Skills API (Internal Only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-key-handling-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 Key Handling Rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-api-contract-for-cgs-ai-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. API Contract for CGS AI Service
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-endpoint-catalog-cgs-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Endpoint Catalog (CGS Service)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Endpoint Catalog (CGS Service)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-runtime-endpoints-for-all-company-apps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Runtime Endpoints (for all company apps)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-internal-operator-endpoints-cgs-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Internal Operator Endpoints (CGS only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-company-reporting-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 Company Reporting Endpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-detailed-endpoint-drafts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Detailed Endpoint Drafts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#71-post-serviceaiv1conversations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.1 POST /service/ai/v1/conversations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#72-get-serviceaiv1conversationsconversation_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.2 GET /service/ai/v1/conversations/{conversation_id}
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#73-delete-serviceaiv1conversationsconversation_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.3 DELETE /service/ai/v1/conversations/{conversation_id}
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#74-post-serviceaiv1conversationsconversation_idmessages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.4 POST /service/ai/v1/conversations/{conversation_id}/messages
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#75-post-serviceaiv1conversationsconversation_idmessagesstream" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.5 POST /service/ai/v1/conversations/{conversation_id}/messages/stream
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#76-get-serviceaiv1conversationsconversation_idmessages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.6 GET /service/ai/v1/conversations/{conversation_id}/messages
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#77-post-serviceaiv1conversationsconversation_idanalyticsevents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.7 POST /service/ai/v1/conversations/{conversation_id}/analytics/events
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#78-post-serviceaiv1conversationsconversation_idanalyticsreplaychunks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.8 POST /service/ai/v1/conversations/{conversation_id}/analytics/replay/chunks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#79-get-serviceaiv1conversationsconversation_idanalyticsreplaychunksweb_session_idsequence_no" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.9 GET /service/ai/v1/conversations/{conversation_id}/analytics/replay/chunks/{web_session_id}/{sequence_no}
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#710-post-serviceaiv1conversationsconversation_idanalyticsend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.10 POST /service/ai/v1/conversations/{conversation_id}/analytics/end
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#711-get-serviceaiv1conversationsconversation_idrecommendations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.11 GET /service/ai/v1/conversations/{conversation_id}/recommendations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#712-post-serviceaiv1conversationsconversation_idrecommendationsrecommendation_idfeedback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.12 POST /service/ai/v1/conversations/{conversation_id}/recommendations/{recommendation_id}/feedback
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#713-post-serviceaiv1internaltenants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.13 POST /service/ai/v1/internal/tenants
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#714-patch-serviceaiv1internaltenantstenant_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.14 PATCH /service/ai/v1/internal/tenants/{tenant_id}
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#715-post-serviceaiv1internaltenantstenant_iddeactivate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.15 POST /service/ai/v1/internal/tenants/{tenant_id}/deactivate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#716-post-serviceaiv1internaltenantstenant_idkeysrotate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.16 POST /service/ai/v1/internal/tenants/{tenant_id}/keys/rotate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#717-post-serviceaiv1internaltenantstenant_idrelease-markers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7.17 POST /service/ai/v1/internal/tenants/{tenant_id}/release-markers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-upstream-mapping-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Upstream Mapping Matrix
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-cgs-persistence-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. CGS Persistence Model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-error-code-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Error Code Contract
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-slo-and-reliability-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. SLO and Reliability Targets
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-phase-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Phase Plan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="12. Phase Plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-now-runtime-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 (Now): Runtime integration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-company-reporting-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: Company reporting endpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-3-harden-and-scale" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3: Harden and scale
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-optional-zetherion-enhancements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Optional Zetherion Enhancements
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-example-end-to-end-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. Example End-to-End Flow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15-definition-of-done" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        15. Definition of Done
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="cgs-and-zetherion-integration-service-draft">CGS and Zetherion Integration Service Draft<a class="headerlink" href="#cgs-and-zetherion-integration-service-draft" title="Permanent link">&para;</a></h1>
+<p>Version: <code>v1.0-draft</code><br />
+Date: <code>2026-02-27</code><br />
+Owners: <code>Catalyst Group Solutions (CGS) Platform</code>, <code>Zetherion Backend</code></p>
+<h2 id="1-purpose">1. Purpose<a class="headerlink" href="#1-purpose" title="Permanent link">&para;</a></h2>
+<p>This draft defines the service contract that lets CGS act as the API provider for company apps while Zetherion acts as the backend AI provider.</p>
+<p>Goals:
+- Give all CGS apps one stable AI API contract.
+- Keep Zetherion tenant credentials server-side only.
+- Support chat, streaming, analytics, and recommendation workflows now.
+- Define internal tenant lifecycle and key rotation workflows.
+- Define phase-gated CRM and reporting endpoints for company use.</p>
+<p>Non-goals:
+- Direct browser-to-Zetherion integration.
+- Exposing Zetherion internal Skills API to external app clients.</p>
+<h2 id="2-current-state-audit-summary">2. Current State Audit Summary<a class="headerlink" href="#2-current-state-audit-summary" title="Permanent link">&para;</a></h2>
+<p>Implemented in Zetherion now:
+- Multi-tenant public API on <code>/api/v1</code> with sessions, chat, streaming, analytics, recommendations, release markers, and optional YouTube routes.
+- API key and session token authentication split.
+- Tenant/session isolation checks and per-tenant rate limiting.
+- Tenant storage schema for chat, analytics, replay, recommendations, and CRM extraction tables.
+- Client skills registered in internal Skills service: <code>client_provisioning</code>, <code>tenant_intelligence</code>, <code>client_insights</code>, <code>client_app_watcher</code>.</p>
+<p>Important gaps for a company-wide CGS service:
+- Tenant provisioning is internal workflow, not exposed on Zetherion public <code>/api/v1</code>.
+- CRM read APIs are not broadly exposed on Zetherion public API yet.
+- CORS settings are not wired from config/env in API <code>main()</code>, so browser-direct cross-origin is not the right path for now.
+- No explicit idempotency key contract on Zetherion public endpoints.</p>
+<h2 id="3-target-architecture">3. Target Architecture<a class="headerlink" href="#3-target-architecture" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>flowchart LR
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  Apps[&quot;CGS Apps (Web, Mobile, Internal Tools)&quot;] --&gt; CGS[&quot;CGS AI Service (BFF/Gateway)&quot;]
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>  CGS --&gt; ZAPI[&quot;Zetherion Public API (:8443)&quot;]
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>  CGS --&gt; ZSKILLS[&quot;Zetherion Skills API (:8080, internal only)&quot;]
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>  ZAPI --&gt; ZDB[&quot;Postgres / Qdrant / Object Storage&quot;]
+</code></pre></div>
+<p>Design rule:
+- Apps call CGS only.
+- CGS calls Zetherion public API for runtime chat and analytics.
+- CGS calls Zetherion Skills API for internal tenant lifecycle operations.</p>
+<h2 id="4-auth-and-security-model">4. Auth and Security Model<a class="headerlink" href="#4-auth-and-security-model" title="Permanent link">&para;</a></h2>
+<h3 id="41-app-to-cgs">4.1 App to CGS<a class="headerlink" href="#41-app-to-cgs" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Auth: CGS standard app auth (<code>Authorization: Bearer &lt;cgs_user_or_service_jwt&gt;</code>).</li>
+<li>Tenant context: resolved by CGS from app identity + company mapping.</li>
+<li>Optional headers:</li>
+<li><code>X-Request-Id</code></li>
+<li><code>Idempotency-Key</code> for retriable POSTs.</li>
+</ul>
+<h3 id="42-cgs-to-zetherion-public-api">4.2 CGS to Zetherion Public API<a class="headerlink" href="#42-cgs-to-zetherion-public-api" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Session creation and release markers:</li>
+<li><code>X-API-Key: sk_live_...</code> (tenant-specific key in secure store).</li>
+<li>Session-scoped calls (chat, analytics):</li>
+<li><code>Authorization: Bearer zt_sess_...</code> (token returned by Zetherion session creation).</li>
+</ul>
+<h3 id="43-cgs-to-zetherion-skills-api-internal-only">4.3 CGS to Zetherion Skills API (Internal Only)<a class="headerlink" href="#43-cgs-to-zetherion-skills-api-internal-only" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Auth: <code>X-API-Secret</code> configured between CGS internal worker and Zetherion Skills API.</li>
+<li>Use only for operator/internal workflows such as tenant create/configure/rotate/list.</li>
+</ul>
+<h3 id="44-key-handling-rules">4.4 Key Handling Rules<a class="headerlink" href="#44-key-handling-rules" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Never expose Zetherion API keys or <code>zt_sess_</code> tokens to browsers.</li>
+<li>Store tenant API keys encrypted at rest in CGS secrets storage (KMS-backed).</li>
+<li>Keep key version metadata and rotate keys through internal endpoint.</li>
+</ul>
+<h2 id="5-api-contract-for-cgs-ai-service">5. API Contract for CGS AI Service<a class="headerlink" href="#5-api-contract-for-cgs-ai-service" title="Permanent link">&para;</a></h2>
+<p>Base path (proposed): <code>/service/ai/v1</code></p>
+<p>Response envelope (all JSON endpoints):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">&quot;request_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;req_01H...&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="p">}</span>
+</code></pre></div>
+<p>Error envelope:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">&quot;request_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;req_01H...&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="nt">&quot;code&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AI_UPSTREAM_401&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Session expired&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="nt">&quot;details&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="p">}</span>
+</code></pre></div>
+<h2 id="6-endpoint-catalog-cgs-service">6. Endpoint Catalog (CGS Service)<a class="headerlink" href="#6-endpoint-catalog-cgs-service" title="Permanent link">&para;</a></h2>
+<h3 id="61-runtime-endpoints-for-all-company-apps">6.1 Runtime Endpoints (for all company apps)<a class="headerlink" href="#61-runtime-endpoints-for-all-company-apps" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>CGS Endpoint</th>
+<th>Method</th>
+<th>Purpose</th>
+<th>Zetherion Upstream</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/conversations</code></td>
+<td><code>POST</code></td>
+<td>Create AI conversation/session</td>
+<td><code>POST /api/v1/sessions</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/conversations/{conversation_id}</code></td>
+<td><code>GET</code></td>
+<td>Conversation metadata</td>
+<td><code>GET /api/v1/sessions/{session_id}</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/conversations/{conversation_id}</code></td>
+<td><code>DELETE</code></td>
+<td>End/delete conversation</td>
+<td><code>DELETE /api/v1/sessions/{session_id}</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/conversations/{conversation_id}/messages</code></td>
+<td><code>POST</code></td>
+<td>Sync chat reply</td>
+<td><code>POST /api/v1/chat</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/conversations/{conversation_id}/messages/stream</code></td>
+<td><code>POST</code></td>
+<td>SSE chat stream</td>
+<td><code>POST /api/v1/chat/stream</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/conversations/{conversation_id}/messages</code></td>
+<td><code>GET</code></td>
+<td>Chat history</td>
+<td><code>GET /api/v1/chat/history</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/conversations/{conversation_id}/analytics/events</code></td>
+<td><code>POST</code></td>
+<td>Event batch ingest</td>
+<td><code>POST /api/v1/analytics/events</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/conversations/{conversation_id}/analytics/replay/chunks</code></td>
+<td><code>POST</code></td>
+<td>Replay chunk ingest</td>
+<td><code>POST /api/v1/analytics/replay/chunks</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/conversations/{conversation_id}/analytics/replay/chunks/{web_session_id}/{sequence_no}</code></td>
+<td><code>GET</code></td>
+<td>Replay chunk metadata/data</td>
+<td><code>GET /api/v1/analytics/replay/chunks/{web_session_id}/{sequence_no}</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/conversations/{conversation_id}/analytics/end</code></td>
+<td><code>POST</code></td>
+<td>End tracked session + summarize</td>
+<td><code>POST /api/v1/analytics/sessions/end</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/conversations/{conversation_id}/recommendations</code></td>
+<td><code>GET</code></td>
+<td>Session recommendations</td>
+<td><code>GET /api/v1/analytics/recommendations</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/conversations/{conversation_id}/recommendations/{recommendation_id}/feedback</code></td>
+<td><code>POST</code></td>
+<td>Feedback on recommendation</td>
+<td><code>POST /api/v1/analytics/recommendations/{recommendation_id}/feedback</code></td>
+<td>Ready</td>
+</tr>
+</tbody>
+</table>
+<h3 id="62-internal-operator-endpoints-cgs-only">6.2 Internal Operator Endpoints (CGS only)<a class="headerlink" href="#62-internal-operator-endpoints-cgs-only" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>CGS Internal Endpoint</th>
+<th>Method</th>
+<th>Purpose</th>
+<th>Upstream</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/service/ai/v1/internal/tenants</code></td>
+<td><code>GET</code></td>
+<td>List tenants</td>
+<td>Skills <code>client_list</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/service/ai/v1/internal/tenants</code></td>
+<td><code>POST</code></td>
+<td>Create tenant + API key</td>
+<td>Skills <code>client_create</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/service/ai/v1/internal/tenants/{tenant_id}</code></td>
+<td><code>PATCH</code></td>
+<td>Update tenant config</td>
+<td>Skills <code>client_configure</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/service/ai/v1/internal/tenants/{tenant_id}/deactivate</code></td>
+<td><code>POST</code></td>
+<td>Deactivate tenant</td>
+<td>Skills <code>client_deactivate</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/service/ai/v1/internal/tenants/{tenant_id}/keys/rotate</code></td>
+<td><code>POST</code></td>
+<td>Rotate tenant API key</td>
+<td>Skills <code>client_rotate_key</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/service/ai/v1/internal/tenants/{tenant_id}/release-markers</code></td>
+<td><code>POST</code></td>
+<td>Publish deployment marker</td>
+<td><code>POST /api/v1/releases/markers</code></td>
+<td>Ready</td>
+</tr>
+</tbody>
+</table>
+<h3 id="63-company-reporting-endpoints">6.3 Company Reporting Endpoints<a class="headerlink" href="#63-company-reporting-endpoints" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>CGS Endpoint</th>
+<th>Method</th>
+<th>Purpose</th>
+<th>Upstream</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/tenants/{tenant_id}/crm/contacts</code></td>
+<td><code>GET</code></td>
+<td>CRM contacts for tenant</td>
+<td><code>GET /api/v1/crm/contacts</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/tenants/{tenant_id}/crm/interactions</code></td>
+<td><code>GET</code></td>
+<td>CRM interactions for tenant</td>
+<td><code>GET /api/v1/crm/interactions</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/tenants/{tenant_id}/analytics/funnel</code></td>
+<td><code>GET</code></td>
+<td>Tenant funnel daily metrics</td>
+<td><code>GET /api/v1/analytics/funnel</code></td>
+<td>Ready</td>
+</tr>
+<tr>
+<td><code>/tenants/{tenant_id}/analytics/recommendations</code></td>
+<td><code>GET</code></td>
+<td>Tenant-level recommendations</td>
+<td><code>GET /api/v1/analytics/recommendations/tenant</code></td>
+<td>Ready</td>
+</tr>
+</tbody>
+</table>
+<h2 id="7-detailed-endpoint-drafts">7. Detailed Endpoint Drafts<a class="headerlink" href="#7-detailed-endpoint-drafts" title="Permanent link">&para;</a></h2>
+<h2 id="71-post-serviceaiv1conversations">7.1 <code>POST /service/ai/v1/conversations</code><a class="headerlink" href="#71-post-serviceaiv1conversations" title="Permanent link">&para;</a></h2>
+<p>Create a new conversation for an app user.</p>
+<p>Auth:
+- App auth token.</p>
+<p>Headers:
+- <code>Idempotency-Key</code> recommended.</p>
+<p>Request:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">&quot;tenant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uuid-or-cgs-tenant-slug&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">&quot;app_user_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user_123&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">&quot;external_user_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;optional-external-id&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span><span class="nt">&quot;app&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;portal&quot;</span><span class="p">,</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">    </span><span class="nt">&quot;channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;web&quot;</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="p">}</span>
+</code></pre></div>
+<p>CGS behavior:
+- Resolve tenant mapping and fetch Zetherion API key.
+- Call Zetherion <code>POST /api/v1/sessions</code> with <code>X-API-Key</code>.
+- Store:
+  - <code>conversation_id</code> (CGS ID),
+  - <code>zetherion_session_id</code>,
+  - <code>zt_sess_token</code> (encrypted),
+  - tenant and user references.</p>
+<p>Response:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">{</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">&quot;request_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;req_...&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="nt">&quot;conversation_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cgs_conv_...&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="nt">&quot;tenant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tenant_...&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span><span class="nt">&quot;session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;zetherion_session_uuid&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">    </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-02-27T15:00:00Z&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">    </span><span class="nt">&quot;expires_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-02-28T15:00:00Z&quot;</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">  </span><span class="p">},</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="p">}</span>
+</code></pre></div>
+<h2 id="72-get-serviceaiv1conversationsconversation_id">7.2 <code>GET /service/ai/v1/conversations/{conversation_id}</code><a class="headerlink" href="#72-get-serviceaiv1conversationsconversation_id" title="Permanent link">&para;</a></h2>
+<p>Return metadata for one conversation.</p>
+<p>CGS behavior:
+- Load mapped Zetherion session.
+- Optional refresh from <code>GET /api/v1/sessions/{session_id}</code> with <code>X-API-Key</code>.</p>
+<h2 id="73-delete-serviceaiv1conversationsconversation_id">7.3 <code>DELETE /service/ai/v1/conversations/{conversation_id}</code><a class="headerlink" href="#73-delete-serviceaiv1conversationsconversation_id" title="Permanent link">&para;</a></h2>
+<p>Delete/end one conversation.</p>
+<p>CGS behavior:
+- Call Zetherion <code>DELETE /api/v1/sessions/{session_id}</code>.
+- Mark CGS conversation closed.</p>
+<h2 id="74-post-serviceaiv1conversationsconversation_idmessages">7.4 <code>POST /service/ai/v1/conversations/{conversation_id}/messages</code><a class="headerlink" href="#74-post-serviceaiv1conversationsconversation_idmessages" title="Permanent link">&para;</a></h2>
+<p>Send one user message, return one assistant message.</p>
+<p>Request:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="p">{</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Can you help with pricing?&quot;</span><span class="p">,</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">    </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cgs-web-widget&quot;</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="p">}</span>
+</code></pre></div>
+<p>CGS behavior:
+- Retrieve encrypted <code>zt_sess_</code> token for conversation.
+- Call Zetherion <code>POST /api/v1/chat</code>.
+- Map response back to CGS envelope.</p>
+<p>Response:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">{</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">&quot;request_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;req_...&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="nt">&quot;message_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uuid&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;assistant&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">    </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Sure. Here are your options...&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;claude-sonnet-4-5&quot;</span><span class="p">,</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">    </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-02-27T15:01:20Z&quot;</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">  </span><span class="p">},</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="p">}</span>
+</code></pre></div>
+<h2 id="75-post-serviceaiv1conversationsconversation_idmessagesstream">7.5 <code>POST /service/ai/v1/conversations/{conversation_id}/messages/stream</code><a class="headerlink" href="#75-post-serviceaiv1conversationsconversation_idmessagesstream" title="Permanent link">&para;</a></h2>
+<p>SSE endpoint for streaming assistant response.</p>
+<p>SSE payload contract:
+- <code>{"type":"token","content":"..."}</code> repeated.
+- <code>{"type":"done","message_id":"...","model":"..."}</code> final.</p>
+<p>CGS behavior:
+- Proxy upstream Zetherion SSE stream and preserve event order.
+- Add <code>X-Request-Id</code> header for traceability.</p>
+<h2 id="76-get-serviceaiv1conversationsconversation_idmessages">7.6 <code>GET /service/ai/v1/conversations/{conversation_id}/messages</code><a class="headerlink" href="#76-get-serviceaiv1conversationsconversation_idmessages" title="Permanent link">&para;</a></h2>
+<p>Query params:
+- <code>limit</code> default <code>50</code>, max <code>100</code>.
+- <code>before</code> optional cursor.</p>
+<p>CGS behavior:
+- Call Zetherion <code>GET /api/v1/chat/history?limit=...&amp;before=...</code>.</p>
+<h2 id="77-post-serviceaiv1conversationsconversation_idanalyticsevents">7.7 <code>POST /service/ai/v1/conversations/{conversation_id}/analytics/events</code><a class="headerlink" href="#77-post-serviceaiv1conversationsconversation_idanalyticsevents" title="Permanent link">&para;</a></h2>
+<p>Ingest frontend behavior events.</p>
+<p>Request:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="p">{</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">&quot;external_user_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user_123&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">&quot;consent_replay&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span><span class="nt">&quot;app&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;portal&quot;</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="p">},</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span><span class="nt">&quot;events&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">      </span><span class="nt">&quot;event_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;page_view&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">      </span><span class="nt">&quot;event_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;pricing_page&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">      </span><span class="nt">&quot;page_url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://app.cgs.com/pricing&quot;</span><span class="p">,</span>
+<a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">      </span><span class="nt">&quot;properties&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">        </span><span class="nt">&quot;plan&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;pro&quot;</span>
+<a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">      </span><span class="p">},</span>
+<a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">      </span><span class="nt">&quot;occurred_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-02-27T15:02:00Z&quot;</span>
+<a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="w">  </span><span class="p">]</span>
+<a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="p">}</span>
+</code></pre></div>
+<p>CGS behavior:
+- Call Zetherion <code>POST /api/v1/analytics/events</code>.</p>
+<h2 id="78-post-serviceaiv1conversationsconversation_idanalyticsreplaychunks">7.8 <code>POST /service/ai/v1/conversations/{conversation_id}/analytics/replay/chunks</code><a class="headerlink" href="#78-post-serviceaiv1conversationsconversation_idanalyticsreplaychunks" title="Permanent link">&para;</a></h2>
+<p>Ingest replay chunk metadata and optional bytes.</p>
+<p>Important:
+- Requires explicit consent.
+- Requires sampled replay.
+- Enforces sequence checks.</p>
+<h2 id="79-get-serviceaiv1conversationsconversation_idanalyticsreplaychunksweb_session_idsequence_no">7.9 <code>GET /service/ai/v1/conversations/{conversation_id}/analytics/replay/chunks/{web_session_id}/{sequence_no}</code><a class="headerlink" href="#79-get-serviceaiv1conversationsconversation_idanalyticsreplaychunksweb_session_idsequence_no" title="Permanent link">&para;</a></h2>
+<p>Query:
+- <code>include_data=true|false</code>.</p>
+<p>CGS behavior:
+- Proxy to Zetherion replay chunk GET endpoint.</p>
+<h2 id="710-post-serviceaiv1conversationsconversation_idanalyticsend">7.10 <code>POST /service/ai/v1/conversations/{conversation_id}/analytics/end</code><a class="headerlink" href="#710-post-serviceaiv1conversationsconversation_idanalyticsend" title="Permanent link">&para;</a></h2>
+<p>Ends web behavior session and triggers summary/recommendations.</p>
+<p>Request:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="p">{</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">&quot;web_session_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uuid&quot;</span><span class="p">,</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span><span class="nt">&quot;contact_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uuid-or-null&quot;</span><span class="p">,</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user_closed_widget&quot;</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="p">}</span>
+</code></pre></div>
+<p>Response includes:
+- web session payload,
+- summary payload,
+- recommendation count.</p>
+<h2 id="711-get-serviceaiv1conversationsconversation_idrecommendations">7.11 <code>GET /service/ai/v1/conversations/{conversation_id}/recommendations</code><a class="headerlink" href="#711-get-serviceaiv1conversationsconversation_idrecommendations" title="Permanent link">&para;</a></h2>
+<p>Query:
+- <code>status</code> optional.
+- <code>limit</code> default <code>50</code>, max <code>200</code>.</p>
+<p>CGS behavior:
+- Proxy to Zetherion recommendations list endpoint.</p>
+<h2 id="712-post-serviceaiv1conversationsconversation_idrecommendationsrecommendation_idfeedback">7.12 <code>POST /service/ai/v1/conversations/{conversation_id}/recommendations/{recommendation_id}/feedback</code><a class="headerlink" href="#712-post-serviceaiv1conversationsconversation_idrecommendationsrecommendation_idfeedback" title="Permanent link">&para;</a></h2>
+<p>Request:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="p">{</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">&quot;feedback_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;accepted&quot;</span><span class="p">,</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="nt">&quot;note&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Will implement this sprint&quot;</span><span class="p">,</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">&quot;actor&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ops_manager&quot;</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="p">}</span>
+</code></pre></div>
+<h2 id="713-post-serviceaiv1internaltenants">7.13 <code>POST /service/ai/v1/internal/tenants</code><a class="headerlink" href="#713-post-serviceaiv1internaltenants" title="Permanent link">&para;</a></h2>
+<p>Internal CGS operator endpoint.</p>
+<p>Request:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p">{</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Acme Client&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="nt">&quot;domain&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;acme.com&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">  </span><span class="nt">&quot;config&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">    </span><span class="nt">&quot;system_prompt&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;You are Acme support assistant.&quot;</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="p">}</span>
+</code></pre></div>
+<p>CGS behavior:
+- Call Zetherion Skills API <code>/handle</code> with intent <code>client_create</code>.
+- Persist returned tenant ID and API key in CGS tenant registry.</p>
+<h2 id="714-patch-serviceaiv1internaltenantstenant_id">7.14 <code>PATCH /service/ai/v1/internal/tenants/{tenant_id}</code><a class="headerlink" href="#714-patch-serviceaiv1internaltenantstenant_id" title="Permanent link">&para;</a></h2>
+<p>Internal update endpoint:
+- Maps to <code>client_configure</code>.</p>
+<h2 id="715-post-serviceaiv1internaltenantstenant_iddeactivate">7.15 <code>POST /service/ai/v1/internal/tenants/{tenant_id}/deactivate</code><a class="headerlink" href="#715-post-serviceaiv1internaltenantstenant_iddeactivate" title="Permanent link">&para;</a></h2>
+<p>Internal deactivation endpoint:
+- Maps to <code>client_deactivate</code>.</p>
+<h2 id="716-post-serviceaiv1internaltenantstenant_idkeysrotate">7.16 <code>POST /service/ai/v1/internal/tenants/{tenant_id}/keys/rotate</code><a class="headerlink" href="#716-post-serviceaiv1internaltenantstenant_idkeysrotate" title="Permanent link">&para;</a></h2>
+<p>Internal key rotation endpoint:
+- Maps to <code>client_rotate_key</code>.
+- Must update encrypted key record atomically.</p>
+<h2 id="717-post-serviceaiv1internaltenantstenant_idrelease-markers">7.17 <code>POST /service/ai/v1/internal/tenants/{tenant_id}/release-markers</code><a class="headerlink" href="#717-post-serviceaiv1internaltenantstenant_idrelease-markers" title="Permanent link">&para;</a></h2>
+<p>Publish deployment markers to Zetherion for regression detection.</p>
+<p>Request:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="p">{</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cgs-deploy&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">&quot;environment&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;production&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">&quot;commit_sha&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;abc123&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">  </span><span class="nt">&quot;branch&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;main&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">  </span><span class="nt">&quot;tag_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;v1.2.3&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">  </span><span class="nt">&quot;deployed_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-02-27T15:10:00Z&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">  </span><span class="nt">&quot;metadata&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">    </span><span class="nt">&quot;service&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;portal-web&quot;</span>
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="p">}</span>
+</code></pre></div>
+<p>If <code>RELEASE_MARKER_SIGNING_SECRET</code> is enabled in Zetherion:
+- CGS must set:
+  - <code>X-Release-Timestamp</code>,
+  - <code>X-Release-Nonce</code>,
+  - <code>X-Release-Signature</code>.</p>
+<p>Canonical signature string:
+- <code>&lt;tenant_id&gt;.&lt;timestamp&gt;.&lt;nonce&gt;.&lt;raw_json_body&gt;</code></p>
+<h2 id="8-upstream-mapping-matrix">8. Upstream Mapping Matrix<a class="headerlink" href="#8-upstream-mapping-matrix" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>CGS Route</th>
+<th>Zetherion Route</th>
+<th>Auth Used by CGS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST /conversations</code></td>
+<td><code>POST /api/v1/sessions</code></td>
+<td><code>X-API-Key</code></td>
+</tr>
+<tr>
+<td><code>GET /conversations/{id}</code></td>
+<td><code>GET /api/v1/sessions/{session_id}</code></td>
+<td><code>X-API-Key</code></td>
+</tr>
+<tr>
+<td><code>DELETE /conversations/{id}</code></td>
+<td><code>DELETE /api/v1/sessions/{session_id}</code></td>
+<td><code>X-API-Key</code></td>
+</tr>
+<tr>
+<td><code>POST /conversations/{id}/messages</code></td>
+<td><code>POST /api/v1/chat</code></td>
+<td><code>Bearer zt_sess_</code></td>
+</tr>
+<tr>
+<td><code>POST /conversations/{id}/messages/stream</code></td>
+<td><code>POST /api/v1/chat/stream</code></td>
+<td><code>Bearer zt_sess_</code></td>
+</tr>
+<tr>
+<td><code>GET /conversations/{id}/messages</code></td>
+<td><code>GET /api/v1/chat/history</code></td>
+<td><code>Bearer zt_sess_</code></td>
+</tr>
+<tr>
+<td><code>POST /conversations/{id}/analytics/events</code></td>
+<td><code>POST /api/v1/analytics/events</code></td>
+<td><code>Bearer zt_sess_</code></td>
+</tr>
+<tr>
+<td><code>POST /conversations/{id}/analytics/replay/chunks</code></td>
+<td><code>POST /api/v1/analytics/replay/chunks</code></td>
+<td><code>Bearer zt_sess_</code></td>
+</tr>
+<tr>
+<td><code>GET /conversations/{id}/analytics/replay/chunks/...</code></td>
+<td><code>GET /api/v1/analytics/replay/chunks/...</code></td>
+<td><code>Bearer zt_sess_</code></td>
+</tr>
+<tr>
+<td><code>POST /conversations/{id}/analytics/end</code></td>
+<td><code>POST /api/v1/analytics/sessions/end</code></td>
+<td><code>Bearer zt_sess_</code></td>
+</tr>
+<tr>
+<td><code>GET /conversations/{id}/recommendations</code></td>
+<td><code>GET /api/v1/analytics/recommendations</code></td>
+<td><code>Bearer zt_sess_</code></td>
+</tr>
+<tr>
+<td><code>POST /conversations/{id}/recommendations/{rid}/feedback</code></td>
+<td><code>POST /api/v1/analytics/recommendations/{rid}/feedback</code></td>
+<td><code>Bearer zt_sess_</code></td>
+</tr>
+<tr>
+<td><code>POST /service/ai/v1/internal/tenants/{tenant_id}/release-markers</code></td>
+<td><code>POST /api/v1/releases/markers</code></td>
+<td><code>X-API-Key</code> (+ optional signing headers)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="9-cgs-persistence-model">9. CGS Persistence Model<a class="headerlink" href="#9-cgs-persistence-model" title="Permanent link">&para;</a></h2>
+<p>Minimum CGS tables:</p>
+<ul>
+<li><code>cgs_ai_tenants</code></li>
+<li><code>cgs_tenant_id</code></li>
+<li><code>zetherion_tenant_id</code></li>
+<li><code>zetherion_api_key_ciphertext</code></li>
+<li><code>key_version</code></li>
+<li><code>is_active</code></li>
+<li><code>config_snapshot</code></li>
+<li>
+<p>timestamps</p>
+</li>
+<li>
+<p><code>cgs_ai_conversations</code></p>
+</li>
+<li><code>conversation_id</code></li>
+<li><code>cgs_tenant_id</code></li>
+<li><code>app_user_id</code></li>
+<li><code>zetherion_session_id</code></li>
+<li><code>zetherion_session_token_ciphertext</code></li>
+<li><code>status</code></li>
+<li><code>expires_at</code></li>
+<li>
+<p>timestamps</p>
+</li>
+<li>
+<p><code>cgs_ai_idempotency</code></p>
+</li>
+<li><code>idempotency_key</code></li>
+<li><code>route</code></li>
+<li><code>tenant_id</code></li>
+<li><code>request_hash</code></li>
+<li><code>response_payload</code></li>
+<li><code>status_code</code></li>
+<li>
+<p>timestamps</p>
+</li>
+<li>
+<p><code>cgs_ai_request_log</code></p>
+</li>
+<li><code>request_id</code></li>
+<li><code>conversation_id</code></li>
+<li><code>upstream_route</code></li>
+<li><code>upstream_status</code></li>
+<li><code>latency_ms</code></li>
+<li><code>error_code</code></li>
+<li>timestamps</li>
+</ul>
+<h2 id="10-error-code-contract">10. Error Code Contract<a class="headerlink" href="#10-error-code-contract" title="Permanent link">&para;</a></h2>
+<p>Standard CGS error codes:</p>
+<ul>
+<li><code>AI_UNAUTHORIZED</code></li>
+<li><code>AI_FORBIDDEN</code></li>
+<li><code>AI_RATE_LIMITED</code></li>
+<li><code>AI_SESSION_EXPIRED</code></li>
+<li><code>AI_NOT_FOUND</code></li>
+<li><code>AI_VALIDATION_FAILED</code></li>
+<li><code>AI_UPSTREAM_UNAVAILABLE</code></li>
+<li><code>AI_UPSTREAM_TIMEOUT</code></li>
+<li><code>AI_INTERNAL_ERROR</code></li>
+</ul>
+<p>CGS maps upstream status:</p>
+<ul>
+<li><code>400 -&gt; AI_VALIDATION_FAILED</code></li>
+<li><code>401 -&gt; AI_UNAUTHORIZED</code> or <code>AI_SESSION_EXPIRED</code></li>
+<li><code>403 -&gt; AI_FORBIDDEN</code></li>
+<li><code>404 -&gt; AI_NOT_FOUND</code></li>
+<li><code>429 -&gt; AI_RATE_LIMITED</code></li>
+<li><code>5xx -&gt; AI_UPSTREAM_UNAVAILABLE</code></li>
+</ul>
+<h2 id="11-slo-and-reliability-targets">11. SLO and Reliability Targets<a class="headerlink" href="#11-slo-and-reliability-targets" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Session create p95: <code>&lt; 400ms</code> (excluding cold starts).</li>
+<li>Sync chat p95: <code>&lt; 4s</code>.</li>
+<li>Stream first token p95: <code>&lt; 1.5s</code>.</li>
+<li>Availability target: <code>99.9%</code> monthly for CGS AI service.</li>
+</ul>
+<p>Retry policy:
+- Retries only for <code>5xx</code> and network timeouts.
+- No blind retry for mutating calls unless <code>Idempotency-Key</code> present.</p>
+<h2 id="12-phase-plan">12. Phase Plan<a class="headerlink" href="#12-phase-plan" title="Permanent link">&para;</a></h2>
+<h3 id="phase-1-now-runtime-integration">Phase 1 (Now): Runtime integration<a class="headerlink" href="#phase-1-now-runtime-integration" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Implement all runtime conversation/chat/analytics endpoints in section 6.1.</li>
+<li>Implement internal tenant lifecycle endpoints in section 6.2.</li>
+<li>Use CGS proxy model only (no browser direct to Zetherion).</li>
+</ul>
+<h3 id="phase-2-company-reporting-endpoints">Phase 2: Company reporting endpoints<a class="headerlink" href="#phase-2-company-reporting-endpoints" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Integrate CGS reporting APIs in section 6.3 against existing Zetherion public read routes.</li>
+</ul>
+<h3 id="phase-3-harden-and-scale">Phase 3: Harden and scale<a class="headerlink" href="#phase-3-harden-and-scale" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Add signature verification for CGS app client webhooks if needed.</li>
+<li>Add circuit breaker and per-tenant concurrency controls.</li>
+<li>Add dashboarding and alerting on upstream failures.</li>
+</ul>
+<h2 id="13-optional-zetherion-enhancements">13. Optional Zetherion Enhancements<a class="headerlink" href="#13-optional-zetherion-enhancements" title="Permanent link">&para;</a></h2>
+<p>Recommended:
+- Public API idempotency support via <code>Idempotency-Key</code>.
+- Env/config wiring for allowed CORS origins in API bootstrap.</p>
+<h2 id="14-example-end-to-end-flow">14. Example End-to-End Flow<a class="headerlink" href="#14-example-end-to-end-flow" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>sequenceDiagram
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>  participant App as CGS App
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>  participant CGS as CGS AI Service
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>  participant ZAPI as Zetherion Public API
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>  App-&gt;&gt;CGS: POST /conversations
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>  CGS-&gt;&gt;ZAPI: POST /api/v1/sessions (X-API-Key)
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>  ZAPI--&gt;&gt;CGS: session_id + zt_sess token
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>  CGS--&gt;&gt;App: conversation_id
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>
+<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>  App-&gt;&gt;CGS: POST /conversations/{id}/messages
+<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a>  CGS-&gt;&gt;ZAPI: POST /api/v1/chat (Bearer zt_sess)
+<a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>  ZAPI--&gt;&gt;CGS: assistant message
+<a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a>  CGS--&gt;&gt;App: normalized response
+</code></pre></div>
+<h2 id="15-definition-of-done">15. Definition of Done<a class="headerlink" href="#15-definition-of-done" title="Permanent link">&para;</a></h2>
+<p>This draft is considered implemented when:
+- All section 6.1 and 6.2 endpoints are live in CGS service.
+- At least two CGS apps are integrated against CGS AI contract without direct Zetherion access.
+- Tenant provisioning, key rotation, and release markers run through CGS internal endpoints.
+- Audit logs and request tracing are available for all upstream calls.
+- Phase 2 gap endpoints are either implemented or approved with a signed deferment.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/jimtin/zetherion-ai" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.tabs.sticky", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
