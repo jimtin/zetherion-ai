@@ -96,6 +96,103 @@ function Wait-ForDocker {
     return $false
 }
 
+function Get-EnvValueFromFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Keys
+    )
+
+    if (-not (Test-Path $Path)) {
+        throw "Required env file not found: $Path"
+    }
+
+    $lines = Get-Content -Path $Path
+    foreach ($key in $Keys) {
+        for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+            $line = $lines[$i]
+            if ($line -match "^\s*#") {
+                continue
+            }
+            if ($line -notmatch "^\s*$([Regex]::Escape($key))\s*=") {
+                continue
+            }
+
+            $separatorIndex = $line.IndexOf("=")
+            if ($separatorIndex -lt 0) {
+                continue
+            }
+            $value = $line.Substring($separatorIndex + 1).Trim()
+            if (
+                ($value.StartsWith("'") -and $value.EndsWith("'")) -or
+                ($value.StartsWith('"') -and $value.EndsWith('"'))
+            ) {
+                if ($value.Length -ge 2) {
+                    $value = $value.Substring(1, $value.Length - 2)
+                }
+            }
+            if ($value) {
+                return $value
+            }
+        }
+    }
+
+    return ""
+}
+
+function Set-OrAddEnvLine {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Collections.Generic.List[string]]$Lines,
+        [Parameter(Mandatory = $true)]
+        [string]$Key,
+        [Parameter(Mandatory = $true)]
+        [string]$Value
+    )
+
+    $pattern = "^\s*$([Regex]::Escape($Key))\s*="
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -match $pattern) {
+            $Lines[$i] = "$Key=$Value"
+            return
+        }
+    }
+
+    $Lines.Add("$Key=$Value")
+}
+
+function Sync-CgsSharedSecret {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepositoryPath
+    )
+
+    $rootEnvPath = Join-Path $RepositoryPath ".env"
+    $secret = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("ZETHERION_SKILLS_API_SECRET", "SKILLS_API_SECRET")
+    if (-not $secret) {
+        throw "Missing ZETHERION_SKILLS_API_SECRET/SKILLS_API_SECRET in $rootEnvPath"
+    }
+
+    $cgsDirectory = Join-Path $RepositoryPath "cgs"
+    if (-not (Test-Path $cgsDirectory)) {
+        New-Item -ItemType Directory -Path $cgsDirectory -Force | Out-Null
+    }
+
+    $cgsEnvLocalPath = Join-Path $cgsDirectory ".env.local"
+    $cgsEnvLines = New-Object 'System.Collections.Generic.List[string]'
+    if (Test-Path $cgsEnvLocalPath) {
+        foreach ($line in Get-Content -Path $cgsEnvLocalPath) {
+            $cgsEnvLines.Add($line)
+        }
+    }
+
+    Set-OrAddEnvLine -Lines $cgsEnvLines -Key "SKILLS_API_SECRET" -Value $secret
+    Set-OrAddEnvLine -Lines $cgsEnvLines -Key "ZETHERION_SKILLS_API_SECRET" -Value $secret
+
+    Set-Content -Path $cgsEnvLocalPath -Value $cgsEnvLines -Encoding utf8
+}
+
 $bootId = [guid]::NewGuid().ToString()
 $bootStartedAt = [DateTime]::UtcNow
 $actionsTaken = @()
@@ -153,6 +250,8 @@ try {
 
     Push-Location $DeployPath
     try {
+        Sync-CgsSharedSecret -RepositoryPath $DeployPath
+        $actionsTaken += "synced_cgs_shared_secret"
         docker compose up -d
     }
     finally {

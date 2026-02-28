@@ -232,11 +232,11 @@ def main() -> None:
         "CGS_GATEWAY_ALLOWED_ORIGINS",
         getattr(settings, "cgs_gateway_allowed_origins", ""),
     )
-    allowed_origins = _split_csv(allowed_origins_raw)
+    allowed_origins = _split_csv(allowed_origins_raw or "")
 
-    jwks_url = os.environ.get("CGS_AUTH_JWKS_URL", getattr(settings, "cgs_auth_jwks_url", ""))
-    issuer = os.environ.get("CGS_AUTH_ISSUER", getattr(settings, "cgs_auth_issuer", ""))
-    audience = os.environ.get("CGS_AUTH_AUDIENCE", getattr(settings, "cgs_auth_audience", ""))
+    jwks_url = os.environ.get("CGS_AUTH_JWKS_URL", getattr(settings, "cgs_auth_jwks_url", "")) or ""
+    issuer = os.environ.get("CGS_AUTH_ISSUER", getattr(settings, "cgs_auth_issuer", "")) or ""
+    audience = os.environ.get("CGS_AUTH_AUDIENCE", getattr(settings, "cgs_auth_audience", "")) or ""
 
     z_public = os.environ.get(
         "ZETHERION_PUBLIC_API_BASE_URL",

@@ -458,20 +458,20 @@ class Settings(BaseSettings):
         description="CGS gateway bind host",
     )
     cgs_gateway_port: int = Field(default=8743, description="CGS gateway bind port")
-    cgs_gateway_allowed_origins: str = Field(
-        default="",
+    cgs_gateway_allowed_origins: str | None = Field(
+        default=None,
         description="Comma-separated CORS origins for CGS gateway",
     )
-    cgs_auth_jwks_url: str = Field(
-        default="",
+    cgs_auth_jwks_url: str | None = Field(
+        default=None,
         description="JWKS URL used to validate CGS JWT bearer tokens",
     )
-    cgs_auth_issuer: str = Field(
-        default="",
+    cgs_auth_issuer: str | None = Field(
+        default=None,
         description="Expected JWT issuer for CGS auth tokens",
     )
-    cgs_auth_audience: str = Field(
-        default="",
+    cgs_auth_audience: str | None = Field(
+        default=None,
         description="Expected JWT audience for CGS auth tokens",
     )
     zetherion_public_api_base_url: str = Field(

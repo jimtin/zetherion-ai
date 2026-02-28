@@ -11,6 +11,7 @@ Run with::
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from uuid import uuid4
@@ -31,24 +32,62 @@ SKIP_INTEGRATION = os.getenv("SKIP_INTEGRATION_TESTS", "false").lower() == "true
 
 
 def _get_api_secret() -> str | None:
-    """Try to extract API secret from the skills container environment."""
+    """Resolve skills API secret from test container env with robust fallbacks."""
+    container_name = "zetherion-ai-test-skills"
+    secret_keys = ("SKILLS_API_SECRET", "ZETHERION_SKILLS_API_SECRET")
+
+    # Prefer docker inspect because distroless images may not include printenv.
     try:
         result = subprocess.run(
             [
                 "docker",
-                "exec",
-                "zetherion-ai-test-skills",
-                "printenv",
-                "SKILLS_API_SECRET",
+                "inspect",
+                "--format",
+                "{{json .Config.Env}}",
+                container_name,
             ],
             capture_output=True,
             text=True,
             timeout=5,
         )
         if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
+            env_entries = json.loads(result.stdout.strip())
+            if isinstance(env_entries, list):
+                for key in secret_keys:
+                    prefix = f"{key}="
+                    for entry in env_entries:
+                        if isinstance(entry, str) and entry.startswith(prefix):
+                            value = entry.split("=", 1)[1].strip()
+                            if value:
+                                return value
     except Exception:
         pass
+
+    # Legacy fallback for images that still include printenv.
+    for key in secret_keys:
+        try:
+            result = subprocess.run(
+                [
+                    "docker",
+                    "exec",
+                    container_name,
+                    "printenv",
+                    key,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        except Exception:
+            continue
+
+    # Final fallback when running with env-injected secrets outside Docker.
+    for key in secret_keys:
+        value = os.getenv(key)
+        if value:
+            return value
     return None
 
 

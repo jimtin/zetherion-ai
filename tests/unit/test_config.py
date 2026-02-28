@@ -197,3 +197,20 @@ class TestDynamicSettingsFallback:
                 value = get_dynamic("api", "port", 8443)
 
         assert value == 9000
+
+
+class TestCgsGatewayOptionalEnvParsing:
+    """Tests for optional CGS env parsing with empty-string env values."""
+
+    def test_empty_cgs_env_values_do_not_raise_validation_error(self, monkeypatch):
+        monkeypatch.setenv("CGS_GATEWAY_ALLOWED_ORIGINS", "")
+        monkeypatch.setenv("CGS_AUTH_JWKS_URL", "")
+        monkeypatch.setenv("CGS_AUTH_ISSUER", "")
+        monkeypatch.setenv("CGS_AUTH_AUDIENCE", "")
+
+        settings = _make_settings()
+
+        assert settings.cgs_gateway_allowed_origins is None
+        assert settings.cgs_auth_jwks_url is None
+        assert settings.cgs_auth_issuer is None
+        assert settings.cgs_auth_audience is None
