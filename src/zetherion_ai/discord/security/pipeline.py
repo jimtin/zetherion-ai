@@ -55,6 +55,7 @@ class SecurityPipeline:
         user_id: int,
         channel_id: int,
         request_id: str = "",
+        intent_hint: str | None = None,
     ) -> ThreatVerdict:
         """Analyse a message through the full security pipeline.
 
@@ -116,11 +117,26 @@ class SecurityPipeline:
         # ---- Tier 2: AI Analysis (runs on ALL messages by default) ----
         if self._enable_tier2 and self._ai_analyzer is not None:
             tier_reached = 2
-            ai_signal = await self._ai_analyzer.analyze(content, signals)
+            ai_signal = await self._ai_analyzer.analyze(
+                content,
+                signals,
+                intent_hint=intent_hint,
+            )
             if ai_signal is not None:
                 # If AI says false positive, halve its own score
                 if ai_signal.metadata.get("false_positive_likely"):
                     ai_signal.score *= 0.5
+
+                # Memory-store requests are frequently benign user-profile writes.
+                # Keep explicit regex attacks blocked, but suppress pure AI-only
+                # false positives when Tier 1 found no direct attack markers.
+                if (
+                    (intent_hint or "").strip().lower() == "memory_store"
+                    and not signals
+                    and ai_signal.pattern_name == "ai_analysis"
+                ):
+                    ai_signal.score = min(ai_signal.score, 0.2)
+                    ai_signal.metadata["false_positive_likely"] = True
                 signals.append(ai_signal)
                 ai_reasoning = ai_signal.metadata.get("ai_reasoning", "")
 

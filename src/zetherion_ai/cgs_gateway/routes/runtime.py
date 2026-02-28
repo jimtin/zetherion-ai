@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -9,7 +10,14 @@ from aiohttp import web
 from pydantic import ValidationError
 
 from zetherion_ai.cgs_gateway.errors import GatewayError, success_response
-from zetherion_ai.cgs_gateway.models import CreateConversationRequest, MessageRequest
+from zetherion_ai.cgs_gateway.models import (
+    CreateConversationRequest,
+    DocumentCompleteUploadRequest,
+    DocumentQueryRequest,
+    DocumentReindexRequest,
+    DocumentUploadRequest,
+    MessageRequest,
+)
 from zetherion_ai.cgs_gateway.routes._utils import (
     canonical_upstream_headers,
     enforce_tenant_access,
@@ -604,6 +612,264 @@ async def handle_recommendation_feedback(request: web.Request) -> web.Response:
     )
 
 
+async def _load_mapping_for_tenant_payload(
+    request: web.Request,
+    *,
+    tenant_id: str,
+) -> dict[str, Any]:
+    principal_obj = principal(request)
+    enforce_tenant_access(principal_obj, tenant_id)
+    return await resolve_active_mapping(request.app["cgs_storage"], tenant_id)
+
+
+async def handle_documents_create_upload(request: web.Request) -> web.Response:
+    """POST /service/ai/v1/documents/uploads."""
+    rid = request_id(request)
+    raw = await json_object(request)
+    try:
+        payload = DocumentUploadRequest.model_validate(raw)
+    except ValidationError as exc:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="Validation failed",
+            status=400,
+            details={"errors": exc.errors()},
+        ) from exc
+
+    mapping = await _load_mapping_for_tenant_payload(request, tenant_id=payload.tenant_id)
+
+    status, upstream, _ = await request.app["cgs_public_client"].request_json(
+        "POST",
+        "/api/v1/documents/uploads",
+        headers=canonical_upstream_headers(
+            request_id_value=rid,
+            api_key=str(mapping["zetherion_api_key"]),
+        ),
+        json_body=payload.model_dump(mode="json", exclude={"tenant_id"}),
+    )
+    if status >= 400:
+        raise _map_upstream_error(status, upstream)
+    return success_response(rid, upstream, status=201)
+
+
+async def handle_documents_complete_upload(request: web.Request) -> web.Response:
+    """POST /service/ai/v1/documents/uploads/{upload_id}/complete."""
+    rid = request_id(request)
+    upload_id = request.match_info["upload_id"]
+    raw = await json_object(request)
+    try:
+        payload = DocumentCompleteUploadRequest.model_validate(raw)
+    except ValidationError as exc:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="Validation failed",
+            status=400,
+            details={"errors": exc.errors()},
+        ) from exc
+
+    mapping = await _load_mapping_for_tenant_payload(request, tenant_id=payload.tenant_id)
+    upstream_body = payload.model_dump(mode="json", exclude={"tenant_id"})
+
+    status, upstream, _ = await request.app["cgs_public_client"].request_json(
+        "POST",
+        f"/api/v1/documents/uploads/{upload_id}/complete",
+        headers=canonical_upstream_headers(
+            request_id_value=rid,
+            api_key=str(mapping["zetherion_api_key"]),
+        ),
+        json_body=upstream_body,
+    )
+    if status >= 400:
+        raise _map_upstream_error(status, upstream)
+    return success_response(rid, upstream, status=201)
+
+
+async def handle_documents_list(request: web.Request) -> web.Response:
+    """GET /service/ai/v1/documents."""
+    rid = request_id(request)
+    tenant_id = request.query.get("tenant_id", "").strip()
+    if not tenant_id:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="tenant_id query parameter is required",
+            status=400,
+        )
+
+    mapping = await _load_mapping_for_tenant_payload(request, tenant_id=tenant_id)
+    status, upstream, _ = await request.app["cgs_public_client"].request_json(
+        "GET",
+        "/api/v1/documents",
+        headers=canonical_upstream_headers(
+            request_id_value=rid,
+            api_key=str(mapping["zetherion_api_key"]),
+        ),
+    )
+    if status >= 400:
+        raise _map_upstream_error(status, upstream)
+    return success_response(rid, upstream)
+
+
+async def handle_documents_get(request: web.Request) -> web.Response:
+    """GET /service/ai/v1/documents/{document_id}."""
+    rid = request_id(request)
+    tenant_id = request.query.get("tenant_id", "").strip()
+    if not tenant_id:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="tenant_id query parameter is required",
+            status=400,
+        )
+
+    mapping = await _load_mapping_for_tenant_payload(request, tenant_id=tenant_id)
+    document_id = request.match_info["document_id"]
+    status, upstream, _ = await request.app["cgs_public_client"].request_json(
+        "GET",
+        f"/api/v1/documents/{document_id}",
+        headers=canonical_upstream_headers(
+            request_id_value=rid,
+            api_key=str(mapping["zetherion_api_key"]),
+        ),
+    )
+    if status >= 400:
+        raise _map_upstream_error(status, upstream)
+    return success_response(rid, upstream)
+
+
+async def _proxy_document_binary(
+    request: web.Request,
+    *,
+    suffix: str,
+) -> web.Response:
+    rid = request_id(request)
+    tenant_id = request.query.get("tenant_id", "").strip()
+    if not tenant_id:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="tenant_id query parameter is required",
+            status=400,
+        )
+
+    mapping = await _load_mapping_for_tenant_payload(request, tenant_id=tenant_id)
+    document_id = request.match_info["document_id"]
+
+    status, payload, upstream_headers = await request.app["cgs_public_client"].request_raw(
+        "GET",
+        f"/api/v1/documents/{document_id}/{suffix}",
+        headers=canonical_upstream_headers(
+            request_id_value=rid,
+            api_key=str(mapping["zetherion_api_key"]),
+        ),
+    )
+    if status >= 400:
+        detail: Any
+        try:
+            detail = json.loads(payload.decode("utf-8", errors="ignore"))
+        except Exception:
+            detail = payload.decode("utf-8", errors="ignore")
+        raise _map_upstream_error(status, detail)
+
+    headers = {}
+    for key in ("Content-Type", "Content-Disposition", "Cache-Control"):
+        if key in upstream_headers:
+            headers[key] = upstream_headers[key]
+    return web.Response(body=payload, status=200, headers=headers)
+
+
+async def handle_documents_preview(request: web.Request) -> web.Response:
+    """GET /service/ai/v1/documents/{document_id}/preview."""
+    return await _proxy_document_binary(request, suffix="preview")
+
+
+async def handle_documents_download(request: web.Request) -> web.Response:
+    """GET /service/ai/v1/documents/{document_id}/download."""
+    return await _proxy_document_binary(request, suffix="download")
+
+
+async def handle_documents_reindex(request: web.Request) -> web.Response:
+    """POST /service/ai/v1/documents/{document_id}/index."""
+    rid = request_id(request)
+    raw = await json_object(request)
+    try:
+        payload = DocumentReindexRequest.model_validate(raw)
+    except ValidationError as exc:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="Validation failed",
+            status=400,
+            details={"errors": exc.errors()},
+        ) from exc
+
+    mapping = await _load_mapping_for_tenant_payload(request, tenant_id=payload.tenant_id)
+    document_id = request.match_info["document_id"]
+    status, upstream, _ = await request.app["cgs_public_client"].request_json(
+        "POST",
+        f"/api/v1/documents/{document_id}/index",
+        headers=canonical_upstream_headers(
+            request_id_value=rid,
+            api_key=str(mapping["zetherion_api_key"]),
+        ),
+    )
+    if status >= 400:
+        raise _map_upstream_error(status, upstream)
+    return success_response(rid, upstream)
+
+
+async def handle_documents_rag_query(request: web.Request) -> web.Response:
+    """POST /service/ai/v1/rag/query."""
+    rid = request_id(request)
+    raw = await json_object(request)
+    try:
+        payload = DocumentQueryRequest.model_validate(raw)
+    except ValidationError as exc:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="Validation failed",
+            status=400,
+            details={"errors": exc.errors()},
+        ) from exc
+
+    mapping = await _load_mapping_for_tenant_payload(request, tenant_id=payload.tenant_id)
+    upstream_body = payload.model_dump(mode="json", exclude={"tenant_id"})
+
+    status, upstream, _ = await request.app["cgs_public_client"].request_json(
+        "POST",
+        "/api/v1/rag/query",
+        headers=canonical_upstream_headers(
+            request_id_value=rid,
+            api_key=str(mapping["zetherion_api_key"]),
+        ),
+        json_body=upstream_body,
+    )
+    if status >= 400:
+        raise _map_upstream_error(status, upstream)
+    return success_response(rid, upstream)
+
+
+async def handle_model_providers(request: web.Request) -> web.Response:
+    """GET /service/ai/v1/models/providers."""
+    rid = request_id(request)
+    tenant_id = request.query.get("tenant_id", "").strip()
+    if not tenant_id:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="tenant_id query parameter is required",
+            status=400,
+        )
+
+    mapping = await _load_mapping_for_tenant_payload(request, tenant_id=tenant_id)
+    status, upstream, _ = await request.app["cgs_public_client"].request_json(
+        "GET",
+        "/api/v1/models/providers",
+        headers=canonical_upstream_headers(
+            request_id_value=rid,
+            api_key=str(mapping["zetherion_api_key"]),
+        ),
+    )
+    if status >= 400:
+        raise _map_upstream_error(status, upstream)
+    return success_response(rid, upstream)
+
+
 def register_runtime_routes(app: web.Application) -> None:
     """Register all runtime conversation routes."""
     prefix = "/service/ai/v1"
@@ -651,6 +917,20 @@ def register_runtime_routes(app: web.Application) -> None:
         prefix + "/conversations/{conversation_id}/recommendations/{recommendation_id}/feedback",
         handle_recommendation_feedback,
     )
+
+    # Tenant-scoped document intelligence endpoints.
+    app.router.add_post(prefix + "/documents/uploads", handle_documents_create_upload)
+    app.router.add_post(
+        prefix + "/documents/uploads/{upload_id}/complete",
+        handle_documents_complete_upload,
+    )
+    app.router.add_get(prefix + "/documents", handle_documents_list)
+    app.router.add_get(prefix + "/documents/{document_id}", handle_documents_get)
+    app.router.add_get(prefix + "/documents/{document_id}/preview", handle_documents_preview)
+    app.router.add_get(prefix + "/documents/{document_id}/download", handle_documents_download)
+    app.router.add_post(prefix + "/documents/{document_id}/index", handle_documents_reindex)
+    app.router.add_post(prefix + "/rag/query", handle_documents_rag_query)
+    app.router.add_get(prefix + "/models/providers", handle_model_providers)
 
 
 def now_iso() -> str:

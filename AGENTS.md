@@ -30,6 +30,20 @@ This is the only supported full local gate. Do not substitute ad-hoc pytest comm
 10. Background jobs (`mypy`, `pip-audit`) must never run indefinitely; canonical timeouts/heartbeat logging are mandatory.
 11. Canonical validation must run against repo-local virtualenv tooling (`.venv`/`venv`), not an unrelated active shell virtualenv.
 
+## API Documentation Contract (Mandatory)
+
+1. Any new API endpoint set (public API and/or CGS gateway) must include an extensive documentation bundle before merge.
+2. The required bundle includes:
+   - public API reference updates
+   - CGS mapping specification updates
+   - OpenAPI contract updates (public + CGS)
+   - API error matrix + auth matrix updates
+   - example request/response updates
+   - frontend wiring guide updates (route-to-screen mapping)
+   - changelog entry updates
+3. CI must fail if endpoint routes change without full documentation bundle updates in the same change set.
+4. Documentation suite publishing must run after every `main` merge (no docs-only path filter on `main`).
+
 ## Script Policy
 
 Legacy scripts are compatibility wrappers and must delegate to canonical behavior:
@@ -62,22 +76,6 @@ Critical-path integration coverage in canonical runs must include both:
 4. Run `./scripts/require-local-gate-update.sh --sha <failed_commit_sha>` and do not proceed until it passes.
 5. Re-run `./scripts/test-full.sh` after fixes before pushing again.
 
-## Post-Push CI/CD Verification (Mandatory)
-
-Every successful GitHub push must be proven by CI/CD status, and `main` pushes must include a successful Windows deployment receipt.
-
-1. Use the local runbook at `.agent-handoff/GITHUB_PUSH_AND_WINDOWS_DEPLOY_RUNBOOK.md`.
-2. Validate CI/CD proof with:
-   - `./scripts/check-cicd-success.sh --sha <commit_sha> --ref <ref>`
-3. Required by ref:
-   - Non-main refs: successful `CI/CD Pipeline` run for the exact commit SHA.
-   - `main`/`refs/heads/main`: successful `CI/CD Pipeline` and successful `Deploy Windows` workflow for the same SHA, with valid `deployment-receipt.json`.
-4. `deployment-receipt.json` must confirm:
-   - `target_sha == deployed_sha`
-   - checks all true: `containers_healthy`, `bot_startup_markers`, `postgres_model_keys`, `fallback_probe`, `recovery_tasks_registered`, `runner_service_persistent`, `docker_service_persistent`
-   - status is `success`
-5. Do not consider work complete until `./scripts/check-cicd-success.sh` passes, or a concrete blocker is reported.
-
 ## Automatic Main Promotion (Mandatory)
 
 1. Standard branch workflow is `codex/*` -> auto-promotion into `main`; do not use non-`codex/*` branches when the goal is standard delivery.
@@ -90,3 +88,16 @@ Every successful GitHub push must be proven by CI/CD status, and `main` pushes m
 ## Break-Glass SSH Deployment (Non-Standard)
 
 SSH-based deployment/remoting is emergency-only recovery and is not part of the standard completion path.
+
+## Post-Deploy Promotions (Mandatory)
+
+1. Every successful deployed `main` merge must trigger post-deploy promotions only after deployment receipt validation passes.
+2. Blog generation/publish is mandatory per deployed `main` SHA:
+   - run only after `Deploy Windows` success and deployment receipt success checks
+   - required models: `gpt-5.2` (draft) and `claude-sonnet-4-6` (refine)
+   - if either required model is unavailable, fail the workflow (no lower-tier fallback)
+   - enforce idempotency by deployed SHA (no duplicate publish)
+3. GitHub release auto-increment is mandatory per deployed `main` SHA:
+   - increment SemVer patch from latest `v*` release (bootstrap `v0.1.0` when absent)
+   - bind release to deployed SHA
+   - enforce idempotency by SHA (no duplicate release creation)

@@ -13,6 +13,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Document Intelligence + Post-Deploy Promotions (2026-02-28)
+
+- Tenant-scoped document intelligence API endpoints:
+  - `POST /api/v1/documents/uploads`
+  - `POST /api/v1/documents/uploads/{upload_id}/complete`
+  - `GET /api/v1/documents`
+  - `GET /api/v1/documents/{document_id}`
+  - `GET /api/v1/documents/{document_id}/preview`
+  - `GET /api/v1/documents/{document_id}/download`
+  - `POST /api/v1/documents/{document_id}/index`
+  - `POST /api/v1/rag/query`
+  - `GET /api/v1/models/providers`
+- New tenant document persistence schema:
+  - `tenant_documents`
+  - `tenant_document_uploads`
+  - `document_ingestion_jobs`
+- Document ingestion pipeline for PDF/DOCX/text extraction, chunking, embedding, and indexing into `tenant_documents` Qdrant collection.
+- CGS gateway runtime routes for document upload/list/detail/preview/download/re-index/RAG/provider catalog under `/service/ai/v1`.
+- Provider/model override support in inference broker call path to support Groq/OpenAI/Claude routing for document RAG.
+- Security and reliability hardening for Discord message alignment:
+  - intent-aware memory-store handling in Tier 2 security path to reduce benign false positives
+  - deterministic recent-context retrieval ordering in Qdrant
+  - queue serialization guard for `discord_message` tasks by `(user_id, channel_id)`
+  - strict reply-reference matching in Discord E2E waiter logic
+- CI docs-contract enforcement additions:
+  - endpoint doc-bundle checker (`scripts/check-endpoint-doc-bundle.py`)
+  - pipeline contract job now runs endpoint docs bundle checks with full git history
+- Documentation deployment now republishes on every `main` push (no docs-only path filter).
+- Post-deploy promotions workflow (`.github/workflows/post-deploy-promotions.yml`) added:
+  - gated by successful `Deploy Windows` completion and deployment receipt validation
+  - mandatory SemVer patch release auto-increment/idempotency per deployed SHA
+  - mandatory CGS blog generation/publish using `gpt-5.2` + `claude-sonnet-4-6` only
+  - publishes release/blog receipts as workflow artifacts
+
 ### Added - Phase 9 (2026-02-08)
 
 #### Phase 9: Personal Understanding System

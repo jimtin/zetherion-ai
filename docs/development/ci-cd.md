@@ -154,6 +154,30 @@ The CI/CD pipeline is defined in `.github/workflows/ci.yml`.
 | `pull_request` | Targeting `main` or `develop` branches |
 | `workflow_dispatch` | Manual trigger from GitHub UI or `gh workflow run ci.yml` |
 
+### Additional Main-Branch Automation
+
+| Workflow | Trigger | Contract |
+|---|---|---|
+| `docs.yml` (`Deploy Documentation`) | every push to `main` | Rebuild + republish full docs suite on each `main` merge |
+| `post-deploy-promotions.yml` (`Post-Deploy Promotions`) | successful `Deploy Windows` completion on `main` | Validate deployment receipt, auto-increment GitHub release, generate+publish CGS blog |
+
+Post-deploy promotion gates:
+
+1. `deployment-receipt.json` must be `status=success`.
+2. `target_sha == deployed_sha` and must match triggering SHA.
+3. Required receipt checks must all be `true`:
+   - `containers_healthy`
+   - `bot_startup_markers`
+   - `postgres_model_keys`
+   - `fallback_probe`
+   - `recovery_tasks_registered`
+   - `runner_service_persistent`
+   - `docker_service_persistent`
+4. Blog generation requires high-tier models only:
+   - draft: `gpt-5.2`
+   - refine: `claude-sonnet-4-6`
+   - no lower-tier fallback
+
 ### Jobs
 
 The pipeline runs the following jobs. Jobs without dependency arrows run in parallel.

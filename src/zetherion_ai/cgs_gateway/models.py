@@ -70,3 +70,37 @@ class ReleaseMarkerRequest(BaseModel):
     tag_name: str | None = None
     deployed_at: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DocumentUploadRequest(BaseModel):
+    """Create document upload intent."""
+
+    tenant_id: str
+    file_name: str = Field(min_length=1, max_length=512)
+    mime_type: str = Field(default="application/octet-stream", max_length=255)
+    size_bytes: int = Field(default=0, ge=0)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DocumentCompleteUploadRequest(BaseModel):
+    """Finalize document upload payload."""
+
+    tenant_id: str
+    file_base64: str = Field(min_length=4)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DocumentReindexRequest(BaseModel):
+    """Document re-index trigger payload."""
+
+    tenant_id: str
+
+
+class DocumentQueryRequest(BaseModel):
+    """Tenant RAG query request."""
+
+    tenant_id: str
+    query: str = Field(min_length=1, max_length=20000)
+    top_k: int = Field(default=6, ge=1, le=20)
+    provider: str | None = None
+    model: str | None = None

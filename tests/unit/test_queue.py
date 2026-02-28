@@ -268,6 +268,10 @@ class TestQueueStorageDequeue:
         await storage.dequeue(priority_min=2, priority_max=3, worker_id="w-bg")
 
         call_args = conn.fetchrow.call_args[0]
+        sql = call_args[0]
+        assert "mq.task_type <> 'discord_message'" in sql
+        assert "inflight.status = 'processing'" in sql
+        assert "inflight.user_id = mq.user_id" in sql
         assert call_args[1] == "w-bg"
         assert call_args[2] == 2
         assert call_args[3] == 3

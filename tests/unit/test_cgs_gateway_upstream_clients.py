@@ -21,12 +21,14 @@ class _DummyResponseCtx:
         headers: dict[str, str] | None = None,
         json_payload: object | None = None,
         text_payload: str = "",
+        raw_payload: bytes = b"",
         raise_json: bool = False,
     ) -> None:
         self.status = status
         self.headers = headers or {}
         self._json_payload = json_payload
         self._text_payload = text_payload
+        self._raw_payload = raw_payload
         self._raise_json = raise_json
 
     async def __aenter__(self) -> _DummyResponseCtx:
@@ -42,6 +44,9 @@ class _DummyResponseCtx:
 
     async def text(self) -> str:
         return self._text_payload
+
+    async def read(self) -> bytes:
+        return self._raw_payload
 
 
 class _DummyJSONSession:
@@ -140,6 +145,24 @@ async def test_public_api_client_open_stream_and_session_guard() -> None:
     assert opened is response
     assert session.calls[0][0][0] == "POST"
     assert session.calls[0][0][1] == "https://api.example/stream"
+
+
+@pytest.mark.asyncio
+async def test_public_api_client_request_raw() -> None:
+    client = PublicAPIClient(base_url="https://api.example")
+    session = _DummyJSONSession(
+        _DummyResponseCtx(
+            status=200,
+            headers={"content-type": "application/pdf"},
+            raw_payload=b"%PDF-1.7",
+        )
+    )
+    client._session = session  # type: ignore[assignment]
+
+    status, payload, headers = await client.request_raw("GET", "/files/1")
+    assert status == 200
+    assert payload == b"%PDF-1.7"
+    assert headers == {"content-type": "application/pdf"}
 
 
 @pytest.mark.asyncio

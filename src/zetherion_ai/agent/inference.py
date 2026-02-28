@@ -508,6 +508,8 @@ class InferenceBroker:
         messages: list[dict[str, str]] | None = None,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float = 0.7,
+        forced_provider: Provider | None = None,
+        forced_model: str | None = None,
     ) -> InferenceResult:
         """Make an inference call with smart provider selection.
 
@@ -518,6 +520,8 @@ class InferenceBroker:
             messages: Optional conversation history.
             max_tokens: Maximum tokens to generate.
             temperature: Sampling temperature.
+            forced_provider: Optional explicit provider override.
+            forced_model: Optional explicit model override.
 
         Returns:
             InferenceResult with the response and metadata.
@@ -528,11 +532,14 @@ class InferenceBroker:
         start_time = time.time()
 
         # Get the optimal provider for this task
-        provider = get_provider_for_task(
+        provider = forced_provider or get_provider_for_task(
             task_type=task_type,
             ollama_model=self._ollama_model,
             available_providers=self._available_providers,
         )
+
+        if forced_provider is not None and forced_provider not in self._available_providers:
+            raise RuntimeError(f"Forced provider is not available: {forced_provider.value}")
 
         log.debug(
             "provider_selected",
@@ -550,6 +557,7 @@ class InferenceBroker:
                 messages=messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
+                model_override=forced_model,
             )
         except Exception as e:
             await self._record_provider_issue(provider, e, task_type=task_type)
@@ -558,6 +566,8 @@ class InferenceBroker:
                 provider=provider.value,
                 error=str(e),
             )
+            if forced_provider is not None:
+                raise
             # Try fallbacks
             result = await self._try_fallbacks(
                 task_type=task_type,
@@ -959,6 +969,7 @@ class InferenceBroker:
         messages: list[dict[str, str]] | None,
         max_tokens: int,
         temperature: float,
+        model_override: str | None = None,
     ) -> InferenceResult:
         """Call a specific provider.
 
@@ -977,23 +988,53 @@ class InferenceBroker:
         match provider:
             case Provider.CLAUDE:
                 return await self._call_claude(
-                    prompt, task_type, system_prompt, messages, max_tokens, temperature
+                    prompt,
+                    task_type,
+                    system_prompt,
+                    messages,
+                    max_tokens,
+                    temperature,
+                    model_override=model_override,
                 )
             case Provider.OPENAI:
                 return await self._call_openai(
-                    prompt, task_type, system_prompt, messages, max_tokens, temperature
+                    prompt,
+                    task_type,
+                    system_prompt,
+                    messages,
+                    max_tokens,
+                    temperature,
+                    model_override=model_override,
                 )
             case Provider.GROQ:
                 return await self._call_groq(
-                    prompt, task_type, system_prompt, messages, max_tokens, temperature
+                    prompt,
+                    task_type,
+                    system_prompt,
+                    messages,
+                    max_tokens,
+                    temperature,
+                    model_override=model_override,
                 )
             case Provider.GEMINI:
                 return await self._call_gemini(
-                    prompt, task_type, system_prompt, messages, max_tokens, temperature
+                    prompt,
+                    task_type,
+                    system_prompt,
+                    messages,
+                    max_tokens,
+                    temperature,
+                    model_override=model_override,
                 )
             case Provider.OLLAMA:
                 return await self._call_ollama(
-                    prompt, task_type, system_prompt, messages, max_tokens, temperature
+                    prompt,
+                    task_type,
+                    system_prompt,
+                    messages,
+                    max_tokens,
+                    temperature,
+                    model_override=model_override,
                 )
             case _:
                 raise ValueError(f"Unknown provider: {provider}")
@@ -1006,6 +1047,7 @@ class InferenceBroker:
         messages: list[dict[str, str]] | None,
         max_tokens: int,
         temperature: float,
+        model_override: str | None = None,
     ) -> InferenceResult:
         """Call Claude API."""
         if not self._claude_client:
@@ -1018,7 +1060,7 @@ class InferenceBroker:
                 api_messages.append({"role": msg["role"], "content": msg["content"]})
         api_messages.append({"role": "user", "content": prompt})
 
-        model = get_dynamic("models", "claude_model", self._claude_model)
+        model = model_override or get_dynamic("models", "claude_model", self._claude_model)
         response = await self._claude_client.messages.create(
             model=model,
             max_tokens=max_tokens,
@@ -1043,6 +1085,7 @@ class InferenceBroker:
         messages: list[dict[str, str]] | None,
         max_tokens: int,
         temperature: float,
+        model_override: str | None = None,
     ) -> InferenceResult:
         """Call OpenAI API."""
         if not self._openai_client:
@@ -1057,7 +1100,7 @@ class InferenceBroker:
                 api_messages.append({"role": msg["role"], "content": msg["content"]})
         api_messages.append({"role": "user", "content": prompt})
 
-        model = get_dynamic("models", "openai_model", self._openai_model)
+        model = model_override or get_dynamic("models", "openai_model", self._openai_model)
         response = await self._openai_client.chat.completions.create(
             model=model,
             messages=api_messages,  # type: ignore[arg-type]
@@ -1082,6 +1125,7 @@ class InferenceBroker:
         messages: list[dict[str, str]] | None,
         max_tokens: int,
         temperature: float,
+        model_override: str | None = None,
     ) -> InferenceResult:
         """Call Groq API (OpenAI-compatible)."""
         if not self._groq_client:
@@ -1095,7 +1139,7 @@ class InferenceBroker:
                 api_messages.append({"role": msg["role"], "content": msg["content"]})
         api_messages.append({"role": "user", "content": prompt})
 
-        model = get_dynamic("models", "groq_model", self._groq_model)
+        model = model_override or get_dynamic("models", "groq_model", self._groq_model)
         response = await self._groq_client.chat.completions.create(
             model=model,
             messages=api_messages,  # type: ignore[arg-type]
@@ -1120,6 +1164,7 @@ class InferenceBroker:
         messages: list[dict[str, str]] | None,
         max_tokens: int,
         temperature: float,
+        model_override: str | None = None,
     ) -> InferenceResult:
         """Call Gemini API."""
         if not self._gemini_client:
@@ -1131,7 +1176,7 @@ class InferenceBroker:
             content = f"{system_prompt}\n\n{prompt}"
 
         # Wrap synchronous Gemini call in thread to avoid blocking event loop
-        gemini_model = get_dynamic("models", "router_model", self._gemini_model)
+        gemini_model = model_override or get_dynamic("models", "router_model", self._gemini_model)
 
         def _sync_generate() -> Any:
             return self._gemini_client.models.generate_content(  # type: ignore[union-attr]
@@ -1174,6 +1219,7 @@ class InferenceBroker:
         messages: list[dict[str, str]] | None,
         max_tokens: int,
         temperature: float,
+        model_override: str | None = None,
     ) -> InferenceResult:
         """Call Ollama API."""
         # Build messages for chat endpoint
@@ -1184,7 +1230,9 @@ class InferenceBroker:
             api_messages.extend(messages)
         api_messages.append({"role": "user", "content": prompt})
 
-        ollama_model = get_dynamic("models", "ollama_generation_model", self._ollama_model)
+        ollama_model = model_override or get_dynamic(
+            "models", "ollama_generation_model", self._ollama_model
+        )
         response = await self._httpx_client.post(
             f"{self._ollama_url}/api/chat",
             json={

@@ -251,14 +251,18 @@ class DiscordTestClient:
 
         # Wait for bot response
         def check(message: discord.Message) -> bool:
+            reference_message_id = (
+                message.reference.message_id if message.reference is not None else None
+            )
             is_match = (
                 message.channel.id == self.channel_id  # type: ignore[union-attr]
                 and message.author.id == bot_id
-                and message.created_at > after_message.created_at
+                and reference_message_id == after_message.id
             )
             bot_match = message.author.id == bot_id
             print(
-                f"Check: author={message.author.name}, bot_match={bot_match}, is_match={is_match}"
+                f"Check: author={message.author.name}, bot_match={bot_match}, "
+                f"reply_to={reference_message_id}, expected={after_message.id}, is_match={is_match}"
             )
             return is_match
 
@@ -270,18 +274,12 @@ class DiscordTestClient:
         except TimeoutError:
             # Check message history as fallback
             print("Timeout reached, checking message history...")
-            # History returns newest first, so look for bot response after our message
-            found_our_message = False
             async for msg in self.channel.history(limit=20):
                 content = msg.content[:50] if msg.content else "[empty]"
                 print(f"  History: {msg.author.name} ({msg.author.id}): {content}...")
-                # Once we find our sent message, any newer bot message is the response
-                if msg.id == after_message.id:
-                    found_our_message = True
-                    continue
-                # This message is newer - check if it's from the bot
-                if not found_our_message and msg.author.id == bot_id:
-                    print("Found response in history (newer than our message)!")
+                reference_message_id = msg.reference.message_id if msg.reference else None
+                if msg.author.id == bot_id and reference_message_id == after_message.id:
+                    print("Found response in history (reply-correlated)!")
                     return msg
             return None
 

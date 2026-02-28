@@ -429,6 +429,65 @@ class TestQdrantMemoryGetRecentContext:
 
         mock_encryptor.decrypt_payload.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_get_recent_context_paginates_and_limits_latest(
+        self, mock_settings, mock_embeddings
+    ):
+        """Pagination path should still return the true latest records by timestamp."""
+        mock_client = AsyncMock()
+
+        p1 = MagicMock()
+        p1.id = "msg1"
+        p1.payload = {"content": "Old", "timestamp": "2024-01-01T10:00:00"}
+
+        p2 = MagicMock()
+        p2.id = "msg2"
+        p2.payload = {"content": "Mid", "timestamp": "2024-01-01T10:02:00"}
+
+        p3 = MagicMock()
+        p3.id = "msg3"
+        p3.payload = {"content": "New", "timestamp": "2024-01-01T10:03:00"}
+
+        mock_client.scroll = AsyncMock(
+            side_effect=[
+                ([p2, p1], "offset-1"),
+                ([p3], None),
+            ]
+        )
+
+        with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
+                with patch(
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
+                ):
+                    memory = QdrantMemory()
+                    results = await memory.get_recent_context(user_id=1, channel_id=2, limit=2)
+
+        assert [row["content"] for row in results] == ["Mid", "New"]
+        assert mock_client.scroll.await_count == 2
+
+
+class TestQdrantMemoryDeleteByFilters:
+    """Tests for delete_by_filters helper."""
+
+    @pytest.mark.asyncio
+    async def test_delete_by_filters_calls_client_delete(self, mock_settings, mock_embeddings):
+        mock_client = AsyncMock()
+        mock_client.delete = AsyncMock()
+
+        with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
+                with patch(
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
+                ):
+                    memory = QdrantMemory()
+                    await memory.delete_by_filters(
+                        "tenant_documents",
+                        filters={"tenant_id": "t-1", "document_id": "d-1"},
+                    )
+
+        mock_client.delete.assert_called_once()
+
 
 class TestQdrantMemoryClose:
     """Tests for close method."""

@@ -1,0 +1,143 @@
+name: Post-Deploy Promotions
+
+on:
+  workflow_run:
+    workflows:
+      - Deploy Windows
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit SHA to promote
+        required: true
+        type: string
+      source_run_id:
+        description: Deploy Windows run ID containing deployment-receipt artifact
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: post-deploy-promotions-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.sha }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Release + Blog Promotion
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    env:
+      BLOG_MODEL_PRIMARY: gpt-5.2
+      BLOG_MODEL_SECONDARY: claude-sonnet-4-6
+      BLOG_PUBLISH_ENABLED: ${{ vars.BLOG_PUBLISH_ENABLED || 'true' }}
+      RELEASE_AUTO_INCREMENT_ENABLED: ${{ vars.RELEASE_AUTO_INCREMENT_ENABLED || 'true' }}
+      CGS_BLOG_PUBLISH_URL: ${{ vars.CGS_BLOG_PUBLISH_URL }}
+      CGS_BLOG_PUBLISH_TOKEN: ${{ secrets.CGS_BLOG_PUBLISH_TOKEN }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.12'
+
+      - name: Resolve target SHA and source run
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            TARGET_SHA="${{ github.event.workflow_run.head_sha }}"
+            SOURCE_RUN_ID="${{ github.event.workflow_run.id }}"
+          else
+            TARGET_SHA="${{ inputs.sha }}"
+            SOURCE_RUN_ID="${{ inputs.source_run_id }}"
+          fi
+
+          if [[ -z "$TARGET_SHA" || -z "$SOURCE_RUN_ID" ]]; then
+            echo "Missing target SHA or source run ID" >&2
+            exit 1
+          fi
+
+          echo "target_sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
+          echo "source_run_id=$SOURCE_RUN_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Download deployment receipt artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/deployment
+          gh run download "${{ steps.target.outputs.source_run_id }}" \
+            --name deployment-receipt \
+            --dir artifacts/deployment
+          RECEIPT_PATH="$(find artifacts/deployment -type f -name 'deployment-receipt.json' | head -n 1)"
+          if [[ -z "$RECEIPT_PATH" ]]; then
+            echo "deployment-receipt.json not found" >&2
+            exit 1
+          fi
+          echo "RECEIPT_PATH=$RECEIPT_PATH" >> "$GITHUB_ENV"
+
+      - name: Validate deployment receipt gate
+        run: |
+          scripts/validate-deployment-receipt.py \
+            --receipt "$RECEIPT_PATH" \
+            --expected-sha "${{ steps.target.outputs.target_sha }}"
+
+      - name: Auto-increment release for deployed SHA
+        run: |
+          scripts/release-auto-increment.py \
+            --sha "${{ steps.target.outputs.target_sha }}" \
+            --repo "${{ github.repository }}" \
+            --output release-receipt.json
+
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="$(python - <<'PY'
+import json
+from pathlib import Path
+receipt = json.loads(Path('release-receipt.json').read_text(encoding='utf-8'))
+print(receipt.get('tag', ''))
+PY
+)"
+          if [[ -z "$TAG" ]]; then
+            echo "Release tag missing in release receipt" >&2
+            cat release-receipt.json
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Generate and publish deployment blog
+        run: |
+          scripts/post-deploy-blog.py \
+            --sha "${{ steps.target.outputs.target_sha }}" \
+            --repo "${{ github.repository }}" \
+            --release-tag "${{ steps.release.outputs.tag }}" \
+            --output blog-publish-receipt.json
+
+      - name: Upload promotion artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: post-deploy-promotions
+          path: |
+            release-receipt.json
+            blog-publish-receipt.json
+            ${{ env.RECEIPT_PATH }}
+          if-no-files-found: ignore
+          retention-days: 30

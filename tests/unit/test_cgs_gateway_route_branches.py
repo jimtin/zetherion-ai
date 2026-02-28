@@ -381,6 +381,115 @@ async def test_runtime_forwarding_idempotent_replay_and_upstream_error() -> None
 
 
 @pytest.mark.asyncio
+async def test_runtime_document_routes_success_and_binary_proxy() -> None:
+    app, storage, public_client = _runtime_app()
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_api_key": "sk_live_abc",
+        }
+    )
+    public_client.request_json = AsyncMock(
+        side_effect=[
+            (201, {"upload_id": "u1"}, {}),  # create upload
+            (201, {"document_id": "d1", "status": "indexed"}, {}),  # complete upload
+            (200, {"documents": [{"document_id": "d1"}], "count": 1}, {}),  # list
+            (200, {"document_id": "d1", "status": "indexed"}, {}),  # get
+            (200, {"document_id": "d1", "status": "indexed"}, {}),  # reindex
+            (200, {"answer": "ok", "citations": [], "provider": "groq", "model": "m"}, {}),  # rag
+            (200, {"providers": ["groq"], "defaults": {"groq": "m"}, "allowed_models": ["m"]}, {}),
+        ]
+    )
+    public_client.request_raw = AsyncMock(
+        side_effect=[
+            (
+                200,
+                b"<html>preview</html>",
+                {
+                    "Content-Type": "text/html",
+                    "Content-Disposition": 'inline; filename="x.html"',
+                },
+            ),
+            (
+                200,
+                b"file-bytes",
+                {
+                    "Content-Type": "application/pdf",
+                    "Content-Disposition": 'attachment; filename="x.pdf"',
+                },
+            ),
+        ]
+    )
+
+    async with TestClient(TestServer(app)) as client:
+        created = await client.post(
+            "/service/ai/v1/documents/uploads",
+            json={
+                "tenant_id": "tenant-a",
+                "file_name": "proposal.pdf",
+                "mime_type": "application/pdf",
+                "size_bytes": 10,
+            },
+        )
+        assert created.status == 201
+
+        completed = await client.post(
+            "/service/ai/v1/documents/uploads/u1/complete",
+            json={"tenant_id": "tenant-a", "file_base64": "aGVsbG8="},
+        )
+        assert completed.status == 201
+
+        listed = await client.get("/service/ai/v1/documents?tenant_id=tenant-a")
+        assert listed.status == 200
+
+        got = await client.get("/service/ai/v1/documents/d1?tenant_id=tenant-a")
+        assert got.status == 200
+
+        preview = await client.get("/service/ai/v1/documents/d1/preview?tenant_id=tenant-a")
+        assert preview.status == 200
+        assert await preview.read() == b"<html>preview</html>"
+
+        downloaded = await client.get("/service/ai/v1/documents/d1/download?tenant_id=tenant-a")
+        assert downloaded.status == 200
+        assert await downloaded.read() == b"file-bytes"
+
+        reindexed = await client.post(
+            "/service/ai/v1/documents/d1/index",
+            json={"tenant_id": "tenant-a"},
+        )
+        assert reindexed.status == 200
+
+        rag = await client.post(
+            "/service/ai/v1/rag/query",
+            json={"tenant_id": "tenant-a", "query": "hello"},
+        )
+        assert rag.status == 200
+
+        providers = await client.get("/service/ai/v1/models/providers?tenant_id=tenant-a")
+        assert providers.status == 200
+
+    assert public_client.request_raw.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_runtime_document_routes_require_tenant_query() -> None:
+    app, storage, public_client = _runtime_app()
+    storage.get_tenant_mapping = AsyncMock()
+    public_client.request_json = AsyncMock()
+
+    async with TestClient(TestServer(app)) as client:
+        list_resp = await client.get("/service/ai/v1/documents")
+        assert list_resp.status == 400
+        detail_resp = await client.get("/service/ai/v1/documents/doc-1")
+        assert detail_resp.status == 400
+        preview_resp = await client.get("/service/ai/v1/documents/doc-1/preview")
+        assert preview_resp.status == 400
+        providers_resp = await client.get("/service/ai/v1/models/providers")
+        assert providers_resp.status == 400
+
+
+@pytest.mark.asyncio
 async def test_internal_forbidden_for_non_operator() -> None:
     app, _, _ = _runtime_app(principal_roles=["viewer"], principal_scopes=["read:all"])
     async with TestClient(TestServer(app)) as client:

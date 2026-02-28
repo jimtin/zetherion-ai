@@ -188,6 +188,69 @@ CREATE TABLE IF NOT EXISTS tenant_replay_chunks (
 CREATE INDEX IF NOT EXISTS idx_tenant_replay_chunks_session
     ON tenant_replay_chunks (web_session_id, sequence_no ASC);
 
+CREATE TABLE IF NOT EXISTS tenant_documents (
+    id               SERIAL       PRIMARY KEY,
+    document_id      UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    tenant_id        UUID         NOT NULL REFERENCES tenants(tenant_id),
+    file_name        TEXT         NOT NULL,
+    mime_type        TEXT         NOT NULL DEFAULT 'application/octet-stream',
+    object_key       TEXT         NOT NULL,
+    status           VARCHAR(20)  NOT NULL DEFAULT 'uploaded',
+    size_bytes       BIGINT       NOT NULL DEFAULT 0,
+    checksum_sha256  VARCHAR(64),
+    metadata         JSONB        DEFAULT '{}'::jsonb,
+    extracted_text   TEXT,
+    preview_html     TEXT,
+    chunk_count      INT          NOT NULL DEFAULT 0,
+    indexed_at       TIMESTAMPTZ,
+    error_message    TEXT,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_documents_tenant
+    ON tenant_documents (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_documents_status
+    ON tenant_documents (tenant_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_document_uploads (
+    id               SERIAL       PRIMARY KEY,
+    upload_id        UUID         NOT NULL UNIQUE,
+    tenant_id        UUID         NOT NULL REFERENCES tenants(tenant_id),
+    file_name        TEXT         NOT NULL,
+    mime_type        TEXT         NOT NULL DEFAULT 'application/octet-stream',
+    size_bytes       BIGINT       NOT NULL DEFAULT 0,
+    metadata         JSONB        DEFAULT '{}'::jsonb,
+    status           VARCHAR(20)  NOT NULL DEFAULT 'pending',
+    document_id      UUID,
+    expires_at       TIMESTAMPTZ  NOT NULL,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_document_uploads_tenant
+    ON tenant_document_uploads (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_document_uploads_status
+    ON tenant_document_uploads (tenant_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS document_ingestion_jobs (
+    id               SERIAL       PRIMARY KEY,
+    job_id           UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    tenant_id        UUID         NOT NULL REFERENCES tenants(tenant_id),
+    document_id      UUID         NOT NULL
+                                 REFERENCES tenant_documents(document_id) ON DELETE CASCADE,
+    status           VARCHAR(20)  NOT NULL DEFAULT 'processing',
+    error_message    TEXT,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    started_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    completed_at     TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_ingestion_jobs_tenant
+    ON document_ingestion_jobs (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_document_ingestion_jobs_document
+    ON document_ingestion_jobs (document_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS tenant_release_markers (
     id               SERIAL       PRIMARY KEY,
     marker_id        UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
@@ -1155,6 +1218,257 @@ class TenantManager:
             sequence_no,
         )
         return dict(row) if row else None
+
+    async def create_document_upload(
+        self,
+        tenant_id: str,
+        *,
+        upload_id: str,
+        file_name: str,
+        mime_type: str,
+        size_bytes: int,
+        metadata: dict[str, Any] | None = None,
+        expires_at: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Create a pending document upload token."""
+        import json as _json
+
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_document_uploads (
+                upload_id, tenant_id, file_name, mime_type, size_bytes, metadata, expires_at
+            )
+            VALUES (
+                $1::uuid, $2::uuid, $3, $4, $5, $6::jsonb,
+                COALESCE($7, now() + INTERVAL '1 hour')
+            )
+            RETURNING upload_id, tenant_id, file_name, mime_type, size_bytes, metadata,
+                      status, document_id, expires_at, created_at, updated_at
+            """,
+            upload_id,
+            tenant_id,
+            file_name,
+            mime_type,
+            size_bytes,
+            _json.dumps(metadata or {}),
+            expires_at,
+        )
+        return dict(row)
+
+    async def get_document_upload(self, tenant_id: str, upload_id: str) -> dict[str, Any] | None:
+        """Fetch one tenant upload record."""
+        row = await self._fetchrow(
+            """
+            SELECT upload_id, tenant_id, file_name, mime_type, size_bytes, metadata,
+                   status, document_id, expires_at, created_at, updated_at
+            FROM tenant_document_uploads
+            WHERE tenant_id = $1::uuid AND upload_id = $2::uuid
+            LIMIT 1
+            """,
+            tenant_id,
+            upload_id,
+        )
+        return dict(row) if row else None
+
+    async def mark_document_upload_completed(
+        self,
+        tenant_id: str,
+        *,
+        upload_id: str,
+        document_id: str,
+    ) -> None:
+        """Mark upload as completed and bind created document id."""
+        await self._execute(
+            """
+            UPDATE tenant_document_uploads
+            SET status = 'completed',
+                document_id = $3::uuid,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid AND upload_id = $2::uuid
+            """,
+            tenant_id,
+            upload_id,
+            document_id,
+        )
+
+    async def create_document(
+        self,
+        tenant_id: str,
+        *,
+        document_id: str,
+        file_name: str,
+        mime_type: str,
+        object_key: str,
+        status: str,
+        size_bytes: int,
+        checksum_sha256: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Insert a tenant document metadata record."""
+        import json as _json
+
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_documents (
+                document_id, tenant_id, file_name, mime_type, object_key, status,
+                size_bytes, checksum_sha256, metadata
+            )
+            VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9::jsonb)
+            RETURNING document_id, tenant_id, file_name, mime_type, object_key, status,
+                      size_bytes, checksum_sha256, metadata, extracted_text, preview_html,
+                      chunk_count, indexed_at, error_message, created_at, updated_at
+            """,
+            document_id,
+            tenant_id,
+            file_name,
+            mime_type,
+            object_key,
+            status,
+            size_bytes,
+            checksum_sha256,
+            _json.dumps(metadata or {}),
+        )
+        return dict(row)
+
+    async def get_document(self, tenant_id: str, document_id: str) -> dict[str, Any] | None:
+        """Fetch one tenant document by id."""
+        row = await self._fetchrow(
+            """
+            SELECT document_id, tenant_id, file_name, mime_type, object_key, status,
+                   size_bytes, checksum_sha256, metadata, extracted_text, preview_html,
+                   chunk_count, indexed_at, error_message, created_at, updated_at
+            FROM tenant_documents
+            WHERE tenant_id = $1::uuid AND document_id = $2::uuid
+            LIMIT 1
+            """,
+            tenant_id,
+            document_id,
+        )
+        return dict(row) if row else None
+
+    async def list_documents(self, tenant_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
+        """List tenant documents by newest first."""
+        rows = await self._fetch(
+            """
+            SELECT document_id, tenant_id, file_name, mime_type, object_key, status,
+                   size_bytes, checksum_sha256, metadata, extracted_text, preview_html,
+                   chunk_count, indexed_at, error_message, created_at, updated_at
+            FROM tenant_documents
+            WHERE tenant_id = $1::uuid
+            ORDER BY created_at DESC
+            LIMIT $2
+            """,
+            tenant_id,
+            limit,
+        )
+        return [dict(r) for r in rows]
+
+    async def update_document_status(
+        self,
+        tenant_id: str,
+        *,
+        document_id: str,
+        status: str,
+        error_message: str | None,
+    ) -> None:
+        """Update document status/error fields."""
+        await self._execute(
+            """
+            UPDATE tenant_documents
+            SET status = $3,
+                error_message = $4,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid AND document_id = $2::uuid
+            """,
+            tenant_id,
+            document_id,
+            status,
+            error_message,
+        )
+
+    async def update_document_index_payload(
+        self,
+        tenant_id: str,
+        *,
+        document_id: str,
+        extracted_text: str,
+        preview_html: str | None,
+        chunk_count: int,
+        status: str,
+        error_message: str | None,
+    ) -> None:
+        """Update extracted/indexed document payload fields."""
+        await self._execute(
+            """
+            UPDATE tenant_documents
+            SET extracted_text = $3,
+                preview_html = $4,
+                chunk_count = $5,
+                status = $6,
+                error_message = $7,
+                indexed_at = now(),
+                updated_at = now()
+            WHERE tenant_id = $1::uuid AND document_id = $2::uuid
+            """,
+            tenant_id,
+            document_id,
+            extracted_text,
+            preview_html,
+            chunk_count,
+            status,
+            error_message,
+        )
+
+    async def create_document_ingestion_job(
+        self,
+        tenant_id: str,
+        *,
+        document_id: str,
+        status: str = "processing",
+        error_message: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a document ingestion job record."""
+        row = await self._fetchrow(
+            """
+            INSERT INTO document_ingestion_jobs (
+                tenant_id, document_id, status, error_message
+            )
+            VALUES ($1::uuid, $2::uuid, $3, $4)
+            RETURNING job_id, tenant_id, document_id, status, error_message,
+                      created_at, started_at, completed_at
+            """,
+            tenant_id,
+            document_id,
+            status,
+            error_message,
+        )
+        return dict(row)
+
+    async def update_document_ingestion_job(
+        self,
+        tenant_id: str,
+        *,
+        job_id: str,
+        status: str,
+        error_message: str | None,
+    ) -> None:
+        """Update document ingestion job terminal state."""
+        await self._execute(
+            """
+            UPDATE document_ingestion_jobs
+            SET status = $3,
+                error_message = $4,
+                completed_at = CASE
+                    WHEN $3 IN ('indexed', 'failed') THEN now()
+                    ELSE completed_at
+                END
+            WHERE tenant_id = $1::uuid AND job_id = $2::uuid
+            """,
+            tenant_id,
+            job_id,
+            status,
+            error_message,
+        )
 
     async def add_release_marker(
         self,

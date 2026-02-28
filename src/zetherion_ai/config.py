@@ -234,6 +234,14 @@ class Settings(BaseSettings):
     openai_embedding_dimensions: int = Field(
         default=3072, description="Embedding dimensions for OpenAI model"
     )
+    rag_allowed_providers: str = Field(
+        default="groq,openai,claude",
+        description="Comma-separated providers allowed for /api/v1/rag/query overrides",
+    )
+    rag_allowed_models: str = Field(
+        default="",
+        description="Comma-separated model allowlist for /api/v1/rag/query overrides",
+    )
 
     # Encryption Configuration (Phase 5A)
     encryption_passphrase: SecretStr = Field(
@@ -649,6 +657,30 @@ class Settings(BaseSettings):
     release_marker_signature_ttl_seconds: int = Field(
         default=300,
         description="Allowed clock skew/age window for signed release marker requests",
+    )
+    cgs_blog_publish_url: str = Field(
+        default="",
+        description="CGS publish API endpoint used for post-deploy blog publication",
+    )
+    cgs_blog_publish_token: SecretStr | None = Field(
+        default=None,
+        description="Auth token for CGS blog publish API",
+    )
+    blog_model_primary: str = Field(
+        default="gpt-5.2",
+        description="Primary high-tier model for blog drafting",
+    )
+    blog_model_secondary: str = Field(
+        default="claude-sonnet-4-6",
+        description="Secondary high-tier model for blog refinement",
+    )
+    blog_publish_enabled: bool = Field(
+        default=True,
+        description="Enable post-deploy blog generation/publishing workflow",
+    )
+    release_auto_increment_enabled: bool = Field(
+        default=True,
+        description="Enable automatic SemVer release increment after successful main deploy",
     )
 
     app_watcher_trust_mode: str = Field(

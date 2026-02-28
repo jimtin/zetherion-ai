@@ -16,3 +16,4 @@ aiohttp==3.13.3  # Skills service REST API (Phase 5D)
 asyncpg==0.31.0  # PostgreSQL async driver for RBAC and settings
 bcrypt==5.0.0  # API key hashing for telemetry receiver (Phase 10C)
 PyJWT==2.11.0  # JWT session tokens for multi-tenant API
+defusedxml==0.7.1  # Safe XML parsing for DOCX ingestion

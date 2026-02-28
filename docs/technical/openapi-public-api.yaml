@@ -1,0 +1,521 @@
+openapi: 3.1.0
+info:
+  title: Zetherion Public API
+  version: 1.0.0
+  description: Public `/api/v1` contract used by external clients and CGS gateway integrations.
+servers:
+  - url: https://{host}
+    variables:
+      host:
+        default: api.example.com
+security:
+  - ApiKeyAuth: []
+paths:
+  /api/v1/health:
+    get:
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: Healthy service status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /api/v1/sessions:
+    post:
+      summary: Create tenant chat session
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+  /api/v1/sessions/{session_id}:
+    get:
+      summary: Get session metadata
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Session metadata
+    delete:
+      summary: Delete session
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Session deleted
+  /api/v1/chat:
+    post:
+      summary: Send a chat message
+      security:
+        - SessionBearerAuth: []
+      responses:
+        '200':
+          description: Assistant message
+  /api/v1/chat/stream:
+    post:
+      summary: Stream chat response (SSE)
+      security:
+        - SessionBearerAuth: []
+      responses:
+        '200':
+          description: Streaming response
+  /api/v1/chat/history:
+    get:
+      summary: Retrieve chat history
+      security:
+        - SessionBearerAuth: []
+      responses:
+        '200':
+          description: Message history
+  /api/v1/analytics/events:
+    post:
+      summary: Ingest analytics events
+      security:
+        - SessionBearerAuth: []
+      responses:
+        '201':
+          description: Events accepted
+  /api/v1/analytics/replay/chunks:
+    post:
+      summary: Upload replay chunk metadata
+      security:
+        - SessionBearerAuth: []
+      responses:
+        '201':
+          description: Replay chunk accepted
+  /api/v1/analytics/replay/chunks/{web_session_id}/{sequence_no}:
+    get:
+      summary: Get replay chunk metadata/data
+      security:
+        - SessionBearerAuth: []
+      parameters:
+        - name: web_session_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sequence_no
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Replay chunk metadata
+  /api/v1/analytics/sessions/end:
+    post:
+      summary: End analytics web session
+      security:
+        - SessionBearerAuth: []
+      responses:
+        '200':
+          description: Session closed
+  /api/v1/analytics/recommendations:
+    get:
+      summary: Get session recommendations
+      security:
+        - SessionBearerAuth: []
+      responses:
+        '200':
+          description: Recommendations list
+  /api/v1/analytics/recommendations/tenant:
+    get:
+      summary: Get tenant recommendations
+      responses:
+        '200':
+          description: Tenant recommendation list
+  /api/v1/analytics/funnel:
+    get:
+      summary: Get tenant funnel metrics
+      responses:
+        '200':
+          description: Funnel metrics
+  /api/v1/analytics/recommendations/{recommendation_id}/feedback:
+    post:
+      summary: Submit recommendation feedback
+      security:
+        - SessionBearerAuth: []
+      parameters:
+        - name: recommendation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Feedback recorded
+  /api/v1/crm/contacts:
+    get:
+      summary: List tenant CRM contacts
+      responses:
+        '200':
+          description: Contacts list
+  /api/v1/crm/interactions:
+    get:
+      summary: List tenant CRM interactions
+      responses:
+        '200':
+          description: Interactions list
+  /api/v1/releases/markers:
+    post:
+      summary: Ingest release marker
+      responses:
+        '201':
+          description: Marker created
+
+  /api/v1/documents/uploads:
+    post:
+      summary: Create document upload intent
+      description: Creates a pending upload token for tenant-scoped document ingestion.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentUploadCreateRequest'
+      responses:
+        '201':
+          description: Upload intent created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentUploadCreateResponse'
+  /api/v1/documents/uploads/{upload_id}/complete:
+    post:
+      summary: Complete document upload
+      description: Completes upload using base64 JSON payload or multipart file upload.
+      parameters:
+        - $ref: '#/components/parameters/UploadId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentUploadCompleteRequest'
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                metadata:
+                  type: string
+                  description: Optional JSON string metadata payload.
+      responses:
+        '201':
+          description: Document created and queued for indexing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentRecord'
+  /api/v1/documents:
+    get:
+      summary: List tenant documents
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Document list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DocumentRecord'
+                  count:
+                    type: integer
+  /api/v1/documents/{document_id}:
+    get:
+      summary: Get document metadata/status
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Document metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentRecord'
+  /api/v1/documents/{document_id}/preview:
+    get:
+      summary: Preview document content
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Inline preview stream (PDF, HTML, or text fallback)
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            text/html:
+              schema:
+                type: string
+  /api/v1/documents/{document_id}/download:
+    get:
+      summary: Download raw document bytes
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: File download stream
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+  /api/v1/documents/{document_id}/index:
+    post:
+      summary: Re-index an existing tenant document
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Updated indexed document metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentRecord'
+  /api/v1/rag/query:
+    post:
+      summary: Query tenant document vectors with provider/model override
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RagQueryRequest'
+      responses:
+        '200':
+          description: RAG response with citations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RagQueryResponse'
+  /api/v1/models/providers:
+    get:
+      summary: List available retrieval providers/models
+      responses:
+        '200':
+          description: Provider catalog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderCatalog'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    SessionBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UploadId:
+      name: upload_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DocumentId:
+      name: document_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+      required: [status, service]
+    SessionResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        external_user_id:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        session_token:
+          type: string
+      required: [session_id, tenant_id, created_at, session_token]
+    DocumentUploadCreateRequest:
+      type: object
+      required: [file_name]
+      properties:
+        file_name:
+          type: string
+        mime_type:
+          type: string
+          default: application/octet-stream
+        size_bytes:
+          type: integer
+          minimum: 0
+        metadata:
+          type: object
+          additionalProperties: true
+    DocumentUploadCompleteRequest:
+      type: object
+      required: [file_base64]
+      properties:
+        file_base64:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    DocumentUploadCreateResponse:
+      type: object
+      properties:
+        upload_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+        status:
+          type: string
+          enum: [pending, completed, expired, failed]
+        expires_at:
+          type: string
+          format: date-time
+        complete_url:
+          type: string
+      required: [upload_id, tenant_id, status, complete_url]
+    DocumentRecord:
+      type: object
+      properties:
+        document_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        file_name:
+          type: string
+        mime_type:
+          type: string
+        object_key:
+          type: string
+        status:
+          type: string
+          enum: [uploaded, processing, indexed, failed]
+        size_bytes:
+          type: integer
+        checksum_sha256:
+          type: string
+        chunk_count:
+          type: integer
+        indexed_at:
+          type: string
+          format: date-time
+          nullable: true
+        error_message:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - document_id
+        - tenant_id
+        - file_name
+        - mime_type
+        - status
+        - size_bytes
+        - created_at
+        - updated_at
+    RagQueryRequest:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+          minLength: 1
+        top_k:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 6
+        provider:
+          type: string
+          description: Optional provider override. Allowed by RAG_ALLOWED_PROVIDERS.
+        model:
+          type: string
+          description: Optional model override. Allowed by RAG_ALLOWED_MODELS.
+    RagQueryResponse:
+      type: object
+      properties:
+        answer:
+          type: string
+        citations:
+          type: array
+          items:
+            type: object
+            properties:
+              document_id:
+                type: string
+              file_name:
+                type: string
+        provider:
+          type: string
+        model:
+          type: string
+      required: [answer, citations, provider, model]
+    ProviderCatalog:
+      type: object
+      properties:
+        providers:
+          type: array
+          items:
+            type: string
+        defaults:
+          type: object
+          additionalProperties:
+            type: string
+        allowed_models:
+          type: array
+          items:
+            type: string
+      required: [providers, defaults, allowed_models]

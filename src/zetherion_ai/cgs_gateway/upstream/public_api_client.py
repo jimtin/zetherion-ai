@@ -82,3 +82,21 @@ class PublicAPIClient:
             headers=headers,
             json=json_body,
         )
+
+    async def request_raw(
+        self,
+        method: str,
+        path: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> tuple[int, bytes, dict[str, str]]:
+        """Send request and return raw bytes body."""
+        async with self.session.request(
+            method.upper(),
+            self._url(path),
+            headers=headers,
+            params=params,
+        ) as response:
+            payload = await response.read()
+            return response.status, payload, dict(response.headers)

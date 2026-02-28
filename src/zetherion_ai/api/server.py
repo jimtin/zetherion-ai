@@ -36,6 +36,17 @@ from zetherion_ai.api.routes.analytics import (
 )
 from zetherion_ai.api.routes.chat import handle_chat, handle_chat_history, handle_chat_stream
 from zetherion_ai.api.routes.crm import handle_get_contacts, handle_get_interactions
+from zetherion_ai.api.routes.documents import (
+    handle_complete_upload,
+    handle_create_upload,
+    handle_download_document,
+    handle_get_document,
+    handle_list_documents,
+    handle_model_catalog,
+    handle_preview_document,
+    handle_rag_query,
+    handle_reindex_document,
+)
 from zetherion_ai.api.routes.health import handle_health
 from zetherion_ai.api.routes.sessions import (
     handle_create_session,
@@ -44,6 +55,7 @@ from zetherion_ai.api.routes.sessions import (
 )
 from zetherion_ai.api.routes.youtube import register_youtube_routes
 from zetherion_ai.api.tenant import TenantManager
+from zetherion_ai.documents.service import DocumentService
 from zetherion_ai.logging import get_logger
 
 log = get_logger("zetherion_ai.api.server")
@@ -67,6 +79,7 @@ class PublicAPIServer:
         analytics_jobs_enabled: bool = False,
         analytics_hourly_interval_seconds: int = 3600,
         analytics_daily_interval_seconds: int = 86400,
+        document_service: DocumentService | None = None,
     ) -> None:
         self._tenant_manager = tenant_manager
         self._jwt_secret = jwt_secret
@@ -80,6 +93,7 @@ class PublicAPIServer:
         self._analytics_jobs_enabled = analytics_jobs_enabled
         self._analytics_hourly_interval_seconds = analytics_hourly_interval_seconds
         self._analytics_daily_interval_seconds = analytics_daily_interval_seconds
+        self._document_service = document_service
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
         self._rate_limiter = RateLimiter()
@@ -111,6 +125,8 @@ class PublicAPIServer:
             app["inference_broker"] = self._inference_broker
         if self._replay_store is not None:
             app["replay_store"] = self._replay_store
+        if self._document_service is not None:
+            app["document_service"] = self._document_service
 
         # YouTube skill state (accessed by route handlers)
         if self._youtube_storage is not None:
@@ -153,6 +169,20 @@ class PublicAPIServer:
 
         # CI/deploy marker ingest (API-key auth)
         app.router.add_post("/api/v1/releases/markers", handle_release_marker)
+
+        # Tenant documents + retrieval
+        app.router.add_post("/api/v1/documents/uploads", handle_create_upload)
+        app.router.add_post(
+            "/api/v1/documents/uploads/{upload_id}/complete",
+            handle_complete_upload,
+        )
+        app.router.add_get("/api/v1/documents", handle_list_documents)
+        app.router.add_get("/api/v1/documents/{document_id}", handle_get_document)
+        app.router.add_get("/api/v1/documents/{document_id}/preview", handle_preview_document)
+        app.router.add_get("/api/v1/documents/{document_id}/download", handle_download_document)
+        app.router.add_post("/api/v1/documents/{document_id}/index", handle_reindex_document)
+        app.router.add_post("/api/v1/rag/query", handle_rag_query)
+        app.router.add_get("/api/v1/models/providers", handle_model_catalog)
 
         # YouTube (API key auth)
         if self._youtube_storage is not None:
@@ -218,6 +248,7 @@ async def run_server(
     analytics_jobs_enabled: bool = False,
     analytics_hourly_interval_seconds: int = 3600,
     analytics_daily_interval_seconds: int = 86400,
+    document_service: DocumentService | None = None,
 ) -> None:
     """Run the public API server (main entry point for Docker container)."""
     server = PublicAPIServer(
@@ -232,6 +263,7 @@ async def run_server(
         analytics_jobs_enabled=analytics_jobs_enabled,
         analytics_hourly_interval_seconds=analytics_hourly_interval_seconds,
         analytics_daily_interval_seconds=analytics_daily_interval_seconds,
+        document_service=document_service,
     )
     await server.start()
 
@@ -249,6 +281,7 @@ def main() -> None:
     import os
 
     from zetherion_ai.config import get_settings
+    from zetherion_ai.memory.qdrant import QdrantMemory
 
     settings = get_settings()
 
@@ -274,10 +307,25 @@ def main() -> None:
             log.warning("api_inference_broker_init_failed", error=str(e))
 
         replay_store = None
+        document_service = None
         try:
             replay_store = create_replay_store_from_settings(settings)
         except Exception as e:
             log.warning("replay_store_init_failed", error=str(e))
+
+        try:
+            doc_memory = QdrantMemory()
+            await doc_memory.initialize()
+            document_service = DocumentService(
+                tenant_manager=tenant_manager,
+                memory=doc_memory,
+                inference_broker=api_broker,
+                blob_store=replay_store,
+            )
+            await document_service.initialize()
+        except Exception as e:
+            log.warning("document_service_init_failed", error=str(e))
+            document_service = None
 
         # Initialize YouTube storage and skills if Postgres is available
         yt_storage = None
@@ -326,6 +374,7 @@ def main() -> None:
                 analytics_daily_interval_seconds=int(
                     getattr(settings, "analytics_daily_job_interval_seconds", 86400)
                 ),
+                document_service=document_service,
             )
         finally:
             if api_broker is not None:

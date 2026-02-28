@@ -325,27 +325,41 @@ class QdrantMemory:
         Returns:
             List of recent messages, oldest first.
         """
-        results = await self._client.scroll(
-            collection_name=CONVERSATIONS_COLLECTION,
-            scroll_filter=qdrant_models.Filter(
-                must=[
-                    qdrant_models.FieldCondition(
-                        key="user_id",
-                        match=qdrant_models.MatchValue(value=user_id),
-                    ),
-                    qdrant_models.FieldCondition(
-                        key="channel_id",
-                        match=qdrant_models.MatchValue(value=channel_id),
-                    ),
-                ]
-            ),
-            limit=limit,
-            with_payload=True,
-            with_vectors=False,
+        # Scroll all matching rows so "recent" ordering is deterministic even
+        # when backend pagination order differs from timestamp order.
+        scroll_filter = qdrant_models.Filter(
+            must=[
+                qdrant_models.FieldCondition(
+                    key="user_id",
+                    match=qdrant_models.MatchValue(value=user_id),
+                ),
+                qdrant_models.FieldCondition(
+                    key="channel_id",
+                    match=qdrant_models.MatchValue(value=channel_id),
+                ),
+            ]
         )
 
-        messages = []
-        for point in results[0]:
+        points: list[Any] = []
+        offset: str | int | None = None
+        max_scan = max(limit * 10, 200)
+
+        while True:
+            page, next_offset = await self._client.scroll(
+                collection_name=CONVERSATIONS_COLLECTION,
+                scroll_filter=scroll_filter,
+                limit=min(max_scan, 256),
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            points.extend(page)
+            if next_offset is None or len(points) >= max_scan:
+                break
+            offset = next_offset
+
+        messages: list[dict[str, Any]] = []
+        for point in points:
             payload = point.payload or {}
             # Decrypt sensitive fields if encryptor is configured
             if self._encryptor is not None:
@@ -357,8 +371,10 @@ class QdrantMemory:
                 }
             )
 
-        # Sort by timestamp
+        # Sort by timestamp and cap to latest "limit" records.
         messages.sort(key=lambda m: m.get("timestamp", ""))
+        if limit > 0:
+            messages = messages[-limit:]
         return messages
 
     async def ensure_collection(
@@ -496,6 +512,43 @@ class QdrantMemory:
             top_score=round(output[0]["score"], 3) if output else None,
         )
         return output
+
+    async def delete_by_filters(
+        self,
+        collection_name: str,
+        *,
+        filters: dict[str, Any],
+    ) -> None:
+        """Delete points in a collection that match exact payload filters.
+
+        Args:
+            collection_name: Collection to prune.
+            filters: Exact-match payload filters.
+        """
+        if not filters:
+            return
+
+        conditions: list[qdrant_models.Condition] = []
+        for key, value in filters.items():
+            conditions.append(
+                qdrant_models.FieldCondition(
+                    key=key,
+                    match=qdrant_models.MatchValue(value=value),
+                )
+            )
+
+        await self._client.delete(
+            collection_name=collection_name,
+            points_selector=qdrant_models.FilterSelector(
+                filter=qdrant_models.Filter(must=conditions)
+            ),
+        )
+
+        log.debug(
+            "collection_points_deleted",
+            collection=collection_name,
+            filter_keys=sorted(filters.keys()),
+        )
 
     async def get_by_id(
         self,

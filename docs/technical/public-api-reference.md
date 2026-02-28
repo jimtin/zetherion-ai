@@ -342,6 +342,143 @@ Optional hardened signing headers (required when `RELEASE_MARKER_SIGNING_SECRET`
 
 ---
 
+## Document Intelligence API (API Key)
+
+Tenant-scoped document upload, preview/download, indexing, and retrieval endpoints.
+All routes below require `X-API-Key`.
+
+### POST /api/v1/documents/uploads
+
+Create an upload intent and return an `upload_id` token for completion.
+
+**Request:**
+
+```json
+{
+  "file_name": "proposal.pdf",
+  "mime_type": "application/pdf",
+  "size_bytes": 481230,
+  "metadata": {
+    "source": "client-portal"
+  }
+}
+```
+
+**Response 201:**
+
+```json
+{
+  "upload_id": "uuid",
+  "tenant_id": "uuid",
+  "status": "pending",
+  "expires_at": "2026-02-28T22:00:00+00:00",
+  "complete_url": "/api/v1/documents/uploads/{upload_id}/complete"
+}
+```
+
+### POST /api/v1/documents/uploads/{upload_id}/complete
+
+Complete upload with either:
+- `application/json` body containing `file_base64`, or
+- `multipart/form-data` with a `file` part and optional `metadata`.
+
+**JSON request:**
+
+```json
+{
+  "file_base64": "<base64-bytes>",
+  "metadata": {
+    "customer": "acme"
+  }
+}
+```
+
+**Response 201:** returns created document metadata record.
+
+### GET /api/v1/documents
+
+List tenant documents.
+
+Query params:
+- `limit` (default `50`, max `200`)
+
+### GET /api/v1/documents/{document_id}
+
+Get one tenant document metadata/status row.
+
+### GET /api/v1/documents/{document_id}/preview
+
+Inline preview behavior by file type:
+- PDF: `application/pdf` inline stream
+- DOCX: sanitized HTML preview
+- fallback: extracted text preview as HTML
+
+### GET /api/v1/documents/{document_id}/download
+
+Raw file download stream with attachment disposition.
+
+### POST /api/v1/documents/{document_id}/index
+
+Re-index an existing document into vector collection `tenant_documents`.
+
+### POST /api/v1/rag/query
+
+Query indexed tenant document chunks and generate an answer with citations.
+
+**Request:**
+
+```json
+{
+  "query": "What implementation risks are called out in the proposal?",
+  "top_k": 6,
+  "provider": "groq",
+  "model": "llama-3.3-70b-versatile"
+}
+```
+
+**Response 200:**
+
+```json
+{
+  "answer": "...",
+  "citations": [
+    {
+      "document_id": "uuid",
+      "file_name": "proposal.pdf"
+    }
+  ],
+  "provider": "groq",
+  "model": "llama-3.3-70b-versatile"
+}
+```
+
+### GET /api/v1/models/providers
+
+Return retrieval provider/model catalog for UI selectors.
+
+**Response 200:**
+
+```json
+{
+  "providers": ["groq", "openai", "claude"],
+  "defaults": {
+    "groq": "llama-3.3-70b-versatile",
+    "openai": "gpt-5.2",
+    "claude": "claude-sonnet-4-5-20250929"
+  },
+  "allowed_models": ["..."]
+}
+```
+
+### Document Lifecycle States
+
+- `uploaded`
+- `processing`
+- `indexed`
+- `failed`
+
+---
+
 ## YouTube API (API Key)
 
 YouTube routes are registered only when YouTube storage/skills initialize.
@@ -404,10 +541,12 @@ Base prefix: `/api/v1/youtube`
 | Status | Meaning | Example |
 |---|---|---|
 | 400 | Invalid request body or parameters | `{"error":"Invalid JSON body"}` |
+| 413 | Upload payload exceeds configured limit | `{"error":"Upload too large ... "}` |
 | 401 | Missing/invalid auth header or expired session token | `{"error":"Invalid or expired session token"}` |
 | 403 | Tenant inactive or session/tenant mismatch | `{"error":"Tenant not found or inactive"}` |
 | 404 | Tenant-scoped resource not found | `{"error":"Session not found"}` |
 | 429 | Tenant rate limit exceeded | `{"error":"Rate limit exceeded","retry_after":60}` |
+| 500 | Unexpected processing failure | `{"error":"...internal..."}` |
 | 503 | Service dependency unavailable | `{"error":"Service unavailable"}` |
 
 ---
@@ -417,3 +556,6 @@ Base prefix: `/api/v1/youtube`
 - [AI Agent Integration](ai-agent-integration.md)
 - [Skills API Reference](api-reference.md)
 - [Architecture](architecture.md)
+- [API Auth Matrix](api-auth-matrix.md)
+- [API Error Matrix](api-error-matrix.md)
+- [OpenAPI Contracts](openapi-contracts.md)

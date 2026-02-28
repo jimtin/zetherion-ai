@@ -10,6 +10,8 @@ Rules:
   - All refs require a successful "CI/CD Pipeline" run for the target SHA.
   - main/refs/heads/main also require a successful "Deploy Windows" run and
     a valid deployment-receipt artifact proving runtime + resilience success.
+  - main/refs/heads/main also require a successful "Post-Deploy Promotions"
+    run for the same SHA.
 EOF
 }
 
@@ -186,3 +188,34 @@ if [[ "$IS_VALID" != "true" ]]; then
 fi
 
 echo "Deployment success verified: run_id=$DEPLOY_RUN_ID receipt=$RECEIPT_PATH"
+
+PROMOTION_RUNS_JSON="$(
+  jq -c '
+    map(select(
+      .workflowName == "Post-Deploy Promotions"
+      or .workflowName == ".github/workflows/post-deploy-promotions.yml"
+      or .workflowName == "post-deploy-promotions.yml"
+    ))
+  ' <<<"$ALL_RUNS_JSON"
+)"
+
+PROMOTION_RUN_ID="$(
+  jq -r --arg sha "$TARGET_SHA" --arg sha_short "$SHA" '
+    map(select(
+      (.headSha == $sha or (.headSha | startswith($sha_short)))
+      and .status == "completed"
+      and .conclusion == "success"
+    ))
+    | sort_by(.createdAt)
+    | reverse
+    | .[0].databaseId // empty
+  ' <<<"$PROMOTION_RUNS_JSON"
+)"
+
+if [[ -z "$PROMOTION_RUN_ID" ]]; then
+  echo "ERROR: main requires successful Post-Deploy Promotions run for commit $TARGET_SHA."
+  echo "$PROMOTION_RUNS_JSON" | jq -r '.[] | "- run=\(.databaseId) branch=\(.headBranch) status=\(.status) conclusion=\(.conclusion)"'
+  exit 1
+fi
+
+echo "Post-deploy promotions verified: run_id=$PROMOTION_RUN_ID sha=$TARGET_SHA"

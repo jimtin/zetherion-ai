@@ -3,11 +3,6 @@ name: Deploy Documentation
 on:
   push:
     branches: [main]
-    paths:
-      - 'docs/**'
-      - 'mkdocs.yml'
-      - 'scripts/check-docs-*.py'
-      - '.github/workflows/docs.yml'
   workflow_dispatch:
 
 permissions:
@@ -45,6 +40,7 @@ jobs:
           scripts/check-docs-links.py
           scripts/check-route-doc-parity.py
           scripts/check-env-doc-parity.py
+          scripts/check-endpoint-doc-bundle.py
 
       - name: Build docs (strict)
         run: mkdocs build --strict

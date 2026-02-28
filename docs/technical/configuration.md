@@ -80,6 +80,8 @@ cp .env.example .env
 | `EMBEDDINGS_BACKEND` | `openai` | `openai`, `gemini`, `ollama` |
 | `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-large` | OpenAI embedding model |
 | `OPENAI_EMBEDDING_DIMENSIONS` | `3072` | OpenAI embedding dimensions |
+| `RAG_ALLOWED_PROVIDERS` | `groq,openai,claude` | Allowed providers for `/api/v1/rag/query` provider override |
+| `RAG_ALLOWED_MODELS` | empty | Optional model allow-list for `/api/v1/rag/query` model override |
 
 ---
 
@@ -251,6 +253,12 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `ZETHERION_PUBLIC_API_BASE_URL` | `http://zetherion-ai-traefik:8443` | Upstream Zetherion public API base URL for CGS gateway |
 | `ZETHERION_SKILLS_API_BASE_URL` | `http://zetherion-ai-traefik:8080` | Upstream Zetherion skills API base URL for CGS gateway |
 | `ZETHERION_SKILLS_API_SECRET` | unset | Optional override secret for CGS gateway -> skills API calls |
+| `CGS_BLOG_PUBLISH_URL` | empty | CGS publish adapter URL used by post-deploy blog workflow |
+| `CGS_BLOG_PUBLISH_TOKEN` | unset | Auth token used to publish generated blog posts to CGS |
+| `BLOG_MODEL_PRIMARY` | `gpt-5.2` | Required OpenAI model for initial post-deploy draft generation |
+| `BLOG_MODEL_SECONDARY` | `claude-sonnet-4-6` | Required Claude model for humanizing/refinement pass |
+| `BLOG_PUBLISH_ENABLED` | `true` | Enable post-deploy blog generation/publish workflow |
+| `RELEASE_AUTO_INCREMENT_ENABLED` | `true` | Enable mandatory post-deploy GitHub release patch increment |
 | `ANALYTICS_EVENT_RETENTION_DAYS` | `90` | Retention window for raw web events |
 | `ANALYTICS_REPLAY_RETENTION_DAYS` | `14` | Retention window for replay chunk metadata |
 | `ANALYTICS_REPLAY_ENABLED_DEFAULT` | `false` | Default replay ingest policy for tenants |

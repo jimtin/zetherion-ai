@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import json
+import re
 import time
 from datetime import time as clock_time
 from pathlib import Path
@@ -629,10 +630,12 @@ class ZetherionAIBot(discord.Client):
                 return
 
             # Check for prompt injection
+            intent_hint = self._infer_security_intent_hint(content)
             if await self._is_security_blocked(
                 content=content,
                 user_id=message.author.id,
                 channel_id=message.channel.id,
+                intent_hint=intent_hint,
             ):
                 await message.reply(
                     "I noticed some unusual patterns in your message. "
@@ -1483,10 +1486,12 @@ class ZetherionAIBot(discord.Client):
             )
             return False
 
+        intent_hint = self._infer_security_intent_hint(content or "")
         if content and await self._is_security_blocked(
             content=content,
             user_id=interaction.user.id,
             channel_id=interaction.channel_id or 0,
+            intent_hint=intent_hint,
         ):
             await interaction.response.send_message(
                 "I noticed some unusual patterns in your message. Could you rephrase it?",
@@ -1502,6 +1507,7 @@ class ZetherionAIBot(discord.Client):
         content: str,
         user_id: int,
         channel_id: int,
+        intent_hint: str | None = None,
     ) -> bool:
         """Return True when message content should be blocked by security checks."""
         pipeline = self._security_pipeline
@@ -1514,6 +1520,7 @@ class ZetherionAIBot(discord.Client):
                 user_id=user_id,
                 channel_id=channel_id,
                 request_id=str(uuid4())[:12],
+                intent_hint=intent_hint,
             )
         except Exception:
             log.exception("security_pipeline_failed")
@@ -1530,6 +1537,25 @@ class ZetherionAIBot(discord.Client):
                 tier=verdict.tier_reached,
             )
         return False
+
+    @staticmethod
+    def _infer_security_intent_hint(content: str) -> str | None:
+        """Best-effort hint to help reduce Tier-2 false positives."""
+        text = content.strip().lower()
+        if not text:
+            return None
+
+        memory_patterns = (
+            r"^remember(?:\s+that)?\b",
+            r"^my\s+\w+\s+is\b",
+            r"^i\s+(?:am|work as|prefer|like)\b",
+        )
+        if any(re.search(pattern, text) for pattern in memory_patterns):
+            return "memory_store"
+
+        if text.startswith("what do you know about") or "favorite" in text:
+            return "memory_recall"
+        return None
 
     async def _handle_ask(
         self,

@@ -123,6 +123,15 @@ Error envelope:
 | `/conversations/{conversation_id}/analytics/end` | `POST` | End tracked session + summarize | `POST /api/v1/analytics/sessions/end` | Ready |
 | `/conversations/{conversation_id}/recommendations` | `GET` | Session recommendations | `GET /api/v1/analytics/recommendations` | Ready |
 | `/conversations/{conversation_id}/recommendations/{recommendation_id}/feedback` | `POST` | Feedback on recommendation | `POST /api/v1/analytics/recommendations/{recommendation_id}/feedback` | Ready |
+| `/documents/uploads` | `POST` | Create tenant document upload intent | `POST /api/v1/documents/uploads` | Ready |
+| `/documents/uploads/{upload_id}/complete` | `POST` | Complete tenant document upload | `POST /api/v1/documents/uploads/{upload_id}/complete` | Ready |
+| `/documents` | `GET` | List tenant documents | `GET /api/v1/documents` | Ready |
+| `/documents/{document_id}` | `GET` | Get tenant document metadata | `GET /api/v1/documents/{document_id}` | Ready |
+| `/documents/{document_id}/preview` | `GET` | Inline document preview stream | `GET /api/v1/documents/{document_id}/preview` | Ready |
+| `/documents/{document_id}/download` | `GET` | Raw document download stream | `GET /api/v1/documents/{document_id}/download` | Ready |
+| `/documents/{document_id}/index` | `POST` | Re-index a tenant document | `POST /api/v1/documents/{document_id}/index` | Ready |
+| `/rag/query` | `POST` | Query tenant vector store + generate answer | `POST /api/v1/rag/query` | Ready |
+| `/models/providers` | `GET` | Retrieve provider/model catalog | `GET /api/v1/models/providers` | Ready |
 
 ### 6.2 Internal Operator Endpoints (CGS only)
 
@@ -357,7 +366,76 @@ Request:
 }
 ```
 
-## 7.13 `POST /service/ai/v1/internal/tenants`
+## 7.13 `POST /service/ai/v1/documents/uploads`
+
+Creates tenant document upload intent.
+
+Request:
+
+```json
+{
+  "tenant_id": "tenant-a",
+  "file_name": "proposal.pdf",
+  "mime_type": "application/pdf",
+  "size_bytes": 123456
+}
+```
+
+CGS behavior:
+- Validate principal tenant access to `tenant_id`.
+- Forward request to `POST /api/v1/documents/uploads` with mapped `X-API-Key`.
+- Return standard envelope with upstream payload.
+
+## 7.14 `POST /service/ai/v1/documents/uploads/{upload_id}/complete`
+
+Completes upload with base64 payload.
+
+Request:
+
+```json
+{
+  "tenant_id": "tenant-a",
+  "file_base64": "<base64-bytes>",
+  "metadata": {
+    "source": "portal"
+  }
+}
+```
+
+## 7.15 `GET /service/ai/v1/documents`, `GET /service/ai/v1/documents/{document_id}`
+
+Document list/detail endpoints requiring `tenant_id` query parameter.
+
+CGS behavior:
+- enforce tenant ownership from principal + query tenant
+- proxy to upstream metadata endpoints
+- wrap in standard envelope
+
+## 7.16 `GET /service/ai/v1/documents/{document_id}/preview`, `GET /service/ai/v1/documents/{document_id}/download`
+
+Binary passthrough endpoints for browser preview/download.
+
+CGS behavior:
+- stream raw bytes without envelope
+- preserve upstream content headers (`Content-Type`, `Content-Disposition`)
+
+## 7.17 `POST /service/ai/v1/rag/query`, `GET /service/ai/v1/models/providers`
+
+RAG query + provider catalog endpoints for document intelligence UI.
+
+Request (`POST /service/ai/v1/rag/query`):
+
+```json
+{
+  "tenant_id": "tenant-a",
+  "query": "Summarize rollout risks from this proposal",
+  "top_k": 6,
+  "provider": "groq",
+  "model": "llama-3.3-70b-versatile"
+}
+```
+
+## 7.18 `POST /service/ai/v1/internal/tenants`
 
 Internal CGS operator endpoint.
 
@@ -377,23 +455,23 @@ CGS behavior:
 - Call Zetherion Skills API `/handle` with intent `client_create`.
 - Persist returned tenant ID and API key in CGS tenant registry.
 
-## 7.14 `PATCH /service/ai/v1/internal/tenants/{tenant_id}`
+## 7.19 `PATCH /service/ai/v1/internal/tenants/{tenant_id}`
 
 Internal update endpoint:
 - Maps to `client_configure`.
 
-## 7.15 `POST /service/ai/v1/internal/tenants/{tenant_id}/deactivate`
+## 7.20 `POST /service/ai/v1/internal/tenants/{tenant_id}/deactivate`
 
 Internal deactivation endpoint:
 - Maps to `client_deactivate`.
 
-## 7.16 `POST /service/ai/v1/internal/tenants/{tenant_id}/keys/rotate`
+## 7.21 `POST /service/ai/v1/internal/tenants/{tenant_id}/keys/rotate`
 
 Internal key rotation endpoint:
 - Maps to `client_rotate_key`.
 - Must update encrypted key record atomically.
 
-## 7.17 `POST /service/ai/v1/internal/tenants/{tenant_id}/release-markers`
+## 7.22 `POST /service/ai/v1/internal/tenants/{tenant_id}/release-markers`
 
 Publish deployment markers to Zetherion for regression detection.
 
@@ -438,6 +516,15 @@ Canonical signature string:
 | `POST /conversations/{id}/analytics/end` | `POST /api/v1/analytics/sessions/end` | `Bearer zt_sess_` |
 | `GET /conversations/{id}/recommendations` | `GET /api/v1/analytics/recommendations` | `Bearer zt_sess_` |
 | `POST /conversations/{id}/recommendations/{rid}/feedback` | `POST /api/v1/analytics/recommendations/{rid}/feedback` | `Bearer zt_sess_` |
+| `POST /documents/uploads` | `POST /api/v1/documents/uploads` | `X-API-Key` |
+| `POST /documents/uploads/{upload_id}/complete` | `POST /api/v1/documents/uploads/{upload_id}/complete` | `X-API-Key` |
+| `GET /documents` | `GET /api/v1/documents` | `X-API-Key` |
+| `GET /documents/{document_id}` | `GET /api/v1/documents/{document_id}` | `X-API-Key` |
+| `GET /documents/{document_id}/preview` | `GET /api/v1/documents/{document_id}/preview` | `X-API-Key` |
+| `GET /documents/{document_id}/download` | `GET /api/v1/documents/{document_id}/download` | `X-API-Key` |
+| `POST /documents/{document_id}/index` | `POST /api/v1/documents/{document_id}/index` | `X-API-Key` |
+| `POST /rag/query` | `POST /api/v1/rag/query` | `X-API-Key` |
+| `GET /models/providers` | `GET /api/v1/models/providers` | `X-API-Key` |
 | `POST /service/ai/v1/internal/tenants/{tenant_id}/release-markers` | `POST /api/v1/releases/markers` | `X-API-Key` (+ optional signing headers) |
 
 ## 9. CGS Persistence Model

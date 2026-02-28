@@ -292,7 +292,108 @@ Forwards to:
 
 - `/api/v1/analytics/recommendations/{recommendation_id}/feedback`
 
-### 8.3 Internal Operator Endpoints
+### 8.3 Document Intelligence Endpoints
+
+All document endpoints require bearer auth and explicit tenant-scoping.
+For list/detail/preview/download/providers endpoints, `tenant_id` is required as a query param.
+For mutating endpoints, `tenant_id` is required in request JSON body.
+
+### `POST /service/ai/v1/documents/uploads`
+
+Create upload intent (maps to `POST /api/v1/documents/uploads`).
+
+Request:
+
+```json
+{
+  "tenant_id": "tenant-a",
+  "file_name": "proposal.pdf",
+  "mime_type": "application/pdf",
+  "size_bytes": 123456,
+  "metadata": {
+    "source": "portal"
+  }
+}
+```
+
+Response envelope status `201` with upstream payload in `data`.
+
+### `POST /service/ai/v1/documents/uploads/{upload_id}/complete`
+
+Complete upload (maps to `POST /api/v1/documents/uploads/{upload_id}/complete`).
+
+Request:
+
+```json
+{
+  "tenant_id": "tenant-a",
+  "file_base64": "<base64>",
+  "metadata": {
+    "customer": "acme"
+  }
+}
+```
+
+Response envelope status `201`.
+
+### `GET /service/ai/v1/documents?tenant_id=...`
+
+Maps to `GET /api/v1/documents`.
+Response envelope contains `{documents,count}` payload.
+
+### `GET /service/ai/v1/documents/{document_id}?tenant_id=...`
+
+Maps to `GET /api/v1/documents/{document_id}`.
+Response envelope contains document metadata and status lifecycle:
+`uploaded`, `processing`, `indexed`, `failed`.
+
+### `GET /service/ai/v1/documents/{document_id}/preview?tenant_id=...`
+
+Binary passthrough to `GET /api/v1/documents/{document_id}/preview`.
+Gateway preserves relevant content headers:
+- `Content-Type`
+- `Content-Disposition`
+- `Cache-Control`
+
+### `GET /service/ai/v1/documents/{document_id}/download?tenant_id=...`
+
+Binary passthrough to `GET /api/v1/documents/{document_id}/download` with same header behavior.
+
+### `POST /service/ai/v1/documents/{document_id}/index`
+
+Request:
+
+```json
+{
+  "tenant_id": "tenant-a"
+}
+```
+
+Maps to `POST /api/v1/documents/{document_id}/index`.
+
+### `POST /service/ai/v1/rag/query`
+
+Request:
+
+```json
+{
+  "tenant_id": "tenant-a",
+  "query": "Summarize implementation risks in the proposal",
+  "top_k": 6,
+  "provider": "groq",
+  "model": "llama-3.3-70b-versatile"
+}
+```
+
+Maps to `POST /api/v1/rag/query`.
+Response envelope includes `answer`, `citations`, `provider`, `model`.
+
+### `GET /service/ai/v1/models/providers?tenant_id=...`
+
+Maps to `GET /api/v1/models/providers`.
+Used by frontend provider/model selector UI.
+
+### 8.4 Internal Operator Endpoints
 
 Prefix: `/service/ai/v1/internal`
 
@@ -345,7 +446,7 @@ Default payload fields:
 - `environment` (default `production`)
 - `commit_sha`, `branch`, `tag_name`, `deployed_at`, `metadata`
 
-### 8.4 Tenant Reporting Endpoints
+### 8.5 Tenant Reporting Endpoints
 
 Prefix: `/service/ai/v1/tenants/{tenant_id}`
 
@@ -369,7 +470,7 @@ Forwards to `/api/v1/analytics/recommendations/tenant`
 
 Runtime endpoints map to Zetherion Public API using:
 
-- `X-API-Key` (tenant-level operations: sessions/reporting/release markers)
+- `X-API-Key` (tenant-level operations: sessions, documents, RAG, reporting, release markers)
 - `Authorization: Bearer <session_token>` (session-scoped chat/analytics paths)
 
 Internal lifecycle maps to Skills API `/handle` with intents:
@@ -393,6 +494,12 @@ Recommended:
 - `CGS_AUTH_ISSUER`
 - `CGS_AUTH_AUDIENCE`
 - `CGS_GATEWAY_ALLOWED_ORIGINS`
+- `CGS_BLOG_PUBLISH_URL`
+- `CGS_BLOG_PUBLISH_TOKEN`
+- `BLOG_MODEL_PRIMARY=gpt-5.2`
+- `BLOG_MODEL_SECONDARY=claude-sonnet-4-6`
+- `BLOG_PUBLISH_ENABLED=true`
+- `RELEASE_AUTO_INCREMENT_ENABLED=true`
 
 Defaults:
 

@@ -76,6 +76,10 @@ nav:
       - Cost Tracking: technical/cost-tracking.md
       - Skills API Reference: technical/api-reference.md
       - Public API Reference: technical/public-api-reference.md
+      - API Auth Matrix: technical/api-auth-matrix.md
+      - API Error Matrix: technical/api-error-matrix.md
+      - Frontend Route Wiring: technical/frontend-route-wiring.md
+      - OpenAPI Contracts: technical/openapi-contracts.md
       - AI Agent Integration: technical/ai-agent-integration.md
   - Development:
       - Setup & Contributing: development/setup.md

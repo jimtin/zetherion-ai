@@ -184,21 +184,34 @@ class QueueStorage:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                UPDATE message_queue
-                SET status       = 'processing',
-                    worker_id    = $1,
-                    started_at   = now(),
-                    attempt_count = attempt_count + 1
-                WHERE id = (
-                    SELECT id FROM message_queue
-                    WHERE status = 'queued'
-                      AND scheduled_for <= now()
-                      AND priority >= $2
-                      AND priority <= $3
-                    ORDER BY priority ASC, scheduled_for ASC
+                WITH candidate AS (
+                    SELECT mq.id
+                    FROM message_queue mq
+                    WHERE mq.status = 'queued'
+                      AND mq.scheduled_for <= now()
+                      AND mq.priority >= $2
+                      AND mq.priority <= $3
+                      AND (
+                        mq.task_type <> 'discord_message'
+                        OR NOT EXISTS (
+                            SELECT 1
+                            FROM message_queue inflight
+                            WHERE inflight.status = 'processing'
+                              AND inflight.task_type = 'discord_message'
+                              AND inflight.user_id = mq.user_id
+                              AND COALESCE(inflight.channel_id, -1) = COALESCE(mq.channel_id, -1)
+                        )
+                      )
+                    ORDER BY mq.priority ASC, mq.scheduled_for ASC
                     LIMIT 1
                     FOR UPDATE SKIP LOCKED
                 )
+                UPDATE message_queue
+                SET status        = 'processing',
+                    worker_id     = $1,
+                    started_at    = now(),
+                    attempt_count = attempt_count + 1
+                WHERE id = (SELECT id FROM candidate)
                 RETURNING *
                 """,
                 worker_id,

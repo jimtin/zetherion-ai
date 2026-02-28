@@ -82,6 +82,15 @@ class TestPublicAPIServerCreateApp:
         assert "/api/v1/crm/contacts" in paths
         assert "/api/v1/crm/interactions" in paths
         assert "/api/v1/releases/markers" in paths
+        assert "/api/v1/documents/uploads" in paths
+        assert "/api/v1/documents/uploads/{upload_id}/complete" in paths
+        assert "/api/v1/documents" in paths
+        assert "/api/v1/documents/{document_id}" in paths
+        assert "/api/v1/documents/{document_id}/preview" in paths
+        assert "/api/v1/documents/{document_id}/download" in paths
+        assert "/api/v1/documents/{document_id}/index" in paths
+        assert "/api/v1/rag/query" in paths
+        assert "/api/v1/models/providers" in paths
 
 
 class TestPublicAPIServerLifecycle:
