@@ -65,3 +65,22 @@ Contract source:
 ## Operating Rule
 
 When CI fails, inspect attribution first. If attribution says a failure should have been caught locally, treat that as a process breach and enforce canonical local gate usage before the next push.
+
+## CI/CD Proof of Completion
+
+After pushing, completion must be proven by CI/CD results for the exact commit SHA:
+
+```bash
+./scripts/check-cicd-success.sh --sha <commit_sha> --ref <ref>
+```
+
+Rules:
+
+1. All refs require successful `CI/CD Pipeline`.
+2. `main` additionally requires successful `Deploy Windows` and a valid `deployment-receipt.json` artifact.
+
+If CI failure attribution includes `SHOULD_HAVE_BEEN_CAUGHT_LOCALLY` or `PIPELINE_CONTRACT_GAP`, enforce local gate updates in the same fix cycle:
+
+```bash
+./scripts/require-local-gate-update.sh --sha <failed_commit_sha>
+```

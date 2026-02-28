@@ -1,0 +1,267 @@
+name: Deploy Windows
+
+on:
+  workflow_run:
+    workflows:
+      - CI/CD Pipeline
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit SHA to deploy (defaults to head of provided ref)
+        required: false
+        type: string
+      ref:
+        description: Ref to deploy when SHA is omitted
+        required: false
+        default: refs/heads/main
+        type: string
+
+concurrency:
+  group: deploy-windows-main
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy and Verify Windows Runtime
+    runs-on:
+      - self-hosted
+      - windows
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: read
+      actions: read
+    env:
+      WINDOWS_DEPLOY_PATH: C:\ZetherionAI
+      WINDOWS_LAST_GOOD_SHA_PATH: C:\ZetherionAI\data\last-good-sha.txt
+      WINDOWS_DEPLOY_LOCK_PATH: C:\ZetherionAI\data\deploy.lock
+    steps:
+      - name: Determine deployment target
+        id: target
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $eventName = "${{ github.event_name }}"
+          $targetSha = ""
+          $targetRef = ""
+          $sourceWorkflowRunId = ""
+
+          if ($eventName -eq "workflow_run") {
+            $targetSha = "${{ github.event.workflow_run.head_sha }}"
+            $targetRef = "refs/heads/${{ github.event.workflow_run.head_branch }}"
+            $sourceWorkflowRunId = "${{ github.event.workflow_run.id }}"
+          } else {
+            $targetRef = "${{ inputs.ref }}"
+            if (-not $targetRef) {
+              $targetRef = "refs/heads/main"
+            }
+
+            $targetSha = "${{ inputs.sha }}"
+            if (-not $targetSha) {
+              $lsRemote = git ls-remote "https://github.com/${{ github.repository }}.git" $targetRef
+              if (-not $lsRemote) {
+                throw "Unable to resolve SHA for ref: $targetRef"
+              }
+              $targetSha = ($lsRemote -split "\s+")[0]
+            }
+            $sourceWorkflowRunId = "${{ github.run_id }}"
+          }
+
+          if (-not $targetSha) {
+            throw "Resolved target SHA is empty."
+          }
+
+          "target_sha=$targetSha" >> $env:GITHUB_OUTPUT
+          "target_ref=$targetRef" >> $env:GITHUB_OUTPUT
+          "source_workflow_run_id=$sourceWorkflowRunId" >> $env:GITHUB_OUTPUT
+
+      - name: Checkout deployment scripts for target commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ steps.target.outputs.target_sha }}
+
+      - name: Deploy target SHA on Windows host
+        id: deploy
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $deployResultPath = Join-Path $PWD "deploy-result.json"
+          $exitCode = 0
+
+          & ./scripts/windows/deploy-runner.ps1 `
+            -DeployPath "$env:WINDOWS_DEPLOY_PATH" `
+            -TargetSha "${{ steps.target.outputs.target_sha }}" `
+            -TargetRef "${{ steps.target.outputs.target_ref }}" `
+            -LockPath "$env:WINDOWS_DEPLOY_LOCK_PATH" `
+            -OutputPath "$deployResultPath"
+          $exitCode = $LASTEXITCODE
+
+          if (Test-Path $deployResultPath) {
+            $deployResult = Get-Content $deployResultPath -Raw | ConvertFrom-Json
+            "deployed_sha=$($deployResult.deployed_sha)" >> $env:GITHUB_OUTPUT
+            "previous_sha=$($deployResult.previous_sha)" >> $env:GITHUB_OUTPUT
+          } else {
+            "deployed_sha=" >> $env:GITHUB_OUTPUT
+            "previous_sha=" >> $env:GITHUB_OUTPUT
+          }
+
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
+      - name: Verify runtime health and behavior
+        id: verify
+        if: ${{ steps.deploy.outcome == 'success' }}
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $verifyResultPath = Join-Path $PWD "verify-result.json"
+          $exitCode = 0
+
+          & ./scripts/windows/verify-runtime.ps1 `
+            -DeployPath "$env:WINDOWS_DEPLOY_PATH" `
+            -OutputPath "$verifyResultPath"
+          $exitCode = $LASTEXITCODE
+
+          if (Test-Path $verifyResultPath) {
+            $verifyResult = Get-Content $verifyResultPath -Raw | ConvertFrom-Json
+            $checks = $verifyResult.checks
+            "containers_healthy=$($checks.containers_healthy)" >> $env:GITHUB_OUTPUT
+            "bot_startup_markers=$($checks.bot_startup_markers)" >> $env:GITHUB_OUTPUT
+            "postgres_model_keys=$($checks.postgres_model_keys)" >> $env:GITHUB_OUTPUT
+            "fallback_probe=$($checks.fallback_probe)" >> $env:GITHUB_OUTPUT
+          } else {
+            "containers_healthy=false" >> $env:GITHUB_OUTPUT
+            "bot_startup_markers=false" >> $env:GITHUB_OUTPUT
+            "postgres_model_keys=false" >> $env:GITHUB_OUTPUT
+            "fallback_probe=false" >> $env:GITHUB_OUTPUT
+          }
+
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
+      - name: Roll back to last known good SHA
+        id: rollback
+        if: ${{ steps.deploy.outcome == 'failure' || steps.verify.outcome == 'failure' }}
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $rollbackResultPath = Join-Path $PWD "rollback-result.json"
+          & ./scripts/windows/rollback-last-good.ps1 `
+            -DeployPath "$env:WINDOWS_DEPLOY_PATH" `
+            -LastGoodShaPath "$env:WINDOWS_LAST_GOOD_SHA_PATH" `
+            -LockPath "$env:WINDOWS_DEPLOY_LOCK_PATH" `
+            -OutputPath "$rollbackResultPath"
+
+      - name: Build deployment receipt
+        id: receipt
+        if: always()
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $verifyResultPath = Join-Path $PWD "verify-result.json"
+          if (Test-Path $verifyResultPath) {
+            $verify = Get-Content $verifyResultPath -Raw | ConvertFrom-Json
+          } else {
+            $verify = [pscustomobject]@{
+              checks = [pscustomobject]@{
+                containers_healthy = $false
+                bot_startup_markers = $false
+                postgres_model_keys = $false
+                fallback_probe = $false
+              }
+            }
+          }
+
+          $status = "success"
+          if ("${{ steps.deploy.outcome }}" -eq "failure" -or "${{ steps.verify.outcome }}" -eq "failure") {
+            if ("${{ steps.rollback.outcome }}" -eq "success") {
+              $status = "rolled_back"
+            } else {
+              $status = "failed"
+            }
+          }
+
+          $receipt = [ordered]@{
+            target_sha = "${{ steps.target.outputs.target_sha }}"
+            deployed_sha = "${{ steps.deploy.outputs.deployed_sha }}"
+            ref = "${{ steps.target.outputs.target_ref }}"
+            deployed_at = [DateTime]::UtcNow.ToString("o")
+            workflow_run_id = "${{ steps.target.outputs.source_workflow_run_id }}"
+            checks = [ordered]@{
+              containers_healthy = [bool]$verify.checks.containers_healthy
+              bot_startup_markers = [bool]$verify.checks.bot_startup_markers
+              postgres_model_keys = [bool]$verify.checks.postgres_model_keys
+              fallback_probe = [bool]$verify.checks.fallback_probe
+            }
+            status = $status
+          }
+
+          $receiptPath = Join-Path $PWD "deployment-receipt.json"
+          $receipt | ConvertTo-Json -Depth 8 | Out-File $receiptPath -Encoding utf8
+          "receipt_path=$receiptPath" >> $env:GITHUB_OUTPUT
+
+      - name: Persist last known good SHA
+        if: ${{ steps.receipt.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $receipt = Get-Content "${{ steps.receipt.outputs.receipt_path }}" -Raw | ConvertFrom-Json
+          if ($receipt.status -eq "success" -and $receipt.deployed_sha) {
+            $parent = Split-Path -Parent "$env:WINDOWS_LAST_GOOD_SHA_PATH"
+            if (-not (Test-Path $parent)) {
+              New-Item -ItemType Directory -Path $parent -Force | Out-Null
+            }
+            Set-Content -Path "$env:WINDOWS_LAST_GOOD_SHA_PATH" -Value "$($receipt.deployed_sha)`n" -Encoding utf8
+          }
+
+      - name: Upload deployment receipt artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: deployment-receipt
+          path: ${{ steps.receipt.outputs.receipt_path }}
+          retention-days: 30
+
+      - name: Enforce receipt success gate
+        if: always()
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $receipt = Get-Content "${{ steps.receipt.outputs.receipt_path }}" -Raw | ConvertFrom-Json
+          if ($receipt.status -ne "success") {
+            throw "Deployment receipt status is '$($receipt.status)' (expected 'success')."
+          }
+          if (-not $receipt.target_sha -or -not $receipt.deployed_sha) {
+            throw "Receipt is missing target/deployed SHA."
+          }
+          if ($receipt.target_sha -ne $receipt.deployed_sha) {
+            throw "Receipt SHA mismatch: target=$($receipt.target_sha) deployed=$($receipt.deployed_sha)."
+          }
+
+          $checks = $receipt.checks
+          if (-not $checks.containers_healthy) { throw "Receipt check failed: containers_healthy" }
+          if (-not $checks.bot_startup_markers) { throw "Receipt check failed: bot_startup_markers" }
+          if (-not $checks.postgres_model_keys) { throw "Receipt check failed: postgres_model_keys" }
+          if (-not $checks.fallback_probe) { throw "Receipt check failed: fallback_probe" }

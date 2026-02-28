@@ -58,18 +58,25 @@ Critical-path integration coverage in canonical runs must include both:
 1. Read the failure-attribution summary/artifact first.
 2. If reason is `SHOULD_HAVE_BEEN_CAUGHT_LOCALLY`, treat as local gate process breach and fix workflow usage.
 3. If reason is `PIPELINE_CONTRACT_GAP`, update contract mappings immediately.
-4. Re-run `./scripts/test-full.sh` after fixes before pushing again.
+4. Run `./scripts/require-local-gate-update.sh --sha <failed_commit_sha>` and do not proceed until it passes.
+5. Re-run `./scripts/test-full.sh` after fixes before pushing again.
 
-## Post-Push Windows Deployment (Mandatory)
+## Post-Push CI/CD Verification (Mandatory)
 
-Every successful GitHub push must be followed by a Windows host update and runtime verification.
+Every successful GitHub push must be proven by CI/CD status, and `main` pushes must include a successful Windows deployment receipt.
 
 1. Use the local runbook at `.agent-handoff/GITHUB_PUSH_AND_WINDOWS_DEPLOY_RUNBOOK.md`.
-2. Use the runbook-defined SSH target (user/host) to update `C:\ZetherionAI` to the pushed ref, and record the resulting commit hash.
-3. Apply the Docker credential fix from the runbook when needed, then run `docker compose up -d --build`.
-4. Verify deployment health with:
-   - `docker compose ps`
-   - bot startup logs (`settings_manager_initialized`, `provider_issue_alerts_wired`, `provider_probe_task_started`)
-   - model settings rows in Postgres (`models` namespace keys)
-   - fallback behavior check and related log signals.
-5. Do not consider work complete until Windows deploy + verification has succeeded, or a concrete blocker is reported.
+2. Validate CI/CD proof with:
+   - `./scripts/check-cicd-success.sh --sha <commit_sha> --ref <ref>`
+3. Required by ref:
+   - Non-main refs: successful `CI/CD Pipeline` run for the exact commit SHA.
+   - `main`/`refs/heads/main`: successful `CI/CD Pipeline` and successful `Deploy Windows` workflow for the same SHA, with valid `deployment-receipt.json`.
+4. `deployment-receipt.json` must confirm:
+   - `target_sha == deployed_sha`
+   - checks all true: `containers_healthy`, `bot_startup_markers`, `postgres_model_keys`, `fallback_probe`
+   - status is `success`
+5. Do not consider work complete until `./scripts/check-cicd-success.sh` passes, or a concrete blocker is reported.
+
+## Break-Glass SSH Deployment (Non-Standard)
+
+SSH-based deployment/remoting is emergency-only recovery and is not part of the standard completion path.
