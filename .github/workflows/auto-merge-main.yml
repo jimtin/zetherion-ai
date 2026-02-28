@@ -1,0 +1,177 @@
+name: Auto Merge Main
+
+on:
+  workflow_run:
+    workflows:
+      - CI/CD Pipeline
+    types:
+      - completed
+
+concurrency:
+  group: auto-merge-main-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  promote:
+    name: Auto-promote codex/* to main
+    if: >-
+      ${{
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch != 'main' &&
+        startsWith(github.event.workflow_run.head_branch, 'codex/') &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Promote branch to main (fast-forward only)
+        id: promote
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          DELETE_SOURCE_BRANCH: "true"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          merge_status="blocked"
+          blocked_reason=""
+          main_before_sha=""
+          main_after_sha=""
+          pr_url=""
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git fetch --prune origin "+refs/heads/main:refs/remotes/origin/main"
+          if ! git fetch --prune origin "+refs/heads/${SOURCE_BRANCH}:refs/remotes/origin/${SOURCE_BRANCH}"; then
+            blocked_reason="source_branch_missing"
+          fi
+
+          if ! git show-ref --verify --quiet "refs/remotes/origin/${SOURCE_BRANCH}"; then
+            blocked_reason="source_branch_missing"
+          else
+            source_head_sha="$(git rev-parse "refs/remotes/origin/${SOURCE_BRANCH}")"
+            main_before_sha="$(git rev-parse refs/remotes/origin/main)"
+            main_after_sha="$main_before_sha"
+
+            if [[ "$source_head_sha" != "$SOURCE_SHA" ]]; then
+              blocked_reason="source_branch_head_moved"
+            elif git merge-base --is-ancestor "$SOURCE_SHA" "refs/remotes/origin/main"; then
+              merge_status="merged"
+              blocked_reason=""
+              main_after_sha="$(git rev-parse refs/remotes/origin/main)"
+            elif git merge-base --is-ancestor "refs/remotes/origin/main" "refs/remotes/origin/${SOURCE_BRANCH}"; then
+              git checkout -B main "refs/remotes/origin/main"
+              git merge --ff-only "refs/remotes/origin/${SOURCE_BRANCH}"
+              main_after_sha="$(git rev-parse HEAD)"
+              git push origin HEAD:main
+              merge_status="merged"
+              blocked_reason=""
+
+              if [[ "${DELETE_SOURCE_BRANCH}" == "true" ]]; then
+                git push origin --delete "${SOURCE_BRANCH}" || true
+              fi
+            else
+              blocked_reason="fast_forward_blocked"
+            fi
+          fi
+
+          if [[ "$merge_status" == "blocked" ]]; then
+            if [[ -z "$main_before_sha" ]]; then
+              main_before_sha="$(git rev-parse refs/remotes/origin/main)"
+            fi
+            if [[ -z "$main_after_sha" ]]; then
+              main_after_sha="$main_before_sha"
+            fi
+
+            if [[ "$blocked_reason" != "source_branch_missing" ]]; then
+              body_file="$(mktemp)"
+              cat >"$body_file" <<EOF
+          Auto-promotion from \`${SOURCE_BRANCH}\` to \`main\` was blocked.
+
+          Reason: \`${blocked_reason}\`
+
+          Required action:
+          1. Rebase \`${SOURCE_BRANCH}\` on the latest \`main\`.
+          2. Push the updated branch.
+          3. Wait for a fresh successful \`CI/CD Pipeline\` run.
+
+          Source SHA from passing CI run: \`${SOURCE_SHA}\`
+          Current main SHA: \`${main_before_sha}\`
+          EOF
+
+              existing_pr_number="$(
+                gh pr list \
+                  --state open \
+                  --head "${SOURCE_BRANCH}" \
+                  --base "main" \
+                  --json number \
+                  --jq '.[0].number // empty'
+              )"
+
+              if [[ -n "$existing_pr_number" ]]; then
+                gh pr comment "$existing_pr_number" --body-file "$body_file" || true
+                pr_url="$(gh pr view "$existing_pr_number" --json url --jq '.url')"
+              else
+                gh pr create \
+                  --head "${SOURCE_BRANCH}" \
+                  --base "main" \
+                  --title "Auto-promotion blocked: ${SOURCE_BRANCH} -> main" \
+                  --body-file "$body_file"
+                pr_url="$(
+                  gh pr list \
+                    --state open \
+                    --head "${SOURCE_BRANCH}" \
+                    --base "main" \
+                    --json url \
+                    --jq '.[0].url // empty'
+                )"
+              fi
+            fi
+          fi
+
+          jq -n \
+            --arg source_branch "$SOURCE_BRANCH" \
+            --arg source_sha "$SOURCE_SHA" \
+            --arg main_before_sha "$main_before_sha" \
+            --arg main_after_sha "$main_after_sha" \
+            --arg merge_method "ff-only" \
+            --arg status "$merge_status" \
+            --arg blocked_reason "$blocked_reason" \
+            --arg pr_url "$pr_url" \
+            --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{
+              generated_at: $generated_at,
+              source_branch: $source_branch,
+              source_sha: $source_sha,
+              main_before_sha: $main_before_sha,
+              main_after_sha: $main_after_sha,
+              merge_method: $merge_method,
+              status: $status,
+              blocked_reason: $blocked_reason,
+              pr_url: $pr_url
+            }' > automerge-receipt.json
+
+          echo "status=${merge_status}" >> "$GITHUB_OUTPUT"
+          echo "receipt_path=$PWD/automerge-receipt.json" >> "$GITHUB_OUTPUT"
+          echo "pr_url=${pr_url}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload auto-merge receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: automerge-receipt
+          path: ${{ steps.promote.outputs.receipt_path }}
+          retention-days: 30

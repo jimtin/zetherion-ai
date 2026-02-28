@@ -9,7 +9,7 @@ Usage:
 Rules:
   - All refs require a successful "CI/CD Pipeline" run for the target SHA.
   - main/refs/heads/main also require a successful "Deploy Windows" run and
-    a valid deployment-receipt artifact proving runtime verification success.
+    a valid deployment-receipt artifact proving runtime + resilience success.
 EOF
 }
 
@@ -173,6 +173,9 @@ IS_VALID="$(
     and .checks.bot_startup_markers == true
     and .checks.postgres_model_keys == true
     and .checks.fallback_probe == true
+    and .checks.recovery_tasks_registered == true
+    and .checks.runner_service_persistent == true
+    and .checks.docker_service_persistent == true
   ' "$RECEIPT_PATH"
 )"
 

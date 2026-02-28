@@ -74,9 +74,18 @@ Every successful GitHub push must be proven by CI/CD status, and `main` pushes m
    - `main`/`refs/heads/main`: successful `CI/CD Pipeline` and successful `Deploy Windows` workflow for the same SHA, with valid `deployment-receipt.json`.
 4. `deployment-receipt.json` must confirm:
    - `target_sha == deployed_sha`
-   - checks all true: `containers_healthy`, `bot_startup_markers`, `postgres_model_keys`, `fallback_probe`
+   - checks all true: `containers_healthy`, `bot_startup_markers`, `postgres_model_keys`, `fallback_probe`, `recovery_tasks_registered`, `runner_service_persistent`, `docker_service_persistent`
    - status is `success`
 5. Do not consider work complete until `./scripts/check-cicd-success.sh` passes, or a concrete blocker is reported.
+
+## Automatic Main Promotion (Mandatory)
+
+1. Standard branch workflow is `codex/*` -> auto-promotion into `main`; do not use non-`codex/*` branches when the goal is standard delivery.
+2. Direct feature pushes to `main` are non-standard; use only break-glass procedures when automation cannot be used.
+3. Successful `CI/CD Pipeline` runs on `codex/*` branches are promoted by `.github/workflows/auto-merge-main.yml` using fast-forward-only rules.
+4. If fast-forward is blocked, automation must stop merge attempts and open/update a PR from `codex/*` to `main` with rebase instructions.
+5. If `Deploy Windows` fails for an auto-merged `main` SHA, `.github/workflows/revert-failed-main-deploy.yml` must auto-revert the merged commit range on `main`.
+6. Manual merge to `main` is break-glass only and must include explicit operator justification in workflow/runbook notes.
 
 ## Break-Glass SSH Deployment (Non-Standard)
 

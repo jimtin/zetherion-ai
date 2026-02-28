@@ -78,6 +78,14 @@ Rules:
 
 1. All refs require successful `CI/CD Pipeline`.
 2. `main` additionally requires successful `Deploy Windows` and a valid `deployment-receipt.json` artifact.
+3. `main` receipt checks must all be true:
+   - `containers_healthy`
+   - `bot_startup_markers`
+   - `postgres_model_keys`
+   - `fallback_probe`
+   - `recovery_tasks_registered`
+   - `runner_service_persistent`
+   - `docker_service_persistent`
 
 If CI failure attribution includes `SHOULD_HAVE_BEEN_CAUGHT_LOCALLY` or `PIPELINE_CONTRACT_GAP`, enforce local gate updates in the same fix cycle:
 

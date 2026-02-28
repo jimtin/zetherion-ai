@@ -66,6 +66,53 @@ require_env_var() {
     return 0
 }
 
+ensure_python_ca_bundle() {
+    # Discord gateway tests use aiohttp/websockets, which rely on Python/OpenSSL
+    # trust settings. Some local Python installs have missing default cert paths.
+    if [ -n "${SSL_CERT_FILE:-}" ] && [ -r "${SSL_CERT_FILE:-}" ]; then
+        return 0
+    fi
+
+    local ca_bundle
+    ca_bundle="$(
+        python - <<'PY'
+import os
+import ssl
+from pathlib import Path
+
+def _readable(path: str | None) -> bool:
+    return bool(path) and Path(path).is_file() and os.access(path, os.R_OK)
+
+verify = ssl.get_default_verify_paths()
+if _readable(verify.cafile):
+    print(verify.cafile)
+    raise SystemExit(0)
+
+try:
+    import certifi  # type: ignore
+except Exception:
+    raise SystemExit(1)
+
+certifi_path = certifi.where()
+if _readable(certifi_path):
+    print(certifi_path)
+    raise SystemExit(0)
+
+raise SystemExit(1)
+PY
+    )" || true
+
+    if [ -z "$ca_bundle" ] || [ ! -r "$ca_bundle" ]; then
+        echo "[$(ts)] ERROR: Could not determine a readable CA bundle for Python TLS verification."
+        echo "[$(ts)] Install certifi in the repo virtualenv or configure SSL_CERT_FILE."
+        return 1
+    fi
+
+    export SSL_CERT_FILE="$ca_bundle"
+    echo "[$(ts)] Using SSL_CERT_FILE=$SSL_CERT_FILE for Python TLS verification."
+    return 0
+}
+
 can_bind_local_socket() {
     python - <<'PY' >/dev/null 2>&1
 import socket
@@ -346,6 +393,10 @@ if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
 fi
 export EMBEDDINGS_BACKEND OPENAI_EMBEDDING_MODEL OPENAI_EMBEDDING_DIMENSIONS
 echo "[$(ts)] Embeddings backend: $EMBEDDINGS_BACKEND (model=$OPENAI_EMBEDDING_MODEL, dimensions=$OPENAI_EMBEDDING_DIMENSIONS)"
+
+if ! ensure_python_ca_bundle; then
+    exit 1
+fi
 
 if [ "${SKIP_LOCAL_SOCKET_PREFLIGHT:-false}" != "true" ]; then
     if ! can_bind_local_socket; then

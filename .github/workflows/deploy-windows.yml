@@ -85,6 +85,51 @@ jobs:
         with:
           ref: ${{ steps.target.outputs.target_sha }}
 
+      - name: Register resilience startup/watchdog tasks
+        id: resilience_register
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $registrationPath = Join-Path $PWD "resilience-registration.json"
+          & ./scripts/windows/register-resilience-tasks.ps1 `
+            -DeployPath "$env:WINDOWS_DEPLOY_PATH" `
+            -OutputPath "$registrationPath"
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      - name: Verify resilience readiness
+        id: resilience
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $readinessPath = Join-Path $PWD "resilience-ready.json"
+          & ./scripts/windows/check-resilience-ready.ps1 `
+            -DeployPath "$env:WINDOWS_DEPLOY_PATH" `
+            -OutputPath "$readinessPath"
+          $exitCode = $LASTEXITCODE
+
+          if (Test-Path $readinessPath) {
+            $readiness = Get-Content $readinessPath -Raw | ConvertFrom-Json
+            "recovery_tasks_registered=$($readiness.checks.recovery_tasks_registered)" >> $env:GITHUB_OUTPUT
+            "runner_service_persistent=$($readiness.checks.runner_service_persistent)" >> $env:GITHUB_OUTPUT
+            "docker_service_persistent=$($readiness.checks.docker_service_persistent)" >> $env:GITHUB_OUTPUT
+          } else {
+            "recovery_tasks_registered=false" >> $env:GITHUB_OUTPUT
+            "runner_service_persistent=false" >> $env:GITHUB_OUTPUT
+            "docker_service_persistent=false" >> $env:GITHUB_OUTPUT
+          }
+
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
       - name: Deploy target SHA on Windows host
         id: deploy
         shell: pwsh
@@ -190,6 +235,12 @@ jobs:
             }
           }
 
+          $resilienceChecks = [pscustomobject]@{
+            recovery_tasks_registered = "${{ steps.resilience.outputs.recovery_tasks_registered }}" -eq "true"
+            runner_service_persistent = "${{ steps.resilience.outputs.runner_service_persistent }}" -eq "true"
+            docker_service_persistent = "${{ steps.resilience.outputs.docker_service_persistent }}" -eq "true"
+          }
+
           $status = "success"
           if ("${{ steps.deploy.outcome }}" -eq "failure" -or "${{ steps.verify.outcome }}" -eq "failure") {
             if ("${{ steps.rollback.outcome }}" -eq "success") {
@@ -210,6 +261,9 @@ jobs:
               bot_startup_markers = [bool]$verify.checks.bot_startup_markers
               postgres_model_keys = [bool]$verify.checks.postgres_model_keys
               fallback_probe = [bool]$verify.checks.fallback_probe
+              recovery_tasks_registered = [bool]$resilienceChecks.recovery_tasks_registered
+              runner_service_persistent = [bool]$resilienceChecks.runner_service_persistent
+              docker_service_persistent = [bool]$resilienceChecks.docker_service_persistent
             }
             status = $status
           }
@@ -265,3 +319,6 @@ jobs:
           if (-not $checks.bot_startup_markers) { throw "Receipt check failed: bot_startup_markers" }
           if (-not $checks.postgres_model_keys) { throw "Receipt check failed: postgres_model_keys" }
           if (-not $checks.fallback_probe) { throw "Receipt check failed: fallback_probe" }
+          if (-not $checks.recovery_tasks_registered) { throw "Receipt check failed: recovery_tasks_registered" }
+          if (-not $checks.runner_service_persistent) { throw "Receipt check failed: runner_service_persistent" }
+          if (-not $checks.docker_service_persistent) { throw "Receipt check failed: docker_service_persistent" }

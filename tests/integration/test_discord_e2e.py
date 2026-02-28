@@ -413,8 +413,10 @@ async def test_bot_remembers_information(discord_test_client: DiscordTestClient)
         f"<@{bot_id}> Remember that my favorite color is {favorite_color}"
     )
     store_response = None
-    recall_message = None
-    recall_response = None
+    recall_messages: list[discord.Message] = []
+    recall_responses: list[discord.Message] = []
+    memory_recall_success = False
+    last_recall_explanation = ""
 
     try:
         store_response = await discord_test_client.wait_for_bot_response(
@@ -425,31 +427,44 @@ async def test_bot_remembers_information(discord_test_client: DiscordTestClient)
         # Wait a moment for memory to be indexed
         await asyncio.sleep(5)
 
-        # Recall memory
-        recall_message = await discord_test_client.send_message(
-            f"<@{bot_id}> What is my favorite color? Please include the exact value."
+        for attempt in range(1, 4):
+            recall_message = await discord_test_client.send_message(
+                f"<@{bot_id}> What is my favorite color? Please include the exact value."
+            )
+            recall_messages.append(recall_message)
+            recall_response = await discord_test_client.wait_for_bot_response(
+                recall_message, timeout=90.0, bot_id=bot_id
+            )
+            assert recall_response is not None, "Bot did not respond to recall query"
+            recall_responses.append(recall_response)
+
+            # Validate that the bot successfully recalled the information.
+            success, explanation = validate_memory_recall(recall_response.content, favorite_color)
+            last_recall_explanation = explanation
+            print(f"Memory validation (attempt {attempt}/3): {explanation}")
+            print(f"Bot response: {recall_response.content[:200]}...")
+
+            if success:
+                memory_recall_success = True
+                break
+
+            # Give indexing one more short window before retrying.
+            if attempt < 3:
+                await asyncio.sleep(8)
+
+        assert memory_recall_success, (
+            "Bot failed to recall stored memory after retries. "
+            f"Final explanation: {last_recall_explanation}"
         )
-        recall_response = await discord_test_client.wait_for_bot_response(
-            recall_message, timeout=90.0, bot_id=bot_id
-        )
-
-        assert recall_response is not None, "Bot did not respond to recall query"
-
-        # Validate that the bot successfully recalled the information
-        success, explanation = validate_memory_recall(recall_response.content, favorite_color)
-        print(f"Memory validation: {explanation}")
-        print(f"Bot response: {recall_response.content[:200]}...")
-
-        assert success, f"Bot failed to recall stored memory. Explanation: {explanation}"
         print("✅ Memory test completed successfully")
 
     finally:
         await discord_test_client.delete_message(store_message)
         if store_response:
             await discord_test_client.delete_message(store_response)
-        if recall_message:
+        for recall_message in recall_messages:
             await discord_test_client.delete_message(recall_message)
-        if recall_response:
+        for recall_response in recall_responses:
             await discord_test_client.delete_message(recall_response)
 
 

@@ -1,0 +1,179 @@
+name: Revert Failed Main Deploy
+
+on:
+  workflow_run:
+    workflows:
+      - Deploy Windows
+    types:
+      - completed
+    branches:
+      - main
+
+concurrency:
+  group: revert-failed-main-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  revert:
+    name: Auto-revert failed auto-merged main deploy
+    if: >-
+      ${{
+        github.event.workflow_run.conclusion == 'failure' &&
+        github.event.workflow_run.head_branch == 'main'
+      }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Correlate failed deploy and revert range
+        id: revert
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FAILED_SHA: ${{ github.event.workflow_run.head_sha }}
+          FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          status="failed"
+          reason=""
+          matched_automerge_run_id=""
+          main_before_sha=""
+          reverted_head_sha=""
+          source_branch=""
+          source_sha=""
+          reverted_commits_json="[]"
+
+          tmp_root="$(mktemp -d)"
+          cleanup() {
+            rm -rf "$tmp_root"
+          }
+          trap cleanup EXIT
+
+          auto_runs_json="$(gh run list --workflow "Auto Merge Main" --limit 80 --json databaseId,status,conclusion,createdAt,url)"
+          matched_receipt=""
+
+          while IFS= read -r run_id; do
+            run_dir="$tmp_root/$run_id"
+            mkdir -p "$run_dir"
+
+            if ! gh run download "$run_id" --name "automerge-receipt" --dir "$run_dir" >/dev/null 2>&1; then
+              continue
+            fi
+
+            receipt_path="$(find "$run_dir" -type f -name 'automerge-receipt.json' | head -n 1)"
+            if [[ -z "$receipt_path" ]]; then
+              continue
+            fi
+
+            if jq -e --arg sha "$FAILED_SHA" '.status == "merged" and .main_after_sha == $sha' "$receipt_path" >/dev/null; then
+              matched_receipt="$receipt_path"
+              matched_automerge_run_id="$run_id"
+              break
+            fi
+          done < <(
+            jq -r '
+              map(select(.status == "completed" and .conclusion == "success"))
+              | sort_by(.createdAt)
+              | reverse
+              | .[].databaseId
+            ' <<<"$auto_runs_json"
+          )
+
+          if [[ -z "$matched_receipt" ]]; then
+            status="skipped"
+            reason="no_matching_automerge_receipt"
+          else
+            main_before_sha="$(jq -r '.main_before_sha' "$matched_receipt")"
+            source_branch="$(jq -r '.source_branch' "$matched_receipt")"
+            source_sha="$(jq -r '.source_sha' "$matched_receipt")"
+
+            git fetch --prune origin "+refs/heads/main:refs/remotes/origin/main"
+            current_main_sha="$(git rev-parse refs/remotes/origin/main)"
+
+            if [[ "$current_main_sha" != "$FAILED_SHA" ]]; then
+              status="skipped"
+              reason="main_head_advanced"
+            elif [[ -z "$main_before_sha" ]]; then
+              status="skipped"
+              reason="missing_main_before_sha"
+            else
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git checkout -B main "refs/remotes/origin/main"
+
+              mapfile -t revert_commits < <(git rev-list "${main_before_sha}..${FAILED_SHA}")
+              if [[ "${#revert_commits[@]}" -eq 0 ]]; then
+                status="skipped"
+                reason="empty_revert_range"
+              else
+                for commit_sha in "${revert_commits[@]}"; do
+                  git revert --no-edit "$commit_sha"
+                done
+
+                reverted_head_sha="$(git rev-parse HEAD)"
+                git push origin HEAD:main
+                reverted_commits_json="$(printf '%s\n' "${revert_commits[@]}" | jq -Rsc 'split("\n") | map(select(length > 0))')"
+                status="reverted"
+                reason=""
+              fi
+            fi
+          fi
+
+          jq -n \
+            --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg status "$status" \
+            --arg reason "$reason" \
+            --arg failed_deploy_run_id "$FAILED_RUN_ID" \
+            --arg failed_sha "$FAILED_SHA" \
+            --arg matched_automerge_run_id "$matched_automerge_run_id" \
+            --arg main_before_sha "$main_before_sha" \
+            --arg reverted_head_sha "$reverted_head_sha" \
+            --arg source_branch "$source_branch" \
+            --arg source_sha "$source_sha" \
+            --argjson reverted_commits "$reverted_commits_json" \
+            '{
+              generated_at: $generated_at,
+              status: $status,
+              reason: $reason,
+              failed_deploy_run_id: $failed_deploy_run_id,
+              failed_sha: $failed_sha,
+              matched_automerge_run_id: $matched_automerge_run_id,
+              main_before_sha: $main_before_sha,
+              reverted_head_sha: $reverted_head_sha,
+              source_branch: $source_branch,
+              source_sha: $source_sha,
+              reverted_commits: $reverted_commits
+            }' > revert-receipt.json
+
+          {
+            echo "### Failed Main Deploy Revert"
+            echo ""
+            echo "- status: \`${status}\`"
+            echo "- reason: \`${reason}\`"
+            echo "- failed_sha: \`${FAILED_SHA}\`"
+            if [[ -n "$matched_automerge_run_id" ]]; then
+              echo "- matched_automerge_run_id: \`${matched_automerge_run_id}\`"
+            fi
+            if [[ -n "$reverted_head_sha" ]]; then
+              echo "- reverted_head_sha: \`${reverted_head_sha}\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          echo "receipt_path=$PWD/revert-receipt.json" >> "$GITHUB_OUTPUT"
+
+      - name: Upload revert receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: revert-receipt
+          path: ${{ steps.revert.outputs.receipt_path }}
+          retention-days: 30
