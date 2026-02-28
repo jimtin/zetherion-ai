@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Internal typing and multipart parsing hardening in `src/zetherion_ai/api/routes/documents.py`.
 - No API surface changes: no path/method/auth/error/schema contract changes for document endpoints.
 
+### Changed - Windows Deploy Resilience Fallback (2026-03-01)
+
+- Added controlled fallback in Windows resilience readiness checks for hardened runners where scheduled task registration is access-denied.
+- Deployment receipt now treats persistent runner/docker service recovery as valid fallback when recovery tasks are missing and explicit fallback is enabled.
+
 ### Added - Document Intelligence + Post-Deploy Promotions (2026-02-28)
 
 - Tenant-scoped document intelligence API endpoints:

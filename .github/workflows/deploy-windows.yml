@@ -38,6 +38,7 @@ jobs:
       WINDOWS_DEPLOY_PATH: C:\ZetherionAI
       WINDOWS_LAST_GOOD_SHA_PATH: C:\ZetherionAI\data\last-good-sha.txt
       WINDOWS_DEPLOY_LOCK_PATH: C:\ZetherionAI\data\deploy.lock
+      WINDOWS_RESILIENCE_ALLOW_SERVICE_FALLBACK: "true"
     steps:
       - name: Determine deployment target
         id: target
