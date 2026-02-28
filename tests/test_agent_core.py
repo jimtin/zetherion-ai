@@ -9,6 +9,12 @@ from zetherion_ai.agent.providers import Provider, TaskType
 from zetherion_ai.agent.router import MessageIntent, RoutingDecision
 
 
+@pytest.fixture(autouse=True)
+def _set_required_api_keys(monkeypatch):
+    """Ensure unit tests do not depend on external secret presence."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+
+
 class TestBuildContext:
     """Tests for _build_context method."""
 
