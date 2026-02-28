@@ -10,6 +10,10 @@ optional tenant-scoped YouTube endpoints.
 
 This API is distinct from the internal Skills API (`:8080`).
 
+Maintenance note (2026-03-01):
+- Internal document upload route parsing/typing hardening was applied.
+- No public API contract changes were introduced.
+
 ---
 
 ## Authentication

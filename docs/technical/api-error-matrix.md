@@ -2,6 +2,11 @@
 
 This matrix defines the normalized error behavior for the Zetherion public API and CGS gateway.
 
+## Maintenance Note (2026-03-01)
+
+- Internal document route parsing/typing hardening was applied.
+- Error contracts and status mappings remain unchanged.
+
 ## Public API (`/api/v1`)
 
 | Route Group | Status | Error Shape | Notes |

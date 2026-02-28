@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Document Route Internal Hardening (2026-03-01)
+
+- Internal typing and multipart parsing hardening in `src/zetherion_ai/api/routes/documents.py`.
+- No API surface changes: no path/method/auth/error/schema contract changes for document endpoints.
+
 ### Added - Document Intelligence + Post-Deploy Promotions (2026-02-28)
 
 - Tenant-scoped document intelligence API endpoints:
