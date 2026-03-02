@@ -159,9 +159,9 @@ The CI/CD pipeline is defined in `.github/workflows/ci.yml`.
 | Workflow | Trigger | Contract |
 |---|---|---|
 | `docs.yml` (`Deploy Documentation`) | every push to `main` | Rebuild + republish full docs suite on each `main` merge |
-| `post-deploy-promotions.yml` (`Post-Deploy Promotions`) | successful `Deploy Windows` completion on `main` | Validate deployment receipt, auto-increment GitHub release, generate+publish CGS blog |
+| Windows local promotions worker (`scripts/windows/promotions-runner.ps1` + `scripts/windows/promotions-watch.ps1`) | successful Windows deployment receipt for `main` SHA | Validate deployment receipt, build merge intelligence, generate/publish CGS blog, and auto-increment GitHub release |
 
-Post-deploy promotion gates:
+Windows promotion gates:
 
 1. `deployment-receipt.json` must be `status=success`.
 2. `target_sha == deployed_sha` and must match triggering SHA.

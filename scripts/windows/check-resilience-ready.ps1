@@ -6,6 +6,8 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$WatchdogTaskName = "ZetherionRuntimeWatchdog",
     [Parameter(Mandatory = $false)]
+    [string]$PromotionsTaskName = "ZetherionPostDeployPromotions",
+    [Parameter(Mandatory = $false)]
     [string]$OutputPath = "resilience-ready.json"
 )
 
@@ -123,6 +125,7 @@ function Test-RecoveryTask {
 
 $checks = [ordered]@{
     recovery_tasks_registered = $false
+    promotions_task_registered = $false
     runner_service_persistent = $false
     docker_service_persistent = $false
 }
@@ -131,8 +134,10 @@ $details = [ordered]@{
     deploy_path = $DeployPath
     startup_task_name = $StartupTaskName
     watchdog_task_name = $WatchdogTaskName
+    promotions_task_name = $PromotionsTaskName
     startup_task = $null
     watchdog_task = $null
+    promotions_task = $null
     runner_services = @()
     docker_service = $null
     network_service_in_docker_users = $false
@@ -141,10 +146,14 @@ $details = [ordered]@{
 try {
     $details.startup_task = Test-RecoveryTask -TaskName $StartupTaskName -ScriptNeedle "startup-recover.ps1"
     $details.watchdog_task = Test-RecoveryTask -TaskName $WatchdogTaskName -ScriptNeedle "runtime-watchdog.ps1"
+    $details.promotions_task = Test-RecoveryTask -TaskName $PromotionsTaskName -ScriptNeedle "promotions-watch.ps1"
 
     $checks.recovery_tasks_registered = [bool](
         ($details.startup_task.passes -or $details.startup_task.degraded_pass) -and
         ($details.watchdog_task.passes -or $details.watchdog_task.degraded_pass)
+    )
+    $checks.promotions_task_registered = [bool](
+        ($details.promotions_task.passes -or $details.promotions_task.degraded_pass)
     )
 
     $runnerServices = @(
