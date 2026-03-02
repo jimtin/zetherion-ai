@@ -2572,13 +2572,13 @@
 <td>Rebuild + republish full docs suite on each <code>main</code> merge</td>
 </tr>
 <tr>
-<td><code>post-deploy-promotions.yml</code> (<code>Post-Deploy Promotions</code>)</td>
-<td>successful <code>Deploy Windows</code> completion on <code>main</code></td>
-<td>Validate deployment receipt, auto-increment GitHub release, generate+publish CGS blog</td>
+<td>Windows local promotions worker (<code>scripts/windows/promotions-runner.ps1</code> + <code>scripts/windows/promotions-watch.ps1</code>)</td>
+<td>successful Windows deployment receipt for <code>main</code> SHA</td>
+<td>Validate deployment receipt, build merge intelligence, generate/publish CGS blog, and auto-increment GitHub release</td>
 </tr>
 </tbody>
 </table>
-<p>Post-deploy promotion gates:</p>
+<p>Windows promotion gates:</p>
 <ol>
 <li><code>deployment-receipt.json</code> must be <code>status=success</code>.</li>
 <li><code>target_sha == deployed_sha</code> and must match triggering SHA.</li>

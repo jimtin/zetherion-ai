@@ -2917,32 +2917,37 @@ in <code>config.py</code>.</p>
 <tr>
 <td><code>CGS_BLOG_PUBLISH_URL</code></td>
 <td>empty</td>
-<td>CGS publish adapter URL used by post-deploy blog workflow</td>
+<td>Windows promotions secret key for CGS publish adapter URL (stored via DPAPI blob, not repo <code>.env</code>)</td>
 </tr>
 <tr>
 <td><code>CGS_BLOG_PUBLISH_TOKEN</code></td>
 <td>unset</td>
-<td>Auth token used to publish generated blog posts to CGS</td>
+<td>Windows promotions secret key for CGS publish auth token</td>
+</tr>
+<tr>
+<td><code>GITHUB_PROMOTION_TOKEN</code></td>
+<td>unset</td>
+<td>Windows promotions secret key used to call GitHub Releases/PR APIs</td>
 </tr>
 <tr>
 <td><code>BLOG_MODEL_PRIMARY</code></td>
 <td><code>gpt-5.2</code></td>
-<td>Required OpenAI model for initial post-deploy draft generation</td>
+<td>Required OpenAI model for Windows promotion draft generation</td>
 </tr>
 <tr>
 <td><code>BLOG_MODEL_SECONDARY</code></td>
 <td><code>claude-sonnet-4-6</code></td>
-<td>Required Claude model for humanizing/refinement pass</td>
+<td>Required Claude model for Windows promotion refine/humanization pass</td>
 </tr>
 <tr>
 <td><code>BLOG_PUBLISH_ENABLED</code></td>
 <td><code>true</code></td>
-<td>Enable post-deploy blog generation/publish workflow</td>
+<td>Windows promotions toggle for blog generation/publish</td>
 </tr>
 <tr>
 <td><code>RELEASE_AUTO_INCREMENT_ENABLED</code></td>
 <td><code>true</code></td>
-<td>Enable mandatory post-deploy GitHub release patch increment</td>
+<td>Windows promotions toggle for mandatory GitHub SemVer patch release increment</td>
 </tr>
 <tr>
 <td><code>ANALYTICS_EVENT_RETENTION_DAYS</code></td>
@@ -3182,6 +3187,12 @@ in <code>config.py</code>.</p>
 </tbody>
 </table>
 <p>Legacy <code>REPLAY_STORAGE_*</code> environment variable names remain accepted for backward compatibility, but <code>OBJECT_STORAGE_*</code> is the preferred naming.</p>
+<p>Windows promotions secrets are bootstrapped/rotated with:</p>
+<ul>
+<li><code>scripts/windows/set-promotions-secrets.ps1</code></li>
+<li><code>scripts/windows/test-promotions-secrets.ps1</code></li>
+</ul>
+<p>Encrypted blob path: <code>C:\ZetherionAI\data\secrets\promotions.bin</code></p>
 <hr />
 <h2 id="logging-and-runtime">Logging and Runtime<a class="headerlink" href="#logging-and-runtime" title="Permanent link">&para;</a></h2>
 <table>

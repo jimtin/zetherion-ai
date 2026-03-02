@@ -1492,6 +1492,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#changed-windows-merge-intelligence-promotions-authority-2026-03-02" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Windows Merge-Intelligence Promotions Authority (2026-03-02)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#changed-document-route-internal-hardening-2026-03-01" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2250,6 +2261,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#changed-windows-merge-intelligence-promotions-authority-2026-03-02" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Windows Merge-Intelligence Promotions Authority (2026-03-02)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#changed-document-route-internal-hardening-2026-03-01" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2867,6 +2889,30 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 </blockquote>
 <hr />
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="changed-windows-merge-intelligence-promotions-authority-2026-03-02">Changed - Windows Merge-Intelligence Promotions Authority (2026-03-02)<a class="headerlink" href="#changed-windows-merge-intelligence-promotions-authority-2026-03-02" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Removed GitHub Actions <code>post-deploy-promotions.yml</code>; blog/release promotions are now executed on the Windows deployment host.</li>
+<li>Added Windows promotion runtime components:</li>
+<li><code>scripts/windows/promotions-runner.ps1</code></li>
+<li><code>scripts/windows/promotions-watch.ps1</code></li>
+<li><code>scripts/windows/promotions-pipeline.py</code></li>
+<li><code>scripts/windows/set-promotions-secrets.ps1</code></li>
+<li><code>scripts/windows/test-promotions-secrets.ps1</code></li>
+<li>Deployment workflow now persists machine-local deployment receipts at <code>C:\ZetherionAI\data\deployment-receipts\&lt;sha&gt;.json</code> and invokes the local promotions runner after successful receipt build.</li>
+<li>Added scheduled task registration for <code>ZetherionPostDeployPromotions</code> (startup + periodic execution) through <code>scripts/windows/register-resilience-tasks.ps1</code>.</li>
+<li>Added per-SHA local promotions artifacts:</li>
+<li><code>C:\ZetherionAI\data\promotions\analysis\&lt;sha&gt;.json</code></li>
+<li><code>C:\ZetherionAI\data\promotions\receipts\&lt;sha&gt;.json</code></li>
+<li><code>C:\ZetherionAI\data\promotions\state.json</code></li>
+<li>Promotions pipeline now enforces:</li>
+<li>deployment receipt validation before any publish/release action</li>
+<li>merge-intelligence evidence mapping across the promotion window</li>
+<li>high-tier model only content generation (<code>gpt-5.2</code> -&gt; <code>claude-sonnet-4-6</code>)</li>
+<li>SEO + GEO gate checks and claim-to-evidence validation</li>
+<li>idempotent blog publish + idempotent release increment with partial-failure retry behavior</li>
+<li><code>scripts/check-cicd-success.sh</code> no longer requires a GitHub <code>Post-Deploy Promotions</code> workflow run for <code>main</code>.</li>
+<li>CI push trigger no longer runs full pipeline on <code>codex/**</code> (PR-to-main flow remains the quality gate path).</li>
+</ul>
 <h3 id="changed-document-route-internal-hardening-2026-03-01">Changed - Document Route Internal Hardening (2026-03-01)<a class="headerlink" href="#changed-document-route-internal-hardening-2026-03-01" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Internal typing and multipart parsing hardening in <code>src/zetherion_ai/api/routes/documents.py</code>.</li>
