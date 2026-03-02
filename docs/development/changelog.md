@@ -13,6 +13,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Windows Merge-Intelligence Promotions Authority (2026-03-02)
+
+- Removed GitHub Actions `post-deploy-promotions.yml`; blog/release promotions are now executed on the Windows deployment host.
+- Added Windows promotion runtime components:
+  - `scripts/windows/promotions-runner.ps1`
+  - `scripts/windows/promotions-watch.ps1`
+  - `scripts/windows/promotions-pipeline.py`
+  - `scripts/windows/set-promotions-secrets.ps1`
+  - `scripts/windows/test-promotions-secrets.ps1`
+- Deployment workflow now persists machine-local deployment receipts at `C:\ZetherionAI\data\deployment-receipts\<sha>.json` and invokes the local promotions runner after successful receipt build.
+- Added scheduled task registration for `ZetherionPostDeployPromotions` (startup + periodic execution) through `scripts/windows/register-resilience-tasks.ps1`.
+- Added per-SHA local promotions artifacts:
+  - `C:\ZetherionAI\data\promotions\analysis\<sha>.json`
+  - `C:\ZetherionAI\data\promotions\receipts\<sha>.json`
+  - `C:\ZetherionAI\data\promotions\state.json`
+- Promotions pipeline now enforces:
+  - deployment receipt validation before any publish/release action
+  - merge-intelligence evidence mapping across the promotion window
+  - high-tier model only content generation (`gpt-5.2` -> `claude-sonnet-4-6`)
+  - SEO + GEO gate checks and claim-to-evidence validation
+  - idempotent blog publish + idempotent release increment with partial-failure retry behavior
+- `scripts/check-cicd-success.sh` no longer requires a GitHub `Post-Deploy Promotions` workflow run for `main`.
+- CI push trigger no longer runs full pipeline on `codex/**` (PR-to-main flow remains the quality gate path).
+
 ### Changed - Document Route Internal Hardening (2026-03-01)
 
 - Internal typing and multipart parsing hardening in `src/zetherion_ai/api/routes/documents.py`.

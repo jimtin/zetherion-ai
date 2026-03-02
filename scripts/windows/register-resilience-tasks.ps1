@@ -6,9 +6,13 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$WatchdogTaskName = "ZetherionRuntimeWatchdog",
     [Parameter(Mandatory = $false)]
+    [string]$PromotionsTaskName = "ZetherionPostDeployPromotions",
+    [Parameter(Mandatory = $false)]
     [string]$LegacyTaskName = "ZetherionDockerAutoStart",
     [Parameter(Mandatory = $false)]
     [int]$WatchdogIntervalMinutes = 5,
+    [Parameter(Mandatory = $false)]
+    [int]$PromotionsIntervalMinutes = 10,
     [Parameter(Mandatory = $false)]
     [string]$OutputPath = "resilience-registration.json"
 )
@@ -18,6 +22,9 @@ $ErrorActionPreference = "Stop"
 
 if ($WatchdogIntervalMinutes -lt 1) {
     throw "WatchdogIntervalMinutes must be >= 1."
+}
+if ($PromotionsIntervalMinutes -lt 1) {
+    throw "PromotionsIntervalMinutes must be >= 1."
 }
 
 function Write-RegistrationResult {
@@ -145,17 +152,21 @@ $result = [ordered]@{
     checks = [ordered]@{
         startup_task_registered = $false
         watchdog_task_registered = $false
+        promotions_task_registered = $false
         legacy_task_disabled = $false
         recovery_tasks_registered = $false
     }
     details = [ordered]@{
         startup_task = $StartupTaskName
         watchdog_task = $WatchdogTaskName
+        promotions_task = $PromotionsTaskName
         legacy_task = $LegacyTaskName
         deploy_path = $DeployPath
         watchdog_interval_minutes = $WatchdogIntervalMinutes
+        promotions_interval_minutes = $PromotionsIntervalMinutes
         startup_task_probe = $null
         watchdog_task_probe = $null
+        promotions_task_probe = $null
         actions_taken = @()
         warnings = @()
     }
@@ -166,6 +177,7 @@ $result = [ordered]@{
 try {
     $startupScriptPath = Join-Path $DeployPath "scripts\windows\startup-recover.ps1"
     $watchdogScriptPath = Join-Path $DeployPath "scripts\windows\runtime-watchdog.ps1"
+    $promotionsWatchScriptPath = Join-Path $DeployPath "scripts\windows\promotions-watch.ps1"
 
     if (-not (Test-Path $startupScriptPath)) {
         $sourceStartupScriptPath = Join-Path $PSScriptRoot "startup-recover.ps1"
@@ -191,6 +203,18 @@ try {
         Copy-Item -Path $sourceWatchdogScriptPath -Destination $watchdogScriptPath -Force
         $result.details.actions_taken += "bootstrapped_recovery_script:runtime-watchdog.ps1"
     }
+    if (-not (Test-Path $promotionsWatchScriptPath)) {
+        $sourcePromotionsWatchScriptPath = Join-Path $PSScriptRoot "promotions-watch.ps1"
+        if (-not (Test-Path $sourcePromotionsWatchScriptPath)) {
+            throw "Promotions watch script not found at $promotionsWatchScriptPath or $sourcePromotionsWatchScriptPath"
+        }
+        $promotionsParent = Split-Path -Parent $promotionsWatchScriptPath
+        if ($promotionsParent -and -not (Test-Path $promotionsParent)) {
+            New-Item -ItemType Directory -Path $promotionsParent -Force | Out-Null
+        }
+        Copy-Item -Path $sourcePromotionsWatchScriptPath -Destination $promotionsWatchScriptPath -Force
+        $result.details.actions_taken += "bootstrapped_recovery_script:promotions-watch.ps1"
+    }
 
     $legacyTask = Get-ScheduledTask -TaskName $LegacyTaskName -ErrorAction SilentlyContinue
     if ($legacyTask) {
@@ -208,13 +232,16 @@ try {
 
     $startupProbe = Get-RecoveryTaskRecord -TaskName $StartupTaskName -ScriptNeedle "startup-recover.ps1"
     $watchdogProbe = Get-RecoveryTaskRecord -TaskName $WatchdogTaskName -ScriptNeedle "runtime-watchdog.ps1"
+    $promotionsProbe = Get-RecoveryTaskRecord -TaskName $PromotionsTaskName -ScriptNeedle "promotions-watch.ps1"
     $result.details.startup_task_probe = $startupProbe
     $result.details.watchdog_task_probe = $watchdogProbe
+    $result.details.promotions_task_probe = $promotionsProbe
 
-    if ($startupProbe.passes -and $watchdogProbe.passes) {
+    if ($startupProbe.passes -and $watchdogProbe.passes -and $promotionsProbe.passes) {
         $result.details.actions_taken += "recovery_tasks_already_registered"
         $result.checks.startup_task_registered = $true
         $result.checks.watchdog_task_registered = $true
+        $result.checks.promotions_task_registered = $true
     } else {
         try {
             $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
@@ -258,6 +285,29 @@ try {
                 -Description "Periodic runtime watchdog for Zetherion."
             Register-ScheduledTask -TaskName $WatchdogTaskName -InputObject $watchdogTask -Force | Out-Null
             $result.details.actions_taken += "registered_watchdog_task:$WatchdogTaskName"
+
+            $promotionsAction = New-ScheduledTaskAction `
+                -Execute "pwsh.exe" `
+                -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$promotionsWatchScriptPath`" -DeployPath `"$DeployPath`""
+            $promotionsStartupTrigger = New-ScheduledTaskTrigger -AtStartup
+            $promotionsRecurringTrigger = New-ScheduledTaskTrigger `
+                -Once `
+                -At ((Get-Date).AddMinutes(2)) `
+                -RepetitionInterval (New-TimeSpan -Minutes $PromotionsIntervalMinutes) `
+                -RepetitionDuration (New-TimeSpan -Days 3650)
+            $promotionsSettings = New-ScheduledTaskSettingsSet `
+                -StartWhenAvailable `
+                -AllowStartIfOnBatteries `
+                -DontStopIfGoingOnBatteries `
+                -ExecutionTimeLimit (New-TimeSpan -Minutes 20)
+            $promotionsTask = New-ScheduledTask `
+                -Action $promotionsAction `
+                -Trigger @($promotionsStartupTrigger, $promotionsRecurringTrigger) `
+                -Principal $principal `
+                -Settings $promotionsSettings `
+                -Description "Process post-deploy promotions (blog + release) on startup and periodic schedule."
+            Register-ScheduledTask -TaskName $PromotionsTaskName -InputObject $promotionsTask -Force | Out-Null
+            $result.details.actions_taken += "registered_promotions_task:$PromotionsTaskName"
         } catch {
             $message = $_.Exception.Message
             if ($message -and $message -like "*Access is denied*") {
@@ -270,8 +320,10 @@ try {
 
         $startupProbe = Get-RecoveryTaskRecord -TaskName $StartupTaskName -ScriptNeedle "startup-recover.ps1"
         $watchdogProbe = Get-RecoveryTaskRecord -TaskName $WatchdogTaskName -ScriptNeedle "runtime-watchdog.ps1"
+        $promotionsProbe = Get-RecoveryTaskRecord -TaskName $PromotionsTaskName -ScriptNeedle "promotions-watch.ps1"
         $result.details.startup_task_probe = $startupProbe
         $result.details.watchdog_task_probe = $watchdogProbe
+        $result.details.promotions_task_probe = $promotionsProbe
 
         $result.checks.startup_task_registered = [bool](
             $startupProbe.passes -or $startupProbe.degraded_pass
@@ -279,13 +331,20 @@ try {
         $result.checks.watchdog_task_registered = [bool](
             $watchdogProbe.passes -or $watchdogProbe.degraded_pass
         )
+        $result.checks.promotions_task_registered = [bool](
+            $promotionsProbe.passes -or $promotionsProbe.degraded_pass
+        )
     }
 
     $result.checks.recovery_tasks_registered = [bool](
         $result.checks.startup_task_registered -and $result.checks.watchdog_task_registered
     )
 
-    $result.status = if ($result.checks.recovery_tasks_registered -and $result.checks.legacy_task_disabled) {
+    $result.status = if (
+        $result.checks.recovery_tasks_registered -and
+        $result.checks.promotions_task_registered -and
+        $result.checks.legacy_task_disabled
+    ) {
         "success"
     } else {
         "failed"

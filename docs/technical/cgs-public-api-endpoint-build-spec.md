@@ -499,12 +499,13 @@ Recommended:
 - `CGS_AUTH_ISSUER`
 - `CGS_AUTH_AUDIENCE`
 - `CGS_GATEWAY_ALLOWED_ORIGINS`
-- `CGS_BLOG_PUBLISH_URL`
-- `CGS_BLOG_PUBLISH_TOKEN`
-- `BLOG_MODEL_PRIMARY=gpt-5.2`
-- `BLOG_MODEL_SECONDARY=claude-sonnet-4-6`
-- `BLOG_PUBLISH_ENABLED=true`
-- `RELEASE_AUTO_INCREMENT_ENABLED=true`
+- `CGS_BLOG_PUBLISH_URL` (Windows promotions secret)
+- `CGS_BLOG_PUBLISH_TOKEN` (Windows promotions secret)
+- `GITHUB_PROMOTION_TOKEN` (Windows promotions secret)
+- `BLOG_MODEL_PRIMARY=gpt-5.2` (Windows promotions secret)
+- `BLOG_MODEL_SECONDARY=claude-sonnet-4-6` (Windows promotions secret)
+- `BLOG_PUBLISH_ENABLED=true` (Windows promotions secret)
+- `RELEASE_AUTO_INCREMENT_ENABLED=true` (Windows promotions secret)
 
 Defaults:
 

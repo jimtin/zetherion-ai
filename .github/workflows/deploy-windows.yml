@@ -38,6 +38,7 @@ jobs:
       WINDOWS_DEPLOY_PATH: C:\ZetherionAI
       WINDOWS_LAST_GOOD_SHA_PATH: C:\ZetherionAI\data\last-good-sha.txt
       WINDOWS_DEPLOY_LOCK_PATH: C:\ZetherionAI\data\deploy.lock
+      WINDOWS_DEPLOYMENT_RECEIPTS_PATH: C:\ZetherionAI\data\deployment-receipts
       WINDOWS_RESILIENCE_ALLOW_SERVICE_FALLBACK: "true"
     steps:
       - name: Determine deployment target
@@ -86,7 +87,7 @@ jobs:
         with:
           ref: ${{ steps.target.outputs.target_sha }}
 
-      - name: Register resilience startup/watchdog tasks
+      - name: Register resilience startup/watchdog/promotions tasks
         id: resilience_register
         shell: pwsh
         continue-on-error: true
@@ -119,10 +120,12 @@ jobs:
           if (Test-Path $readinessPath) {
             $readiness = Get-Content $readinessPath -Raw | ConvertFrom-Json
             "recovery_tasks_registered=$($readiness.checks.recovery_tasks_registered)" >> $env:GITHUB_OUTPUT
+            "promotions_task_registered=$($readiness.checks.promotions_task_registered)" >> $env:GITHUB_OUTPUT
             "runner_service_persistent=$($readiness.checks.runner_service_persistent)" >> $env:GITHUB_OUTPUT
             "docker_service_persistent=$($readiness.checks.docker_service_persistent)" >> $env:GITHUB_OUTPUT
           } else {
             "recovery_tasks_registered=false" >> $env:GITHUB_OUTPUT
+            "promotions_task_registered=false" >> $env:GITHUB_OUTPUT
             "runner_service_persistent=false" >> $env:GITHUB_OUTPUT
             "docker_service_persistent=false" >> $env:GITHUB_OUTPUT
           }
@@ -238,6 +241,7 @@ jobs:
 
           $resilienceChecks = [pscustomobject]@{
             recovery_tasks_registered = "${{ steps.resilience.outputs.recovery_tasks_registered }}" -eq "true"
+            promotions_task_registered = "${{ steps.resilience.outputs.promotions_task_registered }}" -eq "true"
             runner_service_persistent = "${{ steps.resilience.outputs.runner_service_persistent }}" -eq "true"
             docker_service_persistent = "${{ steps.resilience.outputs.docker_service_persistent }}" -eq "true"
           }
@@ -263,6 +267,7 @@ jobs:
               postgres_model_keys = [bool]$verify.checks.postgres_model_keys
               fallback_probe = [bool]$verify.checks.fallback_probe
               recovery_tasks_registered = [bool]$resilienceChecks.recovery_tasks_registered
+              promotions_task_registered = [bool]$resilienceChecks.promotions_task_registered
               runner_service_persistent = [bool]$resilienceChecks.runner_service_persistent
               docker_service_persistent = [bool]$resilienceChecks.docker_service_persistent
             }
@@ -271,7 +276,18 @@ jobs:
 
           $receiptPath = Join-Path $PWD "deployment-receipt.json"
           $receipt | ConvertTo-Json -Depth 8 | Out-File $receiptPath -Encoding utf8
+          $localReceiptDir = "$env:WINDOWS_DEPLOYMENT_RECEIPTS_PATH"
+          if (-not (Test-Path $localReceiptDir)) {
+            New-Item -ItemType Directory -Path $localReceiptDir -Force | Out-Null
+          }
+          $receiptSha = if ($receipt.target_sha) { [string]$receipt.target_sha } else { [string]$receipt.deployed_sha }
+          if (-not $receiptSha) {
+            $receiptSha = "${{ steps.target.outputs.target_sha }}"
+          }
+          $localReceiptPath = Join-Path $localReceiptDir "$receiptSha.json"
+          $receipt | ConvertTo-Json -Depth 8 | Out-File $localReceiptPath -Encoding utf8
           "receipt_path=$receiptPath" >> $env:GITHUB_OUTPUT
+          "local_receipt_path=$localReceiptPath" >> $env:GITHUB_OUTPUT
 
       - name: Persist last known good SHA
         if: ${{ steps.receipt.outcome == 'success' }}
@@ -288,6 +304,47 @@ jobs:
             }
             Set-Content -Path "$env:WINDOWS_LAST_GOOD_SHA_PATH" -Value "$($receipt.deployed_sha)`n" -Encoding utf8
           }
+
+      - name: Trigger local post-deploy promotions runner
+        id: promotions
+        if: ${{ steps.receipt.outcome == 'success' }}
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $receiptPath = "${{ steps.receipt.outputs.local_receipt_path }}"
+          if (-not $receiptPath -or -not (Test-Path $receiptPath)) {
+            throw "Local deployment receipt not found: $receiptPath"
+          }
+
+          $receipt = Get-Content $receiptPath -Raw | ConvertFrom-Json
+          if ($receipt.status -ne "success") {
+            "promotions_status=skipped_non_success_receipt" >> $env:GITHUB_OUTPUT
+            "promotions_exit_code=0" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          $promotionsResultPath = Join-Path $PWD "promotions-run-result.json"
+          & ./scripts/windows/promotions-runner.ps1 `
+            -Sha "${{ steps.target.outputs.target_sha }}" `
+            -ReceiptPath "$receiptPath" `
+            -DeployPath "$env:WINDOWS_DEPLOY_PATH" `
+            -OutputPath "$promotionsResultPath"
+          $exitCode = $LASTEXITCODE
+
+          "promotions_exit_code=$exitCode" >> $env:GITHUB_OUTPUT
+          if (Test-Path $promotionsResultPath) {
+            "promotions_result_path=$promotionsResultPath" >> $env:GITHUB_OUTPUT
+          }
+
+          if ($exitCode -eq 0) {
+            "promotions_status=success" >> $env:GITHUB_OUTPUT
+          } else {
+            "promotions_status=deferred" >> $env:GITHUB_OUTPUT
+          }
+          exit 0
 
       - name: Upload deployment receipt artifact
         if: always()
@@ -308,6 +365,7 @@ jobs:
             deploy-result.json
             verify-result.json
             rollback-result.json
+            promotions-run-result.json
           if-no-files-found: ignore
           retention-days: 30
 

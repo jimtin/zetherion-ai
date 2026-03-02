@@ -81,7 +81,7 @@ Critical-path integration coverage in canonical runs must include both:
 
 1. Standard branch workflow is `codex/*` -> auto-promotion into `main`; do not use non-`codex/*` branches when the goal is standard delivery.
 2. Direct feature pushes to `main` are non-standard; use only break-glass procedures when automation cannot be used.
-3. Successful `CI/CD Pipeline` runs on `codex/*` branches are promoted by `.github/workflows/auto-merge-main.yml` using fast-forward-only rules.
+3. Successful `CI/CD Pipeline` runs for `codex/*` pull requests targeting `main` are promoted by `.github/workflows/auto-merge-main.yml` using fast-forward-only rules.
 4. If fast-forward is blocked, automation must stop merge attempts and open/update a PR from `codex/*` to `main` with rebase instructions.
 5. If `Deploy Windows` fails for an auto-merged `main` SHA, `.github/workflows/revert-failed-main-deploy.yml` must auto-revert the merged commit range on `main`.
 6. Manual merge to `main` is break-glass only and must include explicit operator justification in workflow/runbook notes.
@@ -92,13 +92,14 @@ SSH-based deployment/remoting is emergency-only recovery and is not part of the 
 
 ## Post-Deploy Promotions (Mandatory)
 
-1. Every successful deployed `main` merge must trigger post-deploy promotions only after deployment receipt validation passes.
-2. Blog generation/publish is mandatory per deployed `main` SHA:
-   - run only after `Deploy Windows` success and deployment receipt success checks
+1. Blog/release promotion execution is owned by the Windows main machine, not GitHub Actions.
+2. Promotions may run only after deployment receipt validation passes (`status=success`, SHA match, all required checks true).
+3. Blog generation/publish is mandatory per deployed `main` SHA:
    - required models: `gpt-5.2` (draft) and `claude-sonnet-4-6` (refine)
-   - if either required model is unavailable, fail the workflow (no lower-tier fallback)
-   - enforce idempotency by deployed SHA (no duplicate publish)
-3. GitHub release auto-increment is mandatory per deployed `main` SHA:
+   - no lower-tier fallback
+   - idempotency required by deployed SHA (no duplicate publish)
+4. GitHub release auto-increment is mandatory per deployed `main` SHA:
    - increment SemVer patch from latest `v*` release (bootstrap `v0.1.0` when absent)
    - bind release to deployed SHA
-   - enforce idempotency by SHA (no duplicate release creation)
+   - idempotency required by SHA (no duplicate release creation)
+5. Promotions secrets must be machine-local DPAPI (`C:\ZetherionAI\data\secrets\promotions.bin`) and must not be stored in repo `.env` or GitHub Actions secrets for execution.

@@ -253,12 +253,13 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `ZETHERION_PUBLIC_API_BASE_URL` | `http://zetherion-ai-traefik:8443` | Upstream Zetherion public API base URL for CGS gateway |
 | `ZETHERION_SKILLS_API_BASE_URL` | `http://zetherion-ai-traefik:8080` | Upstream Zetherion skills API base URL for CGS gateway |
 | `ZETHERION_SKILLS_API_SECRET` | unset | Optional override secret for CGS gateway -> skills API calls |
-| `CGS_BLOG_PUBLISH_URL` | empty | CGS publish adapter URL used by post-deploy blog workflow |
-| `CGS_BLOG_PUBLISH_TOKEN` | unset | Auth token used to publish generated blog posts to CGS |
-| `BLOG_MODEL_PRIMARY` | `gpt-5.2` | Required OpenAI model for initial post-deploy draft generation |
-| `BLOG_MODEL_SECONDARY` | `claude-sonnet-4-6` | Required Claude model for humanizing/refinement pass |
-| `BLOG_PUBLISH_ENABLED` | `true` | Enable post-deploy blog generation/publish workflow |
-| `RELEASE_AUTO_INCREMENT_ENABLED` | `true` | Enable mandatory post-deploy GitHub release patch increment |
+| `CGS_BLOG_PUBLISH_URL` | empty | Windows promotions secret key for CGS publish adapter URL (stored via DPAPI blob, not repo `.env`) |
+| `CGS_BLOG_PUBLISH_TOKEN` | unset | Windows promotions secret key for CGS publish auth token |
+| `GITHUB_PROMOTION_TOKEN` | unset | Windows promotions secret key used to call GitHub Releases/PR APIs |
+| `BLOG_MODEL_PRIMARY` | `gpt-5.2` | Required OpenAI model for Windows promotion draft generation |
+| `BLOG_MODEL_SECONDARY` | `claude-sonnet-4-6` | Required Claude model for Windows promotion refine/humanization pass |
+| `BLOG_PUBLISH_ENABLED` | `true` | Windows promotions toggle for blog generation/publish |
+| `RELEASE_AUTO_INCREMENT_ENABLED` | `true` | Windows promotions toggle for mandatory GitHub SemVer patch release increment |
 | `ANALYTICS_EVENT_RETENTION_DAYS` | `90` | Retention window for raw web events |
 | `ANALYTICS_REPLAY_RETENTION_DAYS` | `14` | Retention window for replay chunk metadata |
 | `ANALYTICS_REPLAY_ENABLED_DEFAULT` | `false` | Default replay ingest policy for tenants |
@@ -308,6 +309,13 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `TELEMETRY_REPORT_INTERVAL` | `86400` | Telemetry report interval |
 
 Legacy `REPLAY_STORAGE_*` environment variable names remain accepted for backward compatibility, but `OBJECT_STORAGE_*` is the preferred naming.
+
+Windows promotions secrets are bootstrapped/rotated with:
+
+- `scripts/windows/set-promotions-secrets.ps1`
+- `scripts/windows/test-promotions-secrets.ps1`
+
+Encrypted blob path: `C:\ZetherionAI\data\secrets\promotions.bin`
 
 ---
 
