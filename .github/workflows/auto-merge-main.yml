@@ -35,12 +35,13 @@ jobs:
           fetch-depth: 0
           ref: main
 
-      - name: Promote branch to main (fast-forward only)
+      - name: Promote branch to main (PR merge)
         id: promote
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SOURCE_BRANCH: ${{ github.event.workflow_run.head_branch }}
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
           DELETE_SOURCE_BRANCH: "true"
         shell: bash
         run: |
@@ -51,53 +52,72 @@ jobs:
           main_before_sha=""
           main_after_sha=""
           pr_url=""
+          pr_number="${PR_NUMBER:-}"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git fetch --prune origin "+refs/heads/main:refs/remotes/origin/main"
-          if ! git fetch --prune origin "+refs/heads/${SOURCE_BRANCH}:refs/remotes/origin/${SOURCE_BRANCH}"; then
-            blocked_reason="source_branch_missing"
+          main_before_sha="$(git rev-parse refs/remotes/origin/main)"
+          main_after_sha="$main_before_sha"
+
+          # Fallback PR resolution in case workflow_run payload omits pull request linkage.
+          if [[ -z "$pr_number" || "$pr_number" == "null" ]]; then
+            pr_number="$(
+              gh pr list \
+                --state open \
+                --head "${SOURCE_BRANCH}" \
+                --base "main" \
+                --json number \
+                --jq '.[0].number // empty'
+            )"
           fi
 
-          if ! git show-ref --verify --quiet "refs/remotes/origin/${SOURCE_BRANCH}"; then
-            blocked_reason="source_branch_missing"
+          # If the exact source SHA is already in main, treat as idempotent success.
+          if git merge-base --is-ancestor "$SOURCE_SHA" "refs/remotes/origin/main"; then
+            merge_status="merged"
+            blocked_reason="already_merged"
           else
-            source_head_sha="$(git rev-parse "refs/remotes/origin/${SOURCE_BRANCH}")"
-            main_before_sha="$(git rev-parse refs/remotes/origin/main)"
-            main_after_sha="$main_before_sha"
-
-            if [[ "$source_head_sha" != "$SOURCE_SHA" ]]; then
-              blocked_reason="source_branch_head_moved"
-            elif git merge-base --is-ancestor "$SOURCE_SHA" "refs/remotes/origin/main"; then
-              merge_status="merged"
-              blocked_reason=""
-              main_after_sha="$(git rev-parse refs/remotes/origin/main)"
-            elif git merge-base --is-ancestor "refs/remotes/origin/main" "refs/remotes/origin/${SOURCE_BRANCH}"; then
-              git checkout -B main "refs/remotes/origin/main"
-              git merge --ff-only "refs/remotes/origin/${SOURCE_BRANCH}"
-              main_after_sha="$(git rev-parse HEAD)"
-              git push origin HEAD:main
-              merge_status="merged"
-              blocked_reason=""
-
-              if [[ "${DELETE_SOURCE_BRANCH}" == "true" ]]; then
-                git push origin --delete "${SOURCE_BRANCH}" || true
-              fi
+            if [[ -z "$pr_number" ]]; then
+              blocked_reason="pr_not_found"
             else
-              blocked_reason="fast_forward_blocked"
+              pr_url="$(gh pr view "$pr_number" --json url --jq '.url')"
+              pr_state="$(gh pr view "$pr_number" --json state --jq '.state')"
+              pr_head_sha="$(gh pr view "$pr_number" --json headRefOid --jq '.headRefOid')"
+              pr_base_ref="$(gh pr view "$pr_number" --json baseRefName --jq '.baseRefName')"
+
+              if [[ "$pr_base_ref" != "main" ]]; then
+                blocked_reason="pr_base_not_main"
+              elif [[ "$pr_state" == "MERGED" ]]; then
+                merge_status="merged"
+                blocked_reason="already_merged"
+              elif [[ "$pr_state" != "OPEN" ]]; then
+                blocked_reason="pr_not_open"
+              elif [[ "$pr_head_sha" != "$SOURCE_SHA" ]]; then
+                blocked_reason="source_branch_head_moved"
+              else
+                merge_cmd=(gh pr merge "$pr_number" --rebase)
+                if [[ "${DELETE_SOURCE_BRANCH}" == "true" ]]; then
+                  merge_cmd+=(--delete-branch)
+                fi
+                if "${merge_cmd[@]}"; then
+                  git fetch --prune origin "+refs/heads/main:refs/remotes/origin/main"
+                  main_after_sha="$(git rev-parse refs/remotes/origin/main)"
+                  if git merge-base --is-ancestor "$SOURCE_SHA" "$main_after_sha"; then
+                    merge_status="merged"
+                    blocked_reason=""
+                  else
+                    blocked_reason="merge_not_observed_on_main"
+                  fi
+                else
+                  blocked_reason="pr_merge_failed"
+                fi
+              fi
             fi
           fi
 
           if [[ "$merge_status" == "blocked" ]]; then
-            if [[ -z "$main_before_sha" ]]; then
-              main_before_sha="$(git rev-parse refs/remotes/origin/main)"
-            fi
-            if [[ -z "$main_after_sha" ]]; then
-              main_after_sha="$main_before_sha"
-            fi
-
-            if [[ "$blocked_reason" != "source_branch_missing" ]]; then
+            if [[ -n "$pr_number" ]]; then
               body_file="$(mktemp)"
               cat >"$body_file" <<EOF
           Auto-promotion from \`${SOURCE_BRANCH}\` to \`main\` was blocked.
@@ -113,33 +133,7 @@ jobs:
           Current main SHA: \`${main_before_sha}\`
           EOF
 
-              existing_pr_number="$(
-                gh pr list \
-                  --state open \
-                  --head "${SOURCE_BRANCH}" \
-                  --base "main" \
-                  --json number \
-                  --jq '.[0].number // empty'
-              )"
-
-              if [[ -n "$existing_pr_number" ]]; then
-                gh pr comment "$existing_pr_number" --body-file "$body_file" || true
-                pr_url="$(gh pr view "$existing_pr_number" --json url --jq '.url')"
-              else
-                gh pr create \
-                  --head "${SOURCE_BRANCH}" \
-                  --base "main" \
-                  --title "Auto-promotion blocked: ${SOURCE_BRANCH} -> main" \
-                  --body-file "$body_file"
-                pr_url="$(
-                  gh pr list \
-                    --state open \
-                    --head "${SOURCE_BRANCH}" \
-                    --base "main" \
-                    --json url \
-                    --jq '.[0].url // empty'
-                )"
-              fi
+              gh pr comment "$pr_number" --body-file "$body_file" || true
             fi
           fi
 
@@ -148,7 +142,7 @@ jobs:
             --arg source_sha "$SOURCE_SHA" \
             --arg main_before_sha "$main_before_sha" \
             --arg main_after_sha "$main_after_sha" \
-            --arg merge_method "ff-only" \
+            --arg merge_method "pr-rebase" \
             --arg status "$merge_status" \
             --arg blocked_reason "$blocked_reason" \
             --arg pr_url "$pr_url" \
