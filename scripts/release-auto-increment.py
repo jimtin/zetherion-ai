@@ -11,6 +11,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 
 SEMVER_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 
@@ -43,6 +44,12 @@ def _is_enabled(raw: str | None) -> bool:
 
 def _normalize_sha(value: str) -> str:
     return value.strip().lower()
+
+
+def _write_receipt(path: str, payload: dict[str, object]) -> None:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
 def _gh_request(
@@ -175,8 +182,7 @@ def main() -> int:
             "sha": args.sha,
             "repo": args.repo,
         }
-        with open(args.output, "w", encoding="utf-8") as fh:
-            json.dump(receipt, fh, indent=2)
+        _write_receipt(args.output, receipt)
         print(json.dumps(receipt))
         return 0
 
@@ -206,8 +212,7 @@ def main() -> int:
                 "release_id": existing.get("id"),
                 "html_url": existing.get("html_url"),
             }
-            with open(args.output, "w", encoding="utf-8") as fh:
-                json.dump(receipt, fh, indent=2)
+            _write_receipt(args.output, receipt)
             print(json.dumps(receipt))
             return 0
 
@@ -249,8 +254,7 @@ def main() -> int:
             "html_url": created.get("html_url"),
             "previous_tag": previous_tag,
         }
-        with open(args.output, "w", encoding="utf-8") as fh:
-            json.dump(receipt, fh, indent=2)
+        _write_receipt(args.output, receipt)
         print(json.dumps(receipt))
         return 0
     except Exception as exc:
