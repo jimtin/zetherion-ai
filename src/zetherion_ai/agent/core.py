@@ -513,9 +513,9 @@ class Agent:
             status = self._format_task_status(task.get("status"))
             priority = self._format_task_priority(task.get("priority"))
             line = f"{idx}. {title} - {status} - {priority}"
-            due = self._format_deadline(task.get("deadline"))
-            if due:
-                line += f" - due {due}"
+            due_label = self._format_deadline(task.get("deadline"))
+            if due_label:
+                line += f" - due {due_label}"
             lines.append(line)
 
         remaining = len(tasks) - len(displayed)
@@ -544,8 +544,13 @@ class Agent:
             return "Medium"
 
         if text.isdigit():
-            mapping = {"4": "Critical", "3": "High", "2": "Medium", "1": "Low"}
-            return mapping.get(text, "Medium")
+            text_mapping: dict[str, str] = {
+                "4": "Critical",
+                "3": "High",
+                "2": "Medium",
+                "1": "Low",
+            }
+            return text_mapping.get(text, "Medium")
 
         return text.replace("_", " ").title()
 
