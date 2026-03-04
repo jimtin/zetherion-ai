@@ -20,6 +20,13 @@ It does not cover external gateway/public API mapping.
 4. Auto-purge raw bytes and vectors after retention period.
 5. Keep tombstone metadata for auditability after purge.
 
+## Segmented PR Execution Order
+
+1. `seg1-zeth-delete-handoff-gate` (completed): handoff spec + docs gate scoping.
+2. `seg2a-ci-docker-build-conditional` (new): minimize CI spend by running `docker-build-test` only when Docker-related files change, while keeping scheduled/manual runs intact.
+3. `seg2-zeth-document-archive-schema` (in progress): schema + tenant manager lifecycle methods.
+4. Next segments continue in strict one-PR-per-segment order (API routes, workers, retrieval guardrails, tests, docs).
+
 ## Lifecycle States
 
 Canonical document `status` values:
