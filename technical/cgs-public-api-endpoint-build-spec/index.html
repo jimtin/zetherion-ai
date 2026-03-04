@@ -1049,7 +1049,35 @@
   <span class="md-ellipsis">
     
   
-    Public API Reference
+    Zetherion Upstream API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../zetherion-document-intelligence-component/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Document Intelligence Component
   
 
     
@@ -1162,6 +1190,62 @@
     
   
     OpenAPI Contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cgs-client-onboarding-kit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CGS Client Onboarding Kit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cgs-email-monitoring-onboarding-kit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CGS Email Monitoring Onboarding Kit
   
 
     
@@ -1594,10 +1678,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#maintenance-note-2026-03-01" class="md-nav__link">
+  <a href="#maintenance-note-2026-03-04" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Maintenance Note (2026-03-01)
+        Maintenance Note (2026-03-04)
       
     </span>
   </a>
@@ -2141,10 +2225,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#85-tenant-reporting-endpoints" class="md-nav__link">
+  <a href="#85-internal-tenant-admin-endpoints" class="md-nav__link">
     <span class="md-ellipsis">
       
-        8.5 Tenant Reporting Endpoints
+        8.5 Internal Tenant Admin Endpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#86-tenant-reporting-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8.6 Tenant Reporting Endpoints
       
     </span>
   </a>
@@ -2288,6 +2383,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#17-client-integration-kit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        17. Client Integration Kit
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2312,10 +2418,13 @@
 <h2 id="1-purpose">1. Purpose<a class="headerlink" href="#1-purpose" title="Permanent link">&para;</a></h2>
 <p>This document is the implementation handoff for Catalyst Group Solutions (CGS) to build and wire the public app-facing API endpoints that integrate with Zetherion AI through the CGS gateway layer.</p>
 <p>It is based on the code currently implemented in this repository (not only draft design docs).</p>
-<h2 id="maintenance-note-2026-03-01">Maintenance Note (2026-03-01)<a class="headerlink" href="#maintenance-note-2026-03-01" title="Permanent link">&para;</a></h2>
+<h2 id="maintenance-note-2026-03-04">Maintenance Note (2026-03-04)<a class="headerlink" href="#maintenance-note-2026-03-04" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Internal hardening landed in upstream document upload route parsing/typing.</li>
-<li>CGS endpoint contracts and mappings are unchanged by this maintenance patch.</li>
+<li>Added internal blog publish adapter route: <code>POST /service/ai/v1/internal/blog/publish</code>.</li>
+<li>Added gateway envelope field <code>error.retryable</code> for all failure responses.</li>
+<li>Added CGS route-doc parity gate for lifecycle/reporting/admin/blog surfaces.</li>
+<li>Added tenant email admin control-plane routes for OAuth app setup, mailbox linking, sync, critical message triage, calendar binding, and insight reindex.</li>
+<li>Zetherion-only boundary recovery removed in-repo CGS website/UI assets; endpoint contracts stay CGS-first and unchanged.</li>
 </ul>
 <h2 id="2-scope">2. Scope<a class="headerlink" href="#2-scope" title="Permanent link">&para;</a></h2>
 <p>In scope:</p>
@@ -2325,6 +2434,7 @@
 <li>Request/response envelope standard</li>
 <li>Idempotency behavior</li>
 <li>Tenant lifecycle/internal operator endpoints</li>
+<li>Tenant email admin control plane endpoints (operator-only)</li>
 <li>Tenant reporting endpoints</li>
 <li>SDK integration mode for CGS web observer analytics</li>
 <li>Deployment and readiness checklist</li>
@@ -2334,7 +2444,23 @@
 <li>Re-defining Zetherion upstream <code>/api/v1</code> contracts</li>
 <li>Replacing Zetherion backend logic</li>
 <li>Frontend UI design details in CGS apps</li>
+<li>Direct client access to Zetherion <code>/api/v1</code></li>
 </ul>
+<p>Canonical route inventory (implemented):
+- Runtime conversations + analytics + recommendations:
+  - <code>/service/ai/v1/conversations/*</code>
+- Document intelligence:
+  - <code>/service/ai/v1/documents/*</code>
+  - <code>/service/ai/v1/rag/query</code>
+  - <code>/service/ai/v1/models/providers</code>
+- Internal lifecycle:
+  - <code>/service/ai/v1/internal/tenants/*</code>
+- Internal tenant-admin:
+  - <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/*</code>
+- Tenant reporting:
+  - <code>/service/ai/v1/tenants/{tenant_id}/*</code>
+- Internal publish adapter:
+  - <code>/service/ai/v1/internal/blog/publish</code></p>
 <h2 id="3-architecture-overview">3. Architecture Overview<a class="headerlink" href="#3-architecture-overview" title="Permanent link">&para;</a></h2>
 <h3 id="31-runtime-path">3.1 Runtime path<a class="headerlink" href="#31-runtime-path" title="Permanent link">&para;</a></h3>
 <ol>
@@ -2354,6 +2480,8 @@
 <li><code>cgs_ai_conversations</code></li>
 <li><code>cgs_ai_idempotency</code></li>
 <li><code>cgs_ai_request_log</code></li>
+<li><code>cgs_ai_admin_changes</code></li>
+<li><code>cgs_ai_blog_publish_receipts</code></li>
 </ul>
 <p>Session tokens and API keys are encrypted at rest.</p>
 <h2 id="4-base-path-and-versioning">4. Base Path and Versioning<a class="headerlink" href="#4-base-path-and-versioning" title="Permanent link">&para;</a></h2>
@@ -2415,9 +2543,10 @@
 <a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">&quot;code&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AI_*&quot;</span><span class="p">,</span>
 <a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;human readable&quot;</span><span class="p">,</span>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="nt">&quot;details&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="p">}</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="p">}</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="nt">&quot;retryable&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="nt">&quot;details&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="p">}</span>
 </code></pre></div>
 <h3 id="63-error-code-families">6.3 Error code families<a class="headerlink" href="#63-error-code-families" title="Permanent link">&para;</a></h3>
 <ul>
@@ -2575,7 +2704,7 @@ For mutating endpoints, <code>tenant_id</code> is required in request JSON body.
 <p>Response envelope status <code>201</code> with upstream payload in <code>data</code>.</p>
 <h3 id="post-serviceaiv1documentsuploadsupload_idcomplete"><code>POST /service/ai/v1/documents/uploads/{upload_id}/complete</code><a class="headerlink" href="#post-serviceaiv1documentsuploadsupload_idcomplete" title="Permanent link">&para;</a></h3>
 <p>Complete upload (maps to <code>POST /api/v1/documents/uploads/{upload_id}/complete</code>).</p>
-<p>Request:</p>
+<p>JSON request:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="p">{</span>
 <a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">&quot;tenant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tenant-a&quot;</span><span class="p">,</span>
 <a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">&quot;file_base64&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;base64&gt;&quot;</span><span class="p">,</span>
@@ -2584,6 +2713,14 @@ For mutating endpoints, <code>tenant_id</code> is required in request JSON body.
 <a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="p">}</span>
 <a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="p">}</span>
 </code></pre></div>
+<p>Multipart request (browser-friendly):</p>
+<ul>
+<li>Query param: <code>tenant_id=tenant-a</code></li>
+<li>Content type: <code>multipart/form-data</code></li>
+<li>Parts:</li>
+<li><code>file</code> (required binary file)</li>
+<li><code>metadata</code> (optional JSON string)</li>
+</ul>
 <p>Response envelope status <code>201</code>.</p>
 <h3 id="get-serviceaiv1documentstenant_id"><code>GET /service/ai/v1/documents?tenant_id=...</code><a class="headerlink" href="#get-serviceaiv1documentstenant_id" title="Permanent link">&para;</a></h3>
 <p>Maps to <code>GET /api/v1/documents</code>.
@@ -2618,7 +2755,8 @@ Gateway preserves relevant content headers:
 <a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="p">}</span>
 </code></pre></div>
 <p>Maps to <code>POST /api/v1/rag/query</code>.
-Response envelope includes <code>answer</code>, <code>citations</code>, <code>provider</code>, <code>model</code>.</p>
+Response envelope includes <code>answer</code>, <code>citations</code>, <code>provider</code>, <code>model</code>.
+Provider contract: <code>groq</code>, <code>openai</code>, <code>anthropic</code> (<code>claude</code> is accepted as an alias).</p>
 <h3 id="get-serviceaiv1modelsproviderstenant_id"><code>GET /service/ai/v1/models/providers?tenant_id=...</code><a class="headerlink" href="#get-serviceaiv1modelsproviderstenant_id" title="Permanent link">&para;</a></h3>
 <p>Maps to <code>GET /api/v1/models/providers</code>.
 Used by frontend provider/model selector UI.</p>
@@ -2658,7 +2796,59 @@ Used by frontend provider/model selector UI.</p>
 <li><code>environment</code> (default <code>production</code>)</li>
 <li><code>commit_sha</code>, <code>branch</code>, <code>tag_name</code>, <code>deployed_at</code>, <code>metadata</code></li>
 </ul>
-<h3 id="85-tenant-reporting-endpoints">8.5 Tenant Reporting Endpoints<a class="headerlink" href="#85-tenant-reporting-endpoints" title="Permanent link">&para;</a></h3>
+<h3 id="85-internal-tenant-admin-endpoints">8.5 Internal Tenant Admin Endpoints<a class="headerlink" href="#85-internal-tenant-admin-endpoints" title="Permanent link">&para;</a></h3>
+<p>Prefix: <code>/service/ai/v1/internal/admin/tenants/{tenant_id}</code></p>
+<p>Security requirements:
+- operator role/scope required
+- <code>cgs:zetherion-admin</code> scope required
+- mutating operations require step-up claim (<code>step_up=true</code> or MFA AMR/ACR claims)
+- secrets endpoints additionally require <code>cgs:zetherion-secrets-admin</code></p>
+<p>High-risk approval workflow:
+- required for secret create/rotate/delete
+- required for owner role grants
+- required for email OAuth app credential writes
+- required for mailbox disconnect actions
+- submit/review/apply represented by <code>change_ticket_id</code> and <code>/changes</code> workflow routes</p>
+<p>Tenant admin route set:
+- <code>GET|POST /discord-users</code>
+- <code>DELETE /discord-users/{discord_user_id}</code>
+- <code>PATCH /discord-users/{discord_user_id}/role</code>
+- <code>GET /discord-bindings</code>
+- <code>PUT /discord-bindings/guilds/{guild_id}</code>
+- <code>PUT|DELETE /discord-bindings/channels/{channel_id}</code>
+- <code>GET /settings</code>
+- <code>PUT|DELETE /settings/{namespace}/{key}</code>
+- <code>GET /secrets</code>
+- <code>PUT|DELETE /secrets/{name}</code>
+- <code>GET /audit</code>
+- <code>GET|PUT /email/providers/{provider}/oauth-app</code>
+- <code>POST /email/mailboxes/connect/start</code>
+- <code>GET /email/mailboxes/connect/callback</code>
+- <code>GET /email/mailboxes</code>
+- <code>PATCH|DELETE /email/mailboxes/{mailbox_id}</code>
+- <code>POST /email/mailboxes/{mailbox_id}/sync</code>
+- <code>GET /email/critical/messages</code>
+- <code>GET /email/calendars</code>
+- <code>PUT /email/mailboxes/{mailbox_id}/calendar-primary</code>
+- <code>GET /email/insights</code>
+- <code>POST /email/insights/reindex</code>
+- <code>POST|GET /changes</code>
+- <code>POST /changes/{change_id}/approve</code>
+- <code>POST /changes/{change_id}/reject</code></p>
+<p>Upstream mapping:
+- CGS tenant ID maps to <code>zetherion_tenant_id</code>
+- gateway calls Skills REST tenant-admin routes under:
+  - <code>/admin/tenants/{zetherion_tenant_id}/...</code>
+- gateway sends signed actor envelope headers:
+  - <code>X-Admin-Actor</code>
+  - <code>X-Admin-Signature</code></p>
+<p>Email admin route behavior notes:
+- provider scope for initial rollout is <code>google</code>.
+- OAuth app reads never return client secret values.
+- mailbox status lifecycle: <code>pending|connected|degraded|revoked|disconnected</code>.
+- sync job status lifecycle: <code>queued|running|succeeded|failed|retrying</code>.
+- critical severity lifecycle: <code>critical|high|normal</code>; triage state <code>open|resolved|dismissed</code>.</p>
+<h3 id="86-tenant-reporting-endpoints">8.6 Tenant Reporting Endpoints<a class="headerlink" href="#86-tenant-reporting-endpoints" title="Permanent link">&para;</a></h3>
 <p>Prefix: <code>/service/ai/v1/tenants/{tenant_id}</code></p>
 <h3 id="get-crmcontacts"><code>GET /crm/contacts</code><a class="headerlink" href="#get-crmcontacts" title="Permanent link">&para;</a></h3>
 <p>Forwards to <code>/api/v1/crm/contacts</code></p>
@@ -2681,6 +2871,22 @@ Used by frontend provider/model selector UI.</p>
 <li><code>client_deactivate</code></li>
 <li><code>client_rotate_key</code></li>
 </ul>
+<p>Internal tenant-admin maps to Skills REST endpoints:
+- <code>/admin/tenants/{tenant_id}/discord-users*</code>
+- <code>/admin/tenants/{tenant_id}/discord-bindings*</code>
+- <code>/admin/tenants/{tenant_id}/settings*</code>
+- <code>/admin/tenants/{tenant_id}/secrets*</code>
+- <code>/admin/tenants/{tenant_id}/audit</code>
+- <code>/admin/tenants/{tenant_id}/email/providers/{provider}/oauth-app</code>
+- <code>/admin/tenants/{tenant_id}/email/oauth/{provider}/start</code>
+- <code>/admin/tenants/{tenant_id}/email/oauth/{provider}/exchange</code>
+- <code>/admin/tenants/{tenant_id}/email/accounts*</code>
+- <code>/admin/tenants/{tenant_id}/email/critical</code>
+- <code>/admin/tenants/{tenant_id}/email/calendars</code>
+- <code>/admin/tenants/{tenant_id}/email/insights*</code></p>
+<p>Actor attribution to Skills tenant-admin endpoints is mandatory:
+- signed actor envelope includes <code>actor_sub</code>, <code>actor_roles</code>, <code>request_id</code>, <code>timestamp</code>, <code>nonce</code>
+- replay-protection is enforced upstream (nonce/timestamp validation)</p>
 <h2 id="10-gateway-environment-variables">10. Gateway Environment Variables<a class="headerlink" href="#10-gateway-environment-variables" title="Permanent link">&para;</a></h2>
 <p>Required:</p>
 <ul>
@@ -2771,6 +2977,12 @@ Used by frontend provider/model selector UI.</p>
 <li>Create tenant -&gt; rotate key -&gt; update -&gt; deactivate</li>
 <li>Reporting</li>
 <li>Contacts/interactions/funnel/recommendations with tenant scoping</li>
+<li>Email admin control plane</li>
+<li>Configure tenant Google OAuth app (approval-gated)</li>
+<li>Link 5+ mailboxes through connect start/callback</li>
+<li>Trigger sync and verify critical message records + insight records</li>
+<li>List calendars and set mailbox primary calendar</li>
+<li>Verify mailbox delete is approval-gated and idempotent</li>
 </ol>
 <h2 id="15-operational-notes">15. Operational Notes<a class="headerlink" href="#15-operational-notes" title="Permanent link">&para;</a></h2>
 <ul>
@@ -2785,11 +2997,21 @@ Used by frontend provider/model selector UI.</p>
 <li><code>src/zetherion_ai/cgs_gateway/middleware.py</code></li>
 <li><code>src/zetherion_ai/cgs_gateway/routes/runtime.py</code></li>
 <li><code>src/zetherion_ai/cgs_gateway/routes/internal.py</code></li>
+<li><code>src/zetherion_ai/cgs_gateway/routes/internal_admin.py</code></li>
 <li><code>src/zetherion_ai/cgs_gateway/routes/reporting.py</code></li>
 <li><code>src/zetherion_ai/cgs_gateway/storage.py</code></li>
 <li><code>src/zetherion_ai/cgs_gateway/models.py</code></li>
 <li><code>sdk/zetherion-web-observer/src/index.ts</code></li>
 <li><code>sdk/zetherion-web-observer/src/types.ts</code></li>
+</ul>
+<h2 id="17-client-integration-kit">17. Client Integration Kit<a class="headerlink" href="#17-client-integration-kit" title="Permanent link">&para;</a></h2>
+<p>Use these docs together as the external onboarding pack:</p>
+<ul>
+<li><code>docs/technical/cgs-client-onboarding-kit.md</code></li>
+<li><code>docs/technical/frontend-route-wiring.md</code></li>
+<li><code>docs/technical/api-auth-matrix.md</code></li>
+<li><code>docs/technical/api-error-matrix.md</code></li>
+<li><code>docs/technical/openapi-cgs-gateway.yaml</code></li>
 </ul>
 
 

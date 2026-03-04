@@ -16,7 +16,7 @@
         <link rel="prev" href="../api-reference/">
       
       
-        <link rel="next" href="../api-auth-matrix/">
+        <link rel="next" href="../zetherion-document-intelligence-component/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Public API Reference - Zetherion AI</title>
+        <title>Zetherion Upstream API - Zetherion AI</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#public-api-reference" class="md-skip">
+        <a href="#zetherion-upstream-api-reference-internal" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Public API Reference
+              Zetherion Upstream API
             
           </span>
         </div>
@@ -1067,7 +1067,7 @@
   <span class="md-ellipsis">
     
   
-    Public API Reference
+    Zetherion Upstream API
   
 
     
@@ -1085,7 +1085,7 @@
   <span class="md-ellipsis">
     
   
-    Public API Reference
+    Zetherion Upstream API
   
 
     
@@ -1118,6 +1118,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#exposure-policy-authoritative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exposure Policy (Authoritative)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1719,6 +1736,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../zetherion-document-intelligence-component/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Document Intelligence Component
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../api-auth-matrix/" class="md-nav__link">
         
   
@@ -1811,6 +1856,62 @@
     
   
     OpenAPI Contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cgs-client-onboarding-kit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CGS Client Onboarding Kit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cgs-email-monitoring-onboarding-kit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CGS Email Monitoring Onboarding Kit
   
 
     
@@ -2239,6 +2340,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Overview">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#exposure-policy-authoritative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exposure Policy (Authoritative)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2844,16 +2962,24 @@
   
 
 
-<h1 id="public-api-reference">Public API Reference<a class="headerlink" href="#public-api-reference" title="Permanent link">&para;</a></h1>
+<h1 id="zetherion-upstream-api-reference-internal">Zetherion Upstream API Reference (Internal)<a class="headerlink" href="#zetherion-upstream-api-reference-internal" title="Permanent link">&para;</a></h1>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>The Public API runs on port <code>8443</code> and is intended for external applications.
-It exposes tenant-scoped session and chat endpoints under <code>/api/v1</code>, plus
-optional tenant-scoped YouTube endpoints.</p>
-<p><strong>Base URL:</strong> <code>http://&lt;host&gt;:8443/api/v1</code></p>
-<p>This API is distinct from the internal Skills API (<code>:8080</code>).</p>
-<p>Maintenance note (2026-03-01):
+<p>The upstream API runs on port <code>8443</code> and is consumed by the CGS gateway.
+It exposes tenant-scoped session/chat/document/reporting capabilities under <code>/api/v1</code>,
+plus optional tenant-scoped YouTube endpoints.</p>
+<p><strong>Internal Base URL:</strong> <code>http://&lt;host&gt;:8443/api/v1</code></p>
+<p>This API is distinct from the internal Skills API (<code>:8080</code>) and is not the public
+client contract. External clients must integrate through CGS <code>/service/ai/v1</code>.</p>
+<p>Maintenance note (2026-03-04):
 - Internal document upload route parsing/typing hardening was applied.
-- No public API contract changes were introduced.</p>
+- No public API contract changes were introduced.
+- Zetherion-only boundary recovery removed in-repo CGS website/UI assets; upstream API behavior remains unchanged.</p>
+<h3 id="exposure-policy-authoritative">Exposure Policy (Authoritative)<a class="headerlink" href="#exposure-policy-authoritative" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Zetherion <code>/api/v1</code> is upstream-only.</li>
+<li>Direct client/browser access is not supported.</li>
+<li>CGS <code>/service/ai/v1</code> is the only public API surface for client integrations.</li>
+</ul>
 <hr />
 <h2 id="authentication">Authentication<a class="headerlink" href="#authentication" title="Permanent link">&para;</a></h2>
 <p>The API uses two auth modes:</p>
@@ -2884,7 +3010,7 @@ Use them for:</p>
 <hr />
 <h2 id="health">Health<a class="headerlink" href="#health" title="Permanent link">&para;</a></h2>
 <h3 id="get-apiv1health">GET /api/v1/health<a class="headerlink" href="#get-apiv1health" title="Permanent link">&para;</a></h3>
-<p>Public health probe. No authentication required.</p>
+<p>Upstream health probe. No authentication required.</p>
 <p><strong>Response 200:</strong></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;healthy&quot;</span><span class="p">,</span>
@@ -3160,11 +3286,11 @@ All routes below require <code>X-API-Key</code>.</p>
 <p>Return retrieval provider/model catalog for UI selectors.</p>
 <p><strong>Response 200:</strong></p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="p">{</span>
-<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">  </span><span class="nt">&quot;providers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;groq&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;openai&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;claude&quot;</span><span class="p">],</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">  </span><span class="nt">&quot;providers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;groq&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;openai&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;anthropic&quot;</span><span class="p">],</span>
 <a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="w">  </span><span class="nt">&quot;defaults&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="w">    </span><span class="nt">&quot;groq&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llama-3.3-70b-versatile&quot;</span><span class="p">,</span>
 <a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="w">    </span><span class="nt">&quot;openai&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpt-5.2&quot;</span><span class="p">,</span>
-<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="w">    </span><span class="nt">&quot;claude&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;claude-sonnet-4-5-20250929&quot;</span>
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="w">    </span><span class="nt">&quot;anthropic&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;claude-sonnet-4-5-20250929&quot;</span>
 <a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="w">  </span><span class="p">},</span>
 <a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="w">  </span><span class="nt">&quot;allowed_models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;...&quot;</span><span class="p">]</span>
 <a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a><span class="p">}</span>

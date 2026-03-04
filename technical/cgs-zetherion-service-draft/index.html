@@ -1049,7 +1049,35 @@
   <span class="md-ellipsis">
     
   
-    Public API Reference
+    Zetherion Upstream API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../zetherion-document-intelligence-component/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Document Intelligence Component
   
 
     
@@ -1162,6 +1190,62 @@
     
   
     OpenAPI Contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cgs-client-onboarding-kit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CGS Client Onboarding Kit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cgs-email-monitoring-onboarding-kit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CGS Email Monitoring Onboarding Kit
   
 
     
@@ -1722,6 +1806,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#62a-internal-tenant-admin-email-endpoints-cgs-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2A Internal Tenant Admin + Email Endpoints (CGS only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#63-company-reporting-endpoints" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2141,9 +2236,11 @@
 <p>Version: <code>v1.0-draft</code><br />
 Date: <code>2026-03-01</code><br />
 Owners: <code>Catalyst Group Solutions (CGS) Platform</code>, <code>Zetherion Backend</code></p>
-<p>Maintenance note (2026-03-01):
+<p>Maintenance note (2026-03-04):
 - Internal document route typing/multipart parsing hardening was applied.
-- Public + gateway service contracts defined in this draft remain unchanged.</p>
+- Public + gateway service contracts defined in this draft remain unchanged.
+- Added tenant email admin control-plane routes under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/email/*</code> with step-up + approval requirements for high-risk actions.
+- Zetherion-only boundary recovery removed in-repo CGS website/UI assets; integration contract remains CGS-only.</p>
 <h2 id="1-purpose">1. Purpose<a class="headerlink" href="#1-purpose" title="Permanent link">&para;</a></h2>
 <p>This draft defines the service contract that lets CGS act as the API provider for company apps while Zetherion acts as the backend AI provider.</p>
 <p>Goals:
@@ -2154,7 +2251,8 @@ Owners: <code>Catalyst Group Solutions (CGS) Platform</code>, <code>Zetherion Ba
 - Define phase-gated CRM and reporting endpoints for company use.</p>
 <p>Non-goals:
 - Direct browser-to-Zetherion integration.
-- Exposing Zetherion internal Skills API to external app clients.</p>
+- Exposing Zetherion internal Skills API to external app clients.
+- Any direct external use of Zetherion <code>/api/v1</code> without CGS.</p>
 <h2 id="2-current-state-audit-summary">2. Current State Audit Summary<a class="headerlink" href="#2-current-state-audit-summary" title="Permanent link">&para;</a></h2>
 <p>Implemented in Zetherion now:
 - Multi-tenant public API on <code>/api/v1</code> with sessions, chat, streaming, analytics, recommendations, release markers, and optional YouTube routes.
@@ -2221,9 +2319,10 @@ Owners: <code>Catalyst Group Solutions (CGS) Platform</code>, <code>Zetherion Ba
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="nt">&quot;code&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AI_UPSTREAM_401&quot;</span><span class="p">,</span>
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Session expired&quot;</span><span class="p">,</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="nt">&quot;details&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="p">}</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="p">}</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="nt">&quot;retryable&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="nt">&quot;details&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="p">}</span>
 </code></pre></div>
 <h2 id="6-endpoint-catalog-cgs-service">6. Endpoint Catalog (CGS Service)<a class="headerlink" href="#6-endpoint-catalog-cgs-service" title="Permanent link">&para;</a></h2>
 <h3 id="61-runtime-endpoints-for-all-company-apps">6.1 Runtime Endpoints (for all company apps)<a class="headerlink" href="#61-runtime-endpoints-for-all-company-apps" title="Permanent link">&para;</a></h3>
@@ -2443,6 +2542,30 @@ Owners: <code>Catalyst Group Solutions (CGS) Platform</code>, <code>Zetherion Ba
 </tr>
 </tbody>
 </table>
+<h3 id="62a-internal-tenant-admin-email-endpoints-cgs-only">6.2A Internal Tenant Admin + Email Endpoints (CGS only)<a class="headerlink" href="#62a-internal-tenant-admin-email-endpoints-cgs-only" title="Permanent link">&para;</a></h3>
+<p>Prefix: <code>/service/ai/v1/internal/admin/tenants/{tenant_id}</code></p>
+<p>Admin routes (existing):
+- Discord users and role control
+- Guild/channel bindings
+- Settings and secrets
+- Audit and approval queue</p>
+<p>Email admin routes (google-first):
+- <code>GET|PUT /email/providers/{provider}/oauth-app</code>
+- <code>POST /email/mailboxes/connect/start</code>
+- <code>GET /email/mailboxes/connect/callback</code>
+- <code>GET /email/mailboxes</code>
+- <code>PATCH|DELETE /email/mailboxes/{mailbox_id}</code>
+- <code>POST /email/mailboxes/{mailbox_id}/sync</code>
+- <code>GET /email/critical/messages</code>
+- <code>GET /email/calendars</code>
+- <code>PUT /email/mailboxes/{mailbox_id}/calendar-primary</code>
+- <code>GET /email/insights</code>
+- <code>POST /email/insights/reindex</code></p>
+<p>Security rules:
+- Operator auth + <code>cgs:zetherion-admin</code> required.
+- Mutating routes require step-up auth.
+- OAuth app read/write additionally require <code>cgs:zetherion-secrets-admin</code>.
+- OAuth app writes and mailbox disconnects require approved <code>change_ticket_id</code>.</p>
 <h3 id="63-company-reporting-endpoints">6.3 Company Reporting Endpoints<a class="headerlink" href="#63-company-reporting-endpoints" title="Permanent link">&para;</a></h3>
 <table>
 <thead>

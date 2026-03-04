@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
-  title: Zetherion Public API
+  title: Zetherion Upstream API
   version: 1.0.0
-  description: Public `/api/v1` contract used by external clients and CGS gateway integrations.
-  x-maintenance-note: "2026-03-01: Internal document route typing/multipart parsing hardening only; no public contract changes."
+  description: Internal `/api/v1` upstream contract consumed by the CGS gateway. External clients should use CGS `/service/ai/v1`.
+  x-maintenance-note: "2026-03-04: Zetherion-only boundary recovery removed in-repo CGS website/UI assets; upstream API contract unchanged."
 servers:
   - url: https://{host}
     variables:
@@ -481,7 +481,7 @@ components:
           default: 6
         provider:
           type: string
-          description: Optional provider override. Allowed by RAG_ALLOWED_PROVIDERS.
+          description: Optional provider override. Allowed by RAG_ALLOWED_PROVIDERS; canonical values are groq, openai, anthropic (claude alias accepted).
         model:
           type: string
           description: Optional model override. Allowed by RAG_ALLOWED_MODELS.
@@ -511,6 +511,7 @@ components:
           type: array
           items:
             type: string
+          description: Canonical values are groq, openai, anthropic.
         defaults:
           type: object
           additionalProperties:

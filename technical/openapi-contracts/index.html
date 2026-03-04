@@ -16,7 +16,7 @@
         <link rel="prev" href="../frontend-route-wiring/">
       
       
-        <link rel="next" href="../ai-agent-integration/">
+        <link rel="next" href="../cgs-client-onboarding-kit/">
       
       
         
@@ -1058,7 +1058,35 @@
   <span class="md-ellipsis">
     
   
-    Public API Reference
+    Zetherion Upstream API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../zetherion-document-intelligence-component/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Document Intelligence Component
   
 
     
@@ -1189,6 +1217,62 @@
 
       </a>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cgs-client-onboarding-kit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CGS Client Onboarding Kit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cgs-email-monitoring-onboarding-kit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CGS Email Monitoring Onboarding Kit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -1616,10 +1700,14 @@
 <h1 id="openapi-contracts">OpenAPI Contracts<a class="headerlink" href="#openapi-contracts" title="Permanent link">&para;</a></h1>
 <p>The authoritative OpenAPI specs for the new document intelligence and CGS wiring surface are stored as versioned YAML files:</p>
 <ul>
-<li>Public API contract: <a href="../openapi-public-api.yaml"><code>openapi-public-api.yaml</code></a></li>
-<li>CGS gateway contract: <a href="../openapi-cgs-gateway.yaml"><code>openapi-cgs-gateway.yaml</code></a></li>
+<li>Zetherion upstream contract (internal): <a href="../openapi-public-api.yaml"><code>openapi-public-api.yaml</code></a></li>
+<li>CGS public/operator contract (external): <a href="../openapi-cgs-gateway.yaml"><code>openapi-cgs-gateway.yaml</code></a></li>
+<li>Includes runtime conversation APIs, document intelligence APIs, tenant lifecycle APIs, tenant admin APIs, and tenant email admin control-plane APIs.</li>
 </ul>
 <p>These files are part of the required endpoint documentation bundle and must be updated whenever route contracts change.</p>
+<p>Contract parity gates:
+- <code>scripts/check-route-doc-parity.py</code> validates Skills + upstream <code>/api/v1</code> docs parity.
+- <code>scripts/check-cgs-route-doc-parity.py</code> validates CGS route registrations vs <code>openapi-cgs-gateway.yaml</code>.</p>
 
 
 

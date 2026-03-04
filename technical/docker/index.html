@@ -1171,7 +1171,35 @@
   <span class="md-ellipsis">
     
   
-    Public API Reference
+    Zetherion Upstream API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../zetherion-document-intelligence-component/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Document Intelligence Component
   
 
     
@@ -1284,6 +1312,62 @@
     
   
     OpenAPI Contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cgs-client-onboarding-kit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CGS Client Onboarding Kit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cgs-email-monitoring-onboarding-kit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CGS Email Monitoring Onboarding Kit
   
 
     
@@ -1792,12 +1876,13 @@
 
 <h1 id="docker-services-and-deployment">Docker Services and Deployment<a class="headerlink" href="#docker-services-and-deployment" title="Permanent link">&para;</a></h1>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>Zetherion AI runs as a multi-container Docker stack on <code>zetherion-ai-net</code> with blue/green deployments for <code>skills</code> and <code>api</code>.</p>
+<p>Zetherion AI runs as a multi-container Docker stack on <code>zetherion-ai-net</code> with blue/green deployments for <code>skills</code>, <code>api</code>, and <code>cgs-gateway</code>.</p>
 <p>Production topology:</p>
 <ul>
 <li><code>zetherion-ai-bot</code> (single active Discord gateway process)</li>
 <li><code>zetherion-ai-skills-blue</code> / <code>zetherion-ai-skills-green</code></li>
 <li><code>zetherion-ai-api-blue</code> / <code>zetherion-ai-api-green</code></li>
+<li><code>zetherion-ai-cgs-gateway-blue</code> / <code>zetherion-ai-cgs-gateway-green</code></li>
 <li><code>zetherion-ai-traefik</code> (internal traffic switch)</li>
 <li><code>zetherion-ai-updater</code> (GitHub tag pull + build + rollout orchestration)</li>
 <li><code>zetherion-ai-cloudflared</code> (public API tunnel)</li>
@@ -1808,13 +1893,14 @@
 <li>Bot -&gt; Skills: <code>http://zetherion-ai-traefik:8080</code></li>
 <li>Routed Skills backend: blue or green (<code>config/traefik/dynamic/updater-routes.yml</code>)</li>
 <li>Routed API backend: blue or green (same route file, API entrypoint <code>:8443</code>)</li>
+<li>Routed CGS gateway backend: blue or green (<code>/service/ai/v1</code> on API entrypoint <code>:8443</code>)</li>
 <li>Cloudflared depends on Traefik and API availability; tunnel routing is managed in Cloudflare.</li>
 </ul>
 <h2 id="bluegreen-update-flow">Blue/Green Update Flow<a class="headerlink" href="#bluegreen-update-flow" title="Permanent link">&para;</a></h2>
 <p>Updater sidecar (<code>zetherion-ai-updater</code>) performs updates from GitHub release tags using local source builds:</p>
 <ol>
 <li><code>git fetch --tags</code> and checkout target release tag</li>
-<li>Build inactive color (<code>skills</code> + <code>api</code>) and bot images</li>
+<li>Build inactive color (<code>skills</code> + <code>api</code> + <code>cgs-gateway</code>) and bot images</li>
 <li>Start inactive color and verify direct health</li>
 <li>Flip Traefik route file to inactive color</li>
 <li>Verify routed health through Traefik</li>
@@ -1861,6 +1947,11 @@
 <td>none</td>
 </tr>
 <tr>
+<td><code>zetherion-ai-cgs-gateway-blue/green</code></td>
+<td>CGS <code>/service/ai/v1</code> gateway</td>
+<td>none</td>
+</tr>
+<tr>
 <td><code>zetherion-ai-traefik</code></td>
 <td>Internal router / blue-green switch</td>
 <td>none</td>
@@ -1900,7 +1991,7 @@
 <h2 id="notes">Notes<a class="headerlink" href="#notes" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Bot remains single-instance by design to avoid dual active Discord gateway sessions.</li>
-<li>Zero-downtime guarantee applies to <code>skills</code>/<code>api</code> route switching; bot uses graceful reconnect.</li>
+<li>Zero-downtime guarantee applies to <code>skills</code>/<code>api</code>/<code>cgs-gateway</code> route switching; bot uses graceful reconnect.</li>
 <li>Dynamic route defaults are committed at <code>config/traefik/dynamic/updater-routes.yml</code>.</li>
 </ul>
 

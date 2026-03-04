@@ -1055,7 +1055,35 @@
   <span class="md-ellipsis">
     
   
-    Public API Reference
+    Zetherion Upstream API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/zetherion-document-intelligence-component/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Document Intelligence Component
   
 
     
@@ -1168,6 +1196,62 @@
     
   
     OpenAPI Contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/cgs-client-onboarding-kit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CGS Client Onboarding Kit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../technical/cgs-email-monitoring-onboarding-kit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CGS Email Monitoring Onboarding Kit
   
 
     
@@ -1490,6 +1574,50 @@
   
     <nav class="md-nav" aria-label="[Unreleased]">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#changed-zetherion-only-repository-boundary-recovery-2026-03-04" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Zetherion-Only Repository Boundary Recovery (2026-03-04)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-cgs-first-tenant-multi-email-monitoring-control-plane-2026-03-04" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - CGS-First Tenant Multi-Email Monitoring Control Plane (2026-03-04)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-cgs-tenant-admin-control-plane-2026-03-03" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - CGS Tenant Admin Control Plane (2026-03-03)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-cgs-first-document-intelligence-client-kit-2026-03-02" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - CGS-First Document Intelligence Client Kit (2026-03-02)
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#changed-windows-merge-intelligence-promotions-authority-2026-03-02" class="md-nav__link">
@@ -2261,6 +2389,50 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#changed-zetherion-only-repository-boundary-recovery-2026-03-04" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Zetherion-Only Repository Boundary Recovery (2026-03-04)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-cgs-first-tenant-multi-email-monitoring-control-plane-2026-03-04" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - CGS-First Tenant Multi-Email Monitoring Control Plane (2026-03-04)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-cgs-tenant-admin-control-plane-2026-03-03" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - CGS Tenant Admin Control Plane (2026-03-03)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-cgs-first-document-intelligence-client-kit-2026-03-02" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - CGS-First Document Intelligence Client Kit (2026-03-02)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#changed-windows-merge-intelligence-promotions-authority-2026-03-02" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2889,6 +3061,99 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 </blockquote>
 <hr />
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="changed-zetherion-only-repository-boundary-recovery-2026-03-04">Changed - Zetherion-Only Repository Boundary Recovery (2026-03-04)<a class="headerlink" href="#changed-zetherion-only-repository-boundary-recovery-2026-03-04" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Removed top-level <code>cgs/**</code> website/UI source from this repository to restore Zetherion-only scope.</li>
+<li>Removed CGS UI-specific CI jobs and local gate wiring:</li>
+<li>removed <code>cgs-lint</code>, <code>cgs-typecheck</code>, <code>cgs-test</code>, <code>cgs-build</code></li>
+<li>removed <code>scripts/check-cgs-ui.sh</code> integration from local validation flows</li>
+<li>Added boundary enforcement to prevent reintroduction of top-level UI code:</li>
+<li>CI <code>zetherion-boundary-check</code></li>
+<li>local diff guard <code>scripts/check-zetherion-boundary.sh</code></li>
+<li>scope audit helper <code>scripts/check-scope-diff.sh</code></li>
+<li>pre-push guard integration</li>
+<li>Kept internal Zetherion CGS gateway code under <code>src/zetherion_ai/cgs_gateway/**</code> unchanged as in-scope integration logic.</li>
+<li>Removed Windows deploy/rollback/startup hooks that created <code>cgs/.env.local</code>; runtime now operates without top-level CGS UI filesystem assumptions.</li>
+</ul>
+<h3 id="added-cgs-first-tenant-multi-email-monitoring-control-plane-2026-03-04">Added - CGS-First Tenant Multi-Email Monitoring Control Plane (2026-03-04)<a class="headerlink" href="#added-cgs-first-tenant-multi-email-monitoring-control-plane-2026-03-04" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added tenant-scoped email admin persistence and intelligence model:</li>
+<li><code>tenant_email_provider_configs</code></li>
+<li><code>tenant_email_oauth_states</code></li>
+<li><code>tenant_email_accounts</code></li>
+<li><code>tenant_email_sync_jobs</code></li>
+<li><code>tenant_email_message_cache</code></li>
+<li><code>tenant_email_critical_items</code></li>
+<li><code>tenant_email_insights</code></li>
+<li><code>tenant_email_events</code></li>
+<li>Added Skills internal tenant email admin endpoints:</li>
+<li>OAuth app config read/write</li>
+<li>OAuth connect start/exchange</li>
+<li>mailbox list/patch/delete</li>
+<li>sync trigger</li>
+<li>critical list</li>
+<li>calendar list + primary calendar set</li>
+<li>insights list + reindex</li>
+<li>Added model-assisted critical classification stage for synced emails:</li>
+<li>deterministic rules + inference refinement</li>
+<li>severity/reason/confidence outputs persisted for triage</li>
+<li>Added insight vector indexing for tenant email insights (Qdrant-backed when configured).</li>
+<li>Added retention enforcement in email sync path:</li>
+<li>message body cache purge at 90 days</li>
+<li>critical/insight purge at 365 days</li>
+<li>Added CGS internal admin email route family under:</li>
+<li><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/email/...</code></li>
+<li>Added high-risk approval enforcement in CGS routes for:</li>
+<li>tenant OAuth app credential writes</li>
+<li>mailbox disconnect actions</li>
+<li>Added CGS docs coverage for email control-plane:</li>
+<li>OpenAPI updates</li>
+<li>auth/error matrix updates</li>
+<li>frontend route wiring updates</li>
+<li>new <code>docs/technical/cgs-email-monitoring-onboarding-kit.md</code></li>
+</ul>
+<h3 id="added-cgs-tenant-admin-control-plane-2026-03-03">Added - CGS Tenant Admin Control Plane (2026-03-03)<a class="headerlink" href="#added-cgs-tenant-admin-control-plane-2026-03-03" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added tenant-scoped internal admin persistence and audit model:</li>
+<li><code>tenant_discord_users</code></li>
+<li><code>tenant_discord_bindings</code></li>
+<li><code>tenant_settings_overrides</code></li>
+<li><code>tenant_setting_versions</code></li>
+<li><code>tenant_secrets</code></li>
+<li><code>tenant_secret_versions</code></li>
+<li><code>tenant_admin_audit_log</code></li>
+<li>Added Skills internal tenant-admin API endpoints under:</li>
+<li><code>/admin/tenants/{tenant_id}/...</code></li>
+<li>includes Discord allowlist/roles, bindings, settings, secrets, and audit readout</li>
+<li>Added signed actor-envelope enforcement on Skills tenant-admin routes:</li>
+<li><code>X-Admin-Actor</code> + <code>X-Admin-Signature</code></li>
+<li>nonce/timestamp replay protection</li>
+<li>Added CGS internal tenant-admin route family:</li>
+<li><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/...</code></li>
+<li>Added CGS approval workflow storage + routes for high-risk admin mutations:</li>
+<li>pending change create/list</li>
+<li>approve/reject (two-person guard)</li>
+<li>apply status tracking for secret mutations</li>
+<li>Added tenant-aware runtime retrieval helpers:</li>
+<li><code>get_dynamic_for_tenant(...)</code></li>
+<li><code>get_secret_for_tenant(...)</code></li>
+<li>Wired Discord runtime allowlist checks to tenant-scoped controls when enabled via dynamic security settings.</li>
+</ul>
+<h3 id="changed-cgs-first-document-intelligence-client-kit-2026-03-02">Changed - CGS-First Document Intelligence Client Kit (2026-03-02)<a class="headerlink" href="#changed-cgs-first-document-intelligence-client-kit-2026-03-02" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Clarified exposure policy across docs and contracts: Zetherion <code>/api/v1</code> is upstream-only and CGS <code>/service/ai/v1</code> is the only public client API.</li>
+<li>Added internal component spec:</li>
+<li><code>docs/technical/zetherion-document-intelligence-component.md</code></li>
+<li>Added external onboarding pack:</li>
+<li><code>docs/technical/cgs-client-onboarding-kit.md</code></li>
+<li>Expanded CGS docs for browser upload completion options:</li>
+<li>JSON completion (<code>tenant_id</code> in body)</li>
+<li>multipart completion (<code>tenant_id</code> in query)</li>
+<li>Implemented CGS multipart passthrough for upload completion in runtime gateway route.</li>
+<li>Normalized document RAG provider naming to canonical <code>anthropic</code> (with <code>claude</code> alias compatibility retained).</li>
+<li>Updated OpenAPI specs and route wiring/auth/error docs to align with the above behavior.</li>
+<li>Tightened endpoint-doc bundle enforcement to include the new component spec + onboarding kit files.</li>
+</ul>
 <h3 id="changed-windows-merge-intelligence-promotions-authority-2026-03-02">Changed - Windows Merge-Intelligence Promotions Authority (2026-03-02)<a class="headerlink" href="#changed-windows-merge-intelligence-promotions-authority-2026-03-02" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Removed GitHub Actions <code>post-deploy-promotions.yml</code>; blog/release promotions are now executed on the Windows deployment host.</li>

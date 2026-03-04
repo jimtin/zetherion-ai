@@ -2,8 +2,8 @@ openapi: 3.1.0
 info:
   title: CGS AI Gateway API
   version: 1.0.0
-  description: CGS `/service/ai/v1` gateway contract mapped to Zetherion upstream APIs.
-  x-maintenance-note: "2026-03-01: Internal document route typing/multipart parsing hardening only; no gateway contract changes."
+  description: Public CGS `/service/ai/v1` contract mapped to internal Zetherion upstream APIs.
+  x-maintenance-note: "2026-03-04: Zetherion-only boundary recovery removed in-repo CGS website/UI assets; CGS gateway API contract unchanged."
 servers:
   - url: https://{host}
     variables:
@@ -160,12 +160,21 @@ paths:
       summary: Complete tenant document upload
       parameters:
         - $ref: '#/components/parameters/UploadId'
+        - name: tenant_id
+          in: query
+          required: false
+          description: Required when request body is multipart/form-data.
+          schema:
+            type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/DocumentUploadCompleteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DocumentUploadCompleteMultipartRequest'
       responses:
         '201':
           description: Document created and indexed
@@ -258,6 +267,626 @@ paths:
       responses:
         '200':
           description: Provider catalog envelope
+  /service/ai/v1/internal/blog/publish:
+    post:
+      summary: Receive Windows promotions blog publish receipts
+      security: []
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+            description: Bearer blog publish token
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            pattern: '^blog-[A-Fa-f0-9]{7,64}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlogPublishRequest'
+      responses:
+        '201':
+          description: Publish receipt recorded
+        '409':
+          description: Duplicate publish receipt (treated as success)
+  /service/ai/v1/internal/tenants:
+    get:
+      summary: List internal tenant mappings
+      responses:
+        '200':
+          description: Tenant mapping list envelope
+    post:
+      summary: Create or map tenant from internal lifecycle flow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTenantRequest'
+      responses:
+        '201':
+          description: Tenant mapping created
+  /service/ai/v1/internal/tenants/{tenant_id}:
+    patch:
+      summary: Update tenant profile/configuration
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigureTenantRequest'
+      responses:
+        '200':
+          description: Tenant mapping updated
+  /service/ai/v1/internal/tenants/{tenant_id}/deactivate:
+    post:
+      summary: Deactivate internal tenant mapping
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      responses:
+        '200':
+          description: Tenant mapping deactivated
+  /service/ai/v1/internal/tenants/{tenant_id}/keys/rotate:
+    post:
+      summary: Rotate mapped tenant API key
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      responses:
+        '200':
+          description: Tenant API key rotated
+  /service/ai/v1/internal/tenants/{tenant_id}/release-markers:
+    post:
+      summary: Publish release marker with mapped tenant credentials
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleaseMarkerRequest'
+      responses:
+        '201':
+          description: Release marker created
+  /service/ai/v1/tenants/{tenant_id}/crm/contacts:
+    get:
+      summary: Tenant CRM contacts report
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      responses:
+        '200':
+          description: CRM contacts envelope
+  /service/ai/v1/tenants/{tenant_id}/crm/interactions:
+    get:
+      summary: Tenant CRM interactions report
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      responses:
+        '200':
+          description: CRM interactions envelope
+  /service/ai/v1/tenants/{tenant_id}/analytics/funnel:
+    get:
+      summary: Tenant analytics funnel report
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      responses:
+        '200':
+          description: Analytics funnel envelope
+  /service/ai/v1/tenants/{tenant_id}/analytics/recommendations:
+    get:
+      summary: Tenant analytics recommendations report
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      responses:
+        '200':
+          description: Analytics recommendations envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/discord-users:
+    get:
+      summary: List tenant-approved Discord users
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      responses:
+        '200':
+          description: Tenant Discord user list envelope
+    post:
+      summary: Add or update tenant-approved Discord user
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminDiscordUserCreateRequest'
+      responses:
+        '201':
+          description: Tenant Discord user created/updated
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/discord-users/{discord_user_id}:
+    delete:
+      summary: Remove tenant-approved Discord user
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: discord_user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Tenant Discord user removed
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/discord-users/{discord_user_id}/role:
+    patch:
+      summary: Update tenant Discord user role
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: discord_user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminDiscordRolePatchRequest'
+      responses:
+        '200':
+          description: Tenant Discord role update status
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/discord-bindings:
+    get:
+      summary: List tenant Discord guild/channel bindings
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      responses:
+        '200':
+          description: Tenant Discord binding list envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/discord-bindings/guilds/{guild_id}:
+    put:
+      summary: Upsert tenant guild default binding
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: guild_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminGuildBindingRequest'
+      responses:
+        '200':
+          description: Tenant guild binding upserted
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/discord-bindings/channels/{channel_id}:
+    put:
+      summary: Upsert tenant channel override binding
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminChannelBindingRequest'
+      responses:
+        '200':
+          description: Tenant channel binding upserted
+    delete:
+      summary: Delete tenant channel override binding
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Tenant channel binding removed
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/settings:
+    get:
+      summary: List tenant runtime setting overrides
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      responses:
+        '200':
+          description: Tenant settings list envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/settings/{namespace}/{key}:
+    put:
+      summary: Set tenant runtime setting override
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: namespace
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSettingPutRequest'
+      responses:
+        '200':
+          description: Tenant setting updated
+    delete:
+      summary: Delete tenant runtime setting override
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: namespace
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tenant setting removed
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/secrets:
+    get:
+      summary: List tenant secret metadata
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      responses:
+        '200':
+          description: Tenant secret metadata envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/secrets/{name}:
+    put:
+      summary: Create or rotate tenant secret
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSecretPutRequest'
+      responses:
+        '200':
+          description: Tenant secret write accepted
+    delete:
+      summary: Delete tenant secret
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tenant secret delete accepted
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/audit:
+    get:
+      summary: List tenant admin audit entries
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      responses:
+        '200':
+          description: Tenant admin audit envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/email/providers/{provider}/oauth-app:
+    get:
+      summary: Get tenant email provider OAuth app metadata
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OAuth app metadata envelope
+    put:
+      summary: Configure tenant email provider OAuth app
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminEmailOAuthAppPutRequest'
+      responses:
+        '200':
+          description: OAuth app config updated
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/email/mailboxes/connect/start:
+    post:
+      summary: Start mailbox connect OAuth flow
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMailboxConnectStartRequest'
+      responses:
+        '201':
+          description: Mailbox connect started
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/email/mailboxes/connect/callback:
+    get:
+      summary: Exchange mailbox OAuth callback code
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+            default: google
+      responses:
+        '200':
+          description: Mailbox link established
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/email/mailboxes:
+    get:
+      summary: List tenant mailboxes
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+            default: google
+      responses:
+        '200':
+          description: Mailbox list envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/email/mailboxes/{mailbox_id}:
+    patch:
+      summary: Patch mailbox metadata/status
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: mailbox_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMailboxPatchRequest'
+      responses:
+        '200':
+          description: Mailbox updated
+    delete:
+      summary: Delete tenant mailbox
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: mailbox_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Mailbox deleted
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/email/mailboxes/{mailbox_id}/sync:
+    post:
+      summary: Trigger mailbox sync
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: mailbox_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMailboxSyncRequest'
+      responses:
+        '200':
+          description: Mailbox sync accepted
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/email/critical/messages:
+    get:
+      summary: List critical tenant email messages
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [open, resolved, dismissed]
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [critical, high, normal]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        '200':
+          description: Critical message list envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/email/calendars:
+    get:
+      summary: List calendars for mailbox
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: mailbox_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Calendar list envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/email/mailboxes/{mailbox_id}/calendar-primary:
+    put:
+      summary: Set mailbox primary calendar
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: mailbox_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMailboxSetPrimaryCalendarRequest'
+      responses:
+        '200':
+          description: Mailbox primary calendar updated
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/email/insights:
+    get:
+      summary: List tenant email insights
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: insight_type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: min_confidence
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        '200':
+          description: Email insights envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/email/insights/reindex:
+    post:
+      summary: Reindex tenant email insights
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminInsightsReindexRequest'
+      responses:
+        '200':
+          description: Email insight reindex accepted
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/changes:
+    post:
+      summary: Submit a pending admin change for review
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminChangeCreateRequest'
+      responses:
+        '201':
+          description: Pending admin change created
+    get:
+      summary: List pending/approved/applied admin changes for tenant
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      responses:
+        '200':
+          description: Tenant admin change list envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/changes/{change_id}/approve:
+    post:
+      summary: Approve a pending admin change (two-person rule)
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: change_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminChangeDecisionRequest'
+      responses:
+        '200':
+          description: Admin change approved
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/changes/{change_id}/reject:
+    post:
+      summary: Reject a pending admin change
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: change_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminChangeDecisionRequest'
+      responses:
+        '200':
+          description: Admin change rejected
 
 components:
   securitySchemes:
@@ -284,6 +913,12 @@ components:
       required: true
       schema:
         type: string
+    TenantIdPath:
+      name: tenant_id
+      in: path
+      required: true
+      schema:
+        type: string
   schemas:
     EnvelopeBase:
       type: object
@@ -294,9 +929,23 @@ components:
           type: object
           nullable: true
         error:
-          type: object
+          allOf:
+            - $ref: '#/components/schemas/GatewayError'
           nullable: true
       required: [request_id, data, error]
+    GatewayError:
+      type: object
+      required: [code, message, retryable]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        retryable:
+          type: boolean
+        details:
+          type: object
+          additionalProperties: true
     CreateConversationRequest:
       type: object
       required: [tenant_id]
@@ -368,6 +1017,16 @@ components:
         metadata:
           type: object
           additionalProperties: true
+    DocumentUploadCompleteMultipartRequest:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+        metadata:
+          type: string
+          description: Optional JSON string metadata payload.
     DocumentReindexRequest:
       type: object
       required: [tenant_id]
@@ -389,6 +1048,306 @@ components:
         provider:
           type: string
           nullable: true
+          description: Provider override. Canonical values are groq, openai, anthropic (claude alias accepted).
         model:
+          type: string
+          nullable: true
+    CreateTenantRequest:
+      type: object
+      required: [cgs_tenant_id, name]
+      properties:
+        cgs_tenant_id:
+          type: string
+        name:
+          type: string
+        domain:
+          type: string
+          nullable: true
+        config:
+          type: object
+          nullable: true
+          additionalProperties: true
+    ConfigureTenantRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        domain:
+          type: string
+          nullable: true
+        config:
+          type: object
+          nullable: true
+          additionalProperties: true
+    ReleaseMarkerRequest:
+      type: object
+      properties:
+        source:
+          type: string
+          default: cgs-deploy
+        environment:
+          type: string
+          default: production
+        commit_sha:
+          type: string
+          nullable: true
+        branch:
+          type: string
+          nullable: true
+        tag_name:
+          type: string
+          nullable: true
+        deployed_at:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+    BlogPublishModels:
+      type: object
+      required: [draft, refine]
+      properties:
+        draft:
+          type: string
+        refine:
+          type: string
+    BlogPublishRequest:
+      type: object
+      required:
+        - idempotency_key
+        - source
+        - sha
+        - repo
+        - release_tag
+        - title
+        - slug
+        - meta_description
+        - primary_keyword
+        - content_markdown
+        - json_ld
+        - models
+        - published_at
+      properties:
+        idempotency_key:
+          type: string
+          pattern: '^blog-[A-Fa-f0-9]{7,64}$'
+        source:
+          type: string
+        sha:
+          type: string
+          pattern: '^[A-Fa-f0-9]{7,64}$'
+        repo:
+          type: string
+        release_tag:
+          type: string
+        title:
+          type: string
+        slug:
+          type: string
+        meta_description:
+          type: string
+        excerpt:
+          type: string
+        primary_keyword:
+          type: string
+        content_markdown:
+          type: string
+        json_ld:
+          type: object
+          additionalProperties: true
+        models:
+          $ref: '#/components/schemas/BlogPublishModels'
+        published_at:
+          type: string
+    AdminDiscordUserCreateRequest:
+      type: object
+      required: [discord_user_id]
+      properties:
+        discord_user_id:
+          type: integer
+        role:
+          type: string
+          default: user
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminDiscordRolePatchRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminGuildBindingRequest:
+      type: object
+      properties:
+        priority:
+          type: integer
+          default: 100
+        is_active:
+          type: boolean
+          default: true
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminChannelBindingRequest:
+      type: object
+      required: [guild_id]
+      properties:
+        guild_id:
+          type: integer
+        priority:
+          type: integer
+          default: 100
+        is_active:
+          type: boolean
+          default: true
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminSettingPutRequest:
+      type: object
+      required: [value]
+      properties:
+        value:
+          nullable: true
+        data_type:
+          type: string
+          default: string
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminSecretPutRequest:
+      type: object
+      required: [value]
+      properties:
+        value:
+          type: string
+        description:
+          type: string
+          nullable: true
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminEmailOAuthAppPutRequest:
+      type: object
+      required: [redirect_uri]
+      properties:
+        redirect_uri:
+          type: string
+        client_id:
+          type: string
+          nullable: true
+        client_secret:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+          default: true
+        metadata:
+          type: object
+          additionalProperties: true
+        client_id_ref:
+          type: string
+          nullable: true
+        client_secret_ref:
+          type: string
+          nullable: true
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminMailboxConnectStartRequest:
+      type: object
+      properties:
+        provider:
+          type: string
+          default: google
+        account_hint:
+          type: string
+          nullable: true
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminMailboxPatchRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          nullable: true
+        sync_cursor:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+          additionalProperties: true
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminMailboxSyncRequest:
+      type: object
+      properties:
+        direction:
+          type: string
+          default: bi_directional
+        idempotency_key:
+          type: string
+          nullable: true
+        source:
+          type: string
+          nullable: true
+        max_results:
+          type: integer
+          minimum: 1
+          maximum: 100
+        calendar_operations:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          nullable: true
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminMailboxSetPrimaryCalendarRequest:
+      type: object
+      required: [calendar_id]
+      properties:
+        calendar_id:
+          type: string
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminInsightsReindexRequest:
+      type: object
+      properties:
+        insight_type:
+          type: string
+          nullable: true
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminChangeCreateRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+        target:
+          type: string
+          nullable: true
+        payload:
+          type: object
+          additionalProperties: true
+        reason:
+          type: string
+          nullable: true
+    AdminChangeDecisionRequest:
+      type: object
+      properties:
+        reason:
           type: string
           nullable: true

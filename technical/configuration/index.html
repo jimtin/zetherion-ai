@@ -1102,6 +1102,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#backup-and-recovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backup and Recovery
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#intentionally-undocumented-internal-exclusions" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1314,7 +1325,35 @@
   <span class="md-ellipsis">
     
   
-    Public API Reference
+    Zetherion Upstream API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../zetherion-document-intelligence-component/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Document Intelligence Component
   
 
     
@@ -1427,6 +1466,62 @@
     
   
     OpenAPI Contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cgs-client-onboarding-kit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CGS Client Onboarding Kit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cgs-email-monitoring-onboarding-kit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CGS Email Monitoring Onboarding Kit
   
 
     
@@ -2035,6 +2130,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#backup-and-recovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backup and Recovery
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#intentionally-undocumented-internal-exclusions" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2136,6 +2242,16 @@
 <td><code>OWNER_USER_ID</code></td>
 <td>unset</td>
 <td>Bootstrap owner RBAC user</td>
+</tr>
+<tr>
+<td><code>ALLOWLIST_STRICT_STARTUP</code></td>
+<td><code>false</code></td>
+<td>Fail startup if no effective allowlist users are configured</td>
+</tr>
+<tr>
+<td><code>ALLOWLIST_BOOTSTRAP_ENABLED</code></td>
+<td><code>true</code></td>
+<td>Sync <code>OWNER_USER_ID</code> + <code>ALLOWED_USER_IDS</code> into RBAC at startup</td>
 </tr>
 <tr>
 <td><code>ALLOW_BOT_MESSAGES</code></td>
@@ -2910,6 +3026,16 @@ in <code>config.py</code>.</p>
 <td>Upstream Zetherion skills API base URL for CGS gateway</td>
 </tr>
 <tr>
+<td><code>CGS_DOCUMENT_MUTATION_RPM</code></td>
+<td><code>30</code></td>
+<td>Tenant-aware document mutation rate-limit bucket (requests/minute)</td>
+</tr>
+<tr>
+<td><code>CGS_ADMIN_MUTATION_RPM</code></td>
+<td><code>20</code></td>
+<td>Tenant-aware internal admin mutation rate-limit bucket (requests/minute)</td>
+</tr>
+<tr>
 <td><code>ZETHERION_SKILLS_API_SECRET</code></td>
 <td>unset</td>
 <td>Optional override secret for CGS gateway -&gt; skills API calls</td>
@@ -3243,6 +3369,44 @@ in <code>config.py</code>.</p>
 <td><code>LOG_FILE_PREFIX</code></td>
 <td><code>zetherion_ai</code></td>
 <td>Log file prefix</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="backup-and-recovery">Backup and Recovery<a class="headerlink" href="#backup-and-recovery" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>BACKUP_AGE_RECIPIENT</code></td>
+<td>empty</td>
+<td>age recipient public key for encrypted backup archives</td>
+</tr>
+<tr>
+<td><code>BACKUP_AGE_IDENTITY</code></td>
+<td>empty</td>
+<td>age private identity key path used by verify/restore</td>
+</tr>
+<tr>
+<td><code>BACKUP_DIRECTORY</code></td>
+<td><code>$HOME/.zetherion-backups</code></td>
+<td>Local encrypted backup destination</td>
+</tr>
+<tr>
+<td><code>BACKUP_RETENTION_COUNT</code></td>
+<td><code>14</code></td>
+<td>Number of archives retained before pruning</td>
+</tr>
+<tr>
+<td><code>BACKUP_STATE_DIR</code></td>
+<td><code>data</code></td>
+<td>Host persistent state path included in backup payload</td>
 </tr>
 </tbody>
 </table>

@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://jimtin.github.io/zetherion-ai/technical/gmail-architecture/">
+        <link rel="canonical" href="https://jimtin.github.io/zetherion-ai/technical/cgs-email-monitoring-onboarding-kit/">
       
       
-        <link rel="prev" href="../skills-framework/">
+        <link rel="prev" href="../cgs-client-onboarding-kit/">
       
       
-        <link rel="next" href="../observation-pipeline/">
+        <link rel="next" href="../ai-agent-integration/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Gmail Architecture - Zetherion AI</title>
+        <title>CGS Email Monitoring Onboarding Kit - Zetherion AI</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#gmail-architecture" class="md-skip">
+        <a href="#cgs-email-monitoring-onboarding-kit-google-first" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Gmail Architecture
+              CGS Email Monitoring Onboarding Kit
             
           </span>
         </div>
@@ -908,37 +908,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Gmail Architecture
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../gmail-architecture/" class="md-nav__link">
         
   
   
@@ -954,214 +927,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Overview
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#module-structure" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Module Structure
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#trust-system" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Trust System
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Trust System">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#two-dimensional-trust" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Two-Dimensional Trust
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#effective-trust-calculation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Effective Trust Calculation
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#trust-evolution" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Trust Evolution
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#reply-type-ceilings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reply Type Ceilings
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#auto-send-decision" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Auto-Send Decision
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#database-schema" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Database Schema
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#reply-pipeline" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Reply Pipeline
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#account-management" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Account Management
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Account Management">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#database-schema_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Database Schema
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#digest-generation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Digest Generation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#analytics" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Analytics
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#heartbeat-integration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Heartbeat Integration
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#related-docs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Related Docs
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1479,10 +1244,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../cgs-email-monitoring-onboarding-kit/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CGS Email Monitoring Onboarding Kit
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1498,6 +1290,208 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#audience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Audience
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#maintenance-note-2026-03-04" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maintenance Note (2026-03-04)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#capability-outcome" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Capability Outcome
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authoritative-endpoint-surface-cgs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authoritative Endpoint Surface (CGS)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#auth-scope-and-approval-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auth, Scope, and Approval Rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#core-data-contracts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Data Contracts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#operator-flows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operator Flows
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Operator Flows">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#flow-a-configure-oauth-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flow A: Configure OAuth App
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flow-b-connect-mailboxes-5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flow B: Connect Mailboxes (5+)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flow-c-initial-sync-triage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flow C: Initial Sync + Triage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flow-d-calendar-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flow D: Calendar Controls
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security-and-compliance-expectations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security and Compliance Expectations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ui-wiring-expectations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UI Wiring Expectations
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#uat-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UAT Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#go-live-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Go-Live Checklist
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supporting-docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supporting Docs
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1911,10 +1905,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#audience" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview
+        Audience
       
     </span>
   </a>
@@ -1922,10 +1916,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#module-structure" class="md-nav__link">
+  <a href="#maintenance-note-2026-03-04" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Module Structure
+        Maintenance Note (2026-03-04)
       
     </span>
   </a>
@@ -1933,22 +1927,66 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#trust-system" class="md-nav__link">
+  <a href="#capability-outcome" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Trust System
+        Capability Outcome
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Trust System">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#authoritative-endpoint-surface-cgs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authoritative Endpoint Surface (CGS)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#auth-scope-and-approval-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auth, Scope, and Approval Rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#core-data-contracts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Data Contracts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#operator-flows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operator Flows
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Operator Flows">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#two-dimensional-trust" class="md-nav__link">
+  <a href="#flow-a-configure-oauth-app" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Two-Dimensional Trust
+        Flow A: Configure OAuth App
       
     </span>
   </a>
@@ -1956,10 +1994,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#effective-trust-calculation" class="md-nav__link">
+  <a href="#flow-b-connect-mailboxes-5" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Effective Trust Calculation
+        Flow B: Connect Mailboxes (5+)
       
     </span>
   </a>
@@ -1967,10 +2005,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#trust-evolution" class="md-nav__link">
+  <a href="#flow-c-initial-sync-triage" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Trust Evolution
+        Flow C: Initial Sync + Triage
       
     </span>
   </a>
@@ -1978,32 +2016,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#reply-type-ceilings" class="md-nav__link">
+  <a href="#flow-d-calendar-controls" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Reply Type Ceilings
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#auto-send-decision" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Auto-Send Decision
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#database-schema" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Database Schema
+        Flow D: Calendar Controls
       
     </span>
   </a>
@@ -2016,10 +2032,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#reply-pipeline" class="md-nav__link">
+  <a href="#security-and-compliance-expectations" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Reply Pipeline
+        Security and Compliance Expectations
       
     </span>
   </a>
@@ -2027,38 +2043,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#account-management" class="md-nav__link">
+  <a href="#ui-wiring-expectations" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Account Management
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Account Management">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#database-schema_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Database Schema
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#digest-generation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Digest Generation
+        UI Wiring Expectations
       
     </span>
   </a>
@@ -2066,10 +2054,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#analytics" class="md-nav__link">
+  <a href="#uat-checklist" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Analytics
+        UAT Checklist
       
     </span>
   </a>
@@ -2077,10 +2065,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#heartbeat-integration" class="md-nav__link">
+  <a href="#go-live-checklist" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Heartbeat Integration
+        Go-Live Checklist
       
     </span>
   </a>
@@ -2088,10 +2076,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#related-docs" class="md-nav__link">
+  <a href="#supporting-docs" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Related Docs
+        Supporting Docs
       
     </span>
   </a>
@@ -2118,209 +2106,139 @@
   
 
 
-<h1 id="gmail-architecture">Gmail Architecture<a class="headerlink" href="#gmail-architecture" title="Permanent link">&para;</a></h1>
-<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>The Gmail integration is a 12-file module (src/zetherion_ai/skills/gmail/) providing email management with a progressive trust system for reply automation.</p>
-<h2 id="module-structure">Module Structure<a class="headerlink" href="#module-structure" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>File</th>
-<th>Purpose</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>skill.py</td>
-<td>Entry point, intent routing (7 intents)</td>
-</tr>
-<tr>
-<td>trust.py</td>
-<td>Per-contact and per-type trust scoring</td>
-</tr>
-<tr>
-<td>accounts.py</td>
-<td>Multi-account management with encrypted tokens</td>
-</tr>
-<tr>
-<td>inbox.py</td>
-<td>Unified inbox aggregation</td>
-</tr>
-<tr>
-<td>digest.py</td>
-<td>Morning/evening/weekly digest generation</td>
-</tr>
-<tr>
-<td>replies.py</td>
-<td>AI-powered reply generation and classification</td>
-</tr>
-<tr>
-<td>analytics.py</td>
-<td>Email analytics and relationship scoring</td>
-</tr>
-<tr>
-<td>auth.py</td>
-<td>OAuth2 authentication</td>
-</tr>
-<tr>
-<td>client.py</td>
-<td>Gmail API client</td>
-</tr>
-<tr>
-<td>sync.py</td>
-<td>Email synchronization</td>
-</tr>
-<tr>
-<td>calendar_sync.py</td>
-<td>Calendar integration</td>
-</tr>
-<tr>
-<td>conflicts.py</td>
-<td>Calendar conflict detection</td>
-</tr>
-</tbody>
-</table>
-<h2 id="trust-system">Trust System<a class="headerlink" href="#trust-system" title="Permanent link">&para;</a></h2>
-<h3 id="two-dimensional-trust">Two-Dimensional Trust<a class="headerlink" href="#two-dimensional-trust" title="Permanent link">&para;</a></h3>
-<p>Trust is tracked along two dimensions:
-1. <strong>Type Trust</strong>: Per reply type (e.g., how much to trust acknowledgment replies globally)
-2. <strong>Contact Trust</strong>: Per sender (e.g., how much to trust replies to your manager)</p>
-<h3 id="effective-trust-calculation">Effective Trust Calculation<a class="headerlink" href="#effective-trust-calculation" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>effective_trust = min(type_trust, contact_trust, reply_type_ceiling)
-</code></pre></div>
-<h3 id="trust-evolution">Trust Evolution<a class="headerlink" href="#trust-evolution" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Event</th>
-<th>Delta</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>User approves draft</td>
-<td>+0.05</td>
-</tr>
-<tr>
-<td>User makes minor edit</td>
-<td>-0.02</td>
-</tr>
-<tr>
-<td>User makes major edit</td>
-<td>-0.10</td>
-</tr>
-<tr>
-<td>User rejects draft</td>
-<td>-0.20</td>
-</tr>
-<tr>
-<td>Floor</td>
-<td>0.00</td>
-</tr>
-<tr>
-<td>Global cap</td>
-<td>0.95</td>
-</tr>
-</tbody>
-</table>
-<h3 id="reply-type-ceilings">Reply Type Ceilings<a class="headerlink" href="#reply-type-ceilings" title="Permanent link">&para;</a></h3>
-<table>
-<thead>
-<tr>
-<th>Reply Type</th>
-<th>Ceiling</th>
-<th>Rationale</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>ACKNOWLEDGMENT</td>
-<td>0.95</td>
-<td>Low risk, formulaic</td>
-</tr>
-<tr>
-<td>MEETING_CONFIRM</td>
-<td>0.90</td>
-<td>Simple confirmation</td>
-</tr>
-<tr>
-<td>MEETING_DECLINE</td>
-<td>0.80</td>
-<td>Needs care with wording</td>
-</tr>
-<tr>
-<td>INFO_REQUEST</td>
-<td>0.75</td>
-<td>Content-dependent</td>
-</tr>
-<tr>
-<td>TASK_UPDATE</td>
-<td>0.70</td>
-<td>Context-dependent</td>
-</tr>
-<tr>
-<td>GENERAL</td>
-<td>0.60</td>
-<td>Variable risk</td>
-</tr>
-<tr>
-<td>NEGOTIATION</td>
-<td>0.50</td>
-<td>High stakes</td>
-</tr>
-<tr>
-<td>SENSITIVE</td>
-<td>0.30</td>
-<td>Highest risk</td>
-</tr>
-</tbody>
-</table>
-<h3 id="auto-send-decision">Auto-Send Decision<a class="headerlink" href="#auto-send-decision" title="Permanent link">&para;</a></h3>
-<p>A reply is auto-sent when BOTH conditions are met:
-- effective_trust &gt;= 0.85
-- confidence &gt;= 0.85</p>
-<h3 id="database-schema">Database Schema<a class="headerlink" href="#database-schema" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">gmail_type_trust</span><span class="w"> </span><span class="p">(</span><span class="n">user_id</span><span class="p">,</span><span class="w"> </span><span class="n">reply_type</span><span class="p">,</span><span class="w"> </span><span class="n">score</span><span class="p">,</span><span class="w"> </span><span class="n">approvals</span><span class="p">,</span><span class="w"> </span><span class="n">rejections</span><span class="p">,</span><span class="w"> </span><span class="n">edits</span><span class="p">,</span><span class="w"> </span><span class="n">total_interactions</span><span class="p">)</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">gmail_contact_trust</span><span class="w"> </span><span class="p">(</span><span class="n">user_id</span><span class="p">,</span><span class="w"> </span><span class="n">contact_email</span><span class="p">,</span><span class="w"> </span><span class="n">score</span><span class="p">,</span><span class="w"> </span><span class="n">approvals</span><span class="p">,</span><span class="w"> </span><span class="n">rejections</span><span class="p">,</span><span class="w"> </span><span class="n">edits</span><span class="p">,</span><span class="w"> </span><span class="n">total_interactions</span><span class="p">)</span>
-</code></pre></div>
-<h2 id="reply-pipeline">Reply Pipeline<a class="headerlink" href="#reply-pipeline" title="Permanent link">&para;</a></h2>
+<h1 id="cgs-email-monitoring-onboarding-kit-google-first">CGS Email Monitoring Onboarding Kit (Google-First)<a class="headerlink" href="#cgs-email-monitoring-onboarding-kit-google-first" title="Permanent link">&para;</a></h1>
+<h2 id="audience">Audience<a class="headerlink" href="#audience" title="Permanent link">&para;</a></h2>
+<p>This kit is for CGS implementation teams and external operator teams onboarding tenant-scoped multi-mailbox monitoring through CGS only.</p>
+<p>Authoritative exposure rule:
+- Public/admin clients integrate only with CGS <code>/service/ai/v1/...</code>.
+- Zetherion email admin APIs are internal-only and never exposed directly.</p>
+<h2 id="maintenance-note-2026-03-04">Maintenance Note (2026-03-04)<a class="headerlink" href="#maintenance-note-2026-03-04" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Zetherion-only boundary recovery removed in-repo CGS website/UI assets.</li>
+<li>Email monitoring API contracts in this onboarding kit are unchanged.</li>
+</ul>
+<h2 id="capability-outcome">Capability Outcome<a class="headerlink" href="#capability-outcome" title="Permanent link">&para;</a></h2>
+<p>After implementing this kit, operators can:
+- Configure per-tenant Google OAuth app credentials securely.
+- Connect and manage 5+ mailboxes per tenant.
+- Trigger mailbox sync jobs (email + calendar context).
+- Triage critical messages with reason codes and confidence.
+- Query normalized insights for downstream skill extraction.
+- Set mailbox primary calendar for controlled write flows.</p>
+<h2 id="authoritative-endpoint-surface-cgs">Authoritative Endpoint Surface (CGS)<a class="headerlink" href="#authoritative-endpoint-surface-cgs" title="Permanent link">&para;</a></h2>
+<p>Prefix: <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/email</code></p>
+<ul>
+<li><code>GET /providers/google/oauth-app</code></li>
+<li><code>PUT /providers/google/oauth-app</code></li>
+<li><code>POST /mailboxes/connect/start</code></li>
+<li><code>GET /mailboxes/connect/callback</code></li>
+<li><code>GET /mailboxes</code></li>
+<li><code>PATCH /mailboxes/{mailbox_id}</code></li>
+<li><code>DELETE /mailboxes/{mailbox_id}</code></li>
+<li><code>POST /mailboxes/{mailbox_id}/sync</code></li>
+<li><code>GET /critical/messages</code></li>
+<li><code>GET /calendars</code></li>
+<li><code>PUT /mailboxes/{mailbox_id}/calendar-primary</code></li>
+<li><code>GET /insights</code></li>
+<li><code>POST /insights/reindex</code></li>
+</ul>
+<p>Contract source:
+- <code>docs/technical/openapi-cgs-gateway.yaml</code></p>
+<h2 id="auth-scope-and-approval-rules">Auth, Scope, and Approval Rules<a class="headerlink" href="#auth-scope-and-approval-rules" title="Permanent link">&para;</a></h2>
+<p>Required headers:
+- <code>Authorization: Bearer &lt;cgs_jwt&gt;</code>
+- <code>Idempotency-Key: &lt;key&gt;</code> for retry-prone mutations</p>
+<p>Required scopes:
+- All routes: operator + <code>cgs:zetherion-admin</code>
+- OAuth app routes: additionally <code>cgs:zetherion-secrets-admin</code></p>
+<p>Step-up requirement:
+- All mutating routes require step-up claim (<code>step_up=true</code> or accepted MFA <code>acr/amr</code> claim).</p>
+<p>Approval workflow requirements:
+- <code>PUT /providers/google/oauth-app</code> requires approved <code>change_ticket_id</code>.
+- <code>DELETE /mailboxes/{mailbox_id}</code> requires approved <code>change_ticket_id</code>.
+- Two-person approval is enforced.</p>
+<h2 id="core-data-contracts">Core Data Contracts<a class="headerlink" href="#core-data-contracts" title="Permanent link">&para;</a></h2>
+<p>Mailbox status:
+- <code>pending|connected|degraded|revoked|disconnected</code></p>
+<p>Sync job status:
+- <code>queued|running|succeeded|failed|retrying</code></p>
+<p>Critical item severity/state:
+- severity: <code>critical|high|normal</code>
+- status: <code>open|resolved|dismissed</code></p>
+<h2 id="operator-flows">Operator Flows<a class="headerlink" href="#operator-flows" title="Permanent link">&para;</a></h2>
+<h3 id="flow-a-configure-oauth-app">Flow A: Configure OAuth App<a class="headerlink" href="#flow-a-configure-oauth-app" title="Permanent link">&para;</a></h3>
 <ol>
-<li>Email received and classified by ReplyClassifier (keyword matching)</li>
-<li>Reply type determined (8 types from ACKNOWLEDGMENT to SENSITIVE)</li>
-<li>ReplyGenerator creates draft using InferenceBroker with type-specific templates</li>
-<li>Confidence score calculated: (ceiling * 0.7) + bonuses - penalties</li>
-<li>Trust check: if effective_trust &gt;= 0.85 AND confidence &gt;= 0.85, auto-send</li>
-<li>Otherwise, draft stored as PENDING for user review</li>
-<li>User approves/edits/rejects, trust evolves accordingly</li>
+<li>Read current config (<code>GET /providers/google/oauth-app</code>).</li>
+<li>Submit approved change ticket via existing admin <code>/changes</code> route family.</li>
+<li>Save config (<code>PUT /providers/google/oauth-app</code>) with <code>redirect_uri</code>, optional secret refs/values, and <code>change_ticket_id</code>.</li>
+<li>Confirm read response shows metadata + <code>has_client_id</code>/<code>has_client_secret</code> without revealing secret values.</li>
 </ol>
-<h2 id="account-management">Account Management<a class="headerlink" href="#account-management" title="Permanent link">&para;</a></h2>
+<h3 id="flow-b-connect-mailboxes-5">Flow B: Connect Mailboxes (5+)<a class="headerlink" href="#flow-b-connect-mailboxes-5" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Start OAuth connect (<code>POST /mailboxes/connect/start</code>).</li>
+<li>Redirect operator to returned provider authorization URL.</li>
+<li>Complete browser callback (<code>GET /mailboxes/connect/callback?code=...&amp;state=...</code>).</li>
+<li>Refresh mailbox list (<code>GET /mailboxes</code>) and verify all targeted mailboxes appear as <code>connected</code>.</li>
+</ol>
+<h3 id="flow-c-initial-sync-triage">Flow C: Initial Sync + Triage<a class="headerlink" href="#flow-c-initial-sync-triage" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Trigger sync per mailbox (<code>POST /mailboxes/{mailbox_id}/sync</code>), default direction <code>bi_directional</code>.</li>
+<li>Pull critical inbox (<code>GET /critical/messages</code>) with filters (<code>status</code>, <code>severity</code>, <code>limit</code>).</li>
+<li>Pull insights (<code>GET /insights</code>) with filters (<code>insight_type</code>, <code>min_confidence</code>, <code>limit</code>).</li>
+<li>Optional recovery: <code>POST /insights/reindex</code> to rebuild vector-linked insight records.</li>
+</ol>
+<h3 id="flow-d-calendar-controls">Flow D: Calendar Controls<a class="headerlink" href="#flow-d-calendar-controls" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Load calendars for mailbox (<code>GET /calendars?mailbox_id=...</code>).</li>
+<li>Set primary calendar (<code>PUT /mailboxes/{mailbox_id}/calendar-primary</code>).</li>
+<li>Keep delete operations disabled for calendar writes unless explicitly enabled by policy in a later phase.</li>
+</ol>
+<h2 id="security-and-compliance-expectations">Security and Compliance Expectations<a class="headerlink" href="#security-and-compliance-expectations" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Multi-account support (first account = primary)</li>
-<li>OAuth tokens encrypted with AES-256-GCM before storage</li>
-<li>Token refresh handled automatically</li>
-<li>Sync state tracked per account (history_id, last sync timestamps)</li>
+<li>OAuth and mailbox credentials are encrypted at rest in tenant-scoped stores.</li>
+<li>OAuth app read paths never return plaintext secret values.</li>
+<li>All mutations are auditable with actor, request ID, and change ticket linkage.</li>
+<li>Replay-resistant actor envelopes are enforced in upstream internal calls.</li>
+<li>Retention defaults:</li>
+<li>Message bodies/content: 90 days</li>
+<li>Metadata/critical/insights: 365 days</li>
 </ul>
-<h3 id="database-schema_1">Database Schema<a class="headerlink" href="#database-schema_1" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">gmail_accounts</span><span class="w"> </span><span class="p">(</span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">user_id</span><span class="p">,</span><span class="w"> </span><span class="n">email</span><span class="p">,</span><span class="w"> </span><span class="n">access_token_encrypted</span><span class="p">,</span><span class="w"> </span><span class="n">refresh_token_encrypted</span><span class="p">,</span><span class="w"> </span><span class="n">token_expiry</span><span class="p">,</span><span class="w"> </span><span class="n">scopes</span><span class="p">,</span><span class="w"> </span><span class="n">is_primary</span><span class="p">,</span><span class="w"> </span><span class="n">last_sync</span><span class="p">)</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">gmail_sync_state</span><span class="w"> </span><span class="p">(</span><span class="n">account_id</span><span class="p">,</span><span class="w"> </span><span class="n">history_id</span><span class="p">,</span><span class="w"> </span><span class="n">last_full_sync</span><span class="p">,</span><span class="w"> </span><span class="n">last_partial_sync</span><span class="p">)</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">gmail_drafts</span><span class="w"> </span><span class="p">(</span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">email_id</span><span class="p">,</span><span class="w"> </span><span class="n">account_id</span><span class="p">,</span><span class="w"> </span><span class="n">draft_text</span><span class="p">,</span><span class="w"> </span><span class="n">reply_type</span><span class="p">,</span><span class="w"> </span><span class="n">confidence</span><span class="p">,</span><span class="w"> </span><span class="n">status</span><span class="p">,</span><span class="w"> </span><span class="n">sent_at</span><span class="p">)</span>
-</code></pre></div>
-<h2 id="digest-generation">Digest Generation<a class="headerlink" href="#digest-generation" title="Permanent link">&para;</a></h2>
-<p>Three digest types:
-- <strong>Morning</strong>: Unread summary by classification, today's volume, pending drafts
-- <strong>Evening</strong>: Day summary, drafted count, neglected threads (&gt;2 days)
-- <strong>Weekly</strong>: 7-day volume trends, top 5 contacts, classification breakdown, neglected threads (&gt;5 days)</p>
-<h2 id="analytics">Analytics<a class="headerlink" href="#analytics" title="Permanent link">&para;</a></h2>
+<h2 id="ui-wiring-expectations">UI Wiring Expectations<a class="headerlink" href="#ui-wiring-expectations" title="Permanent link">&para;</a></h2>
+<p>Operator UI should provide:
+- OAuth app setup screen (masked secrets, no readback).
+- Mailbox onboarding wizard (start + callback + status).
+- Critical inbox screen (severity/confidence/reason codes).
+- Calendar sync screen (mailbox calendars + primary selection).
+- Insights screen (filterable structured extraction records).</p>
+<p>Route-to-screen mapping source:
+- <code>docs/technical/frontend-route-wiring.md</code></p>
+<h2 id="uat-checklist">UAT Checklist<a class="headerlink" href="#uat-checklist" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Configure tenant OAuth app with approval gate and secrets scope.</li>
+<li>Connect at least 5 Google mailboxes successfully.</li>
+<li>Verify token refresh path by forcing one near-expiry mailbox and re-syncing.</li>
+<li>Confirm critical items are created with severity, score, and reason codes.</li>
+<li>Confirm calendar list and primary calendar set flows work.</li>
+<li>Confirm cross-tenant access is denied.</li>
+<li>Confirm mailbox disconnect requires approved <code>change_ticket_id</code>.</li>
+<li>Confirm secret values are never returned by read endpoints.</li>
+</ol>
+<h2 id="go-live-checklist">Go-Live Checklist<a class="headerlink" href="#go-live-checklist" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Operator JWTs include required scopes and step-up claims.</li>
+<li>Approval workflow is enabled and staffed for two-person review.</li>
+<li>CGS error handling maps <code>AI_AUTH_*</code>, <code>AI_APPROVAL_*</code>, and upstream errors correctly.</li>
+<li>Observability dashboards include mailbox sync failures and critical backlog.</li>
+<li>Runbook includes OAuth callback failures, token refresh failures, and sync retry handling.</li>
+</ol>
+<h2 id="supporting-docs">Supporting Docs<a class="headerlink" href="#supporting-docs" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Contact relationship scoring: volume (log scale, 0.4 max) + recency (0.3 max) + response time (0.2 max)</li>
-<li>Period statistics: received/sent/drafted counts, average response time</li>
-<li>Top senders identification</li>
-<li>Neglected thread detection</li>
+<li><code>docs/technical/cgs-public-api-endpoint-build-spec.md</code></li>
+<li><code>docs/technical/api-auth-matrix.md</code></li>
+<li><code>docs/technical/api-error-matrix.md</code></li>
+<li><code>docs/technical/openapi-cgs-gateway.yaml</code></li>
+<li><code>docs/technical/frontend-route-wiring.md</code></li>
 </ul>
-<h2 id="heartbeat-integration">Heartbeat Integration<a class="headerlink" href="#heartbeat-integration" title="Permanent link">&para;</a></h2>
-<p>The Gmail skill provides heartbeat actions for periodic digest generation. When users have connected accounts, the scheduler triggers email_digest at configured intervals.</p>
-<h2 id="related-docs">Related Docs<a class="headerlink" href="#related-docs" title="Permanent link">&para;</a></h2>
-<p>Links to: architecture.md, security.md (OAuth, trust), configuration.md (Gmail vars)</p>
 
 
 
