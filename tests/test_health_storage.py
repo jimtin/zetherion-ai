@@ -19,6 +19,7 @@ from zetherion_ai.health.storage import (
     Incident,
     IncidentSeverity,
     MetricsSnapshot,
+    NotificationIncident,
     UpdateRecord,
     UpdateStatus,
 )
@@ -91,6 +92,7 @@ class TestInitialize:
         assert "CREATE TABLE IF NOT EXISTS health_daily_reports" in schema_sql
         assert "CREATE TABLE IF NOT EXISTS health_healing_actions" in schema_sql
         assert "CREATE TABLE IF NOT EXISTS health_incidents" in schema_sql
+        assert "CREATE TABLE IF NOT EXISTS notification_incidents" in schema_sql
         assert "CREATE TABLE IF NOT EXISTS update_history" in schema_sql
 
 
@@ -540,7 +542,141 @@ class TestIncidents:
 
 
 # ------------------------------------------------------------------
-# 7. Update history insert and retrieval
+# 7. Notification incident lifecycle
+# ------------------------------------------------------------------
+
+
+class TestNotificationIncidents:
+    """Tests for notification incident persistence."""
+
+    @pytest.mark.asyncio
+    async def test_create_notification_incident_returns_id(self, storage, mock_pool, now):
+        """create_notification_incident() inserts and returns row id."""
+        pool, conn = mock_pool
+        storage._pool = pool
+        conn.fetchrow.return_value = {"id": 321}
+
+        incident = NotificationIncident(
+            provider="groq",
+            fingerprint="fp-1",
+            severity=IncidentSeverity.CRITICAL,
+            description="Groq errors elevated",
+            state="open",
+            first_seen=now,
+            last_seen=now,
+            occurrence_count=1,
+            last_state_change_at=now,
+        )
+
+        result = await storage.create_notification_incident(incident)
+
+        assert result == 321
+        args = conn.fetchrow.call_args[0]
+        assert "INSERT INTO notification_incidents" in args[0]
+        assert args[1] == "groq"
+        assert args[2] == "fp-1"
+        assert args[3] == "critical"
+        assert args[4] == "Groq errors elevated"
+
+    @pytest.mark.asyncio
+    async def test_get_notification_incident_found(self, storage, mock_pool, now):
+        """get_notification_incident() deserializes IncidentSeverity and fields."""
+        pool, conn = mock_pool
+        storage._pool = pool
+        conn.fetchrow.return_value = {
+            "id": 11,
+            "provider": "openai",
+            "fingerprint": "fp-openai",
+            "severity": "high",
+            "description": "OpenAI latency elevated",
+            "state": "open",
+            "first_seen": now,
+            "last_seen": now,
+            "occurrence_count": 4,
+            "last_notified_at": now,
+            "last_digest_notified_at": None,
+            "last_state_change_at": now,
+        }
+
+        incident = await storage.get_notification_incident("openai", "fp-openai")
+
+        assert incident is not None
+        assert incident.provider == "openai"
+        assert incident.fingerprint == "fp-openai"
+        assert incident.severity == IncidentSeverity.HIGH
+        assert incident.occurrence_count == 4
+
+    @pytest.mark.asyncio
+    async def test_update_notification_incident_observation(self, storage, mock_pool, now):
+        """update_notification_incident_observation() updates severity/state and count."""
+        pool, conn = mock_pool
+        storage._pool = pool
+
+        await storage.update_notification_incident_observation(
+            11,
+            severity=IncidentSeverity.CRITICAL,
+            description="Escalated incident",
+            observed_at=now,
+            state="open",
+            state_changed=True,
+        )
+
+        conn.execute.assert_awaited_once()
+        args = conn.execute.call_args[0]
+        assert "UPDATE notification_incidents" in args[0]
+        assert "occurrence_count = occurrence_count + 1" in args[0]
+        assert args[1] == "critical"
+        assert args[2] == "Escalated incident"
+        assert args[3] is now
+        assert args[4] == "open"
+        assert args[5] is True
+        assert args[6] == 11
+
+    @pytest.mark.asyncio
+    async def test_list_open_notification_incidents(self, storage, mock_pool, now):
+        """list_open_notification_incidents() returns open incidents only."""
+        pool, conn = mock_pool
+        storage._pool = pool
+        conn.fetch.return_value = [
+            {
+                "id": 5,
+                "provider": "gemini",
+                "fingerprint": "fp-g",
+                "severity": "critical",
+                "description": "Gemini outage",
+                "state": "open",
+                "first_seen": now,
+                "last_seen": now,
+                "occurrence_count": 2,
+                "last_notified_at": now,
+                "last_digest_notified_at": None,
+                "last_state_change_at": now,
+            }
+        ]
+
+        incidents = await storage.list_open_notification_incidents()
+
+        assert len(incidents) == 1
+        assert incidents[0].provider == "gemini"
+        assert incidents[0].severity == IncidentSeverity.CRITICAL
+
+    @pytest.mark.asyncio
+    async def test_get_recent_incident_digest_times(self, storage, mock_pool, now):
+        """get_recent_incident_digest_times() returns timestamp list."""
+        pool, conn = mock_pool
+        storage._pool = pool
+        conn.fetch.return_value = [{"last_digest_notified_at": now}]
+
+        times = await storage.get_recent_incident_digest_times(limit=5)
+
+        assert times == [now]
+        args = conn.fetch.call_args[0]
+        assert "FROM notification_incidents" in args[0]
+        assert args[1] == 5
+
+
+# ------------------------------------------------------------------
+# 8. Update history insert and retrieval
 # ------------------------------------------------------------------
 
 

@@ -16,6 +16,8 @@ Users can query health via intents:
 
 from __future__ import annotations
 
+import hashlib
+from collections import Counter
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -42,6 +44,8 @@ log = get_logger("zetherion_ai.skills.health_analyzer")
 # Beat intervals for analysis cycles
 _ANALYSIS_EVERY_N_BEATS = 6  # ~30 min at default 5-min interval
 _DAILY_REPORT_EVERY_N_BEATS = 288  # ~24 h at default 5-min interval
+_INCIDENT_DIGEST_FALLBACK_HOUR = 9
+_INCIDENT_DIGEST_FALLBACK_MINUTE = 0
 
 
 class HealthAnalyzerSkill(Skill):
@@ -71,6 +75,9 @@ class HealthAnalyzerSkill(Skill):
 
         # Beat counter for scheduling analysis/report cycles
         self._beat_count: int = 0
+        self._incident_digest_fallback_hour: int = _INCIDENT_DIGEST_FALLBACK_HOUR
+        self._incident_digest_fallback_minute: int = _INCIDENT_DIGEST_FALLBACK_MINUTE
+        self._last_incident_digest_by_user: dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Skill ABC implementation
@@ -260,24 +267,236 @@ class HealthAnalyzerSkill(Skill):
             except Exception as exc:
                 log.warning("self_healing_failed", error=str(exc))
 
-        # Alert owner on critical anomalies
-        if result.has_critical and user_ids:
-            anomaly_summaries = [
-                a.description for a in result.anomalies if a.severity == "critical"
+        # Incident-aware notification lifecycle:
+        # immediate first/escalation alert + deduped repeat suppression + morning digest.
+        incident_actions = await self._build_incident_actions(result.anomalies, user_ids)
+        actions.extend(incident_actions)
+
+        return actions
+
+    @staticmethod
+    def _severity_rank(severity: "IncidentSeverity") -> int:
+        """Return comparable rank for incident severities."""
+        from zetherion_ai.health.storage import IncidentSeverity
+
+        ranks = {
+            IncidentSeverity.LOW: 1,
+            IncidentSeverity.MEDIUM: 2,
+            IncidentSeverity.HIGH: 3,
+            IncidentSeverity.CRITICAL: 4,
+        }
+        return ranks.get(severity, 0)
+
+    @staticmethod
+    def _map_anomaly_severity(raw_severity: str) -> "IncidentSeverity":
+        """Map analyzer severity labels to persistent incident severity."""
+        from zetherion_ai.health.storage import IncidentSeverity
+
+        normalized = str(raw_severity or "").strip().lower()
+        if normalized == "critical":
+            return IncidentSeverity.CRITICAL
+        if normalized == "warning":
+            return IncidentSeverity.HIGH
+        return IncidentSeverity.MEDIUM
+
+    @staticmethod
+    def _incident_identity(anomaly: Any) -> tuple[str, str, str]:
+        """Build provider+fingerprint identity for anomaly incident tracking."""
+        metric_path = str(getattr(anomaly, "metric_path", "") or "").strip()
+        description = str(getattr(anomaly, "description", "") or "").strip()
+        if not description:
+            description = "Health anomaly detected."
+
+        provider = "system"
+        if metric_path:
+            parts = [p for p in metric_path.split(".") if p]
+            if len(parts) >= 3:
+                provider = parts[-1]
+            elif parts:
+                provider = parts[0]
+            if provider.isdigit():
+                provider = parts[0]
+
+        fingerprint_base = metric_path or description.lower()
+        fingerprint = hashlib.sha256(fingerprint_base.encode("utf-8")).hexdigest()
+        return provider, fingerprint, description
+
+    async def _learn_digest_time(self) -> tuple[int, int]:
+        """Learn preferred digest send time from historical digest notifications."""
+        fallback = (self._incident_digest_fallback_hour, self._incident_digest_fallback_minute)
+        if self._storage is None or self._storage._pool is None:
+            return fallback
+
+        try:
+            timestamps = await self._storage.get_recent_incident_digest_times(limit=40)
+        except Exception:
+            return fallback
+
+        if len(timestamps) < 3:
+            return fallback
+
+        buckets = Counter((ts.hour, (ts.minute // 15) * 15) for ts in timestamps if ts is not None)
+        if not buckets:
+            return fallback
+        return buckets.most_common(1)[0][0]
+
+    async def _build_incident_actions(
+        self,
+        anomalies: list[Any],
+        user_ids: list[str],
+    ) -> list[HeartbeatAction]:
+        """Build incident-aware notification actions (immediate + digest)."""
+        actions: list[HeartbeatAction] = []
+        if not user_ids:
+            return actions
+
+        # If persistence is unavailable, keep legacy critical alert behavior.
+        if self._storage is None or self._storage._pool is None:
+            critical = [
+                str(getattr(a, "description", "")).strip()
+                for a in anomalies
+                if str(getattr(a, "severity", "")).strip().lower() == "critical"
             ]
+            critical = [line for line in critical if line]
+            if critical:
+                actions.append(
+                    HeartbeatAction(
+                        skill_name="health_analyzer",
+                        action_type="send_message",
+                        user_id=user_ids[0],
+                        data={
+                            "message": (
+                                "**Health Alert**: Critical anomalies detected\n"
+                                + "\n".join(f"- {line}" for line in critical[:5])
+                            )
+                        },
+                        priority=9,
+                    )
+                )
+            return actions
+
+        from zetherion_ai.health.storage import NotificationIncident
+
+        now = datetime.now()
+        active_keys: set[tuple[str, str]] = set()
+        immediate_lines: list[str] = []
+
+        for anomaly in anomalies:
+            if str(getattr(anomaly, "severity", "")).strip().lower() != "critical":
+                continue
+            provider, fingerprint, description = self._incident_identity(anomaly)
+            severity = self._map_anomaly_severity(str(getattr(anomaly, "severity", "")))
+            active_keys.add((provider, fingerprint))
+
+            existing = await self._storage.get_notification_incident(provider, fingerprint)
+            if existing is None:
+                incident = NotificationIncident(
+                    provider=provider,
+                    fingerprint=fingerprint,
+                    severity=severity,
+                    description=description,
+                    first_seen=now,
+                    last_seen=now,
+                    state="open",
+                    occurrence_count=1,
+                    last_state_change_at=now,
+                )
+                incident_id = await self._storage.create_notification_incident(incident)
+                await self._storage.mark_notification_incident_notified(incident_id, now)
+                immediate_lines.append(f"- [{severity.value}] {description} ({provider})")
+                continue
+
+            severity_escalated = self._severity_rank(severity) > self._severity_rank(existing.severity)
+            state_reopened = existing.state != "open"
+            next_severity = severity if severity_escalated else existing.severity
+            next_state = "open" if state_reopened else None
+            state_changed = severity_escalated or state_reopened
+
+            await self._storage.update_notification_incident_observation(
+                existing.id,  # type: ignore[arg-type]
+                severity=next_severity,
+                description=description,
+                observed_at=now,
+                state=next_state,
+                state_changed=state_changed,
+            )
+
+            if state_changed:
+                await self._storage.mark_notification_incident_notified(existing.id, now)  # type: ignore[arg-type]
+                if severity_escalated and state_reopened:
+                    reason = "reopened + escalated"
+                elif severity_escalated:
+                    reason = "escalated"
+                else:
+                    reason = "reopened"
+                immediate_lines.append(f"- [{next_severity.value}] {description} ({provider}, {reason})")
+
+        open_incidents = await self._storage.list_open_notification_incidents()
+        for incident in open_incidents:
+            if (incident.provider, incident.fingerprint) not in active_keys:
+                await self._storage.resolve_notification_incident(
+                    incident.id,  # type: ignore[arg-type]
+                    resolved_at=now,
+                )
+
+        if immediate_lines:
+            lines = immediate_lines[:5]
+            if len(immediate_lines) > len(lines):
+                lines.append(f"- +{len(immediate_lines) - len(lines)} more incident(s)")
             actions.append(
                 HeartbeatAction(
                     skill_name="health_analyzer",
                     action_type="send_message",
-                    user_id=user_ids[0],  # owner
-                    data={
-                        "message": (
-                            "**Health Alert**: Critical anomalies detected\n"
-                            + "\n".join(f"- {s}" for s in anomaly_summaries[:5])
-                        ),
-                    },
+                    user_id=user_ids[0],
+                    data={"message": "**Health Incident Alert**\n" + "\n".join(lines)},
                     priority=9,
                 )
+            )
+            return actions
+
+        unresolved = await self._storage.list_open_notification_incidents()
+        if not unresolved:
+            return actions
+
+        digest_hour, digest_minute = await self._learn_digest_time()
+        owner_id = user_ids[0]
+        today = now.date().isoformat()
+        if self._last_incident_digest_by_user.get(owner_id) == today:
+            return actions
+        if any(
+            inc.last_digest_notified_at and inc.last_digest_notified_at.date() == now.date()
+            for inc in unresolved
+        ):
+            self._last_incident_digest_by_user[owner_id] = today
+            return actions
+        if (now.hour, now.minute) < (digest_hour, digest_minute):
+            return actions
+
+        lines = [
+            f"- [{incident.severity.value}] {incident.description} ({incident.provider})"
+            for incident in unresolved[:10]
+        ]
+        if len(unresolved) > 10:
+            lines.append(f"- +{len(unresolved) - 10} more unresolved incident(s)")
+        actions.append(
+            HeartbeatAction(
+                skill_name="health_analyzer",
+                action_type="send_message",
+                user_id=owner_id,
+                data={
+                    "message": (
+                        f"**Morning health digest**: {len(unresolved)} unresolved incident(s)\n"
+                        + "\n".join(lines)
+                    )
+                },
+                priority=5,
+            )
+        )
+        self._last_incident_digest_by_user[owner_id] = today
+        for incident in unresolved:
+            await self._storage.mark_notification_incident_digest_notified(
+                incident.id,  # type: ignore[arg-type]
+                now,
             )
 
         return actions
