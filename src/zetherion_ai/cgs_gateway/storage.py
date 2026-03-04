@@ -169,7 +169,7 @@ class CGSGatewayStorage:
             min_size=self._min_size,
             max_size=max(self._min_size, self._max_size),
         )
-        await self._execute(_SCHEMA_SQL)
+        await self._ensure_schema()
         log.info(
             "cgs_gateway_storage_initialized",
             min_size=self._min_size,
@@ -888,6 +888,23 @@ class CGSGatewayStorage:
         if row is None:
             raise RuntimeError("Failed to create blog publish receipt")
         return dict(row)
+
+    async def _ensure_schema(self) -> None:
+        """Create gateway schema objects if absent.
+
+        Multiple blue/green gateway instances can start at the same time during
+        deploy and race on ``CREATE ... IF NOT EXISTS`` statements. PostgreSQL can
+        surface this as ``UniqueViolationError`` on ``pg_type_typname_nsp_index``;
+        treat it as safe because another process completed the DDL first.
+        """
+        try:
+            await self._execute(_SCHEMA_SQL)
+            log.info("cgs_gateway_schema_ensured")
+        except asyncpg.UniqueViolationError:
+            log.info("cgs_gateway_schema_ensured", note="concurrent_creation_resolved")
+        except asyncpg.PostgresError as exc:
+            log.error("cgs_gateway_schema_creation_failed", error=str(exc))
+            raise
 
     async def _fetchrow(self, query: str, *args: Any) -> asyncpg.Record | None:
         if self._pool is None:
