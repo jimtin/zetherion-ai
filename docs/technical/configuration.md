@@ -336,6 +336,18 @@ Encrypted blob path: `C:\ZetherionAI\data\secrets\promotions.bin`
 
 ---
 
+## Backup and Recovery
+
+| Variable | Default | Description |
+|---|---|---|
+| `BACKUP_AGE_RECIPIENT` | empty | age recipient public key for encrypted backup archives |
+| `BACKUP_AGE_IDENTITY` | empty | age private identity key path used by verify/restore |
+| `BACKUP_DIRECTORY` | `$HOME/.zetherion-backups` | Local encrypted backup destination |
+| `BACKUP_RETENTION_COUNT` | `14` | Number of archives retained before pruning |
+| `BACKUP_STATE_DIR` | `data` | Host persistent state path included in backup payload |
+
+---
+
 ## Intentionally Undocumented / Internal Exclusions
 
 The following variables are intentionally excluded from the runtime reference or
