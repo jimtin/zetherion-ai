@@ -22,6 +22,14 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$ReleaseAutoIncrementEnabled = "true",
     [Parameter(Mandatory = $false)]
+    [string]$DiscordDmNotifyEnabled = "false",
+    [Parameter(Mandatory = $false)]
+    [string]$DiscordBotToken = "",
+    [Parameter(Mandatory = $false)]
+    [string]$DiscordNotifyUserId = "",
+    [Parameter(Mandatory = $false)]
+    [string]$OwnerUserId = "",
+    [Parameter(Mandatory = $false)]
     [string]$RunnerServiceAccount = "NT AUTHORITY\NETWORK SERVICE"
 )
 
@@ -33,6 +41,16 @@ if ($BlogModelPrimary -ne "gpt-5.2") {
 }
 if ($BlogModelSecondary -ne "claude-sonnet-4-6") {
     throw "BlogModelSecondary must be 'claude-sonnet-4-6'."
+}
+
+$dmEnabled = $DiscordDmNotifyEnabled.ToLowerInvariant() -in @("1", "true", "yes", "on")
+if ($dmEnabled) {
+    if (-not $DiscordBotToken) {
+        throw "DiscordBotToken is required when DiscordDmNotifyEnabled=true."
+    }
+    if (-not $DiscordNotifyUserId -and -not $OwnerUserId) {
+        throw "Either DiscordNotifyUserId or OwnerUserId is required when DiscordDmNotifyEnabled=true."
+    }
 }
 
 function Ensure-ParentDir {
@@ -110,6 +128,10 @@ $payload = [ordered]@{
         BLOG_MODEL_SECONDARY = $BlogModelSecondary
         BLOG_PUBLISH_ENABLED = $BlogPublishEnabled
         RELEASE_AUTO_INCREMENT_ENABLED = $ReleaseAutoIncrementEnabled
+        DISCORD_DM_NOTIFY_ENABLED = $DiscordDmNotifyEnabled
+        DISCORD_BOT_TOKEN = $DiscordBotToken
+        DISCORD_NOTIFY_USER_ID = $DiscordNotifyUserId
+        OWNER_USER_ID = $OwnerUserId
     }
 }
 
@@ -126,6 +148,7 @@ $result = [ordered]@{
     model_secondary = $BlogModelSecondary
     blog_publish_enabled = $BlogPublishEnabled
     release_auto_increment_enabled = $ReleaseAutoIncrementEnabled
+    discord_dm_notify_enabled = $DiscordDmNotifyEnabled
 }
 
 $result | ConvertTo-Json -Depth 8
