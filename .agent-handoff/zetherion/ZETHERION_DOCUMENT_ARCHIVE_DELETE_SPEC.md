@@ -23,9 +23,10 @@ It does not cover external gateway/public API mapping.
 ## Segmented PR Execution Order
 
 1. `seg1-zeth-delete-handoff-gate` (completed): handoff spec + docs gate scoping.
-2. `seg2a-ci-docker-build-conditional` (new): minimize CI spend by running `docker-build-test` only when Docker-related files change, while keeping scheduled/manual runs intact.
-3. `seg2-zeth-document-archive-schema` (in progress): schema + tenant manager lifecycle methods.
-4. Next segments continue in strict one-PR-per-segment order (API routes, workers, retrieval guardrails, tests, docs).
+2. `seg2a-ci-docker-build-conditional` (completed): minimize CI spend by running `docker-build-test` only when Docker-related files change, while keeping scheduled/manual runs intact.
+3. `seg2-zeth-document-archive-schema` (completed): schema + tenant manager lifecycle methods.
+4. `seg3-zeth-delete-delete-endpoint` (in progress): add upstream delete/archive + restore routes, list filter wiring, lifecycle route tests, and docs bundle updates.
+5. Next segments continue in strict one-PR-per-segment order (workers, retrieval guardrails, purge execution, and broader integration tests).
 
 ## Lifecycle States
 

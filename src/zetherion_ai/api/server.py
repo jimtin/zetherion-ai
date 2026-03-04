@@ -37,6 +37,7 @@ from zetherion_ai.api.routes.analytics import (
 from zetherion_ai.api.routes.chat import handle_chat, handle_chat_history, handle_chat_stream
 from zetherion_ai.api.routes.crm import handle_get_contacts, handle_get_interactions
 from zetherion_ai.api.routes.documents import (
+    handle_archive_document,
     handle_complete_upload,
     handle_create_upload,
     handle_download_document,
@@ -46,6 +47,7 @@ from zetherion_ai.api.routes.documents import (
     handle_preview_document,
     handle_rag_query,
     handle_reindex_document,
+    handle_restore_document,
 )
 from zetherion_ai.api.routes.health import handle_health
 from zetherion_ai.api.routes.sessions import (
@@ -178,9 +180,11 @@ class PublicAPIServer:
         )
         app.router.add_get("/api/v1/documents", handle_list_documents)
         app.router.add_get("/api/v1/documents/{document_id}", handle_get_document)
+        app.router.add_delete("/api/v1/documents/{document_id}", handle_archive_document)
         app.router.add_get("/api/v1/documents/{document_id}/preview", handle_preview_document)
         app.router.add_get("/api/v1/documents/{document_id}/download", handle_download_document)
         app.router.add_post("/api/v1/documents/{document_id}/index", handle_reindex_document)
+        app.router.add_post("/api/v1/documents/{document_id}/restore", handle_restore_document)
         app.router.add_post("/api/v1/rag/query", handle_rag_query)
         app.router.add_get("/api/v1/models/providers", handle_model_catalog)
 

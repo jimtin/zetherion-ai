@@ -9,7 +9,11 @@ from unittest.mock import ANY, AsyncMock, patch
 import pytest
 
 from zetherion_ai.agent.providers import Provider
-from zetherion_ai.documents.service import DOCUMENT_COLLECTION, DocumentService
+from zetherion_ai.documents.service import (
+    DOCUMENT_COLLECTION,
+    DocumentLifecycleError,
+    DocumentService,
+)
 
 
 @pytest.fixture()
@@ -223,6 +227,98 @@ async def test_index_document_failure_marks_job_failed(
         status="failed",
         error_message=ANY,
     )
+
+
+@pytest.mark.asyncio
+async def test_request_archive_happy_path_and_idempotent_states(
+    document_service: tuple[DocumentService, AsyncMock, AsyncMock, AsyncMock, AsyncMock],
+) -> None:
+    service, tenant_manager, _, _, _ = document_service
+    tenant_manager.get_document.side_effect = [
+        {"document_id": "doc-1", "tenant_id": "tenant-1", "status": "indexed"},
+        {"document_id": "doc-1", "tenant_id": "tenant-1", "status": "archived"},
+    ]
+    tenant_manager.mark_document_archiving.return_value = {
+        "document_id": "doc-1",
+        "tenant_id": "tenant-1",
+        "status": "archiving",
+    }
+    tenant_manager.create_document_archive_job.return_value = {"job_id": "job-1"}
+
+    scheduled = await service.request_archive(
+        tenant_id="tenant-1",
+        document_id="doc-1",
+        archived_reason="cleanup",
+    )
+    assert scheduled["archive_job_id"] == "job-1"
+    assert scheduled["idempotent"] is False
+    tenant_manager.mark_document_archiving.assert_awaited_once_with(
+        "tenant-1",
+        document_id="doc-1",
+        archived_reason="cleanup",
+    )
+    tenant_manager.create_document_archive_job.assert_awaited_once_with(
+        "tenant-1",
+        document_id="doc-1",
+        status="queued",
+    )
+
+    idempotent = await service.request_archive(tenant_id="tenant-1", document_id="doc-1")
+    assert idempotent["archive_job_id"] is None
+    assert idempotent["idempotent"] is True
+
+
+@pytest.mark.asyncio
+async def test_request_archive_rejects_unknown_or_invalid_status(
+    document_service: tuple[DocumentService, AsyncMock, AsyncMock, AsyncMock, AsyncMock],
+) -> None:
+    service, tenant_manager, _, _, _ = document_service
+    tenant_manager.get_document.side_effect = [
+        None,
+        {"document_id": "doc-1", "tenant_id": "tenant-1", "status": "processing"},
+    ]
+
+    with pytest.raises(ValueError, match="Document not found"):
+        await service.request_archive(tenant_id="tenant-1", document_id="missing")
+
+    with pytest.raises(DocumentLifecycleError, match="cannot be archived"):
+        await service.request_archive(tenant_id="tenant-1", document_id="doc-1")
+
+
+@pytest.mark.asyncio
+async def test_restore_document_validates_state_and_reindexes(
+    document_service: tuple[DocumentService, AsyncMock, AsyncMock, AsyncMock, AsyncMock],
+) -> None:
+    service, tenant_manager, _, _, _ = document_service
+    tenant_manager.get_document.side_effect = [
+        None,
+        {"document_id": "doc-1", "tenant_id": "tenant-1", "status": "purged"},
+        {"document_id": "doc-1", "tenant_id": "tenant-1", "status": "indexed"},
+        {"document_id": "doc-1", "tenant_id": "tenant-1", "status": "archived"},
+    ]
+    tenant_manager.mark_document_restoring.return_value = {
+        "document_id": "doc-1",
+        "tenant_id": "tenant-1",
+        "status": "processing",
+    }
+    service.index_document = AsyncMock(return_value={"document_id": "doc-1", "status": "indexed"})  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError, match="Document not found"):
+        await service.restore_document(tenant_id="tenant-1", document_id="missing")
+
+    with pytest.raises(DocumentLifecycleError, match="Purged document cannot be restored"):
+        await service.restore_document(tenant_id="tenant-1", document_id="doc-1")
+
+    with pytest.raises(DocumentLifecycleError, match="cannot be restored"):
+        await service.restore_document(tenant_id="tenant-1", document_id="doc-1")
+
+    restored = await service.restore_document(tenant_id="tenant-1", document_id="doc-1")
+    assert restored["status"] == "indexed"
+    tenant_manager.mark_document_restoring.assert_awaited_once_with(
+        "tenant-1",
+        document_id="doc-1",
+    )
+    service.index_document.assert_awaited_once_with(tenant_id="tenant-1", document_id="doc-1")  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio

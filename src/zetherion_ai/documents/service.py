@@ -39,6 +39,14 @@ class DocumentQueryResult:
     model: str
 
 
+class DocumentLifecycleError(RuntimeError):
+    """Raised when a document lifecycle transition is invalid."""
+
+    def __init__(self, message: str, *, status_code: int = 409) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class DocumentService:
     """Coordinates document storage, indexing, and RAG responses."""
 
@@ -155,6 +163,79 @@ class DocumentService:
 
         latest = await self._tenant_manager.get_document(tenant_id, document_id)
         return cast(dict[str, Any], latest or document)
+
+    async def request_archive(
+        self,
+        *,
+        tenant_id: str,
+        document_id: str,
+        archived_reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Mark a document as archiving and enqueue archive work."""
+        await self.initialize()
+
+        document = await self._tenant_manager.get_document(tenant_id, document_id)
+        if document is None:
+            raise ValueError("Document not found")
+
+        status = str(document.get("status") or "").lower()
+        if status in {"archiving", "archived", "purged"}:
+            return {
+                "document": cast(dict[str, Any], document),
+                "archive_job_id": None,
+                "idempotent": True,
+            }
+        if status not in {"uploaded", "indexed", "failed"}:
+            raise DocumentLifecycleError(
+                f"Document cannot be archived from status '{status}'",
+                status_code=409,
+            )
+
+        updated = await self._tenant_manager.mark_document_archiving(
+            tenant_id,
+            document_id=document_id,
+            archived_reason=archived_reason,
+        )
+        if updated is None:
+            raise ValueError("Document not found")
+
+        archive_job = await self._tenant_manager.create_document_archive_job(
+            tenant_id,
+            document_id=document_id,
+            status="queued",
+        )
+        return {
+            "document": cast(dict[str, Any], updated),
+            "archive_job_id": str(archive_job["job_id"]),
+            "idempotent": False,
+        }
+
+    async def restore_document(self, *, tenant_id: str, document_id: str) -> dict[str, Any]:
+        """Restore an archived document and re-index immediately."""
+        await self.initialize()
+
+        document = await self._tenant_manager.get_document(tenant_id, document_id)
+        if document is None:
+            raise ValueError("Document not found")
+
+        status = str(document.get("status") or "").lower()
+        if status == "purged":
+            raise DocumentLifecycleError("Purged document cannot be restored", status_code=409)
+        if status != "archived":
+            raise DocumentLifecycleError(
+                f"Document cannot be restored from status '{status}'",
+                status_code=409,
+            )
+
+        restored = await self._tenant_manager.mark_document_restoring(
+            tenant_id,
+            document_id=document_id,
+        )
+        if restored is None:
+            raise ValueError("Document not found")
+
+        # Existing indexing flow is synchronous; restore delegates to that path.
+        return await self.index_document(tenant_id=tenant_id, document_id=document_id)
 
     async def index_document(self, *, tenant_id: str, document_id: str) -> dict[str, Any]:
         """Extract text and index document chunks into vector store."""

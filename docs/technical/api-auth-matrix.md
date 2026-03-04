@@ -6,13 +6,15 @@ Authoritative exposure rule:
 - External clients authenticate only against CGS `/service/ai/v1`.
 - Zetherion `/api/v1` auth is internal upstream auth between CGS and Zetherion.
 
-## Maintenance Note (2026-03-04)
+## Maintenance Note (2026-03-05)
 
 - Added token-authenticated CGS blog publish adapter route:
   - `POST /service/ai/v1/internal/blog/publish`
 - Internal lifecycle tenant mutations now enforce claims-to-tenant policy in addition to operator scope checks.
-- Auth requirements for public document routes are unchanged.
-- Zetherion-only boundary recovery removed in-repo CGS website/UI artifacts; auth contracts remain unchanged.
+- Auth requirements for public document routes remain API-key based, including:
+  - `DELETE /api/v1/documents/{document_id}`
+  - `POST /api/v1/documents/{document_id}/restore`
+- Document list now supports `include_archived`, without auth model changes.
 
 ## Zetherion Upstream API (`/api/v1`, internal)
 

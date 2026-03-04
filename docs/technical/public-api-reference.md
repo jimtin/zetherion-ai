@@ -11,10 +11,12 @@ plus optional tenant-scoped YouTube endpoints.
 This API is distinct from the internal Skills API (`:8080`) and is not the public
 client contract. External clients must integrate through CGS `/service/ai/v1`.
 
-Maintenance note (2026-03-04):
-- Internal document upload route parsing/typing hardening was applied.
-- No public API contract changes were introduced.
-- Zetherion-only boundary recovery removed in-repo CGS website/UI assets; upstream API behavior remains unchanged.
+Maintenance note (2026-03-05):
+- Added document archive/delete and restore upstream routes:
+  - `DELETE /api/v1/documents/{document_id}`
+  - `POST /api/v1/documents/{document_id}/restore`
+- Added `include_archived` query support for document list.
+- Document lifecycle statuses now include archive states (`archiving|archived|purged`).
 
 ### Exposure Policy (Authoritative)
 
@@ -413,6 +415,9 @@ List tenant documents.
 
 Query params:
 - `limit` (default `50`, max `200`)
+- `include_archived` (default `false`; accepts `true|false|1|0|yes|no|on|off`)
+  - when false, omits `archiving|archived|purged`
+  - when true, includes all lifecycle states
 
 ### GET /api/v1/documents/{document_id}
 
@@ -432,6 +437,40 @@ Raw file download stream with attachment disposition.
 ### POST /api/v1/documents/{document_id}/index
 
 Re-index an existing document into vector collection `tenant_documents`.
+
+### DELETE /api/v1/documents/{document_id}
+
+Schedule document archive (delete-intent) asynchronously.
+
+Behavior:
+- transitions active document to `archiving`
+- creates a `document_archive_jobs` queue record
+- returns `202 Accepted`
+- idempotent when already `archiving|archived|purged`
+
+Optional request body:
+
+```json
+{
+  "reason": "user-request"
+}
+```
+
+Optional query:
+- `reason=<text>` (used if JSON body is not provided)
+
+### POST /api/v1/documents/{document_id}/restore
+
+Restore an archived document and re-run indexing.
+
+Behavior:
+- allowed only from `archived`
+- transitions to processing and re-indexes through normal ingestion/index flow
+- returns updated document record
+
+Errors:
+- `404` unknown document
+- `409` for invalid lifecycle (`purged` or non-archived states)
 
 ### POST /api/v1/rag/query
 
@@ -488,6 +527,9 @@ Return retrieval provider/model catalog for UI selectors.
 - `processing`
 - `indexed`
 - `failed`
+- `archiving`
+- `archived`
+- `purged`
 
 ---
 

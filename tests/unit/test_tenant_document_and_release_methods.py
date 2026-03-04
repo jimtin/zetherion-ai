@@ -124,6 +124,7 @@ async def test_document_archive_job_and_lifecycle_methods(tenant_manager: Tenant
         {"job_id": "archive-job-1", "status": "queued"},
         {"document_id": "doc-1", "status": "archiving", "archived_reason": "user-request"},
         {"document_id": "doc-1", "status": "archived", "purge_after": purge_after},
+        {"document_id": "doc-1", "status": "processing"},
         {"document_id": "doc-1", "status": "purged", "purged_at": now},
     ]
     tenant_manager._fetch.side_effect = [  # type: ignore[attr-defined]
@@ -167,6 +168,12 @@ async def test_document_archive_job_and_lifecycle_methods(tenant_manager: Tenant
         purge_after=purge_after,
     )
     assert archived == {"document_id": "doc-1", "status": "archived", "purge_after": purge_after}
+
+    restoring = await tenant_manager.mark_document_restoring(
+        "tenant-1",
+        document_id="doc-1",
+    )
+    assert restoring == {"document_id": "doc-1", "status": "processing"}
 
     purged = await tenant_manager.mark_document_purged(
         "tenant-1",

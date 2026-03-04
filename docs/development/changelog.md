@@ -13,6 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Document Archive/Delete API Lifecycle Routes (2026-03-05)
+
+- Added upstream document lifecycle routes:
+  - `DELETE /api/v1/documents/{document_id}` (archive/delete request, async enqueue)
+  - `POST /api/v1/documents/{document_id}/restore` (restore from archived state + reindex)
+- Added `include_archived` query support to `GET /api/v1/documents` with default exclusion of
+  `archiving|archived|purged`.
+- Added document lifecycle domain methods:
+  - `DocumentService.request_archive(...)`
+  - `DocumentService.restore_document(...)`
+  - `TenantManager.mark_document_restoring(...)`
+- Added/updated unit coverage for route wiring, lifecycle status/error mapping, and tenant-manager
+  lifecycle transitions.
+- Updated upstream OpenAPI and technical docs bundle to include archive/delete/restore behavior and
+  expanded lifecycle statuses.
+
 ### Changed - Windows Promotions Hardening + Runbook (2026-03-04)
 
 - Enforced strict CGS blog publish response contract handling in Windows promotions pipeline:
