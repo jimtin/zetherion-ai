@@ -9,25 +9,37 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-ROUTE_CHANGE_PREFIXES = (
-    "src/zetherion_ai/api/server.py",
-    "src/zetherion_ai/api/routes/",
-    "src/zetherion_ai/cgs_gateway/routes/",
-)
-
-REQUIRED_DOC_BUNDLE = {
-    "docs/technical/public-api-reference.md",
-    "docs/technical/cgs-public-api-endpoint-build-spec.md",
-    "docs/technical/cgs-zetherion-service-draft.md",
-    "docs/technical/openapi-public-api.yaml",
-    "docs/technical/openapi-cgs-gateway.yaml",
-    "docs/technical/api-error-matrix.md",
-    "docs/technical/api-auth-matrix.md",
-    "docs/technical/frontend-route-wiring.md",
-    "docs/technical/zetherion-document-intelligence-component.md",
-    "docs/technical/cgs-client-onboarding-kit.md",
-    "docs/technical/cgs-email-monitoring-onboarding-kit.md",
-    "docs/development/changelog.md",
+DOC_RULES: dict[str, dict[str, object]] = {
+    "zetherion_public_api": {
+        "prefixes": (
+            "src/zetherion_ai/api/server.py",
+            "src/zetherion_ai/api/routes/",
+        ),
+        "required_docs": {
+            "docs/technical/public-api-reference.md",
+            "docs/technical/openapi-public-api.yaml",
+            "docs/technical/api-error-matrix.md",
+            "docs/technical/api-auth-matrix.md",
+            "docs/technical/zetherion-document-intelligence-component.md",
+            ".agent-handoff/zetherion/ZETHERION_DOCUMENT_ARCHIVE_DELETE_SPEC.md",
+            "docs/development/changelog.md",
+        },
+    },
+    "cgs_gateway_routes": {
+        "prefixes": (
+            "src/zetherion_ai/cgs_gateway/routes/",
+            "src/zetherion_ai/cgs_gateway/server.py",
+        ),
+        "required_docs": {
+            "docs/technical/cgs-public-api-endpoint-build-spec.md",
+            "docs/technical/cgs-zetherion-service-draft.md",
+            "docs/technical/openapi-cgs-gateway.yaml",
+            "docs/technical/frontend-route-wiring.md",
+            "docs/technical/cgs-client-onboarding-kit.md",
+            "docs/technical/cgs-email-monitoring-onboarding-kit.md",
+            "docs/development/changelog.md",
+        },
+    },
 }
 
 
@@ -97,8 +109,8 @@ def _changed_files(base_ref: str | None) -> set[str]:
     raise RuntimeError(f"Unable to diff against base ref: {base_ref}")
 
 
-def _is_route_change(path: str) -> bool:
-    return path.startswith(ROUTE_CHANGE_PREFIXES)
+def _rule_matches_path(path: str, prefixes: tuple[str, ...]) -> bool:
+    return path.startswith(prefixes)
 
 
 def main() -> int:
@@ -109,37 +121,49 @@ def main() -> int:
         print(f"ERROR: {exc}")
         return 1
 
-    route_changes = sorted(path for path in changed if _is_route_change(path))
-    if not route_changes:
+    matched_rules: list[tuple[str, list[str], set[str]]] = []
+    for rule_name, rule in DOC_RULES.items():
+        prefixes = tuple(rule["prefixes"])  # type: ignore[arg-type]
+        required_docs = set(rule["required_docs"])  # type: ignore[arg-type]
+        matched = sorted(path for path in changed if _rule_matches_path(path, prefixes))
+        if matched:
+            matched_rules.append((rule_name, matched, required_docs))
+
+    if not matched_rules:
         print("Endpoint docs bundle check passed (no API route changes detected).")
         return 0
 
-    missing_on_disk = sorted(
-        path for path in REQUIRED_DOC_BUNDLE if not (REPO_ROOT / path).exists()
-    )
-    if missing_on_disk:
-        print("Endpoint docs bundle check failed. Missing required docs files on disk:")
-        for path in missing_on_disk:
-            print(f"  - {path}")
-        return 1
-
-    docs_touched = {path for path in changed if path in REQUIRED_DOC_BUNDLE}
-    missing_updates = sorted(REQUIRED_DOC_BUNDLE - docs_touched)
-    if missing_updates:
-        print("Endpoint docs bundle check failed.")
-        print("API route files changed:")
-        for path in route_changes:
-            print(f"  - {path}")
-        print("Required docs not updated in this change:")
-        for path in missing_updates:
-            print(f"  - {path}")
-        return 1
-
-    print("Endpoint docs bundle check passed.")
+    failed = False
     print(f"Base ref: {base_ref or 'none'}")
-    print(f"Route files changed: {len(route_changes)}")
-    print(f"Required docs updated: {len(docs_touched)}")
-    return 0
+    for rule_name, route_changes, required_docs in matched_rules:
+        missing_on_disk = sorted(path for path in required_docs if not (REPO_ROOT / path).exists())
+        if missing_on_disk:
+            failed = True
+            print(f"Endpoint docs bundle check failed [{rule_name}].")
+            print("Missing required docs files on disk:")
+            for path in missing_on_disk:
+                print(f"  - {path}")
+            continue
+
+        docs_touched = {path for path in changed if path in required_docs}
+        missing_updates = sorted(required_docs - docs_touched)
+        if missing_updates:
+            failed = True
+            print(f"Endpoint docs bundle check failed [{rule_name}].")
+            print("API route files changed:")
+            for path in route_changes:
+                print(f"  - {path}")
+            print("Required docs not updated in this change:")
+            for path in missing_updates:
+                print(f"  - {path}")
+            continue
+
+        print(
+            "Endpoint docs bundle check passed "
+            f"[{rule_name}] (routes={len(route_changes)}, docs={len(docs_touched)})."
+        )
+
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
