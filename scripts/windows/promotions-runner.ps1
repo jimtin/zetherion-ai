@@ -183,7 +183,7 @@ $result = [ordered]@{
     sha = ""
     receipt_path = ""
     status = "failed"
-    retryable = $true
+    retryable = $false
     command = ""
     exit_code = -1
     error = ""
@@ -300,22 +300,27 @@ try {
         exit 2
     }
 
-    $result.status = "failed"
-    $result.retryable = $true
-    $result.error = "Promotions pipeline exited with code $exitCode."
-    Ensure-QueueEntry -Path $QueuePath -Sha $Sha -Reason $result.error
-    Write-PromotionEvent -Source $EventSource -EntryType "Error" -EventId 7199 -Message "Post-deploy promotion failed for SHA $Sha (exit=$exitCode)."
+    if ($exitCode -eq 3) {
+        $result.status = "non_retryable_failure"
+        $result.retryable = $false
+        $result.error = "Promotions pipeline returned non-retryable exit code."
+        Write-PromotionEvent -Source $EventSource -EntryType "Error" -EventId 7199 -Message "Post-deploy promotion failed for SHA $Sha (non-retryable)."
+        Write-JsonFile -Payload $result -Path $OutputPath
+        exit 3
+    }
+
+    $result.status = "non_retryable_failure"
+    $result.retryable = $false
+    $result.error = "Promotions pipeline exited with unexpected code $exitCode."
+    Write-PromotionEvent -Source $EventSource -EntryType "Error" -EventId 7199 -Message "Post-deploy promotion failed for SHA $Sha with unexpected exit=$exitCode (not queued)."
     Write-JsonFile -Payload $result -Path $OutputPath
-    exit $exitCode
+    exit 3
 }
 catch {
-    $result.status = "failed"
-    $result.retryable = $true
+    $result.status = "non_retryable_failure"
+    $result.retryable = $false
     $result.error = $_.Exception.Message
-    if ($result.sha) {
-        Ensure-QueueEntry -Path $QueuePath -Sha $result.sha -Reason $result.error
-    }
     Write-PromotionEvent -Source $EventSource -EntryType "Error" -EventId 7198 -Message "Post-deploy promotion runner error: $($result.error)"
     Write-JsonFile -Payload $result -Path $OutputPath
-    exit 2
+    exit 3
 }

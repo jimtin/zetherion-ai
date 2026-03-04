@@ -69,21 +69,22 @@ function Read-PromotionsQueue {
     return Read-JsonFile -Path $Path -Default $default
 }
 
-function Get-SuccessfulPromotionShas {
+function Get-TerminalPromotionShas {
     param([string]$ReceiptsDirectory)
-    $successful = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $terminal = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     if (-not (Test-Path $ReceiptsDirectory)) {
-        return $successful
+        return $terminal
     }
 
     $receiptFiles = Get-ChildItem -Path $ReceiptsDirectory -Filter "*.json" -File -ErrorAction SilentlyContinue
     foreach ($file in $receiptFiles) {
         try {
             $receipt = Get-Content -Path $file.FullName -Raw | ConvertFrom-Json
-            if ([string]$receipt.status -eq "success") {
+            $status = [string]$receipt.status
+            if ($status -in @("success", "failed_non_retryable", "non_retryable_failure")) {
                 $sha = [string]$receipt.sha
                 if ($sha) {
-                    [void]$successful.Add($sha.Trim().ToLowerInvariant())
+                    [void]$terminal.Add($sha.Trim().ToLowerInvariant())
                 }
             }
         }
@@ -92,13 +93,13 @@ function Get-SuccessfulPromotionShas {
         }
     }
 
-    return $successful
+    return $terminal
 }
 
 function Get-DeploymentCandidates {
     param(
         [string]$DeploymentReceiptsDirectory,
-        [System.Collections.Generic.HashSet[string]]$AlreadySuccessful
+        [System.Collections.Generic.HashSet[string]]$AlreadyTerminal
     )
 
     $candidates = New-Object 'System.Collections.Generic.List[object]'
@@ -122,7 +123,7 @@ function Get-DeploymentCandidates {
             }
 
             $normalized = $sha.Trim().ToLowerInvariant()
-            if ($AlreadySuccessful.Contains($normalized)) {
+            if ($AlreadyTerminal.Contains($normalized)) {
                 continue
             }
 
@@ -194,7 +195,7 @@ if ($queue.pending) {
     $pendingQueue = @($queue.pending)
 }
 
-$successfulShas = Get-SuccessfulPromotionShas -ReceiptsDirectory $promotionReceiptsDir
+$terminalShas = Get-TerminalPromotionShas -ReceiptsDirectory $promotionReceiptsDir
 $queueCandidates = @()
 foreach ($entry in $pendingQueue) {
     $sha = [string]$entry.sha
@@ -202,7 +203,7 @@ foreach ($entry in $pendingQueue) {
         continue
     }
     $normalized = $sha.Trim().ToLowerInvariant()
-    if ($successfulShas.Contains($normalized)) {
+    if ($terminalShas.Contains($normalized)) {
         continue
     }
     $queueCandidates += [pscustomobject]@{
@@ -212,7 +213,7 @@ foreach ($entry in $pendingQueue) {
     }
 }
 
-$deploymentCandidates = Get-DeploymentCandidates -DeploymentReceiptsDirectory $deployReceiptsDir -AlreadySuccessful $successfulShas
+$deploymentCandidates = Get-DeploymentCandidates -DeploymentReceiptsDirectory $deployReceiptsDir -AlreadyTerminal $terminalShas
 $candidates = Merge-Candidates -QueueCandidates $queueCandidates -DeploymentCandidates $deploymentCandidates
 
 $actions = @()
@@ -265,9 +266,12 @@ foreach ($candidate in $candidates) {
     if ($exitCode -eq 0) {
         [void]$remainingShas.Remove($sha)
         $actions += "promoted:$sha"
-    } else {
+    } elseif ($exitCode -eq 2) {
         [void]$remainingShas.Add($sha)
-        $actions += "deferred:$sha"
+        $actions += "deferred_retryable:$sha"
+    } else {
+        [void]$remainingShas.Remove($sha)
+        $actions += "terminal_failed:$sha"
     }
 }
 

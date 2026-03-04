@@ -44,18 +44,45 @@ PR_REF_RE = re.compile(r"\(#(\d+)\)|(?<![A-Za-z0-9_])#(\d+)\b")
 ISSUE_REF_RE = re.compile(r"(?<![A-Za-z0-9_])#(\d+)\b")
 
 RETRYABLE_EXIT_CODE = 2
+NON_RETRYABLE_EXIT_CODE = 3
 
 CGS_BLOG_PUBLISH_PATH_SUFFIX = "/service/ai/v1/internal/blog/publish"
 IDEMPOTENCY_KEY_RE = re.compile(r"^blog-[A-Fa-f0-9]{7,64}$")
 SHA_RE = re.compile(r"^[A-Fa-f0-9]{7,64}$")
+RETRYABLE_MESSAGE_HINTS = (
+    "timeout",
+    "timed out",
+    "temporarily unavailable",
+    "temporary failure",
+    "connection reset",
+    "connection aborted",
+    "network error",
+    "econnreset",
+    "connection refused",
+    "rate limit",
+    "http 429",
+    "http 500",
+    "http 502",
+    "http 503",
+    "http 504",
+)
 
 
 class PromotionError(RuntimeError):
     """Raised when the promotion pipeline cannot continue."""
 
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+
 
 def _now_iso() -> str:
     return dt.datetime.now(dt.UTC).isoformat()
+
+
+def _looks_retryable_message(message: str) -> bool:
+    lowered = message.lower()
+    return any(hint in lowered for hint in RETRYABLE_MESSAGE_HINTS)
 
 
 def _normalize_sha(value: str | None) -> str:
@@ -155,6 +182,11 @@ def _post_json(
             return response.status, response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read().decode("utf-8", errors="replace")
+    except urllib.error.URLError as exc:
+        raise PromotionError(
+            f"Network error calling {url}: {exc}",
+            retryable=True,
+        ) from exc
 
 
 def _gh_request(
@@ -181,8 +213,15 @@ def _gh_request(
             raw = response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
+        retryable = exc.code == 429 or exc.code >= 500
         raise PromotionError(
-            f"GitHub API request failed ({method} {path}) HTTP {exc.code}: {detail}"
+            f"GitHub API request failed ({method} {path}) HTTP {exc.code}: {detail}",
+            retryable=retryable,
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise PromotionError(
+            f"GitHub API network error ({method} {path}): {exc}",
+            retryable=True,
         ) from exc
 
     if not raw:
@@ -232,7 +271,10 @@ def _openai_generate(*, api_key: str, model: str, system: str, user: str) -> str
         headers={"Authorization": f"Bearer {api_key}"},
     )
     if status >= 400:
-        raise PromotionError(f"OpenAI draft generation failed (HTTP {status}): {body}")
+        raise PromotionError(
+            f"OpenAI draft generation failed (HTTP {status}): {body}",
+            retryable=(status == 429 or status >= 500),
+        )
 
     payload = json.loads(body)
     if isinstance(payload.get("output_text"), str) and payload["output_text"].strip():
@@ -273,7 +315,10 @@ def _anthropic_refine(*, api_key: str, model: str, prompt: str) -> str:
         },
     )
     if status >= 400:
-        raise PromotionError(f"Anthropic refine generation failed (HTTP {status}): {body}")
+        raise PromotionError(
+            f"Anthropic refine generation failed (HTTP {status}): {body}",
+            retryable=(status == 429 or status >= 500),
+        )
 
     payload = json.loads(body)
     content = payload.get("content")
@@ -845,11 +890,12 @@ def _publish_blog(
     if not publish_url_clean.endswith(CGS_BLOG_PUBLISH_PATH_SUFFIX):
         raise PromotionError(
             "CGS_BLOG_PUBLISH_URL must end with "
-            f"{CGS_BLOG_PUBLISH_PATH_SUFFIX!r} (got {publish_url_clean!r})"
+            f"{CGS_BLOG_PUBLISH_PATH_SUFFIX!r} (got {publish_url_clean!r})",
+            retryable=False,
         )
 
     if not SHA_RE.fullmatch(sha):
-        raise PromotionError(f"Invalid publish SHA format: {sha!r}")
+        raise PromotionError(f"Invalid publish SHA format: {sha!r}", retryable=False)
 
     idempotency_key = str(payload.get("idempotency_key", "")).strip()
     payload_sha = str(payload.get("sha", "")).strip().lower()
@@ -858,17 +904,20 @@ def _publish_blog(
     if not IDEMPOTENCY_KEY_RE.fullmatch(idempotency_key):
         raise PromotionError(
             "idempotency_key must match ^blog-[A-Fa-f0-9]{7,64}$ "
-            f"(got {idempotency_key!r})"
+            f"(got {idempotency_key!r})",
+            retryable=False,
         )
     if idempotency_key != expected_key:
         raise PromotionError(
             "idempotency_key must equal blog-<sha> "
-            f"(expected {expected_key!r}, got {idempotency_key!r})"
+            f"(expected {expected_key!r}, got {idempotency_key!r})",
+            retryable=False,
         )
     if payload_sha != sha:
         raise PromotionError(
             "payload sha must match normalized deployment sha "
-            f"(expected {sha!r}, got {payload_sha!r})"
+            f"(expected {sha!r}, got {payload_sha!r})",
+            retryable=False,
         )
 
     request_id = f"req_{uuid4().hex}"
@@ -913,7 +962,8 @@ def _publish_blog(
             return "published", result
         raise PromotionError(
             "CGS publish API returned HTTP 201 but unexpected envelope status "
-            f"(data.status={data_status!r}, request_id={envelope_request_id})"
+            f"(data.status={data_status!r}, request_id={envelope_request_id})",
+            retryable=False,
         )
 
     if status == 409:
@@ -927,33 +977,39 @@ def _publish_blog(
         ):
             raise PromotionError(
                 "CGS publish API idempotency conflict requires manual intervention "
-                f"(request_id={envelope_request_id})"
+                f"(request_id={envelope_request_id})",
+                retryable=False,
             )
         raise PromotionError(
             "CGS publish API returned HTTP 409 with non-duplicate envelope "
-            f"(request_id={envelope_request_id})"
+            f"(request_id={envelope_request_id})",
+            retryable=False,
         )
 
     if status in {400, 401, 403}:
         raise PromotionError(
             "CGS publish API hard failure "
-            f"(HTTP {status}, request_id={envelope_request_id}): {body}"
+            f"(HTTP {status}, request_id={envelope_request_id}): {body}",
+            retryable=False,
         )
 
     if status == 429 or status >= 500:
         raise PromotionError(
             "CGS publish API retryable failure "
-            f"(HTTP {status}, request_id={envelope_request_id}): {body}"
+            f"(HTTP {status}, request_id={envelope_request_id}): {body}",
+            retryable=True,
         )
 
     if isinstance(envelope_error, dict) and bool(envelope_error.get("retryable")):
         raise PromotionError(
             "CGS publish API retryable envelope error "
-            f"(HTTP {status}, request_id={envelope_request_id}): {body}"
+            f"(HTTP {status}, request_id={envelope_request_id}): {body}",
+            retryable=True,
         )
 
     raise PromotionError(
-        f"CGS publish API failed (HTTP {status}, request_id={envelope_request_id}): {body}"
+        f"CGS publish API failed (HTTP {status}, request_id={envelope_request_id}): {body}",
+        retryable=False,
     )
 
 
@@ -1066,7 +1122,10 @@ def _run_release_increment(
     if "GH_TOKEN" not in env and "GITHUB_TOKEN" in env:
         env["GH_TOKEN"] = env["GITHUB_TOKEN"]
     if not env.get("GITHUB_TOKEN") and not env.get("GH_TOKEN"):
-        raise PromotionError("Missing GitHub token for release increment (GITHUB_TOKEN/GH_TOKEN)")
+        raise PromotionError(
+            "Missing GitHub token for release increment (GITHUB_TOKEN/GH_TOKEN)",
+            retryable=False,
+        )
 
     cmd = [
         sys.executable,
@@ -1080,15 +1139,16 @@ def _run_release_increment(
     ]
     proc = _run_command(cmd, cwd=deploy_path, env=env)
     if proc.returncode != 0:
+        detail = f"{proc.stdout.strip() or ''} {proc.stderr.strip() or ''}".strip()
         raise PromotionError(
-            "Release increment failed: "
-            f"{proc.stdout.strip() or ''} {proc.stderr.strip() or ''}".strip()
+            f"Release increment failed: {detail}",
+            retryable=_looks_retryable_message(detail),
         )
 
     payload = _read_json(output_path, default={})
     status = str(payload.get("status", ""))
     if status not in RELEASE_SUCCESS_STATUSES:
-        raise PromotionError(f"Unexpected release status: {status!r}")
+        raise PromotionError(f"Unexpected release status: {status!r}", retryable=False)
     return payload
 
 
@@ -1163,12 +1223,12 @@ def main() -> int:
     sha = _normalize_sha(args.sha)
     if not sha:
         print("ERROR: --sha cannot be empty")
-        return 1
+        return NON_RETRYABLE_EXIT_CODE
 
     deploy_path = Path(args.deploy_path)
     if not deploy_path.exists():
         print(f"ERROR: deploy path does not exist: {deploy_path}")
-        return 1
+        return NON_RETRYABLE_EXIT_CODE
 
     paths = _build_paths(data_root=Path(args.data_root), sha=sha)
 
@@ -1196,12 +1256,12 @@ def main() -> int:
     if validate_proc.returncode != 0:
         print(validate_proc.stdout.strip() or validate_proc.stderr.strip())
         print("ERROR: deployment receipt validation failed; promotions aborted")
-        return RETRYABLE_EXIT_CODE
+        return NON_RETRYABLE_EXIT_CODE
 
     github_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
     if not github_token:
         print("ERROR: Missing GITHUB_TOKEN/GH_TOKEN for merge intelligence + release")
-        return RETRYABLE_EXIT_CODE
+        return NON_RETRYABLE_EXIT_CODE
 
     state = _read_json(paths.state_path, default={})
     previous_sha = _normalize_sha(str(state.get("last_promoted_sha", "")))
@@ -1273,21 +1333,23 @@ def main() -> int:
         print(json.dumps(final_receipt))
         return RETRYABLE_EXIT_CODE
     except PromotionError as exc:
+        retryable = bool(exc.retryable)
         failure_receipt = {
             "generated_at": _now_iso(),
             "sha": sha,
             "repo": repo,
             "analysis_path": str(paths.analysis_path),
-            "status": "failed_retryable",
-            "retryable": True,
+            "status": "failed_retryable" if retryable else "failed_non_retryable",
+            "retryable": retryable,
             "last_error": str(exc),
             "blog": blog_receipt,
             "release": release_receipt,
         }
         _write_json(paths.receipt_path, failure_receipt)
         _update_state_partial(paths.state_path, sha=sha, receipt=failure_receipt)
-        print(f"ERROR: {exc}")
-        return RETRYABLE_EXIT_CODE
+        retry_text = "retryable" if retryable else "non-retryable"
+        print(f"ERROR ({retry_text}): {exc}")
+        return RETRYABLE_EXIT_CODE if retryable else NON_RETRYABLE_EXIT_CODE
 
 
 if __name__ == "__main__":

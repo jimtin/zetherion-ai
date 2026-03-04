@@ -145,13 +145,14 @@ def test_publish_blog_rejects_idempotency_conflict(monkeypatch, promotions_modul
 
     monkeypatch.setattr(promotions_module, "_post_json", fake_post_json)
 
-    with pytest.raises(promotions_module.PromotionError, match="idempotency conflict"):
+    with pytest.raises(promotions_module.PromotionError, match="idempotency conflict") as exc_info:
         promotions_module._publish_blog(
             publish_url="https://cgs.example.com/service/ai/v1/internal/blog/publish",
             publish_token="token",
             payload=_base_payload(sha),
             sha=sha,
         )
+    assert exc_info.value.retryable is False
 
 
 def test_publish_blog_rejects_hard_auth_failures(monkeypatch, promotions_module):
@@ -168,10 +169,35 @@ def test_publish_blog_rejects_hard_auth_failures(monkeypatch, promotions_module)
 
     monkeypatch.setattr(promotions_module, "_post_json", fake_post_json)
 
-    with pytest.raises(promotions_module.PromotionError, match="hard failure"):
+    with pytest.raises(promotions_module.PromotionError, match="hard failure") as exc_info:
         promotions_module._publish_blog(
             publish_url="https://cgs.example.com/service/ai/v1/internal/blog/publish",
             publish_token="token",
             payload=_base_payload(sha),
             sha=sha,
         )
+    assert exc_info.value.retryable is False
+
+
+def test_publish_blog_marks_http_429_as_retryable(monkeypatch, promotions_module):
+    sha = "3b43aa22e163ed3d44edc3625816da5f634d6385"
+
+    def fake_post_json(url, *, payload, headers, timeout):
+        return (
+            429,
+            (
+                '{"request_id":"req_rl","data":null,'
+                '"error":{"code":"AI_RATE_LIMITED","message":"slow down","retryable":true}}'
+            ),
+        )
+
+    monkeypatch.setattr(promotions_module, "_post_json", fake_post_json)
+
+    with pytest.raises(promotions_module.PromotionError, match="retryable failure") as exc_info:
+        promotions_module._publish_blog(
+            publish_url="https://cgs.example.com/service/ai/v1/internal/blog/publish",
+            publish_token="token",
+            payload=_base_payload(sha),
+            sha=sha,
+        )
+    assert exc_info.value.retryable is True
