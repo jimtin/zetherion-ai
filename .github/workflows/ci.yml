@@ -24,6 +24,7 @@ jobs:
     outputs:
       docs: ${{ steps.filter.outputs.docs }}
       integration: ${{ steps.filter.outputs.integration }}
+      docker: ${{ steps.filter.outputs.docker }}
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -44,6 +45,10 @@ jobs:
               - 'Dockerfile*'
               - 'requirements*.txt'
               - 'pyproject.toml'
+            docker:
+              - 'docker-compose*.yml'
+              - 'Dockerfile*'
+              - '.dockerignore'
 
   # ============================================================================
   # Code Quality Jobs
@@ -433,6 +438,7 @@ jobs:
     name: Docker Build Test
     runs-on: ubuntu-latest
     needs: [detect-changes]
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.docker == 'true' }}
     permissions:
       contents: read
     steps:
@@ -507,6 +513,10 @@ jobs:
           if [[ "$INTEGRATION_RESULT" == "skipped" ]]; then
             INTEGRATION_RESULT="success"
           fi
+          DOCKER_BUILD_RESULT="${{ needs.docker-build-test.result }}"
+          if [[ "$DOCKER_BUILD_RESULT" == "skipped" ]]; then
+            DOCKER_BUILD_RESULT="success"
+          fi
 
           if [[ "${{ needs.lint.result }}" == "success" ]] && \
              [[ "${{ needs.type-check.result }}" == "success" ]] && \
@@ -520,7 +530,7 @@ jobs:
              [[ "$BOUNDARY_RESULT" == "success" ]] && \
              [[ "${{ needs.unit-test.result }}" == "success" ]] && \
              [[ "$INTEGRATION_RESULT" == "success" ]] && \
-             [[ "${{ needs.docker-build-test.result }}" == "success" ]]; then
+             [[ "$DOCKER_BUILD_RESULT" == "success" ]]; then
             echo "✅ All CI checks passed!"
             exit 0
           else
@@ -537,7 +547,7 @@ jobs:
             echo "  Zetherion Boundary: ${BOUNDARY_RESULT} (raw=${{ needs.zetherion-boundary-check.result }})"
             echo "  Unit Tests: ${{ needs.unit-test.result }}"
             echo "  Integration Tests: ${INTEGRATION_RESULT} (raw=${{ needs.integration-test.result }})"
-            echo "  Docker Build Test: ${{ needs.docker-build-test.result }}"
+            echo "  Docker Build Test: ${DOCKER_BUILD_RESULT} (raw=${{ needs.docker-build-test.result }})"
             exit 1
           fi
 
