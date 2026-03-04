@@ -37,10 +37,12 @@ from zetherion_ai.cgs_gateway.routes._utils import (
     request_id,
     resolve_active_mapping,
 )
+from zetherion_ai.security.trust_policy import TrustPolicyDecision, TrustPolicyEvaluator
 
 _ADMIN_SCOPE = "cgs:zetherion-admin"
 _SECRETS_SCOPE = "cgs:zetherion-secrets-admin"
 _STEP_UP_ACR_VALUES = {"mfa", "aal2", "aal3", "urn:mfa"}
+_TRUST_POLICY_EVALUATOR = TrustPolicyEvaluator()
 
 
 def _scope_set(values: list[str]) -> set[str]:
@@ -148,6 +150,121 @@ def _change_ticket_from_request(
     if isinstance(payload_change_ticket_id, str) and payload_change_ticket_id.strip():
         return payload_change_ticket_id.strip()
     return None
+
+
+def _derive_policy_action(method: str, subpath: str, payload: dict[str, Any] | None) -> str:
+    method_upper = method.upper()
+    normalized = subpath.lower()
+
+    if normalized.startswith("/secrets/"):
+        if method_upper == "PUT":
+            return "secret.put"
+        if method_upper == "DELETE":
+            return "secret.delete"
+    if (
+        normalized.startswith("/email/providers/")
+        and normalized.endswith("/oauth-app")
+        and method_upper == "PUT"
+    ):
+        return "email.oauth_app.put"
+    if normalized.startswith("/email/mailboxes/") and method_upper == "DELETE":
+        return "email.mailbox.delete"
+    if normalized.startswith("/discord-users/") and normalized.endswith("/role"):
+        role = str((payload or {}).get("role", "")).strip().lower()
+        if role == "owner":
+            return "discord.role.owner"
+
+    if normalized.startswith("/messaging/"):
+        if method_upper == "POST" and normalized.endswith("/ingest"):
+            return "messaging.ingest"
+        if method_upper == "POST" and normalized.endswith("/send"):
+            return "messaging.send"
+        return "messaging.read"
+
+    if normalized.startswith("/automerge/") and method_upper == "POST":
+        return "automerge.execute"
+
+    if method_upper == "GET":
+        return "tenant_admin.read"
+    return "tenant_admin.mutate"
+
+
+def _derive_policy_target(subpath: str, payload: dict[str, Any] | None) -> str | None:
+    if payload:
+        for key in ("chat_id", "mailbox_id", "target", "name"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    parts = [part for part in subpath.split("/") if part]
+    if not parts:
+        return None
+    if parts[-1] == "send" and len(parts) >= 2:
+        return parts[-2]
+    return parts[-1]
+
+
+def _derive_policy_context(
+    method: str,
+    subpath: str,
+    payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    ctx: dict[str, Any] = {
+        "method": method.upper(),
+        "subpath": subpath,
+    }
+    normalized = subpath.lower()
+    if normalized.startswith("/messaging/"):
+        target = _derive_policy_target(subpath, payload)
+        if target:
+            ctx["chat_id"] = target
+    if normalized.startswith("/automerge/"):
+        body = payload or {}
+        ctx["branch_guard_passed"] = bool(body.get("branch_guard_passed"))
+        ctx["risk_guard_passed"] = bool(body.get("risk_guard_passed"))
+        ctx["explicitly_elevated"] = bool(body.get("explicitly_elevated"))
+    return ctx
+
+
+async def _enforce_trust_policy(
+    request: web.Request,
+    *,
+    cgs_tenant_id: str,
+    zetherion_tenant_id: str | None,
+    method: str,
+    subpath: str,
+    payload: dict[str, Any] | None,
+    change_ticket_id: str | None,
+) -> str | None:
+    action = _derive_policy_action(method, subpath, payload)
+    context = _derive_policy_context(method, subpath, payload)
+    decision: TrustPolicyDecision = _TRUST_POLICY_EVALUATOR.evaluate(
+        tenant_id=zetherion_tenant_id,
+        action=action,
+        context=context,
+    )
+    if decision.allowed:
+        return change_ticket_id
+
+    if decision.approval_required:
+        approved_change = await _ensure_high_risk_approval(
+            request,
+            cgs_tenant_id=cgs_tenant_id,
+            action=action,
+            target=_derive_policy_target(subpath, payload),
+            payload=payload or {},
+            change_ticket_id=change_ticket_id,
+        )
+        return str(approved_change["change_id"])
+
+    details = dict(decision.details)
+    if decision.requires_two_person:
+        details.setdefault("requires_two_person", True)
+    raise GatewayError(
+        code=decision.code,
+        message=decision.message,
+        status=decision.status,
+        details=details,
+    )
 
 
 async def _admin_idempotency_check(
@@ -309,13 +426,23 @@ async def _call_admin_upstream(
     change_ticket_id: str | None = None,
 ) -> Any:
     mapping = await resolve_active_mapping(request.app["cgs_storage"], cgs_tenant_id)
-    actor = _build_actor_context(request, change_ticket_id=change_ticket_id)
+    zetherion_tenant_id = str(mapping["zetherion_tenant_id"])
+    effective_change_ticket_id = await _enforce_trust_policy(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        zetherion_tenant_id=zetherion_tenant_id,
+        method=method,
+        subpath=subpath,
+        payload=payload,
+        change_ticket_id=change_ticket_id,
+    )
+    actor = _build_actor_context(request, change_ticket_id=effective_change_ticket_id)
     skills_client = request.app["cgs_skills_client"]
     tenant_method = getattr(skills_client, "request_tenant_admin_json", None)
     if callable(tenant_method) and inspect.iscoroutinefunction(tenant_method):
         status, upstream = await skills_client.request_tenant_admin_json(
             method,
-            tenant_id=str(mapping["zetherion_tenant_id"]),
+            tenant_id=zetherion_tenant_id,
             subpath=subpath,
             actor=actor,
             json_body=payload,
@@ -330,8 +457,8 @@ async def _call_admin_upstream(
             json_body=payload,
             query=query,
         )
-    if change_ticket_id:
-        request["change_ticket_id"] = change_ticket_id
+    if effective_change_ticket_id:
+        request["change_ticket_id"] = effective_change_ticket_id
     request["cgs_tenant_id"] = cgs_tenant_id
     if isinstance(upstream, dict):
         upstream_request_id = upstream.get("request_id") or upstream.get("upstream_request_id")
@@ -1064,6 +1191,19 @@ async def handle_admin_submit_change(request: web.Request) -> web.Response:
             details={"errors": exc.errors()},
         ) from exc
 
+    policy_decision = _TRUST_POLICY_EVALUATOR.evaluate(
+        tenant_id=None,
+        action=body.action,
+        context={"method": "POST", "subpath": "/changes"},
+    )
+    if not policy_decision.allowed and not policy_decision.approval_required:
+        raise GatewayError(
+            code=policy_decision.code,
+            message=policy_decision.message,
+            status=policy_decision.status,
+            details=policy_decision.details,
+        )
+
     idem_key, idem_fp, cached = await _admin_idempotency_check(
         request,
         cgs_tenant_id=cgs_tenant_id,
@@ -1105,6 +1245,18 @@ async def handle_admin_list_changes(request: web.Request) -> web.Response:
     _ensure_internal_admin_access(request, mutating=False)
     cgs_tenant_id = request.match_info["tenant_id"]
     _ensure_operator_tenant_access(request, cgs_tenant_id)
+    decision = _TRUST_POLICY_EVALUATOR.evaluate(
+        tenant_id=None,
+        action="admin.change.list",
+        context={"method": "GET", "subpath": "/changes"},
+    )
+    if not decision.allowed:
+        raise GatewayError(
+            code=decision.code,
+            message=decision.message,
+            status=decision.status,
+            details=decision.details,
+        )
     status = request.query.get("status")
     changes = await request.app["cgs_storage"].list_admin_changes(
         cgs_tenant_id=cgs_tenant_id,
@@ -1117,6 +1269,18 @@ async def handle_admin_approve_change(request: web.Request) -> web.Response:
     _ensure_internal_admin_access(request, mutating=True)
     cgs_tenant_id = request.match_info["tenant_id"]
     _ensure_operator_tenant_access(request, cgs_tenant_id)
+    decision = _TRUST_POLICY_EVALUATOR.evaluate(
+        tenant_id=None,
+        action="admin.change.approve",
+        context={"method": "POST", "subpath": "/changes/approve"},
+    )
+    if not decision.allowed:
+        raise GatewayError(
+            code=decision.code,
+            message=decision.message,
+            status=decision.status,
+            details=decision.details,
+        )
     enforce_mutation_rate_limit(request, cgs_tenant_id=cgs_tenant_id, family="admin")
     rid = request_id(request)
     raw = await json_object(request, required=False)
@@ -1187,6 +1351,18 @@ async def handle_admin_reject_change(request: web.Request) -> web.Response:
     _ensure_internal_admin_access(request, mutating=True)
     cgs_tenant_id = request.match_info["tenant_id"]
     _ensure_operator_tenant_access(request, cgs_tenant_id)
+    decision = _TRUST_POLICY_EVALUATOR.evaluate(
+        tenant_id=None,
+        action="admin.change.reject",
+        context={"method": "POST", "subpath": "/changes/reject"},
+    )
+    if not decision.allowed:
+        raise GatewayError(
+            code=decision.code,
+            message=decision.message,
+            status=decision.status,
+            details=decision.details,
+        )
     enforce_mutation_rate_limit(request, cgs_tenant_id=cgs_tenant_id, family="admin")
     rid = request_id(request)
     raw = await json_object(request, required=False)

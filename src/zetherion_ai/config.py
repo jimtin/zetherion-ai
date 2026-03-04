@@ -710,6 +710,21 @@ class Settings(BaseSettings):
     app_watcher_global_kill_switch: bool = Field(
         default=False, description="Disable all autonomous app-watcher actions"
     )
+    messaging_ingestion_kill_switch: bool = Field(
+        default=False, description="Global kill switch for tenant messaging ingestion actions"
+    )
+    messaging_send_kill_switch: bool = Field(
+        default=False, description="Global kill switch for tenant messaging send actions"
+    )
+    auto_merge_execution_kill_switch: bool = Field(
+        default=False, description="Global kill switch for autonomous PR merge execution"
+    )
+    auto_merge_policy_enabled: bool = Field(
+        default=False, description="Enable trust-policy auto-merge execution path"
+    )
+    security_default_trust_tier: str = Field(
+        default="tier3", description="Default trust tier for trust-policy action gating"
+    )
 
     # Security Pipeline Configuration (Phase 13)
     security_tier2_enabled: bool = Field(
@@ -771,6 +786,16 @@ class Settings(BaseSettings):
         if v not in valid_modes:
             raise ValueError(f"app_watcher_trust_mode must be one of {valid_modes}, got: {v}")
         return v
+
+    @field_validator("security_default_trust_tier")
+    @classmethod
+    def validate_security_default_trust_tier(cls, v: str) -> str:
+        """Validate trust tier default used by policy evaluator."""
+        normalized = v.strip().lower()
+        allowed = {"tier0", "tier1", "tier2", "tier3", "tier4", "0", "1", "2", "3", "4"}
+        if normalized not in allowed:
+            raise ValueError("security_default_trust_tier must be one of tier0..tier4")
+        return normalized
 
     @field_validator("object_storage_backend")
     @classmethod
