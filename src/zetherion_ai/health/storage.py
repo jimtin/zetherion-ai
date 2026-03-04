@@ -150,6 +150,45 @@ class Incident:
 
 
 @dataclass
+class NotificationIncident:
+    """A persisted notification incident lifecycle record."""
+
+    provider: str
+    fingerprint: str
+    severity: IncidentSeverity
+    description: str
+    first_seen: datetime
+    last_seen: datetime
+    state: str = "open"  # open | resolved
+    occurrence_count: int = 1
+    last_notified_at: datetime | None = None
+    last_digest_notified_at: datetime | None = None
+    last_state_change_at: datetime | None = None
+    id: int | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "provider": self.provider,
+            "fingerprint": self.fingerprint,
+            "severity": self.severity.value,
+            "description": self.description,
+            "first_seen": self.first_seen.isoformat(),
+            "last_seen": self.last_seen.isoformat(),
+            "state": self.state,
+            "occurrence_count": self.occurrence_count,
+            "last_notified_at": self.last_notified_at.isoformat() if self.last_notified_at else None,
+            "last_digest_notified_at": (
+                self.last_digest_notified_at.isoformat() if self.last_digest_notified_at else None
+            ),
+            "last_state_change_at": (
+                self.last_state_change_at.isoformat() if self.last_state_change_at else None
+            ),
+        }
+
+
+@dataclass
 class UpdateRecord:
     """A record of an update attempt."""
 
@@ -213,6 +252,22 @@ CREATE TABLE IF NOT EXISTS health_incidents (
     resolution TEXT
 );
 
+CREATE TABLE IF NOT EXISTS notification_incidents (
+    id SERIAL PRIMARY KEY,
+    provider TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    severity TEXT NOT NULL DEFAULT 'low',
+    description TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'open',
+    first_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    occurrence_count INTEGER NOT NULL DEFAULT 1,
+    last_notified_at TIMESTAMPTZ,
+    last_digest_notified_at TIMESTAMPTZ,
+    last_state_change_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(provider, fingerprint)
+);
+
 CREATE TABLE IF NOT EXISTS update_history (
     id SERIAL PRIMARY KEY,
     timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -231,6 +286,10 @@ CREATE INDEX IF NOT EXISTS idx_health_healing_ts
     ON health_healing_actions (timestamp);
 CREATE INDEX IF NOT EXISTS idx_health_incidents_resolved
     ON health_incidents (resolved);
+CREATE INDEX IF NOT EXISTS idx_notification_incidents_state
+    ON notification_incidents (state);
+CREATE INDEX IF NOT EXISTS idx_notification_incidents_last_seen
+    ON notification_incidents (last_seen);
 CREATE INDEX IF NOT EXISTS idx_update_history_ts
     ON update_history (timestamp);
 """
@@ -537,6 +596,200 @@ class HealthStorage:
             )
             for row in rows
         ]
+
+    # ------------------------------------------------------------------
+    # Notification incidents
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _notification_incident_from_row(row: Any) -> NotificationIncident:
+        """Deserialize a notification incident row."""
+        return NotificationIncident(
+            id=row["id"],
+            provider=row["provider"],
+            fingerprint=row["fingerprint"],
+            severity=IncidentSeverity(row["severity"]),
+            description=row["description"],
+            state=row["state"],
+            first_seen=row["first_seen"],
+            last_seen=row["last_seen"],
+            occurrence_count=row["occurrence_count"],
+            last_notified_at=row["last_notified_at"],
+            last_digest_notified_at=row["last_digest_notified_at"],
+            last_state_change_at=row["last_state_change_at"],
+        )
+
+    async def get_notification_incident(
+        self,
+        provider: str,
+        fingerprint: str,
+    ) -> NotificationIncident | None:
+        """Get a notification incident by provider+fingerprint key."""
+        async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+            row = await conn.fetchrow(
+                """
+                SELECT id, provider, fingerprint, severity, description, state,
+                       first_seen, last_seen, occurrence_count,
+                       last_notified_at, last_digest_notified_at, last_state_change_at
+                FROM notification_incidents
+                WHERE provider = $1 AND fingerprint = $2
+                LIMIT 1
+                """,
+                provider,
+                fingerprint,
+            )
+        if row is None:
+            return None
+        return self._notification_incident_from_row(row)
+
+    async def create_notification_incident(self, incident: NotificationIncident) -> int:
+        """Create a notification incident and return its row id."""
+        async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+            row = await conn.fetchrow(
+                """
+                INSERT INTO notification_incidents (
+                    provider,
+                    fingerprint,
+                    severity,
+                    description,
+                    state,
+                    first_seen,
+                    last_seen,
+                    occurrence_count,
+                    last_state_change_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                RETURNING id
+                """,
+                incident.provider,
+                incident.fingerprint,
+                incident.severity.value,
+                incident.description,
+                incident.state,
+                incident.first_seen,
+                incident.last_seen,
+                incident.occurrence_count,
+                incident.last_state_change_at or incident.first_seen,
+            )
+        return row["id"]  # type: ignore[index,no-any-return]
+
+    async def update_notification_incident_observation(
+        self,
+        incident_id: int,
+        *,
+        severity: IncidentSeverity,
+        description: str,
+        observed_at: datetime,
+        state: str | None = None,
+        state_changed: bool = False,
+    ) -> None:
+        """Update last-seen/severity/description for an incident observation."""
+        async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+            await conn.execute(
+                """
+                UPDATE notification_incidents
+                SET severity = $1,
+                    description = $2,
+                    last_seen = $3,
+                    occurrence_count = occurrence_count + 1,
+                    state = COALESCE($4, state),
+                    last_state_change_at = CASE
+                        WHEN $5 THEN $3
+                        ELSE last_state_change_at
+                    END
+                WHERE id = $6
+                """,
+                severity.value,
+                description,
+                observed_at,
+                state,
+                state_changed,
+                incident_id,
+            )
+
+    async def resolve_notification_incident(
+        self,
+        incident_id: int,
+        *,
+        resolved_at: datetime,
+    ) -> None:
+        """Resolve a notification incident."""
+        async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+            await conn.execute(
+                """
+                UPDATE notification_incidents
+                SET state = 'resolved',
+                    last_seen = $1,
+                    last_state_change_at = $1
+                WHERE id = $2
+                """,
+                resolved_at,
+                incident_id,
+            )
+
+    async def list_open_notification_incidents(self) -> list[NotificationIncident]:
+        """List unresolved notification incidents."""
+        async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+            rows = await conn.fetch(
+                """
+                SELECT id, provider, fingerprint, severity, description, state,
+                       first_seen, last_seen, occurrence_count,
+                       last_notified_at, last_digest_notified_at, last_state_change_at
+                FROM notification_incidents
+                WHERE state = 'open'
+                ORDER BY severity DESC, last_seen DESC
+                """
+            )
+        return [self._notification_incident_from_row(row) for row in rows]
+
+    async def mark_notification_incident_notified(
+        self,
+        incident_id: int,
+        notified_at: datetime,
+    ) -> None:
+        """Record immediate alert notification time for an incident."""
+        async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+            await conn.execute(
+                """
+                UPDATE notification_incidents
+                SET last_notified_at = $1
+                WHERE id = $2
+                """,
+                notified_at,
+                incident_id,
+            )
+
+    async def mark_notification_incident_digest_notified(
+        self,
+        incident_id: int,
+        notified_at: datetime,
+    ) -> None:
+        """Record digest notification time for an incident."""
+        async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+            await conn.execute(
+                """
+                UPDATE notification_incidents
+                SET last_digest_notified_at = $1
+                WHERE id = $2
+                """,
+                notified_at,
+                incident_id,
+            )
+
+    async def get_recent_incident_digest_times(self, limit: int = 30) -> list[datetime]:
+        """Return recent digest notification times for learning digest schedule."""
+        async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+            rows = await conn.fetch(
+                """
+                SELECT last_digest_notified_at
+                FROM notification_incidents
+                WHERE last_digest_notified_at IS NOT NULL
+                ORDER BY last_digest_notified_at DESC
+                LIMIT $1
+                """,
+                limit,
+            )
+        return [row["last_digest_notified_at"] for row in rows]
 
     # ------------------------------------------------------------------
     # Update history

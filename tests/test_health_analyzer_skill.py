@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from zetherion_ai.health.storage import IncidentSeverity, NotificationIncident
 from zetherion_ai.skills.base import (
     HeartbeatAction,
     SkillRequest,
@@ -46,6 +48,14 @@ def _make_initialized_skill(
     skill._storage.get_snapshots = AsyncMock(return_value=[])
     skill._storage.save_daily_report = AsyncMock()
     skill._storage.get_daily_report = AsyncMock(return_value=None)
+    skill._storage.get_notification_incident = AsyncMock(return_value=None)
+    skill._storage.create_notification_incident = AsyncMock(return_value=1)
+    skill._storage.update_notification_incident_observation = AsyncMock()
+    skill._storage.resolve_notification_incident = AsyncMock()
+    skill._storage.list_open_notification_incidents = AsyncMock(return_value=[])
+    skill._storage.mark_notification_incident_notified = AsyncMock()
+    skill._storage.mark_notification_incident_digest_notified = AsyncMock()
+    skill._storage.get_recent_incident_digest_times = AsyncMock(return_value=[])
 
     skill._collector = MagicMock()
     skill._collector.collect_all = MagicMock(
@@ -271,7 +281,7 @@ class TestOnHeartbeat:
         assert action.action_type == "send_message"
         assert action.user_id == "owner_user"
         assert action.priority == 9
-        assert "Health Alert" in action.data["message"]
+        assert "Health Incident Alert" in action.data["message"]
         assert "CPU usage extremely high" in action.data["message"]
 
     @pytest.mark.asyncio
@@ -296,6 +306,130 @@ class TestOnHeartbeat:
         actions = await skill.on_heartbeat(["owner_user"])
 
         assert len(actions) == 0
+
+    @pytest.mark.asyncio
+    async def test_incident_first_detection_alerts_once(self) -> None:
+        """First incident detection should alert once; repeats should be suppressed."""
+        pool = _make_pool_mock()
+        skill = _make_initialized_skill(db_pool=pool)
+
+        anomaly = MagicMock()
+        anomaly.severity = "critical"
+        anomaly.description = "Groq request failures spiking"
+        anomaly.metric_path = "reliability.error_rate_by_provider.groq"
+
+        existing = NotificationIncident(
+            id=101,
+            provider="groq",
+            fingerprint="fp-groq",
+            severity=IncidentSeverity.CRITICAL,
+            description="Groq request failures spiking",
+            state="open",
+            first_seen=datetime.now(),
+            last_seen=datetime.now(),
+        )
+
+        analysis_result = MagicMock()
+        analysis_result.anomalies = [anomaly]
+        analysis_result.has_critical = True
+        analysis_result.recommended_actions = []
+        analysis_result.to_dict.return_value = {"anomalies": [{"description": anomaly.description}]}
+        skill._analyzer.analyze_snapshot.return_value = analysis_result
+
+        skill._storage.create_notification_incident = AsyncMock(return_value=101)
+        skill._storage.get_notification_incident.side_effect = [None, existing]
+        skill._storage.list_open_notification_incidents = AsyncMock(return_value=[])
+
+        skill._beat_count = 5
+        first = await skill.on_heartbeat(["owner_user"])
+
+        skill._beat_count = 11
+        second = await skill.on_heartbeat(["owner_user"])
+
+        assert len(first) == 1
+        assert len(second) == 0
+        skill._storage.mark_notification_incident_notified.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_incident_morning_digest_includes_unresolved(self) -> None:
+        """Unresolved incidents should be sent as a once-daily morning digest."""
+        pool = _make_pool_mock()
+        skill = _make_initialized_skill(db_pool=pool)
+        skill._incident_digest_fallback_hour = 0
+        skill._incident_digest_fallback_minute = 0
+
+        anomaly = MagicMock()
+        anomaly.severity = "critical"
+        anomaly.description = "OpenAI latency significantly above baseline"
+        anomaly.metric_path = "performance.avg_latency_ms.openai"
+
+        existing = NotificationIncident(
+            id=55,
+            provider="openai",
+            fingerprint="fp-openai",
+            severity=IncidentSeverity.CRITICAL,
+            description=anomaly.description,
+            state="open",
+            first_seen=datetime.now(),
+            last_seen=datetime.now(),
+        )
+
+        analysis_result = MagicMock()
+        analysis_result.anomalies = [anomaly]
+        analysis_result.has_critical = True
+        analysis_result.recommended_actions = []
+        analysis_result.to_dict.return_value = {"anomalies": [{"description": anomaly.description}]}
+        skill._analyzer.analyze_snapshot.return_value = analysis_result
+
+        skill._storage.get_notification_incident = AsyncMock(return_value=existing)
+        skill._storage.list_open_notification_incidents = AsyncMock(side_effect=[[existing], [existing]])
+
+        skill._beat_count = 5
+        actions = await skill.on_heartbeat(["owner_user"])
+
+        assert len(actions) == 1
+        assert "Morning health digest" in actions[0].data["message"]
+        assert "OpenAI latency significantly above baseline" in actions[0].data["message"]
+        skill._storage.mark_notification_incident_digest_notified.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_incident_escalation_triggers_immediate_alert(self) -> None:
+        """Severity escalation should emit an immediate re-alert."""
+        pool = _make_pool_mock()
+        skill = _make_initialized_skill(db_pool=pool)
+
+        anomaly = MagicMock()
+        anomaly.severity = "critical"
+        anomaly.description = "Gemini provider errors escalated"
+        anomaly.metric_path = "reliability.error_rate_by_provider.gemini"
+
+        existing = NotificationIncident(
+            id=77,
+            provider="gemini",
+            fingerprint="fp-gemini",
+            severity=IncidentSeverity.HIGH,
+            description=anomaly.description,
+            state="open",
+            first_seen=datetime.now(),
+            last_seen=datetime.now(),
+        )
+
+        analysis_result = MagicMock()
+        analysis_result.anomalies = [anomaly]
+        analysis_result.has_critical = True
+        analysis_result.recommended_actions = []
+        analysis_result.to_dict.return_value = {"anomalies": [{"description": anomaly.description}]}
+        skill._analyzer.analyze_snapshot.return_value = analysis_result
+
+        skill._storage.get_notification_incident = AsyncMock(return_value=existing)
+        skill._storage.list_open_notification_incidents = AsyncMock(return_value=[existing])
+
+        skill._beat_count = 5
+        actions = await skill.on_heartbeat(["owner_user"])
+
+        assert len(actions) == 1
+        assert "escalated" in actions[0].data["message"]
+        skill._storage.mark_notification_incident_notified.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_heartbeat_generates_daily_report_on_288th_beat(self) -> None:
