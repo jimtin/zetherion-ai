@@ -6,6 +6,7 @@ over HTTP (no Docker needed).
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pytest
 import pytest_asyncio
@@ -89,10 +90,11 @@ async def test_task_create_via_agent(agent_with_skills: Agent) -> None:
 @pytest.mark.integration
 async def test_task_list_via_agent(agent_with_skills: Agent) -> None:
     """Listing tasks via _handle_skill_intent should succeed after creation."""
+    task_title = f"review docs {uuid4().hex[:8]}"
     # Create a task first
     await agent_with_skills._handle_skill_intent(
         TEST_USER_ID,
-        "add a task to review docs",
+        f"add a task to {task_title}",
         "task_manager",
     )
     # Now list
@@ -102,6 +104,7 @@ async def test_task_list_via_agent(agent_with_skills: Agent) -> None:
         "task_manager",
     )
     assert "trouble" not in response.lower()
+    assert task_title in response.lower()
 
 
 @pytest.mark.integration
