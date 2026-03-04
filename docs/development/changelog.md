@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Windows Deploy Resilience Registration Signal Cleanup (2026-03-05)
+
+- Updated `Deploy Windows` resilience registration step behavior to remain explicitly non-blocking without
+  emitting a failed-step annotation when task registration is access-denied.
+- Added explicit registration outputs for downstream diagnostics:
+  - `registration_status`
+  - `failure_code`
+  - `bootstrap_required`
+- Expanded promotions-task warning summary to include resilience registration status/failure details so
+  operators can distinguish warning-state bootstrap requirements from true deployment failures.
+
 ### Added - Document Archive/Delete API Lifecycle Routes (2026-03-05)
 
 - Added upstream document lifecycle routes:

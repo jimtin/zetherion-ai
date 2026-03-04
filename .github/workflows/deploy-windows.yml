@@ -91,18 +91,47 @@ jobs:
       - name: Register resilience startup/watchdog/promotions tasks
         id: resilience_register
         shell: pwsh
-        continue-on-error: true
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = "Stop"
 
           $registrationPath = Join-Path $PWD "resilience-registration.json"
+          $registrationExitCode = 0
           & ./scripts/windows/register-resilience-tasks.ps1 `
             -DeployPath "$env:WINDOWS_DEPLOY_PATH" `
             -OutputPath "$registrationPath"
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
+          $registrationExitCode = $LASTEXITCODE
+
+          if (Test-Path $registrationPath) {
+            $registration = Get-Content $registrationPath -Raw | ConvertFrom-Json
+            $registrationStatus = [string]$registration.status
+            if (-not $registrationStatus) {
+              $registrationStatus = "unknown"
+            }
+
+            $registrationFailureCode = ""
+            if ($registration.details -and $registration.details.failure_code) {
+              $registrationFailureCode = [string]$registration.details.failure_code
+            }
+            $bootstrapRequired = "false"
+            if ($registration.details -and $null -ne $registration.details.bootstrap_required) {
+              $bootstrapRequired = ([bool]$registration.details.bootstrap_required).ToString().ToLowerInvariant()
+            }
+
+            "registration_status=$registrationStatus" >> $env:GITHUB_OUTPUT
+            "failure_code=$registrationFailureCode" >> $env:GITHUB_OUTPUT
+            "bootstrap_required=$bootstrapRequired" >> $env:GITHUB_OUTPUT
+          } else {
+            "registration_status=missing_output" >> $env:GITHUB_OUTPUT
+            "failure_code=" >> $env:GITHUB_OUTPUT
+            "bootstrap_required=false" >> $env:GITHUB_OUTPUT
           }
+
+          if ($registrationExitCode -ne 0) {
+            Write-Warning ("register-resilience-tasks returned exit code {0}; continuing with readiness checks and receipt gating." -f $registrationExitCode)
+          }
+
+          exit 0
 
       - name: Verify resilience readiness
         id: resilience
@@ -400,10 +429,23 @@ jobs:
           $warningMessage = "promotions_task_registered=false (mode=$modeText, env WINDOWS_REQUIRE_PROMOTIONS_TASK=$requireRaw)"
           Write-Warning $warningMessage
 
+          $registrationStatus = "${{ steps.resilience_register.outputs.registration_status }}"
+          $registrationFailureCode = "${{ steps.resilience_register.outputs.failure_code }}"
+          $registrationBootstrapRequired = "${{ steps.resilience_register.outputs.bootstrap_required }}"
+
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Promotions Task Warning"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- promotions_task_registered: false"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- mode: $modeText"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- WINDOWS_REQUIRE_PROMOTIONS_TASK: $requireRaw"
+          if ($registrationStatus) {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- resilience_registration_status: $registrationStatus"
+          }
+          if ($registrationFailureCode) {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- resilience_registration_failure_code: $registrationFailureCode"
+          }
+          if ($registrationBootstrapRequired) {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- resilience_registration_bootstrap_required: $registrationBootstrapRequired"
+          }
 
       - name: Enforce receipt success gate
         if: always()
