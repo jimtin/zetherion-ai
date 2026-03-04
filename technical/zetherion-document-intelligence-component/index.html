@@ -1150,10 +1150,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#maintenance-note-2026-03-04" class="md-nav__link">
+  <a href="#maintenance-note-2026-03-05" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Maintenance Note (2026-03-04)
+        Maintenance Note (2026-03-05)
       
     </span>
   </a>
@@ -1866,10 +1866,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#maintenance-note-2026-03-04" class="md-nav__link">
+  <a href="#maintenance-note-2026-03-05" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Maintenance Note (2026-03-04)
+        Maintenance Note (2026-03-05)
       
     </span>
   </a>
@@ -2013,10 +2013,12 @@ It is implementation-level documentation for backend and operations teams.</p>
 <p>Public exposure rule:
 - External clients must not call Zetherion <code>/api/v1</code> directly.
 - CGS <code>/service/ai/v1</code> is the only supported public API for this capability.</p>
-<h2 id="maintenance-note-2026-03-04">Maintenance Note (2026-03-04)<a class="headerlink" href="#maintenance-note-2026-03-04" title="Permanent link">&para;</a></h2>
+<h2 id="maintenance-note-2026-03-05">Maintenance Note (2026-03-05)<a class="headerlink" href="#maintenance-note-2026-03-05" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Zetherion-only boundary recovery removed in-repo CGS website/UI assets.</li>
-<li>Document intelligence component behavior and API contracts are unchanged.</li>
+<li>Added upstream document lifecycle APIs:</li>
+<li><code>DELETE /api/v1/documents/{document_id}</code> (archive schedule)</li>
+<li><code>POST /api/v1/documents/{document_id}/restore</code> (restore + reindex)</li>
+<li>Added archive lifecycle status support and archive job persistence.</li>
 </ul>
 <h2 id="component-boundaries">Component Boundaries<a class="headerlink" href="#component-boundaries" title="Permanent link">&para;</a></h2>
 <p>Zetherion component responsibilities:
@@ -2034,19 +2036,24 @@ It is implementation-level documentation for backend and operations teams.</p>
 <p>Primary tables:
 - <code>tenant_documents</code>
 - <code>tenant_document_uploads</code>
-- <code>document_ingestion_jobs</code></p>
+- <code>document_ingestion_jobs</code>
+- <code>document_archive_jobs</code></p>
 <p><code>tenant_documents</code> key fields:
 - <code>tenant_id</code>
 - <code>document_id</code>
 - <code>file_name</code>
 - <code>mime_type</code>
 - <code>object_key</code>
-- <code>status</code> (<code>uploaded|processing|indexed|failed</code>)
+- <code>status</code> (<code>uploaded|processing|indexed|failed|archiving|archived|purged</code>)
 - <code>size_bytes</code>
 - <code>checksum_sha256</code>
 - <code>chunk_count</code>
 - <code>extracted_text</code>
 - <code>preview_html</code>
+- <code>archived_at</code>
+- <code>purge_after</code>
+- <code>purged_at</code>
+- <code>archived_reason</code>
 - <code>error_message</code>
 - <code>created_at</code>
 - <code>updated_at</code></p>
@@ -2067,6 +2074,16 @@ It is implementation-level documentation for backend and operations teams.</p>
 - <code>job_id</code>
 - <code>document_id</code>
 - <code>status</code> (<code>processing|indexed|failed</code>)
+- <code>error_message</code>
+- <code>created_at</code>
+- <code>updated_at</code></p>
+<p><code>document_archive_jobs</code> key fields:
+- <code>tenant_id</code>
+- <code>job_id</code>
+- <code>document_id</code>
+- <code>status</code> (<code>queued|running|succeeded|failed</code>)
+- <code>retry_count</code>
+- <code>next_attempt_at</code>
 - <code>error_message</code>
 - <code>created_at</code>
 - <code>updated_at</code></p>
@@ -2104,6 +2121,17 @@ It is implementation-level documentation for backend and operations teams.</p>
 <li>Upserts vectors into Qdrant.</li>
 <li>Updates document/job to <code>indexed</code> or <code>failed</code>.</li>
 </ol>
+<p>Archive/delete phase:
+1. <code>DELETE /api/v1/documents/{document_id}</code>
+   - validates lifecycle state
+   - updates document to <code>archiving</code>
+   - enqueues <code>document_archive_jobs</code>
+2. Archive worker (separate segment) removes vectors and marks document <code>archived</code> with retention window.
+3. Purge worker (separate segment) removes raw bytes + vectors after retention and marks <code>purged</code>.</p>
+<p>Restore phase:
+1. <code>POST /api/v1/documents/{document_id}/restore</code>
+2. validates <code>status=archived</code>
+3. clears archive markers, transitions to processing, re-runs indexing flow.</p>
 <p>Failure behavior:
 - Upload validation failures return <code>400</code>.
 - Object/inference dependency errors return <code>503</code>.
@@ -2146,6 +2174,8 @@ It is implementation-level documentation for backend and operations teams.</p>
 - Inference broker availability for retrieval generation.</p>
 <p>Operational tasks:
 - Re-index via <code>POST /api/v1/documents/{document_id}/index</code>.
+- Archive/delete request via <code>DELETE /api/v1/documents/{document_id}</code>.
+- Restore via <code>POST /api/v1/documents/{document_id}/restore</code>.
 - Triage failed ingestions by <code>error_message</code>.
 - Validate preview fallbacks for unsupported/broken files.</p>
 <h2 id="source-of-truth">Source of Truth<a class="headerlink" href="#source-of-truth" title="Permanent link">&para;</a></h2>

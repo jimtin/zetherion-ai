@@ -1567,6 +1567,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#delete-apiv1documentsdocument_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DELETE /api/v1/documents/{document_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1documentsdocument_idrestore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/documents/{document_id}/restore
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#post-apiv1ragquery" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2789,6 +2811,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#delete-apiv1documentsdocument_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DELETE /api/v1/documents/{document_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-apiv1documentsdocument_idrestore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /api/v1/documents/{document_id}/restore
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#post-apiv1ragquery" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2970,10 +3014,12 @@ plus optional tenant-scoped YouTube endpoints.</p>
 <p><strong>Internal Base URL:</strong> <code>http://&lt;host&gt;:8443/api/v1</code></p>
 <p>This API is distinct from the internal Skills API (<code>:8080</code>) and is not the public
 client contract. External clients must integrate through CGS <code>/service/ai/v1</code>.</p>
-<p>Maintenance note (2026-03-04):
-- Internal document upload route parsing/typing hardening was applied.
-- No public API contract changes were introduced.
-- Zetherion-only boundary recovery removed in-repo CGS website/UI assets; upstream API behavior remains unchanged.</p>
+<p>Maintenance note (2026-03-05):
+- Added document archive/delete and restore upstream routes:
+  - <code>DELETE /api/v1/documents/{document_id}</code>
+  - <code>POST /api/v1/documents/{document_id}/restore</code>
+- Added <code>include_archived</code> query support for document list.
+- Document lifecycle statuses now include archive states (<code>archiving|archived|purged</code>).</p>
 <h3 id="exposure-policy-authoritative">Exposure Policy (Authoritative)<a class="headerlink" href="#exposure-policy-authoritative" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Zetherion <code>/api/v1</code> is upstream-only.</li>
@@ -3247,7 +3293,10 @@ All routes below require <code>X-API-Key</code>.</p>
 <h3 id="get-apiv1documents">GET /api/v1/documents<a class="headerlink" href="#get-apiv1documents" title="Permanent link">&para;</a></h3>
 <p>List tenant documents.</p>
 <p>Query params:
-- <code>limit</code> (default <code>50</code>, max <code>200</code>)</p>
+- <code>limit</code> (default <code>50</code>, max <code>200</code>)
+- <code>include_archived</code> (default <code>false</code>; accepts <code>true|false|1|0|yes|no|on|off</code>)
+  - when false, omits <code>archiving|archived|purged</code>
+  - when true, includes all lifecycle states</p>
 <h3 id="get-apiv1documentsdocument_id">GET /api/v1/documents/{document_id}<a class="headerlink" href="#get-apiv1documentsdocument_id" title="Permanent link">&para;</a></h3>
 <p>Get one tenant document metadata/status row.</p>
 <h3 id="get-apiv1documentsdocument_idpreview">GET /api/v1/documents/{document_id}/preview<a class="headerlink" href="#get-apiv1documentsdocument_idpreview" title="Permanent link">&para;</a></h3>
@@ -3259,41 +3308,64 @@ All routes below require <code>X-API-Key</code>.</p>
 <p>Raw file download stream with attachment disposition.</p>
 <h3 id="post-apiv1documentsdocument_idindex">POST /api/v1/documents/{document_id}/index<a class="headerlink" href="#post-apiv1documentsdocument_idindex" title="Permanent link">&para;</a></h3>
 <p>Re-index an existing document into vector collection <code>tenant_documents</code>.</p>
+<h3 id="delete-apiv1documentsdocument_id">DELETE /api/v1/documents/{document_id}<a class="headerlink" href="#delete-apiv1documentsdocument_id" title="Permanent link">&para;</a></h3>
+<p>Schedule document archive (delete-intent) asynchronously.</p>
+<p>Behavior:
+- transitions active document to <code>archiving</code>
+- creates a <code>document_archive_jobs</code> queue record
+- returns <code>202 Accepted</code>
+- idempotent when already <code>archiving|archived|purged</code></p>
+<p>Optional request body:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="p">{</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">  </span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user-request&quot;</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="p">}</span>
+</code></pre></div>
+<p>Optional query:
+- <code>reason=&lt;text&gt;</code> (used if JSON body is not provided)</p>
+<h3 id="post-apiv1documentsdocument_idrestore">POST /api/v1/documents/{document_id}/restore<a class="headerlink" href="#post-apiv1documentsdocument_idrestore" title="Permanent link">&para;</a></h3>
+<p>Restore an archived document and re-run indexing.</p>
+<p>Behavior:
+- allowed only from <code>archived</code>
+- transitions to processing and re-indexes through normal ingestion/index flow
+- returns updated document record</p>
+<p>Errors:
+- <code>404</code> unknown document
+- <code>409</code> for invalid lifecycle (<code>purged</code> or non-archived states)</p>
 <h3 id="post-apiv1ragquery">POST /api/v1/rag/query<a class="headerlink" href="#post-apiv1ragquery" title="Permanent link">&para;</a></h3>
 <p>Query indexed tenant document chunks and generate an answer with citations.</p>
 <p><strong>Request:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="p">{</span>
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">  </span><span class="nt">&quot;query&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;What implementation risks are called out in the proposal?&quot;</span><span class="p">,</span>
-<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">  </span><span class="nt">&quot;top_k&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">6</span><span class="p">,</span>
-<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">  </span><span class="nt">&quot;provider&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;groq&quot;</span><span class="p">,</span>
-<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llama-3.3-70b-versatile&quot;</span>
-<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="p">{</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">  </span><span class="nt">&quot;query&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;What implementation risks are called out in the proposal?&quot;</span><span class="p">,</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">  </span><span class="nt">&quot;top_k&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">6</span><span class="p">,</span>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="w">  </span><span class="nt">&quot;provider&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;groq&quot;</span><span class="p">,</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llama-3.3-70b-versatile&quot;</span>
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="p">}</span>
 </code></pre></div>
 <p><strong>Response 200:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="p">{</span>
-<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">  </span><span class="nt">&quot;answer&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
-<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">  </span><span class="nt">&quot;citations&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="w">    </span><span class="p">{</span>
-<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">      </span><span class="nt">&quot;document_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uuid&quot;</span><span class="p">,</span>
-<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="w">      </span><span class="nt">&quot;file_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;proposal.pdf&quot;</span>
-<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="w">  </span><span class="p">],</span>
-<a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="w">  </span><span class="nt">&quot;provider&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;groq&quot;</span><span class="p">,</span>
-<a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llama-3.3-70b-versatile&quot;</span>
-<a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="p">{</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">  </span><span class="nt">&quot;answer&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="w">  </span><span class="nt">&quot;citations&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="w">      </span><span class="nt">&quot;document_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uuid&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="w">      </span><span class="nt">&quot;file_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;proposal.pdf&quot;</span>
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="w">  </span><span class="p">],</span>
+<a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a><span class="w">  </span><span class="nt">&quot;provider&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;groq&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-10" name="__codelineno-18-10" href="#__codelineno-18-10"></a><span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llama-3.3-70b-versatile&quot;</span>
+<a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a><span class="p">}</span>
 </code></pre></div>
 <h3 id="get-apiv1modelsproviders">GET /api/v1/models/providers<a class="headerlink" href="#get-apiv1modelsproviders" title="Permanent link">&para;</a></h3>
 <p>Return retrieval provider/model catalog for UI selectors.</p>
 <p><strong>Response 200:</strong></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="p">{</span>
-<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">  </span><span class="nt">&quot;providers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;groq&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;openai&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;anthropic&quot;</span><span class="p">],</span>
-<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="w">  </span><span class="nt">&quot;defaults&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="w">    </span><span class="nt">&quot;groq&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llama-3.3-70b-versatile&quot;</span><span class="p">,</span>
-<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="w">    </span><span class="nt">&quot;openai&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpt-5.2&quot;</span><span class="p">,</span>
-<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="w">    </span><span class="nt">&quot;anthropic&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;claude-sonnet-4-5-20250929&quot;</span>
-<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="w">  </span><span class="p">},</span>
-<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="w">  </span><span class="nt">&quot;allowed_models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;...&quot;</span><span class="p">]</span>
-<a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="p">{</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="w">  </span><span class="nt">&quot;providers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;groq&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;openai&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;anthropic&quot;</span><span class="p">],</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="w">  </span><span class="nt">&quot;defaults&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="w">    </span><span class="nt">&quot;groq&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llama-3.3-70b-versatile&quot;</span><span class="p">,</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="w">    </span><span class="nt">&quot;openai&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gpt-5.2&quot;</span><span class="p">,</span>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="w">    </span><span class="nt">&quot;anthropic&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;claude-sonnet-4-5-20250929&quot;</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="w">  </span><span class="p">},</span>
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a><span class="w">  </span><span class="nt">&quot;allowed_models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;...&quot;</span><span class="p">]</span>
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a><span class="p">}</span>
 </code></pre></div>
 <h3 id="document-lifecycle-states">Document Lifecycle States<a class="headerlink" href="#document-lifecycle-states" title="Permanent link">&para;</a></h3>
 <ul>
@@ -3301,6 +3373,9 @@ All routes below require <code>X-API-Key</code>.</p>
 <li><code>processing</code></li>
 <li><code>indexed</code></li>
 <li><code>failed</code></li>
+<li><code>archiving</code></li>
+<li><code>archived</code></li>
+<li><code>purged</code></li>
 </ul>
 <hr />
 <h2 id="youtube-api-api-key">YouTube API (API Key)<a class="headerlink" href="#youtube-api-api-key" title="Permanent link">&para;</a></h2>

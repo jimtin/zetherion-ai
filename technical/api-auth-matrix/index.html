@@ -1167,10 +1167,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#maintenance-note-2026-03-04" class="md-nav__link">
+  <a href="#maintenance-note-2026-03-05" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Maintenance Note (2026-03-04)
+        Maintenance Note (2026-03-05)
       
     </span>
   </a>
@@ -1778,10 +1778,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#maintenance-note-2026-03-04" class="md-nav__link">
+  <a href="#maintenance-note-2026-03-05" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Maintenance Note (2026-03-04)
+        Maintenance Note (2026-03-05)
       
     </span>
   </a>
@@ -1857,13 +1857,15 @@
 <p>Authoritative exposure rule:
 - External clients authenticate only against CGS <code>/service/ai/v1</code>.
 - Zetherion <code>/api/v1</code> auth is internal upstream auth between CGS and Zetherion.</p>
-<h2 id="maintenance-note-2026-03-04">Maintenance Note (2026-03-04)<a class="headerlink" href="#maintenance-note-2026-03-04" title="Permanent link">&para;</a></h2>
+<h2 id="maintenance-note-2026-03-05">Maintenance Note (2026-03-05)<a class="headerlink" href="#maintenance-note-2026-03-05" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Added token-authenticated CGS blog publish adapter route:</li>
 <li><code>POST /service/ai/v1/internal/blog/publish</code></li>
 <li>Internal lifecycle tenant mutations now enforce claims-to-tenant policy in addition to operator scope checks.</li>
-<li>Auth requirements for public document routes are unchanged.</li>
-<li>Zetherion-only boundary recovery removed in-repo CGS website/UI artifacts; auth contracts remain unchanged.</li>
+<li>Auth requirements for public document routes remain API-key based, including:</li>
+<li><code>DELETE /api/v1/documents/{document_id}</code></li>
+<li><code>POST /api/v1/documents/{document_id}/restore</code></li>
+<li>Document list now supports <code>include_archived</code>, without auth model changes.</li>
 </ul>
 <h2 id="zetherion-upstream-api-apiv1-internal">Zetherion Upstream API (<code>/api/v1</code>, internal)<a class="headerlink" href="#zetherion-upstream-api-apiv1-internal" title="Permanent link">&para;</a></h2>
 <table>
