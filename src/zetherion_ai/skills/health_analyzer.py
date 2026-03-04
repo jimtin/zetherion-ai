@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     import asyncpg  # type: ignore[import-not-found,import-untyped]
 
     from zetherion_ai.costs.storage import CostStorage
+    from zetherion_ai.health.storage import IncidentSeverity
     from zetherion_ai.memory.qdrant import QdrantMemory
     from zetherion_ai.scheduler.heartbeat import HeartbeatStats
     from zetherion_ai.skills.registry import SkillRegistry
@@ -275,7 +276,7 @@ class HealthAnalyzerSkill(Skill):
         return actions
 
     @staticmethod
-    def _severity_rank(severity: "IncidentSeverity") -> int:
+    def _severity_rank(severity: IncidentSeverity) -> int:
         """Return comparable rank for incident severities."""
         from zetherion_ai.health.storage import IncidentSeverity
 
@@ -288,7 +289,7 @@ class HealthAnalyzerSkill(Skill):
         return ranks.get(severity, 0)
 
     @staticmethod
-    def _map_anomaly_severity(raw_severity: str) -> "IncidentSeverity":
+    def _map_anomaly_severity(raw_severity: str) -> IncidentSeverity:
         """Map analyzer severity labels to persistent incident severity."""
         from zetherion_ai.health.storage import IncidentSeverity
 
@@ -406,7 +407,9 @@ class HealthAnalyzerSkill(Skill):
                 immediate_lines.append(f"- [{severity.value}] {description} ({provider})")
                 continue
 
-            severity_escalated = self._severity_rank(severity) > self._severity_rank(existing.severity)
+            severity_escalated = self._severity_rank(severity) > self._severity_rank(
+                existing.severity
+            )
             state_reopened = existing.state != "open"
             next_severity = severity if severity_escalated else existing.severity
             next_state = "open" if state_reopened else None
@@ -422,14 +425,19 @@ class HealthAnalyzerSkill(Skill):
             )
 
             if state_changed:
-                await self._storage.mark_notification_incident_notified(existing.id, now)  # type: ignore[arg-type]
+                await self._storage.mark_notification_incident_notified(
+                    existing.id,  # type: ignore[arg-type]
+                    now,
+                )
                 if severity_escalated and state_reopened:
                     reason = "reopened + escalated"
                 elif severity_escalated:
                     reason = "escalated"
                 else:
                     reason = "reopened"
-                immediate_lines.append(f"- [{next_severity.value}] {description} ({provider}, {reason})")
+                immediate_lines.append(
+                    f"- [{next_severity.value}] {description} ({provider}, {reason})"
+                )
 
         open_incidents = await self._storage.list_open_notification_incidents()
         for incident in open_incidents:

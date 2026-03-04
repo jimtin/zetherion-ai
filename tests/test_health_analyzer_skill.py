@@ -382,7 +382,9 @@ class TestOnHeartbeat:
         skill._analyzer.analyze_snapshot.return_value = analysis_result
 
         skill._storage.get_notification_incident = AsyncMock(return_value=existing)
-        skill._storage.list_open_notification_incidents = AsyncMock(side_effect=[[existing], [existing]])
+        skill._storage.list_open_notification_incidents = AsyncMock(
+            side_effect=[[existing], [existing]]
+        )
 
         skill._beat_count = 5
         actions = await skill.on_heartbeat(["owner_user"])
