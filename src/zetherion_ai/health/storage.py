@@ -178,7 +178,9 @@ class NotificationIncident:
             "last_seen": self.last_seen.isoformat(),
             "state": self.state,
             "occurrence_count": self.occurrence_count,
-            "last_notified_at": self.last_notified_at.isoformat() if self.last_notified_at else None,
+            "last_notified_at": (
+                self.last_notified_at.isoformat() if self.last_notified_at else None
+            ),
             "last_digest_notified_at": (
                 self.last_digest_notified_at.isoformat() if self.last_digest_notified_at else None
             ),
