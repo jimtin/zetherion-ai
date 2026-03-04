@@ -680,6 +680,101 @@ class TestGenerateResponseSkillIntents:
             "profile_manager",
         )
 
+    async def test_user_knowledge_summary_intent_routes_to_unified_handler(self):
+        """USER_KNOWLEDGE_SUMMARY should route to unified summary handler."""
+        mock_memory = AsyncMock()
+        mock_router = AsyncMock()
+        mock_router.classify = AsyncMock(
+            return_value=_routing(MessageIntent.USER_KNOWLEDGE_SUMMARY),
+        )
+
+        agent = _make_agent(mock_memory=mock_memory, mock_router=mock_router)
+        agent._handle_user_knowledge_summary = AsyncMock(return_value="Unified profile summary")
+
+        result = await agent.generate_response(
+            user_id=123,
+            channel_id=456,
+            message="what do you know about me",
+        )
+
+        assert result == "Unified profile summary"
+        agent._handle_user_knowledge_summary.assert_awaited_once_with(
+            123,
+            "what do you know about me",
+        )
+
+    async def test_profile_query_knowledge_phrase_uses_unified_handler(self):
+        """PROFILE_QUERY with knowledge-summary phrasing should use unified handler."""
+        mock_memory = AsyncMock()
+        mock_router = AsyncMock()
+        mock_router.classify = AsyncMock(
+            return_value=_routing(MessageIntent.PROFILE_QUERY),
+        )
+
+        agent = _make_agent(mock_memory=mock_memory, mock_router=mock_router)
+        agent._handle_user_knowledge_summary = AsyncMock(return_value="Unified summary")
+        agent._handle_skill_intent = AsyncMock(return_value="Skill summary")
+
+        result = await agent.generate_response(
+            user_id=123,
+            channel_id=456,
+            message="what do you know about me",
+        )
+
+        assert result == "Unified summary"
+        agent._handle_user_knowledge_summary.assert_awaited_once_with(
+            123,
+            "what do you know about me",
+        )
+        agent._handle_skill_intent.assert_not_awaited()
+
+    async def test_unified_summary_includes_profile_and_memory_facts(self):
+        """Unified summary should include profile entries and remembered long-term facts."""
+        mock_memory = AsyncMock()
+
+        async def _filter_by_field(*, collection_name, field, value, limit=100):
+            if collection_name != "long_term_memory" or field != "user_id":
+                return []
+            if value not in (123, "123"):
+                return []
+            return [
+                {"id": "m1", "type": "user_request", "content": "I work as a software engineer"},
+                {"id": "m2", "type": "general", "content": "my favorite color is teal-abc123"},
+            ]
+
+        mock_memory.filter_by_field = AsyncMock(side_effect=_filter_by_field)
+        agent = _make_agent(mock_memory=mock_memory)
+
+        mock_client = AsyncMock()
+        mock_client.handle_request = AsyncMock(
+            side_effect=[
+                SkillResponse(
+                    request_id=uuid4(),
+                    success=True,
+                    data={
+                        "entries": [
+                            {"key": "occupation", "value": "software engineer"},
+                            {"key": "favorite_color", "value": "teal-abc123"},
+                        ]
+                    },
+                ),
+                SkillResponse(
+                    request_id=uuid4(),
+                    success=True,
+                    message="I don't have a profile for you yet.",
+                ),
+            ]
+        )
+        agent._get_skills_client = AsyncMock(return_value=mock_client)
+
+        result = await agent._handle_user_knowledge_summary(123, "what do you know about me")
+
+        assert "Here's what I know about you" in result
+        assert "occupation: software engineer" in result
+        assert "favorite_color: teal-abc123" in result
+        assert "I work as a software engineer" in result
+        assert "my favorite color is teal-abc123" in result
+
     async def test_update_management_intent(self):
         """UPDATE_MANAGEMENT routes to _handle_skill_intent(update_checker)."""
         mock_memory = AsyncMock()

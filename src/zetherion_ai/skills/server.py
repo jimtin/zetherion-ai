@@ -1606,9 +1606,10 @@ def main() -> None:  # pragma: no cover — CLI entry-point
     updater_secret = settings.updater_secret or _resolve_updater_secret()
     gmail_skill = GmailSkill()
     email_skill = EmailSkill(default_provider="google", legacy_gmail_skill=gmail_skill)
+    profile_skill = ProfileSkill()
     registry.register(TaskManagerSkill())
     registry.register(CalendarSkill())
-    registry.register(ProfileSkill())
+    registry.register(profile_skill)
     registry.register(HealthAnalyzerSkill())
     registry.register(DevWatcherSkill())
     registry.register(MilestoneSkill())
@@ -1769,6 +1770,32 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             except Exception as exc:
                 tenant_vector_memory = None
                 log.warning("tenant_email_vector_memory_unavailable", error=str(exc))
+
+            if tenant_vector_memory is not None:
+                try:
+                    from zetherion_ai.profile.builder import ProfileBuilder
+
+                    profile_builder = ProfileBuilder(
+                        memory=tenant_vector_memory,
+                        inference_broker=None,
+                        tier1_only=True,
+                        auto_apply_threshold=float(settings.profile_confidence_threshold),
+                        confirmation_expiry_hours=int(settings.profile_confirmation_expiry_hours),
+                        max_pending_confirmations=int(settings.profile_max_pending_confirmations),
+                    )
+                    profile_skill.configure_dependencies(
+                        memory=tenant_vector_memory,
+                        profile_builder=profile_builder,
+                    )
+                    log.info("profile_skill_dependencies_wired", has_memory=True, has_builder=True)
+                except Exception as exc:
+                    profile_skill.configure_dependencies(memory=tenant_vector_memory)
+                    log.warning(
+                        "profile_skill_builder_wiring_failed",
+                        error=str(exc),
+                    )
+            else:
+                log.warning("profile_skill_memory_unavailable")
 
             tenant_admin_manager = TenantAdminManager(
                 pool=runtime_db_pool,

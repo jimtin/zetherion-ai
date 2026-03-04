@@ -14,7 +14,7 @@ from zetherion_ai.agent.router_factory import create_router_sync
 from zetherion_ai.config import get_dynamic, get_settings
 from zetherion_ai.constants import CONTEXT_HISTORY_LIMIT, MEMORY_SCORE_THRESHOLD
 from zetherion_ai.logging import get_logger
-from zetherion_ai.memory.qdrant import QdrantMemory
+from zetherion_ai.memory.qdrant import LONG_TERM_MEMORY_COLLECTION, QdrantMemory
 from zetherion_ai.skills.base import SkillRequest, SkillResponse
 from zetherion_ai.skills.client import SkillsClient, SkillsClientError
 from zetherion_ai.utils import timed_operation
@@ -79,6 +79,16 @@ CREATIVE_KEYWORDS = frozenset(
 )
 SUMMARIZATION_KEYWORDS = frozenset({"summarize", "summary", "tldr", "condense"})
 TASK_LIST_DISPLAY_LIMIT = 10
+USER_KNOWLEDGE_FACT_DISPLAY_LIMIT = 10
+USER_KNOWLEDGE_QUERY_HINTS = frozenset(
+    {
+        "what do you know about me",
+        "what have you learned about me",
+        "what do you remember about me",
+        "summary of what you know about me",
+        "tell me what you know about me",
+    }
+)
 
 
 class Agent:
@@ -195,7 +205,12 @@ class Agent:
                     case MessageIntent.MEMORY_STORE:
                         response = await self._handle_memory_store(message, user_id=user_id)
                     case MessageIntent.MEMORY_RECALL:
-                        response = await self._handle_memory_recall(user_id, message)
+                        if self._is_user_knowledge_summary_query(message):
+                            response = await self._handle_user_knowledge_summary(user_id, message)
+                        else:
+                            response = await self._handle_memory_recall(user_id, message)
+                    case MessageIntent.USER_KNOWLEDGE_SUMMARY:
+                        response = await self._handle_user_knowledge_summary(user_id, message)
                     case MessageIntent.SYSTEM_COMMAND:
                         response = await self._handle_system_command(message)
                     case MessageIntent.SIMPLE_QUERY:
@@ -213,17 +228,23 @@ class Agent:
                     case MessageIntent.CALENDAR_QUERY:
                         response = await self._handle_skill_intent(user_id, message, "calendar")
                     case MessageIntent.PROFILE_QUERY:
-                        response = await self._handle_skill_intent(
-                            user_id,
-                            message,
-                            "profile_manager",
-                        )
+                        if self._is_user_knowledge_summary_query(message):
+                            response = await self._handle_user_knowledge_summary(user_id, message)
+                        else:
+                            response = await self._handle_skill_intent(
+                                user_id,
+                                message,
+                                "profile_manager",
+                            )
                     case MessageIntent.PERSONAL_MODEL:
-                        response = await self._handle_skill_intent(
-                            user_id,
-                            message,
-                            "personal_model",
-                        )
+                        if self._is_user_knowledge_summary_query(message):
+                            response = await self._handle_user_knowledge_summary(user_id, message)
+                        else:
+                            response = await self._handle_skill_intent(
+                                user_id,
+                                message,
+                                "personal_model",
+                            )
                     case MessageIntent.EMAIL_MANAGEMENT:
                         response = await self._handle_skill_intent(
                             user_id,
@@ -466,6 +487,179 @@ class Agent:
         except SkillsClientError as e:
             log.error("skills_client_error", skill=skill_name, error=str(e))
             return "I'm having trouble processing that request. Please try again."
+
+    @staticmethod
+    def _is_user_knowledge_summary_query(message: str) -> bool:
+        """Return True when message asks for a unified personal-knowledge summary."""
+        msg_lower = " ".join(message.lower().split())
+        return any(hint in msg_lower for hint in USER_KNOWLEDGE_QUERY_HINTS)
+
+    async def _request_skill_response(
+        self,
+        *,
+        client: SkillsClient,
+        user_id: int,
+        skill_name: str,
+        intent: str,
+        message: str,
+    ) -> SkillResponse | None:
+        """Issue a skill request and return the raw response when possible."""
+        request = SkillRequest(
+            user_id=str(user_id),
+            intent=intent,
+            message=message,
+            context={"skill_name": skill_name},
+        )
+        try:
+            return await client.handle_request(request)
+        except SkillsClientError as exc:
+            log.warning(
+                "user_knowledge_skill_request_failed",
+                skill=skill_name,
+                intent=intent,
+                error=str(exc),
+            )
+            return None
+
+    @staticmethod
+    def _is_empty_profile_summary_text(text: str) -> bool:
+        """Detect standard empty-summary responses from skills."""
+        lowered = text.lower()
+        return (
+            "i don't have a profile for you yet" in lowered
+            or "i don't have any profile data for you yet" in lowered
+            or "no profile data" in lowered
+        )
+
+    @staticmethod
+    def _format_profile_entries_for_summary(raw_entries: Any) -> list[str]:
+        """Render profile entries returned by profile_manager:profile_view."""
+        if not isinstance(raw_entries, list):
+            return []
+
+        formatted: list[str] = []
+        seen: set[str] = set()
+        for entry in raw_entries:
+            if not isinstance(entry, dict):
+                continue
+            value = str(entry.get("value") or "").strip()
+            if not value:
+                continue
+
+            key = str(entry.get("key") or "").strip()
+            line = f"- {key}: {value}" if key else f"- {value}"
+            fingerprint = line.casefold()
+            if fingerprint in seen:
+                continue
+            seen.add(fingerprint)
+            formatted.append(line)
+        return formatted
+
+    async def _list_long_term_memories_for_user(self, user_id: int) -> list[dict[str, Any]]:
+        """Load long-term memories for user_id, supporting int/str payload variants."""
+        candidates: list[int | str] = [user_id, str(user_id)]
+        merged: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+
+        for candidate in candidates:
+            try:
+                records = await self._memory.filter_by_field(
+                    collection_name=LONG_TERM_MEMORY_COLLECTION,
+                    field="user_id",
+                    value=candidate,
+                    limit=200,
+                )
+            except Exception as exc:
+                log.debug(
+                    "user_knowledge_memory_filter_failed",
+                    user_id=user_id,
+                    candidate_type=type(candidate).__name__,
+                    error=str(exc),
+                )
+                continue
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+                record_id = str(record.get("id") or "").strip()
+                if record_id and record_id in seen_ids:
+                    continue
+                if record_id:
+                    seen_ids.add(record_id)
+                merged.append(record)
+        return merged
+
+    async def _collect_profile_memory_facts(self, user_id: int) -> list[str]:
+        """Collect normalized user memory facts suitable for summary output."""
+        try:
+            memories = await self._list_long_term_memories_for_user(user_id)
+        except Exception as exc:
+            log.warning("user_knowledge_memory_fetch_failed", user_id=user_id, error=str(exc))
+            return []
+
+        allowed_types = {"", "general", "user_request", "profile", "fact", "preference", "identity"}
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for memory in memories:
+            memory_type = str(memory.get("type") or "").strip().lower()
+            if memory_type not in allowed_types:
+                continue
+            content = str(memory.get("content") or "").strip()
+            if not content:
+                continue
+            collapsed = " ".join(content.split())
+            key = collapsed.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(collapsed)
+        return normalized[:USER_KNOWLEDGE_FACT_DISPLAY_LIMIT]
+
+    async def _handle_user_knowledge_summary(self, user_id: int, message: str) -> str:
+        """Build a canonical summary from profile store and long-term memories."""
+        profile_lines: list[str] = []
+        personal_summary: str | None = None
+
+        client = await self._get_skills_client()
+        if client is not None:
+            profile_response = await self._request_skill_response(
+                client=client,
+                user_id=user_id,
+                skill_name="profile_manager",
+                intent="profile_view",
+                message=message,
+            )
+            if profile_response is not None and profile_response.success:
+                profile_lines = self._format_profile_entries_for_summary(
+                    profile_response.data.get("entries")
+                )
+
+            personal_response = await self._request_skill_response(
+                client=client,
+                user_id=user_id,
+                skill_name="personal_model",
+                intent="personal_summary",
+                message=message,
+            )
+            if personal_response is not None and personal_response.success:
+                raw_summary = (personal_response.message or "").strip()
+                if raw_summary and not self._is_empty_profile_summary_text(raw_summary):
+                    personal_summary = raw_summary
+
+        memory_facts = await self._collect_profile_memory_facts(user_id)
+
+        sections: list[str] = []
+        if profile_lines:
+            sections.append("Profile entries:\n" + "\n".join(profile_lines))
+        if memory_facts:
+            memory_lines = [f"{idx}. {fact}" for idx, fact in enumerate(memory_facts, start=1)]
+            sections.append("Remembered facts:\n" + "\n".join(memory_lines))
+        if personal_summary:
+            sections.append("Personal model:\n" + personal_summary)
+
+        if not sections:
+            return "I don't have any profile data for you yet."
+
+        return "Here's what I know about you:\n\n" + "\n\n".join(sections)
 
     def format_skill_response(
         self,

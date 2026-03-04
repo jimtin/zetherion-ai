@@ -8,6 +8,7 @@ import pytest
 from zetherion_ai.skills.base import SkillRequest, SkillStatus
 from zetherion_ai.skills.permissions import Permission
 from zetherion_ai.skills.profile_skill import (
+    LONG_TERM_MEMORY_COLLECTION,
     PROFILES_COLLECTION,
     ProfileSkill,
     ProfileSummary,
@@ -138,6 +139,51 @@ class TestProfileSkill:
         assert summary["high_confidence"] == 1
         assert summary["medium_confidence"] == 1
         assert summary["low_confidence"] == 1
+
+    @pytest.mark.asyncio
+    async def test_handle_summary_uses_long_term_memories_when_profile_entries_missing(self) -> None:
+        """Summary should not be empty when profile-style memories exist in long-term memory."""
+        now = datetime.now().isoformat()
+
+        async def _filter_by_field(*, collection_name, field, value, limit=100):
+            if field != "user_id":
+                return []
+            if collection_name == PROFILES_COLLECTION:
+                return []
+            if collection_name == LONG_TERM_MEMORY_COLLECTION and value in ("123", 123):
+                return [
+                    {
+                        "id": "m1",
+                        "type": "user_request",
+                        "content": "I work as a software engineer",
+                        "timestamp": now,
+                    },
+                    {
+                        "id": "m2",
+                        "type": "general",
+                        "content": "my favorite color is green-42",
+                        "timestamp": now,
+                    },
+                ]
+            return []
+
+        mock_memory = AsyncMock()
+        mock_memory.filter_by_field = AsyncMock(side_effect=_filter_by_field)
+
+        skill = ProfileSkill(memory=mock_memory)
+        await skill.safe_initialize()
+
+        request = SkillRequest(
+            user_id="123",
+            intent="profile_summary",
+        )
+        response = await skill.handle(request)
+
+        assert response.success is True
+        assert "don't have any profile data" not in response.message.lower()
+        summary = response.data["summary"]
+        assert summary["total_entries"] == 2
+        assert summary["by_category"].get("memory") == 2
 
     @pytest.mark.asyncio
     async def test_handle_view_all(self) -> None:
