@@ -147,6 +147,43 @@ function Is-SystemPrincipal {
     return $UserId -eq "SYSTEM" -or $UserId -eq "NT AUTHORITY\SYSTEM"
 }
 
+function Get-RegistrationActor {
+    try {
+        $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+        if ($identity -and $identity.Name) {
+            return [string]$identity.Name
+        }
+    } catch {
+        # Ignore and fall back to environment-derived actor.
+    }
+
+    $userDomain = [string]$env:USERDOMAIN
+    $userName = [string]$env:USERNAME
+    if ($userDomain -and $userName) {
+        return "$userDomain\$userName"
+    }
+    if ($userName) {
+        return $userName
+    }
+    return "unknown"
+}
+
+function Test-IsElevated {
+    try {
+        $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+        if (-not $identity) {
+            return $false
+        }
+        $principal = [System.Security.Principal.WindowsPrincipal]::new($identity)
+        return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch {
+        return $false
+    }
+}
+
+$registrationActor = Get-RegistrationActor
+$isElevated = Test-IsElevated
+
 $result = [ordered]@{
     generated_at = [DateTime]::UtcNow.ToString("o")
     checks = [ordered]@{
@@ -167,6 +204,10 @@ $result = [ordered]@{
         startup_task_probe = $null
         watchdog_task_probe = $null
         promotions_task_probe = $null
+        bootstrap_required = $false
+        failure_code = ""
+        registration_actor = $registrationActor
+        is_elevated = [bool]$isElevated
         actions_taken = @()
         warnings = @()
     }
@@ -243,6 +284,7 @@ try {
         $result.checks.watchdog_task_registered = $true
         $result.checks.promotions_task_registered = $true
     } else {
+        $registrationAccessDenied = $false
         try {
             $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 
@@ -311,8 +353,9 @@ try {
         } catch {
             $message = $_.Exception.Message
             if ($message -and $message -like "*Access is denied*") {
+                $registrationAccessDenied = $true
                 $result.details.actions_taken += "task_registration_skipped_access_denied"
-                $result.details.warnings += "task_registration_access_denied_existing_task_fallback_applied"
+                $result.details.failure_code = "TASK_REGISTRATION_ACCESS_DENIED"
             } else {
                 throw
             }
@@ -334,6 +377,24 @@ try {
         $result.checks.promotions_task_registered = [bool](
             $promotionsProbe.passes -or $promotionsProbe.degraded_pass
         )
+
+        if ($registrationAccessDenied) {
+            $missingTasks = @()
+            if (-not $startupProbe.exists) { $missingTasks += $StartupTaskName }
+            if (-not $watchdogProbe.exists) { $missingTasks += $WatchdogTaskName }
+            if (-not $promotionsProbe.exists) { $missingTasks += $PromotionsTaskName }
+
+            if ($missingTasks.Count -gt 0) {
+                $result.details.bootstrap_required = $true
+                $result.details.failure_code = "BOOTSTRAP_REQUIRED_TASKS_MISSING_ACCESS_DENIED"
+                $result.details.warnings += "task_registration_access_denied_tasks_missing_bootstrap_required"
+                $result.details.warnings += ("missing_tasks:" + ($missingTasks -join ","))
+            } else {
+                $result.details.bootstrap_required = $false
+                $result.details.failure_code = "TASK_REGISTRATION_ACCESS_DENIED_TASKS_PRESENT"
+                $result.details.warnings += "task_registration_access_denied_tasks_present"
+            }
+        }
     }
 
     $result.checks.recovery_tasks_registered = [bool](
@@ -349,9 +410,20 @@ try {
     } else {
         "failed"
     }
+
+    if ($result.status -ne "success" -and -not $result.details.failure_code) {
+        if (-not $result.checks.legacy_task_disabled) {
+            $result.details.failure_code = "LEGACY_TASK_DISABLE_FAILED"
+        } else {
+            $result.details.failure_code = "TASK_REGISTRATION_INCOMPLETE"
+        }
+    }
 }
 catch {
     $result.error = $_.Exception.Message
+    if (-not $result.details.failure_code) {
+        $result.details.failure_code = "UNHANDLED_EXCEPTION"
+    }
     $result.status = "failed"
 }
 
