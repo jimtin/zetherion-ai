@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -27,6 +29,12 @@ from zetherion_ai.memory.qdrant import QdrantMemory
 log = get_logger("zetherion_ai.documents.service")
 
 DOCUMENT_COLLECTION = "tenant_documents"
+_ARCHIVE_EXCLUDED_STATUSES = {"archiving", "archived", "purged"}
+_ARCHIVE_RETENTION_DAYS = 90
+_ARCHIVE_JOB_BATCH_SIZE = 100
+_ARCHIVE_POLL_INTERVAL_SECONDS = 15
+_ARCHIVE_RETRY_BASE_SECONDS = 30
+_ARCHIVE_RETRY_MAX_SECONDS = 3600
 
 
 @dataclass
@@ -372,7 +380,23 @@ class DocumentService:
             limit=max(1, min(int(top_k), 20)),
         )
 
-        if not matches:
+        active_matches: list[dict[str, Any]] = []
+        status_cache: dict[str, str] = {}
+        for match in matches:
+            doc_id = str(match.get("document_id", ""))
+            if not doc_id:
+                continue
+            if doc_id not in status_cache:
+                doc_row = await self._tenant_manager.get_document(tenant_id, doc_id)
+                status = ""
+                if isinstance(doc_row, Mapping):
+                    status = str(doc_row.get("status") or "").lower()
+                status_cache[doc_id] = status
+            if status_cache[doc_id] in _ARCHIVE_EXCLUDED_STATUSES:
+                continue
+            active_matches.append(match)
+
+        if not active_matches:
             return DocumentQueryResult(
                 answer="I could not find relevant document context for that query.",
                 citations=[],
@@ -383,7 +407,7 @@ class DocumentService:
         citations: list[dict[str, Any]] = []
         seen: set[tuple[str, str]] = set()
         context_lines: list[str] = []
-        for match in matches:
+        for match in active_matches:
             doc_id = str(match.get("document_id", ""))
             file_name = str(match.get("file_name", "document"))
             key = (doc_id, file_name)
@@ -429,6 +453,148 @@ class DocumentService:
             provider=provider_name,
             model=result.model,
         )
+
+    @property
+    def maintenance_interval_seconds(self) -> int:
+        """Background archive/purge loop interval."""
+        return _ARCHIVE_POLL_INTERVAL_SECONDS
+
+    async def run_archive_maintenance_once(self) -> dict[str, int]:
+        """Run one archive + purge maintenance tick."""
+        archive = await self.process_archive_jobs(limit=_ARCHIVE_JOB_BATCH_SIZE)
+        purge = await self.process_due_purges(limit=_ARCHIVE_JOB_BATCH_SIZE)
+        return {
+            "archive_claimed": archive["claimed"],
+            "archive_succeeded": archive["succeeded"],
+            "archive_failed": archive["failed"],
+            "purge_candidates": purge["candidates"],
+            "purge_succeeded": purge["succeeded"],
+            "purge_failed": purge["failed"],
+        }
+
+    async def run_archive_maintenance_loop(self, stop_event: asyncio.Event) -> None:
+        """Continuously process archive and purge work until stopped."""
+        while not stop_event.is_set():
+            try:
+                summary = await self.run_archive_maintenance_once()
+                log.debug("document_archive_maintenance_tick", **summary)
+            except Exception:
+                log.exception("document_archive_maintenance_tick_failed")
+
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=self.maintenance_interval_seconds)
+            except TimeoutError:
+                continue
+
+    async def process_archive_jobs(self, *, limit: int) -> dict[str, int]:
+        """Claim archive jobs, remove vectors, and transition documents to archived."""
+        await self.initialize()
+
+        batch_limit = max(1, min(int(limit), _ARCHIVE_JOB_BATCH_SIZE))
+        jobs = await self._tenant_manager.claim_document_archive_jobs(limit=batch_limit)
+        summary = {"claimed": len(jobs), "succeeded": 0, "failed": 0}
+
+        for job in jobs:
+            tenant_id = str(job.get("tenant_id") or "")
+            document_id = str(job.get("document_id") or "")
+            job_id = str(job.get("job_id") or "")
+            try:
+                await self._memory.delete_by_filters(
+                    DOCUMENT_COLLECTION,
+                    filters={"tenant_id": tenant_id, "document_id": document_id},
+                )
+
+                archived_at = datetime.now(UTC)
+                purge_after = archived_at + timedelta(days=_ARCHIVE_RETENTION_DAYS)
+                updated = await self._tenant_manager.mark_document_archived(
+                    tenant_id,
+                    document_id=document_id,
+                    archived_at=archived_at,
+                    purge_after=purge_after,
+                )
+                if updated is None:
+                    raise ValueError("Document not found during archive processing")
+
+                await self._tenant_manager.mark_document_archive_job_succeeded(
+                    tenant_id,
+                    job_id=job_id,
+                )
+                summary["succeeded"] += 1
+            except Exception as exc:
+                retry_count = int(job.get("retry_count") or 0) + 1
+                backoff_step = max(0, min(retry_count - 1, 6))
+                backoff_seconds = min(
+                    _ARCHIVE_RETRY_MAX_SECONDS,
+                    _ARCHIVE_RETRY_BASE_SECONDS * (2**backoff_step),
+                )
+                next_attempt_at = datetime.now(UTC) + timedelta(seconds=backoff_seconds)
+                try:
+                    await self._tenant_manager.mark_document_archive_job_failed(
+                        tenant_id,
+                        job_id=job_id,
+                        error_message=str(exc)[:1000],
+                        next_attempt_at=next_attempt_at,
+                    )
+                except Exception:
+                    log.exception(
+                        "document_archive_job_fail_mark_error",
+                        tenant_id=tenant_id,
+                        document_id=document_id,
+                        job_id=job_id,
+                    )
+                summary["failed"] += 1
+                log.warning(
+                    "document_archive_job_failed",
+                    tenant_id=tenant_id,
+                    document_id=document_id,
+                    job_id=job_id,
+                    error=str(exc),
+                    next_attempt_at=next_attempt_at.isoformat(),
+                )
+
+        return summary
+
+    async def process_due_purges(self, *, limit: int) -> dict[str, int]:
+        """Purge archived document bytes/vectors when retention has elapsed."""
+        await self.initialize()
+
+        batch_limit = max(1, min(int(limit), _ARCHIVE_JOB_BATCH_SIZE))
+        due = await self._tenant_manager.list_documents_due_for_purge(limit=batch_limit)
+        summary = {"candidates": len(due), "succeeded": 0, "failed": 0}
+
+        for row in due:
+            tenant_id = str(row.get("tenant_id") or "")
+            document_id = str(row.get("document_id") or "")
+            object_key = str(row.get("object_key") or "")
+            try:
+                if object_key:
+                    if self._blob_store is None:
+                        raise RuntimeError("Document object storage is not configured")
+                    await self._blob_store.delete_chunk(object_key)
+
+                await self._memory.delete_by_filters(
+                    DOCUMENT_COLLECTION,
+                    filters={"tenant_id": tenant_id, "document_id": document_id},
+                )
+
+                updated = await self._tenant_manager.mark_document_purged(
+                    tenant_id,
+                    document_id=document_id,
+                    purged_at=datetime.now(UTC),
+                )
+                if updated is None:
+                    raise ValueError("Document not found during purge processing")
+                summary["succeeded"] += 1
+            except Exception as exc:
+                summary["failed"] += 1
+                log.warning(
+                    "document_purge_failed",
+                    tenant_id=tenant_id,
+                    document_id=document_id,
+                    error=str(exc),
+                )
+
+        return summary
 
     async def get_document_payload(self, *, tenant_id: str, document_id: str) -> bytes:
         """Load raw bytes for a tenant document."""

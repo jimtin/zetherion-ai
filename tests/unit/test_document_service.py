@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
@@ -387,6 +389,72 @@ async def test_query_calls_inference_and_deduplicates_citations(
 
 
 @pytest.mark.asyncio
+async def test_query_excludes_archived_matches_before_inference(
+    document_service: tuple[DocumentService, AsyncMock, AsyncMock, AsyncMock, AsyncMock],
+) -> None:
+    service, tenant_manager, memory, inference, _ = document_service
+    memory.search_collection.return_value = [
+        {
+            "document_id": "doc-archived",
+            "file_name": "archived.pdf",
+            "chunk_index": 0,
+            "content": "do not use this content",
+        },
+        {
+            "document_id": "doc-active",
+            "file_name": "active.pdf",
+            "chunk_index": 1,
+            "content": "use this content",
+        },
+    ]
+    tenant_manager.get_document.side_effect = [
+        {"document_id": "doc-archived", "status": "archived"},
+        {"document_id": "doc-active", "status": "indexed"},
+    ]
+    inference.infer.return_value = SimpleNamespace(
+        content="Answer from active context",
+        provider=Provider.GROQ,
+        model="llama-3.3-70b-versatile",
+    )
+    settings = SimpleNamespace(
+        groq_model="llama-3.3-70b-versatile",
+        openai_model="gpt-5.2",
+        claude_model="claude-sonnet-4-6",
+        rag_allowed_providers="groq,openai,anthropic",
+        rag_allowed_models="llama-3.3-70b-versatile,gpt-5.2,claude-sonnet-4-6",
+    )
+    with patch("zetherion_ai.documents.service.get_settings", return_value=settings):
+        result = await service.query(tenant_id="tenant-1", query="Summarize")
+
+    assert result.citations == [{"document_id": "doc-active", "file_name": "active.pdf"}]
+    prompt = str(inference.infer.call_args.kwargs["prompt"])
+    assert "do not use this content" not in prompt
+    assert "use this content" in prompt
+
+
+@pytest.mark.asyncio
+async def test_query_returns_no_context_when_only_archived_matches_found(
+    document_service: tuple[DocumentService, AsyncMock, AsyncMock, AsyncMock, AsyncMock],
+) -> None:
+    service, tenant_manager, memory, inference, _ = document_service
+    memory.search_collection.return_value = [
+        {
+            "document_id": "doc-archived",
+            "file_name": "archived.pdf",
+            "chunk_index": 0,
+            "content": "do not use this content",
+        }
+    ]
+    tenant_manager.get_document.return_value = {"document_id": "doc-archived", "status": "archived"}
+
+    result = await service.query(tenant_id="tenant-1", query="Anything relevant?")
+
+    assert result.provider == "none"
+    assert result.model == "none"
+    inference.infer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_query_normalizes_claude_provider_name_to_anthropic(
     document_service: tuple[DocumentService, AsyncMock, AsyncMock, AsyncMock, AsyncMock],
 ) -> None:
@@ -494,3 +562,132 @@ def test_parse_json_and_checksum_helpers() -> None:
     assert DocumentService.parse_json(None) == {}
     checksum = DocumentService.checksum_sha256(b"hello")
     assert len(checksum) == 64
+
+
+@pytest.mark.asyncio
+async def test_archive_and_purge_maintenance_tick_happy_path(
+    document_service: tuple[DocumentService, AsyncMock, AsyncMock, AsyncMock, AsyncMock],
+) -> None:
+    service, tenant_manager, memory, _, blob_store = document_service
+    tenant_manager.claim_document_archive_jobs.return_value = [
+        {
+            "job_id": "job-1",
+            "tenant_id": "tenant-1",
+            "document_id": "doc-1",
+            "retry_count": 0,
+        }
+    ]
+    tenant_manager.mark_document_archived.return_value = {
+        "document_id": "doc-1",
+        "status": "archived",
+    }
+    tenant_manager.list_documents_due_for_purge.return_value = [
+        {
+            "tenant_id": "tenant-1",
+            "document_id": "doc-2",
+            "object_key": "documents/tenant-1/doc-2/report.pdf",
+        }
+    ]
+    tenant_manager.mark_document_purged.return_value = {"document_id": "doc-2", "status": "purged"}
+    blob_store.delete_chunk.return_value = True
+
+    summary = await service.run_archive_maintenance_once()
+
+    assert summary["archive_claimed"] == 1
+    assert summary["archive_succeeded"] == 1
+    assert summary["archive_failed"] == 0
+    assert summary["purge_candidates"] == 1
+    assert summary["purge_succeeded"] == 1
+    assert summary["purge_failed"] == 0
+    tenant_manager.mark_document_archive_job_succeeded.assert_awaited_once_with(
+        "tenant-1",
+        job_id="job-1",
+    )
+    tenant_manager.mark_document_archived.assert_awaited_once_with(
+        "tenant-1",
+        document_id="doc-1",
+        archived_at=ANY,
+        purge_after=ANY,
+    )
+    blob_store.delete_chunk.assert_awaited_once_with("documents/tenant-1/doc-2/report.pdf")
+    assert memory.delete_by_filters.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_process_archive_jobs_marks_retry_on_failure(
+    document_service: tuple[DocumentService, AsyncMock, AsyncMock, AsyncMock, AsyncMock],
+) -> None:
+    service, tenant_manager, memory, _, _ = document_service
+    tenant_manager.claim_document_archive_jobs.return_value = [
+        {
+            "job_id": "job-9",
+            "tenant_id": "tenant-1",
+            "document_id": "doc-9",
+            "retry_count": 2,
+        }
+    ]
+    memory.delete_by_filters.side_effect = RuntimeError("qdrant unavailable")
+
+    summary = await service.process_archive_jobs(limit=5)
+
+    assert summary == {"claimed": 1, "succeeded": 0, "failed": 1}
+    tenant_manager.mark_document_archive_job_failed.assert_awaited_once_with(
+        "tenant-1",
+        job_id="job-9",
+        error_message=ANY,
+        next_attempt_at=ANY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_archive_maintenance_loop_retries_after_tick_failure(
+    document_service: tuple[DocumentService, AsyncMock, AsyncMock, AsyncMock, AsyncMock],
+) -> None:
+    service, _, _, _, _ = document_service
+    stop_event = asyncio.Event()
+    tick_count = 0
+
+    async def _tick() -> dict[str, int]:
+        nonlocal tick_count
+        tick_count += 1
+        if tick_count == 1:
+            raise RuntimeError("transient failure")
+        stop_event.set()
+        return {
+            "archive_claimed": 0,
+            "archive_succeeded": 0,
+            "archive_failed": 0,
+            "purge_candidates": 0,
+            "purge_succeeded": 0,
+            "purge_failed": 0,
+        }
+
+    service.run_archive_maintenance_once = AsyncMock(side_effect=_tick)  # type: ignore[method-assign]
+
+    wait_calls = 0
+
+    async def _wait_for(awaitable: Any, timeout: float) -> Any:
+        nonlocal wait_calls
+        wait_calls += 1
+        if wait_calls == 1:
+            awaitable.close()
+            raise TimeoutError
+        return await awaitable
+
+    with patch("zetherion_ai.documents.service.asyncio.wait_for", side_effect=_wait_for):
+        await service.run_archive_maintenance_loop(stop_event)
+
+    assert tick_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_document_payload_requires_blob_store() -> None:
+    service = DocumentService(
+        tenant_manager=AsyncMock(),
+        memory=AsyncMock(),
+        inference_broker=AsyncMock(),
+        blob_store=None,
+    )
+
+    with pytest.raises(RuntimeError, match="object storage is not configured"):
+        await service.get_document_payload(tenant_id="tenant-1", document_id="doc-1")

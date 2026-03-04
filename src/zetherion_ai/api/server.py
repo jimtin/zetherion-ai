@@ -101,8 +101,29 @@ class PublicAPIServer:
         self._rate_limiter = RateLimiter()
         self._analytics_stop_event: asyncio.Event | None = None
         self._analytics_task: asyncio.Task[None] | None = None
+        self._document_maintenance_stop_event: asyncio.Event | None = None
+        self._document_maintenance_task: asyncio.Task[None] | None = None
 
         log.info("public_api_initialized", host=host, port=port)
+
+    async def _run_document_maintenance_loop(self, stop_event: asyncio.Event) -> None:
+        """Run periodic archive/purge maintenance for tenant documents."""
+        if self._document_service is None:
+            return
+
+        while not stop_event.is_set():
+            try:
+                await self._document_service.run_archive_maintenance_once()
+            except Exception:
+                log.exception("document_archive_maintenance_loop_failed")
+
+            try:
+                await asyncio.wait_for(
+                    stop_event.wait(),
+                    timeout=self._document_service.maintenance_interval_seconds,
+                )
+            except TimeoutError:
+                continue
 
     def create_app(self) -> web.Application:
         """Create and configure the aiohttp application."""
@@ -221,6 +242,12 @@ class PublicAPIServer:
                 analytics_runner.run_loop(self._analytics_stop_event)
             )
 
+        if self._document_service is not None:
+            self._document_maintenance_stop_event = asyncio.Event()
+            self._document_maintenance_task = asyncio.create_task(
+                self._run_document_maintenance_loop(self._document_maintenance_stop_event)
+            )
+
         log.info("public_api_started", host=self._host, port=self._port)
 
     async def stop(self) -> None:
@@ -233,6 +260,15 @@ class PublicAPIServer:
                 await self._analytics_task
             self._analytics_task = None
         self._analytics_stop_event = None
+
+        if self._document_maintenance_stop_event is not None:
+            self._document_maintenance_stop_event.set()
+        if self._document_maintenance_task is not None:
+            self._document_maintenance_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._document_maintenance_task
+            self._document_maintenance_task = None
+        self._document_maintenance_stop_event = None
 
         if self._runner:
             await self._runner.cleanup()

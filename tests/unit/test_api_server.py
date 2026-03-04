@@ -122,6 +122,31 @@ class TestPublicAPIServerLifecycle:
         site.start.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_start_and_stop_manage_document_maintenance_task(self) -> None:
+        runner = AsyncMock()
+        site = AsyncMock()
+        document_service = AsyncMock()
+        document_service.maintenance_interval_seconds = 1
+
+        with (
+            patch("zetherion_ai.api.server.web.AppRunner", return_value=runner),
+            patch("zetherion_ai.api.server.web.TCPSite", return_value=site),
+        ):
+            server = PublicAPIServer(
+                tenant_manager=MagicMock(),
+                jwt_secret="secret",
+                document_service=document_service,
+            )
+            await server.start()
+            await asyncio.sleep(0)
+            assert server._document_maintenance_task is not None
+            assert document_service.run_archive_maintenance_once.await_count >= 1
+            await server.stop()
+
+        assert server._document_maintenance_task is None
+        assert server._document_maintenance_stop_event is None
+
+    @pytest.mark.asyncio
     async def test_stop_cleans_runner_and_resets_state(self) -> None:
         runner = AsyncMock()
         server = PublicAPIServer(tenant_manager=MagicMock(), jwt_secret="secret")
