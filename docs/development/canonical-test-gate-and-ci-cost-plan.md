@@ -25,6 +25,41 @@ The canonical gate delegates to `scripts/pre-push-tests.sh` and enforces:
 3. fail-fast stage exits
 4. automatic test-environment teardown
 
+## Bounded Lane Protocol
+
+Long-running validation lanes can be executed through the bounded harness:
+
+```bash
+node scripts/testing/run-bounded.mjs --lane check
+```
+
+Quiet lanes can be wrapped with heartbeat logging:
+
+```bash
+node scripts/testing/run-with-heartbeat.mjs --heartbeat-seconds 30 -- python3 scripts/check_pipeline_contract.py
+```
+
+Stall/timeout diagnostics capture:
+
+```bash
+node scripts/testing/test-hang-diagnostics.mjs --output-dir artifacts/testing/hang-diagnostics/manual
+```
+
+Defaults:
+
+1. stall threshold: 45 seconds without process output
+2. stalled/timeout lanes are terminated and diagnostics are captured
+3. lane executions are appended to `docs/migration/test-execution-log.md`
+
+Lane order:
+
+1. `check`, `lint`, `nextjs-only-audit`, `nextjs:api-parity`, `nextjs:functionality-matrix`, `nextjs:functionality-check`
+2. `targeted-unit`
+3. `unit-full`
+4. `api-integration-coverage`
+5. `e2e-mocked`
+6. `e2e-fullstack-critical`
+
 ## Compatibility Wrappers
 
 These scripts are retained for compatibility only and delegate to canonical full behavior:

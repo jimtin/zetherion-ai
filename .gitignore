@@ -87,6 +87,7 @@ site/
 # Local CI debug artifacts
 tmp/ci-debug/
 scripts/collect-ci-failure-logs.sh
+artifacts/testing/hang-diagnostics/
 
 # CGS Next.js build artifacts
 cgs/node_modules/
