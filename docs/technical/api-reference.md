@@ -242,6 +242,21 @@ Backward-compatible alias for the Google provider callback
 
 ---
 
+## Bridge Ingest
+
+### POST /bridge/v1/tenants/{tenant_id}/messaging/ingest
+
+Bridge-only tenant messaging ingest endpoint.
+
+- Requires `X-API-Secret`.
+- Requires signed bridge headers:
+  - `X-Bridge-Timestamp`
+  - `X-Bridge-Nonce`
+  - `X-Bridge-Signature`
+- Rejects replayed nonce values.
+
+---
+
 ## User Management
 
 ### GET /users
