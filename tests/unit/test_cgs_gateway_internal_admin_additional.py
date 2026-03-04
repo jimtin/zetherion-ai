@@ -8,6 +8,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
+import zetherion_ai.cgs_gateway.routes.internal_admin as internal_admin_routes
 from zetherion_ai.cgs_gateway.models import AuthPrincipal
 from zetherion_ai.cgs_gateway.routes._utils import fingerprint_payload
 from zetherion_ai.cgs_gateway.routes.internal_admin import (
@@ -16,6 +17,11 @@ from zetherion_ai.cgs_gateway.routes.internal_admin import (
     register_internal_admin_routes,
 )
 from zetherion_ai.cgs_gateway.server import create_error_middleware
+from zetherion_ai.security.trust_policy import (
+    TrustActionClass,
+    TrustDecisionOutcome,
+    TrustPolicyDecision,
+)
 
 
 def _admin_app(
@@ -52,6 +58,18 @@ def _active_mapping() -> dict[str, object]:
         "is_active": True,
         "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
     }
+
+
+def _denied_policy(action: str) -> TrustPolicyDecision:
+    return TrustPolicyDecision(
+        action=action,
+        action_class=TrustActionClass.CRITICAL,
+        outcome=TrustDecisionOutcome.DENY,
+        status=403,
+        code="AI_TRUST_POLICY_DENIED",
+        message="Blocked by policy",
+        details={"action": action},
+    )
 
 
 class _MappingLikeChange:
@@ -258,6 +276,53 @@ async def test_internal_admin_submit_change_blocks_denied_trust_policy_actions()
         assert body["error"]["code"] == "AI_TRUST_POLICY_DENIED"
 
     storage.create_admin_change.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("path", "json_body", "action"),
+    [
+        ("/service/ai/v1/internal/admin/tenants/tenant-a/changes", None, "admin.change.list"),
+        (
+            "/service/ai/v1/internal/admin/tenants/tenant-a/changes/chg-1/approve",
+            {"reason": "ship"},
+            "admin.change.approve",
+        ),
+        (
+            "/service/ai/v1/internal/admin/tenants/tenant-a/changes/chg-1/reject",
+            {"reason": "stop"},
+            "admin.change.reject",
+        ),
+    ],
+)
+async def test_internal_admin_change_workflow_policy_denials(
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+    json_body: dict[str, str] | None,
+    action: str,
+) -> None:
+    app, storage, _ = _admin_app(
+        scopes=["cgs:internal", "cgs:zetherion-admin"],
+        claims={"step_up": True, "allowed_tenants": ["tenant-a"]},
+    )
+
+    monkeypatch.setattr(
+        internal_admin_routes._TRUST_POLICY_EVALUATOR,
+        "evaluate",
+        lambda tenant_id, action, context: _denied_policy(action),
+    )
+
+    async with TestClient(TestServer(app)) as client:
+        if json_body is None:
+            resp = await client.get(path)
+        else:
+            resp = await client.post(path, json=json_body)
+        assert resp.status == 403
+        body = await resp.json()
+        assert body["error"]["code"] == "AI_TRUST_POLICY_DENIED"
+
+    storage.list_admin_changes.assert_not_called()
+    storage.get_admin_change.assert_not_called()
 
 
 @pytest.mark.asyncio
