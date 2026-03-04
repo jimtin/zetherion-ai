@@ -1452,3 +1452,549 @@ async def test_email_sync_and_listing_paths_cover_success_failure_and_reindex() 
         limit=5,
     )
     assert events[0]["event_id"] == "evt-1"
+
+
+@pytest.mark.asyncio
+async def test_messaging_provider_and_chat_policy_paths() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager.set_setting = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager._fetch = AsyncMock(return_value=[{"chat_id": "chat-1"}])  # type: ignore[method-assign]
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            None,  # get_messaging_provider_config(before)
+            {
+                "tenant_id": "11111111-1111-1111-1111-111111111111",
+                "provider": "whatsapp",
+                "enabled": True,
+                "bridge_mode": "local_sidecar",
+                "account_ref": "acct-1",
+                "session_ref": "sess-1",
+                "metadata": {"label": "phone-main"},
+                "created_by": "operator-1",
+                "updated_by": "operator-1",
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
+            },
+            None,  # get_messaging_chat_policy(before)
+            {
+                "tenant_id": "11111111-1111-1111-1111-111111111111",
+                "provider": "whatsapp",
+                "chat_id": "chat-1",
+                "read_enabled": True,
+                "send_enabled": True,
+                "retention_days": 14,
+                "metadata": {"label": "Family"},
+                "created_by": "operator-1",
+                "updated_by": "operator-1",
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
+            },
+        ]
+    )
+
+    provider = await manager.put_messaging_provider_config(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        provider="whatsapp",
+        enabled=True,
+        bridge_mode="local_sidecar",
+        account_ref="acct-1",
+        session_ref="sess-1",
+        metadata={"label": "phone-main"},
+        actor=_actor(),
+    )
+    assert provider["provider"] == "whatsapp"
+
+    policy = await manager.put_messaging_chat_policy(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        provider="whatsapp",
+        chat_id="chat-1",
+        read_enabled=True,
+        send_enabled=True,
+        retention_days=14,
+        metadata={"label": "Family"},
+        actor=_actor(),
+    )
+    assert policy["chat_id"] == "chat-1"
+    manager.set_setting.assert_awaited_once()
+    kwargs = manager.set_setting.await_args.kwargs
+    assert kwargs["namespace"] == "security"
+    assert kwargs["key"] == "messaging_allowlisted_chats"
+    assert kwargs["value"] == ["chat-1"]
+
+
+@pytest.mark.asyncio
+async def test_messaging_ingest_list_and_ttl_cleanup_paths() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            {
+                "tenant_id": "11111111-1111-1111-1111-111111111111",
+                "provider": "whatsapp",
+                "chat_id": "chat-1",
+                "read_enabled": True,
+                "send_enabled": True,
+                "retention_days": 14,
+                "metadata": {},
+                "created_by": "operator-1",
+                "updated_by": "operator-1",
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
+            },
+            {
+                "message_id": "99999999-9999-9999-9999-999999999999",
+                "tenant_id": "11111111-1111-1111-1111-111111111111",
+                "provider": "whatsapp",
+                "chat_id": "chat-1",
+                "direction": "inbound",
+                "sender_id": "sender-1",
+                "sender_name": "Sender",
+                "body_enc": "hello",
+                "metadata": {"source": "bridge"},
+                "action_id": None,
+                "event_type": "whatsapp.message.inbound",
+                "observed_at": datetime.now(UTC),
+                "expires_at": datetime.now(UTC) + timedelta(days=14),
+                "created_at": datetime.now(UTC),
+            },
+        ]
+    )
+    manager._fetch = AsyncMock(  # type: ignore[method-assign]
+        return_value=[
+            {
+                "message_id": "99999999-9999-9999-9999-999999999999",
+                "tenant_id": "11111111-1111-1111-1111-111111111111",
+                "provider": "whatsapp",
+                "chat_id": "chat-1",
+                "direction": "inbound",
+                "sender_id": "sender-1",
+                "sender_name": "Sender",
+                "body_enc": "hello",
+                "metadata": {"source": "bridge"},
+                "action_id": None,
+                "event_type": "whatsapp.message.inbound",
+                "observed_at": datetime.now(UTC),
+                "expires_at": datetime.now(UTC) + timedelta(days=14),
+                "created_at": datetime.now(UTC),
+            }
+        ]
+    )
+    manager._execute = AsyncMock(return_value="DELETE 2")  # type: ignore[method-assign]
+
+    stored = await manager.ingest_messaging_message(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        provider="whatsapp",
+        chat_id="chat-1",
+        direction="inbound",
+        event_type="whatsapp.message.inbound",
+        body_text="hello",
+        metadata={"source": "bridge"},
+        sender_id="sender-1",
+        sender_name="Sender",
+    )
+    assert stored["body_text"] == "hello"
+
+    listed = await manager.list_messaging_messages(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        provider="whatsapp",
+        chat_id="chat-1",
+        limit=10,
+    )
+    assert listed[0]["body_text"] == "hello"
+
+    purged = await manager.purge_expired_messaging_messages(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        limit=1000,
+    )
+    assert purged == 2
+
+
+@pytest.mark.asyncio
+async def test_queue_messaging_send_paths() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "action_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+            "provider": "whatsapp",
+            "chat_id": "chat-1",
+            "action_type": "send",
+            "payload_json": {"text": "hello"},
+            "status": "queued",
+            "created_by": "operator-1",
+            "request_id": "req-1",
+            "change_ticket_id": None,
+            "error_code": None,
+            "error_detail": None,
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        }
+    )
+    manager.is_messaging_chat_allowed = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    manager.ingest_messaging_message = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "message_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "direction": "outbound",
+            "body_text": "hello",
+        }
+    )
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    queued = await manager.queue_messaging_send(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        provider="whatsapp",
+        chat_id="chat-1",
+        body_text="hello",
+        actor=_actor(),
+        metadata={"reason": "test"},
+    )
+    assert queued["action"]["status"] == "queued"
+    assert queued["message"]["direction"] == "outbound"
+
+    with pytest.raises(ValueError, match="non-empty message body"):
+        await manager.queue_messaging_send(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="chat-1",
+            body_text="",
+            actor=_actor(),
+        )
+
+    manager.is_messaging_chat_allowed = AsyncMock(return_value=False)  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="not enabled"):
+        await manager.queue_messaging_send(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="chat-1",
+            body_text="hello again",
+            actor=_actor(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_messaging_lookup_and_filter_helper_paths() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            {
+                "tenant_id": "11111111-1111-1111-1111-111111111111",
+                "provider": "whatsapp",
+                "enabled": True,
+                "bridge_mode": "local_sidecar",
+                "account_ref": "acct-1",
+                "session_ref": "sess-1",
+                "metadata": {},
+                "created_by": "operator-1",
+                "updated_by": "operator-1",
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
+            },
+            {
+                "tenant_id": "11111111-1111-1111-1111-111111111111",
+                "provider": "whatsapp",
+                "chat_id": "chat-1",
+                "read_enabled": True,
+                "send_enabled": False,
+                "retention_days": 14,
+                "metadata": {},
+                "created_by": "operator-1",
+                "updated_by": "operator-1",
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
+            },
+            {"read_enabled": True, "send_enabled": False},
+            {"read_enabled": False, "send_enabled": True},
+            None,
+        ]
+    )
+    manager._fetch = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            [
+                {
+                    "tenant_id": "11111111-1111-1111-1111-111111111111",
+                    "provider": "whatsapp",
+                    "chat_id": "chat-1",
+                    "read_enabled": True,
+                    "send_enabled": False,
+                    "retention_days": 14,
+                    "metadata": {},
+                    "created_by": "operator-1",
+                    "updated_by": "operator-1",
+                    "created_at": datetime.now(UTC),
+                    "updated_at": datetime.now(UTC),
+                    "message_count": 1,
+                    "last_message_at": datetime.now(UTC),
+                }
+            ],
+            [
+                {
+                    "message_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+                    "tenant_id": "11111111-1111-1111-1111-111111111111",
+                    "provider": "whatsapp",
+                    "chat_id": "chat-1",
+                    "direction": "inbound",
+                    "sender_id": "sender-1",
+                    "sender_name": "Sender",
+                    "body_enc": "payload",
+                    "metadata": {"source": "bridge"},
+                    "action_id": None,
+                    "event_type": "whatsapp.message.inbound",
+                    "observed_at": datetime.now(UTC),
+                    "expires_at": datetime.now(UTC) + timedelta(days=14),
+                    "created_at": datetime.now(UTC),
+                }
+            ],
+        ]
+    )
+    manager._execute = AsyncMock(return_value="DELETE 5")  # type: ignore[method-assign]
+
+    provider_cfg = await manager.get_messaging_provider_config(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        provider="whatsapp",
+    )
+    assert provider_cfg is not None
+    assert provider_cfg["provider"] == "whatsapp"
+
+    policy = await manager.get_messaging_chat_policy(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        provider="whatsapp",
+        chat_id="chat-1",
+    )
+    assert policy is not None
+    assert policy["chat_id"] == "chat-1"
+
+    assert (
+        await manager.is_messaging_chat_allowed(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="chat-1",
+            action="read",
+        )
+        is True
+    )
+    assert (
+        await manager.is_messaging_chat_allowed(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="chat-1",
+            action="send",
+        )
+        is True
+    )
+    assert (
+        await manager.is_messaging_chat_allowed(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="chat-1",
+            action="read",
+        )
+        is False
+    )
+
+    chats = await manager.list_messaging_chats(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        provider="whatsapp",
+        include_inactive=False,
+        limit=25,
+    )
+    assert chats[0]["message_count"] == 1
+
+    messages = await manager.list_messaging_messages(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        provider="whatsapp",
+        chat_id="chat-1",
+        direction="inbound",
+        limit=10,
+    )
+    assert messages[0]["body_text"] == "payload"
+
+    purged_global = await manager.purge_expired_messaging_messages(limit=100)
+    assert purged_global == 5
+
+    with pytest.raises(ValueError, match="Unsupported messaging action"):
+        await manager.is_messaging_chat_allowed(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="chat-1",
+            action="unknown",
+        )
+
+    with pytest.raises(ValueError, match="Invalid direction"):
+        await manager.list_messaging_messages(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="chat-1",
+            direction="sideways",
+        )
+
+
+@pytest.mark.asyncio
+async def test_messaging_validation_error_paths() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="Unsupported messaging provider"):
+        await manager.get_messaging_provider_config(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="telegram",
+        )
+
+    with pytest.raises(ValueError, match="Missing chat_id"):
+        await manager.get_messaging_chat_policy(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="",
+        )
+
+    with pytest.raises(ValueError, match="Invalid messaging direction"):
+        await manager.ingest_messaging_message(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="chat-1",
+            direction="bad-direction",
+            event_type="whatsapp.message.inbound",
+            body_text="hi",
+        )
+
+    with pytest.raises(ValueError, match="Missing event_type"):
+        await manager.ingest_messaging_message(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="chat-1",
+            direction="inbound",
+            event_type="",
+            body_text="hi",
+        )
+
+    manager.get_messaging_chat_policy = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="Invalid message_id"):
+        await manager.ingest_messaging_message(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="chat-1",
+            direction="inbound",
+            event_type="whatsapp.message.inbound",
+            body_text="hi",
+            message_id="not-a-uuid",
+        )
+
+    with pytest.raises(ValueError, match="Invalid action_id"):
+        await manager.ingest_messaging_message(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="chat-1",
+            direction="inbound",
+            event_type="whatsapp.message.inbound",
+            body_text="hi",
+            action_id="not-a-uuid",
+        )
+
+
+@pytest.mark.asyncio
+async def test_messaging_additional_runtime_and_filter_branches() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="bridge_mode"):
+        await manager.put_messaging_provider_config(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            enabled=True,
+            bridge_mode="invalid",
+            actor=_actor(),
+        )
+
+    manager._fetchrow = AsyncMock(side_effect=[None, None])  # type: ignore[method-assign]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="provider config"):
+        await manager.put_messaging_provider_config(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            enabled=True,
+            actor=_actor(),
+        )
+
+    manager._fetchrow = AsyncMock(side_effect=[None, None])  # type: ignore[method-assign]
+    manager._fetch = AsyncMock(return_value=[])  # type: ignore[method-assign]
+    manager.set_setting = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="chat policy"):
+        await manager.put_messaging_chat_policy(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="chat-1",
+            read_enabled=True,
+            send_enabled=True,
+            actor=_actor(),
+        )
+
+    manager._fetch = AsyncMock(return_value=[{"chat_id": "chat-1"}])  # type: ignore[method-assign]
+    manager._settings_cache[
+        ("11111111-1111-1111-1111-111111111111", "security", "messaging_allowlisted_chats")
+    ] = "chat-1"
+    manager.set_setting = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    await manager._sync_messaging_allowlist_setting(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        provider="whatsapp",
+        actor=_actor(),
+    )
+    manager.set_setting.assert_not_awaited()
+
+    manager._fetch = AsyncMock(return_value=[])  # type: ignore[method-assign]
+    chats = await manager.list_messaging_chats(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        provider=None,
+        include_inactive=True,
+        limit=10,
+    )
+    assert chats == []
+
+    assert (
+        await manager.is_messaging_chat_allowed(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="",
+            action="read",
+        )
+        is False
+    )
+
+    with pytest.raises(ValueError, match="Missing chat_id"):
+        await manager.ingest_messaging_message(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="",
+            direction="inbound",
+            event_type="whatsapp.message.inbound",
+            body_text="hello",
+        )
+
+    manager.get_messaging_chat_policy = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="Failed to store tenant messaging message"):
+        await manager.ingest_messaging_message(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="chat-1",
+            direction="inbound",
+            event_type="whatsapp.message.inbound",
+            body_text="",
+            metadata={"source": "bridge"},
+        )
+
+    with pytest.raises(ValueError, match="Invalid chat_id"):
+        await manager.list_messaging_messages(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+            chat_id="   ",
+        )

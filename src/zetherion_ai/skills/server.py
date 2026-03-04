@@ -10,6 +10,7 @@ This server runs in its own Docker container and provides:
 
 import asyncio
 import base64
+import contextlib
 import hashlib
 import hmac
 import json
@@ -292,6 +293,12 @@ class SkillsServer:
         self._bridge_max_skew = timedelta(minutes=5)
         self._bridge_signing_secret = os.environ.get("WHATSAPP_BRIDGE_SIGNING_SECRET", "").strip()
         self._trust_policy_evaluator = TrustPolicyEvaluator()
+        try:
+            interval_raw = int(os.environ.get("MESSAGING_TTL_CLEANUP_INTERVAL_SECONDS", "300"))
+        except ValueError:
+            interval_raw = 300
+        self._messaging_ttl_cleanup_interval_seconds = max(30, interval_raw)
+        self._messaging_ttl_cleanup_task: asyncio.Task[Any] | None = None
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
 
@@ -349,9 +356,32 @@ class SkillsServer:
         raise ValueError(f"Invalid boolean for '{field_name}'")
 
     @staticmethod
+    def _is_bridge_only_tenant_path(path: str) -> bool:
+        return path.startswith("/admin/tenants/") and path.endswith("/messaging/ingest")
+
+    @staticmethod
     def _is_tenant_admin_path(path: str) -> bool:
         """Return True for tenant-admin endpoints requiring actor envelope."""
-        return path.startswith("/admin/tenants/")
+        return path.startswith("/admin/tenants/") and not SkillsServer._is_bridge_only_tenant_path(
+            path
+        )
+
+    async def _messaging_ttl_cleanup_loop(self) -> None:
+        while True:
+            await asyncio.sleep(self._messaging_ttl_cleanup_interval_seconds)
+            if self._tenant_admin_manager is None:
+                continue
+            try:
+                purged = await self._tenant_admin_manager.purge_expired_messaging_messages(
+                    limit=2000,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("tenant_messaging_ttl_cleanup_failed")
+                continue
+            if purged > 0:
+                log.info("tenant_messaging_ttl_cleanup", purged=purged)
 
     def _prune_admin_nonce_cache(self, now: datetime) -> None:
         expired = [nonce for nonce, expiry in self._admin_nonce_cache.items() if expiry <= now]
@@ -1411,23 +1441,233 @@ class SkillsServer:
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
 
-    async def handle_bridge_messaging_ingest(self, request: web.Request) -> web.Response:
-        """POST bridge ingest endpoint with HMAC auth + nonce replay protection."""
+    async def handle_tenant_get_messaging_provider_config(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
         tenant_id = request.match_info["tenant_id"]
+        provider = request.match_info.get("provider", "whatsapp")
+        try:
+            config = await self._tenant_admin_manager.get_messaging_provider_config(
+                tenant_id=tenant_id,
+                provider=provider,
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        if config is None:
+            return web.json_response({"error": "Messaging provider config not found"}, status=404)
+        return web.json_response({"provider_config": _serialise_record(config)})
+
+    async def handle_tenant_put_messaging_provider_config(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        provider = request.match_info.get("provider", "whatsapp")
+        try:
+            actor = self._admin_actor(request)
+            data = await self._read_json_object(request)
+            metadata = data.get("metadata")
+            if metadata is not None and not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object when provided")
+            config = await self._tenant_admin_manager.put_messaging_provider_config(
+                tenant_id=tenant_id,
+                provider=provider,
+                enabled=self._parse_bool(data.get("enabled"), "enabled", default=True),
+                bridge_mode=str(data.get("bridge_mode") or "local_sidecar"),
+                account_ref=str(data.get("account_ref") or "").strip() or None,
+                session_ref=str(data.get("session_ref") or "").strip() or None,
+                metadata=metadata,
+                actor=actor,
+            )
+            return web.json_response({"ok": True, "provider_config": _serialise_record(config)})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_put_messaging_chat_policy(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        chat_id = request.match_info["chat_id"]
+        try:
+            actor = self._admin_actor(request)
+            data = await self._read_json_object(request)
+            metadata = data.get("metadata")
+            if metadata is not None and not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object when provided")
+            policy = await self._tenant_admin_manager.put_messaging_chat_policy(
+                tenant_id=tenant_id,
+                provider=str(data.get("provider") or "whatsapp"),
+                chat_id=chat_id,
+                read_enabled=self._parse_bool(
+                    data.get("read_enabled"),
+                    "read_enabled",
+                    default=False,
+                ),
+                send_enabled=self._parse_bool(
+                    data.get("send_enabled"),
+                    "send_enabled",
+                    default=False,
+                ),
+                retention_days=(
+                    self._parse_int(data.get("retention_days"), "retention_days")
+                    if data.get("retention_days") is not None
+                    else None
+                ),
+                metadata=metadata,
+                actor=actor,
+            )
+            return web.json_response({"ok": True, "chat_policy": _serialise_record(policy)})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_get_messaging_chat_policy(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        chat_id = request.match_info["chat_id"]
+        provider = request.query.get("provider", "whatsapp")
+        try:
+            policy = await self._tenant_admin_manager.get_messaging_chat_policy(
+                tenant_id=tenant_id,
+                provider=provider,
+                chat_id=chat_id,
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        if policy is None:
+            return web.json_response({"error": "Messaging chat policy not found"}, status=404)
+        return web.json_response({"chat_policy": _serialise_record(policy)})
+
+    async def handle_tenant_list_messaging_chats(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            limit = self._parse_int(request.query.get("limit", "200"), "limit")
+            include_inactive = self._parse_bool(
+                request.query.get("include_inactive"),
+                "include_inactive",
+                default=True,
+            )
+            rows = await self._tenant_admin_manager.list_messaging_chats(
+                tenant_id=tenant_id,
+                provider=request.query.get("provider", "whatsapp"),
+                include_inactive=include_inactive,
+                limit=limit,
+            )
+            return web.json_response({"chats": [_serialise_record(row) for row in rows]})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_list_messaging_messages(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        chat_id = str(request.query.get("chat_id") or "").strip()
+        if not chat_id:
+            return web.json_response({"error": "Missing chat_id query parameter"}, status=400)
         decision = self._trust_policy_evaluator.evaluate(
             tenant_id=tenant_id,
-            action="messaging.ingest",
-            context={"method": "POST", "subpath": "/messaging/ingest"},
+            action="messaging.read",
+            context={"method": "GET", "subpath": "/messaging/messages", "chat_id": chat_id},
         )
         if not decision.allowed:
             return web.json_response(
-                {
-                    "error": decision.message,
-                    "code": decision.code,
-                    "details": decision.details,
-                },
+                {"error": decision.message, "code": decision.code, "details": decision.details},
                 status=decision.status,
             )
+        try:
+            await self._tenant_admin_manager.purge_expired_messaging_messages(
+                tenant_id=tenant_id,
+                limit=1000,
+            )
+            limit = self._parse_int(request.query.get("limit", "200"), "limit")
+            rows = await self._tenant_admin_manager.list_messaging_messages(
+                tenant_id=tenant_id,
+                provider=request.query.get("provider", "whatsapp"),
+                chat_id=chat_id,
+                direction=request.query.get("direction"),
+                limit=limit,
+                include_expired=False,
+            )
+            return web.json_response({"messages": [_serialise_record(row) for row in rows]})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_send_messaging_message(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        chat_id = request.match_info["chat_id"]
+        try:
+            actor = self._admin_actor(request)
+            data = await self._read_json_object(request)
+            provider = str(data.get("provider") or "whatsapp")
+            decision = self._trust_policy_evaluator.evaluate(
+                tenant_id=tenant_id,
+                action="messaging.send",
+                context={
+                    "method": "POST",
+                    "subpath": f"/messaging/messages/{chat_id}/send",
+                    "chat_id": chat_id,
+                    "explicitly_elevated": self._parse_bool(
+                        data.get("explicitly_elevated"),
+                        "explicitly_elevated",
+                        default=False,
+                    ),
+                },
+            )
+            if decision.approval_required:
+                return web.json_response(
+                    {
+                        "error": decision.message,
+                        "code": decision.code,
+                        "details": decision.details,
+                        "requires_two_person": decision.requires_two_person,
+                    },
+                    status=decision.status,
+                )
+            if not decision.allowed:
+                return web.json_response(
+                    {
+                        "error": decision.message,
+                        "code": decision.code,
+                        "details": decision.details,
+                        "requires_two_person": decision.requires_two_person,
+                    },
+                    status=decision.status,
+                )
+            metadata = data.get("metadata")
+            if metadata is not None and not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object when provided")
+            queued = await self._tenant_admin_manager.queue_messaging_send(
+                tenant_id=tenant_id,
+                provider=provider,
+                chat_id=chat_id,
+                body_text=str(data.get("text") or "").strip(),
+                metadata=metadata,
+                actor=actor,
+            )
+            return web.json_response(
+                {
+                    "ok": True,
+                    "queued_action": _serialise_record(queued["action"]),
+                    "message": _serialise_record(queued["message"]),
+                },
+                status=202,
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def _handle_signed_bridge_messaging_ingest(self, request: web.Request) -> web.Response:
+        tenant_id = request.match_info["tenant_id"]
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
 
         try:
             raw_body = await request.text()
@@ -1453,6 +1693,89 @@ class SkillsServer:
         chat_id = str(payload.get("chat_id") or "").strip()
         if not event_type:
             return web.json_response({"error": "Missing event_type"}, status=400)
+        if not chat_id:
+            return web.json_response({"error": "Missing chat_id"}, status=400)
+
+        decision = self._trust_policy_evaluator.evaluate(
+            tenant_id=tenant_id,
+            action="messaging.ingest",
+            context={
+                "method": "POST",
+                "subpath": "/messaging/ingest",
+                "chat_id": chat_id,
+            },
+        )
+        if not decision.allowed:
+            return web.json_response(
+                {
+                    "error": decision.message,
+                    "code": decision.code,
+                    "details": decision.details,
+                },
+                status=decision.status,
+            )
+
+        provider = str(payload.get("provider") or "whatsapp")
+        try:
+            allowlisted = await self._tenant_admin_manager.is_messaging_chat_allowed(
+                tenant_id=tenant_id,
+                provider=provider,
+                chat_id=chat_id,
+                action="read",
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        if not allowlisted:
+            return web.json_response(
+                {
+                    "error": "Chat is not allowlisted for messaging ingest",
+                    "code": "AI_MESSAGING_CHAT_NOT_ALLOWLISTED",
+                    "details": {"chat_id": chat_id, "provider": provider},
+                },
+                status=403,
+            )
+
+        try:
+            metadata = payload.get("metadata")
+            if metadata is not None and not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object when provided")
+            observed_at: datetime | None = None
+            observed_raw = payload.get("observed_at")
+            if isinstance(observed_raw, str) and observed_raw.strip():
+                observed_at = datetime.fromisoformat(observed_raw.replace("Z", "+00:00"))
+                if observed_at.tzinfo is None:
+                    observed_at = observed_at.replace(tzinfo=UTC)
+            await self._tenant_admin_manager.purge_expired_messaging_messages(
+                tenant_id=tenant_id,
+                limit=1000,
+            )
+            message = await self._tenant_admin_manager.ingest_messaging_message(
+                tenant_id=tenant_id,
+                provider=provider,
+                chat_id=chat_id,
+                direction=str(payload.get("direction") or "inbound"),
+                event_type=event_type,
+                body_text=str(
+                    payload.get("body_text")
+                    or payload.get("text")
+                    or payload.get("body")
+                    or ""
+                ),
+                metadata=metadata,
+                sender_id=str(payload.get("sender_id") or "").strip() or None,
+                sender_name=str(payload.get("sender_name") or "").strip() or None,
+                message_id=str(payload.get("message_id") or "").strip() or None,
+                observed_at=observed_at,
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception(
+                "tenant_messaging_ingest_store_failed",
+                tenant_id=tenant_id,
+                chat_id=chat_id,
+            )
+            return web.json_response({"error": "Failed to store messaging event"}, status=502)
 
         return web.json_response(
             {
@@ -1461,10 +1784,19 @@ class SkillsServer:
                 "tenant_id": tenant_id,
                 "event_type": event_type,
                 "chat_id": chat_id,
+                "message_id": message["message_id"],
                 "received_at": datetime.now(UTC).isoformat(),
             },
             status=202,
         )
+
+    async def handle_bridge_messaging_ingest(self, request: web.Request) -> web.Response:
+        """POST bridge ingest endpoint with HMAC auth + nonce replay protection."""
+        return await self._handle_signed_bridge_messaging_ingest(request)
+
+    async def handle_tenant_messaging_ingest(self, request: web.Request) -> web.Response:
+        """Bridge-only alias under tenant-admin route family."""
+        return await self._handle_signed_bridge_messaging_ingest(request)
 
     # ------------------------------------------------------------------
     # Application factory
@@ -1616,6 +1948,38 @@ class SkillsServer:
             tenant_prefix + "/email/accounts/{account_id}/calendar-primary",
             self.handle_tenant_set_email_primary_calendar,
         )
+        app.router.add_get(
+            tenant_prefix + "/messaging/providers/{provider}/config",
+            self.handle_tenant_get_messaging_provider_config,
+        )
+        app.router.add_put(
+            tenant_prefix + "/messaging/providers/{provider}/config",
+            self.handle_tenant_put_messaging_provider_config,
+        )
+        app.router.add_put(
+            tenant_prefix + "/messaging/chats/{chat_id}/policy",
+            self.handle_tenant_put_messaging_chat_policy,
+        )
+        app.router.add_get(
+            tenant_prefix + "/messaging/chats/{chat_id}/policy",
+            self.handle_tenant_get_messaging_chat_policy,
+        )
+        app.router.add_get(
+            tenant_prefix + "/messaging/chats",
+            self.handle_tenant_list_messaging_chats,
+        )
+        app.router.add_get(
+            tenant_prefix + "/messaging/messages",
+            self.handle_tenant_list_messaging_messages,
+        )
+        app.router.add_post(
+            tenant_prefix + "/messaging/messages/{chat_id}/send",
+            self.handle_tenant_send_messaging_message,
+        )
+        app.router.add_post(
+            tenant_prefix + "/messaging/ingest",
+            self.handle_tenant_messaging_ingest,
+        )
 
         self._app = app
         return app
@@ -1633,10 +1997,21 @@ class SkillsServer:
         site = web.TCPSite(self._runner, self._host, self._port)
         await site.start()
 
+        if self._tenant_admin_manager is not None and self._messaging_ttl_cleanup_task is None:
+            self._messaging_ttl_cleanup_task = asyncio.create_task(
+                self._messaging_ttl_cleanup_loop(),
+                name="tenant-messaging-ttl-cleanup",
+            )
+
         log.info("skills_server_started", host=self._host, port=self._port)
 
     async def stop(self) -> None:
         """Stop the server."""
+        if self._messaging_ttl_cleanup_task is not None:
+            self._messaging_ttl_cleanup_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._messaging_ttl_cleanup_task
+            self._messaging_ttl_cleanup_task = None
         if self._runner:
             await self._runner.cleanup()
             self._runner = None

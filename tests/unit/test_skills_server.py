@@ -962,6 +962,88 @@ class TestTenantAdminEndpoints:
         mgr.set_email_primary_calendar = AsyncMock(
             return_value={"account_id": "acc-1", "primary_calendar_id": "primary"}
         )
+        mgr.get_secret_cached = MagicMock(return_value="bridge-signing-secret")
+        mgr.get_messaging_provider_config = AsyncMock(
+            return_value={
+                "provider": "whatsapp",
+                "enabled": True,
+                "bridge_mode": "local_sidecar",
+                "account_ref": "acct-1",
+                "session_ref": "sess-1",
+                "metadata": {},
+            }
+        )
+        mgr.put_messaging_provider_config = AsyncMock(
+            return_value={
+                "provider": "whatsapp",
+                "enabled": True,
+                "bridge_mode": "local_sidecar",
+                "account_ref": "acct-1",
+                "session_ref": "sess-1",
+                "metadata": {"label": "phone-main"},
+            }
+        )
+        mgr.put_messaging_chat_policy = AsyncMock(
+            return_value={
+                "provider": "whatsapp",
+                "chat_id": "chat-1",
+                "read_enabled": True,
+                "send_enabled": True,
+                "retention_days": 14,
+                "metadata": {"label": "Family"},
+            }
+        )
+        mgr.get_messaging_chat_policy = AsyncMock(
+            return_value={
+                "provider": "whatsapp",
+                "chat_id": "chat-1",
+                "read_enabled": True,
+                "send_enabled": True,
+                "retention_days": 14,
+                "metadata": {"label": "Family"},
+            }
+        )
+        mgr.list_messaging_chats = AsyncMock(
+            return_value=[
+                {
+                    "provider": "whatsapp",
+                    "chat_id": "chat-1",
+                    "read_enabled": True,
+                    "send_enabled": True,
+                    "retention_days": 14,
+                    "message_count": 2,
+                }
+            ]
+        )
+        mgr.list_messaging_messages = AsyncMock(
+            return_value=[
+                {
+                    "provider": "whatsapp",
+                    "chat_id": "chat-1",
+                    "message_id": "44444444-4444-4444-4444-444444444444",
+                    "direction": "inbound",
+                    "body_text": "hello",
+                }
+            ]
+        )
+        mgr.queue_messaging_send = AsyncMock(
+            return_value={
+                "action": {
+                    "action_id": "55555555-5555-5555-5555-555555555555",
+                    "status": "queued",
+                },
+                "message": {
+                    "message_id": "66666666-6666-6666-6666-666666666666",
+                    "direction": "outbound",
+                    "body_text": "hi there",
+                },
+            }
+        )
+        mgr.is_messaging_chat_allowed = AsyncMock(return_value=True)
+        mgr.ingest_messaging_message = AsyncMock(
+            return_value={"message_id": "77777777-7777-7777-7777-777777777777"}
+        )
+        mgr.purge_expired_messaging_messages = AsyncMock(return_value=0)
         return mgr
 
     @pytest.fixture
@@ -970,6 +1052,17 @@ class TestTenantAdminEndpoints:
             registry=mock_registry,
             api_secret="test-secret",
             tenant_admin_manager=tenant_admin_manager,
+        )
+        server._trust_policy_evaluator = SimpleNamespace(
+            evaluate=lambda **_kwargs: SimpleNamespace(
+                allowed=True,
+                approval_required=False,
+                status=200,
+                code="AI_OK",
+                message="Allowed",
+                details={},
+                requires_two_person=False,
+            )
         )
         app = server.create_app()
         async with TestClient(TestServer(app)) as test_client:
@@ -1219,6 +1312,117 @@ class TestTenantAdminEndpoints:
         tenant_admin_manager.set_email_primary_calendar.assert_awaited_once()
         tenant_admin_manager.delete_email_account.assert_awaited_once()
 
+    async def test_tenant_admin_messaging_matrix_success(self, admin_client, tenant_admin_manager):
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+
+        async def _call(method: str, path: str, json_payload: dict | None = None):
+            headers = {"X-API-Secret": "test-secret"}
+            headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg-1"))
+            kwargs = {"headers": headers}
+            if json_payload is not None:
+                kwargs["json"] = json_payload
+            return await getattr(admin_client, method)(path, **kwargs)
+
+        assert (
+            await _call(
+                "get",
+                f"/admin/tenants/{tenant_id}/messaging/providers/whatsapp/config",
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "put",
+                f"/admin/tenants/{tenant_id}/messaging/providers/whatsapp/config",
+                {
+                    "enabled": True,
+                    "bridge_mode": "local_sidecar",
+                    "account_ref": "acct-1",
+                    "session_ref": "sess-1",
+                    "metadata": {"label": "phone-main"},
+                },
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "put",
+                f"/admin/tenants/{tenant_id}/messaging/chats/chat-1/policy",
+                {
+                    "provider": "whatsapp",
+                    "read_enabled": True,
+                    "send_enabled": True,
+                    "retention_days": 14,
+                    "metadata": {"label": "Family"},
+                },
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "get",
+                f"/admin/tenants/{tenant_id}/messaging/chats/chat-1/policy?provider=whatsapp",
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "get",
+                f"/admin/tenants/{tenant_id}/messaging/chats?provider=whatsapp",
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "get",
+                f"/admin/tenants/{tenant_id}/messaging/messages?provider=whatsapp&chat_id=chat-1",
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "post",
+                f"/admin/tenants/{tenant_id}/messaging/messages/chat-1/send",
+                {
+                    "provider": "whatsapp",
+                    "text": "hello from cgs",
+                    "metadata": {"reason": "test"},
+                },
+            )
+        ).status == 202
+
+        bridge_payload = {
+            "event_type": "whatsapp.message.inbound",
+            "provider": "whatsapp",
+            "chat_id": "chat-1",
+            "message_id": "88888888-8888-8888-8888-888888888888",
+            "body_text": "inbound text",
+        }
+        raw_body = json.dumps(bridge_payload, separators=(",", ":"))
+        nonce = uuid4().hex
+        timestamp = str(int(datetime.now(UTC).timestamp()))
+        signature = hmac.new(
+            b"bridge-signing-secret",
+            f"{tenant_id}.{timestamp}.{nonce}.{raw_body}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        ingest_headers = {
+            "X-API-Secret": "test-secret",
+            "Content-Type": "application/json",
+            "X-Bridge-Timestamp": timestamp,
+            "X-Bridge-Nonce": nonce,
+            "X-Bridge-Signature": signature,
+        }
+        ingest = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/messaging/ingest",
+            headers=ingest_headers,
+            data=raw_body,
+        )
+        assert ingest.status == 202
+
+        tenant_admin_manager.get_messaging_provider_config.assert_awaited_once()
+        tenant_admin_manager.put_messaging_provider_config.assert_awaited_once()
+        tenant_admin_manager.put_messaging_chat_policy.assert_awaited_once()
+        tenant_admin_manager.get_messaging_chat_policy.assert_awaited_once()
+        tenant_admin_manager.list_messaging_chats.assert_awaited_once()
+        tenant_admin_manager.list_messaging_messages.assert_awaited_once()
+        tenant_admin_manager.queue_messaging_send.assert_awaited_once()
+        tenant_admin_manager.ingest_messaging_message.assert_awaited_once()
+
     async def test_tenant_admin_validation_error_branches(self, admin_client):
         tenant_id = "11111111-1111-1111-1111-111111111111"
 
@@ -1260,6 +1464,241 @@ class TestTenantAdminEndpoints:
             headers=_headers(),
         )
         assert invalid_limit.status == 400
+
+        missing_messaging_chat = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/messaging/messages",
+            headers=_headers(),
+        )
+        assert missing_messaging_chat.status == 400
+
+        invalid_messaging_metadata = await admin_client.put(
+            f"/admin/tenants/{tenant_id}/messaging/providers/whatsapp/config",
+            headers=_headers(),
+            json={"metadata": "bad"},
+        )
+        assert invalid_messaging_metadata.status == 400
+
+        invalid_chat_policy_metadata = await admin_client.put(
+            f"/admin/tenants/{tenant_id}/messaging/chats/chat-1/policy",
+            headers=_headers(),
+            json={"metadata": "bad"},
+        )
+        assert invalid_chat_policy_metadata.status == 400
+
+        invalid_include_inactive = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/messaging/chats?include_inactive=not-a-bool",
+            headers=_headers(),
+        )
+        assert invalid_include_inactive.status == 400
+
+        invalid_messages_limit = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/messaging/messages?chat_id=chat-1&limit=bad",
+            headers=_headers(),
+        )
+        assert invalid_messages_limit.status == 400
+
+        invalid_send_metadata = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/messaging/messages/chat-1/send",
+            headers=_headers(),
+            json={"text": "hello", "metadata": "bad"},
+        )
+        assert invalid_send_metadata.status == 400
+
+    async def test_tenant_admin_messaging_policy_denial_paths(
+        self,
+        mock_registry,
+        tenant_admin_manager,
+    ):
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="test-secret",
+            tenant_admin_manager=tenant_admin_manager,
+        )
+
+        class _DenyReadsApproveSend:
+            @staticmethod
+            def evaluate(*, action: str, **_kwargs):
+                if action == "messaging.read":
+                    return SimpleNamespace(
+                        allowed=False,
+                        approval_required=False,
+                        status=403,
+                        code="AI_MESSAGING_CHAT_NOT_ALLOWLISTED",
+                        message="Chat is not allowlisted for this action",
+                        details={"chat_id": "chat-1"},
+                        requires_two_person=False,
+                    )
+                return SimpleNamespace(
+                    allowed=False,
+                    approval_required=True,
+                    status=409,
+                    code="AI_APPROVAL_REQUIRED",
+                    message="This action requires approval before apply",
+                    details={"action": action},
+                    requires_two_person=True,
+                )
+
+        server._trust_policy_evaluator = _DenyReadsApproveSend()
+        app = server.create_app()
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+
+        def _headers() -> dict[str, str]:
+            headers = {"X-API-Secret": "test-secret"}
+            headers.update(_admin_headers(signing_secret="test-secret"))
+            return headers
+
+        async with TestClient(TestServer(app)) as client:
+            denied_read = await client.get(
+                f"/admin/tenants/{tenant_id}/messaging/messages?chat_id=chat-1",
+                headers=_headers(),
+            )
+            assert denied_read.status == 403
+            denied_payload = await denied_read.json()
+            assert denied_payload["code"] == "AI_MESSAGING_CHAT_NOT_ALLOWLISTED"
+
+            approval = await client.post(
+                f"/admin/tenants/{tenant_id}/messaging/messages/chat-1/send",
+                headers=_headers(),
+                json={"text": "hello"},
+            )
+            assert approval.status == 409
+            approval_payload = await approval.json()
+            assert approval_payload["code"] == "AI_APPROVAL_REQUIRED"
+            assert approval_payload["requires_two_person"] is True
+
+        tenant_admin_manager.queue_messaging_send.assert_not_awaited()
+
+    async def test_tenant_admin_send_messaging_denied_without_approval(
+        self,
+        mock_registry,
+        tenant_admin_manager,
+    ):
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="test-secret",
+            tenant_admin_manager=tenant_admin_manager,
+        )
+
+        class _DenySend:
+            @staticmethod
+            def evaluate(*, action: str, **_kwargs):
+                if action == "messaging.send":
+                    return SimpleNamespace(
+                        allowed=False,
+                        approval_required=False,
+                        status=403,
+                        code="AI_TRUST_POLICY_DENIED",
+                        message="Action is blocked by trust policy",
+                        details={"action": action},
+                        requires_two_person=False,
+                    )
+                return SimpleNamespace(
+                    allowed=True,
+                    approval_required=False,
+                    status=200,
+                    code="AI_OK",
+                    message="Allowed",
+                    details={},
+                    requires_two_person=False,
+                )
+
+        server._trust_policy_evaluator = _DenySend()
+        app = server.create_app()
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        headers = {"X-API-Secret": "test-secret"}
+        headers.update(_admin_headers(signing_secret="test-secret"))
+
+        async with TestClient(TestServer(app)) as client:
+            denied = await client.post(
+                f"/admin/tenants/{tenant_id}/messaging/messages/chat-1/send",
+                headers=headers,
+                json={"text": "hello"},
+            )
+            assert denied.status == 403
+            payload = await denied.json()
+            assert payload["code"] == "AI_TRUST_POLICY_DENIED"
+
+        tenant_admin_manager.queue_messaging_send.assert_not_awaited()
+
+    async def test_tenant_admin_messaging_get_routes_not_found(
+        self,
+        mock_registry,
+        tenant_admin_manager,
+    ):
+        tenant_admin_manager.get_messaging_provider_config = AsyncMock(return_value=None)
+        tenant_admin_manager.get_messaging_chat_policy = AsyncMock(return_value=None)
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="test-secret",
+            tenant_admin_manager=tenant_admin_manager,
+        )
+        server._trust_policy_evaluator = SimpleNamespace(
+            evaluate=lambda **_kwargs: SimpleNamespace(
+                allowed=True,
+                approval_required=False,
+                status=200,
+                code="AI_OK",
+                message="Allowed",
+                details={},
+                requires_two_person=False,
+            )
+        )
+        app = server.create_app()
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+
+        def _headers() -> dict[str, str]:
+            headers = {"X-API-Secret": "test-secret"}
+            headers.update(_admin_headers(signing_secret="test-secret"))
+            return headers
+
+        async with TestClient(TestServer(app)) as client:
+            missing_provider = await client.get(
+                f"/admin/tenants/{tenant_id}/messaging/providers/whatsapp/config",
+                headers=_headers(),
+            )
+            assert missing_provider.status == 404
+
+            missing_policy = await client.get(
+                f"/admin/tenants/{tenant_id}/messaging/chats/chat-1/policy",
+                headers=_headers(),
+            )
+            assert missing_policy.status == 404
+
+    async def test_tenant_admin_get_messaging_chat_policy_bad_provider(
+        self,
+        mock_registry,
+        tenant_admin_manager,
+    ):
+        tenant_admin_manager.get_messaging_chat_policy = AsyncMock(
+            side_effect=ValueError("Unsupported messaging provider 'bad'")
+        )
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="test-secret",
+            tenant_admin_manager=tenant_admin_manager,
+        )
+        server._trust_policy_evaluator = SimpleNamespace(
+            evaluate=lambda **_kwargs: SimpleNamespace(
+                allowed=True,
+                approval_required=False,
+                status=200,
+                code="AI_OK",
+                message="Allowed",
+                details={},
+                requires_two_person=False,
+            )
+        )
+        app = server.create_app()
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        headers = {"X-API-Secret": "test-secret"}
+        headers.update(_admin_headers(signing_secret="test-secret"))
+
+        async with TestClient(TestServer(app)) as client:
+            bad_provider = await client.get(
+                f"/admin/tenants/{tenant_id}/messaging/chats/chat-1/policy?provider=bad",
+                headers=headers,
+            )
+            assert bad_provider.status == 400
 
     async def test_tenant_admin_returns_501_when_manager_missing(self, mock_registry):
         server = SkillsServer(
@@ -1438,6 +1877,58 @@ class TestTenantAdminEndpoints:
                     f"/admin/tenants/{tenant_id}/email/accounts/acc-1/calendar-primary",
                     headers=_headers(),
                     json={"calendar_id": "primary"},
+                )
+            ).status == 501
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/messaging/providers/whatsapp/config",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.put(
+                    f"/admin/tenants/{tenant_id}/messaging/providers/whatsapp/config",
+                    headers=_headers(),
+                    json={"enabled": True},
+                )
+            ).status == 501
+            assert (
+                await client.put(
+                    f"/admin/tenants/{tenant_id}/messaging/chats/chat-1/policy",
+                    headers=_headers(),
+                    json={"read_enabled": True, "send_enabled": True},
+                )
+            ).status == 501
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/messaging/chats/chat-1/policy",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/messaging/chats",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/messaging/messages?chat_id=chat-1",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.post(
+                    f"/admin/tenants/{tenant_id}/messaging/messages/chat-1/send",
+                    headers=_headers(),
+                    json={"text": "hello"},
+                )
+            ).status == 501
+            assert (
+                await client.post(
+                    f"/admin/tenants/{tenant_id}/messaging/ingest",
+                    headers={"X-API-Secret": "test-secret"},
+                    json={"event_type": "whatsapp.message.inbound", "chat_id": "chat-1"},
                 )
             ).status == 501
 

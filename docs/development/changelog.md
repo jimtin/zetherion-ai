@@ -25,6 +25,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `SECURITY_DEFAULT_TRUST_TIER`
 - No external endpoint shape changes; contract docs bundle updated to reflect policy and configuration coverage.
 
+### Added - Tenant Messaging Persistence + Skills Internal Control Plane (2026-03-05)
+
+- Added tenant messaging persistence tables:
+  - `tenant_messaging_provider_configs`
+  - `tenant_messaging_accounts`
+  - `tenant_messaging_chat_policies`
+  - `tenant_messaging_messages` (encrypted full-text bodies with expiry timestamps)
+  - `tenant_messaging_action_queue` (queued send actions with request/change refs)
+- Added Skills internal tenant messaging routes:
+  - `GET/PUT /admin/tenants/{tenant_id}/messaging/providers/{provider}/config`
+  - `GET/PUT /admin/tenants/{tenant_id}/messaging/chats/{chat_id}/policy`
+  - `GET /admin/tenants/{tenant_id}/messaging/chats`
+  - `GET /admin/tenants/{tenant_id}/messaging/messages`
+  - `POST /admin/tenants/{tenant_id}/messaging/messages/{chat_id}/send`
+  - `POST /admin/tenants/{tenant_id}/messaging/ingest`
+- Bridge ingest now stores signed inbound events into encrypted tenant message storage and enforces chat allowlist policy.
+- Added TTL cleanup loop in Skills server to continuously purge expired tenant messaging payloads.
+
 ### Changed - Windows Deploy Resilience Registration Signal Cleanup (2026-03-05)
 
 - Updated `Deploy Windows` resilience registration step behavior to remain explicitly non-blocking without

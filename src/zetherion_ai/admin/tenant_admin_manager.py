@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from zetherion_ai.logging import get_logger
 from zetherion_ai.settings_manager import VALID_NAMESPACES
@@ -32,6 +32,13 @@ VALID_EMAIL_SYNC_DIRECTIONS = frozenset(
 VALID_EMAIL_SYNC_STATUSES = frozenset({"queued", "running", "succeeded", "failed", "retrying"})
 VALID_CRITICAL_SEVERITIES = frozenset({"critical", "high", "normal"})
 VALID_CRITICAL_STATUSES = frozenset({"open", "resolved", "dismissed"})
+VALID_MESSAGING_PROVIDERS = frozenset({"whatsapp"})
+VALID_MESSAGING_DIRECTIONS = frozenset({"inbound", "outbound", "system"})
+VALID_MESSAGING_ACTION_TYPES = frozenset({"send"})
+VALID_MESSAGING_QUEUE_STATUSES = frozenset(
+    {"queued", "processing", "sent", "failed", "blocked", "cancelled"}
+)
+DEFAULT_MESSAGING_RETENTION_DAYS = 14
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS tenant_discord_users (
@@ -315,6 +322,126 @@ CREATE TABLE IF NOT EXISTS tenant_email_events (
 
 CREATE INDEX IF NOT EXISTS idx_tenant_email_events_lookup
     ON tenant_email_events (tenant_id, event_type, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_messaging_provider_configs (
+    tenant_id            UUID         NOT NULL,
+    provider             VARCHAR(40)  NOT NULL,
+    enabled              BOOLEAN      NOT NULL DEFAULT TRUE,
+    bridge_mode          VARCHAR(30)  NOT NULL DEFAULT 'local_sidecar'
+                         CHECK (bridge_mode IN ('local_sidecar', 'cloud_bridge')),
+    account_ref          TEXT,
+    session_ref          TEXT,
+    metadata             JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    created_by           TEXT,
+    updated_by           TEXT,
+    created_at           TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, provider)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_messaging_provider_configs_lookup
+    ON tenant_messaging_provider_configs (tenant_id, provider);
+
+CREATE TABLE IF NOT EXISTS tenant_messaging_accounts (
+    account_id           UUID         PRIMARY KEY,
+    tenant_id            UUID         NOT NULL,
+    provider             VARCHAR(40)  NOT NULL,
+    external_account_id  TEXT         NOT NULL,
+    session_id           TEXT,
+    status               VARCHAR(20)  NOT NULL DEFAULT 'active'
+                         CHECK (status IN ('active', 'paused', 'revoked', 'disconnected')),
+    metadata             JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    created_by           TEXT,
+    updated_by           TEXT,
+    created_at           TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, provider, external_account_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_messaging_accounts_lookup
+    ON tenant_messaging_accounts (tenant_id, provider, status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_messaging_chat_policies (
+    tenant_id            UUID         NOT NULL,
+    provider             VARCHAR(40)  NOT NULL,
+    chat_id              TEXT         NOT NULL,
+    read_enabled         BOOLEAN      NOT NULL DEFAULT FALSE,
+    send_enabled         BOOLEAN      NOT NULL DEFAULT FALSE,
+    retention_days       INT          NOT NULL DEFAULT 14
+                         CHECK (retention_days > 0 AND retention_days <= 365),
+    metadata             JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    created_by           TEXT,
+    updated_by           TEXT,
+    created_at           TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, provider, chat_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_messaging_chat_policies_lookup
+    ON tenant_messaging_chat_policies (
+        tenant_id,
+        provider,
+        read_enabled,
+        send_enabled,
+        updated_at DESC
+    );
+
+CREATE TABLE IF NOT EXISTS tenant_messaging_messages (
+    message_pk           BIGSERIAL    PRIMARY KEY,
+    message_id           UUID         NOT NULL,
+    tenant_id            UUID         NOT NULL,
+    provider             VARCHAR(40)  NOT NULL,
+    chat_id              TEXT         NOT NULL,
+    direction            VARCHAR(20)  NOT NULL
+                         CHECK (direction IN ('inbound', 'outbound', 'system')),
+    sender_id            TEXT,
+    sender_name          TEXT,
+    body_enc             TEXT         NOT NULL,
+    metadata             JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    action_id            UUID,
+    event_type           TEXT,
+    observed_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    expires_at           TIMESTAMPTZ  NOT NULL,
+    created_at           TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, provider, message_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_messaging_messages_lookup
+    ON tenant_messaging_messages (tenant_id, provider, chat_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_messaging_messages_expiry
+    ON tenant_messaging_messages (expires_at);
+
+CREATE TABLE IF NOT EXISTS tenant_messaging_action_queue (
+    action_id            UUID         PRIMARY KEY,
+    tenant_id            UUID         NOT NULL,
+    provider             VARCHAR(40)  NOT NULL,
+    chat_id              TEXT         NOT NULL,
+    action_type          VARCHAR(20)  NOT NULL
+                         CHECK (action_type IN ('send')),
+    payload_enc          TEXT,
+    payload_json         JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    status               VARCHAR(20)  NOT NULL DEFAULT 'queued'
+                         CHECK (
+                             status IN (
+                                 'queued',
+                                 'processing',
+                                 'sent',
+                                 'failed',
+                                 'blocked',
+                                 'cancelled'
+                             )
+                         ),
+    created_by           TEXT,
+    request_id           TEXT,
+    change_ticket_id     TEXT,
+    error_code           TEXT,
+    error_detail         TEXT,
+    created_at           TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_messaging_action_queue_lookup
+    ON tenant_messaging_action_queue (tenant_id, provider, chat_id, status, created_at DESC);
 """
 
 
@@ -3018,6 +3145,731 @@ class TenantAdminManager:
                 max(1, min(limit, 500)),
             )
         return [dict(row) for row in rows]
+
+    # ------------------------------------------------------------------
+    # Tenant messaging control-plane domain
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_messaging_provider(provider: str) -> str:
+        normalized = provider.strip().lower()
+        if normalized not in VALID_MESSAGING_PROVIDERS:
+            raise ValueError(f"Unsupported messaging provider '{provider}'")
+        return normalized
+
+    @staticmethod
+    def _coerce_retention_days(raw: Any, *, default: int = DEFAULT_MESSAGING_RETENTION_DAYS) -> int:
+        try:
+            days = int(raw)
+        except (TypeError, ValueError):
+            days = default
+        return max(1, min(days, 365))
+
+    def _resolve_messaging_retention_days(
+        self,
+        *,
+        tenant_id: str,
+        policy_days: int | None = None,
+    ) -> int:
+        if policy_days is not None:
+            return self._coerce_retention_days(
+                policy_days,
+                default=DEFAULT_MESSAGING_RETENTION_DAYS,
+            )
+        configured = self.get_setting_cached(
+            tenant_id,
+            "security",
+            "messaging_retention_days",
+            default=DEFAULT_MESSAGING_RETENTION_DAYS,
+        )
+        return self._coerce_retention_days(
+            configured,
+            default=DEFAULT_MESSAGING_RETENTION_DAYS,
+        )
+
+    async def get_messaging_provider_config(
+        self,
+        *,
+        tenant_id: str,
+        provider: str = "whatsapp",
+    ) -> dict[str, Any] | None:
+        provider_norm = self._normalize_messaging_provider(provider)
+        row = await self._fetchrow(
+            """
+            SELECT tenant_id::text AS tenant_id,
+                   provider,
+                   enabled,
+                   bridge_mode,
+                   account_ref,
+                   session_ref,
+                   metadata,
+                   created_by,
+                   updated_by,
+                   created_at,
+                   updated_at
+            FROM tenant_messaging_provider_configs
+            WHERE tenant_id = $1::uuid
+              AND provider = $2
+            LIMIT 1
+            """,
+            tenant_id,
+            provider_norm,
+        )
+        if row is None:
+            return None
+        return dict(row)
+
+    async def put_messaging_provider_config(
+        self,
+        *,
+        tenant_id: str,
+        provider: str,
+        enabled: bool,
+        actor: AdminActorContext,
+        bridge_mode: str = "local_sidecar",
+        account_ref: str | None = None,
+        session_ref: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        provider_norm = self._normalize_messaging_provider(provider)
+        mode = str(bridge_mode or "local_sidecar").strip().lower()
+        if mode not in {"local_sidecar", "cloud_bridge"}:
+            raise ValueError("bridge_mode must be one of: local_sidecar, cloud_bridge")
+        before = await self.get_messaging_provider_config(
+            tenant_id=tenant_id,
+            provider=provider_norm,
+        )
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_messaging_provider_configs (
+                tenant_id,
+                provider,
+                enabled,
+                bridge_mode,
+                account_ref,
+                session_ref,
+                metadata,
+                created_by,
+                updated_by
+            ) VALUES (
+                $1::uuid, $2, $3, $4, $5, $6, $7::jsonb, $8, $8
+            )
+            ON CONFLICT (tenant_id, provider)
+            DO UPDATE SET enabled = EXCLUDED.enabled,
+                          bridge_mode = EXCLUDED.bridge_mode,
+                          account_ref = EXCLUDED.account_ref,
+                          session_ref = EXCLUDED.session_ref,
+                          metadata = EXCLUDED.metadata,
+                          updated_by = EXCLUDED.updated_by,
+                          updated_at = now()
+            RETURNING tenant_id::text AS tenant_id,
+                      provider,
+                      enabled,
+                      bridge_mode,
+                      account_ref,
+                      session_ref,
+                      metadata,
+                      created_by,
+                      updated_by,
+                      created_at,
+                      updated_at
+            """,
+            tenant_id,
+            provider_norm,
+            enabled,
+            mode,
+            account_ref,
+            session_ref,
+            json.dumps(metadata or {}),
+            actor.actor_sub,
+        )
+        if row is None:
+            raise RuntimeError("Failed to store tenant messaging provider config")
+        after = dict(row)
+        await self._write_audit(
+            tenant_id=tenant_id,
+            action="tenant_messaging_provider_config_upsert",
+            actor=actor,
+            before=before,
+            after=after,
+        )
+        return after
+
+    async def get_messaging_chat_policy(
+        self,
+        *,
+        tenant_id: str,
+        chat_id: str,
+        provider: str = "whatsapp",
+    ) -> dict[str, Any] | None:
+        provider_norm = self._normalize_messaging_provider(provider)
+        chat = str(chat_id or "").strip()
+        if not chat:
+            raise ValueError("Missing chat_id")
+        row = await self._fetchrow(
+            """
+            SELECT tenant_id::text AS tenant_id,
+                   provider,
+                   chat_id,
+                   read_enabled,
+                   send_enabled,
+                   retention_days,
+                   metadata,
+                   created_by,
+                   updated_by,
+                   created_at,
+                   updated_at
+            FROM tenant_messaging_chat_policies
+            WHERE tenant_id = $1::uuid
+              AND provider = $2
+              AND chat_id = $3
+            LIMIT 1
+            """,
+            tenant_id,
+            provider_norm,
+            chat,
+        )
+        if row is None:
+            return None
+        return dict(row)
+
+    async def _sync_messaging_allowlist_setting(
+        self,
+        *,
+        tenant_id: str,
+        provider: str,
+        actor: AdminActorContext,
+    ) -> None:
+        rows = await self._fetch(
+            """
+            SELECT chat_id
+            FROM tenant_messaging_chat_policies
+            WHERE tenant_id = $1::uuid
+              AND provider = $2
+              AND read_enabled = TRUE
+            ORDER BY chat_id ASC
+            """,
+            tenant_id,
+            provider,
+        )
+        allowlisted = sorted(str(row["chat_id"]) for row in rows)
+        cached = self.get_setting_cached(
+            tenant_id,
+            "security",
+            "messaging_allowlisted_chats",
+            default=[],
+        )
+        current = []
+        if isinstance(cached, list):
+            current = sorted(str(item) for item in cached if str(item).strip())
+        elif isinstance(cached, str) and cached.strip():
+            current = sorted(part.strip() for part in cached.split(",") if part.strip())
+        if current == allowlisted:
+            return
+        await self.set_setting(
+            tenant_id=tenant_id,
+            namespace="security",
+            key="messaging_allowlisted_chats",
+            value=allowlisted,
+            data_type="json",
+            actor=actor,
+        )
+
+    async def put_messaging_chat_policy(
+        self,
+        *,
+        tenant_id: str,
+        chat_id: str,
+        provider: str,
+        read_enabled: bool,
+        send_enabled: bool,
+        actor: AdminActorContext,
+        retention_days: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        provider_norm = self._normalize_messaging_provider(provider)
+        chat = str(chat_id or "").strip()
+        if not chat:
+            raise ValueError("Missing chat_id")
+        resolved_retention = self._resolve_messaging_retention_days(
+            tenant_id=tenant_id,
+            policy_days=retention_days,
+        )
+        before = await self.get_messaging_chat_policy(
+            tenant_id=tenant_id,
+            provider=provider_norm,
+            chat_id=chat,
+        )
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_messaging_chat_policies (
+                tenant_id,
+                provider,
+                chat_id,
+                read_enabled,
+                send_enabled,
+                retention_days,
+                metadata,
+                created_by,
+                updated_by
+            ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::jsonb, $8, $8)
+            ON CONFLICT (tenant_id, provider, chat_id)
+            DO UPDATE SET read_enabled = EXCLUDED.read_enabled,
+                          send_enabled = EXCLUDED.send_enabled,
+                          retention_days = EXCLUDED.retention_days,
+                          metadata = EXCLUDED.metadata,
+                          updated_by = EXCLUDED.updated_by,
+                          updated_at = now()
+            RETURNING tenant_id::text AS tenant_id,
+                      provider,
+                      chat_id,
+                      read_enabled,
+                      send_enabled,
+                      retention_days,
+                      metadata,
+                      created_by,
+                      updated_by,
+                      created_at,
+                      updated_at
+            """,
+            tenant_id,
+            provider_norm,
+            chat,
+            read_enabled,
+            send_enabled,
+            resolved_retention,
+            json.dumps(metadata or {}),
+            actor.actor_sub,
+        )
+        if row is None:
+            raise RuntimeError("Failed to store tenant messaging chat policy")
+        await self._sync_messaging_allowlist_setting(
+            tenant_id=tenant_id,
+            provider=provider_norm,
+            actor=actor,
+        )
+        after = dict(row)
+        await self._write_audit(
+            tenant_id=tenant_id,
+            action="tenant_messaging_chat_policy_upsert",
+            actor=actor,
+            before=before,
+            after=after,
+        )
+        return after
+
+    async def list_messaging_chats(
+        self,
+        *,
+        tenant_id: str,
+        provider: str | None = "whatsapp",
+        include_inactive: bool = True,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        filters: list[str] = ["p.tenant_id = $1::uuid"]
+        args: list[Any] = [tenant_id]
+        idx = 2
+        if provider is not None:
+            provider_norm = self._normalize_messaging_provider(provider)
+            filters.append(f"p.provider = ${idx}")
+            args.append(provider_norm)
+            idx += 1
+        if not include_inactive:
+            filters.append("(p.read_enabled = TRUE OR p.send_enabled = TRUE)")
+        args.append(max(1, min(limit, 500)))
+        rows = await self._fetch(
+            f"""
+            SELECT p.tenant_id::text AS tenant_id,
+                   p.provider,
+                   p.chat_id,
+                   p.read_enabled,
+                   p.send_enabled,
+                   p.retention_days,
+                   p.metadata,
+                   p.created_by,
+                   p.updated_by,
+                   p.created_at,
+                   p.updated_at,
+                   COALESCE(stats.message_count, 0)::int AS message_count,
+                   stats.last_message_at
+            FROM tenant_messaging_chat_policies p
+            LEFT JOIN LATERAL (
+                SELECT COUNT(*) AS message_count,
+                       MAX(created_at) AS last_message_at
+                FROM tenant_messaging_messages m
+                WHERE m.tenant_id = p.tenant_id
+                  AND m.provider = p.provider
+                  AND m.chat_id = p.chat_id
+                  AND m.expires_at > now()
+            ) stats ON TRUE
+            WHERE {" AND ".join(filters)}
+            ORDER BY COALESCE(stats.last_message_at, p.updated_at) DESC
+            LIMIT ${idx}
+            """,  # nosec B608
+            *args,
+        )
+        return [dict(row) for row in rows]
+
+    async def is_messaging_chat_allowed(
+        self,
+        *,
+        tenant_id: str,
+        provider: str = "whatsapp",
+        chat_id: str,
+        action: str = "read",
+    ) -> bool:
+        provider_norm = self._normalize_messaging_provider(provider)
+        chat = str(chat_id or "").strip()
+        if not chat:
+            return False
+        action_norm = str(action or "read").strip().lower()
+        if action_norm not in {"read", "send"}:
+            raise ValueError("Unsupported messaging action")
+        row = await self._fetchrow(
+            """
+            SELECT read_enabled, send_enabled
+            FROM tenant_messaging_chat_policies
+            WHERE tenant_id = $1::uuid
+              AND provider = $2
+              AND chat_id = $3
+            LIMIT 1
+            """,
+            tenant_id,
+            provider_norm,
+            chat,
+        )
+        if row is None:
+            return False
+        if action_norm == "send":
+            return bool(row["send_enabled"])
+        return bool(row["read_enabled"])
+
+    async def ingest_messaging_message(
+        self,
+        *,
+        tenant_id: str,
+        provider: str,
+        chat_id: str,
+        direction: str = "inbound",
+        event_type: str,
+        body_text: str,
+        metadata: dict[str, Any] | None = None,
+        sender_id: str | None = None,
+        sender_name: str | None = None,
+        message_id: str | None = None,
+        observed_at: datetime | None = None,
+        action_id: str | None = None,
+    ) -> dict[str, Any]:
+        provider_norm = self._normalize_messaging_provider(provider)
+        chat = str(chat_id or "").strip()
+        if not chat:
+            raise ValueError("Missing chat_id")
+        direction_norm = str(direction or "inbound").strip().lower()
+        if direction_norm not in VALID_MESSAGING_DIRECTIONS:
+            raise ValueError(f"Invalid messaging direction '{direction}'")
+        event = str(event_type or "").strip()
+        if not event:
+            raise ValueError("Missing event_type")
+        body = str(body_text or "")
+        if not body:
+            body = "{}" if metadata else ""
+        policy = await self.get_messaging_chat_policy(
+            tenant_id=tenant_id,
+            provider=provider_norm,
+            chat_id=chat,
+        )
+        retention_days = self._resolve_messaging_retention_days(
+            tenant_id=tenant_id,
+            policy_days=(
+                int(policy["retention_days"])
+                if isinstance(policy, dict) and policy.get("retention_days") is not None
+                else None
+            ),
+        )
+        observed = observed_at or datetime.now(UTC)
+        expires_at = observed + timedelta(days=retention_days)
+        try:
+            message_uuid = str(UUID(str(message_id))) if message_id else str(uuid4())
+        except ValueError as exc:
+            raise ValueError("Invalid message_id") from exc
+        action_uuid: str | None = None
+        if action_id:
+            try:
+                action_uuid = str(UUID(str(action_id)))
+            except ValueError as exc:
+                raise ValueError("Invalid action_id") from exc
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_messaging_messages (
+                message_id,
+                tenant_id,
+                provider,
+                chat_id,
+                direction,
+                sender_id,
+                sender_name,
+                body_enc,
+                metadata,
+                action_id,
+                event_type,
+                observed_at,
+                expires_at
+            ) VALUES (
+                $1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::uuid, $11, $12, $13
+            )
+            ON CONFLICT (tenant_id, provider, message_id)
+            DO UPDATE SET body_enc = EXCLUDED.body_enc,
+                          metadata = EXCLUDED.metadata,
+                          sender_id = EXCLUDED.sender_id,
+                          sender_name = EXCLUDED.sender_name,
+                          observed_at = EXCLUDED.observed_at,
+                          expires_at = EXCLUDED.expires_at,
+                          action_id = COALESCE(
+                              EXCLUDED.action_id,
+                              tenant_messaging_messages.action_id
+                          ),
+                          event_type = EXCLUDED.event_type
+            RETURNING message_id::text AS message_id,
+                      tenant_id::text AS tenant_id,
+                      provider,
+                      chat_id,
+                      direction,
+                      sender_id,
+                      sender_name,
+                      body_enc,
+                      metadata,
+                      action_id::text AS action_id,
+                      event_type,
+                      observed_at,
+                      expires_at,
+                      created_at
+            """,
+            message_uuid,
+            tenant_id,
+            provider_norm,
+            chat,
+            direction_norm,
+            sender_id,
+            sender_name,
+            self._encrypt(body),
+            json.dumps(metadata or {}),
+            action_uuid,
+            event,
+            observed,
+            expires_at,
+        )
+        if row is None:
+            raise RuntimeError("Failed to store tenant messaging message")
+        result = dict(row)
+        result["body_text"] = self._decrypt(str(result.get("body_enc") or "")) or ""
+        return result
+
+    async def list_messaging_messages(
+        self,
+        *,
+        tenant_id: str,
+        provider: str | None = "whatsapp",
+        chat_id: str | None = None,
+        direction: str | None = None,
+        limit: int = 200,
+        include_expired: bool = False,
+    ) -> list[dict[str, Any]]:
+        filters: list[str] = ["tenant_id = $1::uuid"]
+        args: list[Any] = [tenant_id]
+        idx = 2
+        if provider is not None:
+            provider_norm = self._normalize_messaging_provider(provider)
+            filters.append(f"provider = ${idx}")
+            args.append(provider_norm)
+            idx += 1
+        if chat_id:
+            chat = str(chat_id).strip()
+            if not chat:
+                raise ValueError("Invalid chat_id")
+            filters.append(f"chat_id = ${idx}")
+            args.append(chat)
+            idx += 1
+        if direction:
+            direction_norm = str(direction).strip().lower()
+            if direction_norm not in VALID_MESSAGING_DIRECTIONS:
+                raise ValueError(f"Invalid direction '{direction}'")
+            filters.append(f"direction = ${idx}")
+            args.append(direction_norm)
+            idx += 1
+        if not include_expired:
+            filters.append("expires_at > now()")
+        args.append(max(1, min(limit, 500)))
+        rows = await self._fetch(
+            f"""
+            SELECT message_id::text AS message_id,
+                   tenant_id::text AS tenant_id,
+                   provider,
+                   chat_id,
+                   direction,
+                   sender_id,
+                   sender_name,
+                   body_enc,
+                   metadata,
+                   action_id::text AS action_id,
+                   event_type,
+                   observed_at,
+                   expires_at,
+                   created_at
+            FROM tenant_messaging_messages
+            WHERE {" AND ".join(filters)}
+            ORDER BY created_at DESC
+            LIMIT ${idx}
+            """,  # nosec B608
+            *args,
+        )
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            data = dict(row)
+            data["body_text"] = self._decrypt(str(data.get("body_enc") or "")) or ""
+            result.append(data)
+        return result
+
+    async def queue_messaging_send(
+        self,
+        *,
+        tenant_id: str,
+        provider: str,
+        chat_id: str,
+        body_text: str,
+        actor: AdminActorContext,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        provider_norm = self._normalize_messaging_provider(provider)
+        chat = str(chat_id or "").strip()
+        if not chat:
+            raise ValueError("Missing chat_id")
+        body = str(body_text or "").strip()
+        if not body:
+            raise ValueError("Missing non-empty message body")
+        allowed = await self.is_messaging_chat_allowed(
+            tenant_id=tenant_id,
+            provider=provider_norm,
+            chat_id=chat,
+            action="send",
+        )
+        if not allowed:
+            raise ValueError("Chat send policy is not enabled")
+
+        action_id = str(uuid4())
+        payload = {"text": body, "metadata": metadata or {}}
+        action_row = await self._fetchrow(
+            """
+            INSERT INTO tenant_messaging_action_queue (
+                action_id,
+                tenant_id,
+                provider,
+                chat_id,
+                action_type,
+                payload_enc,
+                payload_json,
+                status,
+                created_by,
+                request_id,
+                change_ticket_id
+            ) VALUES (
+                $1::uuid, $2::uuid, $3, $4, 'send', $5, $6::jsonb, 'queued', $7, $8, $9
+            )
+            RETURNING action_id::text AS action_id,
+                      tenant_id::text AS tenant_id,
+                      provider,
+                      chat_id,
+                      action_type,
+                      payload_json,
+                      status,
+                      created_by,
+                      request_id,
+                      change_ticket_id,
+                      error_code,
+                      error_detail,
+                      created_at,
+                      updated_at
+            """,
+            action_id,
+            tenant_id,
+            provider_norm,
+            chat,
+            self._encrypt(json.dumps(payload)),
+            json.dumps(payload),
+            actor.actor_sub,
+            actor.request_id,
+            actor.change_ticket_id,
+        )
+        if action_row is None:
+            raise RuntimeError("Failed to queue messaging send action")
+
+        message_row = await self.ingest_messaging_message(
+            tenant_id=tenant_id,
+            provider=provider_norm,
+            chat_id=chat,
+            direction="outbound",
+            event_type="messaging.send.queued",
+            body_text=body,
+            metadata={"queued_action_id": action_id, **(metadata or {})},
+            sender_id=actor.actor_sub,
+            sender_name=actor.actor_email or actor.actor_sub,
+            action_id=action_id,
+        )
+        await self._write_audit(
+            tenant_id=tenant_id,
+            action="tenant_messaging_send_queued",
+            actor=actor,
+            before=None,
+            after={
+                "action_id": action_id,
+                "provider": provider_norm,
+                "chat_id": chat,
+                "message_id": message_row["message_id"],
+            },
+        )
+        return {"action": dict(action_row), "message": message_row}
+
+    async def purge_expired_messaging_messages(
+        self,
+        *,
+        tenant_id: str | None = None,
+        limit: int = 5000,
+    ) -> int:
+        max_rows = max(1, min(limit, 20000))
+        if tenant_id:
+            result = await self._execute(
+                """
+                WITH doomed AS (
+                    SELECT message_pk
+                    FROM tenant_messaging_messages
+                    WHERE tenant_id = $1::uuid
+                      AND expires_at <= now()
+                    ORDER BY expires_at ASC
+                    LIMIT $2
+                )
+                DELETE FROM tenant_messaging_messages m
+                USING doomed d
+                WHERE m.message_pk = d.message_pk
+                """,
+                tenant_id,
+                max_rows,
+            )
+        else:
+            result = await self._execute(
+                """
+                WITH doomed AS (
+                    SELECT message_pk
+                    FROM tenant_messaging_messages
+                    WHERE expires_at <= now()
+                    ORDER BY expires_at ASC
+                    LIMIT $1
+                )
+                DELETE FROM tenant_messaging_messages m
+                USING doomed d
+                WHERE m.message_pk = d.message_pk
+                """,
+                max_rows,
+            )
+        return _rowcount_from_execute(result)
 
     async def _write_audit(
         self,
