@@ -89,8 +89,16 @@ class TestPublicAPIServerCreateApp:
         assert "/api/v1/documents/{document_id}/preview" in paths
         assert "/api/v1/documents/{document_id}/download" in paths
         assert "/api/v1/documents/{document_id}/index" in paths
+        assert "/api/v1/documents/{document_id}/restore" in paths
         assert "/api/v1/rag/query" in paths
         assert "/api/v1/models/providers" in paths
+
+        document_route_methods = {
+            route.method
+            for route in app.router.routes()
+            if route.resource.canonical == "/api/v1/documents/{document_id}"
+        }
+        assert {"GET", "DELETE"}.issubset(document_route_methods)
 
 
 class TestPublicAPIServerLifecycle:

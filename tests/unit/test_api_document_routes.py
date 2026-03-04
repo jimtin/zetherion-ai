@@ -16,6 +16,7 @@ from zetherion_ai.api.routes.documents import (
     _serialise,
     _service,
     _tenant_id,
+    handle_archive_document,
     handle_complete_upload,
     handle_create_upload,
     handle_download_document,
@@ -25,8 +26,13 @@ from zetherion_ai.api.routes.documents import (
     handle_preview_document,
     handle_rag_query,
     handle_reindex_document,
+    handle_restore_document,
 )
-from zetherion_ai.documents.service import DocumentQueryResult, DocumentService
+from zetherion_ai.documents.service import (
+    DocumentLifecycleError,
+    DocumentQueryResult,
+    DocumentService,
+)
 
 
 @pytest_asyncio.fixture()
@@ -52,9 +58,11 @@ async def documents_client():
     app.router.add_post("/api/v1/documents/uploads/{upload_id}/complete", handle_complete_upload)
     app.router.add_get("/api/v1/documents", handle_list_documents)
     app.router.add_get("/api/v1/documents/{document_id}", handle_get_document)
+    app.router.add_delete("/api/v1/documents/{document_id}", handle_archive_document)
     app.router.add_get("/api/v1/documents/{document_id}/preview", handle_preview_document)
     app.router.add_get("/api/v1/documents/{document_id}/download", handle_download_document)
     app.router.add_post("/api/v1/documents/{document_id}/index", handle_reindex_document)
+    app.router.add_post("/api/v1/documents/{document_id}/restore", handle_restore_document)
     app.router.add_post("/api/v1/rag/query", handle_rag_query)
     app.router.add_get("/api/v1/models/providers", handle_model_catalog)
 
@@ -193,6 +201,14 @@ async def test_list_and_get_document_routes(documents_client) -> None:
     list_response = await client.get("/api/v1/documents?limit=bad")
     assert list_response.status == 200
     assert (await list_response.json())["count"] == 1
+    assert tenant_manager.list_documents.call_args.kwargs["include_archived"] is False
+
+    include_archived = await client.get("/api/v1/documents?include_archived=true")
+    assert include_archived.status == 200
+    assert tenant_manager.list_documents.call_args.kwargs["include_archived"] is True
+
+    invalid_include_archived = await client.get("/api/v1/documents?include_archived=maybe")
+    assert invalid_include_archived.status == 400
 
     missing = await client.get("/api/v1/documents/doc-404")
     assert missing.status == 404
@@ -288,6 +304,98 @@ async def test_reindex_document_maps_errors(documents_client) -> None:
     service.index_document = AsyncMock(side_effect=RuntimeError("boom"))  # type: ignore[method-assign]
     failure = await client.post("/api/v1/documents/doc-1/index")
     assert failure.status == 500
+
+
+@pytest.mark.asyncio
+async def test_archive_document_route_maps_status_and_idempotency(documents_client) -> None:
+    client, service, _ = documents_client
+    service.request_archive = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            ValueError("Document not found"),
+            {
+                "document": {
+                    "document_id": "doc-1",
+                    "tenant_id": "tenant-1",
+                    "status": "archiving",
+                },
+                "archive_job_id": "job-1",
+                "idempotent": False,
+            },
+            {
+                "document": {"document_id": "doc-1", "tenant_id": "tenant-1", "status": "archived"},
+                "archive_job_id": None,
+                "idempotent": True,
+            },
+        ]
+    )
+
+    not_found = await client.delete("/api/v1/documents/doc-1")
+    assert not_found.status == 404
+
+    scheduled = await client.delete(
+        "/api/v1/documents/doc-1",
+        json={"reason": "cleanup"},
+    )
+    assert scheduled.status == 202
+    scheduled_body = await scheduled.json()
+    assert scheduled_body["archive_job_id"] == "job-1"
+    assert scheduled_body["message"] == "Archive scheduled"
+    assert service.request_archive.call_args_list[1].kwargs["archived_reason"] == "cleanup"
+
+    idempotent = await client.delete("/api/v1/documents/doc-1")
+    assert idempotent.status == 202
+    idempotent_body = await idempotent.json()
+    assert idempotent_body["archive_job_id"] is None
+    assert idempotent_body["message"] == "Archive already scheduled"
+
+
+@pytest.mark.asyncio
+async def test_archive_document_route_validates_reason_and_errors(documents_client) -> None:
+    client, service, _ = documents_client
+    service.request_archive = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            DocumentLifecycleError("Document cannot be archived from status 'processing'"),
+            RuntimeError("storage down"),
+        ]
+    )
+
+    invalid_reason = await client.delete(
+        "/api/v1/documents/doc-1",
+        json={"reason": 123},
+    )
+    assert invalid_reason.status == 400
+
+    conflict = await client.delete("/api/v1/documents/doc-1")
+    assert conflict.status == 409
+
+    runtime_error = await client.delete("/api/v1/documents/doc-1")
+    assert runtime_error.status == 503
+
+
+@pytest.mark.asyncio
+async def test_restore_document_route_maps_errors_and_success(documents_client) -> None:
+    client, service, _ = documents_client
+    service.restore_document = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            ValueError("Document not found"),
+            DocumentLifecycleError("Purged document cannot be restored"),
+            RuntimeError("upstream unavailable"),
+            {"document_id": "doc-1", "status": "indexed"},
+        ]
+    )
+
+    not_found = await client.post("/api/v1/documents/doc-1/restore")
+    assert not_found.status == 404
+
+    conflict = await client.post("/api/v1/documents/doc-1/restore")
+    assert conflict.status == 409
+
+    unavailable = await client.post("/api/v1/documents/doc-1/restore")
+    assert unavailable.status == 503
+
+    success = await client.post("/api/v1/documents/doc-1/restore")
+    assert success.status == 200
+    assert (await success.json())["status"] == "indexed"
 
 
 @pytest.mark.asyncio

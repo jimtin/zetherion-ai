@@ -11,7 +11,7 @@ from aiohttp import web
 from aiohttp.multipart import BodyPartReader
 
 from zetherion_ai.documents.processing import infer_file_kind
-from zetherion_ai.documents.service import DocumentService
+from zetherion_ai.documents.service import DocumentLifecycleError, DocumentService
 from zetherion_ai.logging import get_logger
 
 log = get_logger("zetherion_ai.api.routes.documents")
@@ -49,6 +49,20 @@ def _serialise(record: dict[str, Any]) -> dict[str, Any]:
         else:
             out[key] = value
     return out
+
+
+def _parse_bool_query(value: str | None, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise web.HTTPBadRequest(
+        text=json.dumps({"error": "include_archived must be a boolean"}),
+        content_type="application/json",
+    )
 
 
 async def handle_create_upload(request: web.Request) -> web.Response:
@@ -202,7 +216,16 @@ async def handle_list_documents(request: web.Request) -> web.Response:
     except ValueError:
         limit = 50
 
-    rows = await tenant_manager.list_documents(tenant_id, limit=limit)
+    try:
+        include_archived = _parse_bool_query(request.query.get("include_archived"), default=False)
+    except web.HTTPBadRequest:
+        raise
+
+    rows = await tenant_manager.list_documents(
+        tenant_id,
+        limit=limit,
+        include_archived=include_archived,
+    )
     return web.json_response({"documents": [_serialise(row) for row in rows], "count": len(rows)})
 
 
@@ -217,6 +240,74 @@ async def handle_get_document(request: web.Request) -> web.Response:
         return web.json_response({"error": "Document not found"}, status=404)
 
     return web.json_response(_serialise(row))
+
+
+async def handle_archive_document(request: web.Request) -> web.Response:
+    """DELETE /api/v1/documents/{document_id}."""
+    tenant_id = _tenant_id(request)
+    document_id = request.match_info["document_id"]
+
+    archived_reason = request.query.get("reason")
+    if request.content_length:
+        try:
+            payload = await request.json()
+        except Exception:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+        if not isinstance(payload, dict):
+            return web.json_response({"error": "JSON body must be an object"}, status=400)
+        if "reason" in payload and payload["reason"] is not None:
+            if not isinstance(payload["reason"], str):
+                return web.json_response({"error": "reason must be a string"}, status=400)
+            archived_reason = payload["reason"].strip()
+            if not archived_reason:
+                archived_reason = None
+
+    try:
+        archive = await _service(request).request_archive(
+            tenant_id=tenant_id,
+            document_id=document_id,
+            archived_reason=archived_reason,
+        )
+    except ValueError:
+        return web.json_response({"error": "Document not found"}, status=404)
+    except DocumentLifecycleError as exc:
+        return web.json_response({"error": str(exc)}, status=exc.status_code)
+    except RuntimeError as exc:
+        return web.json_response({"error": str(exc)}, status=503)
+
+    document = _serialise(cast(dict[str, Any], archive["document"]))
+    idempotent = bool(archive.get("idempotent"))
+    return web.json_response(
+        {
+            "document_id": document.get("document_id"),
+            "tenant_id": document.get("tenant_id"),
+            "status": document.get("status"),
+            "archive_job_id": archive.get("archive_job_id"),
+            "archived_at": document.get("archived_at"),
+            "purge_after": document.get("purge_after"),
+            "message": "Archive already scheduled" if idempotent else "Archive scheduled",
+        },
+        status=202,
+    )
+
+
+async def handle_restore_document(request: web.Request) -> web.Response:
+    """POST /api/v1/documents/{document_id}/restore."""
+    tenant_id = _tenant_id(request)
+    document_id = request.match_info["document_id"]
+
+    try:
+        doc = await _service(request).restore_document(tenant_id=tenant_id, document_id=document_id)
+    except ValueError:
+        return web.json_response({"error": "Document not found"}, status=404)
+    except DocumentLifecycleError as exc:
+        return web.json_response({"error": str(exc)}, status=exc.status_code)
+    except RuntimeError as exc:
+        return web.json_response({"error": str(exc)}, status=503)
+    except Exception as exc:
+        return web.json_response({"error": str(exc)}, status=500)
+
+    return web.json_response(_serialise(doc), status=200)
 
 
 async def handle_preview_document(request: web.Request) -> web.StreamResponse:

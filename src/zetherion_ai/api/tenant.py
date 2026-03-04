@@ -1684,6 +1684,34 @@ class TenantManager:
         )
         return dict(row) if row else None
 
+    async def mark_document_restoring(
+        self,
+        tenant_id: str,
+        *,
+        document_id: str,
+    ) -> dict[str, Any] | None:
+        """Mark archived document as processing and clear archive markers."""
+        row = await self._fetchrow(
+            """
+            UPDATE tenant_documents
+            SET status = 'processing',
+                archived_at = NULL,
+                purge_after = NULL,
+                purged_at = NULL,
+                archived_reason = NULL,
+                error_message = NULL,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid AND document_id = $2::uuid
+            RETURNING document_id, tenant_id, file_name, mime_type, object_key, status,
+                      size_bytes, checksum_sha256, metadata, extracted_text, preview_html,
+                      chunk_count, indexed_at, archived_at, purge_after, purged_at,
+                      archived_reason, error_message, created_at, updated_at
+            """,
+            tenant_id,
+            document_id,
+        )
+        return dict(row) if row else None
+
     async def mark_document_purged(
         self,
         tenant_id: str,

@@ -3,7 +3,7 @@ info:
   title: Zetherion Upstream API
   version: 1.0.0
   description: Internal `/api/v1` upstream contract consumed by the CGS gateway. External clients should use CGS `/service/ai/v1`.
-  x-maintenance-note: "2026-03-04: Zetherion-only boundary recovery removed in-repo CGS website/UI assets; upstream API contract unchanged."
+  x-maintenance-note: "2026-03-05: added document archive/delete + restore routes and include_archived list filtering."
 servers:
   - url: https://{host}
     variables:
@@ -227,6 +227,13 @@ paths:
             minimum: 1
             maximum: 200
             default: 50
+        - name: include_archived
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Include `archiving|archived|purged` documents when true.
       responses:
         '200':
           description: Document list
@@ -253,6 +260,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DocumentRecord'
+    delete:
+      summary: Schedule document archive/delete
+      description: Marks an active document as archiving and enqueues archive work.
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+        - name: reason
+          in: query
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '202':
+          description: Archive request accepted (idempotent for archived states)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentArchiveResponse'
+        '404':
+          description: Document not found
+        '409':
+          description: Invalid lifecycle transition
   /api/v1/documents/{document_id}/preview:
     get:
       summary: Preview document content
@@ -294,6 +331,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DocumentRecord'
+  /api/v1/documents/{document_id}/restore:
+    post:
+      summary: Restore archived document
+      description: Restores archived document lifecycle state and runs re-indexing.
+      parameters:
+        - $ref: '#/components/parameters/DocumentId'
+      responses:
+        '200':
+          description: Document restored and re-indexed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentRecord'
+        '404':
+          description: Document not found
+        '409':
+          description: Invalid lifecycle transition
   /api/v1/rag/query:
     post:
       summary: Query tenant document vectors with provider/model override
@@ -438,7 +492,7 @@ components:
           type: string
         status:
           type: string
-          enum: [uploaded, processing, indexed, failed]
+          enum: [uploaded, processing, indexed, failed, archiving, archived, purged]
         size_bytes:
           type: integer
         checksum_sha256:
@@ -448,6 +502,21 @@ components:
         indexed_at:
           type: string
           format: date-time
+          nullable: true
+        archived_at:
+          type: string
+          format: date-time
+          nullable: true
+        purge_after:
+          type: string
+          format: date-time
+          nullable: true
+        purged_at:
+          type: string
+          format: date-time
+          nullable: true
+        archived_reason:
+          type: string
           nullable: true
         error_message:
           type: string
@@ -467,6 +536,33 @@ components:
         - size_bytes
         - created_at
         - updated_at
+    DocumentArchiveResponse:
+      type: object
+      properties:
+        document_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [archiving, archived, purged]
+        archive_job_id:
+          type: string
+          format: uuid
+          nullable: true
+        archived_at:
+          type: string
+          format: date-time
+          nullable: true
+        purge_after:
+          type: string
+          format: date-time
+          nullable: true
+        message:
+          type: string
+      required: [document_id, tenant_id, status, message]
     RagQueryRequest:
       type: object
       required: [query]

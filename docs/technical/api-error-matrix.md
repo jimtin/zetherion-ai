@@ -6,13 +6,13 @@ Exposure rule:
 - External clients consume CGS gateway errors only.
 - `/api/v1` errors are upstream/internal and surfaced through CGS mappings.
 
-## Maintenance Note (2026-03-04)
+## Maintenance Note (2026-03-05)
 
 - CGS failure envelope now includes `error.retryable` on all structured failures.
 - Added blog publish adapter duplicate-as-success behavior:
   - `409` with `error=null` and `data.status=duplicate`.
 - Added centralized upstream error mapping policy across runtime/internal/admin/reporting route families.
-- Zetherion-only boundary recovery removed in-repo CGS website/UI artifacts; error contracts remain unchanged.
+- Added upstream document lifecycle error mappings for archive/delete + restore routes.
 
 ## Public API (`/api/v1`)
 
@@ -73,6 +73,10 @@ Retryability rules:
 |---|---|---|
 | `POST /api/v1/documents/uploads/{upload_id}/complete` | Upload expired/non-pending/missing | `400` |
 | `GET /api/v1/documents/{document_id}` | Unknown document | `404` |
+| `DELETE /api/v1/documents/{document_id}` | Unknown document | `404` |
+| `DELETE /api/v1/documents/{document_id}` | Invalid lifecycle transition (for example `processing`) | `409` |
+| `POST /api/v1/documents/{document_id}/restore` | Unknown document | `404` |
+| `POST /api/v1/documents/{document_id}/restore` | Invalid lifecycle transition (`purged` or non-archived) | `409` |
 | `GET /api/v1/documents/{document_id}/preview` | Missing payload | `404` |
 | `POST /api/v1/rag/query` | Empty query/provider/model not allowed | `400` |
 | `POST /service/ai/v1/documents/uploads/{upload_id}/complete` (multipart) | Missing `tenant_id` query param | `400` + `AI_BAD_REQUEST` |

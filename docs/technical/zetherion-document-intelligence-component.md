@@ -9,10 +9,12 @@ Public exposure rule:
 - External clients must not call Zetherion `/api/v1` directly.
 - CGS `/service/ai/v1` is the only supported public API for this capability.
 
-## Maintenance Note (2026-03-04)
+## Maintenance Note (2026-03-05)
 
-- Zetherion-only boundary recovery removed in-repo CGS website/UI assets.
-- Document intelligence component behavior and API contracts are unchanged.
+- Added upstream document lifecycle APIs:
+  - `DELETE /api/v1/documents/{document_id}` (archive schedule)
+  - `POST /api/v1/documents/{document_id}/restore` (restore + reindex)
+- Added archive lifecycle status support and archive job persistence.
 
 ## Component Boundaries
 
@@ -35,6 +37,7 @@ Primary tables:
 - `tenant_documents`
 - `tenant_document_uploads`
 - `document_ingestion_jobs`
+- `document_archive_jobs`
 
 `tenant_documents` key fields:
 - `tenant_id`
@@ -42,12 +45,16 @@ Primary tables:
 - `file_name`
 - `mime_type`
 - `object_key`
-- `status` (`uploaded|processing|indexed|failed`)
+- `status` (`uploaded|processing|indexed|failed|archiving|archived|purged`)
 - `size_bytes`
 - `checksum_sha256`
 - `chunk_count`
 - `extracted_text`
 - `preview_html`
+- `archived_at`
+- `purge_after`
+- `purged_at`
+- `archived_reason`
 - `error_message`
 - `created_at`
 - `updated_at`
@@ -70,6 +77,17 @@ Primary tables:
 - `job_id`
 - `document_id`
 - `status` (`processing|indexed|failed`)
+- `error_message`
+- `created_at`
+- `updated_at`
+
+`document_archive_jobs` key fields:
+- `tenant_id`
+- `job_id`
+- `document_id`
+- `status` (`queued|running|succeeded|failed`)
+- `retry_count`
+- `next_attempt_at`
 - `error_message`
 - `created_at`
 - `updated_at`
@@ -114,7 +132,20 @@ Tenant isolation:
    - Extracts text from PDF/DOCX/text.
    - Chunks text.
    - Upserts vectors into Qdrant.
-   - Updates document/job to `indexed` or `failed`.
+ - Updates document/job to `indexed` or `failed`.
+
+Archive/delete phase:
+1. `DELETE /api/v1/documents/{document_id}`
+   - validates lifecycle state
+   - updates document to `archiving`
+   - enqueues `document_archive_jobs`
+2. Archive worker (separate segment) removes vectors and marks document `archived` with retention window.
+3. Purge worker (separate segment) removes raw bytes + vectors after retention and marks `purged`.
+
+Restore phase:
+1. `POST /api/v1/documents/{document_id}/restore`
+2. validates `status=archived`
+3. clears archive markers, transitions to processing, re-runs indexing flow.
 
 Failure behavior:
 - Upload validation failures return `400`.
@@ -170,6 +201,8 @@ Health indicators:
 
 Operational tasks:
 - Re-index via `POST /api/v1/documents/{document_id}/index`.
+- Archive/delete request via `DELETE /api/v1/documents/{document_id}`.
+- Restore via `POST /api/v1/documents/{document_id}/restore`.
 - Triage failed ingestions by `error_message`.
 - Validate preview fallbacks for unsupported/broken files.
 
