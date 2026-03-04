@@ -588,9 +588,9 @@ async def test_bot_lists_tasks(discord_test_client: DiscordTestClient) -> None:
                 retry_create_message, timeout=90.0, bot_id=bot_id
             )
             assert retry_create_response is not None, "Bot did not acknowledge retry task creation"
-            assert "created task:" in retry_create_response.content.lower(), (
-                f"Unexpected retry task creation response: {retry_create_response.content}"
-            )
+            assert (
+                "created task:" in retry_create_response.content.lower()
+            ), f"Unexpected retry task creation response: {retry_create_response.content}"
 
         list_message = await discord_test_client.send_message(f"<@{bot_id}> show my tasks")
         response = await discord_test_client.wait_for_bot_response(
