@@ -4,10 +4,11 @@ Version: `v1.0-draft`
 Date: `2026-03-01`  
 Owners: `Catalyst Group Solutions (CGS) Platform`, `Zetherion Backend`
 
-Maintenance note (2026-03-01):
+Maintenance note (2026-03-04):
 - Internal document route typing/multipart parsing hardening was applied.
 - Public + gateway service contracts defined in this draft remain unchanged.
 - Added tenant email admin control-plane routes under `/service/ai/v1/internal/admin/tenants/{tenant_id}/email/*` with step-up + approval requirements for high-risk actions.
+- Zetherion-only boundary recovery removed in-repo CGS website/UI assets; integration contract remains CGS-only.
 
 ## 1. Purpose
 

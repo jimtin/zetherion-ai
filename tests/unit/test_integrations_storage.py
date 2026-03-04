@@ -350,12 +350,15 @@ class TestCoverageScenarios:
             )
             is None
         )
-        assert await storage.get_object_link_by_external(
-            user_id=7,
-            provider="google",
-            object_type="task",
-            external_id="missing",
-        ) is None
+        assert (
+            await storage.get_object_link_by_external(
+                user_id=7,
+                provider="google",
+                object_type="task",
+                external_id="missing",
+            )
+            is None
+        )
 
         decision = RouteDecision(
             mode=RouteMode.AUTO,

@@ -9,6 +9,11 @@ Public exposure rule:
 - External clients must not call Zetherion `/api/v1` directly.
 - CGS `/service/ai/v1` is the only supported public API for this capability.
 
+## Maintenance Note (2026-03-04)
+
+- Zetherion-only boundary recovery removed in-repo CGS website/UI assets.
+- Document intelligence component behavior and API contracts are unchanged.
+
 ## Component Boundaries
 
 Zetherion component responsibilities:

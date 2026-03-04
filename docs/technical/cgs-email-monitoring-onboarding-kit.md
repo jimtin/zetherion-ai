@@ -8,6 +8,11 @@ Authoritative exposure rule:
 - Public/admin clients integrate only with CGS `/service/ai/v1/...`.
 - Zetherion email admin APIs are internal-only and never exposed directly.
 
+## Maintenance Note (2026-03-04)
+
+- Zetherion-only boundary recovery removed in-repo CGS website/UI assets.
+- Email monitoring API contracts in this onboarding kit are unchanged.
+
 ## Capability Outcome
 
 After implementing this kit, operators can:
