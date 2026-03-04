@@ -41,8 +41,8 @@ Headers:
 - `Authorization: Bearer <cgs_jwt>`
 
 CGS-hosted web UI mode:
-- The `/cgs` Next.js app uses a session-cookie BFF proxy (HttpOnly session token cookie to Next.js route handlers).
-- Browser code in `/cgs` does not read or store bearer tokens directly.
+- The CGS website uses a session-cookie BFF proxy (HttpOnly session token cookie to CGS route handlers).
+- Browser code does not read or store bearer tokens directly.
 
 Tenant scoping:
 - Query endpoints require `tenant_id` query parameter.

@@ -85,7 +85,11 @@ async def test_internal_admin_validation_error_matrix() -> None:
     skills.request_tenant_admin_json = AsyncMock(return_value=(200, {"ok": True}))
 
     cases = [
-        ("post", "/service/ai/v1/internal/admin/tenants/tenant-a/discord-users", {"discord_user_id": 0}),
+        (
+            "post",
+            "/service/ai/v1/internal/admin/tenants/tenant-a/discord-users",
+            {"discord_user_id": 0},
+        ),
         (
             "patch",
             "/service/ai/v1/internal/admin/tenants/tenant-a/discord-users/5/role",
@@ -186,12 +190,20 @@ async def test_internal_admin_replay_paths_for_change_workflow() -> None:
             {
                 "request_fingerprint": fingerprint_payload(approve_payload),
                 "response_status": 200,
-                "response_body": {"request_id": "req_old", "data": {"approved": True}, "error": None},
+                "response_body": {
+                    "request_id": "req_old",
+                    "data": {"approved": True},
+                    "error": None,
+                },
             },
             {
                 "request_fingerprint": fingerprint_payload(reject_payload),
                 "response_status": 200,
-                "response_body": {"request_id": "req_old", "data": {"rejected": True}, "error": None},
+                "response_body": {
+                    "request_id": "req_old",
+                    "data": {"rejected": True},
+                    "error": None,
+                },
             },
         ]
     )

@@ -331,7 +331,7 @@ def _classify_change(summary: str, body: str, files: list[str]) -> dict[str, boo
         for marker in (
             "src/zetherion_ai/api",
             "src/zetherion_ai/agent",
-            "cgs/",
+            "src/zetherion_ai/cgs_gateway",
             "docs/technical",
             "docs/development",
         )

@@ -48,7 +48,6 @@ PRESERVE_TEST_VOLUMES="${PRESERVE_TEST_VOLUMES:-false}"
 RUN_DISCORD_E2E_REQUIRED="${RUN_DISCORD_E2E_REQUIRED:-true}"
 DISCORD_E2E_PROVIDER="${DISCORD_E2E_PROVIDER:-groq}"
 RUN_DISCORD_E2E_LOCAL_MODEL="${RUN_DISCORD_E2E_LOCAL_MODEL:-false}"
-RUN_CGS_UI_CHECKS="${RUN_CGS_UI_CHECKS:-false}"
 RUN_BANDIT_CHECK="${RUN_BANDIT_CHECK:-true}"
 RUN_LICENSE_COMPLIANCE_CHECK="${RUN_LICENSE_COMPLIANCE_CHECK:-true}"
 OLLAMA_PULL_PROFILE="none"
@@ -449,11 +448,6 @@ fi
 start_static_check "pipeline contract" "python scripts/check_pipeline_contract.py"
 start_static_check "endpoint docs bundle" "python scripts/check-endpoint-doc-bundle.py"
 start_static_check "cgs route-doc parity" "python scripts/check-cgs-route-doc-parity.py"
-if [ "$RUN_CGS_UI_CHECKS" = "true" ]; then
-    start_static_check "cgs ui checks" "scripts/check-cgs-ui.sh"
-else
-    echo "  [skip] cgs ui checks disabled (RUN_CGS_UI_CHECKS=false)"
-fi
 
 if command -v gitleaks >/dev/null 2>&1; then
     start_static_check "gitleaks" "gitleaks detect --no-git --redact --config=.gitleaks.toml"

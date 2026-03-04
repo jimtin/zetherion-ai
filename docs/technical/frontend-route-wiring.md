@@ -7,7 +7,7 @@ This guide maps CGS `/service/ai/v1` routes to expected frontend flows.
 - Added internal lifecycle/reporting route mappings and operator screen coverage.
 - Added explicit failure envelope handling for `error.retryable`.
 - Added blog publish adapter route mapping for operator tooling and promotion worker integration.
-- Added `/cgs` Next.js UI deployment path using session-cookie BFF proxy handlers (`/cgs/api/gateway/*`).
+- Clarified that CGS website/UI is owned outside this repository; this document only maps CGS API routes to UI screens.
 - Added tenant email admin route mapping for OAuth app setup, mailbox linking, sync/triage, and calendar selection.
 
 ## Document Center Screens

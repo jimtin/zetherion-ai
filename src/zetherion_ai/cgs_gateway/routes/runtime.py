@@ -152,6 +152,23 @@ def _normalize_provider_catalog(payload: Any) -> Any:
     return normalized
 
 
+def _coerce_json_response(result: Any) -> tuple[int, Any, dict[str, str]]:
+    if not isinstance(result, tuple) or len(result) != 3:
+        raise TypeError("typed CGS client method returned invalid response tuple")
+    status_raw, payload, headers_raw = result
+    if not isinstance(headers_raw, dict):
+        raise TypeError("typed CGS client method returned non-dict headers")
+    headers = {str(k): str(v) for k, v in headers_raw.items()}
+    return int(status_raw), payload, headers
+
+
+def _coerce_raw_response(result: Any) -> tuple[int, bytes, dict[str, str]]:
+    status, payload, headers = _coerce_json_response(result)
+    if not isinstance(payload, bytes | bytearray | memoryview):
+        raise TypeError("typed CGS client method returned non-bytes body")
+    return status, bytes(payload), headers
+
+
 async def _public_request_json(
     request: web.Request,
     *,
@@ -169,14 +186,16 @@ async def _public_request_json(
         candidate = getattr(client, typed_method, None)
         if callable(candidate) and inspect.iscoroutinefunction(candidate):
             kwargs = typed_kwargs or {}
-            return await candidate(**kwargs)
-    return await client.request_json(
-        method,
-        path,
-        headers=headers,
-        json_body=json_body,
-        params=params,
-        data=data,
+            return _coerce_json_response(await candidate(**kwargs))
+    return _coerce_json_response(
+        await client.request_json(
+            method,
+            path,
+            headers=headers,
+            json_body=json_body,
+            params=params,
+            data=data,
+        )
     )
 
 
@@ -195,12 +214,14 @@ async def _public_request_raw(
         candidate = getattr(client, typed_method, None)
         if callable(candidate) and inspect.iscoroutinefunction(candidate):
             kwargs = typed_kwargs or {}
-            return await candidate(**kwargs)
-    return await client.request_raw(
-        method,
-        path,
-        headers=headers,
-        params=params,
+            return _coerce_raw_response(await candidate(**kwargs))
+    return _coerce_raw_response(
+        await client.request_raw(
+            method,
+            path,
+            headers=headers,
+            params=params,
+        )
     )
 
 

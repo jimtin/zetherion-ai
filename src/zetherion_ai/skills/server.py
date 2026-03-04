@@ -1948,9 +1948,14 @@ def main() -> None:  # pragma: no cover — CLI entry-point
                         return None
                     score_raw = payload.get("score")
                     reasons_raw = payload.get("reason_codes")
-                    try:
+                    if isinstance(score_raw, int | float):
                         score = float(score_raw)
-                    except (TypeError, ValueError):
+                    elif isinstance(score_raw, str):
+                        try:
+                            score = float(score_raw)
+                        except ValueError:
+                            return None
+                    else:
                         return None
                     if not isinstance(reasons_raw, list):
                         reasons_raw = []

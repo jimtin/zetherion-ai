@@ -9,7 +9,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from zetherion_ai.integrations.storage import IntegrationStorage
-from zetherion_ai.routing.models import DestinationRef, DestinationType, RouteDecision, RouteMode, RouteTag
+from zetherion_ai.routing.models import (
+    DestinationRef,
+    DestinationType,
+    RouteDecision,
+    RouteMode,
+    RouteTag,
+)
 
 
 def _make_mock_pool():
@@ -167,7 +173,12 @@ class TestCoverageScenarios:
         # set_primary_destination + delete_account use transaction path.
         conn.execute.reset_mock()
         conn.execute.side_effect = ["UPDATE 2", "UPDATE 1", "DELETE 0", "DELETE 1", "DELETE 1"]
-        assert await storage.set_primary_destination(7, "google", DestinationType.CALENDAR, "calendar-1")
+        assert await storage.set_primary_destination(
+            7,
+            "google",
+            DestinationType.CALENDAR,
+            "calendar-1",
+        )
         assert await storage.delete_account(user_id=7, provider="google", account_ref="acc-1")
 
         # enqueue + claim + mark done + blocked + counts.
@@ -245,7 +256,13 @@ class TestCoverageScenarios:
         assert counts == {"pending": 2, "done": 5}
 
         await storage.set_sync_state(7, "google", "acc-1", cursor="123", state={"k": "v"})
-        storage._fetchrow = AsyncMock(return_value={"cursor": "123", "state": '{"k":"v"}', "updated_at": datetime.now(UTC)})  # type: ignore[method-assign]
+        storage._fetchrow = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "cursor": "123",
+                "state": '{"k":"v"}',
+                "updated_at": datetime.now(UTC),
+            }
+        )
         sync_state = await storage.get_sync_state(7, "google", "acc-1")
         assert sync_state is not None
         assert sync_state["state"] == {"k": "v"}
@@ -325,7 +342,14 @@ class TestCoverageScenarios:
         )
         pref = await storage.get_routing_preference(user_id=7, provider="google", key="policy")
         assert pref == {"mode": "auto"}
-        assert await storage.get_routing_preference(user_id=7, provider="google", key="missing") is None
+        assert (
+            await storage.get_routing_preference(
+                user_id=7,
+                provider="google",
+                key="missing",
+            )
+            is None
+        )
         assert await storage.get_object_link_by_external(
             user_id=7,
             provider="google",

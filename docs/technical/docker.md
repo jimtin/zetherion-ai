@@ -2,7 +2,7 @@
 
 ## Overview
 
-Zetherion AI runs as a multi-container Docker stack on `zetherion-ai-net` with blue/green deployments for `skills`, `api`, `cgs-gateway`, and `cgs-ui`.
+Zetherion AI runs as a multi-container Docker stack on `zetherion-ai-net` with blue/green deployments for `skills`, `api`, and `cgs-gateway`.
 
 Production topology:
 
@@ -10,7 +10,6 @@ Production topology:
 - `zetherion-ai-skills-blue` / `zetherion-ai-skills-green`
 - `zetherion-ai-api-blue` / `zetherion-ai-api-green`
 - `zetherion-ai-cgs-gateway-blue` / `zetherion-ai-cgs-gateway-green`
-- `zetherion-ai-cgs-ui-blue` / `zetherion-ai-cgs-ui-green`
 - `zetherion-ai-traefik` (internal traffic switch)
 - `zetherion-ai-updater` (GitHub tag pull + build + rollout orchestration)
 - `zetherion-ai-cloudflared` (public API tunnel)
@@ -22,7 +21,6 @@ Production topology:
 - Routed Skills backend: blue or green (`config/traefik/dynamic/updater-routes.yml`)
 - Routed API backend: blue or green (same route file, API entrypoint `:8443`)
 - Routed CGS gateway backend: blue or green (`/service/ai/v1` on API entrypoint `:8443`)
-- Routed CGS UI backend: blue or green (`/cgs` on API entrypoint `:8443`)
 - Cloudflared depends on Traefik and API availability; tunnel routing is managed in Cloudflare.
 
 ## Blue/Green Update Flow
@@ -30,7 +28,7 @@ Production topology:
 Updater sidecar (`zetherion-ai-updater`) performs updates from GitHub release tags using local source builds:
 
 1. `git fetch --tags` and checkout target release tag
-2. Build inactive color (`skills` + `api` + `cgs-gateway` + `cgs-ui`) and bot images
+2. Build inactive color (`skills` + `api` + `cgs-gateway`) and bot images
 3. Start inactive color and verify direct health
 4. Flip Traefik route file to inactive color
 5. Verify routed health through Traefik
@@ -60,7 +58,6 @@ Runtime updater state is persisted in `/app/data/updater-state.json`.
 | `zetherion-ai-skills-blue/green` | Skills API | none |
 | `zetherion-ai-api-blue/green` | Public API app | none |
 | `zetherion-ai-cgs-gateway-blue/green` | CGS `/service/ai/v1` gateway | none |
-| `zetherion-ai-cgs-ui-blue/green` | CGS Next.js UI (`/cgs`) | none |
 | `zetherion-ai-traefik` | Internal router / blue-green switch | none |
 | `zetherion-ai-updater` | Update orchestrator | none |
 | `zetherion-ai-cloudflared` | Cloudflare tunnel | none |
@@ -72,5 +69,5 @@ Runtime updater state is persisted in `/app/data/updater-state.json`.
 ## Notes
 
 - Bot remains single-instance by design to avoid dual active Discord gateway sessions.
-- Zero-downtime guarantee applies to `skills`/`api`/`cgs-gateway`/`cgs-ui` route switching; bot uses graceful reconnect.
+- Zero-downtime guarantee applies to `skills`/`api`/`cgs-gateway` route switching; bot uses graceful reconnect.
 - Dynamic route defaults are committed at `config/traefik/dynamic/updater-routes.yml`.
