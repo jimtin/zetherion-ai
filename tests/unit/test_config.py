@@ -137,6 +137,20 @@ class TestAllowAllUsers:
         assert settings.allow_all_users is True
 
 
+class TestAllowlistStartupControls:
+    """Tests for allowlist startup hardening fields."""
+
+    def test_allowlist_strict_startup_default_is_false(self):
+        """Strict startup mode is opt-in by default."""
+        settings = _make_settings()
+        assert settings.allowlist_strict_startup is False
+
+    def test_allowlist_bootstrap_enabled_default_is_true(self):
+        """Allowlist bootstrap sync is enabled by default."""
+        settings = _make_settings()
+        assert settings.allowlist_bootstrap_enabled is True
+
+
 class TestRouterBackendValidation:
     """Tests for router backend validation."""
 
