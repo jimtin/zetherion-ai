@@ -222,6 +222,11 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `SECURITY_FLAG_THRESHOLD` | `0.3` | Flag threshold |
 | `SECURITY_BYPASS_ENABLED` | `false` | Disable checks (testing only) |
 | `SECURITY_NOTIFY_OWNER` | `true` | Notify owner on flagged events |
+| `SECURITY_DEFAULT_TRUST_TIER` | `tier3` | Default trust tier used by trust-policy evaluator (`tier0..tier4`) |
+| `MESSAGING_INGESTION_KILL_SWITCH` | `false` | Global kill switch for tenant messaging ingestion actions |
+| `MESSAGING_SEND_KILL_SWITCH` | `false` | Global kill switch for tenant messaging send actions |
+| `AUTO_MERGE_EXECUTION_KILL_SWITCH` | `false` | Global kill switch for autonomous PR merge execution |
+| `AUTO_MERGE_POLICY_ENABLED` | `false` | Enable trust-policy auto-merge execution path |
 
 ---
 

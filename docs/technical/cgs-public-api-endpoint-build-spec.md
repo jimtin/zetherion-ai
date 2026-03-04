@@ -13,6 +13,7 @@ It is based on the code currently implemented in this repository (not only draft
 - Added CGS route-doc parity gate for lifecycle/reporting/admin/blog surfaces.
 - Added tenant email admin control-plane routes for OAuth app setup, mailbox linking, sync, critical message triage, calendar binding, and insight reindex.
 - Zetherion-only boundary recovery removed in-repo CGS website/UI assets; endpoint contracts stay CGS-first and unchanged.
+- Internal admin trust-policy enforcement was added for sensitive actions; endpoint shapes remain unchanged.
 
 ## 2. Scope
 
