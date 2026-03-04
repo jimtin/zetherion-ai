@@ -30,6 +30,7 @@ from zetherion_ai.admin.tenant_admin_manager import (
 )
 from zetherion_ai.logging import get_logger
 from zetherion_ai.routing.models import DestinationType
+from zetherion_ai.security.trust_policy import TrustPolicyEvaluator
 from zetherion_ai.skills.base import SkillRequest
 from zetherion_ai.skills.registry import SkillRegistry
 
@@ -286,6 +287,11 @@ class SkillsServer:
         self._admin_nonce_cache: dict[str, datetime] = {}
         self._admin_nonce_ttl = timedelta(minutes=10)
         self._admin_actor_max_skew = timedelta(minutes=5)
+        self._bridge_nonce_cache: dict[str, datetime] = {}
+        self._bridge_nonce_ttl = timedelta(minutes=10)
+        self._bridge_max_skew = timedelta(minutes=5)
+        self._bridge_signing_secret = os.environ.get("WHATSAPP_BRIDGE_SIGNING_SECRET", "").strip()
+        self._trust_policy_evaluator = TrustPolicyEvaluator()
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
 
@@ -351,6 +357,65 @@ class SkillsServer:
         expired = [nonce for nonce, expiry in self._admin_nonce_cache.items() if expiry <= now]
         for nonce in expired:
             self._admin_nonce_cache.pop(nonce, None)
+
+    def _prune_bridge_nonce_cache(self, now: datetime) -> None:
+        expired = [nonce for nonce, expiry in self._bridge_nonce_cache.items() if expiry <= now]
+        for nonce in expired:
+            self._bridge_nonce_cache.pop(nonce, None)
+
+    def _resolve_bridge_signing_secret(self, tenant_id: str) -> str:
+        if self._tenant_admin_manager is not None:
+            tenant_secret = self._tenant_admin_manager.get_secret_cached(
+                tenant_id,
+                "WHATSAPP_BRIDGE_SIGNING_SECRET",
+                default="",
+            )
+            if tenant_secret:
+                return tenant_secret
+        return self._bridge_signing_secret
+
+    def _verify_bridge_signature(
+        self,
+        *,
+        request: web.Request,
+        tenant_id: str,
+        raw_body: str,
+    ) -> None:
+        timestamp = request.headers.get("X-Bridge-Timestamp", "").strip()
+        nonce = request.headers.get("X-Bridge-Nonce", "").strip()
+        provided_signature = request.headers.get("X-Bridge-Signature", "").strip().lower()
+        if not timestamp or not nonce or not provided_signature:
+            raise ValueError("Missing bridge signature headers")
+
+        try:
+            timestamp_int = int(timestamp)
+        except ValueError as exc:
+            raise ValueError("Invalid X-Bridge-Timestamp header") from exc
+
+        now = datetime.now(UTC)
+        signed_at = datetime.fromtimestamp(timestamp_int, tz=UTC)
+        skew = now - signed_at
+        if skew > self._bridge_max_skew or skew < -self._bridge_max_skew:
+            raise ValueError("Expired bridge signature timestamp")
+
+        signing_secret = self._resolve_bridge_signing_secret(tenant_id)
+        if not signing_secret:
+            raise ValueError("Bridge signing secret is not configured")
+
+        canonical = f"{tenant_id}.{timestamp}.{nonce}.{raw_body}"
+        expected_signature = hmac.new(
+            signing_secret.encode("utf-8"),
+            canonical.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(provided_signature, expected_signature):
+            raise ValueError("Invalid bridge signature")
+
+        self._prune_bridge_nonce_cache(now)
+        nonce_key = f"{tenant_id}:{nonce}"
+        if nonce_key in self._bridge_nonce_cache:
+            raise RuntimeError("Bridge nonce replay detected")
+        self._bridge_nonce_cache[nonce_key] = now + self._bridge_nonce_ttl
 
     @staticmethod
     def _decode_actor_payload(encoded: str) -> dict[str, Any]:
@@ -1346,6 +1411,61 @@ class SkillsServer:
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
 
+    async def handle_bridge_messaging_ingest(self, request: web.Request) -> web.Response:
+        """POST bridge ingest endpoint with HMAC auth + nonce replay protection."""
+        tenant_id = request.match_info["tenant_id"]
+        decision = self._trust_policy_evaluator.evaluate(
+            tenant_id=tenant_id,
+            action="messaging.ingest",
+            context={"method": "POST", "subpath": "/messaging/ingest"},
+        )
+        if not decision.allowed:
+            return web.json_response(
+                {
+                    "error": decision.message,
+                    "code": decision.code,
+                    "details": decision.details,
+                },
+                status=decision.status,
+            )
+
+        try:
+            raw_body = await request.text()
+        except Exception:
+            raw_body = ""
+        try:
+            payload = _extract_json_object(raw_body)
+        except Exception:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        try:
+            self._verify_bridge_signature(
+                request=request,
+                tenant_id=tenant_id,
+                raw_body=raw_body,
+            )
+        except RuntimeError as exc:
+            return web.json_response({"error": str(exc)}, status=409)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=401)
+
+        event_type = str(payload.get("event_type") or "").strip()
+        chat_id = str(payload.get("chat_id") or "").strip()
+        if not event_type:
+            return web.json_response({"error": "Missing event_type"}, status=400)
+
+        return web.json_response(
+            {
+                "ok": True,
+                "accepted": True,
+                "tenant_id": tenant_id,
+                "event_type": event_type,
+                "chat_id": chat_id,
+                "received_at": datetime.now(UTC).isoformat(),
+            },
+            status=202,
+        )
+
     # ------------------------------------------------------------------
     # Application factory
     # ------------------------------------------------------------------
@@ -1370,6 +1490,10 @@ class SkillsServer:
         app.router.add_get("/oauth/{provider}/authorize", self.handle_oauth_authorize)
         app.router.add_get("/oauth/{provider}/callback", self.handle_oauth_callback)
         app.router.add_get("/gmail/callback", self.handle_gmail_callback_alias)
+        app.router.add_post(
+            "/bridge/v1/tenants/{tenant_id}/messaging/ingest",
+            self.handle_bridge_messaging_ingest,
+        )
 
         # User management routes
         app.router.add_get("/users", self.handle_list_users)

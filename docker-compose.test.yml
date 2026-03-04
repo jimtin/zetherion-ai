@@ -171,6 +171,36 @@ services:
       - zetherion-ai-test-net
     # Use Dockerfile HEALTHCHECK - distroless can only exec via ENTRYPOINT
 
+  zetherion-ai-whatsapp-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.whatsapp-bridge
+    container_name: zetherion-ai-test-whatsapp-bridge
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      zetherion-ai-skills:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - WHATSAPP_BRIDGE_HOST=0.0.0.0
+      - WHATSAPP_BRIDGE_PORT=8877
+      - WHATSAPP_BRIDGE_BOOTSTRAP_SECRET=test-bootstrap-secret
+      - WHATSAPP_BRIDGE_TENANT_ID=11111111-1111-1111-1111-111111111111
+      - WHATSAPP_BRIDGE_INGEST_URL=http://zetherion-ai-skills:8080/bridge/v1/tenants/11111111-1111-1111-1111-111111111111/messaging/ingest
+      - WHATSAPP_BRIDGE_SIGNING_SECRET=test-whatsapp-signing-secret
+      - WHATSAPP_BRIDGE_SKILLS_API_SECRET=${SKILLS_API_SECRET:-test-skills-secret}
+      - WHATSAPP_BRIDGE_STATE_PATH=/app/data/whatsapp-bridge-state.enc
+      - WHATSAPP_BRIDGE_STATE_KEY=MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=
+    ports:
+      - "18877:8877"
+    volumes:
+      - ./data:/app/data
+    networks:
+      - zetherion-ai-test-net
+
   # Ollama Router Container (small, fast model for routing)
   ollama-router:
     image: ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed
