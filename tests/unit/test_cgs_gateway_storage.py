@@ -64,6 +64,26 @@ async def test_storage_initialize_and_close(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 @pytest.mark.asyncio
+async def test_storage_initialize_tolerates_concurrent_schema_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeUniqueViolationError(Exception):
+        pass
+
+    pool = _DummyPool()
+    pool.conn.execute.side_effect = _FakeUniqueViolationError("pg_type_typname_nsp_index")
+    create_pool = AsyncMock(return_value=pool)
+    monkeypatch.setattr(storage_mod.asyncpg, "create_pool", create_pool)
+    monkeypatch.setattr(storage_mod.asyncpg, "UniqueViolationError", _FakeUniqueViolationError)
+
+    storage = CGSGatewayStorage(dsn="postgres://test")
+    await storage.initialize()
+    assert storage._pool is pool
+    create_pool.assert_awaited_once()
+    pool.conn.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_storage_tenant_mapping_methods() -> None:
     storage = CGSGatewayStorage(dsn="postgres://test", encryptor=_DummyEncryptor())
     storage._fetchrow = AsyncMock(
