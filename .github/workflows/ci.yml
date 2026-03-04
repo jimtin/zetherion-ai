@@ -105,7 +105,7 @@ jobs:
   # Security Scanning Jobs
   # ============================================================================
   security:
-    name: Security Scanning (Bandit)
+    name: Security Scanning
     runs-on: ubuntu-latest
     needs: [detect-changes]
     permissions:
@@ -312,7 +312,7 @@ jobs:
   # Test Jobs
   # ============================================================================
   unit-test:
-    name: Unit Tests (Python ${{ matrix.python-version }})
+    name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     needs: [detect-changes]
     permissions:
@@ -429,6 +429,22 @@ jobs:
             --no-cov \
             -q
 
+  docker-build-test:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+    needs: [detect-changes]
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Validate Docker Compose config
+        run: docker compose -f docker-compose.yml config > /tmp/compose-config.yaml
+
+      - name: Build Skills image
+        run: docker build -f Dockerfile.skills -t zetherion-ai-skills-ci:${{ github.sha }} .
+
   # ============================================================================
   # Summary Job
   # ============================================================================
@@ -452,6 +468,7 @@ jobs:
         zetherion-boundary-check,
         unit-test,
         integration-test,
+        docker-build-test,
       ]
     if: always()
     steps:
@@ -494,7 +511,8 @@ jobs:
              [[ "${{ needs.pipeline-contract.result }}" == "success" ]] && \
              [[ "$BOUNDARY_RESULT" == "success" ]] && \
              [[ "${{ needs.unit-test.result }}" == "success" ]] && \
-             [[ "$INTEGRATION_RESULT" == "success" ]]; then
+             [[ "$INTEGRATION_RESULT" == "success" ]] && \
+             [[ "${{ needs.docker-build-test.result }}" == "success" ]]; then
             echo "✅ All CI checks passed!"
             exit 0
           else
@@ -511,6 +529,7 @@ jobs:
             echo "  Zetherion Boundary: ${BOUNDARY_RESULT} (raw=${{ needs.zetherion-boundary-check.result }})"
             echo "  Unit Tests: ${{ needs.unit-test.result }}"
             echo "  Integration Tests: ${INTEGRATION_RESULT} (raw=${{ needs.integration-test.result }})"
+            echo "  Docker Build Test: ${{ needs.docker-build-test.result }}"
             exit 1
           fi
 
@@ -533,6 +552,7 @@ jobs:
           echo "| Zetherion Boundary | ${{ needs.zetherion-boundary-check.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Unit Tests | ${{ needs.unit-test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Integration Tests | ${{ needs.integration-test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker Build Test | ${{ needs.docker-build-test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Security Scanning**: Semgrep (SAST), Bandit (Python), pip-audit (dependencies)" >> $GITHUB_STEP_SUMMARY
 
@@ -555,6 +575,7 @@ jobs:
         zetherion-boundary-check,
         unit-test,
         integration-test,
+        docker-build-test,
       ]
     if: always()
     steps:
@@ -565,7 +586,7 @@ jobs:
         run: |
           python scripts/ci_failure_attribution.py \
             --output ci-failure-attribution.json \
-            --job-results "lint=${{ needs.lint.result }},type-check=${{ needs.type-check.result }},security=${{ needs.security.result }},semgrep=${{ needs.semgrep.result }},dependency-audit=${{ needs.dependency-audit.result }},license-check=${{ needs.license-check.result }},pre-commit=${{ needs.pre-commit.result }},docs-contract=${{ needs.docs-contract.result }},pipeline-contract=${{ needs.pipeline-contract.result }},zetherion-boundary-check=${{ needs.zetherion-boundary-check.result }},unit-test=${{ needs.unit-test.result }},integration-test=${{ needs.integration-test.result }}"
+            --job-results "lint=${{ needs.lint.result }},type-check=${{ needs.type-check.result }},security=${{ needs.security.result }},semgrep=${{ needs.semgrep.result }},dependency-audit=${{ needs.dependency-audit.result }},license-check=${{ needs.license-check.result }},pre-commit=${{ needs.pre-commit.result }},docs-contract=${{ needs.docs-contract.result }},pipeline-contract=${{ needs.pipeline-contract.result }},zetherion-boundary-check=${{ needs.zetherion-boundary-check.result }},unit-test=${{ needs.unit-test.result }},integration-test=${{ needs.integration-test.result }},docker-build-test=${{ needs.docker-build-test.result }}"
 
       - name: Upload attribution artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
