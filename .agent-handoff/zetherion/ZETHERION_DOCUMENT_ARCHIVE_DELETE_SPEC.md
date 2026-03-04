@@ -25,8 +25,22 @@ It does not cover external gateway/public API mapping.
 1. `seg1-zeth-delete-handoff-gate` (completed): handoff spec + docs gate scoping.
 2. `seg2a-ci-docker-build-conditional` (completed): minimize CI spend by running `docker-build-test` only when Docker-related files change, while keeping scheduled/manual runs intact.
 3. `seg2-zeth-document-archive-schema` (completed): schema + tenant manager lifecycle methods.
-4. `seg3-zeth-delete-delete-endpoint` (in progress): add upstream delete/archive + restore routes, list filter wiring, lifecycle route tests, and docs bundle updates.
-5. Next segments continue in strict one-PR-per-segment order (workers, retrieval guardrails, purge execution, and broader integration tests).
+4. `seg3-zeth-delete-delete-endpoint` (completed): upstream delete/archive + restore routes, list filter wiring, lifecycle route tests, and docs bundle updates.
+5. `seg5-zeth-archive-worker-guardrails` (completed): archive/purge maintenance worker logic, server lifecycle loop wiring, retrieval exclusion for `archiving|archived|purged`, and regression tests.
+6. Remaining segments continue in strict one-PR-per-segment order for additional hardening only.
+
+## Implementation Status Update (2026-03-05)
+
+- Archive jobs are now processed by `DocumentService` maintenance methods:
+  - `process_archive_jobs(...)`
+  - `process_due_purges(...)`
+  - `run_archive_maintenance_once(...)`
+- Upstream API startup now launches a background maintenance loop when document service is configured.
+- Retrieval now filters archived-state matches before prompt/citation assembly.
+- Current default processing parameters:
+  - retention: 90 days
+  - archive batch size: 100
+  - maintenance poll interval: 15 seconds
 
 ## Lifecycle States
 

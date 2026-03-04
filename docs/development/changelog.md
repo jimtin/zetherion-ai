@@ -29,6 +29,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated upstream OpenAPI and technical docs bundle to include archive/delete/restore behavior and
   expanded lifecycle statuses.
 
+### Changed - Document Archive Worker + Retrieval Guardrails (2026-03-05)
+
+- Added archive/purge maintenance execution inside `DocumentService`:
+  - claims archive jobs
+  - deletes vectors
+  - marks archived state + retention window
+  - purges bytes/vectors after retention and marks `purged`
+- Added upstream API lifecycle wiring in `PublicAPIServer` to run document maintenance loop on startup and cancel cleanly on shutdown.
+- Updated RAG query path to exclude `archiving|archived|purged` documents before context/citation assembly.
+- Added unit coverage for maintenance loop retry behavior and archive/purge processing paths.
+
 ### Changed - Windows Promotions Hardening + Runbook (2026-03-04)
 
 - Enforced strict CGS blog publish response contract handling in Windows promotions pipeline:

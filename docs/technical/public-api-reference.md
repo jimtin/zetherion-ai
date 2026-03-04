@@ -17,6 +17,8 @@ Maintenance note (2026-03-05):
   - `POST /api/v1/documents/{document_id}/restore`
 - Added `include_archived` query support for document list.
 - Document lifecycle statuses now include archive states (`archiving|archived|purged`).
+- Archive/purge job processing now runs via an upstream background maintenance loop.
+- `POST /api/v1/rag/query` excludes `archiving|archived|purged` documents before context assembly.
 
 ### Exposure Policy (Authoritative)
 
@@ -445,6 +447,8 @@ Schedule document archive (delete-intent) asynchronously.
 Behavior:
 - transitions active document to `archiving`
 - creates a `document_archive_jobs` queue record
+- worker loop claims archive jobs, deletes vectors, and marks document `archived`
+- purge loop removes bytes/vectors after retention and marks document `purged`
 - returns `202 Accepted`
 - idempotent when already `archiving|archived|purged`
 
