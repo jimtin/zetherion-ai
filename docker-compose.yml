@@ -653,6 +653,53 @@ services:
           cpus: '0.25'
           memory: 64M
 
+  # Local WhatsApp bridge sidecar (Segment 2)
+  # Exposed on localhost only and scoped to signed messaging ingest.
+  zetherion-ai-whatsapp-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.whatsapp-bridge
+    container_name: zetherion-ai-whatsapp-bridge
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      zetherion-ai-skills-blue:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - WHATSAPP_BRIDGE_HOST=0.0.0.0
+      - WHATSAPP_BRIDGE_PORT=8877
+      - WHATSAPP_BRIDGE_BOOTSTRAP_SECRET=${WHATSAPP_BRIDGE_BOOTSTRAP_SECRET:-}
+      - WHATSAPP_BRIDGE_BOOTSTRAP_REQUIRE_ONCE=true
+      - WHATSAPP_BRIDGE_TENANT_ID=${WHATSAPP_BRIDGE_TENANT_ID:-00000000-0000-0000-0000-000000000000}
+      - WHATSAPP_BRIDGE_INGEST_URL=${WHATSAPP_BRIDGE_INGEST_URL:-http://zetherion-ai-skills-blue:8080/bridge/v1/tenants/${WHATSAPP_BRIDGE_TENANT_ID:-00000000-0000-0000-0000-000000000000}/messaging/ingest}
+      - WHATSAPP_BRIDGE_SIGNING_SECRET=${WHATSAPP_BRIDGE_SIGNING_SECRET:-}
+      - WHATSAPP_BRIDGE_SKILLS_API_SECRET=${WHATSAPP_BRIDGE_SKILLS_API_SECRET:-${SKILLS_API_SECRET:-}}
+      - WHATSAPP_BRIDGE_STATE_PATH=/app/data/whatsapp-bridge-state.enc
+      - WHATSAPP_BRIDGE_STATE_KEY=${WHATSAPP_BRIDGE_STATE_KEY:-}
+    ports:
+      - "127.0.0.1:8877:8877"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - zetherion-ai-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
 volumes:
   qdrant_storage:
   ollama_models:

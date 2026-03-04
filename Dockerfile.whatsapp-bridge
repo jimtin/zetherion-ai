@@ -1,0 +1,10 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY zetherion-whatsapp-bridge/package.json ./
+COPY zetherion-whatsapp-bridge/src ./src
+
+EXPOSE 8877
+
+CMD ["node", "src/index.mjs"]

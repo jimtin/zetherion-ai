@@ -1,0 +1,14 @@
+{
+  "name": "zetherion-whatsapp-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-only WhatsApp bridge sidecar for signed tenant messaging ingress",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
