@@ -206,6 +206,16 @@ def _build_idempotency_key(*, event: str, sha: str, status: str, explicit: str |
     return f"{event}:{sha}:{status}".lower()
 
 
+def _emit_status(status: str, *, idempotency_key: str = "") -> None:
+    payload = {
+        "generated_at": _now_iso(),
+        "status": status,
+    }
+    if idempotency_key:
+        payload["idempotency_key"] = idempotency_key
+    print(json.dumps(payload, ensure_ascii=True))
+
+
 def _send_discord_dm(*, bot_token: str, recipient_id: str, message: str) -> tuple[bool, str]:
     headers = {"Authorization": f"Bot {bot_token}"}
 
@@ -258,29 +268,16 @@ def main() -> int:
 
     state_path = Path(args.state_path)
     secrets_path = Path(args.secrets_path)
-    secrets, secrets_warning = _load_promotions_secrets(secrets_path)
-
-    result: dict[str, Any] = {
-        "generated_at": _now_iso(),
-        "status": "unknown",
-        "event": args.event,
-        "sha": args.sha.lower(),
-        "notification_status": args.status,
-        "idempotency_key": "",
-        "retryable": False,
-        "secrets_warning": secrets_warning,
-    }
+    secrets, _secrets_warning = _load_promotions_secrets(secrets_path)
 
     enabled = _resolve_enabled(override_enabled=args.enabled, secrets=secrets)
     if not enabled:
-        result["status"] = "disabled"
-        print(json.dumps(result))
+        _emit_status("disabled")
         return 0
 
     bot_token = _resolve_bot_token(override_token=args.bot_token, secrets=secrets)
     if not bot_token:
-        result["status"] = "skipped_missing_token"
-        print(json.dumps(result))
+        _emit_status("skipped_missing_token")
         return 0
 
     recipient_id = _resolve_recipient_id(
@@ -288,8 +285,7 @@ def main() -> int:
         secrets=secrets,
     )
     if not recipient_id:
-        result["status"] = "skipped_missing_recipient"
-        print(json.dumps(result))
+        _emit_status("skipped_missing_recipient")
         return 0
 
     key = _build_idempotency_key(
@@ -298,15 +294,13 @@ def main() -> int:
         status=args.status.strip().lower(),
         explicit=_normalize_id(args.idempotency_key) or None,
     )
-    result["idempotency_key"] = key
 
     state = _read_json(state_path, default={"sent": {}})
     sent = state.get("sent")
     if not isinstance(sent, dict):
         sent = {}
     if key in sent:
-        result["status"] = "deduped"
-        print(json.dumps(result))
+        _emit_status("deduped", idempotency_key=key)
         return 0
 
     message = args.message.strip() or _default_message(
@@ -316,12 +310,9 @@ def main() -> int:
         run_url=args.run_url.strip(),
         stage_results=args.stage_results.strip(),
     )
-    result["recipient_id"] = recipient_id
-    result["message_preview"] = message[:280]
 
     if args.dry_run:
-        result["status"] = "dry_run"
-        print(json.dumps(result))
+        _emit_status("dry_run", idempotency_key=key)
         return 0
 
     ok, detail = _send_discord_dm(
@@ -330,9 +321,7 @@ def main() -> int:
         message=message,
     )
     if not ok:
-        result["status"] = "failed_non_blocking"
-        result["error"] = detail
-        print(json.dumps(result))
+        _emit_status("failed_non_blocking", idempotency_key=key)
         return 0
 
     sent[key] = {
@@ -345,8 +334,7 @@ def main() -> int:
     state["updated_at"] = _now_iso()
     _write_json(state_path, state)
 
-    result["status"] = "sent"
-    print(json.dumps(result))
+    _emit_status("sent", idempotency_key=key)
     return 0
 
 

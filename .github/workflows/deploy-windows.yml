@@ -331,6 +331,7 @@ jobs:
             -Sha "${{ steps.target.outputs.target_sha }}" `
             -ReceiptPath "$receiptPath" `
             -DeployPath "$env:WINDOWS_DEPLOY_PATH" `
+            -RunUrl "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" `
             -OutputPath "$promotionsResultPath"
           $exitCode = $LASTEXITCODE
 
@@ -395,3 +396,33 @@ jobs:
           if (-not $checks.recovery_tasks_registered) { throw "Receipt check failed: recovery_tasks_registered" }
           if (-not $checks.runner_service_persistent) { throw "Receipt check failed: runner_service_persistent" }
           if (-not $checks.docker_service_persistent) { throw "Receipt check failed: docker_service_persistent" }
+
+      - name: Send deploy completion Discord DM
+        if: always()
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $notifyScript = Join-Path $PWD "scripts\windows\discord-dm-notify.py"
+          if (-not (Test-Path $notifyScript)) {
+            Write-Host "Discord DM notifier script not found; skipping notification."
+            exit 0
+          }
+
+          $pythonExe = if (Get-Command python -ErrorAction SilentlyContinue) { "python" } else { "python3" }
+          $deployStatus = "${{ job.status }}"
+          if (-not $deployStatus) {
+            $deployStatus = "unknown"
+          }
+
+          $runUrl = "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          $stageDetails = "deploy=${{ steps.deploy.outcome }};verify=${{ steps.verify.outcome }};receipt=${{ steps.receipt.outcome }};promotions=${{ steps.promotions.outputs.promotions_status }}"
+
+          & $pythonExe $notifyScript `
+            --event deploy `
+            --sha "${{ steps.target.outputs.target_sha }}" `
+            --status "$deployStatus" `
+            --run-url "$runUrl" `
+            --stage-results "$stageDetails" | Out-Null
