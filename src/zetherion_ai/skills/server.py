@@ -1756,10 +1756,7 @@ class SkillsServer:
                 direction=str(payload.get("direction") or "inbound"),
                 event_type=event_type,
                 body_text=str(
-                    payload.get("body_text")
-                    or payload.get("text")
-                    or payload.get("body")
-                    or ""
+                    payload.get("body_text") or payload.get("text") or payload.get("body") or ""
                 ),
                 metadata=metadata,
                 sender_id=str(payload.get("sender_id") or "").strip() or None,
