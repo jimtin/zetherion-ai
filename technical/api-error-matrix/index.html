@@ -1864,6 +1864,7 @@
 <li><code>409</code> with <code>error=null</code> and <code>data.status=duplicate</code>.</li>
 <li>Added centralized upstream error mapping policy across runtime/internal/admin/reporting route families.</li>
 <li>Added upstream document lifecycle error mappings for archive/delete + restore routes.</li>
+<li>Archive/purge execution failures are asynchronous and surface via document/job status fields, not synchronous DELETE request failures.</li>
 </ul>
 <h2 id="public-api-apiv1">Public API (<code>/api/v1</code>)<a class="headerlink" href="#public-api-apiv1" title="Permanent link">&para;</a></h2>
 <table>
@@ -2063,6 +2064,11 @@
 <td><code>409</code></td>
 </tr>
 <tr>
+<td><code>DELETE /api/v1/documents/{document_id}</code></td>
+<td>Archive enqueue accepted but worker later fails</td>
+<td><code>202</code> + inspect document/job status</td>
+</tr>
+<tr>
 <td><code>POST /api/v1/documents/{document_id}/restore</code></td>
 <td>Unknown document</td>
 <td><code>404</code></td>
@@ -2081,6 +2087,11 @@
 <td><code>POST /api/v1/rag/query</code></td>
 <td>Empty query/provider/model not allowed</td>
 <td><code>400</code></td>
+</tr>
+<tr>
+<td><code>POST /api/v1/rag/query</code></td>
+<td>Matches exist only in <code>archiving|archived|purged</code> docs</td>
+<td><code>200</code> with no-context answer</td>
 </tr>
 <tr>
 <td><code>POST /service/ai/v1/documents/uploads/{upload_id}/complete</code> (multipart)</td>

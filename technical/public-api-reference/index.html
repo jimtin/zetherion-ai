@@ -3019,7 +3019,9 @@ client contract. External clients must integrate through CGS <code>/service/ai/v
   - <code>DELETE /api/v1/documents/{document_id}</code>
   - <code>POST /api/v1/documents/{document_id}/restore</code>
 - Added <code>include_archived</code> query support for document list.
-- Document lifecycle statuses now include archive states (<code>archiving|archived|purged</code>).</p>
+- Document lifecycle statuses now include archive states (<code>archiving|archived|purged</code>).
+- Archive/purge job processing now runs via an upstream background maintenance loop.
+- <code>POST /api/v1/rag/query</code> excludes <code>archiving|archived|purged</code> documents before context assembly.</p>
 <h3 id="exposure-policy-authoritative">Exposure Policy (Authoritative)<a class="headerlink" href="#exposure-policy-authoritative" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Zetherion <code>/api/v1</code> is upstream-only.</li>
@@ -3313,6 +3315,8 @@ All routes below require <code>X-API-Key</code>.</p>
 <p>Behavior:
 - transitions active document to <code>archiving</code>
 - creates a <code>document_archive_jobs</code> queue record
+- worker loop claims archive jobs, deletes vectors, and marks document <code>archived</code>
+- purge loop removes bytes/vectors after retention and marks document <code>purged</code>
 - returns <code>202 Accepted</code>
 - idempotent when already <code>archiving|archived|purged</code></p>
 <p>Optional request body:</p>

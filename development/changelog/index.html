@@ -1576,10 +1576,32 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#changed-windows-deploy-resilience-registration-signal-cleanup-2026-03-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Windows Deploy Resilience Registration Signal Cleanup (2026-03-05)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added-document-archivedelete-api-lifecycle-routes-2026-03-05" class="md-nav__link">
     <span class="md-ellipsis">
       
         Added - Document Archive/Delete API Lifecycle Routes (2026-03-05)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-document-archive-worker-retrieval-guardrails-2026-03-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Document Archive Worker + Retrieval Guardrails (2026-03-05)
       
     </span>
   </a>
@@ -2411,10 +2433,32 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#changed-windows-deploy-resilience-registration-signal-cleanup-2026-03-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Windows Deploy Resilience Registration Signal Cleanup (2026-03-05)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added-document-archivedelete-api-lifecycle-routes-2026-03-05" class="md-nav__link">
     <span class="md-ellipsis">
       
         Added - Document Archive/Delete API Lifecycle Routes (2026-03-05)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-document-archive-worker-retrieval-guardrails-2026-03-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Document Archive Worker + Retrieval Guardrails (2026-03-05)
       
     </span>
   </a>
@@ -3105,6 +3149,17 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 </blockquote>
 <hr />
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="changed-windows-deploy-resilience-registration-signal-cleanup-2026-03-05">Changed - Windows Deploy Resilience Registration Signal Cleanup (2026-03-05)<a class="headerlink" href="#changed-windows-deploy-resilience-registration-signal-cleanup-2026-03-05" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Updated <code>Deploy Windows</code> resilience registration step behavior to remain explicitly non-blocking without
+  emitting a failed-step annotation when task registration is access-denied.</li>
+<li>Added explicit registration outputs for downstream diagnostics:</li>
+<li><code>registration_status</code></li>
+<li><code>failure_code</code></li>
+<li><code>bootstrap_required</code></li>
+<li>Expanded promotions-task warning summary to include resilience registration status/failure details so
+  operators can distinguish warning-state bootstrap requirements from true deployment failures.</li>
+</ul>
 <h3 id="added-document-archivedelete-api-lifecycle-routes-2026-03-05">Added - Document Archive/Delete API Lifecycle Routes (2026-03-05)<a class="headerlink" href="#added-document-archivedelete-api-lifecycle-routes-2026-03-05" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added upstream document lifecycle routes:</li>
@@ -3120,6 +3175,17 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
   lifecycle transitions.</li>
 <li>Updated upstream OpenAPI and technical docs bundle to include archive/delete/restore behavior and
   expanded lifecycle statuses.</li>
+</ul>
+<h3 id="changed-document-archive-worker-retrieval-guardrails-2026-03-05">Changed - Document Archive Worker + Retrieval Guardrails (2026-03-05)<a class="headerlink" href="#changed-document-archive-worker-retrieval-guardrails-2026-03-05" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added archive/purge maintenance execution inside <code>DocumentService</code>:</li>
+<li>claims archive jobs</li>
+<li>deletes vectors</li>
+<li>marks archived state + retention window</li>
+<li>purges bytes/vectors after retention and marks <code>purged</code></li>
+<li>Added upstream API lifecycle wiring in <code>PublicAPIServer</code> to run document maintenance loop on startup and cancel cleanly on shutdown.</li>
+<li>Updated RAG query path to exclude <code>archiving|archived|purged</code> documents before context/citation assembly.</li>
+<li>Added unit coverage for maintenance loop retry behavior and archive/purge processing paths.</li>
 </ul>
 <h3 id="changed-windows-promotions-hardening-runbook-2026-03-04">Changed - Windows Promotions Hardening + Runbook (2026-03-04)<a class="headerlink" href="#changed-windows-promotions-hardening-runbook-2026-03-04" title="Permanent link">&para;</a></h3>
 <ul>

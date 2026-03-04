@@ -2019,6 +2019,8 @@ It is implementation-level documentation for backend and operations teams.</p>
 <li><code>DELETE /api/v1/documents/{document_id}</code> (archive schedule)</li>
 <li><code>POST /api/v1/documents/{document_id}/restore</code> (restore + reindex)</li>
 <li>Added archive lifecycle status support and archive job persistence.</li>
+<li>Added background archive/purge maintenance loop wiring in upstream API server lifecycle.</li>
+<li>Added retrieval guardrail to exclude <code>archiving|archived|purged</code> from RAG context assembly.</li>
 </ul>
 <h2 id="component-boundaries">Component Boundaries<a class="headerlink" href="#component-boundaries" title="Permanent link">&para;</a></h2>
 <p>Zetherion component responsibilities:
@@ -2126,8 +2128,8 @@ It is implementation-level documentation for backend and operations teams.</p>
    - validates lifecycle state
    - updates document to <code>archiving</code>
    - enqueues <code>document_archive_jobs</code>
-2. Archive worker (separate segment) removes vectors and marks document <code>archived</code> with retention window.
-3. Purge worker (separate segment) removes raw bytes + vectors after retention and marks <code>purged</code>.</p>
+2. Archive maintenance loop claims jobs, removes vectors, and marks document <code>archived</code> with retention window.
+3. Purge maintenance loop removes raw bytes + vectors after retention and marks <code>purged</code>.</p>
 <p>Restore phase:
 1. <code>POST /api/v1/documents/{document_id}/restore</code>
 2. validates <code>status=archived</code>
@@ -2149,9 +2151,10 @@ It is implementation-level documentation for backend and operations teams.</p>
 <p>Route: <code>POST /api/v1/rag/query</code></p>
 <p>Execution:
 1. Tenant-scoped vector search in <code>tenant_documents</code>.
-2. Context assembly from top matches.
-3. Inference call with optional provider/model override.
-4. Citation assembly (<code>document_id</code>, <code>file_name</code>).</p>
+2. Status guardrail excludes <code>archiving|archived|purged</code> matches before context assembly.
+3. Context assembly from active matches only.
+4. Inference call with optional provider/model override.
+5. Citation assembly (<code>document_id</code>, <code>file_name</code>).</p>
 <p>Provider override:
 - Canonical providers: <code>groq</code>, <code>openai</code>, <code>anthropic</code>.
 - <code>claude</code> is accepted as alias for <code>anthropic</code>.
