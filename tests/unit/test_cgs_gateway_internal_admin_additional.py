@@ -238,6 +238,29 @@ async def test_internal_admin_replay_paths_for_change_workflow() -> None:
 
 
 @pytest.mark.asyncio
+async def test_internal_admin_submit_change_blocks_denied_trust_policy_actions() -> None:
+    app, storage, _ = _admin_app(
+        scopes=["cgs:internal", "cgs:zetherion-admin"],
+        claims={"step_up": True, "allowed_tenants": ["tenant-a"]},
+    )
+    storage.create_admin_change = AsyncMock()
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/changes",
+            json={
+                "action": "automerge.execute",
+                "payload": {"branch_guard_passed": True, "risk_guard_passed": True},
+            },
+        )
+        assert resp.status == 403
+        body = await resp.json()
+        assert body["error"]["code"] == "AI_TRUST_POLICY_DENIED"
+
+    storage.create_admin_change.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_internal_admin_body_ticket_and_upstream_request_id_capture() -> None:
     app, storage, skills = _admin_app(
         scopes=["cgs:internal", "cgs:zetherion-admin"],
