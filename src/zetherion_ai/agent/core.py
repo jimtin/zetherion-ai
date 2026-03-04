@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from datetime import datetime
 from typing import Any
 
 from zetherion_ai.agent.docs_knowledge import DocsKnowledgeBase
@@ -14,7 +15,7 @@ from zetherion_ai.config import get_dynamic, get_settings
 from zetherion_ai.constants import CONTEXT_HISTORY_LIMIT, MEMORY_SCORE_THRESHOLD
 from zetherion_ai.logging import get_logger
 from zetherion_ai.memory.qdrant import QdrantMemory
-from zetherion_ai.skills.base import SkillRequest
+from zetherion_ai.skills.base import SkillRequest, SkillResponse
 from zetherion_ai.skills.client import SkillsClient, SkillsClientError
 from zetherion_ai.utils import timed_operation
 
@@ -77,6 +78,7 @@ CREATIVE_KEYWORDS = frozenset(
     }
 )
 SUMMARIZATION_KEYWORDS = frozenset({"summarize", "summary", "tldr", "condense"})
+TASK_LIST_DISPLAY_LIMIT = 10
 
 
 class Agent:
@@ -442,7 +444,11 @@ class Agent:
             response = await client.handle_request(request)
 
             if response.success:
-                result_msg = response.message or "Done!"
+                result_msg = self.format_skill_response(
+                    skill_name=skill_name,
+                    intent=intent,
+                    response=response,
+                )
                 log.debug(
                     "skill_execution_success",
                     skill=skill_name,
@@ -460,6 +466,99 @@ class Agent:
         except SkillsClientError as e:
             log.error("skills_client_error", skill=skill_name, error=str(e))
             return "I'm having trouble processing that request. Please try again."
+
+    def format_skill_response(self, *, skill_name: str, intent: str, response: SkillResponse) -> str:
+        """Format a skill response into user-facing text."""
+        if skill_name == "task_manager" and intent == "list_tasks":
+            return self._format_task_list_response(response)
+        return response.message or "Done!"
+
+    def _format_task_list_response(self, response: SkillResponse) -> str:
+        """Render task list responses with a useful summary and task details."""
+        raw_tasks = response.data.get("tasks")
+        if not isinstance(raw_tasks, list):
+            return response.message or "Done!"
+
+        tasks = [task for task in raw_tasks if isinstance(task, dict)]
+        if not tasks:
+            return "You have no tasks right now."
+
+        active_count = 0
+        overdue_count = 0
+        now = datetime.now()
+        for task in tasks:
+            status_raw = str(task.get("status", "")).strip().lower()
+            is_closed = status_raw in {"done", "cancelled"}
+            if not is_closed:
+                active_count += 1
+
+            due = self._parse_deadline(task.get("deadline"))
+            if due is not None and not is_closed and due < now:
+                overdue_count += 1
+
+        lines = [f"You have {active_count} active task(s)."]
+        if overdue_count > 0:
+            lines.append(f"Overdue: {overdue_count}.")
+        lines.append("Here are your tasks:")
+
+        displayed = tasks[:TASK_LIST_DISPLAY_LIMIT]
+        for idx, task in enumerate(displayed, start=1):
+            title = str(task.get("title") or "Untitled task").strip()
+            status = self._format_task_status(task.get("status"))
+            priority = self._format_task_priority(task.get("priority"))
+            line = f"{idx}. {title} - {status} - {priority}"
+            due = self._format_deadline(task.get("deadline"))
+            if due:
+                line += f" - due {due}"
+            lines.append(line)
+
+        remaining = len(tasks) - len(displayed)
+        if remaining > 0:
+            lines.append(f"+{remaining} more")
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_task_status(raw_status: Any) -> str:
+        """Normalize task status values to title-cased labels."""
+        status = str(raw_status or "todo").strip().replace("_", " ")
+        if not status:
+            return "Todo"
+        return status.title()
+
+    @staticmethod
+    def _format_task_priority(raw_priority: Any) -> str:
+        """Normalize task priority values from int/str to labels."""
+        if isinstance(raw_priority, int | float):
+            mapping = {4: "Critical", 3: "High", 2: "Medium", 1: "Low"}
+            return mapping.get(int(raw_priority), "Medium")
+
+        text = str(raw_priority or "").strip()
+        if not text:
+            return "Medium"
+
+        if text.isdigit():
+            mapping = {"4": "Critical", "3": "High", "2": "Medium", "1": "Low"}
+            return mapping.get(text, "Medium")
+
+        return text.replace("_", " ").title()
+
+    @staticmethod
+    def _parse_deadline(raw_deadline: Any) -> datetime | None:
+        """Parse a deadline value if present."""
+        if not isinstance(raw_deadline, str) or not raw_deadline.strip():
+            return None
+        try:
+            return datetime.fromisoformat(raw_deadline.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            return None
+
+    def _format_deadline(self, raw_deadline: Any) -> str | None:
+        """Format a deadline value for display."""
+        parsed = self._parse_deadline(raw_deadline)
+        if parsed is None:
+            return None
+        return parsed.strftime("%Y-%m-%d")
 
     def _parse_task_intent(self, message: str) -> str:
         """Parse specific task intent from message."""

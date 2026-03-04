@@ -564,18 +564,52 @@ async def test_bot_lists_tasks(discord_test_client: DiscordTestClient) -> None:
     if not bot_id:
         pytest.skip("Could not find Zetherion AI bot in channel")
 
-    test_message = await discord_test_client.send_message(f"<@{bot_id}> show my tasks")
+    task_title = f"review design docs batch {uuid4().int % 10000}"
+    create_message = await discord_test_client.send_message(
+        f"<@{bot_id}> add a task to {task_title}"
+    )
+    create_response = None
+    retry_create_message = None
+    retry_create_response = None
+    list_message = None
     response = None
 
     try:
+        create_response = await discord_test_client.wait_for_bot_response(
+            create_message, timeout=90.0, bot_id=bot_id
+        )
+        assert create_response is not None, "Bot did not acknowledge task creation"
+        if "created task:" not in create_response.content.lower():
+            task_title = "review the design docs"
+            retry_create_message = await discord_test_client.send_message(
+                f"<@{bot_id}> add a task to {task_title}"
+            )
+            retry_create_response = await discord_test_client.wait_for_bot_response(
+                retry_create_message, timeout=90.0, bot_id=bot_id
+            )
+            assert retry_create_response is not None, "Bot did not acknowledge retry task creation"
+            assert "created task:" in retry_create_response.content.lower(), (
+                f"Unexpected retry task creation response: {retry_create_response.content}"
+            )
+
+        list_message = await discord_test_client.send_message(f"<@{bot_id}> show my tasks")
         response = await discord_test_client.wait_for_bot_response(
-            test_message, timeout=90.0, bot_id=bot_id
+            list_message, timeout=90.0, bot_id=bot_id
         )
         assert response is not None, "Bot did not respond to task listing"
         assert len(response.content) > 0, "Bot response was empty"
+        assert task_title in response.content.lower(), "Bot did not list the created task title"
         print(f"✅ Bot listed tasks: {response.content[:100]}...")
     finally:
-        await discord_test_client.delete_message(test_message)
+        await discord_test_client.delete_message(create_message)
+        if create_response:
+            await discord_test_client.delete_message(create_response)
+        if retry_create_message:
+            await discord_test_client.delete_message(retry_create_message)
+        if retry_create_response:
+            await discord_test_client.delete_message(retry_create_response)
+        if list_message:
+            await discord_test_client.delete_message(list_message)
         if response:
             await discord_test_client.delete_message(response)
 

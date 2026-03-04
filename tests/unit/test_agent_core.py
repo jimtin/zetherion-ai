@@ -291,6 +291,76 @@ class TestHandleSkillIntent:
         result = await agent._handle_skill_intent(123, "list tasks", "task_manager")
         assert "trouble processing" in result
 
+    async def test_task_list_formats_summary_and_items(self):
+        """list_tasks should include a summary plus concrete task entries."""
+        agent = _make_agent()
+
+        mock_client = AsyncMock()
+        mock_response = SkillResponse(
+            request_id=uuid4(),
+            success=True,
+            message="Found 1 task(s)",
+            data={
+                "tasks": [
+                    {
+                        "title": "Review docs",
+                        "status": "todo",
+                        "priority": 3,
+                        "deadline": "2026-03-10T09:30:00",
+                    }
+                ],
+                "count": 1,
+            },
+        )
+        mock_client.handle_request = AsyncMock(return_value=mock_response)
+        agent._get_skills_client = AsyncMock(return_value=mock_client)
+
+        result = await agent._handle_skill_intent(123, "show my tasks", "task_manager")
+        assert "You have 1 active task(s)." in result
+        assert "Here are your tasks:" in result
+        assert "1. Review docs - Todo - High - due 2026-03-10" in result
+        assert "Found 1 task(s)" not in result
+
+    async def test_task_list_empty_state(self):
+        """list_tasks should return an explicit empty-state message."""
+        agent = _make_agent()
+
+        mock_client = AsyncMock()
+        mock_response = SkillResponse(
+            request_id=uuid4(),
+            success=True,
+            message="Found 0 task(s)",
+            data={"tasks": [], "count": 0},
+        )
+        mock_client.handle_request = AsyncMock(return_value=mock_response)
+        agent._get_skills_client = AsyncMock(return_value=mock_client)
+
+        result = await agent._handle_skill_intent(123, "show my tasks", "task_manager")
+        assert result == "You have no tasks right now."
+
+    async def test_task_list_truncates_to_limit(self):
+        """list_tasks should render up to 10 tasks and summarize the remainder."""
+        agent = _make_agent()
+
+        tasks = [
+            {"title": f"Task {i}", "status": "todo", "priority": 2}
+            for i in range(1, 12)
+        ]
+        mock_client = AsyncMock()
+        mock_response = SkillResponse(
+            request_id=uuid4(),
+            success=True,
+            message="Found 11 task(s)",
+            data={"tasks": tasks, "count": 11},
+        )
+        mock_client.handle_request = AsyncMock(return_value=mock_response)
+        agent._get_skills_client = AsyncMock(return_value=mock_client)
+
+        result = await agent._handle_skill_intent(123, "show my tasks", "task_manager")
+        assert "10. Task 10 - Todo - Medium" in result
+        assert "11. Task 11 - Todo - Medium" not in result
+        assert "+1 more" in result
+
     async def test_routes_to_calendar_skill(self):
         """Should use calendar intent parsing for calendar skill."""
         agent = _make_agent()
