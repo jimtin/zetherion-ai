@@ -16,6 +16,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 REQUIRED_PRIMARY_MODEL = "gpt-5.2"
 REQUIRED_SECONDARY_MODEL = "claude-sonnet-4-6"
@@ -43,6 +44,10 @@ PR_REF_RE = re.compile(r"\(#(\d+)\)|(?<![A-Za-z0-9_])#(\d+)\b")
 ISSUE_REF_RE = re.compile(r"(?<![A-Za-z0-9_])#(\d+)\b")
 
 RETRYABLE_EXIT_CODE = 2
+
+CGS_BLOG_PUBLISH_PATH_SUFFIX = "/service/ai/v1/internal/blog/publish"
+IDEMPOTENCY_KEY_RE = re.compile(r"^blog-[A-Fa-f0-9]{7,64}$")
+SHA_RE = re.compile(r"^[A-Fa-f0-9]{7,64}$")
 
 
 class PromotionError(RuntimeError):
@@ -836,12 +841,44 @@ def _publish_blog(
     payload: dict[str, Any],
     sha: str,
 ) -> tuple[str, dict[str, Any]]:
+    publish_url_clean = publish_url.strip()
+    if not publish_url_clean.endswith(CGS_BLOG_PUBLISH_PATH_SUFFIX):
+        raise PromotionError(
+            "CGS_BLOG_PUBLISH_URL must end with "
+            f"{CGS_BLOG_PUBLISH_PATH_SUFFIX!r} (got {publish_url_clean!r})"
+        )
+
+    if not SHA_RE.fullmatch(sha):
+        raise PromotionError(f"Invalid publish SHA format: {sha!r}")
+
+    idempotency_key = str(payload.get("idempotency_key", "")).strip()
+    payload_sha = str(payload.get("sha", "")).strip().lower()
+    expected_key = f"blog-{sha}"
+
+    if not IDEMPOTENCY_KEY_RE.fullmatch(idempotency_key):
+        raise PromotionError(
+            "idempotency_key must match ^blog-[A-Fa-f0-9]{7,64}$ "
+            f"(got {idempotency_key!r})"
+        )
+    if idempotency_key != expected_key:
+        raise PromotionError(
+            "idempotency_key must equal blog-<sha> "
+            f"(expected {expected_key!r}, got {idempotency_key!r})"
+        )
+    if payload_sha != sha:
+        raise PromotionError(
+            "payload sha must match normalized deployment sha "
+            f"(expected {sha!r}, got {payload_sha!r})"
+        )
+
+    request_id = f"req_{uuid4().hex}"
     status, body = _post_json(
-        publish_url,
+        publish_url_clean,
         payload=payload,
         headers={
             "Authorization": f"Bearer {publish_token}",
-            "Idempotency-Key": f"blog-{sha}",
+            "Idempotency-Key": idempotency_key,
+            "X-Request-Id": request_id,
         },
         timeout=60,
     )
@@ -852,11 +889,72 @@ def _publish_blog(
     except json.JSONDecodeError:
         parsed = {"raw": body}
 
-    if status in {200, 201}:
-        return "published", parsed
+    envelope_data = parsed.get("data")
+    envelope_error = parsed.get("error")
+    envelope_request_id = str(parsed.get("request_id", "")).strip()
+    if not envelope_request_id:
+        envelope_request_id = request_id
+
+    result = {
+        "request_id": envelope_request_id,
+        "http_status": status,
+        "idempotency_key": idempotency_key,
+        "response": parsed,
+    }
+    if isinstance(envelope_data, dict):
+        receipt_id = envelope_data.get("receipt_id")
+        if isinstance(receipt_id, str) and receipt_id.strip():
+            result["receipt_id"] = receipt_id.strip()
+
+    if status == 201:
+        data_status = envelope_data.get("status") if isinstance(envelope_data, dict) else None
+        if data_status == "published":
+            result["status"] = "published"
+            return "published", result
+        raise PromotionError(
+            "CGS publish API returned HTTP 201 but unexpected envelope status "
+            f"(data.status={data_status!r}, request_id={envelope_request_id})"
+        )
+
     if status == 409:
-        return "duplicate", parsed
-    raise PromotionError(f"CGS publish API failed (HTTP {status}): {body}")
+        data_status = envelope_data.get("status") if isinstance(envelope_data, dict) else None
+        if data_status == "duplicate" and envelope_error is None:
+            result["status"] = "duplicate"
+            return "duplicate", result
+        if (
+            isinstance(envelope_error, dict)
+            and str(envelope_error.get("code", "")) == "AI_IDEMPOTENCY_CONFLICT"
+        ):
+            raise PromotionError(
+                "CGS publish API idempotency conflict requires manual intervention "
+                f"(request_id={envelope_request_id})"
+            )
+        raise PromotionError(
+            "CGS publish API returned HTTP 409 with non-duplicate envelope "
+            f"(request_id={envelope_request_id})"
+        )
+
+    if status in {400, 401, 403}:
+        raise PromotionError(
+            "CGS publish API hard failure "
+            f"(HTTP {status}, request_id={envelope_request_id}): {body}"
+        )
+
+    if status == 429 or status >= 500:
+        raise PromotionError(
+            "CGS publish API retryable failure "
+            f"(HTTP {status}, request_id={envelope_request_id}): {body}"
+        )
+
+    if isinstance(envelope_error, dict) and bool(envelope_error.get("retryable")):
+        raise PromotionError(
+            "CGS publish API retryable envelope error "
+            f"(HTTP {status}, request_id={envelope_request_id}): {body}"
+        )
+
+    raise PromotionError(
+        f"CGS publish API failed (HTTP {status}, request_id={envelope_request_id}): {body}"
+    )
 
 
 def _generate_and_publish_blog(
