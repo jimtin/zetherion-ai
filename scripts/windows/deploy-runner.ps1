@@ -8,7 +8,11 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$LockPath = "C:\ZetherionAI\data\deploy.lock",
     [Parameter(Mandatory = $false)]
-    [string]$OutputPath = "deploy-result.json"
+    [string]$OutputPath = "deploy-result.json",
+    [Parameter(Mandatory = $false)]
+    [string]$DiagnosticsPath = "deploy-container-diagnostics.json",
+    [Parameter(Mandatory = $false)]
+    [string]$DiagnosticsLogsPath = "deploy-container-logs.txt"
 )
 
 Set-StrictMode -Version Latest
@@ -36,6 +40,115 @@ function Write-DeployResult {
         New-Item -ItemType Directory -Path $parent -Force | Out-Null
     }
     $Result | ConvertTo-Json -Depth 8 | Out-File $Path -Encoding utf8
+}
+
+function Write-TextFile {
+    param(
+        [string]$Path,
+        [string]$Content
+    )
+
+    $parent = Split-Path -Parent $Path
+    if ($parent -and -not (Test-Path $parent)) {
+        New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    }
+    $Content | Out-File $Path -Encoding utf8
+}
+
+function Collect-DeployDiagnostics {
+    param(
+        [string]$RepositoryPath,
+        [string]$DiagnosticsPath,
+        [string]$DiagnosticsLogsPath
+    )
+
+    $generatedAt = [DateTime]::UtcNow.ToString("o")
+    $composePs = ""
+    $dockerPs = ""
+    $containerStates = @()
+    $failedContainers = @()
+    $logsBuilder = New-Object System.Text.StringBuilder
+
+    Push-Location $RepositoryPath
+    try {
+        $composePs = (docker compose ps 2>&1 | Out-String)
+        $dockerPs = (docker ps --format "table {{.Names}}`t{{.Status}}`t{{.Image}}" 2>&1 | Out-String)
+
+        $containerNames = @(
+            docker ps -a --format "{{.Names}}" 2>$null |
+                Where-Object { $_ -and $_ -like "zetherion-ai-*" }
+        )
+
+        foreach ($container in $containerNames) {
+            $stateRaw = docker inspect --format "{{json .State}}" $container 2>$null
+            if ($LASTEXITCODE -ne 0 -or -not $stateRaw) {
+                continue
+            }
+
+            $state = $stateRaw | ConvertFrom-Json
+            $status = [string]$state.Status
+            $exitCode = 0
+            if ($state.PSObject.Properties.Name -contains "ExitCode") {
+                $exitCode = [int]$state.ExitCode
+            }
+
+            $healthStatus = ""
+            if (
+                ($state.PSObject.Properties.Name -contains "Health") -and
+                $null -ne $state.Health -and
+                ($state.Health.PSObject.Properties.Name -contains "Status")
+            ) {
+                $healthStatus = [string]$state.Health.Status
+            }
+
+            $containerState = [ordered]@{
+                name = $container
+                status = $status
+                health = $healthStatus
+                exit_code = $exitCode
+            }
+            $containerStates += $containerState
+
+            $isFailed = $false
+            if ($status -ne "running") {
+                $isFailed = $true
+            } elseif ($healthStatus -eq "unhealthy") {
+                $isFailed = $true
+            } elseif ($exitCode -ne 0) {
+                $isFailed = $true
+            }
+
+            if (-not $isFailed) {
+                continue
+            }
+
+            $failedContainers += $containerState
+            [void]$logsBuilder.AppendLine("===== $container =====")
+            [void]$logsBuilder.AppendLine("status=$status health=$healthStatus exit_code=$exitCode")
+            $tail = (docker logs --tail 200 $container 2>&1 | Out-String)
+            [void]$logsBuilder.AppendLine($tail)
+            [void]$logsBuilder.AppendLine()
+        }
+    } finally {
+        Pop-Location
+    }
+
+    $payload = [ordered]@{
+        generated_at = $generatedAt
+        compose_ps = $composePs
+        docker_ps = $dockerPs
+        container_states = $containerStates
+        failed_containers = $failedContainers
+    }
+
+    $payload | ConvertTo-Json -Depth 8 | Out-File $DiagnosticsPath -Encoding utf8
+    Write-TextFile -Path $DiagnosticsLogsPath -Content $logsBuilder.ToString()
+
+    return [pscustomobject]@{
+        diagnostics_path = $DiagnosticsPath
+        diagnostics_logs_path = $DiagnosticsLogsPath
+        failed_containers = $failedContainers
+    }
 }
 
 function Get-EnvValueFromFile {
@@ -180,6 +293,9 @@ $result = [ordered]@{
     deployed_at = [DateTime]::UtcNow.ToString("o")
     status = "failed"
     error = ""
+    diagnostics_path = ""
+    diagnostics_logs_path = ""
+    failed_services = @()
 }
 
 $lockCreated = $false
@@ -238,6 +354,19 @@ try {
     }
 } catch {
     $result.error = $_.Exception.Message
+    try {
+        $diagnostics = Collect-DeployDiagnostics `
+            -RepositoryPath $DeployPath `
+            -DiagnosticsPath $DiagnosticsPath `
+            -DiagnosticsLogsPath $DiagnosticsLogsPath
+        $result.diagnostics_path = $diagnostics.diagnostics_path
+        $result.diagnostics_logs_path = $diagnostics.diagnostics_logs_path
+        $result.failed_services = @($diagnostics.failed_containers | ForEach-Object { $_.name })
+    } catch {
+        $result.diagnostics_path = $DiagnosticsPath
+        $result.diagnostics_logs_path = $DiagnosticsLogsPath
+        $result.failed_services = @()
+    }
     Write-DeployResult -Result $result -Path $OutputPath
     throw
 } finally {
