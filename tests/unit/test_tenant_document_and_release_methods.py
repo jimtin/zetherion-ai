@@ -73,6 +73,17 @@ async def test_document_upload_and_document_crud_methods(tenant_manager: TenantM
 
     docs = await tenant_manager.list_documents("tenant-1", limit=10)
     assert docs == [{"document_id": "doc-1"}]
+    default_list_sql = tenant_manager._fetch.call_args_list[0].args[0]  # type: ignore[attr-defined]
+    assert "status NOT IN ('archiving', 'archived', 'purged')" in default_list_sql
+
+    docs_with_archived = await tenant_manager.list_documents(
+        "tenant-1",
+        limit=10,
+        include_archived=True,
+    )
+    assert docs_with_archived == [{"document_id": "doc-1"}]
+    include_archived_sql = tenant_manager._fetch.call_args_list[1].args[0]  # type: ignore[attr-defined]
+    assert "status NOT IN ('archiving', 'archived', 'purged')" not in include_archived_sql
 
     await tenant_manager.update_document_status(
         "tenant-1",
@@ -102,6 +113,74 @@ async def test_document_upload_and_document_crud_methods(tenant_manager: TenantM
         status="indexed",
         error_message=None,
     )
+
+
+@pytest.mark.asyncio
+async def test_document_archive_job_and_lifecycle_methods(tenant_manager: TenantManager) -> None:
+    now = datetime.now(UTC)
+    purge_after = datetime.now(UTC)
+
+    tenant_manager._fetchrow.side_effect = [  # type: ignore[attr-defined]
+        {"job_id": "archive-job-1", "status": "queued"},
+        {"document_id": "doc-1", "status": "archiving", "archived_reason": "user-request"},
+        {"document_id": "doc-1", "status": "archived", "purge_after": purge_after},
+        {"document_id": "doc-1", "status": "purged", "purged_at": now},
+    ]
+    tenant_manager._fetch.side_effect = [  # type: ignore[attr-defined]
+        [{"job_id": "archive-job-1", "status": "running"}],
+        [{"document_id": "doc-1", "status": "archived"}],
+    ]
+
+    archive_job = await tenant_manager.create_document_archive_job(
+        "tenant-1",
+        document_id="doc-1",
+        status="queued",
+    )
+    assert archive_job["job_id"] == "archive-job-1"
+
+    claimed_jobs = await tenant_manager.claim_document_archive_jobs(limit=5)
+    assert claimed_jobs == [{"job_id": "archive-job-1", "status": "running"}]
+
+    await tenant_manager.mark_document_archive_job_succeeded("tenant-1", job_id="archive-job-1")
+    await tenant_manager.mark_document_archive_job_failed(
+        "tenant-1",
+        job_id="archive-job-1",
+        error_message="temporary failure",
+        next_attempt_at=now,
+    )
+
+    archiving = await tenant_manager.mark_document_archiving(
+        "tenant-1",
+        document_id="doc-1",
+        archived_reason="user-request",
+    )
+    assert archiving == {
+        "document_id": "doc-1",
+        "status": "archiving",
+        "archived_reason": "user-request",
+    }
+
+    archived = await tenant_manager.mark_document_archived(
+        "tenant-1",
+        document_id="doc-1",
+        archived_at=now,
+        purge_after=purge_after,
+    )
+    assert archived == {"document_id": "doc-1", "status": "archived", "purge_after": purge_after}
+
+    purged = await tenant_manager.mark_document_purged(
+        "tenant-1",
+        document_id="doc-1",
+        purged_at=now,
+    )
+    assert purged == {"document_id": "doc-1", "status": "purged", "purged_at": now}
+
+    due = await tenant_manager.list_documents_due_for_purge(limit=10)
+    assert due == [{"document_id": "doc-1", "status": "archived"}]
+
+    execute_sql_calls = [call.args[0] for call in tenant_manager._execute.call_args_list]  # type: ignore[attr-defined]
+    assert any("status = 'succeeded'" in sql for sql in execute_sql_calls)
+    assert any("status = 'failed'" in sql for sql in execute_sql_calls)
 
 
 @pytest.mark.asyncio

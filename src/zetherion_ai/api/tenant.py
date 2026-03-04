@@ -203,15 +203,31 @@ CREATE TABLE IF NOT EXISTS tenant_documents (
     preview_html     TEXT,
     chunk_count      INT          NOT NULL DEFAULT 0,
     indexed_at       TIMESTAMPTZ,
+    archived_at      TIMESTAMPTZ,
+    purge_after      TIMESTAMPTZ,
+    purged_at        TIMESTAMPTZ,
+    archived_reason  TEXT,
     error_message    TEXT,
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
+ALTER TABLE tenant_documents
+    ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+ALTER TABLE tenant_documents
+    ADD COLUMN IF NOT EXISTS purge_after TIMESTAMPTZ;
+ALTER TABLE tenant_documents
+    ADD COLUMN IF NOT EXISTS purged_at TIMESTAMPTZ;
+ALTER TABLE tenant_documents
+    ADD COLUMN IF NOT EXISTS archived_reason TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_tenant_documents_tenant
     ON tenant_documents (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tenant_documents_status
     ON tenant_documents (tenant_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_documents_purge_after
+    ON tenant_documents (tenant_id, purge_after)
+    WHERE status = 'archived';
 
 CREATE TABLE IF NOT EXISTS tenant_document_uploads (
     id               SERIAL       PRIMARY KEY,
@@ -250,6 +266,29 @@ CREATE INDEX IF NOT EXISTS idx_document_ingestion_jobs_tenant
     ON document_ingestion_jobs (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_document_ingestion_jobs_document
     ON document_ingestion_jobs (document_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS document_archive_jobs (
+    id               SERIAL       PRIMARY KEY,
+    job_id           UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    tenant_id        UUID         NOT NULL REFERENCES tenants(tenant_id),
+    document_id      UUID         NOT NULL
+                                 REFERENCES tenant_documents(document_id) ON DELETE CASCADE,
+    status           VARCHAR(20)  NOT NULL DEFAULT 'queued',
+    retry_count      INT          NOT NULL DEFAULT 0,
+    next_attempt_at  TIMESTAMPTZ,
+    error_message    TEXT,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    started_at       TIMESTAMPTZ,
+    completed_at     TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_archive_jobs_ready
+    ON document_archive_jobs (status, next_attempt_at, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_document_archive_jobs_tenant
+    ON document_archive_jobs (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_document_archive_jobs_document
+    ON document_archive_jobs (document_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS tenant_release_markers (
     id               SERIAL       PRIMARY KEY,
@@ -1316,7 +1355,8 @@ class TenantManager:
             VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9::jsonb)
             RETURNING document_id, tenant_id, file_name, mime_type, object_key, status,
                       size_bytes, checksum_sha256, metadata, extracted_text, preview_html,
-                      chunk_count, indexed_at, error_message, created_at, updated_at
+                      chunk_count, indexed_at, archived_at, purge_after, purged_at,
+                      archived_reason, error_message, created_at, updated_at
             """,
             document_id,
             tenant_id,
@@ -1336,7 +1376,8 @@ class TenantManager:
             """
             SELECT document_id, tenant_id, file_name, mime_type, object_key, status,
                    size_bytes, checksum_sha256, metadata, extracted_text, preview_html,
-                   chunk_count, indexed_at, error_message, created_at, updated_at
+                   chunk_count, indexed_at, archived_at, purge_after, purged_at,
+                   archived_reason, error_message, created_at, updated_at
             FROM tenant_documents
             WHERE tenant_id = $1::uuid AND document_id = $2::uuid
             LIMIT 1
@@ -1346,21 +1387,45 @@ class TenantManager:
         )
         return dict(row) if row else None
 
-    async def list_documents(self, tenant_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
+    async def list_documents(
+        self,
+        tenant_id: str,
+        *,
+        limit: int = 50,
+        include_archived: bool = False,
+    ) -> list[dict[str, Any]]:
         """List tenant documents by newest first."""
-        rows = await self._fetch(
-            """
-            SELECT document_id, tenant_id, file_name, mime_type, object_key, status,
-                   size_bytes, checksum_sha256, metadata, extracted_text, preview_html,
-                   chunk_count, indexed_at, error_message, created_at, updated_at
-            FROM tenant_documents
-            WHERE tenant_id = $1::uuid
-            ORDER BY created_at DESC
-            LIMIT $2
-            """,
-            tenant_id,
-            limit,
-        )
+        if include_archived:
+            rows = await self._fetch(
+                """
+                SELECT document_id, tenant_id, file_name, mime_type, object_key, status,
+                       size_bytes, checksum_sha256, metadata, extracted_text, preview_html,
+                       chunk_count, indexed_at, archived_at, purge_after, purged_at,
+                       archived_reason, error_message, created_at, updated_at
+                FROM tenant_documents
+                WHERE tenant_id = $1::uuid
+                ORDER BY created_at DESC
+                LIMIT $2
+                """,
+                tenant_id,
+                limit,
+            )
+        else:
+            rows = await self._fetch(
+                """
+                SELECT document_id, tenant_id, file_name, mime_type, object_key, status,
+                       size_bytes, checksum_sha256, metadata, extracted_text, preview_html,
+                       chunk_count, indexed_at, archived_at, purge_after, purged_at,
+                       archived_reason, error_message, created_at, updated_at
+                FROM tenant_documents
+                WHERE tenant_id = $1::uuid
+                  AND status NOT IN ('archiving', 'archived', 'purged')
+                ORDER BY created_at DESC
+                LIMIT $2
+                """,
+                tenant_id,
+                limit,
+            )
         return [dict(r) for r in rows]
 
     async def update_document_status(
@@ -1469,6 +1534,204 @@ class TenantManager:
             status,
             error_message,
         )
+
+    async def create_document_archive_job(
+        self,
+        tenant_id: str,
+        *,
+        document_id: str,
+        status: str = "queued",
+        error_message: str | None = None,
+        next_attempt_at: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Create a document archive job row."""
+        row = await self._fetchrow(
+            """
+            INSERT INTO document_archive_jobs (
+                tenant_id, document_id, status, error_message, next_attempt_at
+            )
+            VALUES ($1::uuid, $2::uuid, $3, $4, $5)
+            RETURNING job_id, tenant_id, document_id, status, retry_count, next_attempt_at,
+                      error_message, created_at, updated_at, started_at, completed_at
+            """,
+            tenant_id,
+            document_id,
+            status,
+            error_message,
+            next_attempt_at,
+        )
+        return dict(row)
+
+    async def claim_document_archive_jobs(self, *, limit: int = 25) -> list[dict[str, Any]]:
+        """Claim pending archive jobs and mark them as running."""
+        rows = await self._fetch(
+            """
+            WITH candidate AS (
+                SELECT id
+                FROM document_archive_jobs
+                WHERE status IN ('queued', 'failed')
+                  AND (next_attempt_at IS NULL OR next_attempt_at <= now())
+                ORDER BY created_at ASC
+                LIMIT $1
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE document_archive_jobs jobs
+            SET status = 'running',
+                started_at = now(),
+                updated_at = now(),
+                error_message = NULL
+            WHERE jobs.id IN (SELECT id FROM candidate)
+            RETURNING job_id, tenant_id, document_id, status, retry_count, next_attempt_at,
+                      error_message, created_at, updated_at, started_at, completed_at
+            """,
+            limit,
+        )
+        return [dict(r) for r in rows]
+
+    async def mark_document_archive_job_succeeded(self, tenant_id: str, *, job_id: str) -> None:
+        """Mark one archive job succeeded."""
+        await self._execute(
+            """
+            UPDATE document_archive_jobs
+            SET status = 'succeeded',
+                completed_at = now(),
+                updated_at = now(),
+                error_message = NULL
+            WHERE tenant_id = $1::uuid AND job_id = $2::uuid
+            """,
+            tenant_id,
+            job_id,
+        )
+
+    async def mark_document_archive_job_failed(
+        self,
+        tenant_id: str,
+        *,
+        job_id: str,
+        error_message: str,
+        next_attempt_at: datetime | None = None,
+    ) -> None:
+        """Mark one archive job failed and increment retry count."""
+        await self._execute(
+            """
+            UPDATE document_archive_jobs
+            SET status = 'failed',
+                retry_count = retry_count + 1,
+                error_message = $3,
+                next_attempt_at = $4,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid AND job_id = $2::uuid
+            """,
+            tenant_id,
+            job_id,
+            error_message,
+            next_attempt_at,
+        )
+
+    async def mark_document_archiving(
+        self,
+        tenant_id: str,
+        *,
+        document_id: str,
+        archived_reason: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Set document lifecycle status to archiving."""
+        row = await self._fetchrow(
+            """
+            UPDATE tenant_documents
+            SET status = 'archiving',
+                archived_reason = COALESCE($3, archived_reason),
+                error_message = NULL,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid AND document_id = $2::uuid
+            RETURNING document_id, tenant_id, file_name, mime_type, object_key, status,
+                      size_bytes, checksum_sha256, metadata, extracted_text, preview_html,
+                      chunk_count, indexed_at, archived_at, purge_after, purged_at,
+                      archived_reason, error_message, created_at, updated_at
+            """,
+            tenant_id,
+            document_id,
+            archived_reason,
+        )
+        return dict(row) if row else None
+
+    async def mark_document_archived(
+        self,
+        tenant_id: str,
+        *,
+        document_id: str,
+        archived_at: datetime | None = None,
+        purge_after: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        """Mark document archived and set purge schedule."""
+        row = await self._fetchrow(
+            """
+            UPDATE tenant_documents
+            SET status = 'archived',
+                archived_at = COALESCE($3, now()),
+                purge_after = COALESCE($4, purge_after),
+                updated_at = now()
+            WHERE tenant_id = $1::uuid AND document_id = $2::uuid
+            RETURNING document_id, tenant_id, file_name, mime_type, object_key, status,
+                      size_bytes, checksum_sha256, metadata, extracted_text, preview_html,
+                      chunk_count, indexed_at, archived_at, purge_after, purged_at,
+                      archived_reason, error_message, created_at, updated_at
+            """,
+            tenant_id,
+            document_id,
+            archived_at,
+            purge_after,
+        )
+        return dict(row) if row else None
+
+    async def mark_document_purged(
+        self,
+        tenant_id: str,
+        *,
+        document_id: str,
+        purged_at: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        """Mark document purged and clear derived payload fields."""
+        row = await self._fetchrow(
+            """
+            UPDATE tenant_documents
+            SET status = 'purged',
+                purged_at = COALESCE($3, now()),
+                extracted_text = NULL,
+                preview_html = NULL,
+                chunk_count = 0,
+                error_message = NULL,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid AND document_id = $2::uuid
+            RETURNING document_id, tenant_id, file_name, mime_type, object_key, status,
+                      size_bytes, checksum_sha256, metadata, extracted_text, preview_html,
+                      chunk_count, indexed_at, archived_at, purge_after, purged_at,
+                      archived_reason, error_message, created_at, updated_at
+            """,
+            tenant_id,
+            document_id,
+            purged_at,
+        )
+        return dict(row) if row else None
+
+    async def list_documents_due_for_purge(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        """List archived documents whose purge window has elapsed."""
+        rows = await self._fetch(
+            """
+            SELECT document_id, tenant_id, file_name, mime_type, object_key, status,
+                   size_bytes, checksum_sha256, metadata, extracted_text, preview_html,
+                   chunk_count, indexed_at, archived_at, purge_after, purged_at,
+                   archived_reason, error_message, created_at, updated_at
+            FROM tenant_documents
+            WHERE status = 'archived'
+              AND purge_after IS NOT NULL
+              AND purge_after <= now()
+            ORDER BY purge_after ASC
+            LIMIT $1
+            """,
+            limit,
+        )
+        return [dict(r) for r in rows]
 
     async def add_release_marker(
         self,
