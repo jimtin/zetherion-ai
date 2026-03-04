@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from aiohttp import web
 
-from zetherion_ai.cgs_gateway.errors import GatewayError, success_response
+from zetherion_ai.cgs_gateway.errors import map_upstream_error, success_response
 from zetherion_ai.cgs_gateway.routes._utils import (
     canonical_upstream_headers,
     enforce_tenant_access,
@@ -14,51 +12,6 @@ from zetherion_ai.cgs_gateway.routes._utils import (
     request_id,
     resolve_active_mapping,
 )
-
-
-def _map_upstream_error(status: int, payload: Any) -> GatewayError:
-    details = payload if isinstance(payload, dict) else {"upstream": str(payload)}
-    if status == 401:
-        return GatewayError(
-            code="AI_UPSTREAM_401",
-            message="Upstream authentication failed",
-            status=401,
-            details=details,
-        )
-    if status == 403:
-        return GatewayError(
-            code="AI_UPSTREAM_403",
-            message="Upstream request forbidden",
-            status=403,
-            details=details,
-        )
-    if status == 404:
-        return GatewayError(
-            code="AI_UPSTREAM_404",
-            message="Upstream resource not found",
-            status=404,
-            details=details,
-        )
-    if status == 429:
-        return GatewayError(
-            code="AI_UPSTREAM_429",
-            message="Upstream rate limited",
-            status=429,
-            details=details,
-        )
-    if status >= 500:
-        return GatewayError(
-            code="AI_UPSTREAM_5XX",
-            message="Upstream service unavailable",
-            status=503,
-            details=details,
-        )
-    return GatewayError(
-        code="AI_UPSTREAM_ERROR",
-        message="Upstream request failed",
-        status=502,
-        details=details,
-    )
 
 
 async def _forward_tenant_report(request: web.Request, upstream_path: str) -> web.Response:
@@ -78,7 +31,7 @@ async def _forward_tenant_report(request: web.Request, upstream_path: str) -> we
         params=dict(request.query),
     )
     if status >= 400:
-        raise _map_upstream_error(status, upstream)
+        raise map_upstream_error(status=status, payload=upstream)
 
     data = upstream if isinstance(upstream, dict) else {"result": upstream}
     return success_response(rid, data)

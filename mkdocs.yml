@@ -75,11 +75,14 @@ nav:
       - Personal Understanding: technical/personal-understanding.md
       - Cost Tracking: technical/cost-tracking.md
       - Skills API Reference: technical/api-reference.md
-      - Public API Reference: technical/public-api-reference.md
+      - Zetherion Upstream API: technical/public-api-reference.md
+      - Document Intelligence Component: technical/zetherion-document-intelligence-component.md
       - API Auth Matrix: technical/api-auth-matrix.md
       - API Error Matrix: technical/api-error-matrix.md
       - Frontend Route Wiring: technical/frontend-route-wiring.md
       - OpenAPI Contracts: technical/openapi-contracts.md
+      - CGS Client Onboarding Kit: technical/cgs-client-onboarding-kit.md
+      - CGS Email Monitoring Onboarding Kit: technical/cgs-email-monitoring-onboarding-kit.md
       - AI Agent Integration: technical/ai-agent-integration.md
   - Development:
       - Setup & Contributing: development/setup.md

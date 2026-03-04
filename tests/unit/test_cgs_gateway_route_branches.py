@@ -5,12 +5,13 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from aiohttp import web
+from aiohttp import FormData, web
 from aiohttp.test_utils import TestClient, TestServer
 
 from zetherion_ai.cgs_gateway.models import AuthPrincipal
 from zetherion_ai.cgs_gateway.routes._utils import fingerprint_payload
 from zetherion_ai.cgs_gateway.routes.internal import register_internal_routes
+from zetherion_ai.cgs_gateway.routes.internal_admin import register_internal_admin_routes
 from zetherion_ai.cgs_gateway.routes.reporting import register_reporting_routes
 from zetherion_ai.cgs_gateway.routes.runtime import register_runtime_routes
 from zetherion_ai.cgs_gateway.server import create_error_middleware
@@ -21,6 +22,7 @@ def _runtime_app(
     principal_tenant_id: str | None = "tenant-a",
     principal_roles: list[str] | None = None,
     principal_scopes: list[str] | None = None,
+    principal_claims: dict[str, object] | None = None,
 ) -> tuple[web.Application, MagicMock, MagicMock]:
     @web.middleware
     async def inject_context(request: web.Request, handler):
@@ -29,7 +31,7 @@ def _runtime_app(
             tenant_id=principal_tenant_id,
             roles=principal_roles or ["operator"],
             scopes=principal_scopes or ["cgs:internal"],
-            claims={},
+            claims=principal_claims or {},
         )
         request["request_id"] = "req_branch_test"
         return await handler(request)
@@ -41,8 +43,10 @@ def _runtime_app(
     app["cgs_storage"] = storage
     app["cgs_public_client"] = public_client
     app["cgs_skills_client"] = MagicMock()
+    app["cgs_blog_publish_token"] = "blog-token"
     register_runtime_routes(app)
     register_internal_routes(app)
+    register_internal_admin_routes(app)
     register_reporting_routes(app)
     return app, storage, public_client
 
@@ -473,6 +477,53 @@ async def test_runtime_document_routes_success_and_binary_proxy() -> None:
 
 
 @pytest.mark.asyncio
+async def test_runtime_document_complete_upload_supports_multipart_passthrough() -> None:
+    app, storage, public_client = _runtime_app()
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_api_key": "sk_live_abc",
+        }
+    )
+    public_client.request_json = AsyncMock(return_value=(201, {"document_id": "d1"}, {}))
+
+    form = FormData()
+    form.add_field("file", b"hello-world", filename="note.txt", content_type="text/plain")
+    form.add_field("metadata", '{"source":"portal"}')
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/service/ai/v1/documents/uploads/u1/complete?tenant_id=tenant-a",
+            data=form,
+        )
+        assert response.status == 201
+        body = await response.json()
+        assert body["data"]["document_id"] == "d1"
+
+    kwargs = public_client.request_json.await_args.kwargs
+    assert isinstance(kwargs["data"], bytes | bytearray)
+    assert kwargs["headers"]["Content-Type"].startswith("multipart/form-data")
+
+
+@pytest.mark.asyncio
+async def test_runtime_document_complete_upload_multipart_requires_tenant_query() -> None:
+    app, storage, public_client = _runtime_app()
+    storage.get_tenant_mapping = AsyncMock()
+    public_client.request_json = AsyncMock()
+
+    form = FormData()
+    form.add_field("file", b"hello-world", filename="note.txt", content_type="text/plain")
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post("/service/ai/v1/documents/uploads/u1/complete", data=form)
+        assert response.status == 400
+        body = await response.json()
+        assert body["error"]["code"] == "AI_BAD_REQUEST"
+        assert "tenant_id" in body["error"]["message"]
+
+
+@pytest.mark.asyncio
 async def test_runtime_document_routes_require_tenant_query() -> None:
     app, storage, public_client = _runtime_app()
     storage.get_tenant_mapping = AsyncMock()
@@ -497,6 +548,547 @@ async def test_internal_forbidden_for_non_operator() -> None:
         assert resp.status == 403
         body = await resp.json()
         assert body["error"]["code"] == "AI_AUTH_FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_mutation_requires_step_up_claim() -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin"],
+        principal_claims={},
+    )
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+    app["cgs_skills_client"].request_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.put(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/settings/models/default_provider",
+            json={"value": "groq"},
+        )
+        assert resp.status == 403
+        body = await resp.json()
+        assert body["error"]["code"] == "AI_AUTH_STEP_UP_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_secret_put_requires_approval_ticket() -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin", "cgs:zetherion-secrets-admin"],
+        principal_claims={"step_up": True},
+    )
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+    storage.create_admin_change = AsyncMock(
+        return_value={"change_id": "chg_1", "status": "pending"}
+    )
+    app["cgs_skills_client"].request_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.put(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/secrets/OPENAI_API_KEY",
+            json={"value": "sk-live"},
+        )
+        assert resp.status == 409
+        body = await resp.json()
+        assert body["error"]["code"] == "AI_APPROVAL_REQUIRED"
+        assert body["error"]["details"]["change_ticket_id"] == "chg_1"
+        app["cgs_skills_client"].request_admin_json.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_secret_put_with_approved_ticket_applies() -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin", "cgs:zetherion-secrets-admin"],
+        principal_claims={"step_up": True},
+    )
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+    storage.get_admin_change = AsyncMock(
+        return_value={
+            "change_id": "chg_approved",
+            "cgs_tenant_id": "tenant-a",
+            "action": "secret.put",
+            "status": "approved",
+        }
+    )
+    storage.mark_admin_change_applied = AsyncMock(return_value=None)
+    storage.mark_admin_change_failed = AsyncMock(return_value=None)
+    app["cgs_skills_client"].request_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.put(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/secrets/OPENAI_API_KEY",
+            params={"change_ticket_id": "chg_approved"},
+            json={"value": "sk-live"},
+        )
+        assert resp.status == 200
+        body = await resp.json()
+        assert body["data"]["ok"] is True
+        storage.mark_admin_change_applied.assert_awaited_once()
+        app["cgs_skills_client"].request_admin_json.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_route_matrix_success_paths() -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin", "cgs:zetherion-secrets-admin"],
+        principal_claims={
+            "step_up": True,
+            "allowed_tenants": ["tenant-a"],
+            "email": "ops@example.com",
+        },
+    )
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+    storage.get_admin_change = AsyncMock(
+        return_value={
+            "change_id": "chg_delete",
+            "cgs_tenant_id": "tenant-a",
+            "action": "secret.delete",
+            "status": "approved",
+        }
+    )
+    storage.mark_admin_change_applied = AsyncMock(return_value=None)
+    storage.mark_admin_change_failed = AsyncMock(return_value=None)
+    app["cgs_skills_client"].request_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        assert (
+            await client.get("/service/ai/v1/internal/admin/tenants/tenant-a/discord-users")
+        ).status == 200
+        assert (
+            await client.post(
+                "/service/ai/v1/internal/admin/tenants/tenant-a/discord-users",
+                json={"discord_user_id": 5, "role": "user"},
+            )
+        ).status == 201
+        assert (
+            await client.delete("/service/ai/v1/internal/admin/tenants/tenant-a/discord-users/5")
+        ).status == 200
+        assert (
+            await client.patch(
+                "/service/ai/v1/internal/admin/tenants/tenant-a/discord-users/5/role",
+                json={"role": "admin"},
+            )
+        ).status == 200
+        assert (
+            await client.get("/service/ai/v1/internal/admin/tenants/tenant-a/discord-bindings")
+        ).status == 200
+        assert (
+            await client.put(
+                "/service/ai/v1/internal/admin/tenants/tenant-a/discord-bindings/guilds/10",
+                json={"priority": 10, "is_active": True},
+            )
+        ).status == 200
+        assert (
+            await client.put(
+                "/service/ai/v1/internal/admin/tenants/tenant-a/discord-bindings/channels/20",
+                json={"guild_id": 10, "priority": 1, "is_active": True},
+            )
+        ).status == 200
+        assert (
+            await client.delete(
+                "/service/ai/v1/internal/admin/tenants/tenant-a/discord-bindings/channels/20"
+            )
+        ).status == 200
+        assert (
+            await client.get("/service/ai/v1/internal/admin/tenants/tenant-a/settings")
+        ).status == 200
+        assert (
+            await client.put(
+                "/service/ai/v1/internal/admin/tenants/tenant-a/settings/models/default_provider",
+                json={"value": "groq"},
+            )
+        ).status == 200
+        assert (
+            await client.delete(
+                "/service/ai/v1/internal/admin/tenants/tenant-a/settings/models/default_provider"
+            )
+        ).status == 200
+        assert (
+            await client.get("/service/ai/v1/internal/admin/tenants/tenant-a/secrets")
+        ).status == 200
+        assert (
+            await client.delete(
+                "/service/ai/v1/internal/admin/tenants/tenant-a/secrets/OPENAI_API_KEY",
+                params={"change_ticket_id": "chg_delete"},
+            )
+        ).status == 200
+        assert (
+            await client.get("/service/ai/v1/internal/admin/tenants/tenant-a/audit")
+        ).status == 200
+
+    assert app["cgs_skills_client"].request_admin_json.await_count >= 13
+    storage.mark_admin_change_applied.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_owner_role_patch_with_approved_ticket() -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin"],
+        principal_claims={"step_up": True},
+    )
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+    storage.get_admin_change = AsyncMock(
+        return_value={
+            "change_id": "chg_owner",
+            "cgs_tenant_id": "tenant-a",
+            "action": "discord.role.owner",
+            "status": "approved",
+        }
+    )
+    storage.mark_admin_change_applied = AsyncMock(return_value=None)
+    app["cgs_skills_client"].request_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.patch(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/discord-users/99/role",
+            params={"change_ticket_id": "chg_owner"},
+            json={"role": "owner"},
+        )
+        assert resp.status == 200
+        body = await resp.json()
+        assert body["data"]["ok"] is True
+
+    storage.mark_admin_change_applied.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_list_secrets_requires_secrets_scope() -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin"],
+        principal_claims={"step_up": True},
+    )
+    storage.get_tenant_mapping = AsyncMock()
+    app["cgs_skills_client"].request_admin_json = AsyncMock()
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.get("/service/ai/v1/internal/admin/tenants/tenant-a/secrets")
+        assert resp.status == 403
+        body = await resp.json()
+        assert body["error"]["code"] == "AI_AUTH_FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_denies_operator_without_tenant_allowance() -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin"],
+        principal_claims={"allowed_tenants": ["tenant-b"]},
+    )
+    storage.get_tenant_mapping = AsyncMock()
+    app["cgs_skills_client"].request_admin_json = AsyncMock()
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.get("/service/ai/v1/internal/admin/tenants/tenant-a/settings")
+        assert resp.status == 403
+        body = await resp.json()
+        assert body["error"]["code"] == "AI_AUTH_FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_secret_delete_approval_ticket_error_paths() -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin", "cgs:zetherion-secrets-admin"],
+        principal_claims={"step_up": True},
+    )
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+    app["cgs_skills_client"].request_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        storage.get_admin_change = AsyncMock(return_value=None)
+        not_found = await client.delete(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/secrets/OPENAI_API_KEY",
+            params={"change_ticket_id": "missing"},
+        )
+        assert not_found.status == 404
+
+        storage.get_admin_change = AsyncMock(
+            return_value={
+                "change_id": "chg1",
+                "cgs_tenant_id": "tenant-b",
+                "action": "secret.delete",
+                "status": "approved",
+            }
+        )
+        tenant_mismatch = await client.delete(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/secrets/OPENAI_API_KEY",
+            params={"change_ticket_id": "chg1"},
+        )
+        assert tenant_mismatch.status == 403
+
+        storage.get_admin_change = AsyncMock(
+            return_value={
+                "change_id": "chg2",
+                "cgs_tenant_id": "tenant-a",
+                "action": "secret.put",
+                "status": "approved",
+            }
+        )
+        action_mismatch = await client.delete(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/secrets/OPENAI_API_KEY",
+            params={"change_ticket_id": "chg2"},
+        )
+        assert action_mismatch.status == 409
+
+        storage.get_admin_change = AsyncMock(
+            return_value={
+                "change_id": "chg3",
+                "cgs_tenant_id": "tenant-a",
+                "action": "secret.delete",
+                "status": "pending",
+            }
+        )
+        pending = await client.delete(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/secrets/OPENAI_API_KEY",
+            params={"change_ticket_id": "chg3"},
+        )
+        assert pending.status == 409
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_change_workflow_endpoints() -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin"],
+        principal_claims={"step_up": True},
+    )
+    storage.create_admin_change = AsyncMock(
+        return_value={"change_id": "chg_1", "status": "pending"}
+    )
+    storage.list_admin_changes = AsyncMock(return_value=[{"change_id": "chg_1"}])
+    storage.get_admin_change = AsyncMock(
+        side_effect=[
+            None,
+            {"change_id": "chg_self", "cgs_tenant_id": "tenant-a", "requested_by": "user-1"},
+            {"change_id": "chg_invalid", "cgs_tenant_id": "tenant-a", "requested_by": "another"},
+            {"change_id": "chg_reject", "cgs_tenant_id": "tenant-a", "requested_by": "another"},
+        ]
+    )
+    storage.approve_admin_change = AsyncMock(return_value=None)
+    storage.reject_admin_change = AsyncMock(
+        return_value={"change_id": "chg_reject", "status": "rejected"}
+    )
+
+    async with TestClient(TestServer(app)) as client:
+        created = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/changes",
+            json={"action": "setting.put", "payload": {"k": "v"}},
+        )
+        assert created.status == 201
+
+        listed = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/changes",
+            params={"status": "pending"},
+        )
+        assert listed.status == 200
+
+        missing = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/changes/chg_missing/approve",
+            json={"reason": "approve"},
+        )
+        assert missing.status == 404
+
+        self_approve = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/changes/chg_self/approve",
+            json={"reason": "approve"},
+        )
+        assert self_approve.status == 409
+
+        invalid_state = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/changes/chg_invalid/approve",
+            json={"reason": "approve"},
+        )
+        assert invalid_state.status == 409
+
+        rejected = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/changes/chg_reject/reject",
+            json={"reason": "reject"},
+        )
+        assert rejected.status == 200
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_email_route_matrix_and_high_risk_controls() -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin", "cgs:zetherion-secrets-admin"],
+        principal_claims={"step_up": True, "allowed_tenants": ["tenant-a"]},
+    )
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+    storage.create_admin_change = AsyncMock(
+        return_value={"change_id": "chg_email", "status": "pending"}
+    )
+    storage.get_admin_change = AsyncMock(
+        return_value={
+            "change_id": "chg_email_approved",
+            "cgs_tenant_id": "tenant-a",
+            "action": "email.oauth_app.put",
+            "status": "approved",
+            "requested_by": "another-operator",
+        }
+    )
+    storage.mark_admin_change_applied = AsyncMock(return_value=None)
+    storage.mark_admin_change_failed = AsyncMock(return_value=None)
+
+    app["cgs_skills_client"].request_tenant_admin_json = AsyncMock(
+        return_value=(200, {"ok": True, "accounts": [], "insights": []})
+    )
+    app["cgs_skills_client"].request_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        oauth_get = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/email/providers/google/oauth-app"
+        )
+        assert oauth_get.status == 200
+
+        oauth_put_requires_ticket = await client.put(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/email/providers/google/oauth-app",
+            json={
+                "redirect_uri": "https://cgs.example.com/oauth/callback",
+                "client_id": "client-id",
+                "client_secret": "client-secret",
+                "enabled": True,
+            },
+        )
+        assert oauth_put_requires_ticket.status == 409
+        body = await oauth_put_requires_ticket.json()
+        assert body["error"]["code"] == "AI_APPROVAL_REQUIRED"
+
+        storage.get_admin_change = AsyncMock(
+            return_value={
+                "change_id": "chg_email_approved",
+                "cgs_tenant_id": "tenant-a",
+                "action": "email.oauth_app.put",
+                "status": "approved",
+                "requested_by": "another-operator",
+            }
+        )
+        oauth_put = await client.put(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/email/providers/google/oauth-app",
+            params={"change_ticket_id": "chg_email_approved"},
+            json={
+                "redirect_uri": "https://cgs.example.com/oauth/callback",
+                "client_id": "client-id",
+                "client_secret": "client-secret",
+                "enabled": True,
+            },
+        )
+        assert oauth_put.status == 200
+
+        connect_start = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/email/mailboxes/connect/start",
+            json={"provider": "google", "account_hint": "ops@example.com"},
+        )
+        assert connect_start.status == 201
+
+        callback = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/email/mailboxes/connect/callback",
+            params={"provider": "google", "code": "abc", "state": "state-1"},
+        )
+        assert callback.status == 200
+
+        listed = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/email/mailboxes?provider=google"
+        )
+        assert listed.status == 200
+
+        patched = await client.patch(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/email/mailboxes/mailbox-1",
+            json={"status": "connected"},
+        )
+        assert patched.status == 200
+
+        sync = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/email/mailboxes/mailbox-1/sync",
+            json={"direction": "bi_directional", "max_results": 10},
+        )
+        assert sync.status == 200
+
+        critical = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/email/critical/messages?status=open"
+        )
+        assert critical.status == 200
+
+        calendars_missing = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/email/calendars"
+        )
+        assert calendars_missing.status == 400
+
+        calendars = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/email/calendars?mailbox_id=mailbox-1"
+        )
+        assert calendars.status == 200
+
+        primary_calendar = await client.put(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/email/mailboxes/mailbox-1/calendar-primary",
+            json={"calendar_id": "primary"},
+        )
+        assert primary_calendar.status == 200
+
+        insights = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/email/insights?limit=50"
+        )
+        assert insights.status == 200
+
+        reindex = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/email/insights/reindex",
+            json={"insight_type": "critical_email"},
+        )
+        assert reindex.status == 200
+
+        storage.get_admin_change = AsyncMock(
+            return_value={
+                "change_id": "chg_mailbox_delete",
+                "cgs_tenant_id": "tenant-a",
+                "action": "email.mailbox.delete",
+                "status": "approved",
+                "requested_by": "another-operator",
+            }
+        )
+        deleted = await client.delete(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/email/mailboxes/mailbox-1",
+            params={"change_ticket_id": "chg_mailbox_delete"},
+        )
+        assert deleted.status == 200
+
+    assert app["cgs_skills_client"].request_tenant_admin_json.await_count >= 12
+    assert storage.mark_admin_change_applied.await_count >= 2
 
 
 @pytest.mark.asyncio
@@ -573,9 +1165,9 @@ async def test_internal_release_marker_upstream_failure() -> None:
             "/service/ai/v1/internal/tenants/tenant-a/release-markers",
             json={"source": "deploy"},
         )
-        assert resp.status == 502
+        assert resp.status == 503
         body = await resp.json()
-        assert body["error"]["code"] == "AI_UPSTREAM_ERROR"
+        assert body["error"]["code"] == "AI_UPSTREAM_5XX"
 
 
 @pytest.mark.asyncio
@@ -654,3 +1246,105 @@ def test_runtime_now_iso_returns_utc_string() -> None:
     value = now_iso()
     assert "T" in value
     assert value.endswith("+00:00")
+
+
+@pytest.mark.asyncio
+async def test_internal_blog_publish_success_and_duplicate() -> None:
+    app, storage, _ = _runtime_app()
+    payload = {
+        "idempotency_key": "blog-abcdef1",
+        "source": "zetherion-windows-post-deploy",
+        "sha": "abcdef1",
+        "repo": "owner/repo",
+        "release_tag": "v1.2.3",
+        "title": "Release v1.2.3",
+        "slug": "release-v1-2-3",
+        "meta_description": "Meta description",
+        "excerpt": "Excerpt",
+        "primary_keyword": "release notes",
+        "content_markdown": "# Release Notes",
+        "json_ld": {"blog_posting": {}, "faq_page": {}},
+        "models": {"draft": "gpt-5.2", "refine": "claude-sonnet-4-6"},
+        "published_at": "2026-03-03T00:00:00Z",
+    }
+    payload_fp = fingerprint_payload(payload)
+    storage.find_blog_publish_receipt = AsyncMock(
+        side_effect=[None, {"payload_fingerprint": payload_fp}]
+    )
+    storage.create_blog_publish_receipt = AsyncMock(
+        return_value={
+            "receipt_id": "blog_1",
+            "idempotency_key": "blog-abcdef1",
+            "sha": "abcdef1",
+            "published_at": "2026-03-03T00:00:00Z",
+        }
+    )
+
+    async with TestClient(TestServer(app)) as client:
+        created = await client.post(
+            "/service/ai/v1/internal/blog/publish",
+            headers={
+                "Authorization": "Bearer blog-token",
+                "Idempotency-Key": "blog-abcdef1",
+            },
+            json=payload,
+        )
+        assert created.status == 201
+        created_body = await created.json()
+        assert created_body["data"]["status"] == "published"
+
+        duplicated = await client.post(
+            "/service/ai/v1/internal/blog/publish",
+            headers={
+                "Authorization": "Bearer blog-token",
+                "Idempotency-Key": "blog-abcdef1",
+            },
+            json=payload,
+        )
+        assert duplicated.status == 409
+        dup_body = await duplicated.json()
+        assert dup_body["data"]["status"] == "duplicate"
+
+
+@pytest.mark.asyncio
+async def test_internal_blog_publish_rejects_invalid_token_and_idempotency() -> None:
+    app, storage, _ = _runtime_app()
+    storage.find_blog_publish_receipt = AsyncMock(return_value=None)
+    storage.create_blog_publish_receipt = AsyncMock()
+    payload = {
+        "idempotency_key": "blog-abcdef1",
+        "source": "zetherion-windows-post-deploy",
+        "sha": "abcdef1",
+        "repo": "owner/repo",
+        "release_tag": "v1.2.3",
+        "title": "Release v1.2.3",
+        "slug": "release-v1-2-3",
+        "meta_description": "Meta description",
+        "excerpt": "Excerpt",
+        "primary_keyword": "release notes",
+        "content_markdown": "# Release Notes",
+        "json_ld": {"blog_posting": {}, "faq_page": {}},
+        "models": {"draft": "gpt-5.2", "refine": "claude-sonnet-4-6"},
+        "published_at": "2026-03-03T00:00:00Z",
+    }
+
+    async with TestClient(TestServer(app)) as client:
+        invalid_token = await client.post(
+            "/service/ai/v1/internal/blog/publish",
+            headers={
+                "Authorization": "Bearer wrong-token",
+                "Idempotency-Key": "blog-abcdef1",
+            },
+            json=payload,
+        )
+        assert invalid_token.status == 403
+
+        mismatch = await client.post(
+            "/service/ai/v1/internal/blog/publish",
+            headers={
+                "Authorization": "Bearer blog-token",
+                "Idempotency-Key": "blog-abcdef1",
+            },
+            json={**payload, "sha": "bbbbbbb"},
+        )
+        assert mismatch.status == 400

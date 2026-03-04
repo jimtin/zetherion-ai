@@ -48,7 +48,7 @@ class PublicAPIClient:
         headers: dict[str, str] | None = None,
         json_body: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
-        data: str | None = None,
+        data: Any = None,
     ) -> tuple[int, Any, dict[str, str]]:
         """Send request and parse response as JSON when possible."""
         async with self.session.request(
@@ -100,3 +100,125 @@ class PublicAPIClient:
         ) as response:
             payload = await response.read()
             return response.status, payload, dict(response.headers)
+
+    async def create_document_upload(
+        self,
+        *,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+    ) -> tuple[int, Any, dict[str, str]]:
+        return await self.request_json(
+            "POST",
+            "/api/v1/documents/uploads",
+            headers=headers,
+            json_body=payload,
+        )
+
+    async def complete_document_upload_json(
+        self,
+        *,
+        upload_id: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+    ) -> tuple[int, Any, dict[str, str]]:
+        return await self.request_json(
+            "POST",
+            f"/api/v1/documents/uploads/{upload_id}/complete",
+            headers=headers,
+            json_body=payload,
+        )
+
+    async def complete_document_upload_multipart(
+        self,
+        *,
+        upload_id: str,
+        headers: dict[str, str],
+        body: bytes,
+    ) -> tuple[int, Any, dict[str, str]]:
+        return await self.request_json(
+            "POST",
+            f"/api/v1/documents/uploads/{upload_id}/complete",
+            headers=headers,
+            data=body,
+        )
+
+    async def list_documents(
+        self,
+        *,
+        headers: dict[str, str],
+    ) -> tuple[int, Any, dict[str, str]]:
+        return await self.request_json("GET", "/api/v1/documents", headers=headers)
+
+    async def get_document(
+        self,
+        *,
+        document_id: str,
+        headers: dict[str, str],
+    ) -> tuple[int, Any, dict[str, str]]:
+        return await self.request_json(
+            "GET",
+            f"/api/v1/documents/{document_id}",
+            headers=headers,
+        )
+
+    async def get_document_binary(
+        self,
+        *,
+        document_id: str,
+        suffix: str,
+        headers: dict[str, str],
+    ) -> tuple[int, bytes, dict[str, str]]:
+        return await self.request_raw(
+            "GET",
+            f"/api/v1/documents/{document_id}/{suffix}",
+            headers=headers,
+        )
+
+    async def reindex_document(
+        self,
+        *,
+        document_id: str,
+        headers: dict[str, str],
+    ) -> tuple[int, Any, dict[str, str]]:
+        return await self.request_json(
+            "POST",
+            f"/api/v1/documents/{document_id}/index",
+            headers=headers,
+        )
+
+    async def rag_query(
+        self,
+        *,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+    ) -> tuple[int, Any, dict[str, str]]:
+        return await self.request_json(
+            "POST",
+            "/api/v1/rag/query",
+            headers=headers,
+            json_body=payload,
+        )
+
+    async def list_model_providers(
+        self,
+        *,
+        headers: dict[str, str],
+    ) -> tuple[int, Any, dict[str, str]]:
+        return await self.request_json(
+            "GET",
+            "/api/v1/models/providers",
+            headers=headers,
+        )
+
+    async def create_release_marker(
+        self,
+        *,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+    ) -> tuple[int, Any, dict[str, str]]:
+        return await self.request_json(
+            "POST",
+            "/api/v1/releases/markers",
+            headers=headers,
+            json_body=payload,
+        )

@@ -48,12 +48,16 @@ PRESERVE_TEST_VOLUMES="${PRESERVE_TEST_VOLUMES:-false}"
 RUN_DISCORD_E2E_REQUIRED="${RUN_DISCORD_E2E_REQUIRED:-true}"
 DISCORD_E2E_PROVIDER="${DISCORD_E2E_PROVIDER:-groq}"
 RUN_DISCORD_E2E_LOCAL_MODEL="${RUN_DISCORD_E2E_LOCAL_MODEL:-false}"
+RUN_CGS_UI_CHECKS="${RUN_CGS_UI_CHECKS:-false}"
+RUN_BANDIT_CHECK="${RUN_BANDIT_CHECK:-true}"
+RUN_LICENSE_COMPLIANCE_CHECK="${RUN_LICENSE_COMPLIANCE_CHECK:-true}"
 OLLAMA_PULL_PROFILE="none"
 EMBEDDINGS_BACKEND="${EMBEDDINGS_BACKEND:-openai}"
 OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}"
 OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-3072}"
-MYPY_TIMEOUT_SECONDS="${MYPY_TIMEOUT_SECONDS:-600}"
+MYPY_TIMEOUT_SECONDS="${MYPY_TIMEOUT_SECONDS:-1200}"
 PIPAUDIT_TIMEOUT_SECONDS="${PIPAUDIT_TIMEOUT_SECONDS:-300}"
+STATIC_TIMEOUT_SECONDS="${STATIC_TIMEOUT_SECONDS:-600}"
 
 ts() { date "+%H:%M:%S"; }
 
@@ -437,9 +441,19 @@ echo "[$(ts)]   Launching static checks in parallel..."
 
 start_static_check "ruff lint" "ruff check $SRC_DIRS"
 start_static_check "ruff format" "ruff format --check $SRC_DIRS"
-start_static_check "bandit" "bandit -c pyproject.toml -r $LINT_DIRS -q"
+if [ "$RUN_BANDIT_CHECK" = "true" ]; then
+    start_static_check "bandit" "bandit -c pyproject.toml -r $LINT_DIRS -q"
+else
+    echo "  [skip] bandit disabled (RUN_BANDIT_CHECK=false)"
+fi
 start_static_check "pipeline contract" "python scripts/check_pipeline_contract.py"
 start_static_check "endpoint docs bundle" "python scripts/check-endpoint-doc-bundle.py"
+start_static_check "cgs route-doc parity" "python scripts/check-cgs-route-doc-parity.py"
+if [ "$RUN_CGS_UI_CHECKS" = "true" ]; then
+    start_static_check "cgs ui checks" "scripts/check-cgs-ui.sh"
+else
+    echo "  [skip] cgs ui checks disabled (RUN_CGS_UI_CHECKS=false)"
+fi
 
 if command -v gitleaks >/dev/null 2>&1; then
     start_static_check "gitleaks" "gitleaks detect --no-git --redact --config=.gitleaks.toml"
@@ -455,7 +469,9 @@ else
     echo "  [skip] hadolint requires Docker (Docker not available yet)"
 fi
 
-if command -v pip-licenses >/dev/null 2>&1; then
+if [ "$RUN_LICENSE_COMPLIANCE_CHECK" != "true" ]; then
+    echo "  [skip] license compliance disabled (RUN_LICENSE_COMPLIANCE_CHECK=false)"
+elif command -v pip-licenses >/dev/null 2>&1; then
     start_static_check "license compliance" "pip-licenses --allow-only=\"$LICENSE_ALLOWLIST\" --partial-match"
 else
     echo "  [skip] pip-licenses not installed (pip install pip-licenses)"
@@ -472,11 +488,17 @@ for i in "${!STATIC_PIDS[@]}"; do
     name="${STATIC_NAMES[$i]}"
     log_file="${STATIC_LOGS[$i]}"
     pid="${STATIC_PIDS[$i]}"
-    if wait "$pid"; then
+    static_status=0
+    wait_for_background_task "$pid" "$name" "$STATIC_TIMEOUT_SECONDS" || static_status=$?
+    if [ "$static_status" -eq 0 ]; then
         echo "[$(ts)]   ${name} passed."
     else
         STATIC_FAILED=true
-        echo "[$(ts)]   ${name} FAILED:"
+        if [ "$static_status" -eq 124 ]; then
+            echo "[$(ts)]   ${name} FAILED (timeout after ${STATIC_TIMEOUT_SECONDS}s):"
+        else
+            echo "[$(ts)]   ${name} FAILED:"
+        fi
         cat "$log_file"
     fi
     rm -f "$log_file"
@@ -499,6 +521,13 @@ echo "[$(ts)] [2/5] Unit tests + mypy + pip-audit (parallel)..."
 
 MYPY_LOG="$(mktemp)"
 PIPAUDIT_LOG="$(mktemp)"
+
+# Coverage sqlite artifacts can become incompatible after interrupted runs or
+# toolchain upgrades; clear them so pytest-cov starts from a clean schema.
+rm -f .coverage .coverage.* .coverage-*
+# Mypy cache can contain stale iCloud "dataless" files that block on read().
+# Rebuild cache each run to avoid indefinite local stalls.
+rm -rf .mypy_cache
 
 # Start mypy in background
 mypy src/zetherion_ai/ updater_sidecar/ --config-file=pyproject.toml > "$MYPY_LOG" 2>&1 &

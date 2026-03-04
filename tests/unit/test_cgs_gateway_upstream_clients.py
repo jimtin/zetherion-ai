@@ -69,16 +69,6 @@ class _DummyAsyncStreamSession:
         return self.response
 
 
-class _DummyPostSession:
-    def __init__(self, response: _DummyResponseCtx) -> None:
-        self._response = response
-        self.calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
-
-    def post(self, *args: object, **kwargs: object) -> _DummyResponseCtx:
-        self.calls.append((args, kwargs))
-        return self._response
-
-
 @pytest.mark.asyncio
 async def test_public_and_skills_clients_start_and_close(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_session = SimpleNamespace(close=AsyncMock())
@@ -169,7 +159,7 @@ async def test_public_api_client_request_raw() -> None:
 async def test_skills_client_handle_intent_success_and_text_fallback() -> None:
     client = SkillsClient(base_url="https://skills.example", api_secret="secret-1")
 
-    session_ok = _DummyPostSession(
+    session_ok = _DummyJSONSession(
         _DummyResponseCtx(status=200, json_payload={"ok": True, "data": {"k": "v"}})
     )
     client._session = session_ok  # type: ignore[assignment]
@@ -183,11 +173,12 @@ async def test_skills_client_handle_intent_success_and_text_fallback() -> None:
     assert status == 200
     assert payload == {"ok": True, "data": {"k": "v"}}
     call_args, call_kwargs = session_ok.calls[0]
-    assert call_args[0] == "https://skills.example/handle"
+    assert call_args[0] == "POST"
+    assert call_args[1] == "https://skills.example/handle"
     assert call_kwargs["headers"]["X-API-Secret"] == "secret-1"
     assert call_kwargs["json"]["intent"] == "client_create"
 
-    session_text = _DummyPostSession(
+    session_text = _DummyJSONSession(
         _DummyResponseCtx(status=500, raise_json=True, text_payload="bad-gateway")
     )
     client._session = session_text  # type: ignore[assignment]
@@ -198,3 +189,32 @@ async def test_skills_client_handle_intent_success_and_text_fallback() -> None:
     )
     assert status2 == 500
     assert payload2 == "bad-gateway"
+
+
+@pytest.mark.asyncio
+async def test_skills_client_request_admin_json_signs_actor_context() -> None:
+    client = SkillsClient(base_url="https://skills.example", api_secret="secret-1")
+    session = _DummyJSONSession(_DummyResponseCtx(status=200, json_payload={"ok": True}))
+    client._session = session  # type: ignore[assignment]
+
+    status, payload = await client.request_admin_json(
+        "PUT",
+        "/admin/tenants/t-1/secrets/OPENAI_API_KEY",
+        actor={
+            "actor_sub": "operator-1",
+            "actor_roles": ["operator"],
+            "request_id": "req-1",
+            "timestamp": "2026-03-03T12:00:00+00:00",
+            "nonce": "n-1",
+        },
+        json_body={"value": "secret"},
+    )
+    assert status == 200
+    assert payload == {"ok": True}
+    call_args, call_kwargs = session.calls[0]
+    assert call_args[0] == "PUT"
+    assert call_args[1] == "https://skills.example/admin/tenants/t-1/secrets/OPENAI_API_KEY"
+    headers = call_kwargs["headers"]
+    assert headers["X-API-Secret"] == "secret-1"
+    assert "X-Admin-Actor" in headers
+    assert "X-Admin-Signature" in headers

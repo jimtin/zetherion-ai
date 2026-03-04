@@ -6,10 +6,12 @@ This document is the implementation handoff for Catalyst Group Solutions (CGS) t
 
 It is based on the code currently implemented in this repository (not only draft design docs).
 
-## Maintenance Note (2026-03-01)
+## Maintenance Note (2026-03-04)
 
-- Internal hardening landed in upstream document upload route parsing/typing.
-- CGS endpoint contracts and mappings are unchanged by this maintenance patch.
+- Added internal blog publish adapter route: `POST /service/ai/v1/internal/blog/publish`.
+- Added gateway envelope field `error.retryable` for all failure responses.
+- Added CGS route-doc parity gate for lifecycle/reporting/admin/blog surfaces.
+- Added tenant email admin control-plane routes for OAuth app setup, mailbox linking, sync, critical message triage, calendar binding, and insight reindex.
 
 ## 2. Scope
 
@@ -20,6 +22,7 @@ In scope:
 - Request/response envelope standard
 - Idempotency behavior
 - Tenant lifecycle/internal operator endpoints
+- Tenant email admin control plane endpoints (operator-only)
 - Tenant reporting endpoints
 - SDK integration mode for CGS web observer analytics
 - Deployment and readiness checklist
@@ -29,6 +32,23 @@ Out of scope:
 - Re-defining Zetherion upstream `/api/v1` contracts
 - Replacing Zetherion backend logic
 - Frontend UI design details in CGS apps
+- Direct client access to Zetherion `/api/v1`
+
+Canonical route inventory (implemented):
+- Runtime conversations + analytics + recommendations:
+  - `/service/ai/v1/conversations/*`
+- Document intelligence:
+  - `/service/ai/v1/documents/*`
+  - `/service/ai/v1/rag/query`
+  - `/service/ai/v1/models/providers`
+- Internal lifecycle:
+  - `/service/ai/v1/internal/tenants/*`
+- Internal tenant-admin:
+  - `/service/ai/v1/internal/admin/tenants/{tenant_id}/*`
+- Tenant reporting:
+  - `/service/ai/v1/tenants/{tenant_id}/*`
+- Internal publish adapter:
+  - `/service/ai/v1/internal/blog/publish`
 
 ## 3. Architecture Overview
 
@@ -51,6 +71,8 @@ Gateway persists and uses:
 - `cgs_ai_conversations`
 - `cgs_ai_idempotency`
 - `cgs_ai_request_log`
+- `cgs_ai_admin_changes`
+- `cgs_ai_blog_publish_receipts`
 
 Session tokens and API keys are encrypted at rest.
 
@@ -124,6 +146,7 @@ Failure:
   "error": {
     "code": "AI_*",
     "message": "human readable",
+    "retryable": false,
     "details": {}
   }
 }
@@ -327,7 +350,7 @@ Response envelope status `201` with upstream payload in `data`.
 
 Complete upload (maps to `POST /api/v1/documents/uploads/{upload_id}/complete`).
 
-Request:
+JSON request:
 
 ```json
 {
@@ -338,6 +361,14 @@ Request:
   }
 }
 ```
+
+Multipart request (browser-friendly):
+
+- Query param: `tenant_id=tenant-a`
+- Content type: `multipart/form-data`
+- Parts:
+  - `file` (required binary file)
+  - `metadata` (optional JSON string)
 
 Response envelope status `201`.
 
@@ -392,6 +423,7 @@ Request:
 
 Maps to `POST /api/v1/rag/query`.
 Response envelope includes `answer`, `citations`, `provider`, `model`.
+Provider contract: `groq`, `openai`, `anthropic` (`claude` is accepted as an alias).
 
 ### `GET /service/ai/v1/models/providers?tenant_id=...`
 
@@ -451,7 +483,66 @@ Default payload fields:
 - `environment` (default `production`)
 - `commit_sha`, `branch`, `tag_name`, `deployed_at`, `metadata`
 
-### 8.5 Tenant Reporting Endpoints
+### 8.5 Internal Tenant Admin Endpoints
+
+Prefix: `/service/ai/v1/internal/admin/tenants/{tenant_id}`
+
+Security requirements:
+- operator role/scope required
+- `cgs:zetherion-admin` scope required
+- mutating operations require step-up claim (`step_up=true` or MFA AMR/ACR claims)
+- secrets endpoints additionally require `cgs:zetherion-secrets-admin`
+
+High-risk approval workflow:
+- required for secret create/rotate/delete
+- required for owner role grants
+- required for email OAuth app credential writes
+- required for mailbox disconnect actions
+- submit/review/apply represented by `change_ticket_id` and `/changes` workflow routes
+
+Tenant admin route set:
+- `GET|POST /discord-users`
+- `DELETE /discord-users/{discord_user_id}`
+- `PATCH /discord-users/{discord_user_id}/role`
+- `GET /discord-bindings`
+- `PUT /discord-bindings/guilds/{guild_id}`
+- `PUT|DELETE /discord-bindings/channels/{channel_id}`
+- `GET /settings`
+- `PUT|DELETE /settings/{namespace}/{key}`
+- `GET /secrets`
+- `PUT|DELETE /secrets/{name}`
+- `GET /audit`
+- `GET|PUT /email/providers/{provider}/oauth-app`
+- `POST /email/mailboxes/connect/start`
+- `GET /email/mailboxes/connect/callback`
+- `GET /email/mailboxes`
+- `PATCH|DELETE /email/mailboxes/{mailbox_id}`
+- `POST /email/mailboxes/{mailbox_id}/sync`
+- `GET /email/critical/messages`
+- `GET /email/calendars`
+- `PUT /email/mailboxes/{mailbox_id}/calendar-primary`
+- `GET /email/insights`
+- `POST /email/insights/reindex`
+- `POST|GET /changes`
+- `POST /changes/{change_id}/approve`
+- `POST /changes/{change_id}/reject`
+
+Upstream mapping:
+- CGS tenant ID maps to `zetherion_tenant_id`
+- gateway calls Skills REST tenant-admin routes under:
+  - `/admin/tenants/{zetherion_tenant_id}/...`
+- gateway sends signed actor envelope headers:
+  - `X-Admin-Actor`
+  - `X-Admin-Signature`
+
+Email admin route behavior notes:
+- provider scope for initial rollout is `google`.
+- OAuth app reads never return client secret values.
+- mailbox status lifecycle: `pending|connected|degraded|revoked|disconnected`.
+- sync job status lifecycle: `queued|running|succeeded|failed|retrying`.
+- critical severity lifecycle: `critical|high|normal`; triage state `open|resolved|dismissed`.
+
+### 8.6 Tenant Reporting Endpoints
 
 Prefix: `/service/ai/v1/tenants/{tenant_id}`
 
@@ -484,6 +575,24 @@ Internal lifecycle maps to Skills API `/handle` with intents:
 - `client_configure`
 - `client_deactivate`
 - `client_rotate_key`
+
+Internal tenant-admin maps to Skills REST endpoints:
+- `/admin/tenants/{tenant_id}/discord-users*`
+- `/admin/tenants/{tenant_id}/discord-bindings*`
+- `/admin/tenants/{tenant_id}/settings*`
+- `/admin/tenants/{tenant_id}/secrets*`
+- `/admin/tenants/{tenant_id}/audit`
+- `/admin/tenants/{tenant_id}/email/providers/{provider}/oauth-app`
+- `/admin/tenants/{tenant_id}/email/oauth/{provider}/start`
+- `/admin/tenants/{tenant_id}/email/oauth/{provider}/exchange`
+- `/admin/tenants/{tenant_id}/email/accounts*`
+- `/admin/tenants/{tenant_id}/email/critical`
+- `/admin/tenants/{tenant_id}/email/calendars`
+- `/admin/tenants/{tenant_id}/email/insights*`
+
+Actor attribution to Skills tenant-admin endpoints is mandatory:
+- signed actor envelope includes `actor_sub`, `actor_roles`, `request_id`, `timestamp`, `nonce`
+- replay-protection is enforced upstream (nonce/timestamp validation)
 
 ## 10. Gateway Environment Variables
 
@@ -579,6 +688,12 @@ Minimum acceptance coverage:
    - Create tenant -> rotate key -> update -> deactivate
 5. Reporting
    - Contacts/interactions/funnel/recommendations with tenant scoping
+6. Email admin control plane
+   - Configure tenant Google OAuth app (approval-gated)
+   - Link 5+ mailboxes through connect start/callback
+   - Trigger sync and verify critical message records + insight records
+   - List calendars and set mailbox primary calendar
+   - Verify mailbox delete is approval-gated and idempotent
 
 ## 15. Operational Notes
 
@@ -593,8 +708,19 @@ Minimum acceptance coverage:
 - `src/zetherion_ai/cgs_gateway/middleware.py`
 - `src/zetherion_ai/cgs_gateway/routes/runtime.py`
 - `src/zetherion_ai/cgs_gateway/routes/internal.py`
+- `src/zetherion_ai/cgs_gateway/routes/internal_admin.py`
 - `src/zetherion_ai/cgs_gateway/routes/reporting.py`
 - `src/zetherion_ai/cgs_gateway/storage.py`
 - `src/zetherion_ai/cgs_gateway/models.py`
 - `sdk/zetherion-web-observer/src/index.ts`
 - `sdk/zetherion-web-observer/src/types.ts`
+
+## 17. Client Integration Kit
+
+Use these docs together as the external onboarding pack:
+
+- `docs/technical/cgs-client-onboarding-kit.md`
+- `docs/technical/frontend-route-wiring.md`
+- `docs/technical/api-auth-matrix.md`
+- `docs/technical/api-error-matrix.md`
+- `docs/technical/openapi-cgs-gateway.yaml`

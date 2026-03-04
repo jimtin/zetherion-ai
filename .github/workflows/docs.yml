@@ -39,6 +39,7 @@ jobs:
           scripts/check-docs-nav.py
           scripts/check-docs-links.py
           scripts/check-route-doc-parity.py
+          scripts/check-cgs-route-doc-parity.py
           scripts/check-env-doc-parity.py
           scripts/check-endpoint-doc-bundle.py
 

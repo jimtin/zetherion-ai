@@ -24,6 +24,7 @@ jobs:
     outputs:
       docs: ${{ steps.filter.outputs.docs }}
       integration: ${{ steps.filter.outputs.integration }}
+      cgs: ${{ steps.filter.outputs.cgs }}
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -44,6 +45,8 @@ jobs:
               - 'Dockerfile*'
               - 'requirements*.txt'
               - 'pyproject.toml'
+            cgs:
+              - 'cgs/**'
 
   # ============================================================================
   # Code Quality Jobs
@@ -257,6 +260,7 @@ jobs:
           scripts/check-docs-nav.py
           scripts/check-docs-links.py
           scripts/check-route-doc-parity.py
+          scripts/check-cgs-route-doc-parity.py
           scripts/check-env-doc-parity.py
 
       - name: Build docs (strict)
@@ -278,6 +282,110 @@ jobs:
         run: |
           python scripts/check_pipeline_contract.py
           python scripts/check-endpoint-doc-bundle.py
+
+  cgs-lint:
+    name: CGS UI Lint
+    runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.cgs == 'true' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: cgs/package-lock.json
+
+      - name: Install dependencies
+        working-directory: cgs
+        run: npm ci
+
+      - name: Run lint
+        working-directory: cgs
+        run: npm run lint
+
+  cgs-typecheck:
+    name: CGS UI Typecheck
+    runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.cgs == 'true' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: cgs/package-lock.json
+
+      - name: Install dependencies
+        working-directory: cgs
+        run: npm ci
+
+      - name: Run typecheck
+        working-directory: cgs
+        run: npm run typecheck
+
+  cgs-test:
+    name: CGS UI Test
+    runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.cgs == 'true' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: cgs/package-lock.json
+
+      - name: Install dependencies
+        working-directory: cgs
+        run: npm ci
+
+      - name: Run tests
+        working-directory: cgs
+        run: npm run test
+
+  cgs-build:
+    name: CGS UI Build
+    runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.cgs == 'true' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: cgs/package-lock.json
+
+      - name: Install dependencies
+        working-directory: cgs
+        run: npm ci
+
+      - name: Run build
+        working-directory: cgs
+        run: npm run build
 
   # ============================================================================
   # Test Jobs
@@ -420,6 +528,10 @@ jobs:
         pre-commit,
         docs-contract,
         pipeline-contract,
+        cgs-lint,
+        cgs-typecheck,
+        cgs-test,
+        cgs-build,
         unit-test,
         integration-test,
       ]
@@ -448,6 +560,22 @@ jobs:
           if [[ "$INTEGRATION_RESULT" == "skipped" ]]; then
             INTEGRATION_RESULT="success"
           fi
+          CGS_LINT_RESULT="${{ needs.cgs-lint.result }}"
+          if [[ "$CGS_LINT_RESULT" == "skipped" ]]; then
+            CGS_LINT_RESULT="success"
+          fi
+          CGS_TYPECHECK_RESULT="${{ needs.cgs-typecheck.result }}"
+          if [[ "$CGS_TYPECHECK_RESULT" == "skipped" ]]; then
+            CGS_TYPECHECK_RESULT="success"
+          fi
+          CGS_TEST_RESULT="${{ needs.cgs-test.result }}"
+          if [[ "$CGS_TEST_RESULT" == "skipped" ]]; then
+            CGS_TEST_RESULT="success"
+          fi
+          CGS_BUILD_RESULT="${{ needs.cgs-build.result }}"
+          if [[ "$CGS_BUILD_RESULT" == "skipped" ]]; then
+            CGS_BUILD_RESULT="success"
+          fi
 
           if [[ "${{ needs.lint.result }}" == "success" ]] && \
              [[ "${{ needs.type-check.result }}" == "success" ]] && \
@@ -458,6 +586,10 @@ jobs:
              [[ "$PRE_COMMIT_RESULT" == "success" ]] && \
              [[ "$DOCS_RESULT" == "success" ]] && \
              [[ "${{ needs.pipeline-contract.result }}" == "success" ]] && \
+             [[ "$CGS_LINT_RESULT" == "success" ]] && \
+             [[ "$CGS_TYPECHECK_RESULT" == "success" ]] && \
+             [[ "$CGS_TEST_RESULT" == "success" ]] && \
+             [[ "$CGS_BUILD_RESULT" == "success" ]] && \
              [[ "${{ needs.unit-test.result }}" == "success" ]] && \
              [[ "$INTEGRATION_RESULT" == "success" ]]; then
             echo "✅ All CI checks passed!"
@@ -473,6 +605,10 @@ jobs:
             echo "  Pre-commit: ${{ needs.pre-commit.result }}"
             echo "  Docs Contracts: ${DOCS_RESULT} (raw=${{ needs.docs-contract.result }})"
             echo "  Pipeline Contract: ${{ needs.pipeline-contract.result }}"
+            echo "  CGS UI Lint: ${CGS_LINT_RESULT} (raw=${{ needs.cgs-lint.result }})"
+            echo "  CGS UI Typecheck: ${CGS_TYPECHECK_RESULT} (raw=${{ needs.cgs-typecheck.result }})"
+            echo "  CGS UI Test: ${CGS_TEST_RESULT} (raw=${{ needs.cgs-test.result }})"
+            echo "  CGS UI Build: ${CGS_BUILD_RESULT} (raw=${{ needs.cgs-build.result }})"
             echo "  Unit Tests: ${{ needs.unit-test.result }}"
             echo "  Integration Tests: ${INTEGRATION_RESULT} (raw=${{ needs.integration-test.result }})"
             exit 1
@@ -494,6 +630,10 @@ jobs:
           echo "| Pre-commit | ${{ needs.pre-commit.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Docs Contracts | ${{ needs.docs-contract.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Pipeline Contract | ${{ needs.pipeline-contract.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| CGS UI Lint | ${{ needs.cgs-lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| CGS UI Typecheck | ${{ needs.cgs-typecheck.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| CGS UI Test | ${{ needs.cgs-test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| CGS UI Build | ${{ needs.cgs-build.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Unit Tests | ${{ needs.unit-test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Integration Tests | ${{ needs.integration-test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -515,6 +655,10 @@ jobs:
         pre-commit,
         docs-contract,
         pipeline-contract,
+        cgs-lint,
+        cgs-typecheck,
+        cgs-test,
+        cgs-build,
         unit-test,
         integration-test,
       ]
@@ -527,7 +671,7 @@ jobs:
         run: |
           python scripts/ci_failure_attribution.py \
             --output ci-failure-attribution.json \
-            --job-results "lint=${{ needs.lint.result }},type-check=${{ needs.type-check.result }},security=${{ needs.security.result }},semgrep=${{ needs.semgrep.result }},dependency-audit=${{ needs.dependency-audit.result }},license-check=${{ needs.license-check.result }},pre-commit=${{ needs.pre-commit.result }},docs-contract=${{ needs.docs-contract.result }},pipeline-contract=${{ needs.pipeline-contract.result }},unit-test=${{ needs.unit-test.result }},integration-test=${{ needs.integration-test.result }}"
+            --job-results "lint=${{ needs.lint.result }},type-check=${{ needs.type-check.result }},security=${{ needs.security.result }},semgrep=${{ needs.semgrep.result }},dependency-audit=${{ needs.dependency-audit.result }},license-check=${{ needs.license-check.result }},pre-commit=${{ needs.pre-commit.result }},docs-contract=${{ needs.docs-contract.result }},pipeline-contract=${{ needs.pipeline-contract.result }},cgs-lint=${{ needs.cgs-lint.result }},cgs-typecheck=${{ needs.cgs-typecheck.result }},cgs-test=${{ needs.cgs-test.result }},cgs-build=${{ needs.cgs-build.result }},unit-test=${{ needs.unit-test.result }},integration-test=${{ needs.integration-test.result }}"
 
       - name: Upload attribution artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4

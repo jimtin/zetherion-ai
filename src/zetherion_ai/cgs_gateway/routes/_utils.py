@@ -10,6 +10,7 @@ from aiohttp import web
 
 from zetherion_ai.cgs_gateway.errors import GatewayError
 from zetherion_ai.cgs_gateway.models import AuthPrincipal
+from zetherion_ai.cgs_gateway.rate_limit import TenantMutationRateLimiter
 from zetherion_ai.cgs_gateway.storage import CGSGatewayStorage
 
 
@@ -94,3 +95,27 @@ async def resolve_active_mapping(storage: CGSGatewayStorage, cgs_tenant_id: str)
     if not bool(mapping.get("is_active", True)):
         raise GatewayError(code="AI_TENANT_INACTIVE", message="Tenant is inactive", status=403)
     return mapping
+
+
+def enforce_mutation_rate_limit(
+    request: web.Request,
+    *,
+    cgs_tenant_id: str,
+    family: str,
+) -> None:
+    """Apply tenant-aware mutation rate limits when configured."""
+    limiter = request.app.get("cgs_mutation_rate_limiter")
+    if not isinstance(limiter, TenantMutationRateLimiter):
+        return
+
+    allowed, retry_after = limiter.check(tenant_id=cgs_tenant_id, family=family)
+    if allowed:
+        return
+
+    raise GatewayError(
+        code="AI_UPSTREAM_429",
+        message="Gateway rate limit exceeded",
+        status=429,
+        retryable=True,
+        details={"retry_after_seconds": retry_after, "family": family},
+    )

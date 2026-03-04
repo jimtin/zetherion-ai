@@ -30,6 +30,9 @@ This is the only supported full local gate. Do not substitute ad-hoc pytest comm
 10. Background jobs (`mypy`, `pip-audit`) must never run indefinitely; canonical timeouts/heartbeat logging are mandatory.
 11. Canonical validation must run against repo-local virtualenv tooling (`.venv`/`venv`), not an unrelated active shell virtualenv.
 12. Canonical static analysis must run both `scripts/check_pipeline_contract.py` and `scripts/check-endpoint-doc-bundle.py` so route/doc-contract mismatches fail locally before push.
+13. Unit-test coverage must remain `>=90%` in canonical runs; coverage regressions block push/release.
+14. Critical-path integration suites must run in canonical validation, including dev-watcher onboarding paths.
+15. Full end-to-end validation is mandatory for substantial delivery: Docker E2E (`test_e2e.py`) and required Discord E2E must both pass.
 
 ## API Documentation Contract (Mandatory)
 

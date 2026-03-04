@@ -59,6 +59,7 @@ def test_success_and_error_response_helpers() -> None:
         "error": {
             "code": "AI_BAD_REQUEST",
             "message": "bad input",
+            "retryable": False,
             "details": {"field": "tenant_id"},
         },
     }
@@ -73,6 +74,7 @@ def test_from_exception_maps_gateway_and_generic() -> None:
     assert _response_json(mapped)["error"] == {
         "code": "AI_AUTH_MISSING",
         "message": "missing",
+        "retryable": False,
         "details": {},
     }
 
@@ -81,6 +83,7 @@ def test_from_exception_maps_gateway_and_generic() -> None:
     assert _response_json(generic)["error"] == {
         "code": "AI_INTERNAL_ERROR",
         "message": "Unexpected gateway error",
+        "retryable": True,
         "details": {},
     }
 
@@ -473,7 +476,7 @@ async def test_run_server_starts_and_stops_on_cancel(monkeypatch: pytest.MonkeyP
         issuer="issuer",
         audience="aud",
         postgres_dsn="postgres://db",
-        encryption_passphrase="passphrase",
+        encryption_passphrase="passphrase-012345",
         encryption_salt_path="/tmp/salt",
         zetherion_public_api_base_url="http://public",
         zetherion_skills_api_base_url="http://skills",
@@ -501,7 +504,7 @@ def _fake_settings(**overrides: object) -> SimpleNamespace:
         "zetherion_skills_api_base_url": "http://skills",
         "skills_api_secret": SecretStr("skills-secret"),
         "postgres_dsn": "postgres://db",
-        "encryption_passphrase": SecretStr("passphrase"),
+        "encryption_passphrase": SecretStr("passphrase-012345"),
         "encryption_salt_path": "/tmp/salt",
     }
     base.update(overrides)
@@ -509,6 +512,12 @@ def _fake_settings(**overrides: object) -> SimpleNamespace:
 
 
 def test_main_exits_without_required_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Ensure ambient shell env cannot override test fixture settings.
+    monkeypatch.delenv("POSTGRES_DSN", raising=False)
+    monkeypatch.setenv("CGS_AUTH_JWKS_URL", "")
+    monkeypatch.delenv("CGS_AUTH_ISSUER", raising=False)
+    monkeypatch.delenv("CGS_AUTH_AUDIENCE", raising=False)
+    monkeypatch.setenv("ZETHERION_SKILLS_API_SECRET", "")
     monkeypatch.setattr(server_mod, "get_settings", lambda: _fake_settings(postgres_dsn=""))
     with pytest.raises(SystemExit, match="1"):
         server_mod.main()
@@ -522,7 +531,6 @@ def test_main_exits_without_required_settings(monkeypatch: pytest.MonkeyPatch) -
         "get_settings",
         lambda: _fake_settings(skills_api_secret=None),
     )
-    monkeypatch.setenv("ZETHERION_SKILLS_API_SECRET", "")
     with pytest.raises(SystemExit, match="1"):
         server_mod.main()
 

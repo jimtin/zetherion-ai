@@ -13,6 +13,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - CGS Go-Live Closure Wave (2026-03-04)
+
+- Added CGS operator Next.js app in `cgs/` mounted at `/cgs` with session-cookie BFF route handlers (`/cgs/api/gateway/*`).
+- Added production operator screens for documents, retrieval, tenant access, bindings, settings, secrets, approvals, and audit export flows.
+- Added blue/green CGS UI services in `docker-compose.yml`:
+  - `zetherion-ai-cgs-ui-blue`
+  - `zetherion-ai-cgs-ui-green`
+- Added Traefik dynamic routing for `/cgs` while preserving `/service/ai/v1` to CGS gateway.
+- Extended updater sidecar rollout/rollback orchestration to include `cgs-gateway` and `cgs-ui` service families plus routed health checks.
+- Added CI jobs and contract mapping for CGS UI:
+  - `cgs-lint`
+  - `cgs-typecheck`
+  - `cgs-test`
+  - `cgs-build`
+- Added local gate script `scripts/check-cgs-ui.sh` and wired it into `pre-push-tests.sh` and `validate-ci.sh`.
+- Added env/config docs for:
+  - `CGS_DOCUMENT_MUTATION_RPM`
+  - `CGS_ADMIN_MUTATION_RPM`
+  - `CGS_SESSION_COOKIE_NAME`
+  - `CGS_GATEWAY_BASE_URL`
+
+### Added - CGS-First Tenant Multi-Email Monitoring Control Plane (2026-03-04)
+
+- Added tenant-scoped email admin persistence and intelligence model:
+  - `tenant_email_provider_configs`
+  - `tenant_email_oauth_states`
+  - `tenant_email_accounts`
+  - `tenant_email_sync_jobs`
+  - `tenant_email_message_cache`
+  - `tenant_email_critical_items`
+  - `tenant_email_insights`
+  - `tenant_email_events`
+- Added Skills internal tenant email admin endpoints:
+  - OAuth app config read/write
+  - OAuth connect start/exchange
+  - mailbox list/patch/delete
+  - sync trigger
+  - critical list
+  - calendar list + primary calendar set
+  - insights list + reindex
+- Added model-assisted critical classification stage for synced emails:
+  - deterministic rules + inference refinement
+  - severity/reason/confidence outputs persisted for triage
+- Added insight vector indexing for tenant email insights (Qdrant-backed when configured).
+- Added retention enforcement in email sync path:
+  - message body cache purge at 90 days
+  - critical/insight purge at 365 days
+- Added CGS internal admin email route family under:
+  - `/service/ai/v1/internal/admin/tenants/{tenant_id}/email/...`
+- Added high-risk approval enforcement in CGS routes for:
+  - tenant OAuth app credential writes
+  - mailbox disconnect actions
+- Added CGS docs coverage for email control-plane:
+  - OpenAPI updates
+  - auth/error matrix updates
+  - frontend route wiring updates
+  - new `docs/technical/cgs-email-monitoring-onboarding-kit.md`
+
+### Added - CGS Tenant Admin Control Plane (2026-03-03)
+
+- Added tenant-scoped internal admin persistence and audit model:
+  - `tenant_discord_users`
+  - `tenant_discord_bindings`
+  - `tenant_settings_overrides`
+  - `tenant_setting_versions`
+  - `tenant_secrets`
+  - `tenant_secret_versions`
+  - `tenant_admin_audit_log`
+- Added Skills internal tenant-admin API endpoints under:
+  - `/admin/tenants/{tenant_id}/...`
+  - includes Discord allowlist/roles, bindings, settings, secrets, and audit readout
+- Added signed actor-envelope enforcement on Skills tenant-admin routes:
+  - `X-Admin-Actor` + `X-Admin-Signature`
+  - nonce/timestamp replay protection
+- Added CGS internal tenant-admin route family:
+  - `/service/ai/v1/internal/admin/tenants/{tenant_id}/...`
+- Added CGS approval workflow storage + routes for high-risk admin mutations:
+  - pending change create/list
+  - approve/reject (two-person guard)
+  - apply status tracking for secret mutations
+- Added tenant-aware runtime retrieval helpers:
+  - `get_dynamic_for_tenant(...)`
+  - `get_secret_for_tenant(...)`
+- Wired Discord runtime allowlist checks to tenant-scoped controls when enabled via dynamic security settings.
+
+### Changed - CGS-First Document Intelligence Client Kit (2026-03-02)
+
+- Clarified exposure policy across docs and contracts: Zetherion `/api/v1` is upstream-only and CGS `/service/ai/v1` is the only public client API.
+- Added internal component spec:
+  - `docs/technical/zetherion-document-intelligence-component.md`
+- Added external onboarding pack:
+  - `docs/technical/cgs-client-onboarding-kit.md`
+- Expanded CGS docs for browser upload completion options:
+  - JSON completion (`tenant_id` in body)
+  - multipart completion (`tenant_id` in query)
+- Implemented CGS multipart passthrough for upload completion in runtime gateway route.
+- Normalized document RAG provider naming to canonical `anthropic` (with `claude` alias compatibility retained).
+- Updated OpenAPI specs and route wiring/auth/error docs to align with the above behavior.
+- Tightened endpoint-doc bundle enforcement to include the new component spec + onboarding kit files.
+
 ### Changed - Windows Merge-Intelligence Promotions Authority (2026-03-02)
 
 - Removed GitHub Actions `post-deploy-promotions.yml`; blog/release promotions are now executed on the Windows deployment host.

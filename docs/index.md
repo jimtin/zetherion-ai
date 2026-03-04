@@ -69,7 +69,10 @@ If you want to understand the internals:
 | [Personal Understanding](technical/personal-understanding.md) | PostgreSQL personal model |
 | [Cost Tracking](technical/cost-tracking.md) | Budget management and reporting |
 | [Skills API Reference](technical/api-reference.md) | Internal skills REST API endpoints |
-| [Public API Reference](technical/public-api-reference.md) | External `/api/v1` contract for sessions/chat/YouTube |
+| [Zetherion Upstream API](technical/public-api-reference.md) | Internal `/api/v1` upstream contract consumed by CGS |
+| [Document Intelligence Component](technical/zetherion-document-intelligence-component.md) | Internal ingestion, indexing, preview, and retrieval design |
+| [CGS Client Onboarding Kit](technical/cgs-client-onboarding-kit.md) | External integration handoff for `/service/ai/v1` document intelligence |
+| [CGS Email Monitoring Onboarding Kit](technical/cgs-email-monitoring-onboarding-kit.md) | External/operator integration handoff for tenant email monitoring via CGS |
 | [AI Agent Integration](technical/ai-agent-integration.md) | Integration contract and capability boundaries for external agents |
 
 ### For Developers
@@ -104,7 +107,7 @@ If you want to contribute or extend:
 | Source Files | 90+ |
 | Docker Services | Current compose topology (blue/green app + skills + routing + updater + data services) |
 | Configuration Fields | 70+ |
-| CI/CD Jobs | 10 |
+| CI/CD Jobs | 14 |
 | Skills | 10+ built-in and optional skills (tasks, calendar, profile, gmail/email router, github, personal model, health, updater, dev watcher, milestone, YouTube when enabled) |
 
 ---

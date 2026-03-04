@@ -16,6 +16,10 @@ REQUIRED_JOBS = {
     "pre-commit",
     "docs-contract",
     "pipeline-contract",
+    "cgs-lint",
+    "cgs-typecheck",
+    "cgs-test",
+    "cgs-build",
     "unit-test",
     "integration-test",
 }

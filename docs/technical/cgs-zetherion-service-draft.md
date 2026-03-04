@@ -7,6 +7,7 @@ Owners: `Catalyst Group Solutions (CGS) Platform`, `Zetherion Backend`
 Maintenance note (2026-03-01):
 - Internal document route typing/multipart parsing hardening was applied.
 - Public + gateway service contracts defined in this draft remain unchanged.
+- Added tenant email admin control-plane routes under `/service/ai/v1/internal/admin/tenants/{tenant_id}/email/*` with step-up + approval requirements for high-risk actions.
 
 ## 1. Purpose
 
@@ -22,6 +23,7 @@ Goals:
 Non-goals:
 - Direct browser-to-Zetherion integration.
 - Exposing Zetherion internal Skills API to external app clients.
+- Any direct external use of Zetherion `/api/v1` without CGS.
 
 ## 2. Current State Audit Summary
 
@@ -104,6 +106,7 @@ Error envelope:
   "error": {
     "code": "AI_UPSTREAM_401",
     "message": "Session expired",
+    "retryable": false,
     "details": {}
   }
 }
@@ -147,6 +150,35 @@ Error envelope:
 | `/service/ai/v1/internal/tenants/{tenant_id}/deactivate` | `POST` | Deactivate tenant | Skills `client_deactivate` | Ready |
 | `/service/ai/v1/internal/tenants/{tenant_id}/keys/rotate` | `POST` | Rotate tenant API key | Skills `client_rotate_key` | Ready |
 | `/service/ai/v1/internal/tenants/{tenant_id}/release-markers` | `POST` | Publish deployment marker | `POST /api/v1/releases/markers` | Ready |
+
+### 6.2A Internal Tenant Admin + Email Endpoints (CGS only)
+
+Prefix: `/service/ai/v1/internal/admin/tenants/{tenant_id}`
+
+Admin routes (existing):
+- Discord users and role control
+- Guild/channel bindings
+- Settings and secrets
+- Audit and approval queue
+
+Email admin routes (google-first):
+- `GET|PUT /email/providers/{provider}/oauth-app`
+- `POST /email/mailboxes/connect/start`
+- `GET /email/mailboxes/connect/callback`
+- `GET /email/mailboxes`
+- `PATCH|DELETE /email/mailboxes/{mailbox_id}`
+- `POST /email/mailboxes/{mailbox_id}/sync`
+- `GET /email/critical/messages`
+- `GET /email/calendars`
+- `PUT /email/mailboxes/{mailbox_id}/calendar-primary`
+- `GET /email/insights`
+- `POST /email/insights/reindex`
+
+Security rules:
+- Operator auth + `cgs:zetherion-admin` required.
+- Mutating routes require step-up auth.
+- OAuth app read/write additionally require `cgs:zetherion-secrets-admin`.
+- OAuth app writes and mailbox disconnects require approved `change_ticket_id`.
 
 ### 6.3 Company Reporting Endpoints
 

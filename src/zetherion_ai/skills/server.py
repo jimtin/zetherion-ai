@@ -9,7 +9,10 @@ This server runs in its own Docker container and provides:
 """
 
 import asyncio
+import base64
+import hashlib
 import hmac
+import json
 import math
 import os
 from collections.abc import Awaitable, Callable
@@ -20,6 +23,11 @@ from typing import Any
 
 from aiohttp import web
 
+from zetherion_ai.admin.tenant_admin_manager import (
+    AdminActorContext,
+    TenantAdminManager,
+    admin_actor_from_payload,
+)
 from zetherion_ai.logging import get_logger
 from zetherion_ai.routing.models import DestinationType
 from zetherion_ai.skills.base import SkillRequest
@@ -40,6 +48,28 @@ def _serialise_record(record: dict[str, Any]) -> dict[str, Any]:
         else:
             out[k] = v
     return out
+
+
+def _extract_json_object(raw: str) -> dict[str, Any]:
+    """Best-effort JSON object extraction from model output."""
+    text = raw.strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+        return {}
+    except Exception:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return {}
+        try:
+            parsed = json.loads(text[start : end + 1])
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
 
 
 def _resolve_updater_secret() -> str:
@@ -222,11 +252,13 @@ class SkillsServer:
         self,
         registry: SkillRegistry,
         api_secret: str | None = None,
+        admin_actor_secret: str | None = None,
         host: str = "0.0.0.0",  # nosec B104 - Intentional for Docker container
         port: int = 8080,
         user_manager: Any | None = None,
         settings_manager: Any | None = None,
         secrets_manager: Any | None = None,
+        tenant_admin_manager: TenantAdminManager | None = None,
         oauth_handlers: dict[str, OAuthCallbackHandler] | None = None,
         oauth_authorizers: dict[str, OAuthAuthorizeHandler] | None = None,
     ):
@@ -242,13 +274,18 @@ class SkillsServer:
         """
         self._registry = registry
         self._api_secret = api_secret
+        self._admin_actor_secret = (admin_actor_secret or api_secret or "").strip()
         self._host = host
         self._port = port
         self._user_manager = user_manager
         self._settings_manager = settings_manager
         self._secrets_manager = secrets_manager
+        self._tenant_admin_manager = tenant_admin_manager
         self._oauth_handlers = oauth_handlers or {}
         self._oauth_authorizers = oauth_authorizers or {}
+        self._admin_nonce_cache: dict[str, datetime] = {}
+        self._admin_nonce_ttl = timedelta(minutes=10)
+        self._admin_actor_max_skew = timedelta(minutes=5)
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
 
@@ -288,6 +325,79 @@ class SkillsServer:
         except (TypeError, ValueError) as err:
             raise ValueError(f"Invalid integer for '{field_name}'") from err
 
+    @staticmethod
+    def _parse_bool(raw: Any, field_name: str, default: bool = True) -> bool:
+        """Parse a boolean field and raise ValueError on invalid input."""
+        if raw is None:
+            return default
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, int | float):
+            return bool(raw)
+        if isinstance(raw, str):
+            normalized = raw.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+        raise ValueError(f"Invalid boolean for '{field_name}'")
+
+    @staticmethod
+    def _is_tenant_admin_path(path: str) -> bool:
+        """Return True for tenant-admin endpoints requiring actor envelope."""
+        return path.startswith("/admin/tenants/")
+
+    def _prune_admin_nonce_cache(self, now: datetime) -> None:
+        expired = [nonce for nonce, expiry in self._admin_nonce_cache.items() if expiry <= now]
+        for nonce in expired:
+            self._admin_nonce_cache.pop(nonce, None)
+
+    @staticmethod
+    def _decode_actor_payload(encoded: str) -> dict[str, Any]:
+        if not encoded.strip():
+            raise ValueError("Missing admin actor envelope")
+        padding = "=" * ((4 - len(encoded) % 4) % 4)
+        try:
+            decoded = base64.urlsafe_b64decode((encoded + padding).encode("ascii"))
+            payload = json.loads(decoded.decode("utf-8"))
+        except Exception as exc:
+            raise ValueError("Invalid admin actor envelope") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("Invalid admin actor envelope")
+        return payload
+
+    def _verify_admin_actor(self, request: web.Request) -> AdminActorContext:
+        if not self._admin_actor_secret:
+            raise ValueError("Admin actor secret is not configured")
+
+        encoded_actor = request.headers.get("X-Admin-Actor", "").strip()
+        provided_signature = request.headers.get("X-Admin-Signature", "").strip()
+        if not encoded_actor or not provided_signature:
+            raise ValueError("Missing admin actor signature headers")
+
+        expected_signature = hmac.new(
+            self._admin_actor_secret.encode("utf-8"),
+            encoded_actor.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(provided_signature, expected_signature):
+            raise ValueError("Invalid admin actor signature")
+
+        payload = self._decode_actor_payload(encoded_actor)
+        actor = admin_actor_from_payload(payload)
+
+        now = datetime.now(UTC)
+        skew = now - actor.timestamp
+        if skew > self._admin_actor_max_skew or skew < -self._admin_actor_max_skew:
+            raise ValueError("Expired admin actor envelope")
+
+        self._prune_admin_nonce_cache(now)
+        nonce_key = f"{actor.actor_sub}:{actor.nonce}"
+        if nonce_key in self._admin_nonce_cache:
+            raise ValueError("Replayed admin actor envelope")
+        self._admin_nonce_cache[nonce_key] = now + self._admin_nonce_ttl
+        return actor
+
     @web.middleware
     async def auth_middleware(
         self,
@@ -320,8 +430,21 @@ class SkillsServer:
                 status=401,
             )
 
+        if self._is_tenant_admin_path(request.path):
+            try:
+                request["admin_actor"] = self._verify_admin_actor(request)
+            except ValueError as exc:
+                return web.json_response({"error": str(exc)}, status=401)
+
         response = await handler(request)
         return response
+
+    @staticmethod
+    def _admin_actor(request: web.Request) -> AdminActorContext:
+        actor = request.get("admin_actor")
+        if not isinstance(actor, AdminActorContext):
+            raise ValueError("Missing admin actor context")
+        return actor
 
     async def handle_health(self, request: web.Request) -> web.Response:
         """Health check endpoint.
@@ -714,6 +837,516 @@ class SkillsServer:
         return web.json_response({"ok": True, "existed": deleted})
 
     # ------------------------------------------------------------------
+    # Tenant admin API (internal-only)
+    # ------------------------------------------------------------------
+
+    async def handle_tenant_list_discord_users(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        users = await self._tenant_admin_manager.list_discord_users(tenant_id)
+        return web.json_response({"users": [_serialise_record(row) for row in users]})
+
+    async def handle_tenant_add_discord_user(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            actor = self._admin_actor(request)
+            data = await self._read_json_object(request)
+            discord_user_id = self._parse_int(data.get("discord_user_id"), "discord_user_id")
+            role = str(data.get("role", "user")).strip() or "user"
+            row = await self._tenant_admin_manager.upsert_discord_user(
+                tenant_id=tenant_id,
+                discord_user_id=discord_user_id,
+                role=role,
+                actor=actor,
+            )
+            return web.json_response({"ok": True, "user": _serialise_record(row)}, status=201)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_delete_discord_user(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            actor = self._admin_actor(request)
+            discord_user_id = self._parse_int(
+                request.match_info.get("discord_user_id"), "discord_user_id"
+            )
+            deleted = await self._tenant_admin_manager.delete_discord_user(
+                tenant_id=tenant_id,
+                discord_user_id=discord_user_id,
+                actor=actor,
+            )
+            return web.json_response({"ok": True, "existed": deleted})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_patch_discord_user_role(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            actor = self._admin_actor(request)
+            discord_user_id = self._parse_int(
+                request.match_info.get("discord_user_id"), "discord_user_id"
+            )
+            data = await self._read_json_object(request)
+            role = str(data.get("role", "")).strip()
+            if not role:
+                raise ValueError("Missing role")
+            changed = await self._tenant_admin_manager.update_discord_user_role(
+                tenant_id=tenant_id,
+                discord_user_id=discord_user_id,
+                role=role,
+                actor=actor,
+            )
+            return web.json_response({"ok": True, "changed": changed})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_list_discord_bindings(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        rows = await self._tenant_admin_manager.list_discord_bindings(tenant_id)
+        return web.json_response({"bindings": [_serialise_record(row) for row in rows]})
+
+    async def handle_tenant_put_guild_binding(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            actor = self._admin_actor(request)
+            guild_id = self._parse_int(request.match_info.get("guild_id"), "guild_id")
+            data = await self._read_json_object(request)
+            priority = self._parse_int(data.get("priority", 100), "priority")
+            is_active = self._parse_bool(data.get("is_active"), "is_active", default=True)
+            row = await self._tenant_admin_manager.put_guild_binding(
+                tenant_id=tenant_id,
+                guild_id=guild_id,
+                priority=priority,
+                is_active=is_active,
+                actor=actor,
+            )
+            return web.json_response({"ok": True, "binding": _serialise_record(row)})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_put_channel_binding(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            actor = self._admin_actor(request)
+            channel_id = self._parse_int(request.match_info.get("channel_id"), "channel_id")
+            data = await self._read_json_object(request)
+            guild_id = self._parse_int(data.get("guild_id"), "guild_id")
+            priority = self._parse_int(data.get("priority", 100), "priority")
+            is_active = self._parse_bool(data.get("is_active"), "is_active", default=True)
+            row = await self._tenant_admin_manager.put_channel_binding(
+                tenant_id=tenant_id,
+                guild_id=guild_id,
+                channel_id=channel_id,
+                priority=priority,
+                is_active=is_active,
+                actor=actor,
+            )
+            return web.json_response({"ok": True, "binding": _serialise_record(row)})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_delete_channel_binding(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            actor = self._admin_actor(request)
+            channel_id = self._parse_int(request.match_info.get("channel_id"), "channel_id")
+            deleted = await self._tenant_admin_manager.delete_channel_binding(
+                tenant_id=tenant_id,
+                channel_id=channel_id,
+                actor=actor,
+            )
+            return web.json_response({"ok": True, "existed": deleted})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_list_settings(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        namespace = request.query.get("namespace")
+        rows = await self._tenant_admin_manager.list_settings(tenant_id, namespace=namespace)
+        return web.json_response({"settings": rows})
+
+    async def handle_tenant_put_setting(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        namespace = request.match_info["namespace"]
+        key = request.match_info["key"]
+        try:
+            actor = self._admin_actor(request)
+            data = await self._read_json_object(request)
+            if "value" not in data:
+                raise ValueError("Missing setting value")
+            await self._tenant_admin_manager.set_setting(
+                tenant_id=tenant_id,
+                namespace=namespace,
+                key=key,
+                value=data["value"],
+                data_type=str(data.get("data_type", "string")),
+                actor=actor,
+            )
+            return web.json_response({"ok": True})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_delete_setting(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        namespace = request.match_info["namespace"]
+        key = request.match_info["key"]
+        try:
+            actor = self._admin_actor(request)
+            deleted = await self._tenant_admin_manager.delete_setting(
+                tenant_id=tenant_id,
+                namespace=namespace,
+                key=key,
+                actor=actor,
+            )
+            return web.json_response({"ok": True, "existed": deleted})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_list_secrets(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        rows = await self._tenant_admin_manager.list_secret_metadata(tenant_id)
+        return web.json_response({"secrets": [_serialise_record(row) for row in rows]})
+
+    async def handle_tenant_put_secret(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        name = request.match_info["name"]
+        try:
+            actor = self._admin_actor(request)
+            data = await self._read_json_object(request)
+            value = str(data.get("value", ""))
+            if not value:
+                raise ValueError("Missing non-empty secret value")
+            row = await self._tenant_admin_manager.set_secret(
+                tenant_id=tenant_id,
+                name=name,
+                value=value,
+                description=str(data["description"]) if "description" in data else None,
+                actor=actor,
+            )
+            return web.json_response({"ok": True, "secret": _serialise_record(row)})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_delete_secret(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        name = request.match_info["name"]
+        try:
+            actor = self._admin_actor(request)
+            deleted = await self._tenant_admin_manager.delete_secret(
+                tenant_id=tenant_id,
+                name=name,
+                actor=actor,
+            )
+            return web.json_response({"ok": True, "existed": deleted})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_list_audit(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            limit = self._parse_int(request.query.get("limit", "200"), "limit")
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        rows = await self._tenant_admin_manager.list_audit(tenant_id, limit=limit)
+        return web.json_response({"entries": [_serialise_record(row) for row in rows]})
+
+    async def handle_tenant_get_email_provider_config(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        provider = request.match_info.get("provider", "google")
+        try:
+            config = await self._tenant_admin_manager.get_email_provider_config(
+                tenant_id=tenant_id,
+                provider=provider,
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        if config is None:
+            return web.json_response({"error": "Email provider config not found"}, status=404)
+        return web.json_response({"provider_config": _serialise_record(config)})
+
+    async def handle_tenant_put_email_provider_config(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        provider = request.match_info.get("provider", "google")
+        try:
+            actor = self._admin_actor(request)
+            data = await self._read_json_object(request)
+            redirect_uri = str(data.get("redirect_uri", "")).strip()
+            if not redirect_uri:
+                raise ValueError("Missing redirect_uri")
+            enabled = self._parse_bool(data.get("enabled"), "enabled", default=True)
+            config = await self._tenant_admin_manager.put_email_provider_config(
+                tenant_id=tenant_id,
+                provider=provider,
+                client_id=str(data.get("client_id") or "").strip() or None,
+                client_secret=str(data.get("client_secret") or "").strip() or None,
+                redirect_uri=redirect_uri,
+                enabled=enabled,
+                actor=actor,
+                metadata=data.get("metadata") if isinstance(data.get("metadata"), dict) else None,
+                client_id_ref=str(data.get("client_id_ref") or "").strip() or None,
+                client_secret_ref=str(data.get("client_secret_ref") or "").strip() or None,
+            )
+            return web.json_response({"ok": True, "provider_config": _serialise_record(config)})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_start_email_oauth(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            actor = self._admin_actor(request)
+            data = await self._read_json_object(request)
+            provider = str(data.get("provider") or "google")
+            result = await self._tenant_admin_manager.create_email_oauth_start(
+                tenant_id=tenant_id,
+                provider=provider,
+                actor=actor,
+                account_hint=str(data.get("account_hint") or "").strip() or None,
+            )
+            return web.json_response({"ok": True, **result}, status=201)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_exchange_email_oauth(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        provider = request.match_info.get("provider", "google").strip().lower()
+        if provider != "google":
+            return web.json_response({"error": f"Unsupported provider '{provider}'"}, status=400)
+        try:
+            actor = self._admin_actor(request)
+            data = await self._read_json_object(request)
+            code = str(data.get("code") or "").strip()
+            state = str(data.get("state") or "").strip()
+            if not code or not state:
+                raise ValueError("Missing OAuth code/state")
+            account = await self._tenant_admin_manager.exchange_google_oauth_code(
+                tenant_id=tenant_id,
+                code=code,
+                state=state,
+                actor=actor,
+            )
+            return web.json_response({"ok": True, "account": _serialise_record(account)})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_list_email_accounts(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        provider = request.query.get("provider", "google")
+        try:
+            rows = await self._tenant_admin_manager.list_email_accounts(
+                tenant_id=tenant_id,
+                provider=provider,
+            )
+            return web.json_response({"accounts": [_serialise_record(row) for row in rows]})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_patch_email_account(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        account_id = request.match_info["account_id"]
+        try:
+            actor = self._admin_actor(request)
+            data = await self._read_json_object(request)
+            metadata = data.get("metadata")
+            if metadata is not None and not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object when provided")
+            patched = await self._tenant_admin_manager.patch_email_account(
+                tenant_id=tenant_id,
+                account_id=account_id,
+                actor=actor,
+                status=str(data.get("status")).strip() if data.get("status") is not None else None,
+                metadata=metadata,
+                sync_cursor=(
+                    str(data.get("sync_cursor")).strip()
+                    if data.get("sync_cursor") is not None
+                    else None
+                ),
+            )
+            return web.json_response({"ok": True, "account": _serialise_record(patched)})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_delete_email_account(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        account_id = request.match_info["account_id"]
+        try:
+            actor = self._admin_actor(request)
+            deleted = await self._tenant_admin_manager.delete_email_account(
+                tenant_id=tenant_id,
+                account_id=account_id,
+                actor=actor,
+            )
+            return web.json_response({"ok": True, "existed": deleted})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_sync_email_account(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        account_id = request.match_info["account_id"]
+        try:
+            actor = self._admin_actor(request)
+            data = await self._read_json_object(request)
+            calendar_ops = data.get("calendar_operations")
+            if calendar_ops is not None and not isinstance(calendar_ops, list):
+                raise ValueError("calendar_operations must be an array")
+            result = await self._tenant_admin_manager.sync_email_account(
+                tenant_id=tenant_id,
+                account_id=account_id,
+                actor=actor,
+                direction=str(data.get("direction") or "bi_directional"),
+                idempotency_key=str(data.get("idempotency_key") or "").strip() or None,
+                source=str(data.get("source") or "cgs-admin"),
+                calendar_operations=calendar_ops,
+                max_results=int(data.get("max_results") or 20),
+            )
+            return web.json_response({"ok": True, "sync": result})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception("tenant_email_sync_failed", tenant_id=tenant_id, account_id=account_id)
+            return web.json_response({"error": "Email sync failed"}, status=502)
+
+    async def handle_tenant_list_email_critical(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            limit = self._parse_int(request.query.get("limit", "200"), "limit")
+            rows = await self._tenant_admin_manager.list_email_critical_items(
+                tenant_id=tenant_id,
+                status=request.query.get("status"),
+                severity=request.query.get("severity"),
+                limit=limit,
+            )
+            return web.json_response({"critical_items": [_serialise_record(row) for row in rows]})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_list_email_insights(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            limit = self._parse_int(request.query.get("limit", "200"), "limit")
+            min_confidence = request.query.get("min_confidence")
+            min_confidence_value: float | None = None
+            if isinstance(min_confidence, str) and min_confidence.strip():
+                min_confidence_value = float(min_confidence)
+            rows = await self._tenant_admin_manager.list_email_insights(
+                tenant_id=tenant_id,
+                insight_type=request.query.get("insight_type"),
+                min_confidence=min_confidence_value,
+                limit=limit,
+            )
+            return web.json_response({"insights": [_serialise_record(row) for row in rows]})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_reindex_email_insights(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            actor = self._admin_actor(request)
+            data = await self._read_json_object(request)
+            result = await self._tenant_admin_manager.reindex_email_insights(
+                tenant_id=tenant_id,
+                actor=actor,
+                insight_type=(
+                    str(data.get("insight_type")).strip()
+                    if data.get("insight_type") is not None
+                    else None
+                ),
+            )
+            return web.json_response({"ok": True, "reindex": result})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_list_email_calendars(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        account_id = request.query.get("account_id")
+        if not account_id:
+            return web.json_response({"error": "Missing account_id query parameter"}, status=400)
+        try:
+            calendars = await self._tenant_admin_manager.list_google_calendars(
+                tenant_id=tenant_id,
+                account_id=account_id,
+            )
+            return web.json_response({"calendars": calendars})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception("tenant_email_list_calendars_failed", tenant_id=tenant_id)
+            return web.json_response({"error": "Failed to list calendars"}, status=502)
+
+    async def handle_tenant_set_email_primary_calendar(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        account_id = request.match_info["account_id"]
+        try:
+            actor = self._admin_actor(request)
+            data = await self._read_json_object(request)
+            calendar_id = str(data.get("calendar_id") or "").strip()
+            if not calendar_id:
+                raise ValueError("Missing calendar_id")
+            row = await self._tenant_admin_manager.set_email_primary_calendar(
+                tenant_id=tenant_id,
+                account_id=account_id,
+                calendar_id=calendar_id,
+                actor=actor,
+            )
+            return web.json_response({"ok": True, "account": _serialise_record(row)})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    # ------------------------------------------------------------------
     # Application factory
     # ------------------------------------------------------------------
 
@@ -754,6 +1387,112 @@ class SkillsServer:
         app.router.add_put("/secrets/{name}", self.handle_put_secret)
         app.router.add_delete("/secrets/{name}", self.handle_delete_secret)
 
+        # Tenant-admin routes (internal-only; actor envelope required).
+        tenant_prefix = "/admin/tenants/{tenant_id}"
+        app.router.add_get(
+            tenant_prefix + "/discord-users",
+            self.handle_tenant_list_discord_users,
+        )
+        app.router.add_post(
+            tenant_prefix + "/discord-users",
+            self.handle_tenant_add_discord_user,
+        )
+        app.router.add_delete(
+            tenant_prefix + "/discord-users/{discord_user_id}",
+            self.handle_tenant_delete_discord_user,
+        )
+        app.router.add_patch(
+            tenant_prefix + "/discord-users/{discord_user_id}/role",
+            self.handle_tenant_patch_discord_user_role,
+        )
+        app.router.add_get(
+            tenant_prefix + "/discord-bindings",
+            self.handle_tenant_list_discord_bindings,
+        )
+        app.router.add_put(
+            tenant_prefix + "/discord-bindings/guilds/{guild_id}",
+            self.handle_tenant_put_guild_binding,
+        )
+        app.router.add_put(
+            tenant_prefix + "/discord-bindings/channels/{channel_id}",
+            self.handle_tenant_put_channel_binding,
+        )
+        app.router.add_delete(
+            tenant_prefix + "/discord-bindings/channels/{channel_id}",
+            self.handle_tenant_delete_channel_binding,
+        )
+        app.router.add_get(tenant_prefix + "/settings", self.handle_tenant_list_settings)
+        app.router.add_put(
+            tenant_prefix + "/settings/{namespace}/{key}",
+            self.handle_tenant_put_setting,
+        )
+        app.router.add_delete(
+            tenant_prefix + "/settings/{namespace}/{key}",
+            self.handle_tenant_delete_setting,
+        )
+        app.router.add_get(tenant_prefix + "/secrets", self.handle_tenant_list_secrets)
+        app.router.add_put(
+            tenant_prefix + "/secrets/{name}",
+            self.handle_tenant_put_secret,
+        )
+        app.router.add_delete(
+            tenant_prefix + "/secrets/{name}",
+            self.handle_tenant_delete_secret,
+        )
+        app.router.add_get(tenant_prefix + "/audit", self.handle_tenant_list_audit)
+        app.router.add_get(
+            tenant_prefix + "/email/providers/{provider}/oauth-app",
+            self.handle_tenant_get_email_provider_config,
+        )
+        app.router.add_put(
+            tenant_prefix + "/email/providers/{provider}/oauth-app",
+            self.handle_tenant_put_email_provider_config,
+        )
+        app.router.add_post(
+            tenant_prefix + "/email/oauth/{provider}/start",
+            self.handle_tenant_start_email_oauth,
+        )
+        app.router.add_post(
+            tenant_prefix + "/email/oauth/{provider}/exchange",
+            self.handle_tenant_exchange_email_oauth,
+        )
+        app.router.add_get(
+            tenant_prefix + "/email/accounts",
+            self.handle_tenant_list_email_accounts,
+        )
+        app.router.add_patch(
+            tenant_prefix + "/email/accounts/{account_id}",
+            self.handle_tenant_patch_email_account,
+        )
+        app.router.add_delete(
+            tenant_prefix + "/email/accounts/{account_id}",
+            self.handle_tenant_delete_email_account,
+        )
+        app.router.add_post(
+            tenant_prefix + "/email/accounts/{account_id}/sync",
+            self.handle_tenant_sync_email_account,
+        )
+        app.router.add_get(
+            tenant_prefix + "/email/critical",
+            self.handle_tenant_list_email_critical,
+        )
+        app.router.add_get(
+            tenant_prefix + "/email/insights",
+            self.handle_tenant_list_email_insights,
+        )
+        app.router.add_post(
+            tenant_prefix + "/email/insights/reindex",
+            self.handle_tenant_reindex_email_insights,
+        )
+        app.router.add_get(
+            tenant_prefix + "/email/calendars",
+            self.handle_tenant_list_email_calendars,
+        )
+        app.router.add_put(
+            tenant_prefix + "/email/accounts/{account_id}/calendar-primary",
+            self.handle_tenant_set_email_primary_calendar,
+        )
+
         self._app = app
         return app
 
@@ -783,10 +1522,12 @@ class SkillsServer:
 async def run_server(  # pragma: no cover — starts infinite loop
     registry: SkillRegistry,
     api_secret: str | None = None,
+    admin_actor_secret: str | None = None,
     host: str = "0.0.0.0",  # nosec B104 - Intentional for Docker container
     port: int = 8080,
     settings_manager: Any | None = None,
     secrets_manager: Any | None = None,
+    tenant_admin_manager: TenantAdminManager | None = None,
     oauth_handlers: dict[str, OAuthCallbackHandler] | None = None,
     oauth_authorizers: dict[str, OAuthAuthorizeHandler] | None = None,
 ) -> None:
@@ -803,10 +1544,12 @@ async def run_server(  # pragma: no cover — starts infinite loop
     server = SkillsServer(
         registry=registry,
         api_secret=api_secret,
+        admin_actor_secret=admin_actor_secret,
         host=host,
         port=port,
         settings_manager=settings_manager,
         secrets_manager=secrets_manager,
+        tenant_admin_manager=tenant_admin_manager,
         oauth_handlers=oauth_handlers,
         oauth_authorizers=oauth_authorizers,
     )
@@ -829,6 +1572,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
         get_settings,
         set_secret_resolver,
         set_settings_manager,
+        set_tenant_admin_manager,
     )
 
     # Get configuration from environment
@@ -964,13 +1708,16 @@ def main() -> None:  # pragma: no cover — CLI entry-point
         runtime_db_pool = None
         runtime_settings_manager = None
         runtime_secrets_manager = None
+        tenant_admin_manager = None
         encryptor = None
+        tenant_vector_memory = None
         personal_db_pool = None
         integration_pool = None
         oauth_handlers: dict[str, OAuthCallbackHandler] = {}
         oauth_authorizers: dict[str, OAuthAuthorizeHandler] = {}
         security_pipeline = None
         email_router = None
+        email_inference_broker = None
         pool_min = max(1, int(settings.postgres_pool_min_size))
         pool_max = max(pool_min, int(settings.postgres_pool_max_size))
         pool_kwargs = {"min_size": pool_min, "max_size": pool_max}
@@ -981,6 +1728,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
         if settings.postgres_dsn:
             import asyncpg  # type: ignore[import-not-found,import-untyped]
 
+            from zetherion_ai.admin import TenantAdminManager
             from zetherion_ai.discord.user_manager import _SCHEMA_SQL
             from zetherion_ai.security.encryption import FieldEncryptor
             from zetherion_ai.security.keys import KeyManager
@@ -1012,6 +1760,23 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             runtime_secrets_manager = SecretsManager(encryptor=encryptor)
             await runtime_secrets_manager.initialize(runtime_db_pool)
             set_secret_resolver(SecretResolver(runtime_secrets_manager, settings))
+
+            try:
+                from zetherion_ai.memory.qdrant import QdrantMemory
+
+                tenant_vector_memory = QdrantMemory(encryptor=encryptor)
+                await tenant_vector_memory.initialize()
+            except Exception as exc:
+                tenant_vector_memory = None
+                log.warning("tenant_email_vector_memory_unavailable", error=str(exc))
+
+            tenant_admin_manager = TenantAdminManager(
+                pool=runtime_db_pool,
+                encryptor=encryptor,
+                vector_memory=tenant_vector_memory,
+            )
+            await tenant_admin_manager.initialize()
+            set_tenant_admin_manager(tenant_admin_manager)
         if settings.work_router_enabled and settings.postgres_dsn:
             import asyncpg  # type: ignore[import-not-found,import-untyped]
 
@@ -1114,12 +1879,14 @@ def main() -> None:  # pragma: no cover — CLI entry-point
                     )
                 return {"timezone": timezone_name}
 
+            email_inference_broker = InferenceBroker()
+
             email_router = EmailRouter(
                 storage=integration_storage,
                 providers=provider_registry,
                 security=security_pipeline,
                 task_calendar_router=task_calendar_router,
-                inference=InferenceBroker(),
+                inference=email_inference_broker,
                 email_security_gate_enabled=settings.email_security_gate_enabled,
                 local_extraction_required=settings.local_extraction_required,
                 user_context_resolver=resolve_email_user_context,
@@ -1150,6 +1917,47 @@ def main() -> None:  # pragma: no cover — CLI entry-point
                 return {"provider": provider, "auth_url": auth_url, "state": state}
 
             email_skill.configure(oauth_authorizer=email_oauth_authorizer)
+
+            if tenant_admin_manager is not None:
+                from zetherion_ai.agent.providers import TaskType
+
+                async def tenant_email_critical_scorer(
+                    subject: str,
+                    body_preview: str,
+                ) -> dict[str, Any] | None:
+                    prompt = (
+                        "You are scoring whether an inbound business email is critical.\n"
+                        "Return strict JSON only with keys score (0-1 float) and reason_codes"
+                        " (array of short snake_case strings).\n"
+                        "Subject:\n"
+                        f"{subject}\n\n"
+                        "Body preview:\n"
+                        f"{body_preview[:1200]}"
+                    )
+                    infer_result = email_inference_broker.infer(
+                        prompt,
+                        TaskType.CLASSIFICATION,
+                        max_tokens=180,
+                        temperature=0.1,
+                    )
+                    result = (
+                        await infer_result if asyncio.iscoroutine(infer_result) else infer_result
+                    )
+                    payload = _extract_json_object(result.content)
+                    if not payload:
+                        return None
+                    score_raw = payload.get("score")
+                    reasons_raw = payload.get("reason_codes")
+                    try:
+                        score = float(score_raw)
+                    except (TypeError, ValueError):
+                        return None
+                    if not isinstance(reasons_raw, list):
+                        reasons_raw = []
+                    reason_codes = [str(code).strip() for code in reasons_raw if str(code).strip()]
+                    return {"score": score, "reason_codes": reason_codes}
+
+                tenant_admin_manager.set_critical_scorer(tenant_email_critical_scorer)
         if (
             _personal_pool_factory is not None
             and _personal_storage_cls is not None
@@ -1168,12 +1976,14 @@ def main() -> None:  # pragma: no cover — CLI entry-point
         await registry.initialize_all()
         try:
             await run_server(
-                registry,
-                api_secret,
-                host,
-                port,
+                registry=registry,
+                api_secret=api_secret,
+                admin_actor_secret=api_secret,
+                host=host,
+                port=port,
                 settings_manager=runtime_settings_manager,
                 secrets_manager=runtime_secrets_manager,
+                tenant_admin_manager=tenant_admin_manager,
                 oauth_handlers=oauth_handlers,
                 oauth_authorizers=oauth_authorizers,
             )
@@ -1186,8 +1996,12 @@ def main() -> None:  # pragma: no cover — CLI entry-point
                 await runtime_db_pool.close()
             if personal_db_pool is not None:
                 await personal_db_pool.close()
+            if tenant_vector_memory is not None:
+                await tenant_vector_memory.close()
             if _tenant_inference_broker is not None:
                 await _tenant_inference_broker.close()
+            if email_inference_broker is not None:
+                await email_inference_broker.close()
 
     try:
         asyncio.run(init_and_run())

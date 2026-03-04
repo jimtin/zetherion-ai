@@ -298,3 +298,226 @@ async def test_storage_raises_when_not_initialized() -> None:
         await storage._fetch("SELECT 1")
     with pytest.raises(RuntimeError, match="not initialized"):
         await storage._execute("SELECT 1")
+
+
+@pytest.mark.asyncio
+async def test_storage_admin_change_lifecycle_and_duplicate_paths() -> None:
+    storage = CGSGatewayStorage(dsn="postgres://test", encryptor=_DummyEncryptor())
+
+    pending_row = {
+        "change_id": "chg_1",
+        "cgs_tenant_id": "tenant-a",
+        "action": "secret.rotate",
+        "target": "OPENAI_API_KEY",
+        "payload": {"name": "OPENAI_API_KEY"},
+        "payload_fingerprint": "fp-1",
+        "status": "pending",
+        "requested_by": "op@example.com",
+        "approved_by": None,
+        "reviewed_at": None,
+        "applied_at": None,
+        "request_id": "req-1",
+        "reason": None,
+        "result": None,
+        "created_at": "2026-03-01T00:00:00Z",
+        "updated_at": "2026-03-01T00:00:00Z",
+    }
+    approved_row = {**pending_row, "status": "approved", "approved_by": "approver@example.com"}
+    rejected_row = {**pending_row, "status": "rejected", "approved_by": "approver@example.com"}
+    applied_row = {**approved_row, "status": "applied"}
+    failed_row = {**approved_row, "status": "failed"}
+
+    storage._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            None,  # duplicate lookup for create
+            pending_row,  # insert create
+            pending_row,  # get_admin_change
+            approved_row,  # approve
+            rejected_row,  # reject
+            applied_row,  # mark applied update
+            failed_row,  # mark failed update
+            pending_row,  # duplicate lookup for create
+        ]
+    )
+    storage._fetch = AsyncMock(return_value=[pending_row])  # type: ignore[method-assign]
+
+    created = await storage.create_admin_change(
+        cgs_tenant_id="tenant-a",
+        action="secret.rotate",
+        target="OPENAI_API_KEY",
+        payload={"name": "OPENAI_API_KEY"},
+        requested_by="op@example.com",
+        request_id="req-1",
+        reason=None,
+    )
+    assert created["change_id"] == "chg_1"
+
+    fetched = await storage.get_admin_change("chg_1")
+    assert fetched is not None
+    assert fetched["status"] == "pending"
+
+    listed = await storage.list_admin_changes(cgs_tenant_id="tenant-a", status="pending", limit=10)
+    assert listed[0]["status"] == "pending"
+
+    approved = await storage.approve_admin_change(
+        change_id="chg_1",
+        approved_by="approver@example.com",
+        reason="approved",
+    )
+    assert approved is not None
+    assert approved["status"] == "approved"
+
+    rejected = await storage.reject_admin_change(
+        change_id="chg_1",
+        approved_by="approver@example.com",
+        reason="rejected",
+    )
+    assert rejected is not None
+    assert rejected["status"] == "rejected"
+
+    applied = await storage.mark_admin_change_applied(
+        change_id="chg_1",
+        result={"ok": True},
+    )
+    assert applied is not None
+    assert applied["status"] == "applied"
+
+    failed = await storage.mark_admin_change_failed(
+        change_id="chg_1",
+        result={"ok": False},
+    )
+    assert failed is not None
+    assert failed["status"] == "failed"
+
+    duplicate = await storage.create_admin_change(
+        cgs_tenant_id="tenant-a",
+        action="secret.rotate",
+        target="OPENAI_API_KEY",
+        payload={"name": "OPENAI_API_KEY"},
+        requested_by="op@example.com",
+        request_id="req-1",
+        reason=None,
+    )
+    assert duplicate["duplicate"] is True
+
+
+@pytest.mark.asyncio
+async def test_storage_admin_change_mark_paths_with_current_state_fallback() -> None:
+    storage = CGSGatewayStorage(dsn="postgres://test", encryptor=_DummyEncryptor())
+    applied_row = {
+        "change_id": "chg_2",
+        "cgs_tenant_id": "tenant-a",
+        "action": "secret.rotate",
+        "target": "OPENAI_API_KEY",
+        "payload": {},
+        "payload_fingerprint": "fp-2",
+        "status": "applied",
+        "requested_by": "op@example.com",
+        "approved_by": "approver@example.com",
+        "reviewed_at": None,
+        "applied_at": None,
+        "request_id": "req-2",
+        "reason": None,
+        "result": {"ok": True},
+        "created_at": "2026-03-01T00:00:00Z",
+        "updated_at": "2026-03-01T00:00:00Z",
+    }
+
+    storage._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    storage.get_admin_change = AsyncMock(return_value=applied_row)  # type: ignore[method-assign]
+
+    applied = await storage.mark_admin_change_applied(
+        change_id="chg_2",
+        result={"ok": True},
+    )
+    assert applied is not None
+    assert applied["status"] == "applied"
+
+    storage.get_admin_change = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    assert (
+        await storage.mark_admin_change_failed(
+            change_id="chg_2",
+            result={"ok": False},
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_storage_blog_publish_receipt_create_find_and_duplicate_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = CGSGatewayStorage(dsn="postgres://test", encryptor=_DummyEncryptor())
+
+    receipt = {
+        "receipt_id": "blog_1",
+        "idempotency_key": "blog-sha1",
+        "sha": "sha1",
+        "payload_fingerprint": "fp-1",
+        "source": "windows-worker",
+        "repo": "jimtin/zetherion-ai",
+        "release_tag": "v0.4.5",
+        "title": "Release notes",
+        "slug": "release-notes",
+        "meta_description": "desc",
+        "excerpt": "excerpt",
+        "primary_keyword": "zetherion",
+        "content_markdown": "body",
+        "json_ld": {},
+        "models": {"primary": "gpt-5.2"},
+        "published_at": "2026-03-04T00:00:00Z",
+        "request_id": "req-1",
+        "created_at": "2026-03-04T00:00:00Z",
+    }
+
+    storage._fetchrow = AsyncMock(return_value=receipt)  # type: ignore[method-assign]
+    found = await storage.find_blog_publish_receipt(idempotency_key="blog-sha1", sha="sha1")
+    assert found is not None
+    assert found["receipt_id"] == "blog_1"
+
+    created = await storage.create_blog_publish_receipt(
+        idempotency_key="blog-sha1",
+        payload_fingerprint="fp-1",
+        source="windows-worker",
+        sha="sha1",
+        repo="jimtin/zetherion-ai",
+        release_tag="v0.4.5",
+        title="Release notes",
+        slug="release-notes",
+        meta_description="desc",
+        excerpt="excerpt",
+        primary_keyword="zetherion",
+        content_markdown="body",
+        json_ld={},
+        models={"primary": "gpt-5.2"},
+        published_at="2026-03-04T00:00:00Z",
+        request_id="req-1",
+    )
+    assert created["receipt_id"] == "blog_1"
+
+    class _UniqueViolationError(Exception):
+        pass
+
+    monkeypatch.setattr(storage_mod.asyncpg, "UniqueViolationError", _UniqueViolationError)
+    storage._fetchrow = AsyncMock(side_effect=_UniqueViolationError())  # type: ignore[method-assign]
+    storage.find_blog_publish_receipt = AsyncMock(return_value=receipt)  # type: ignore[method-assign]
+
+    duplicate = await storage.create_blog_publish_receipt(
+        idempotency_key="blog-sha1",
+        payload_fingerprint="fp-1",
+        source="windows-worker",
+        sha="sha1",
+        repo="jimtin/zetherion-ai",
+        release_tag="v0.4.5",
+        title="Release notes",
+        slug="release-notes",
+        meta_description="desc",
+        excerpt="excerpt",
+        primary_keyword="zetherion",
+        content_markdown="body",
+        json_ld={},
+        models={"primary": "gpt-5.2"},
+        published_at="2026-03-04T00:00:00Z",
+        request_id="req-1",
+    )
+    assert duplicate["receipt_id"] == "blog_1"

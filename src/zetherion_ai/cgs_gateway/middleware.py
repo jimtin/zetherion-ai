@@ -13,6 +13,11 @@ from zetherion_ai.cgs_gateway.errors import GatewayError, error_response
 from zetherion_ai.cgs_gateway.models import AuthPrincipal
 
 PUBLIC_PATHS = frozenset({"/service/ai/v1/health"})
+JWT_BYPASS_PATHS = frozenset(
+    {
+        "/service/ai/v1/internal/blog/publish",
+    }
+)
 RequestHandler = Callable[[web.Request], Awaitable[web.StreamResponse]]
 
 
@@ -144,7 +149,11 @@ def create_auth_middleware(verifier: JWTVerifier) -> Any:
     @web.middleware
     async def auth_middleware(request: web.Request, handler: RequestHandler) -> web.StreamResponse:
         path = request.path
-        if path in PUBLIC_PATHS or not path.startswith("/service/ai/v1"):
+        if (
+            path in PUBLIC_PATHS
+            or path in JWT_BYPASS_PATHS
+            or not path.startswith("/service/ai/v1")
+        ):
             return await handler(request)
 
         auth_header = request.headers.get("Authorization", "")

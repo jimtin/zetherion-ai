@@ -3,7 +3,13 @@
 import asyncio
 from typing import Any
 
-from zetherion_ai.config import get_settings, set_secret_resolver, set_settings_manager
+from zetherion_ai.admin import TenantAdminManager
+from zetherion_ai.config import (
+    get_settings,
+    set_secret_resolver,
+    set_settings_manager,
+    set_tenant_admin_manager,
+)
 from zetherion_ai.discord.bot import ZetherionAIBot
 from zetherion_ai.discord.user_manager import UserManager
 from zetherion_ai.logging import get_logger, setup_logging
@@ -129,6 +135,13 @@ async def main() -> None:
         set_secret_resolver(SecretResolver(secrets_mgr, settings))
         log.info("secrets_manager_initialized")
 
+    tenant_admin_mgr: TenantAdminManager | None = None
+    if user_manager._pool:
+        tenant_admin_mgr = TenantAdminManager(pool=user_manager._pool, encryptor=encryptor)
+        await tenant_admin_mgr.initialize()
+        set_tenant_admin_manager(tenant_admin_mgr)
+        log.info("tenant_admin_manager_initialized")
+
     # Initialize memory system with encryption
     memory = QdrantMemory(encryptor=encryptor)
     await memory.initialize()
@@ -147,6 +160,7 @@ async def main() -> None:
         memory=memory,
         user_manager=user_manager,
         settings_manager=settings_mgr,
+        tenant_admin_manager=tenant_admin_mgr,
         queue_manager=queue_mgr,
     )
     log.info("bot_created")
