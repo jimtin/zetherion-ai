@@ -13,6 +13,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Windows Promotions Hardening + Runbook (2026-03-04)
+
+- Enforced strict CGS blog publish response contract handling in Windows promotions pipeline:
+  - `201/published` success
+  - `409/duplicate` idempotent success
+  - `409/AI_IDEMPOTENCY_CONFLICT` non-retryable failure
+  - `400/401/403` non-retryable failure
+  - `429/5xx` retryable failure
+- Added promotions retry taxonomy and exit code contract:
+  - `0` success
+  - `2` retryable failure (queue + retry)
+  - `3` non-retryable failure (no requeue)
+- Added Discord DM completion notifications for deploy + promotions outcomes with idempotent dedupe keys.
+- Improved resilience task registration diagnostics with explicit fields:
+  - `bootstrap_required`
+  - `failure_code`
+  - `registration_actor`
+  - `is_elevated`
+- Added deterministic host-side resilience tooling:
+  - `scripts/windows/bootstrap-resilience-tasks.ps1`
+  - `scripts/windows/verify-resilience-tasks.ps1`
+  - validates `ZetherionStartupRecover`, `ZetherionRuntimeWatchdog`, `ZetherionPostDeployPromotions`
+- Added workflow strictness toggle in `deploy-windows.yml`:
+  - `WINDOWS_REQUIRE_PROMOTIONS_TASK` (default `false`)
+  - warning summary when promotions task is missing
+  - blocking gate only when strict mode is enabled
+- Expanded CI/CD docs with an operator runbook for:
+  - promotions secret setup/validation
+  - resilience bootstrap/verification
+  - DM notification verification
+  - CGS publish contract troubleshooting
+
 ### Changed - Zetherion-Only Repository Boundary Recovery (2026-03-04)
 
 - Removed top-level `cgs/**` website/UI source from this repository to restore Zetherion-only scope.

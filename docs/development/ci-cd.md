@@ -178,6 +178,94 @@ Windows promotion gates:
    - refine: `claude-sonnet-4-6`
    - no lower-tier fallback
 
+### Windows Promotions Ops Runbook
+
+Use these commands on the Windows host (`C:\ZetherionAI`) for promotions/release operations.
+
+#### 1. Configure and validate promotions secrets
+
+```powershell
+pwsh -File .\scripts\windows\set-promotions-secrets.ps1 `
+  -CgsBlogPublishUrl "https://<cgs-host>/..." `
+  -CgsBlogPublishToken "<token>" `
+  -OpenAiApiKey "<openai-key>" `
+  -AnthropicApiKey "<anthropic-key>" `
+  -GitHubPromotionToken "<github-token>" `
+  -GitHubRepository "jimtin/zetherion-ai" `
+  -DiscordDmNotifyEnabled "true" `
+  -DiscordBotToken "<discord-bot-token>" `
+  -DiscordNotifyUserId "<discord-user-id>"
+
+pwsh -File .\scripts\windows\test-promotions-secrets.ps1
+```
+
+#### 2. Bootstrap resilience scheduled tasks (run elevated)
+
+```powershell
+pwsh -File .\scripts\windows\bootstrap-resilience-tasks.ps1 `
+  -DeployPath "C:\ZetherionAI" `
+  -OutputPath "C:\ZetherionAI\data\resilience-bootstrap.json"
+```
+
+#### 3. Verify resilience scheduled task contract
+
+```powershell
+pwsh -File .\scripts\windows\verify-resilience-tasks.ps1 `
+  -DeployPath "C:\ZetherionAI" `
+  -OutputPath "C:\ZetherionAI\data\resilience-verify.json"
+```
+
+Expected `checks` in the JSON output:
+- `startup_task_registered=true`
+- `watchdog_task_registered=true`
+- `promotions_task_registered=true`
+- `all_tasks_registered=true`
+
+#### 4. Verify Discord DM notification path
+
+```powershell
+python .\scripts\windows\discord-dm-notify.py `
+  --event deploy `
+  --sha "<sha>" `
+  --status success `
+  --run-url "https://github.com/jimtin/zetherion-ai/actions/runs/<run-id>" `
+  --stage-results "manual=smoke" `
+  --dry-run
+```
+
+If this returns `status: "dry_run"` or `status: "deduped"`, secret resolution and idempotency wiring are working.
+
+#### 5. Troubleshoot CGS publish contract and promotions pipeline
+
+```powershell
+pwsh -File .\scripts\windows\promotions-runner.ps1 `
+  -Sha "<sha>" `
+  -ReceiptPath "C:\ZetherionAI\data\deployment-receipts\<sha>.json" `
+  -DeployPath "C:\ZetherionAI" `
+  -OutputPath "C:\ZetherionAI\data\promotions\last-run.json"
+
+python .\scripts\windows\promotions-pipeline.py `
+  --sha "<sha>" `
+  --deploy-path "C:\ZetherionAI" `
+  --deployment-receipt "C:\ZetherionAI\data\deployment-receipts\<sha>.json" `
+  --data-root "C:\ZetherionAI\data\promotions" `
+  --repo "jimtin/zetherion-ai"
+```
+
+Use these artifacts to diagnose failures:
+- `C:\ZetherionAI\data\promotions\analysis\<sha>.json`
+- `C:\ZetherionAI\data\promotions\receipts\<sha>.json`
+- `C:\ZetherionAI\data\promotions\state.json`
+- `C:\ZetherionAI\data\promotions\queue.json`
+
+#### 6. Promotions-task strict mode
+
+`Deploy Windows` supports a strict gate toggle:
+- `WINDOWS_REQUIRE_PROMOTIONS_TASK=false` (default): missing promotions task is warning-only.
+- `WINDOWS_REQUIRE_PROMOTIONS_TASK=true`: receipt gate fails if `promotions_task_registered=false`.
+
+Keep the default during burn-in. Enable strict mode only after repeated successful deployments confirm task registration is stable.
+
 ### Jobs
 
 The pipeline runs the following jobs. Jobs without dependency arrows run in parallel.
