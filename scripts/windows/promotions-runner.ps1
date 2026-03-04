@@ -16,7 +16,9 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$EventSource = "ZetherionPromotions",
     [Parameter(Mandatory = $false)]
-    [string]$Repo = ""
+    [string]$Repo = "",
+    [Parameter(Mandatory = $false)]
+    [string]$RunUrl = ""
 )
 
 Set-StrictMode -Version Latest
@@ -160,6 +162,38 @@ function Ensure-QueueEntry {
     Write-JsonFile -Payload $queue -Path $Path
 }
 
+function Invoke-DiscordDmNotification {
+    param(
+        [string]$Status,
+        [string]$Details
+    )
+
+    try {
+        if (-not $Sha) {
+            return
+        }
+
+        $notifyScript = Join-Path $DeployPath "scripts\windows\discord-dm-notify.py"
+        if (-not (Test-Path $notifyScript)) {
+            return
+        }
+
+        $pythonExe = if (Get-Command python -ErrorAction SilentlyContinue) { "python" } else { "python3" }
+        $notifyArgs = @(
+            $notifyScript,
+            "--event", "promotions",
+            "--sha", $Sha,
+            "--status", $Status,
+            "--run-url", $RunUrl,
+            "--stage-results", $Details
+        )
+        & $pythonExe @notifyArgs | Out-Null
+    }
+    catch {
+        # DM notification is intentionally non-blocking.
+    }
+}
+
 function Resolve-ShaFromReceipt {
     param([string]$Path)
     if (-not (Test-Path $Path)) {
@@ -217,6 +251,7 @@ try {
                 $result.retryable = $false
                 $result.exit_code = 0
                 Write-JsonFile -Payload $result -Path $OutputPath
+                Invoke-DiscordDmNotification -Status "skipped_existing_success" -Details "promotions_already_successful=true"
                 exit 0
             }
         }
@@ -287,6 +322,7 @@ try {
         $result.retryable = $false
         Write-PromotionEvent -Source $EventSource -EntryType "Information" -EventId 7100 -Message "Post-deploy promotion succeeded for SHA $Sha."
         Write-JsonFile -Payload $result -Path $OutputPath
+        Invoke-DiscordDmNotification -Status "success" -Details "runner_status=success;pipeline_exit=0;retryable=false"
         exit 0
     }
 
@@ -297,6 +333,7 @@ try {
         Ensure-QueueEntry -Path $QueuePath -Sha $Sha -Reason $result.error
         Write-PromotionEvent -Source $EventSource -EntryType "Warning" -EventId 7101 -Message "Post-deploy promotion deferred for SHA $Sha (retry queued)."
         Write-JsonFile -Payload $result -Path $OutputPath
+        Invoke-DiscordDmNotification -Status "retryable_failure" -Details "runner_status=retryable_failure;pipeline_exit=2;retryable=true"
         exit 2
     }
 
@@ -306,6 +343,7 @@ try {
         $result.error = "Promotions pipeline returned non-retryable exit code."
         Write-PromotionEvent -Source $EventSource -EntryType "Error" -EventId 7199 -Message "Post-deploy promotion failed for SHA $Sha (non-retryable)."
         Write-JsonFile -Payload $result -Path $OutputPath
+        Invoke-DiscordDmNotification -Status "non_retryable_failure" -Details "runner_status=non_retryable_failure;pipeline_exit=3;retryable=false"
         exit 3
     }
 
@@ -314,6 +352,7 @@ try {
     $result.error = "Promotions pipeline exited with unexpected code $exitCode."
     Write-PromotionEvent -Source $EventSource -EntryType "Error" -EventId 7199 -Message "Post-deploy promotion failed for SHA $Sha with unexpected exit=$exitCode (not queued)."
     Write-JsonFile -Payload $result -Path $OutputPath
+    Invoke-DiscordDmNotification -Status "non_retryable_failure" -Details "runner_status=non_retryable_failure;pipeline_exit=$exitCode;retryable=false"
     exit 3
 }
 catch {
@@ -322,5 +361,6 @@ catch {
     $result.error = $_.Exception.Message
     Write-PromotionEvent -Source $EventSource -EntryType "Error" -EventId 7198 -Message "Post-deploy promotion runner error: $($result.error)"
     Write-JsonFile -Payload $result -Path $OutputPath
+    Invoke-DiscordDmNotification -Status "non_retryable_failure" -Details "runner_status=exception;retryable=false"
     exit 3
 }
