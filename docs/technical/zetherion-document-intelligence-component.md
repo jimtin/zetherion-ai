@@ -15,6 +15,8 @@ Public exposure rule:
   - `DELETE /api/v1/documents/{document_id}` (archive schedule)
   - `POST /api/v1/documents/{document_id}/restore` (restore + reindex)
 - Added archive lifecycle status support and archive job persistence.
+- Added background archive/purge maintenance loop wiring in upstream API server lifecycle.
+- Added retrieval guardrail to exclude `archiving|archived|purged` from RAG context assembly.
 
 ## Component Boundaries
 
@@ -139,8 +141,8 @@ Archive/delete phase:
    - validates lifecycle state
    - updates document to `archiving`
    - enqueues `document_archive_jobs`
-2. Archive worker (separate segment) removes vectors and marks document `archived` with retention window.
-3. Purge worker (separate segment) removes raw bytes + vectors after retention and marks `purged`.
+2. Archive maintenance loop claims jobs, removes vectors, and marks document `archived` with retention window.
+3. Purge maintenance loop removes raw bytes + vectors after retention and marks `purged`.
 
 Restore phase:
 1. `POST /api/v1/documents/{document_id}/restore`
@@ -171,9 +173,10 @@ Route: `POST /api/v1/rag/query`
 
 Execution:
 1. Tenant-scoped vector search in `tenant_documents`.
-2. Context assembly from top matches.
-3. Inference call with optional provider/model override.
-4. Citation assembly (`document_id`, `file_name`).
+2. Status guardrail excludes `archiving|archived|purged` matches before context assembly.
+3. Context assembly from active matches only.
+4. Inference call with optional provider/model override.
+5. Citation assembly (`document_id`, `file_name`).
 
 Provider override:
 - Canonical providers: `groq`, `openai`, `anthropic`.

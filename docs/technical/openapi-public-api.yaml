@@ -3,7 +3,7 @@ info:
   title: Zetherion Upstream API
   version: 1.0.0
   description: Internal `/api/v1` upstream contract consumed by the CGS gateway. External clients should use CGS `/service/ai/v1`.
-  x-maintenance-note: "2026-03-05: added document archive/delete + restore routes and include_archived list filtering."
+  x-maintenance-note: "2026-03-05: added document archive/delete + restore routes, include_archived list filtering, archive/purge maintenance loops, and archived-state RAG exclusion."
 servers:
   - url: https://{host}
     variables:

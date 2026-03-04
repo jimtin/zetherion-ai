@@ -15,6 +15,7 @@ Authoritative exposure rule:
   - `DELETE /api/v1/documents/{document_id}`
   - `POST /api/v1/documents/{document_id}/restore`
 - Document list now supports `include_archived`, without auth model changes.
+- Archive/purge background processing and retrieval filtering are internal service behavior only; no new auth scopes/headers were added.
 
 ## Zetherion Upstream API (`/api/v1`, internal)
 

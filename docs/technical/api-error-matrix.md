@@ -13,6 +13,7 @@ Exposure rule:
   - `409` with `error=null` and `data.status=duplicate`.
 - Added centralized upstream error mapping policy across runtime/internal/admin/reporting route families.
 - Added upstream document lifecycle error mappings for archive/delete + restore routes.
+- Archive/purge execution failures are asynchronous and surface via document/job status fields, not synchronous DELETE request failures.
 
 ## Public API (`/api/v1`)
 
@@ -75,10 +76,12 @@ Retryability rules:
 | `GET /api/v1/documents/{document_id}` | Unknown document | `404` |
 | `DELETE /api/v1/documents/{document_id}` | Unknown document | `404` |
 | `DELETE /api/v1/documents/{document_id}` | Invalid lifecycle transition (for example `processing`) | `409` |
+| `DELETE /api/v1/documents/{document_id}` | Archive enqueue accepted but worker later fails | `202` + inspect document/job status |
 | `POST /api/v1/documents/{document_id}/restore` | Unknown document | `404` |
 | `POST /api/v1/documents/{document_id}/restore` | Invalid lifecycle transition (`purged` or non-archived) | `409` |
 | `GET /api/v1/documents/{document_id}/preview` | Missing payload | `404` |
 | `POST /api/v1/rag/query` | Empty query/provider/model not allowed | `400` |
+| `POST /api/v1/rag/query` | Matches exist only in `archiving|archived|purged` docs | `200` with no-context answer |
 | `POST /service/ai/v1/documents/uploads/{upload_id}/complete` (multipart) | Missing `tenant_id` query param | `400` + `AI_BAD_REQUEST` |
 | `POST /service/ai/v1/rag/query` | Tenant missing in request | `400` + `AI_BAD_REQUEST` |
 | `GET /service/ai/v1/documents*` | Tenant query not supplied | `400` + `AI_BAD_REQUEST` |
