@@ -259,90 +259,6 @@ services:
           cpus: '0.25'
           memory: 128M
 
-  # CGS operator UI (blue deployment)
-  zetherion-ai-cgs-ui-blue:
-    build:
-      context: ./cgs
-      dockerfile: Dockerfile
-    container_name: zetherion-ai-cgs-ui-blue
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    depends_on:
-      traefik:
-        condition: service_started
-    env_file:
-      - .env
-    environment:
-      - NODE_ENV=production
-      - PORT=3000
-      - HOSTNAME=0.0.0.0
-      - CGS_SESSION_COOKIE_NAME=${CGS_SESSION_COOKIE_NAME:-cgs_session}
-      - CGS_GATEWAY_BASE_URL=${CGS_GATEWAY_BASE_URL:-http://zetherion-ai-traefik:8443/service/ai/v1}
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/cgs/api/health >/dev/null || exit 1"]
-      interval: 20s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - zetherion-ai-net
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 128M
-
-  # CGS operator UI (green deployment)
-  zetherion-ai-cgs-ui-green:
-    build:
-      context: ./cgs
-      dockerfile: Dockerfile
-    container_name: zetherion-ai-cgs-ui-green
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    depends_on:
-      traefik:
-        condition: service_started
-    env_file:
-      - .env
-    environment:
-      - NODE_ENV=production
-      - PORT=3000
-      - HOSTNAME=0.0.0.0
-      - CGS_SESSION_COOKIE_NAME=${CGS_SESSION_COOKIE_NAME:-cgs_session}
-      - CGS_GATEWAY_BASE_URL=${CGS_GATEWAY_BASE_URL:-http://zetherion-ai-traefik:8443/service/ai/v1}
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/cgs/api/health >/dev/null || exit 1"]
-      interval: 20s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - zetherion-ai-net
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 128M
-
   # Cloudflare Tunnel — exposes the API to the internet without opening ports
   # Requires a Cloudflare Tunnel token (create at https://one.dash.cloudflare.com)
   cloudflared:
@@ -360,8 +276,6 @@ services:
       zetherion-ai-api-blue:
         condition: service_healthy
       zetherion-ai-cgs-gateway-blue:
-        condition: service_healthy
-      zetherion-ai-cgs-ui-blue:
         condition: service_healthy
     networks:
       - zetherion-ai-net
@@ -656,7 +570,7 @@ services:
     environment:
       - COMPOSE_FILE=/project/docker-compose.yml
       - PROJECT_DIR=/project
-      - HEALTH_URLS=http://zetherion-ai-skills-blue:8080/health,http://zetherion-ai-skills-green:8080/health,http://zetherion-ai-api-blue:8443/health,http://zetherion-ai-api-green:8443/health,http://zetherion-ai-cgs-gateway-blue:8443/service/ai/v1/health,http://zetherion-ai-cgs-gateway-green:8443/service/ai/v1/health,http://zetherion-ai-cgs-ui-blue:3000/cgs/api/health,http://zetherion-ai-cgs-ui-green:3000/cgs/api/health
+      - HEALTH_URLS=http://zetherion-ai-skills-blue:8080/health,http://zetherion-ai-skills-green:8080/health,http://zetherion-ai-api-blue:8443/health,http://zetherion-ai-api-green:8443/health,http://zetherion-ai-cgs-gateway-blue:8443/service/ai/v1/health,http://zetherion-ai-cgs-gateway-green:8443/service/ai/v1/health
       - UPDATER_SECRET_PATH=/app/data/.updater-secret
       - UPDATER_STATE_PATH=/app/data/updater-state.json
       - UPDATER_TRAEFIK_DYNAMIC_PATH=/project/config/traefik/dynamic/updater-routes.yml

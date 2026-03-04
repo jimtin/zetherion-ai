@@ -264,11 +264,16 @@ async def test_list_sources_and_preferred_account_paths() -> None:
         ]
     )
     account_manager.get_primary_account = AsyncMock(return_value=None)
-    account_manager.get_account = AsyncMock(return_value=GmailAccount(id=1, email="primary@example.com"))
+    account_manager.get_account = AsyncMock(
+        return_value=GmailAccount(id=1, email="primary@example.com")
+    )
     adapter = GoogleProviderAdapter(account_manager=account_manager)
 
     sources = await adapter.list_sources(user_id=7)
-    assert [src.destination_type for src in sources] == [DestinationType.MAILBOX, DestinationType.MAILBOX]
+    assert [src.destination_type for src in sources] == [
+        DestinationType.MAILBOX,
+        DestinationType.MAILBOX,
+    ]
     assert sources[0].is_primary is True
     assert sources[0].destination_id == "1"
 
@@ -294,7 +299,12 @@ async def test_list_task_lists_and_create_task_paths() -> None:
         }
     )
     adapter._post_json = AsyncMock(  # type: ignore[assignment]
-        return_value={"id": "task-1", "title": "Call client", "status": "needsAction", "due": "2026-03-04T10:00:00Z"}
+        return_value={
+            "id": "task-1",
+            "title": "Call client",
+            "status": "needsAction",
+            "due": "2026-03-04T10:00:00Z",
+        }
     )
 
     lists = await adapter.list_task_lists(user_id=7)
@@ -311,7 +321,9 @@ async def test_list_task_lists_and_create_task_paths() -> None:
 
 
 @pytest.mark.asyncio
-async def test_calendar_listing_and_event_create_list_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_calendar_listing_and_event_create_list_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     account_manager = MagicMock()
     account = GmailAccount(id=1, email="primary@example.com", is_primary=True)
     account_manager.get_primary_account = AsyncMock(return_value=account)
@@ -320,7 +332,13 @@ async def test_calendar_listing_and_event_create_list_paths(monkeypatch: pytest.
     adapter._get_json = AsyncMock(  # type: ignore[assignment]
         return_value={
             "items": [
-                {"id": "cal-1", "summary": "Work", "accessRole": "owner", "primary": True, "timeZone": "UTC"}
+                {
+                    "id": "cal-1",
+                    "summary": "Work",
+                    "accessRole": "owner",
+                    "primary": True,
+                    "timeZone": "UTC",
+                }
             ]
         }
     )
@@ -378,7 +396,10 @@ async def test_calendar_listing_and_event_create_list_paths(monkeypatch: pytest.
                 html_link="https://calendar/event/evt-2",
             )
 
-    monkeypatch.setattr("zetherion_ai.integrations.providers.google.CalendarClient", _FakeCalendarClient)
+    monkeypatch.setattr(
+        "zetherion_ai.integrations.providers.google.CalendarClient",
+        _FakeCalendarClient,
+    )
 
     now = datetime.now(UTC)
     listed = await adapter.list_events(

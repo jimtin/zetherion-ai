@@ -2429,10 +2429,14 @@ class TenantAdminManager:
                 model_signal = None
             if isinstance(model_signal, dict):
                 model_score_raw = model_signal.get("score")
-                try:
+                model_score: float | None = None
+                if isinstance(model_score_raw, int | float):
                     model_score = max(0.0, min(1.0, float(model_score_raw)))
-                except (TypeError, ValueError):
-                    model_score = None
+                elif isinstance(model_score_raw, str):
+                    try:
+                        model_score = max(0.0, min(1.0, float(model_score_raw)))
+                    except ValueError:
+                        model_score = None
                 if model_score is not None:
                     score = (score * 0.6) + (model_score * 0.4)
                     reasons.append("model_score")

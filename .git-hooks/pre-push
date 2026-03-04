@@ -22,15 +22,24 @@ done
 #   <local-ref> <local-oid> <remote-ref> <remote-oid>
 # Deletions have local-ref "(delete)" and/or local-oid all zeros.
 if [ "${#updates[@]}" -gt 0 ]; then
+    empty_tree_oid="$(git hash-object -t tree /dev/null)"
     delete_only=true
     for update in "${updates[@]}"; do
         # shellcheck disable=SC2086
         set -- $update
         local_ref="${1:-}"
         local_oid="${2:-}"
+        remote_oid="${4:-}"
         if [ "$local_ref" != "(delete)" ] && [ "$local_oid" != "0000000000000000000000000000000000000000" ]; then
             delete_only=false
-            break
+            base_oid="$remote_oid"
+            if [ -z "$base_oid" ] || [ "$base_oid" = "0000000000000000000000000000000000000000" ]; then
+                base_oid="$empty_tree_oid"
+            fi
+            if ! scripts/check-zetherion-boundary.sh "$base_oid" "$local_oid"; then
+                echo "[pre-push] Boundary enforcement failed for $local_ref."
+                exit 1
+            fi
         fi
     done
     if [ "$delete_only" = true ]; then

@@ -33,6 +33,7 @@ This is the only supported full local gate. Do not substitute ad-hoc pytest comm
 13. Unit-test coverage must remain `>=90%` in canonical runs; coverage regressions block push/release.
 14. Critical-path integration suites must run in canonical validation, including dev-watcher onboarding paths.
 15. Full end-to-end validation is mandatory for substantial delivery: Docker E2E (`test_e2e.py`) and required Discord E2E must both pass.
+16. This repository is Zetherion-only. Top-level `cgs/**` website/UI files are disallowed here.
 
 ## API Documentation Contract (Mandatory)
 
@@ -62,6 +63,18 @@ Critical-path integration coverage in canonical runs must include both:
 
 - `tests/integration/test_dev_watcher_e2e.py`
 - `tests/integration/test_dev_watcher_onboarding_integration.py`
+
+## Repository Boundary Policy (Mandatory)
+
+- Allowed scope: `src/zetherion_ai/**` and supporting infra/docs/scripts/tests for Zetherion.
+- Disallowed scope in this repo: top-level `cgs/**` website/UI artifacts.
+- CI enforcement: `zetherion-boundary-check` must fail on any top-level `cgs/**` change.
+- Local enforcement: pre-push must fail when a pushed commit range contains top-level `cgs/**` paths.
+- Release checklist command (required before merge):
+  - `scripts/check-scope-diff.sh origin/main HEAD`
+- Normal workflow forbids bypass shortcuts:
+  - `git push --no-verify` is prohibited.
+  - `--admin` merge is prohibited unless explicit incident/break-glass authorization is documented.
 
 ## CI Cost + Attribution Policy
 

@@ -255,8 +255,6 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `CGS_DOCUMENT_MUTATION_RPM` | `30` | Tenant-aware document mutation rate-limit bucket (requests/minute) |
 | `CGS_ADMIN_MUTATION_RPM` | `20` | Tenant-aware internal admin mutation rate-limit bucket (requests/minute) |
 | `ZETHERION_SKILLS_API_SECRET` | unset | Optional override secret for CGS gateway -> skills API calls |
-| `CGS_SESSION_COOKIE_NAME` | `cgs_session` | Next.js `/cgs` BFF session cookie name (HttpOnly token source) |
-| `CGS_GATEWAY_BASE_URL` | `http://zetherion-ai-traefik:8443/service/ai/v1` | Next.js `/cgs` BFF upstream base URL |
 | `CGS_BLOG_PUBLISH_URL` | empty | Windows promotions secret key for CGS publish adapter URL (stored via DPAPI blob, not repo `.env`) |
 | `CGS_BLOG_PUBLISH_TOKEN` | unset | Windows promotions secret key for CGS publish auth token |
 | `GITHUB_PROMOTION_TOKEN` | unset | Windows promotions secret key used to call GitHub Releases/PR APIs |

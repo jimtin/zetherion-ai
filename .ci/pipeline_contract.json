@@ -45,25 +45,10 @@
       "local_stage": "static-analysis",
       "note": "contract validation runs locally via scripts/check_pipeline_contract.py"
     },
-    "cgs-lint": {
+    "zetherion-boundary-check": {
       "local_equivalent": true,
-      "local_stage": "cgs-ui",
-      "note": "next lint in cgs/ is covered by scripts/check-cgs-ui.sh"
-    },
-    "cgs-typecheck": {
-      "local_equivalent": true,
-      "local_stage": "cgs-ui",
-      "note": "TypeScript noEmit typecheck in cgs/ is covered by scripts/check-cgs-ui.sh"
-    },
-    "cgs-test": {
-      "local_equivalent": true,
-      "local_stage": "cgs-ui",
-      "note": "Vitest suite in cgs/ is covered by scripts/check-cgs-ui.sh"
-    },
-    "cgs-build": {
-      "local_equivalent": true,
-      "local_stage": "cgs-ui",
-      "note": "Next production build in cgs/ is covered by scripts/check-cgs-ui.sh"
+      "local_stage": "pre-push-boundary",
+      "note": "Top-level cgs/** is blocked in local pre-push and CI boundary checks."
     },
     "unit-test": {
       "local_equivalent": true,

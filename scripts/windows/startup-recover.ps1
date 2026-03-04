@@ -230,37 +230,6 @@ function Ensure-RequiredRuntimeEnv {
     return [string[]]$updatedKeys.ToArray()
 }
 
-function Sync-CgsSharedSecret {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$RepositoryPath
-    )
-
-    $rootEnvPath = Join-Path $RepositoryPath ".env"
-    $secret = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("ZETHERION_SKILLS_API_SECRET", "SKILLS_API_SECRET")
-    if (-not $secret) {
-        throw "Missing ZETHERION_SKILLS_API_SECRET/SKILLS_API_SECRET in $rootEnvPath"
-    }
-
-    $cgsDirectory = Join-Path $RepositoryPath "cgs"
-    if (-not (Test-Path $cgsDirectory)) {
-        New-Item -ItemType Directory -Path $cgsDirectory -Force | Out-Null
-    }
-
-    $cgsEnvLocalPath = Join-Path $cgsDirectory ".env.local"
-    $cgsEnvLines = New-Object 'System.Collections.Generic.List[string]'
-    if (Test-Path $cgsEnvLocalPath) {
-        foreach ($line in Get-Content -Path $cgsEnvLocalPath) {
-            $cgsEnvLines.Add($line)
-        }
-    }
-
-    Set-OrAddEnvLine -Lines $cgsEnvLines -Key "SKILLS_API_SECRET" -Value $secret
-    Set-OrAddEnvLine -Lines $cgsEnvLines -Key "ZETHERION_SKILLS_API_SECRET" -Value $secret
-
-    Set-Content -Path $cgsEnvLocalPath -Value $cgsEnvLines -Encoding utf8
-}
-
 $bootId = [guid]::NewGuid().ToString()
 $bootStartedAt = [DateTime]::UtcNow
 $actionsTaken = @()
@@ -322,8 +291,6 @@ try {
         if ($bootstrappedKeys.Count -gt 0) {
             $actionsTaken += "bootstrapped_runtime_env_keys:$($bootstrappedKeys -join ',')"
         }
-        Sync-CgsSharedSecret -RepositoryPath $DeployPath
-        $actionsTaken += "synced_cgs_shared_secret"
         docker compose up -d
     }
     finally {
