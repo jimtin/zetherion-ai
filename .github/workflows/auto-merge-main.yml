@@ -27,7 +27,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      actions: read
+      actions: write
     steps:
       - name: Checkout main
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -160,8 +160,24 @@ jobs:
             }' > automerge-receipt.json
 
           echo "status=${merge_status}" >> "$GITHUB_OUTPUT"
+          echo "blocked_reason=${blocked_reason}" >> "$GITHUB_OUTPUT"
+          echo "main_after_sha=${main_after_sha}" >> "$GITHUB_OUTPUT"
           echo "receipt_path=$PWD/automerge-receipt.json" >> "$GITHUB_OUTPUT"
           echo "pr_url=${pr_url}" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger Deploy Windows for merged SHA
+        if: ${{ steps.promote.outputs.status == 'merged' && steps.promote.outputs.blocked_reason != 'already_merged' && steps.promote.outputs.main_after_sha != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_sha="${{ steps.promote.outputs.main_after_sha }}"
+          echo "Dispatching Deploy Windows for main SHA: ${target_sha}"
+          gh workflow run "Deploy Windows" \
+            --ref main \
+            -f sha="${target_sha}" \
+            -f ref="refs/heads/main"
 
       - name: Upload auto-merge receipt
         if: always()
