@@ -5,8 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from zetherion_ai.security.trust_policy import (
+    TrustActionClass,
     TrustDecisionOutcome,
     TrustPolicyEvaluator,
+    TrustTier,
 )
 
 
@@ -124,3 +126,55 @@ def test_unknown_sensitive_actions_are_denied_by_default() -> None:
     )
     assert decision.outcome == TrustDecisionOutcome.DENY
     assert decision.code == "AI_TRUST_POLICY_DENIED"
+
+
+def test_unknown_non_sensitive_actions_allow_with_method_classification() -> None:
+    evaluator = TrustPolicyEvaluator(setting_resolver=_resolver_factory({}))
+
+    read_decision = evaluator.evaluate(
+        tenant_id="tenant-1",
+        action="tenant_admin.unknown_read",
+        context={"method": "GET"},
+    )
+    assert read_decision.outcome == TrustDecisionOutcome.ALLOW
+    assert read_decision.action_class == TrustActionClass.READ
+
+    mutate_decision = evaluator.evaluate(
+        tenant_id="tenant-1",
+        action="tenant_admin.unknown_mutate",
+        context={"method": "POST"},
+    )
+    assert mutate_decision.outcome == TrustDecisionOutcome.ALLOW
+    assert mutate_decision.action_class == TrustActionClass.MUTATE
+
+
+def test_numeric_trust_tier_aliases_and_low_tier_denial() -> None:
+    assert TrustTier.coerce("1", default=TrustTier.TIER3) == TrustTier.TIER1
+
+    evaluator = TrustPolicyEvaluator(
+        setting_resolver=_resolver_factory(
+            {
+                ("tenant-1", "security", "trust_tier"): "1",
+                ("tenant-1", "security", "messaging_allowlisted_chats"): ["chat-1"],
+            }
+        )
+    )
+    decision = evaluator.evaluate(
+        tenant_id="tenant-1",
+        action="messaging.send",
+        context={"chat_id": "chat-1"},
+    )
+    assert decision.outcome == TrustDecisionOutcome.DENY
+    assert decision.code == "AI_TRUST_TIER_TOO_LOW"
+
+
+def test_coercion_helpers_cover_string_and_numeric_paths() -> None:
+    assert TrustPolicyEvaluator._as_bool(1) is True
+    assert TrustPolicyEvaluator._as_bool("yes") is True
+    assert TrustPolicyEvaluator._as_bool("off") is False
+
+    assert TrustPolicyEvaluator._coerce_allowlist('["chat-a","chat-b"]') == {"chat-a", "chat-b"}
+    assert TrustPolicyEvaluator._coerce_allowlist("chat-c, chat-d") == {"chat-c", "chat-d"}
+    assert TrustPolicyEvaluator._coerce_allowlist("[not-json]") == {"[not-json]"}
+    assert TrustPolicyEvaluator._coerce_allowlist("   ") == set()
+    assert TrustPolicyEvaluator._coerce_allowlist(None) == set()
