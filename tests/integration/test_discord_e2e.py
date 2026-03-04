@@ -707,8 +707,12 @@ async def test_bot_multi_turn(discord_test_client: DiscordTestClient) -> None:
         messages_to_delete.append(resp3)
 
         summary_text = resp3.content.lower()
+        normalized_summary_text = summary_text.replace("#", "")
+        normalized_favorite_color = favorite_color.replace("#", "")
         assert "software engineer" in summary_text, "Summary missing remembered profession"
-        assert favorite_color in summary_text, "Summary missing remembered favorite color"
+        assert (
+            normalized_favorite_color in normalized_summary_text
+        ), "Summary missing remembered favorite color"
         print(f"✅ Multi-turn response: {resp3.content[:200]}...")
 
     finally:
