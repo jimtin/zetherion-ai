@@ -111,14 +111,15 @@ jobs:
                       break
                     fi
 
+                    # Rebase rewrites SHAs; if main advanced after a successful merge command,
+                    # treat that as merge observation even before PR state propagation catches up.
+                    if [[ "$main_after_sha" != "$main_before_sha" ]]; then
+                      merge_observed="true"
+                      break
+                    fi
+
                     pr_state_after="$(gh pr view "$pr_number" --json state --jq '.state')"
                     if [[ "$pr_state_after" == "MERGED" ]]; then
-                      # Rebase merges rewrite commit SHAs; rely on main advancement and PR merged state.
-                      if [[ "$main_after_sha" != "$main_before_sha" ]]; then
-                        merge_observed="true"
-                        break
-                      fi
-
                       pr_merge_commit_sha="$(gh pr view "$pr_number" --json mergeCommit --jq '.mergeCommit.oid // empty')"
                       if [[ -n "$pr_merge_commit_sha" ]] && git merge-base --is-ancestor "$pr_merge_commit_sha" "$main_after_sha"; then
                         merge_observed="true"
