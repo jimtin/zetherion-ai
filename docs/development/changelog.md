@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Trust Policy Gate for Internal Admin Actions (2026-03-05)
+
+- Added a centralized trust-policy evaluator for sensitive/critical actions across messaging and autonomous merge control paths.
+- Wired CGS internal admin tenant routes through trust-policy enforcement before upstream apply calls.
+- Added global trust controls and kill switches:
+  - `MESSAGING_INGESTION_KILL_SWITCH`
+  - `MESSAGING_SEND_KILL_SWITCH`
+  - `AUTO_MERGE_EXECUTION_KILL_SWITCH`
+  - `AUTO_MERGE_POLICY_ENABLED`
+  - `SECURITY_DEFAULT_TRUST_TIER`
+- No external endpoint shape changes; contract docs bundle updated to reflect policy and configuration coverage.
+
 ### Changed - Windows Deploy Resilience Registration Signal Cleanup (2026-03-05)
 
 - Updated `Deploy Windows` resilience registration step behavior to remain explicitly non-blocking without

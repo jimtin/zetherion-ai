@@ -11,6 +11,10 @@ For the full technical implementation scope CGS must deliver to go live, use:
 - `.agent-handoff/CGS_GO_LIVE_IMPLEMENTATION_CHECKLIST.md`
 - `docs/technical/cgs-email-monitoring-onboarding-kit.md` (tenant multi-mailbox monitoring and intelligence)
 
+Maintenance note (2026-03-05):
+- Internal trust-policy enforcement was added for sensitive internal admin actions.
+- Public CGS client-facing document intelligence endpoints in this kit are unchanged.
+
 ## Integration Outcome
 
 After implementing this kit, client applications can:

@@ -9,6 +9,7 @@ This guide maps CGS `/service/ai/v1` routes to expected frontend flows.
 - Added blog publish adapter route mapping for operator tooling and promotion worker integration.
 - Clarified that CGS website/UI is owned outside this repository; this document only maps CGS API routes to UI screens.
 - Added tenant email admin route mapping for OAuth app setup, mailbox linking, sync/triage, and calendar selection.
+- Added trust-policy enforcement note for sensitive internal admin actions; UI should handle deny/approval-required outcomes consistently.
 
 ## Document Center Screens
 
