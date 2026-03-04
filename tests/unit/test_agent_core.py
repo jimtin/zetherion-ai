@@ -342,10 +342,7 @@ class TestHandleSkillIntent:
         """list_tasks should render up to 10 tasks and summarize the remainder."""
         agent = _make_agent()
 
-        tasks = [
-            {"title": f"Task {i}", "status": "todo", "priority": 2}
-            for i in range(1, 12)
-        ]
+        tasks = [{"title": f"Task {i}", "status": "todo", "priority": 2} for i in range(1, 12)]
         mock_client = AsyncMock()
         mock_response = SkillResponse(
             request_id=uuid4(),

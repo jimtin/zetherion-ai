@@ -467,7 +467,13 @@ class Agent:
             log.error("skills_client_error", skill=skill_name, error=str(e))
             return "I'm having trouble processing that request. Please try again."
 
-    def format_skill_response(self, *, skill_name: str, intent: str, response: SkillResponse) -> str:
+    def format_skill_response(
+        self,
+        *,
+        skill_name: str,
+        intent: str,
+        response: SkillResponse,
+    ) -> str:
         """Format a skill response into user-facing text."""
         if skill_name == "task_manager" and intent == "list_tasks":
             return self._format_task_list_response(response)
