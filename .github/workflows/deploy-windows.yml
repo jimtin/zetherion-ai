@@ -144,6 +144,8 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           $deployResultPath = Join-Path $PWD "deploy-result.json"
+          $deployDiagnosticsPath = Join-Path $PWD "deploy-container-diagnostics.json"
+          $deployLogsPath = Join-Path $PWD "deploy-container-logs.txt"
           $exitCode = 0
 
           & ./scripts/windows/deploy-runner.ps1 `
@@ -151,7 +153,9 @@ jobs:
             -TargetSha "${{ steps.target.outputs.target_sha }}" `
             -TargetRef "${{ steps.target.outputs.target_ref }}" `
             -LockPath "$env:WINDOWS_DEPLOY_LOCK_PATH" `
-            -OutputPath "$deployResultPath"
+            -OutputPath "$deployResultPath" `
+            -DiagnosticsPath "$deployDiagnosticsPath" `
+            -DiagnosticsLogsPath "$deployLogsPath"
           $exitCode = $LASTEXITCODE
 
           if (Test-Path $deployResultPath) {
@@ -365,6 +369,8 @@ jobs:
             resilience-registration.json
             resilience-ready.json
             deploy-result.json
+            deploy-container-diagnostics.json
+            deploy-container-logs.txt
             verify-result.json
             rollback-result.json
             promotions-run-result.json
