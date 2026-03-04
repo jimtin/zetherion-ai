@@ -40,6 +40,7 @@ jobs:
       WINDOWS_DEPLOY_LOCK_PATH: C:\ZetherionAI\data\deploy.lock
       WINDOWS_DEPLOYMENT_RECEIPTS_PATH: C:\ZetherionAI\data\deployment-receipts
       WINDOWS_RESILIENCE_ALLOW_SERVICE_FALLBACK: "true"
+      WINDOWS_REQUIRE_PROMOTIONS_TASK: "false"
     steps:
       - name: Determine deployment target
         id: target
@@ -370,6 +371,34 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+      - name: Warn when promotions task is missing
+        if: ${{ always() && steps.receipt.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $receipt = Get-Content "${{ steps.receipt.outputs.receipt_path }}" -Raw | ConvertFrom-Json
+          if ($receipt.checks.promotions_task_registered) {
+            exit 0
+          }
+
+          $requireRaw = [string]$env:WINDOWS_REQUIRE_PROMOTIONS_TASK
+          $requirePromotionsTask = $false
+          if ($requireRaw) {
+            $normalized = $requireRaw.Trim().ToLowerInvariant()
+            $requirePromotionsTask = @("1", "true", "yes", "on") -contains $normalized
+          }
+
+          $modeText = if ($requirePromotionsTask) { "blocking" } else { "warning_only" }
+          $warningMessage = "promotions_task_registered=false (mode=$modeText, env WINDOWS_REQUIRE_PROMOTIONS_TASK=$requireRaw)"
+          Write-Warning $warningMessage
+
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Promotions Task Warning"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- promotions_task_registered: false"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- mode: $modeText"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- WINDOWS_REQUIRE_PROMOTIONS_TASK: $requireRaw"
+
       - name: Enforce receipt success gate
         if: always()
         shell: pwsh
@@ -396,6 +425,16 @@ jobs:
           if (-not $checks.recovery_tasks_registered) { throw "Receipt check failed: recovery_tasks_registered" }
           if (-not $checks.runner_service_persistent) { throw "Receipt check failed: runner_service_persistent" }
           if (-not $checks.docker_service_persistent) { throw "Receipt check failed: docker_service_persistent" }
+
+          $requireRaw = [string]$env:WINDOWS_REQUIRE_PROMOTIONS_TASK
+          $requirePromotionsTask = $false
+          if ($requireRaw) {
+            $normalized = $requireRaw.Trim().ToLowerInvariant()
+            $requirePromotionsTask = @("1", "true", "yes", "on") -contains $normalized
+          }
+          if ($requirePromotionsTask -and -not $checks.promotions_task_registered) {
+            throw "Receipt check failed: promotions_task_registered (WINDOWS_REQUIRE_PROMOTIONS_TASK=$requireRaw)."
+          }
 
       - name: Send deploy completion Discord DM
         if: always()
