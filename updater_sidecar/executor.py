@@ -41,7 +41,18 @@ API_SERVICES: dict[str, str] = {
     "green": "zetherion-ai-api-green",
 }
 
+CGS_GATEWAY_SERVICES: dict[str, str] = {
+    "blue": "zetherion-ai-cgs-gateway-blue",
+    "green": "zetherion-ai-cgs-gateway-green",
+}
+
+CGS_UI_SERVICES: dict[str, str] = {
+    "blue": "zetherion-ai-cgs-ui-blue",
+    "green": "zetherion-ai-cgs-ui-green",
+}
+
 BOT_SERVICE = "zetherion-ai-bot"
+ROUTED_HEALTH_KEYS = ("routed_skills", "routed_api", "routed_cgs_api", "routed_cgs_ui")
 
 DEFAULT_HEALTH_URLS: dict[str, str] = {
     # Direct service health checks
@@ -49,9 +60,15 @@ DEFAULT_HEALTH_URLS: dict[str, str] = {
     "zetherion-ai-skills-green": "http://zetherion-ai-skills-green:8080/health",
     "zetherion-ai-api-blue": "http://zetherion-ai-api-blue:8443/health",
     "zetherion-ai-api-green": "http://zetherion-ai-api-green:8443/health",
+    "zetherion-ai-cgs-gateway-blue": "http://zetherion-ai-cgs-gateway-blue:8443/service/ai/v1/health",
+    "zetherion-ai-cgs-gateway-green": "http://zetherion-ai-cgs-gateway-green:8443/service/ai/v1/health",
+    "zetherion-ai-cgs-ui-blue": "http://zetherion-ai-cgs-ui-blue:3000/cgs/api/health",
+    "zetherion-ai-cgs-ui-green": "http://zetherion-ai-cgs-ui-green:3000/cgs/api/health",
     # Routed health checks through Traefik
     "routed_skills": "http://zetherion-ai-traefik:8080/health",
     "routed_api": "http://zetherion-ai-traefik:8443/health",
+    "routed_cgs_api": "http://zetherion-ai-traefik:8443/service/ai/v1/health",
+    "routed_cgs_ui": "http://zetherion-ai-traefik:8443/cgs/api/health",
 }
 
 DEFAULT_STATE_PATH = "/app/data/updater-state.json"
@@ -296,6 +313,8 @@ class UpdateExecutor:
             target_services = [
                 SKILLS_SERVICES[target_color],
                 API_SERVICES[target_color],
+                CGS_GATEWAY_SERVICES[target_color],
+                CGS_UI_SERVICES[target_color],
             ]
             build_services = [*target_services, BOT_SERVICE]
             services_str = " ".join(build_services)
@@ -339,7 +358,7 @@ class UpdateExecutor:
                 return await self._pause_and_rollback(result, previous_color)
             result.steps_completed.append("route_switch")
 
-            for routed_name in ("routed_skills", "routed_api"):
+            for routed_name in ROUTED_HEALTH_KEYS:
                 routed_url = self._health_urls[routed_name]
                 self._current_operation = f"Validating {routed_name}"
                 healthy = await check_service_health(
@@ -367,6 +386,8 @@ class UpdateExecutor:
             old_services = [
                 SKILLS_SERVICES[previous_color],
                 API_SERVICES[previous_color],
+                CGS_GATEWAY_SERVICES[previous_color],
+                CGS_UI_SERVICES[previous_color],
             ]
             old_services_str = " ".join(old_services)
             self._current_operation = f"Stopping old color ({previous_color})"
@@ -642,6 +663,8 @@ class UpdateExecutor:
         rollback_services = [
             SKILLS_SERVICES[previous_color],
             API_SERVICES[previous_color],
+            CGS_GATEWAY_SERVICES[previous_color],
+            CGS_UI_SERVICES[previous_color],
             BOT_SERVICE,
         ]
         services_str = " ".join(rollback_services)
@@ -653,7 +676,12 @@ class UpdateExecutor:
             log.error("Rollback: docker build failed")
             return False
 
-        for service in (SKILLS_SERVICES[previous_color], API_SERVICES[previous_color]):
+        for service in (
+            SKILLS_SERVICES[previous_color],
+            API_SERVICES[previous_color],
+            CGS_GATEWAY_SERVICES[previous_color],
+            CGS_UI_SERVICES[previous_color],
+        ):
             ok = await self._run_cmd(
                 f"docker compose -f {self._compose_file} up -d --no-deps {service}",
                 timeout=180,
@@ -676,7 +704,7 @@ class UpdateExecutor:
             log.error("Rollback: failed to switch route back to %s", previous_color)
             return False
 
-        for routed_name in ("routed_skills", "routed_api"):
+        for routed_name in ROUTED_HEALTH_KEYS:
             healthy = await check_service_health(
                 self._health_urls[routed_name],
                 HealthCheckConfig(retries=8, delay_seconds=5),
@@ -694,7 +722,12 @@ class UpdateExecutor:
             return False
 
         inactive = self._inactive_color(previous_color)
-        inactive_services = [SKILLS_SERVICES[inactive], API_SERVICES[inactive]]
+        inactive_services = [
+            SKILLS_SERVICES[inactive],
+            API_SERVICES[inactive],
+            CGS_GATEWAY_SERVICES[inactive],
+            CGS_UI_SERVICES[inactive],
+        ]
         inactive_str = " ".join(inactive_services)
         await self._run_cmd(
             f"docker compose -f {self._compose_file} stop {inactive_str}",
@@ -822,11 +855,25 @@ class UpdateExecutor:
         - skills
       rule: \"PathPrefix(`/`)\"
       service: skills-{active_color}
+      priority: 10
+    cgs-api:
+      entryPoints:
+        - api
+      rule: \"PathPrefix(`/service/ai/v1`)\"
+      service: cgs-api-{active_color}
+      priority: 30
+    cgs-ui:
+      entryPoints:
+        - api
+      rule: \"PathPrefix(`/cgs`)\"
+      service: cgs-ui-{active_color}
+      priority: 20
     api:
       entryPoints:
         - api
       rule: \"PathPrefix(`/`)\"
       service: api-{active_color}
+      priority: 10
   services:
     skills-blue:
       loadBalancer:
@@ -844,6 +891,22 @@ class UpdateExecutor:
       loadBalancer:
         servers:
           - url: \"http://{API_SERVICES['green']}:8443\"
+    cgs-api-blue:
+      loadBalancer:
+        servers:
+          - url: \"http://{CGS_GATEWAY_SERVICES['blue']}:8443\"
+    cgs-api-green:
+      loadBalancer:
+        servers:
+          - url: \"http://{CGS_GATEWAY_SERVICES['green']}:8443\"
+    cgs-ui-blue:
+      loadBalancer:
+        servers:
+          - url: \"http://{CGS_UI_SERVICES['blue']}:3000\"
+    cgs-ui-green:
+      loadBalancer:
+        servers:
+          - url: \"http://{CGS_UI_SERVICES['green']}:3000\"
 """
 
     async def _is_service_running(self, service: str) -> bool:

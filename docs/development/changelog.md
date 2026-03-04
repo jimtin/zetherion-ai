@@ -13,6 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - CGS Go-Live Closure Wave (2026-03-04)
+
+- Added CGS operator Next.js app in `cgs/` mounted at `/cgs` with session-cookie BFF route handlers (`/cgs/api/gateway/*`).
+- Added production operator screens for documents, retrieval, tenant access, bindings, settings, secrets, approvals, and audit export flows.
+- Added blue/green CGS UI services in `docker-compose.yml`:
+  - `zetherion-ai-cgs-ui-blue`
+  - `zetherion-ai-cgs-ui-green`
+- Added Traefik dynamic routing for `/cgs` while preserving `/service/ai/v1` to CGS gateway.
+- Extended updater sidecar rollout/rollback orchestration to include `cgs-gateway` and `cgs-ui` service families plus routed health checks.
+- Added CI jobs and contract mapping for CGS UI:
+  - `cgs-lint`
+  - `cgs-typecheck`
+  - `cgs-test`
+  - `cgs-build`
+- Added local gate script `scripts/check-cgs-ui.sh` and wired it into `pre-push-tests.sh` and `validate-ci.sh`.
+- Added env/config docs for:
+  - `CGS_DOCUMENT_MUTATION_RPM`
+  - `CGS_ADMIN_MUTATION_RPM`
+  - `CGS_SESSION_COOKIE_NAME`
+  - `CGS_GATEWAY_BASE_URL`
+
 ### Added - CGS-First Tenant Multi-Email Monitoring Control Plane (2026-03-04)
 
 - Added tenant-scoped email admin persistence and intelligence model:

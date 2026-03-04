@@ -8,7 +8,7 @@ interface ResponsePanelProps {
   result: GatewayCallResult | null;
 }
 
-export function ResponsePanel({ result }: ResponsePanelProps): JSX.Element {
+export function ResponsePanel({ result }: ResponsePanelProps) {
   if (!result) {
     return (
       <section className="panel result-panel">

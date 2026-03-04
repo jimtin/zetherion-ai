@@ -107,7 +107,7 @@ If you want to contribute or extend:
 | Source Files | 90+ |
 | Docker Services | Current compose topology (blue/green app + skills + routing + updater + data services) |
 | Configuration Fields | 70+ |
-| CI/CD Jobs | 10 |
+| CI/CD Jobs | 14 |
 | Skills | 10+ built-in and optional skills (tasks, calendar, profile, gmail/email router, github, personal model, health, updater, dev watcher, milestone, YouTube when enabled) |
 
 ---

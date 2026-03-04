@@ -1,4 +1,4 @@
-export default function OverviewPage(): JSX.Element {
+export default function OverviewPage() {
   return (
     <section className="panel hero">
       <p className="eyebrow">Go-Live Control Surface</p>

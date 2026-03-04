@@ -94,6 +94,12 @@ echo "--- Tests ---"
 run_check "pytest (unit)" "pytest tests/ -m 'not integration' -q --tb=no" "false" "pytest"
 run_check "pipeline contract" "python scripts/check_pipeline_contract.py" "false" "python"
 
+if [[ -f cgs/package.json ]]; then
+    echo ""
+    echo "--- CGS UI ---"
+    run_check "CGS UI (lint/typecheck/test/build)" "scripts/check-cgs-ui.sh" "false" "npm"
+fi
+
 # Docker (optional)
 if [[ "$DOCKER" == "true" ]]; then
     echo ""

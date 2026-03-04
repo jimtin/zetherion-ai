@@ -5,9 +5,9 @@ import { resolveSessionToken } from "@/lib/server/auth";
 import { proxyToGateway } from "@/lib/server/proxy";
 
 interface RouteContext {
-  params: {
+  params: Promise<{
     path: string[];
-  };
+  }>;
 }
 
 function authMissingResponse(): NextResponse {
@@ -30,6 +30,8 @@ async function handleProxy(request: Request, { params }: RouteContext): Promise<
     process.env.CGS_GATEWAY_BASE_URL ?? "http://zetherion-ai-traefik:8443/service/ai/v1";
   const cookieName = process.env.CGS_SESSION_COOKIE_NAME ?? "cgs_session";
 
+  const resolvedParams = await params;
+
   const sessionToken = resolveSessionToken(await cookies(), cookieName);
   if (!sessionToken) {
     return authMissingResponse();
@@ -37,7 +39,7 @@ async function handleProxy(request: Request, { params }: RouteContext): Promise<
 
   return proxyToGateway(request, {
     gatewayBaseUrl,
-    pathSegments: params.path,
+    pathSegments: resolvedParams.path,
     sessionToken
   });
 }

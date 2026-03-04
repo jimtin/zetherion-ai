@@ -87,3 +87,9 @@ site/
 # Local CI debug artifacts
 tmp/ci-debug/
 scripts/collect-ci-failure-logs.sh
+
+# CGS Next.js build artifacts
+cgs/node_modules/
+cgs/node_modules.bak.*/
+cgs/.next/
+cgs/tsconfig.tsbuildinfo

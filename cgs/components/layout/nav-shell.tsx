@@ -16,7 +16,7 @@ const NAV_ITEMS = [
   { href: "/audit", label: "Audit" }
 ];
 
-export function NavShell({ children }: PropsWithChildren): JSX.Element {
+export function NavShell({ children }: PropsWithChildren) {
   const pathname = usePathname();
   const normalized = pathname?.replace(/^\/cgs/, "") || "/";
 

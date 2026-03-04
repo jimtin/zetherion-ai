@@ -4,7 +4,7 @@ interface StatusNoticeProps {
   hint: UxHint | null;
 }
 
-export function StatusNotice({ hint }: StatusNoticeProps): JSX.Element | null {
+export function StatusNotice({ hint }: StatusNoticeProps) {
   if (!hint) {
     return null;
   }
