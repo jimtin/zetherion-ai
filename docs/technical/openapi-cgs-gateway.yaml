@@ -3,7 +3,7 @@ info:
   title: CGS AI Gateway API
   version: 1.0.0
   description: Public CGS `/service/ai/v1` contract mapped to internal Zetherion upstream APIs.
-  x-maintenance-note: "2026-03-02: Added multipart completion contract for document uploads and normalized provider naming guidance."
+  x-maintenance-note: "2026-03-04: Zetherion-only boundary recovery removed in-repo CGS website/UI assets; CGS gateway API contract unchanged."
 servers:
   - url: https://{host}
     variables:

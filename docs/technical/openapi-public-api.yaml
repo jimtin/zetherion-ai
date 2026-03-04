@@ -3,7 +3,7 @@ info:
   title: Zetherion Upstream API
   version: 1.0.0
   description: Internal `/api/v1` upstream contract consumed by the CGS gateway. External clients should use CGS `/service/ai/v1`.
-  x-maintenance-note: "2026-03-02: Clarified CGS-only public exposure and normalized provider naming guidance."
+  x-maintenance-note: "2026-03-04: Zetherion-only boundary recovery removed in-repo CGS website/UI assets; upstream API contract unchanged."
 servers:
   - url: https://{host}
     variables:

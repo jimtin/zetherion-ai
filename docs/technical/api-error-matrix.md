@@ -12,6 +12,7 @@ Exposure rule:
 - Added blog publish adapter duplicate-as-success behavior:
   - `409` with `error=null` and `data.status=duplicate`.
 - Added centralized upstream error mapping policy across runtime/internal/admin/reporting route families.
+- Zetherion-only boundary recovery removed in-repo CGS website/UI artifacts; error contracts remain unchanged.
 
 ## Public API (`/api/v1`)
 

@@ -11,9 +11,10 @@ plus optional tenant-scoped YouTube endpoints.
 This API is distinct from the internal Skills API (`:8080`) and is not the public
 client contract. External clients must integrate through CGS `/service/ai/v1`.
 
-Maintenance note (2026-03-01):
+Maintenance note (2026-03-04):
 - Internal document upload route parsing/typing hardening was applied.
 - No public API contract changes were introduced.
+- Zetherion-only boundary recovery removed in-repo CGS website/UI assets; upstream API behavior remains unchanged.
 
 ### Exposure Policy (Authoritative)
 

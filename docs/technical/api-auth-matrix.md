@@ -12,6 +12,7 @@ Authoritative exposure rule:
   - `POST /service/ai/v1/internal/blog/publish`
 - Internal lifecycle tenant mutations now enforce claims-to-tenant policy in addition to operator scope checks.
 - Auth requirements for public document routes are unchanged.
+- Zetherion-only boundary recovery removed in-repo CGS website/UI artifacts; auth contracts remain unchanged.
 
 ## Zetherion Upstream API (`/api/v1`, internal)
 
