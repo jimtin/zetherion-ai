@@ -141,7 +141,9 @@ class TestProfileSkill:
         assert summary["low_confidence"] == 1
 
     @pytest.mark.asyncio
-    async def test_handle_summary_uses_long_term_memories_when_profile_entries_missing(self) -> None:
+    async def test_handle_summary_uses_long_term_memories_when_profile_entries_missing(
+        self,
+    ) -> None:
         """Summary should not be empty when profile-style memories exist in long-term memory."""
         now = datetime.now().isoformat()
 

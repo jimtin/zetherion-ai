@@ -10,6 +10,7 @@ Provides user profile management capabilities:
 Uses the existing user_profiles collection from Phase 5C.
 """
 
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -573,10 +574,8 @@ class ProfileSkill(Skill):
             return []
 
         candidates: list[str | int] = [user_id]
-        try:
+        with suppress(ValueError):
             candidates.append(int(user_id))
-        except ValueError:
-            pass
 
         merged: list[dict[str, Any]] = []
         seen_ids: set[str] = set()
