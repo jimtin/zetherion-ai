@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import tarfile
 import tempfile
 from dataclasses import dataclass, field
@@ -61,7 +61,7 @@ class SubprocessCommandRunner:
             BackupError: If command execution fails or command is unavailable.
         """
         try:
-            completed = subprocess.run(
+            completed = subprocess.run(  # nosec B603
                 command,
                 input=input_bytes,
                 capture_output=True,
@@ -430,10 +430,14 @@ class BackupManager:
             raise BackupError(f"Missing checksums in payload: {checksums_path}")
 
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest_raw = json.loads(manifest_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
             raise BackupError(f"Invalid internal manifest JSON: {manifest_path}") from exc
 
+        if not isinstance(manifest_raw, dict):
+            raise BackupError("Internal manifest root must be a JSON object.")
+
+        manifest: dict[str, Any] = manifest_raw
         components = manifest.get("components")
         if not isinstance(components, list) or not components:
             raise BackupError("Manifest components are missing or invalid.")
@@ -642,7 +646,5 @@ def _sha256_file(path: Path) -> str:
 
 def _backup_id_from_archive_name(name: str) -> str:
     if not name.endswith(BACKUP_ARCHIVE_SUFFIX):
-        raise BackupError(
-            f"Backup archive filename must end with {BACKUP_ARCHIVE_SUFFIX}: {name}"
-        )
+        raise BackupError(f"Backup archive filename must end with {BACKUP_ARCHIVE_SUFFIX}: {name}")
     return name[: -len(BACKUP_ARCHIVE_SUFFIX)]
