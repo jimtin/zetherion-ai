@@ -334,6 +334,32 @@ class TestOllamaRouterBackendClassify:
         assert decision.use_claude is False
 
     @pytest.mark.asyncio
+    async def test_classify_user_knowledge_summary(self, mock_settings):
+        """Test classifying canonical user knowledge summary queries."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "response": json.dumps(
+                {
+                    "intent": "user_knowledge_summary",
+                    "confidence": 0.96,
+                    "reasoning": "User asks for a complete personal knowledge summary",
+                }
+            )
+        }
+
+        with patch("zetherion_ai.agent.router_ollama.get_settings", return_value=mock_settings):
+            backend = OllamaRouterBackend()
+            backend._client = MagicMock()
+            backend._client.post = AsyncMock(return_value=mock_response)
+
+            decision = await backend.classify("What do you know about me?")
+
+        assert decision.intent == MessageIntent.USER_KNOWLEDGE_SUMMARY
+        assert decision.use_claude is False
+
+    @pytest.mark.asyncio
     async def test_classify_json_in_code_block(self, mock_settings):
         """Test handling JSON wrapped in code block."""
         mock_response = MagicMock()

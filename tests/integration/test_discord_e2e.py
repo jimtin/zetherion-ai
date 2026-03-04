@@ -675,12 +675,13 @@ async def test_bot_multi_turn(discord_test_client: DiscordTestClient) -> None:
     if not bot_id:
         pytest.skip("Could not find Zetherion AI bot in channel")
 
+    favorite_color = f"teal-{uuid4().hex[:6]}"
     messages_to_delete: list[discord.Message] = []
 
     try:
-        # Turn 1: Tell the bot a name
+        # Turn 1: Remember profession
         msg1 = await discord_test_client.send_message(
-            f"<@{bot_id}> remember that my name is TestUser42"
+            f"<@{bot_id}> remember that I work as a software engineer"
         )
         messages_to_delete.append(msg1)
         resp1 = await discord_test_client.wait_for_bot_response(msg1, timeout=90.0, bot_id=bot_id)
@@ -688,9 +689,9 @@ async def test_bot_multi_turn(discord_test_client: DiscordTestClient) -> None:
         messages_to_delete.append(resp1)
         await asyncio.sleep(2)
 
-        # Turn 2: Tell occupation
+        # Turn 2: Remember favorite color
         msg2 = await discord_test_client.send_message(
-            f"<@{bot_id}> remember that I work as a software engineer"
+            f"<@{bot_id}> remember that my favorite color is {favorite_color}"
         )
         messages_to_delete.append(msg2)
         resp2 = await discord_test_client.wait_for_bot_response(msg2, timeout=90.0, bot_id=bot_id)
@@ -705,8 +706,9 @@ async def test_bot_multi_turn(discord_test_client: DiscordTestClient) -> None:
         assert resp3 is not None, "Bot did not respond to turn 3"
         messages_to_delete.append(resp3)
 
-        # The response should reference at least some prior information
-        assert len(resp3.content) > 20, "Multi-turn response too short"
+        summary_text = resp3.content.lower()
+        assert "software engineer" in summary_text, "Summary missing remembered profession"
+        assert favorite_color in summary_text, "Summary missing remembered favorite color"
         print(f"✅ Multi-turn response: {resp3.content[:200]}...")
 
     finally:

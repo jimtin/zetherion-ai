@@ -41,6 +41,7 @@ class MessageIntent(Enum):
     COMPLEX_TASK = "complex_task"  # Code generation, analysis, creative tasks
     MEMORY_STORE = "memory_store"  # User wants to remember something
     MEMORY_RECALL = "memory_recall"  # User asking about past conversations
+    USER_KNOWLEDGE_SUMMARY = "user_knowledge_summary"  # Canonical user-knowledge summary path
     SYSTEM_COMMAND = "system_command"  # Bot commands, settings
     # Skill intents (Phase 5G)
     TASK_MANAGEMENT = "task_management"  # Task creation, updates, listing
@@ -151,6 +152,10 @@ ROUTER_PROMPT = """You are a message router. Classify the user's message into on
 17. YOUTUBE_STRATEGY - YouTube growth strategy, content planning, SEO recommendations
    Examples: "Generate YouTube strategy", "Content plan for my channel", "YouTube growth plan", \
 "SEO recommendations", "What should I post next?"
+
+18. USER_KNOWLEDGE_SUMMARY - Canonical summary of what the bot knows about the user
+   Examples: "What do you know about me?", "What have you learned about me?", \
+"What do you remember about me?", "Give me a summary of what you know about me"
 
 Respond with ONLY a JSON object:
 {"intent": "INTENT_NAME", "confidence": 0.0-1.0, "reasoning": "brief reason"}

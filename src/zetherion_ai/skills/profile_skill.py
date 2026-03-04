@@ -32,6 +32,7 @@ log = get_logger("zetherion_ai.skills.profile_skill")
 
 # Uses existing collection from Phase 5C
 PROFILES_COLLECTION = "user_profiles"
+LONG_TERM_MEMORY_COLLECTION = "long_term_memory"
 
 
 @dataclass
@@ -94,6 +95,18 @@ class ProfileSkill(Skill):
         super().__init__(memory=memory)
         self._profile_builder = profile_builder
 
+    def configure_dependencies(
+        self,
+        *,
+        memory: "QdrantMemory | None" = None,
+        profile_builder: "ProfileBuilder | None" = None,
+    ) -> None:
+        """Attach runtime dependencies after startup bootstrap."""
+        if memory is not None:
+            self._memory = memory
+        if profile_builder is not None:
+            self._profile_builder = profile_builder
+
     @property
     def metadata(self) -> SkillMetadata:
         """Return skill metadata."""
@@ -141,7 +154,7 @@ class ProfileSkill(Skill):
 
     async def _handle_summary(self, request: SkillRequest) -> SkillResponse:
         """Handle profile summary request."""
-        entries = await self._get_profile_entries(request.user_id)
+        entries = await self._get_summary_entries(request.user_id)
 
         if not entries:
             return SkillResponse(
@@ -504,12 +517,7 @@ class ProfileSkill(Skill):
     async def _get_profile_entries(self, user_id: str) -> list[dict[str, Any]]:
         """Get all profile entries for a user."""
         if self._memory:
-            results = await self._memory.filter_by_field(
-                collection_name=PROFILES_COLLECTION,
-                field="user_id",
-                value=user_id,
-            )
-            return results
+            return await self._filter_entries_by_user(PROFILES_COLLECTION, user_id)
 
         if self._profile_builder:
             # Try to get from profile builder, fallback to empty on any error
@@ -520,6 +528,104 @@ class ProfileSkill(Skill):
                 pass
 
         return []
+
+    async def _get_summary_entries(self, user_id: str) -> list[dict[str, Any]]:
+        """Get profile summary entries, including long-term profile-style memories."""
+        entries = await self._get_profile_entries(user_id)
+        memory_entries = await self._get_profile_memory_entries(user_id)
+        if not memory_entries:
+            return entries
+
+        merged = list(entries)
+        seen: set[str] = set()
+        for entry in merged:
+            fingerprint = self._entry_fingerprint(entry)
+            if fingerprint:
+                seen.add(fingerprint)
+
+        for entry in memory_entries:
+            fingerprint = self._entry_fingerprint(entry)
+            if fingerprint and fingerprint in seen:
+                continue
+            if fingerprint:
+                seen.add(fingerprint)
+            merged.append(entry)
+
+        return merged
+
+    @staticmethod
+    def _entry_fingerprint(entry: dict[str, Any]) -> str:
+        """Build a dedupe fingerprint for summary entries."""
+        category = str(entry.get("category", "")).strip().lower()
+        key = str(entry.get("key", "")).strip().lower()
+        value = str(entry.get("value", "")).strip().lower()
+        if not value:
+            return ""
+        return f"{category}|{key}|{value}"
+
+    async def _filter_entries_by_user(
+        self,
+        collection_name: str,
+        user_id: str,
+    ) -> list[dict[str, Any]]:
+        """Filter a collection by user_id, supporting string/int payload variants."""
+        if self._memory is None:
+            return []
+
+        candidates: list[str | int] = [user_id]
+        try:
+            candidates.append(int(user_id))
+        except ValueError:
+            pass
+
+        merged: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        for candidate in candidates:
+            rows = await self._memory.filter_by_field(
+                collection_name=collection_name,
+                field="user_id",
+                value=candidate,
+            )
+            for row in rows:
+                row_id = str(row.get("id", "")).strip()
+                if row_id and row_id in seen_ids:
+                    continue
+                if row_id:
+                    seen_ids.add(row_id)
+                merged.append(row)
+        return merged
+
+    async def _get_profile_memory_entries(self, user_id: str) -> list[dict[str, Any]]:
+        """Map long-term memories into profile-style entries for summaries."""
+        if self._memory is None:
+            return []
+
+        raw_entries = await self._filter_entries_by_user(LONG_TERM_MEMORY_COLLECTION, user_id)
+        allowed_types = {"", "general", "user_request", "profile", "fact", "preference", "identity"}
+        normalized: list[dict[str, Any]] = []
+
+        for entry in raw_entries:
+            memory_type = str(entry.get("type") or "").strip().lower()
+            if memory_type not in allowed_types:
+                continue
+
+            content = str(entry.get("content") or "").strip()
+            if not content:
+                continue
+
+            normalized.append(
+                {
+                    "id": str(entry.get("id") or ""),
+                    "category": "memory",
+                    "key": memory_type or "memory",
+                    "value": content,
+                    "confidence": 0.7,
+                    "source": "long_term_memory",
+                    "created_at": entry.get("timestamp"),
+                }
+            )
+
+        return normalized
 
     async def cleanup(self) -> None:
         """Clean up resources."""

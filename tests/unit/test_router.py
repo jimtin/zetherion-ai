@@ -34,6 +34,7 @@ class TestMessageIntent:
             "COMPLEX_TASK",
             "MEMORY_STORE",
             "MEMORY_RECALL",
+            "USER_KNOWLEDGE_SUMMARY",
             "SYSTEM_COMMAND",
             # Phase 5G skill intents
             "TASK_MANAGEMENT",
@@ -55,6 +56,7 @@ class TestMessageIntent:
         assert MessageIntent.COMPLEX_TASK.value == "complex_task"
         assert MessageIntent.MEMORY_STORE.value == "memory_store"
         assert MessageIntent.MEMORY_RECALL.value == "memory_recall"
+        assert MessageIntent.USER_KNOWLEDGE_SUMMARY.value == "user_knowledge_summary"
         assert MessageIntent.SYSTEM_COMMAND.value == "system_command"
         # Phase 5G skill intents
         assert MessageIntent.TASK_MANAGEMENT.value == "task_management"
@@ -294,6 +296,29 @@ class TestGeminiRouterBackendClassify:
                 decision = await backend.classify("What do you know about me?")
 
         assert decision.intent == MessageIntent.PROFILE_QUERY
+        assert decision.use_claude is False
+
+    @pytest.mark.asyncio
+    async def test_classify_user_knowledge_summary(self, mock_settings):
+        """Test classifying canonical user knowledge summary queries."""
+        mock_response = MagicMock()
+        mock_response.text = json.dumps(
+            {
+                "intent": "user_knowledge_summary",
+                "confidence": 0.96,
+                "reasoning": "User asks for a complete personal knowledge summary",
+            }
+        )
+
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = mock_response
+
+        with patch("zetherion_ai.agent.router.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.agent.router.genai.Client", return_value=mock_client):
+                backend = GeminiRouterBackend()
+                decision = await backend.classify("What do you know about me?")
+
+        assert decision.intent == MessageIntent.USER_KNOWLEDGE_SUMMARY
         assert decision.use_claude is False
 
     @pytest.mark.asyncio
