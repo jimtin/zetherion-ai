@@ -5,6 +5,7 @@ Every test mocks asyncpg thoroughly so no real database connection is needed.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncpg
@@ -713,18 +714,20 @@ class TestBootstrap:
     """Tests for UserManager._bootstrap."""
 
     @pytest.mark.asyncio
-    async def test_seeds_owner_and_users_when_empty(self):
-        """_bootstrap inserts owner and seed users when table is empty."""
+    async def test_seeds_owner_and_users_idempotently(self):
+        """_bootstrap inserts owner and seed users with ON CONFLICT safety."""
         mgr = UserManager(DSN)
         mock_pool, mock_conn = _make_mock_pool()
         mgr._pool = mock_pool
 
-        # fetchval returns 0 for count(*) -- table is empty
-        mock_conn.fetchval.return_value = 0
-
-        mock_settings = MagicMock()
-        mock_settings.owner_user_id = 111
-        mock_settings.allowed_user_ids = [111, 222, 333]
+        mock_settings = SimpleNamespace(
+            owner_user_id=111,
+            allowed_user_ids=[111, 222, 333],
+            allow_all_users=False,
+            allowlist_strict_startup=False,
+            allowlist_bootstrap_enabled=True,
+        )
+        mock_conn.execute.side_effect = ["INSERT 0 1", "INSERT 0 1", "INSERT 0 1"]
 
         with patch(
             "zetherion_ai.discord.user_manager.get_settings",
@@ -732,25 +735,39 @@ class TestBootstrap:
         ):
             await mgr._bootstrap()
 
-        # _execute is called via pool.acquire context manager
-        # Owner insert + 2 seed user inserts (222 and 333, not 111 since it matches owner)
+        # Owner insert + 2 seed user inserts (222 and 333; 111 is owner)
         assert mock_conn.execute.await_count == 3
 
     @pytest.mark.asyncio
-    async def test_skips_when_table_has_data(self):
-        """_bootstrap skips seeding when the users table already has rows."""
+    async def test_reconciles_allowlist_across_restart(self):
+        """_bootstrap can run repeatedly, preserving expected users across restarts."""
         mgr = UserManager(DSN)
         mock_pool, mock_conn = _make_mock_pool()
         mgr._pool = mock_pool
 
-        # Table already has users
-        mock_conn.fetchval.return_value = 5
+        mock_settings = SimpleNamespace(
+            owner_user_id=111,
+            allowed_user_ids=[111, 222],
+            allow_all_users=False,
+            allowlist_strict_startup=False,
+            allowlist_bootstrap_enabled=True,
+        )
+        # First startup inserts both rows, second startup sees both existing.
+        mock_conn.execute.side_effect = [
+            "INSERT 0 1",
+            "INSERT 0 1",
+            "INSERT 0 0",
+            "INSERT 0 0",
+        ]
 
-        await mgr._bootstrap()
+        with patch(
+            "zetherion_ai.discord.user_manager.get_settings",
+            return_value=mock_settings,
+        ):
+            await mgr._bootstrap()
+            await mgr._bootstrap()
 
-        # Only the count query should have been issued (via fetchval);
-        # no execute calls for inserts
-        mock_conn.execute.assert_not_awaited()
+        assert mock_conn.execute.await_count == 4
 
     @pytest.mark.asyncio
     async def test_handles_no_owner_user_id(self):
@@ -759,11 +776,14 @@ class TestBootstrap:
         mock_pool, mock_conn = _make_mock_pool()
         mgr._pool = mock_pool
 
-        mock_conn.fetchval.return_value = 0
-
-        mock_settings = MagicMock()
-        mock_settings.owner_user_id = None
-        mock_settings.allowed_user_ids = [222, 333]
+        mock_settings = SimpleNamespace(
+            owner_user_id=None,
+            allowed_user_ids=[222, 333],
+            allow_all_users=False,
+            allowlist_strict_startup=False,
+            allowlist_bootstrap_enabled=True,
+        )
+        mock_conn.execute.side_effect = ["INSERT 0 1", "INSERT 0 1"]
 
         with patch(
             "zetherion_ai.discord.user_manager.get_settings",
@@ -771,8 +791,7 @@ class TestBootstrap:
         ):
             await mgr._bootstrap()
 
-        # No owner insert, but 2 seed user inserts
-        # added_by will be 0 since owner_id is None (owner_id or 0)
+        # No owner insert, but 2 seed user inserts (added_by falls back to 0)
         assert mock_conn.execute.await_count == 2
 
     @pytest.mark.asyncio
@@ -782,11 +801,14 @@ class TestBootstrap:
         mock_pool, mock_conn = _make_mock_pool()
         mgr._pool = mock_pool
 
-        mock_conn.fetchval.return_value = 0
-
-        mock_settings = MagicMock()
-        mock_settings.owner_user_id = 111
-        mock_settings.allowed_user_ids = []
+        mock_settings = SimpleNamespace(
+            owner_user_id=111,
+            allowed_user_ids=[],
+            allow_all_users=False,
+            allowlist_strict_startup=False,
+            allowlist_bootstrap_enabled=True,
+        )
+        mock_conn.execute.return_value = "INSERT 0 1"
 
         with patch(
             "zetherion_ai.discord.user_manager.get_settings",
@@ -798,16 +820,74 @@ class TestBootstrap:
         assert mock_conn.execute.await_count == 1
 
     @pytest.mark.asyncio
-    async def test_raises_on_postgres_error(self):
-        """_bootstrap re-raises PostgresError from the count query."""
+    async def test_strict_startup_fails_with_empty_effective_allowlist(self):
+        """Strict startup fails fast when owner and allowlist are both empty."""
         mgr = UserManager(DSN)
         mock_pool, mock_conn = _make_mock_pool()
         mgr._pool = mock_pool
 
-        mock_conn.fetchval.side_effect = asyncpg.PostgresError("table missing")
+        mock_settings = SimpleNamespace(
+            owner_user_id=None,
+            allowed_user_ids=[],
+            allow_all_users=False,
+            allowlist_strict_startup=True,
+            allowlist_bootstrap_enabled=True,
+        )
 
-        with pytest.raises(asyncpg.PostgresError):
+        with patch(
+            "zetherion_ai.discord.user_manager.get_settings",
+            return_value=mock_settings,
+        ):
+            with pytest.raises(RuntimeError, match="ALLOWLIST_STRICT_STARTUP"):
+                await mgr._bootstrap()
+
+        mock_conn.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_skips_bootstrap_when_disabled(self):
+        """_bootstrap does nothing when bootstrap synchronization is disabled."""
+        mgr = UserManager(DSN)
+        mock_pool, mock_conn = _make_mock_pool()
+        mgr._pool = mock_pool
+
+        mock_settings = SimpleNamespace(
+            owner_user_id=111,
+            allowed_user_ids=[111, 222],
+            allow_all_users=False,
+            allowlist_strict_startup=False,
+            allowlist_bootstrap_enabled=False,
+        )
+
+        with patch(
+            "zetherion_ai.discord.user_manager.get_settings",
+            return_value=mock_settings,
+        ):
             await mgr._bootstrap()
+
+        mock_conn.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_raises_on_postgres_error(self):
+        """_bootstrap re-raises PostgresError from insert execution."""
+        mgr = UserManager(DSN)
+        mock_pool, mock_conn = _make_mock_pool()
+        mgr._pool = mock_pool
+
+        mock_conn.execute.side_effect = asyncpg.PostgresError("table missing")
+        mock_settings = SimpleNamespace(
+            owner_user_id=111,
+            allowed_user_ids=[],
+            allow_all_users=False,
+            allowlist_strict_startup=False,
+            allowlist_bootstrap_enabled=True,
+        )
+
+        with patch(
+            "zetherion_ai.discord.user_manager.get_settings",
+            return_value=mock_settings,
+        ):
+            with pytest.raises(asyncpg.PostgresError):
+                await mgr._bootstrap()
 
 
 class TestRoleHierarchyConstants:

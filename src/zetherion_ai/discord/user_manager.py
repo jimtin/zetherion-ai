@@ -265,8 +265,8 @@ class UserManager:
 
     The manager maintains a ``users`` table with role assignments, an
     ``audit_log`` for every mutation, and a ``settings`` key-value store.
-    On first start (empty ``users`` table) it bootstraps the owner and
-    seed users from the application configuration.
+    On every start it idempotently synchronizes owner/seed users from
+    application configuration into RBAC.
     """
 
     def __init__(self, dsn: str, *, allow_all: bool = False) -> None:
@@ -654,22 +654,55 @@ class UserManager:
             raise
 
     async def _bootstrap(self) -> None:
-        """Seed the users table from application settings when it is empty.
-
-        If the table already contains rows the bootstrap is skipped entirely,
-        making this safe to call on every startup.
-        """
+        """Idempotently sync owner/allowlist users from settings into RBAC."""
         try:
-            count = await self._fetchval("SELECT count(*) FROM users")
-            if count and int(count) > 0:
-                log.info("bootstrap_skipped", existing_user_count=count)
+            settings = get_settings()
+            if not settings.allowlist_bootstrap_enabled:
+                log.info("bootstrap_skipped", reason="allowlist_bootstrap_disabled")
                 return
 
-            settings = get_settings()
-
             owner_id = settings.owner_user_id
+            seed_ids = list(dict.fromkeys(settings.allowed_user_ids))
+            effective_allowlist = set(seed_ids)
             if owner_id is not None:
-                await self._execute(
+                effective_allowlist.add(owner_id)
+
+            if settings.allow_all_users:
+                source = "allow_all_users"
+            elif owner_id is not None and seed_ids:
+                source = "owner_and_allowed_user_ids"
+            elif owner_id is not None:
+                source = "owner_user_id"
+            elif seed_ids:
+                source = "allowed_user_ids"
+            else:
+                source = "none"
+
+            log.info(
+                "allowlist_effective_resolved",
+                source=source,
+                strict_startup=settings.allowlist_strict_startup,
+                allow_all_users=settings.allow_all_users,
+                owner_configured=owner_id is not None,
+                configured_allowlist_count=len(seed_ids),
+                effective_allowlist_count=len(effective_allowlist),
+            )
+
+            if (
+                settings.allowlist_strict_startup
+                and not settings.allow_all_users
+                and not effective_allowlist
+            ):
+                message = (
+                    "ALLOWLIST_STRICT_STARTUP is enabled but no OWNER_USER_ID or "
+                    "ALLOWED_USER_IDS were configured"
+                )
+                log.error("allowlist_strict_startup_failed", error=message)
+                raise RuntimeError(message)
+
+            owner_inserted = 0
+            if owner_id is not None:
+                owner_status = await self._execute(
                     """
                     INSERT INTO users (discord_user_id, role, added_by)
                     VALUES ($1, 'owner', $1)
@@ -677,13 +710,19 @@ class UserManager:
                     """,
                     owner_id,
                 )
-                log.info("bootstrap_owner_created", owner_id=owner_id)
+                owner_inserted = self._rows_affected(owner_status)
+                log.info(
+                    "bootstrap_owner_synced",
+                    owner_id=owner_id,
+                    inserted=owner_inserted,
+                )
 
-            seed_ids = settings.allowed_user_ids
+            configured_seed_ids = [uid for uid in seed_ids if uid != owner_id]
+            seed_inserted = 0
             for uid in seed_ids:
                 if uid == owner_id:
                     continue  # already inserted as owner
-                await self._execute(
+                seed_status = await self._execute(
                     """
                     INSERT INTO users (discord_user_id, role, added_by)
                     VALUES ($1, 'user', $2)
@@ -692,16 +731,36 @@ class UserManager:
                     uid,
                     owner_id or 0,
                 )
-            if seed_ids:
+                seed_inserted += self._rows_affected(seed_status)
+
+            if configured_seed_ids:
                 log.info(
-                    "bootstrap_seed_users_created",
-                    count=len([uid for uid in seed_ids if uid != owner_id]),
+                    "bootstrap_seed_users_synced",
+                    configured_count=len(configured_seed_ids),
+                    inserted_count=seed_inserted,
+                    existing_count=len(configured_seed_ids) - seed_inserted,
                 )
 
-            log.info("bootstrap_complete")
+            log.info(
+                "bootstrap_complete",
+                owner_inserted=owner_inserted,
+                seed_inserted=seed_inserted,
+                effective_allowlist_count=len(effective_allowlist),
+            )
         except asyncpg.PostgresError as exc:
             log.error("bootstrap_failed", error=str(exc))
             raise
+
+    @staticmethod
+    def _rows_affected(status: str) -> int:
+        """Parse affected row count from asyncpg execute status string."""
+        parts = status.split()
+        if not parts:
+            return 0
+        last = parts[-1]
+        if not last.isdigit():
+            return 0
+        return int(last)
 
     # ------------------------------------------------------------------
     # Pool convenience wrappers

@@ -33,6 +33,8 @@ cp .env.example .env
 | `ALLOWED_USER_IDS` | empty | Comma-separated Discord user IDs |
 | `ALLOW_ALL_USERS` | `false` | Allow all users when allowlist is empty |
 | `OWNER_USER_ID` | unset | Bootstrap owner RBAC user |
+| `ALLOWLIST_STRICT_STARTUP` | `false` | Fail startup if no effective allowlist users are configured |
+| `ALLOWLIST_BOOTSTRAP_ENABLED` | `true` | Sync `OWNER_USER_ID` + `ALLOWED_USER_IDS` into RBAC at startup |
 | `ALLOW_BOT_MESSAGES` | `false` | Accept bot-origin messages (testing) |
 | `DEV_AGENT_WEBHOOK_NAME` | `zetherion-dev-agent` | Trusted dev webhook sender |
 | `DEV_AGENT_WEBHOOK_ID` | empty | Optional Discord webhook ID allowlist for dev-agent ingestion |

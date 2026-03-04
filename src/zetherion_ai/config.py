@@ -39,6 +39,14 @@ class Settings(BaseSettings):
         default=False, description="Explicitly allow all users when no allowlist is configured"
     )
     owner_user_id: int | None = Field(default=None, description="Bootstrap owner Discord user ID")
+    allowlist_strict_startup: bool = Field(
+        default=False,
+        description="Fail startup when no effective allowlist users are configured",
+    )
+    allowlist_bootstrap_enabled: bool = Field(
+        default=True,
+        description="Synchronize OWNER_USER_ID and ALLOWED_USER_IDS into RBAC on startup",
+    )
 
     # PostgreSQL (for RBAC and dynamic settings)
     postgres_dsn: str = Field(
