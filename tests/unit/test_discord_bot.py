@@ -2441,3 +2441,106 @@ class TestBotRuntimeHelpers:
         client_close.assert_awaited_once()
         assert keep_warm_task.cancelled() is True
         assert provider_task.cancelled() is True
+
+
+class TestTenantAwareAllowlist:
+    """Targeted tests for tenant-admin allowlist enforcement paths."""
+
+    def test_as_bool_parsing(self, bot):
+        assert bot._as_bool(True) is True
+        assert bot._as_bool(1) is True
+        assert bot._as_bool("yes") is True
+        assert bot._as_bool("off", default=True) is False
+        assert bot._as_bool("unknown", default=True) is True
+
+    @pytest.mark.asyncio
+    async def test_resolve_tenant_for_message_handles_error(self, mock_memory):
+        tenant_admin = AsyncMock()
+        tenant_admin.resolve_tenant_for_discord = AsyncMock(side_effect=RuntimeError("boom"))
+        bot = ZetherionAIBot(
+            memory=mock_memory,
+            user_manager=AsyncMock(),
+            tenant_admin_manager=tenant_admin,
+        )
+        message = MagicMock(spec=discord.Message)
+        message.guild = MagicMock()
+        message.guild.id = 10
+        message.channel = MagicMock()
+        message.channel.id = 20
+
+        assert await bot._resolve_tenant_for_message(message) is None
+
+    @pytest.mark.asyncio
+    async def test_message_user_allowed_uses_tenant_enforcement_and_fail_closed(self, mock_memory):
+        user_manager = AsyncMock()
+        user_manager.is_allowed = AsyncMock(return_value=True)
+        tenant_admin = AsyncMock()
+        tenant_admin.resolve_tenant_for_discord = AsyncMock(side_effect=["tenant-1", None, None])
+        tenant_admin.is_discord_user_allowed = AsyncMock(return_value=False)
+        bot = ZetherionAIBot(
+            memory=mock_memory,
+            user_manager=user_manager,
+            tenant_admin_manager=tenant_admin,
+        )
+        message = MagicMock(spec=discord.Message)
+        message.author = MagicMock()
+        message.author.id = 123
+        message.guild = MagicMock()
+        message.guild.id = 10
+        message.channel = MagicMock()
+        message.channel.id = 20
+
+        with (
+            patch("zetherion_ai.discord.bot.get_dynamic_for_tenant", return_value=True),
+            patch("zetherion_ai.discord.bot.get_dynamic", side_effect=[False, True, False]),
+        ):
+            enforced = await bot._is_message_user_allowed(message=message, is_dm=False)
+            fail_closed = await bot._is_message_user_allowed(message=message, is_dm=False)
+            fallback = await bot._is_message_user_allowed(message=message, is_dm=False)
+
+        assert enforced is False
+        assert fail_closed is False
+        assert fallback is True
+        tenant_admin.is_discord_user_allowed.assert_awaited_once_with("tenant-1", 123)
+        user_manager.is_allowed.assert_awaited_once_with(123)
+
+    @pytest.mark.asyncio
+    async def test_interaction_user_allowed_paths(self, mock_memory):
+        user_manager = AsyncMock()
+        user_manager.is_allowed = AsyncMock(return_value=True)
+        tenant_admin = AsyncMock()
+        tenant_admin.resolve_tenant_for_discord = AsyncMock(
+            side_effect=["tenant-1", RuntimeError("x"), None]
+        )
+        tenant_admin.is_discord_user_allowed = AsyncMock(return_value=True)
+        bot = ZetherionAIBot(
+            memory=mock_memory,
+            user_manager=user_manager,
+            tenant_admin_manager=tenant_admin,
+        )
+
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.user = MagicMock()
+        interaction.user.id = 42
+        interaction.guild_id = 10
+        interaction.channel_id = 20
+
+        dm_interaction = MagicMock(spec=discord.Interaction)
+        dm_interaction.user = MagicMock()
+        dm_interaction.user.id = 43
+        dm_interaction.guild_id = None
+        dm_interaction.channel_id = None
+
+        with (
+            patch("zetherion_ai.discord.bot.get_dynamic_for_tenant", return_value=True),
+            patch("zetherion_ai.discord.bot.get_dynamic", side_effect=[False, True, False]),
+        ):
+            tenant_allowed = await bot._is_interaction_user_allowed(interaction)
+            error_fail_closed = await bot._is_interaction_user_allowed(interaction)
+            fallback_allowed = await bot._is_interaction_user_allowed(interaction)
+            dm_allowed = await bot._is_interaction_user_allowed(dm_interaction)
+
+        assert tenant_allowed is True
+        assert error_fail_closed is False
+        assert fallback_allowed is True
+        assert dm_allowed is True

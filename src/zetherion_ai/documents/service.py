@@ -340,11 +340,12 @@ class DocumentService:
             forced_provider=forced_provider,
             forced_model=forced_model,
         )
+        provider_name = self._canonical_provider_name(result.provider.value)
 
         return DocumentQueryResult(
             answer=result.content,
             citations=citations,
-            provider=result.provider.value,
+            provider=provider_name,
             model=result.model,
         )
 
@@ -366,13 +367,21 @@ class DocumentService:
     def provider_catalog(self) -> dict[str, Any]:
         """Return supported providers/models for client-side selector UIs."""
         settings = get_settings()
+        providers = [p for p in ("groq", "openai", "anthropic") if p in self._allowed_providers()]
+        if not providers:
+            providers = ["groq", "openai", "anthropic"]
+
+        defaults: dict[str, str] = {}
+        if "groq" in providers:
+            defaults["groq"] = settings.groq_model
+        if "openai" in providers:
+            defaults["openai"] = settings.openai_model
+        if "anthropic" in providers:
+            defaults["anthropic"] = settings.claude_model
+
         return {
-            "providers": ["groq", "openai", "claude"],
-            "defaults": {
-                "groq": settings.groq_model,
-                "openai": settings.openai_model,
-                "claude": settings.claude_model,
-            },
+            "providers": providers,
+            "defaults": defaults,
             "allowed_models": sorted(self._allowed_models()),
         }
 
@@ -382,9 +391,11 @@ class DocumentService:
 
     def _allowed_providers(self) -> set[str]:
         settings = get_settings()
-        raw = (settings.rag_allowed_providers or "groq,openai,claude").strip()
-        values = {p.strip().lower() for p in raw.split(",") if p.strip()}
-        return values or {"groq", "openai", "claude"}
+        raw = (settings.rag_allowed_providers or "groq,openai,anthropic").strip()
+        values = {
+            self._canonical_provider_name(p.strip().lower()) for p in raw.split(",") if p.strip()
+        }
+        return values or {"groq", "openai", "anthropic"}
 
     def _allowed_models(self) -> set[str]:
         settings = get_settings()
@@ -401,13 +412,12 @@ class DocumentService:
         provider_map = {
             "groq": Provider.GROQ,
             "openai": Provider.OPENAI,
-            "claude": Provider.CLAUDE,
             "anthropic": Provider.CLAUDE,
         }
 
         forced_provider: Provider | None = None
         if provider:
-            key = provider.strip().lower()
+            key = self._canonical_provider_name(provider.strip().lower())
             if key not in self._allowed_providers() or key not in provider_map:
                 raise ValueError("Requested provider is not allowed")
             forced_provider = provider_map[key]
@@ -427,6 +437,12 @@ class DocumentService:
                 forced_provider = Provider.CLAUDE
 
         return forced_provider, forced_model
+
+    @staticmethod
+    def _canonical_provider_name(provider: str) -> str:
+        if provider in {"claude", "anthropic"}:
+            return "anthropic"
+        return provider
 
     @staticmethod
     def checksum_sha256(data: bytes) -> str:

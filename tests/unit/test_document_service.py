@@ -291,6 +291,42 @@ async def test_query_calls_inference_and_deduplicates_citations(
 
 
 @pytest.mark.asyncio
+async def test_query_normalizes_claude_provider_name_to_anthropic(
+    document_service: tuple[DocumentService, AsyncMock, AsyncMock, AsyncMock, AsyncMock],
+) -> None:
+    service, _, memory, inference, _ = document_service
+    memory.search_collection.return_value = [
+        {
+            "document_id": "doc-1",
+            "file_name": "a.pdf",
+            "chunk_index": 0,
+            "content": "first chunk",
+        }
+    ]
+    inference.infer.return_value = SimpleNamespace(
+        content="Answer from context",
+        provider=Provider.CLAUDE,
+        model="claude-sonnet-4-6",
+    )
+    settings = SimpleNamespace(
+        groq_model="llama-3.3-70b-versatile",
+        openai_model="gpt-5.2",
+        claude_model="claude-sonnet-4-6",
+        rag_allowed_providers="groq,openai,anthropic",
+        rag_allowed_models="claude-sonnet-4-6",
+    )
+    with patch("zetherion_ai.documents.service.get_settings", return_value=settings):
+        result = await service.query(
+            tenant_id="tenant-1",
+            query="Summarize",
+            provider="anthropic",
+            model="claude-sonnet-4-6",
+        )
+
+    assert result.provider == "anthropic"
+
+
+@pytest.mark.asyncio
 async def test_query_requires_inference_broker() -> None:
     service = DocumentService(
         tenant_manager=AsyncMock(),
@@ -334,6 +370,8 @@ def test_provider_catalog_and_provider_model_resolution(
     )
     with patch("zetherion_ai.documents.service.get_settings", return_value=settings):
         catalog = service.provider_catalog()
+        assert "anthropic" in catalog["providers"]
+        assert catalog["defaults"]["anthropic"] == "claude-sonnet-4-6"
         assert "extra-model" in catalog["allowed_models"]
         provider, model = service._resolve_provider_model(
             provider="groq",
@@ -341,6 +379,9 @@ def test_provider_catalog_and_provider_model_resolution(
         )
         assert provider == Provider.GROQ
         assert model == "llama-3.3-70b-versatile"
+
+        anthropic_provider, _ = service._resolve_provider_model(provider="claude", model=None)
+        assert anthropic_provider == Provider.CLAUDE
 
         inferred_provider, _ = service._resolve_provider_model(provider=None, model="gpt-5.2")
         assert inferred_provider == Provider.OPENAI

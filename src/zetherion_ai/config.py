@@ -6,6 +6,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Self
 
 if TYPE_CHECKING:
+    from zetherion_ai.admin.tenant_admin_manager import TenantAdminManager
     from zetherion_ai.security.secret_resolver import SecretResolver
     from zetherion_ai.settings_manager import SettingsManager
 
@@ -235,7 +236,7 @@ class Settings(BaseSettings):
         default=3072, description="Embedding dimensions for OpenAI model"
     )
     rag_allowed_providers: str = Field(
-        default="groq,openai,claude",
+        default="groq,openai,anthropic",
         description="Comma-separated providers allowed for /api/v1/rag/query overrides",
     )
     rag_allowed_models: str = Field(
@@ -469,6 +470,14 @@ class Settings(BaseSettings):
     cgs_gateway_allowed_origins: str | None = Field(
         default=None,
         description="Comma-separated CORS origins for CGS gateway",
+    )
+    cgs_document_mutation_rpm: int = Field(
+        default=30,
+        description="Per-tenant document mutation limit per minute in CGS gateway",
+    )
+    cgs_admin_mutation_rpm: int = Field(
+        default=20,
+        description="Per-tenant admin mutation limit per minute in CGS gateway",
     )
     cgs_auth_jwks_url: str | None = Field(
         default=None,
@@ -907,6 +916,7 @@ def get_settings() -> Settings:
 # ---------------------------------------------------------------------------
 
 _settings_manager: SettingsManager | None = None
+_tenant_admin_manager: TenantAdminManager | None = None
 
 
 def set_settings_manager(mgr: SettingsManager) -> None:
@@ -918,6 +928,17 @@ def set_settings_manager(mgr: SettingsManager) -> None:
 def get_settings_manager() -> SettingsManager | None:
     """Get the registered settings manager (or None if not yet registered)."""
     return _settings_manager
+
+
+def set_tenant_admin_manager(mgr: TenantAdminManager | None) -> None:
+    """Register tenant-admin manager for tenant-scoped dynamic reads."""
+    global _tenant_admin_manager
+    _tenant_admin_manager = mgr
+
+
+def get_tenant_admin_manager() -> TenantAdminManager | None:
+    """Get the registered tenant-admin manager."""
+    return _tenant_admin_manager
 
 
 def get_dynamic(namespace: str, key: str, default: Any = None) -> Any:
@@ -946,6 +967,15 @@ def get_dynamic(namespace: str, key: str, default: Any = None) -> Any:
                 return env_val
 
     return default
+
+
+def get_dynamic_for_tenant(tenant_id: str, namespace: str, key: str, default: Any = None) -> Any:
+    """Get a tenant-scoped setting with fallback to global dynamic settings."""
+    if _tenant_admin_manager is not None:
+        value = _tenant_admin_manager.get_setting_cached(tenant_id, namespace, key)
+        if value is not None:
+            return value
+    return get_dynamic(namespace, key, default)
 
 
 # ---------------------------------------------------------------------------
@@ -981,3 +1011,12 @@ def get_secret(name: str, default: str | None = None) -> str | None:
     if _secret_resolver is not None:
         return _secret_resolver.get_secret(name, default)
     return default
+
+
+def get_secret_for_tenant(tenant_id: str, name: str, default: str | None = None) -> str | None:
+    """Get a tenant-scoped secret with fallback to global resolver."""
+    if _tenant_admin_manager is not None:
+        value = _tenant_admin_manager.get_secret_cached(tenant_id, name)
+        if value is not None:
+            return value
+    return get_secret(name, default)

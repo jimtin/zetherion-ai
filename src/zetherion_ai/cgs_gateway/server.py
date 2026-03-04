@@ -18,7 +18,9 @@ from zetherion_ai.cgs_gateway.middleware import (
     create_cors_middleware,
     create_request_context_middleware,
 )
+from zetherion_ai.cgs_gateway.rate_limit import TenantMutationRateLimiter
 from zetherion_ai.cgs_gateway.routes.internal import register_internal_routes
+from zetherion_ai.cgs_gateway.routes.internal_admin import register_internal_admin_routes
 from zetherion_ai.cgs_gateway.routes.reporting import register_reporting_routes
 from zetherion_ai.cgs_gateway.routes.runtime import register_runtime_routes
 from zetherion_ai.cgs_gateway.storage import CGSGatewayStorage
@@ -68,10 +70,20 @@ def create_request_logging_middleware() -> Any:
                 val = request.match_info.get(key)
                 if val:
                     details[key] = val
+            for context_key in (
+                "change_ticket_id",
+                "upstream_request_id",
+                "blog_publish_receipt_id",
+            ):
+                value = request.get(context_key)
+                if isinstance(value, str) and value:
+                    details[context_key] = value
             with suppress(Exception):
                 await storage.log_request(
                     request_id=str(request.get("request_id", "")),
-                    cgs_tenant_id=request.match_info.get("tenant_id"),
+                    cgs_tenant_id=request.match_info.get("tenant_id")
+                    or str(request.get("cgs_tenant_id", "") or "")
+                    or None,
                     conversation_id=request.match_info.get("conversation_id"),
                     endpoint=request.path,
                     method=request.method.upper(),
@@ -109,6 +121,10 @@ class CGSGatewayServer:
         storage: CGSGatewayStorage,
         public_client: PublicAPIClient,
         skills_client: SkillsClient,
+        blog_publish_token: str | None = None,
+        rag_allowed_providers: set[str] | None = None,
+        rag_allowed_models: set[str] | None = None,
+        mutation_rate_limiter: TenantMutationRateLimiter | None = None,
     ) -> None:
         self._host = host
         self._port = port
@@ -117,6 +133,10 @@ class CGSGatewayServer:
         self._storage = storage
         self._public_client = public_client
         self._skills_client = skills_client
+        self._blog_publish_token = (blog_publish_token or "").strip()
+        self._rag_allowed_providers = rag_allowed_providers or {"groq", "openai", "anthropic"}
+        self._rag_allowed_models = rag_allowed_models or set()
+        self._mutation_rate_limiter = mutation_rate_limiter
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
 
@@ -134,10 +154,15 @@ class CGSGatewayServer:
         app["cgs_storage"] = self._storage
         app["cgs_public_client"] = self._public_client
         app["cgs_skills_client"] = self._skills_client
+        app["cgs_blog_publish_token"] = self._blog_publish_token
+        app["cgs_rag_allowed_providers"] = self._rag_allowed_providers
+        app["cgs_rag_allowed_models"] = self._rag_allowed_models
+        app["cgs_mutation_rate_limiter"] = self._mutation_rate_limiter
 
         app.router.add_get("/service/ai/v1/health", handle_health)
         register_runtime_routes(app)
         register_internal_routes(app)
+        register_internal_admin_routes(app)
         register_reporting_routes(app)
 
         self._app = app
@@ -184,6 +209,10 @@ async def run_server(
     zetherion_public_api_base_url: str,
     zetherion_skills_api_base_url: str,
     zetherion_skills_api_secret: str,
+    blog_publish_token: str | None = None,
+    rag_allowed_providers: set[str] | None = None,
+    rag_allowed_models: set[str] | None = None,
+    mutation_rate_limiter: TenantMutationRateLimiter | None = None,
 ) -> None:
     """Create and run CGS gateway server until cancelled."""
     key_manager = KeyManager(encryption_passphrase, encryption_salt_path)
@@ -205,6 +234,10 @@ async def run_server(
         storage=storage,
         public_client=public_client,
         skills_client=skills_client,
+        blog_publish_token=blog_publish_token,
+        rag_allowed_providers=rag_allowed_providers,
+        rag_allowed_models=rag_allowed_models,
+        mutation_rate_limiter=mutation_rate_limiter,
     )
 
     await server.start()
@@ -251,6 +284,44 @@ def main() -> None:
     if not z_skills_secret and settings.skills_api_secret is not None:
         z_skills_secret = settings.skills_api_secret.get_secret_value()
 
+    rag_allowed_providers_raw = os.environ.get(
+        "RAG_ALLOWED_PROVIDERS",
+        getattr(settings, "rag_allowed_providers", "groq,openai,anthropic"),
+    )
+    rag_allowed_providers = {
+        provider.strip().lower()
+        for provider in _split_csv(rag_allowed_providers_raw or "")
+        if provider.strip()
+    } or {"groq", "openai", "anthropic"}
+    rag_allowed_models_raw = os.environ.get(
+        "RAG_ALLOWED_MODELS",
+        getattr(settings, "rag_allowed_models", ""),
+    )
+    rag_allowed_models = {model.strip() for model in _split_csv(rag_allowed_models_raw or "")}
+    blog_publish_token = os.environ.get("CGS_BLOG_PUBLISH_TOKEN", "")
+    if not blog_publish_token and getattr(settings, "cgs_blog_publish_token", None) is not None:
+        token = settings.cgs_blog_publish_token
+        blog_publish_token = token.get_secret_value() if token is not None else ""
+    doc_mutation_rpm = int(
+        os.environ.get(
+            "CGS_DOCUMENT_MUTATION_RPM",
+            str(getattr(settings, "cgs_document_mutation_rpm", 30)),
+        )
+    )
+    admin_mutation_rpm = int(
+        os.environ.get(
+            "CGS_ADMIN_MUTATION_RPM",
+            str(getattr(settings, "cgs_admin_mutation_rpm", 20)),
+        )
+    )
+    mutation_limiter = TenantMutationRateLimiter(
+        default_limit_per_minute=max(1, min(doc_mutation_rpm, admin_mutation_rpm)),
+        family_limits_per_minute={
+            "documents": doc_mutation_rpm,
+            "admin": admin_mutation_rpm,
+        },
+    )
+
     if not settings.postgres_dsn:
         log.error("POSTGRES_DSN is required for CGS gateway")
         raise SystemExit(1)
@@ -276,6 +347,10 @@ def main() -> None:
                 zetherion_public_api_base_url=z_public,
                 zetherion_skills_api_base_url=z_skills,
                 zetherion_skills_api_secret=z_skills_secret,
+                blog_publish_token=blog_publish_token,
+                rag_allowed_providers=rag_allowed_providers,
+                rag_allowed_models=rag_allowed_models,
+                mutation_rate_limiter=mutation_limiter,
             )
         )
     except KeyboardInterrupt:

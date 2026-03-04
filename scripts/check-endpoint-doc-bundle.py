@@ -24,6 +24,9 @@ REQUIRED_DOC_BUNDLE = {
     "docs/technical/api-error-matrix.md",
     "docs/technical/api-auth-matrix.md",
     "docs/technical/frontend-route-wiring.md",
+    "docs/technical/zetherion-document-intelligence-component.md",
+    "docs/technical/cgs-client-onboarding-kit.md",
+    "docs/technical/cgs-email-monitoring-onboarding-kit.md",
     "docs/development/changelog.md",
 }
 

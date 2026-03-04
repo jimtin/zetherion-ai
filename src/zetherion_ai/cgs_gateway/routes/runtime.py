@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import inspect
 import json
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -9,7 +11,7 @@ from typing import Any, cast
 from aiohttp import web
 from pydantic import ValidationError
 
-from zetherion_ai.cgs_gateway.errors import GatewayError, success_response
+from zetherion_ai.cgs_gateway.errors import GatewayError, map_upstream_error, success_response
 from zetherion_ai.cgs_gateway.models import (
     CreateConversationRequest,
     DocumentCompleteUploadRequest,
@@ -20,6 +22,7 @@ from zetherion_ai.cgs_gateway.models import (
 )
 from zetherion_ai.cgs_gateway.routes._utils import (
     canonical_upstream_headers,
+    enforce_mutation_rate_limit,
     enforce_tenant_access,
     fingerprint_payload,
     json_object,
@@ -29,56 +32,175 @@ from zetherion_ai.cgs_gateway.routes._utils import (
 )
 from zetherion_ai.cgs_gateway.storage import CGSGatewayStorage
 
+_ALLOWED_DOCUMENT_STATUSES = {"uploaded", "processing", "indexed", "failed"}
+_DOCUMENT_STATUS_ALIASES = {
+    "pending": "processing",
+    "queued": "processing",
+    "indexing": "processing",
+    "complete": "indexed",
+    "completed": "indexed",
+    "ready": "indexed",
+    "error": "failed",
+}
+_PROVIDER_ALIASES = {"claude": "anthropic"}
 
-def _map_upstream_error(status: int, payload: Any) -> GatewayError:
-    details = payload if isinstance(payload, dict) else {"upstream": str(payload)}
-    if status == 401:
-        return GatewayError(
-            code="AI_UPSTREAM_401",
-            message="Upstream authentication failed",
-            status=401,
-            details=details,
+
+def _normalize_document_status(value: str) -> str:
+    normalized = value.strip().lower()
+    normalized = _DOCUMENT_STATUS_ALIASES.get(normalized, normalized)
+    if normalized in _ALLOWED_DOCUMENT_STATUSES:
+        return normalized
+    return "processing"
+
+
+def _normalize_document_payload(payload: Any) -> Any:
+    if isinstance(payload, dict):
+        normalized: dict[str, Any] = {}
+        for key, value in payload.items():
+            if key == "status" and isinstance(value, str):
+                normalized[key] = _normalize_document_status(value)
+            else:
+                normalized[key] = _normalize_document_payload(value)
+        return normalized
+    if isinstance(payload, list):
+        return [_normalize_document_payload(item) for item in payload]
+    return payload
+
+
+def _normalize_provider(provider: str | None) -> str | None:
+    if provider is None:
+        return None
+    value = provider.strip().lower()
+    if not value:
+        return None
+    return _PROVIDER_ALIASES.get(value, value)
+
+
+def _allowed_providers(request: web.Request) -> set[str]:
+    configured = request.app.get("cgs_rag_allowed_providers")
+    if isinstance(configured, set) and configured:
+        return {str(item).strip().lower() for item in configured if str(item).strip()}
+    return {"groq", "openai", "anthropic"}
+
+
+def _allowed_models(request: web.Request) -> set[str]:
+    configured = request.app.get("cgs_rag_allowed_models")
+    if isinstance(configured, set):
+        return {str(item).strip() for item in configured if str(item).strip()}
+    return set()
+
+
+def _build_rag_upstream_body(
+    request: web.Request,
+    payload: DocumentQueryRequest,
+) -> dict[str, Any]:
+    provider = _normalize_provider(payload.provider)
+    model = payload.model.strip() if isinstance(payload.model, str) else None
+    allowed_providers = _allowed_providers(request)
+    allowed_models = _allowed_models(request)
+
+    if provider is not None and provider not in allowed_providers:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="provider is not allowed",
+            status=400,
+            details={"allowed_providers": sorted(allowed_providers)},
         )
-    if status == 403:
-        return GatewayError(
-            code="AI_UPSTREAM_403",
-            message="Upstream request forbidden",
-            status=403,
-            details=details,
+    if model and allowed_models and model not in allowed_models:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="model is not allowed",
+            status=400,
+            details={"allowed_models": sorted(allowed_models)},
         )
-    if status == 404:
-        return GatewayError(
-            code="AI_UPSTREAM_404",
-            message="Upstream resource not found",
-            status=404,
-            details=details,
-        )
-    if status == 409:
-        return GatewayError(
-            code="AI_UPSTREAM_409",
-            message="Upstream conflict",
-            status=409,
-            details=details,
-        )
-    if status == 429:
-        return GatewayError(
-            code="AI_UPSTREAM_429",
-            message="Upstream rate limited",
-            status=429,
-            details=details,
-        )
-    if status >= 500:
-        return GatewayError(
-            code="AI_UPSTREAM_5XX",
-            message="Upstream service unavailable",
-            status=503,
-            details=details,
-        )
-    return GatewayError(
-        code="AI_UPSTREAM_ERROR",
-        message="Upstream request failed",
-        status=502,
-        details=details,
+
+    upstream_body = payload.model_dump(mode="json", exclude={"tenant_id"})
+    if provider is not None:
+        upstream_body["provider"] = provider
+    if model:
+        upstream_body["model"] = model
+    return upstream_body
+
+
+def _normalize_provider_catalog(payload: Any) -> Any:
+    if not isinstance(payload, dict):
+        return payload
+
+    normalized = dict(payload)
+    providers = normalized.get("providers")
+    if isinstance(providers, list):
+        seen: set[str] = set()
+        out: list[str] = []
+        for provider in providers:
+            mapped = _normalize_provider(str(provider))
+            if not mapped or mapped in seen:
+                continue
+            seen.add(mapped)
+            out.append(mapped)
+        normalized["providers"] = out
+
+    defaults = normalized.get("defaults")
+    if isinstance(defaults, dict):
+        normalized_defaults: dict[str, Any] = {}
+        for key, value in defaults.items():
+            mapped = _normalize_provider(str(key))
+            if mapped is None:
+                continue
+            normalized_defaults[mapped] = value
+        normalized["defaults"] = normalized_defaults
+
+    return normalized
+
+
+async def _public_request_json(
+    request: web.Request,
+    *,
+    method: str,
+    path: str,
+    headers: dict[str, str],
+    json_body: dict[str, Any] | None = None,
+    params: dict[str, Any] | None = None,
+    data: Any = None,
+    typed_method: str | None = None,
+    typed_kwargs: dict[str, Any] | None = None,
+) -> tuple[int, Any, dict[str, str]]:
+    client = request.app["cgs_public_client"]
+    if typed_method:
+        candidate = getattr(client, typed_method, None)
+        if callable(candidate) and inspect.iscoroutinefunction(candidate):
+            kwargs = typed_kwargs or {}
+            return await candidate(**kwargs)
+    return await client.request_json(
+        method,
+        path,
+        headers=headers,
+        json_body=json_body,
+        params=params,
+        data=data,
+    )
+
+
+async def _public_request_raw(
+    request: web.Request,
+    *,
+    method: str,
+    path: str,
+    headers: dict[str, str],
+    params: dict[str, Any] | None = None,
+    typed_method: str | None = None,
+    typed_kwargs: dict[str, Any] | None = None,
+) -> tuple[int, bytes, dict[str, str]]:
+    client = request.app["cgs_public_client"]
+    if typed_method:
+        candidate = getattr(client, typed_method, None)
+        if callable(candidate) and inspect.iscoroutinefunction(candidate):
+            kwargs = typed_kwargs or {}
+            return await candidate(**kwargs)
+    return await client.request_raw(
+        method,
+        path,
+        headers=headers,
+        params=params,
     )
 
 
@@ -201,7 +323,7 @@ async def handle_create_conversation(request: web.Request) -> web.Response:
         },
     )
     if status >= 400:
-        raise _map_upstream_error(status, upstream)
+        raise map_upstream_error(status=status, payload=upstream)
     if not isinstance(upstream, dict):
         raise GatewayError(
             code="AI_UPSTREAM_ERROR",
@@ -289,7 +411,7 @@ async def handle_get_conversation(request: web.Request) -> web.Response:
         ),
     )
     if status >= 400:
-        raise _map_upstream_error(status, upstream)
+        raise map_upstream_error(status=status, payload=upstream)
 
     if isinstance(upstream, dict):
         data = {
@@ -339,7 +461,7 @@ async def handle_delete_conversation(request: web.Request) -> web.Response:
         ),
     )
     if status >= 400 and status != 404:
-        raise _map_upstream_error(status, upstream)
+        raise map_upstream_error(status=status, payload=upstream)
 
     await storage.close_conversation(conversation_id)
     envelope = {
@@ -401,7 +523,7 @@ async def handle_post_message(request: web.Request) -> web.Response:
         json_body=payload,
     )
     if status >= 400:
-        raise _map_upstream_error(status, upstream)
+        raise map_upstream_error(status=status, payload=upstream)
 
     response_data = upstream if isinstance(upstream, dict) else {"content": str(upstream)}
     envelope = {
@@ -446,7 +568,7 @@ async def handle_post_message_stream(request: web.Request) -> web.StreamResponse
         except Exception:
             payload = await upstream_response.text()
         await upstream_response.release()
-        raise _map_upstream_error(upstream_response.status, payload)
+        raise map_upstream_error(status=upstream_response.status, payload=payload)
 
     response = web.StreamResponse(
         status=200,
@@ -492,7 +614,7 @@ async def handle_get_messages(request: web.Request) -> web.Response:
         params=params,
     )
     if status >= 400:
-        raise _map_upstream_error(status, upstream)
+        raise map_upstream_error(status=status, payload=upstream)
 
     data = upstream if isinstance(upstream, dict) else {"messages": []}
     return success_response(rid, data)
@@ -534,7 +656,7 @@ async def _forward_conversation_json(
         params=params,
     )
     if status >= 400:
-        raise _map_upstream_error(status, upstream)
+        raise map_upstream_error(status=status, payload=upstream)
 
     data = upstream if isinstance(upstream, dict) else {"result": upstream}
     envelope = {
@@ -637,25 +759,139 @@ async def handle_documents_create_upload(request: web.Request) -> web.Response:
         ) from exc
 
     mapping = await _load_mapping_for_tenant_payload(request, tenant_id=payload.tenant_id)
+    enforce_mutation_rate_limit(
+        request,
+        cgs_tenant_id=payload.tenant_id,
+        family="documents",
+    )
 
-    status, upstream, _ = await request.app["cgs_public_client"].request_json(
-        "POST",
-        "/api/v1/documents/uploads",
-        headers=canonical_upstream_headers(
-            request_id_value=rid,
-            api_key=str(mapping["zetherion_api_key"]),
-        ),
-        json_body=payload.model_dump(mode="json", exclude={"tenant_id"}),
+    idem_key, idem_fp, cached = await _idempotency_check(
+        request,
+        cgs_tenant_id=payload.tenant_id,
+        payload=payload.model_dump(mode="json"),
+    )
+    if cached is not None:
+        response = web.json_response(cached["body"], status=cached["status"])
+        response.headers["X-Idempotent-Replay"] = "true"
+        return response
+
+    upstream_headers = canonical_upstream_headers(
+        request_id_value=rid,
+        api_key=str(mapping["zetherion_api_key"]),
+    )
+    upstream_payload = payload.model_dump(mode="json", exclude={"tenant_id"})
+    status, upstream, _ = await _public_request_json(
+        request,
+        method="POST",
+        path="/api/v1/documents/uploads",
+        headers=upstream_headers,
+        json_body=upstream_payload,
+        typed_method="create_document_upload",
+        typed_kwargs={
+            "headers": upstream_headers,
+            "payload": upstream_payload,
+        },
     )
     if status >= 400:
-        raise _map_upstream_error(status, upstream)
-    return success_response(rid, upstream, status=201)
+        raise map_upstream_error(status=status, payload=upstream)
+    data = _normalize_document_payload(upstream)
+    envelope = {
+        "request_id": rid,
+        "data": data,
+        "error": None,
+    }
+    await _save_idempotency(
+        request,
+        cgs_tenant_id=payload.tenant_id,
+        idempotency_key=idem_key,
+        request_fingerprint=idem_fp,
+        response_status=201,
+        response_body=envelope,
+    )
+    return web.json_response(envelope, status=201)
 
 
 async def handle_documents_complete_upload(request: web.Request) -> web.Response:
     """POST /service/ai/v1/documents/uploads/{upload_id}/complete."""
     rid = request_id(request)
     upload_id = request.match_info["upload_id"]
+    raw_content_type = request.headers.get("Content-Type", "")
+    content_type = raw_content_type.lower()
+    if content_type.startswith("multipart/"):
+        tenant_id = request.query.get("tenant_id", "").strip()
+        if not tenant_id:
+            raise GatewayError(
+                code="AI_BAD_REQUEST",
+                message="tenant_id query parameter is required for multipart upload completion",
+                status=400,
+            )
+
+        mapping = await _load_mapping_for_tenant_payload(request, tenant_id=tenant_id)
+        enforce_mutation_rate_limit(
+            request,
+            cgs_tenant_id=tenant_id,
+            family="documents",
+        )
+        body = await request.read()
+        if not body:
+            raise GatewayError(
+                code="AI_BAD_REQUEST",
+                message="multipart body is required",
+                status=400,
+            )
+
+        idem_key, idem_fp, cached = await _idempotency_check(
+            request,
+            cgs_tenant_id=tenant_id,
+            payload={
+                "upload_id": upload_id,
+                "tenant_id": tenant_id,
+                "multipart_sha256": hashlib.sha256(body).hexdigest(),
+            },
+        )
+        if cached is not None:
+            response = web.json_response(cached["body"], status=cached["status"])
+            response.headers["X-Idempotent-Replay"] = "true"
+            return response
+
+        upstream_headers = canonical_upstream_headers(
+            request_id_value=rid,
+            api_key=str(mapping["zetherion_api_key"]),
+        )
+        if raw_content_type:
+            upstream_headers["Content-Type"] = raw_content_type
+
+        status, upstream, _ = await _public_request_json(
+            request,
+            method="POST",
+            path=f"/api/v1/documents/uploads/{upload_id}/complete",
+            headers=upstream_headers,
+            data=body,
+            typed_method="complete_document_upload_multipart",
+            typed_kwargs={
+                "upload_id": upload_id,
+                "headers": upstream_headers,
+                "body": body,
+            },
+        )
+        if status >= 400:
+            raise map_upstream_error(status=status, payload=upstream)
+        data = _normalize_document_payload(upstream)
+        envelope = {
+            "request_id": rid,
+            "data": data,
+            "error": None,
+        }
+        await _save_idempotency(
+            request,
+            cgs_tenant_id=tenant_id,
+            idempotency_key=idem_key,
+            request_fingerprint=idem_fp,
+            response_status=201,
+            response_body=envelope,
+        )
+        return web.json_response(envelope, status=201)
+
     raw = await json_object(request)
     try:
         payload = DocumentCompleteUploadRequest.model_validate(raw)
@@ -668,20 +904,58 @@ async def handle_documents_complete_upload(request: web.Request) -> web.Response
         ) from exc
 
     mapping = await _load_mapping_for_tenant_payload(request, tenant_id=payload.tenant_id)
+    enforce_mutation_rate_limit(
+        request,
+        cgs_tenant_id=payload.tenant_id,
+        family="documents",
+    )
+
+    idem_key, idem_fp, cached = await _idempotency_check(
+        request,
+        cgs_tenant_id=payload.tenant_id,
+        payload={"upload_id": upload_id, **payload.model_dump(mode="json")},
+    )
+    if cached is not None:
+        response = web.json_response(cached["body"], status=cached["status"])
+        response.headers["X-Idempotent-Replay"] = "true"
+        return response
+
     upstream_body = payload.model_dump(mode="json", exclude={"tenant_id"})
 
-    status, upstream, _ = await request.app["cgs_public_client"].request_json(
-        "POST",
-        f"/api/v1/documents/uploads/{upload_id}/complete",
-        headers=canonical_upstream_headers(
-            request_id_value=rid,
-            api_key=str(mapping["zetherion_api_key"]),
-        ),
+    upstream_headers = canonical_upstream_headers(
+        request_id_value=rid,
+        api_key=str(mapping["zetherion_api_key"]),
+    )
+    status, upstream, _ = await _public_request_json(
+        request,
+        method="POST",
+        path=f"/api/v1/documents/uploads/{upload_id}/complete",
+        headers=upstream_headers,
         json_body=upstream_body,
+        typed_method="complete_document_upload_json",
+        typed_kwargs={
+            "upload_id": upload_id,
+            "headers": upstream_headers,
+            "payload": upstream_body,
+        },
     )
     if status >= 400:
-        raise _map_upstream_error(status, upstream)
-    return success_response(rid, upstream, status=201)
+        raise map_upstream_error(status=status, payload=upstream)
+    data = _normalize_document_payload(upstream)
+    envelope = {
+        "request_id": rid,
+        "data": data,
+        "error": None,
+    }
+    await _save_idempotency(
+        request,
+        cgs_tenant_id=payload.tenant_id,
+        idempotency_key=idem_key,
+        request_fingerprint=idem_fp,
+        response_status=201,
+        response_body=envelope,
+    )
+    return web.json_response(envelope, status=201)
 
 
 async def handle_documents_list(request: web.Request) -> web.Response:
@@ -696,17 +970,21 @@ async def handle_documents_list(request: web.Request) -> web.Response:
         )
 
     mapping = await _load_mapping_for_tenant_payload(request, tenant_id=tenant_id)
-    status, upstream, _ = await request.app["cgs_public_client"].request_json(
-        "GET",
-        "/api/v1/documents",
-        headers=canonical_upstream_headers(
-            request_id_value=rid,
-            api_key=str(mapping["zetherion_api_key"]),
-        ),
+    upstream_headers = canonical_upstream_headers(
+        request_id_value=rid,
+        api_key=str(mapping["zetherion_api_key"]),
+    )
+    status, upstream, _ = await _public_request_json(
+        request,
+        method="GET",
+        path="/api/v1/documents",
+        headers=upstream_headers,
+        typed_method="list_documents",
+        typed_kwargs={"headers": upstream_headers},
     )
     if status >= 400:
-        raise _map_upstream_error(status, upstream)
-    return success_response(rid, upstream)
+        raise map_upstream_error(status=status, payload=upstream)
+    return success_response(rid, _normalize_document_payload(upstream))
 
 
 async def handle_documents_get(request: web.Request) -> web.Response:
@@ -722,17 +1000,21 @@ async def handle_documents_get(request: web.Request) -> web.Response:
 
     mapping = await _load_mapping_for_tenant_payload(request, tenant_id=tenant_id)
     document_id = request.match_info["document_id"]
-    status, upstream, _ = await request.app["cgs_public_client"].request_json(
-        "GET",
-        f"/api/v1/documents/{document_id}",
-        headers=canonical_upstream_headers(
-            request_id_value=rid,
-            api_key=str(mapping["zetherion_api_key"]),
-        ),
+    upstream_headers = canonical_upstream_headers(
+        request_id_value=rid,
+        api_key=str(mapping["zetherion_api_key"]),
+    )
+    status, upstream, _ = await _public_request_json(
+        request,
+        method="GET",
+        path=f"/api/v1/documents/{document_id}",
+        headers=upstream_headers,
+        typed_method="get_document",
+        typed_kwargs={"document_id": document_id, "headers": upstream_headers},
     )
     if status >= 400:
-        raise _map_upstream_error(status, upstream)
-    return success_response(rid, upstream)
+        raise map_upstream_error(status=status, payload=upstream)
+    return success_response(rid, _normalize_document_payload(upstream))
 
 
 async def _proxy_document_binary(
@@ -752,13 +1034,21 @@ async def _proxy_document_binary(
     mapping = await _load_mapping_for_tenant_payload(request, tenant_id=tenant_id)
     document_id = request.match_info["document_id"]
 
-    status, payload, upstream_headers = await request.app["cgs_public_client"].request_raw(
-        "GET",
-        f"/api/v1/documents/{document_id}/{suffix}",
-        headers=canonical_upstream_headers(
-            request_id_value=rid,
-            api_key=str(mapping["zetherion_api_key"]),
-        ),
+    request_headers = canonical_upstream_headers(
+        request_id_value=rid,
+        api_key=str(mapping["zetherion_api_key"]),
+    )
+    status, payload, upstream_headers = await _public_request_raw(
+        request,
+        method="GET",
+        path=f"/api/v1/documents/{document_id}/{suffix}",
+        headers=request_headers,
+        typed_method="get_document_binary",
+        typed_kwargs={
+            "document_id": document_id,
+            "suffix": suffix,
+            "headers": request_headers,
+        },
     )
     if status >= 400:
         detail: Any
@@ -766,7 +1056,7 @@ async def _proxy_document_binary(
             detail = json.loads(payload.decode("utf-8", errors="ignore"))
         except Exception:
             detail = payload.decode("utf-8", errors="ignore")
-        raise _map_upstream_error(status, detail)
+        raise map_upstream_error(status=status, payload=detail)
 
     headers = {}
     for key in ("Content-Type", "Content-Disposition", "Cache-Control"):
@@ -800,18 +1090,51 @@ async def handle_documents_reindex(request: web.Request) -> web.Response:
         ) from exc
 
     mapping = await _load_mapping_for_tenant_payload(request, tenant_id=payload.tenant_id)
+    enforce_mutation_rate_limit(
+        request,
+        cgs_tenant_id=payload.tenant_id,
+        family="documents",
+    )
     document_id = request.match_info["document_id"]
-    status, upstream, _ = await request.app["cgs_public_client"].request_json(
-        "POST",
-        f"/api/v1/documents/{document_id}/index",
-        headers=canonical_upstream_headers(
-            request_id_value=rid,
-            api_key=str(mapping["zetherion_api_key"]),
-        ),
+    idem_key, idem_fp, cached = await _idempotency_check(
+        request,
+        cgs_tenant_id=payload.tenant_id,
+        payload={"document_id": document_id, **payload.model_dump(mode="json")},
+    )
+    if cached is not None:
+        response = web.json_response(cached["body"], status=cached["status"])
+        response.headers["X-Idempotent-Replay"] = "true"
+        return response
+
+    upstream_headers = canonical_upstream_headers(
+        request_id_value=rid,
+        api_key=str(mapping["zetherion_api_key"]),
+    )
+    status, upstream, _ = await _public_request_json(
+        request,
+        method="POST",
+        path=f"/api/v1/documents/{document_id}/index",
+        headers=upstream_headers,
+        typed_method="reindex_document",
+        typed_kwargs={"document_id": document_id, "headers": upstream_headers},
     )
     if status >= 400:
-        raise _map_upstream_error(status, upstream)
-    return success_response(rid, upstream)
+        raise map_upstream_error(status=status, payload=upstream)
+    data = _normalize_document_payload(upstream)
+    envelope = {
+        "request_id": rid,
+        "data": data,
+        "error": None,
+    }
+    await _save_idempotency(
+        request,
+        cgs_tenant_id=payload.tenant_id,
+        idempotency_key=idem_key,
+        request_fingerprint=idem_fp,
+        response_status=200,
+        response_body=envelope,
+    )
+    return web.json_response(envelope)
 
 
 async def handle_documents_rag_query(request: web.Request) -> web.Response:
@@ -829,19 +1152,23 @@ async def handle_documents_rag_query(request: web.Request) -> web.Response:
         ) from exc
 
     mapping = await _load_mapping_for_tenant_payload(request, tenant_id=payload.tenant_id)
-    upstream_body = payload.model_dump(mode="json", exclude={"tenant_id"})
+    upstream_body = _build_rag_upstream_body(request, payload)
 
-    status, upstream, _ = await request.app["cgs_public_client"].request_json(
-        "POST",
-        "/api/v1/rag/query",
-        headers=canonical_upstream_headers(
-            request_id_value=rid,
-            api_key=str(mapping["zetherion_api_key"]),
-        ),
+    upstream_headers = canonical_upstream_headers(
+        request_id_value=rid,
+        api_key=str(mapping["zetherion_api_key"]),
+    )
+    status, upstream, _ = await _public_request_json(
+        request,
+        method="POST",
+        path="/api/v1/rag/query",
+        headers=upstream_headers,
         json_body=upstream_body,
+        typed_method="rag_query",
+        typed_kwargs={"headers": upstream_headers, "payload": upstream_body},
     )
     if status >= 400:
-        raise _map_upstream_error(status, upstream)
+        raise map_upstream_error(status=status, payload=upstream)
     return success_response(rid, upstream)
 
 
@@ -857,17 +1184,21 @@ async def handle_model_providers(request: web.Request) -> web.Response:
         )
 
     mapping = await _load_mapping_for_tenant_payload(request, tenant_id=tenant_id)
-    status, upstream, _ = await request.app["cgs_public_client"].request_json(
-        "GET",
-        "/api/v1/models/providers",
-        headers=canonical_upstream_headers(
-            request_id_value=rid,
-            api_key=str(mapping["zetherion_api_key"]),
-        ),
+    upstream_headers = canonical_upstream_headers(
+        request_id_value=rid,
+        api_key=str(mapping["zetherion_api_key"]),
+    )
+    status, upstream, _ = await _public_request_json(
+        request,
+        method="GET",
+        path="/api/v1/models/providers",
+        headers=upstream_headers,
+        typed_method="list_model_providers",
+        typed_kwargs={"headers": upstream_headers},
     )
     if status >= 400:
-        raise _map_upstream_error(status, upstream)
-    return success_response(rid, upstream)
+        raise map_upstream_error(status=status, payload=upstream)
+    return success_response(rid, _normalize_provider_catalog(upstream))
 
 
 def register_runtime_routes(app: web.Application) -> None:

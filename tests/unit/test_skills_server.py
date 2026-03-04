@@ -1,6 +1,11 @@
 """Tests for skills server."""
 
+import base64
+import hashlib
+import hmac
+import json
 import os
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -41,6 +46,31 @@ def mock_registry():
     registry.get_system_prompt_fragments.return_value = ["fragment1"]
     registry.list_intents.return_value = {"intent1": "skill1"}
     return registry
+
+
+def _admin_headers(
+    *,
+    signing_secret: str,
+    actor_sub: str = "operator-1",
+    request_id: str = "req-test",
+    change_ticket_id: str | None = None,
+) -> dict[str, str]:
+    payload = {
+        "actor_sub": actor_sub,
+        "actor_roles": ["operator"],
+        "request_id": request_id,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "nonce": uuid4().hex,
+        "change_ticket_id": change_ticket_id,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    encoded = base64.urlsafe_b64encode(canonical.encode("utf-8")).decode("ascii").rstrip("=")
+    signature = hmac.new(
+        signing_secret.encode("utf-8"),
+        encoded.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return {"X-Admin-Actor": encoded, "X-Admin-Signature": signature}
 
 
 class TestSkillsServerAuth:
@@ -853,6 +883,563 @@ class TestSecretsEndpoints:
             params={"deleted_by": "not-int"},
         )
         assert resp.status == 400
+
+
+class TestTenantAdminEndpoints:
+    """Tests for tenant-admin API endpoints (/admin/tenants/*)."""
+
+    @pytest.fixture
+    def tenant_admin_manager(self):
+        mgr = MagicMock()
+        mgr.list_discord_users = AsyncMock(return_value=[{"discord_user_id": 1, "role": "admin"}])
+        mgr.upsert_discord_user = AsyncMock(return_value={"discord_user_id": 2, "role": "user"})
+        mgr.delete_discord_user = AsyncMock(return_value=True)
+        mgr.update_discord_user_role = AsyncMock(return_value=True)
+        mgr.list_discord_bindings = AsyncMock(return_value=[])
+        mgr.put_guild_binding = AsyncMock(return_value={"guild_id": 10, "channel_id": None})
+        mgr.put_channel_binding = AsyncMock(return_value={"guild_id": 10, "channel_id": 20})
+        mgr.delete_channel_binding = AsyncMock(return_value=True)
+        mgr.list_settings = AsyncMock(return_value={"models": {"default_provider": "groq"}})
+        mgr.set_setting = AsyncMock(return_value=None)
+        mgr.delete_setting = AsyncMock(return_value=True)
+        mgr.list_secret_metadata = AsyncMock(
+            return_value=[{"name": "OPENAI_API_KEY", "version": 2}]
+        )
+        mgr.set_secret = AsyncMock(return_value={"name": "OPENAI_API_KEY", "version": 3})
+        mgr.delete_secret = AsyncMock(return_value=True)
+        mgr.list_audit = AsyncMock(return_value=[{"action": "tenant_secret_upsert"}])
+        mgr.get_email_provider_config = AsyncMock(
+            return_value={
+                "provider": "google",
+                "redirect_uri": "https://cgs.example.com/callback",
+                "enabled": True,
+                "has_client_id": True,
+                "has_client_secret": True,
+            }
+        )
+        mgr.put_email_provider_config = AsyncMock(
+            return_value={
+                "provider": "google",
+                "redirect_uri": "https://cgs.example.com/callback",
+                "enabled": True,
+                "has_client_id": True,
+                "has_client_secret": True,
+            }
+        )
+        mgr.create_email_oauth_start = AsyncMock(
+            return_value={
+                "provider": "google",
+                "auth_url": "https://accounts.google.com/o/oauth2/v2/auth?state=abc",
+                "state": "abc",
+                "expires_at": "2026-03-04T00:00:00+00:00",
+            }
+        )
+        mgr.exchange_google_oauth_code = AsyncMock(
+            return_value={"account_id": "acc-1", "email_address": "ops@example.com"}
+        )
+        mgr.list_email_accounts = AsyncMock(
+            return_value=[
+                {"account_id": "acc-1", "email_address": "ops@example.com", "status": "connected"}
+            ]
+        )
+        mgr.patch_email_account = AsyncMock(
+            return_value={
+                "account_id": "acc-1",
+                "email_address": "ops@example.com",
+                "status": "degraded",
+            }
+        )
+        mgr.delete_email_account = AsyncMock(return_value=True)
+        mgr.sync_email_account = AsyncMock(return_value={"job_id": "job-1", "status": "succeeded"})
+        mgr.list_email_critical_items = AsyncMock(
+            return_value=[{"item_id": "crit-1", "severity": "high"}]
+        )
+        mgr.list_email_insights = AsyncMock(return_value=[{"insight_id": "ins-1"}])
+        mgr.reindex_email_insights = AsyncMock(return_value={"reindexed": 1, "scanned": 1})
+        mgr.list_google_calendars = AsyncMock(
+            return_value=[{"id": "primary", "summary": "Primary"}]
+        )
+        mgr.set_email_primary_calendar = AsyncMock(
+            return_value={"account_id": "acc-1", "primary_calendar_id": "primary"}
+        )
+        return mgr
+
+    @pytest.fixture
+    async def admin_client(self, mock_registry, tenant_admin_manager):
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="test-secret",
+            tenant_admin_manager=tenant_admin_manager,
+        )
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as test_client:
+            yield test_client
+
+    async def test_tenant_admin_requires_actor_envelope(self, admin_client):
+        resp = await admin_client.get(
+            "/admin/tenants/11111111-1111-1111-1111-111111111111/discord-users",
+            headers={"X-API-Secret": "test-secret"},
+        )
+        assert resp.status == 401
+        data = await resp.json()
+        assert "signature" in data["error"].lower()
+
+    async def test_tenant_admin_rejects_replayed_nonce(self, admin_client):
+        headers = {"X-API-Secret": "test-secret"}
+        headers.update(_admin_headers(signing_secret="test-secret"))
+        path = "/admin/tenants/11111111-1111-1111-1111-111111111111/discord-users"
+
+        first = await admin_client.get(path, headers=headers)
+        assert first.status == 200
+        second = await admin_client.get(path, headers=headers)
+        assert second.status == 401
+        data = await second.json()
+        assert "replayed" in data["error"].lower()
+
+    async def test_tenant_admin_list_users_success(self, admin_client, tenant_admin_manager):
+        headers = {"X-API-Secret": "test-secret"}
+        headers.update(_admin_headers(signing_secret="test-secret"))
+        resp = await admin_client.get(
+            "/admin/tenants/11111111-1111-1111-1111-111111111111/discord-users",
+            headers=headers,
+        )
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["users"][0]["role"] == "admin"
+        tenant_admin_manager.list_discord_users.assert_awaited_once()
+
+    async def test_tenant_admin_put_secret_success(self, admin_client, tenant_admin_manager):
+        headers = {"X-API-Secret": "test-secret"}
+        headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg_1"))
+        resp = await admin_client.put(
+            "/admin/tenants/11111111-1111-1111-1111-111111111111/secrets/OPENAI_API_KEY",
+            headers=headers,
+            json={"value": "sk-live", "description": "api key"},
+        )
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["ok"] is True
+        assert data["secret"]["name"] == "OPENAI_API_KEY"
+        tenant_admin_manager.set_secret.assert_awaited_once()
+
+    async def test_tenant_admin_invalid_payload_returns_400(self, admin_client):
+        headers = {"X-API-Secret": "test-secret"}
+        headers.update(_admin_headers(signing_secret="test-secret"))
+        resp = await admin_client.put(
+            "/admin/tenants/11111111-1111-1111-1111-111111111111/discord-bindings/channels/20",
+            headers=headers,
+            json={"priority": 1},
+        )
+        assert resp.status == 400
+
+    async def test_tenant_admin_matrix_success_endpoints(self, admin_client, tenant_admin_manager):
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+
+        async def _call(method: str, path: str, json_payload: dict | None = None):
+            headers = {"X-API-Secret": "test-secret"}
+            headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg-1"))
+            kwargs = {"headers": headers}
+            if json_payload is not None:
+                kwargs["json"] = json_payload
+            return await getattr(admin_client, method)(path, **kwargs)
+
+        assert (await _call("get", f"/admin/tenants/{tenant_id}/discord-users")).status == 200
+        assert (
+            await _call(
+                "post",
+                f"/admin/tenants/{tenant_id}/discord-users",
+                {"discord_user_id": 33, "role": "admin"},
+            )
+        ).status == 201
+        assert (
+            await _call(
+                "delete",
+                f"/admin/tenants/{tenant_id}/discord-users/33",
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "patch",
+                f"/admin/tenants/{tenant_id}/discord-users/33/role",
+                {"role": "restricted"},
+            )
+        ).status == 200
+        assert (await _call("get", f"/admin/tenants/{tenant_id}/discord-bindings")).status == 200
+        assert (
+            await _call(
+                "put",
+                f"/admin/tenants/{tenant_id}/discord-bindings/guilds/10",
+                {"priority": 10, "is_active": True},
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "put",
+                f"/admin/tenants/{tenant_id}/discord-bindings/channels/20",
+                {"guild_id": 10, "priority": 1, "is_active": True},
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "delete",
+                f"/admin/tenants/{tenant_id}/discord-bindings/channels/20",
+            )
+        ).status == 200
+        assert (await _call("get", f"/admin/tenants/{tenant_id}/settings")).status == 200
+        assert (
+            await _call(
+                "put",
+                f"/admin/tenants/{tenant_id}/settings/models/default_provider",
+                {"value": "groq", "data_type": "string"},
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "delete",
+                f"/admin/tenants/{tenant_id}/settings/models/default_provider",
+            )
+        ).status == 200
+        assert (await _call("get", f"/admin/tenants/{tenant_id}/secrets")).status == 200
+        assert (
+            await _call(
+                "delete",
+                f"/admin/tenants/{tenant_id}/secrets/OPENAI_API_KEY",
+            )
+        ).status == 200
+        assert (await _call("get", f"/admin/tenants/{tenant_id}/audit?limit=50")).status == 200
+
+        tenant_admin_manager.upsert_discord_user.assert_awaited_once()
+        tenant_admin_manager.delete_discord_user.assert_awaited_once()
+        tenant_admin_manager.update_discord_user_role.assert_awaited_once()
+        tenant_admin_manager.put_guild_binding.assert_awaited_once()
+        tenant_admin_manager.put_channel_binding.assert_awaited_once()
+        tenant_admin_manager.delete_channel_binding.assert_awaited_once()
+        tenant_admin_manager.set_setting.assert_awaited_once()
+        tenant_admin_manager.delete_setting.assert_awaited_once()
+        tenant_admin_manager.delete_secret.assert_awaited_once()
+        tenant_admin_manager.list_audit.assert_awaited_once()
+
+    async def test_tenant_admin_email_matrix_success(self, admin_client, tenant_admin_manager):
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+
+        async def _call(method: str, path: str, json_payload: dict | None = None):
+            headers = {"X-API-Secret": "test-secret"}
+            headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg-1"))
+            kwargs = {"headers": headers}
+            if json_payload is not None:
+                kwargs["json"] = json_payload
+            return await getattr(admin_client, method)(path, **kwargs)
+
+        assert (
+            await _call(
+                "get",
+                f"/admin/tenants/{tenant_id}/email/providers/google/oauth-app",
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "put",
+                f"/admin/tenants/{tenant_id}/email/providers/google/oauth-app",
+                {
+                    "redirect_uri": "https://cgs.example.com/callback",
+                    "client_id": "client-id",
+                    "client_secret": "client-secret",
+                    "enabled": True,
+                },
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "post",
+                f"/admin/tenants/{tenant_id}/email/oauth/google/start",
+                {"provider": "google"},
+            )
+        ).status == 201
+        assert (
+            await _call(
+                "post",
+                f"/admin/tenants/{tenant_id}/email/oauth/google/exchange",
+                {"code": "abc", "state": "state-1"},
+            )
+        ).status == 200
+        assert (await _call("get", f"/admin/tenants/{tenant_id}/email/accounts")).status == 200
+        assert (
+            await _call(
+                "patch",
+                f"/admin/tenants/{tenant_id}/email/accounts/acc-1",
+                {"status": "degraded"},
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "post",
+                f"/admin/tenants/{tenant_id}/email/accounts/acc-1/sync",
+                {"direction": "bi_directional"},
+            )
+        ).status == 200
+        assert (await _call("get", f"/admin/tenants/{tenant_id}/email/critical")).status == 200
+        assert (await _call("get", f"/admin/tenants/{tenant_id}/email/insights")).status == 200
+        assert (
+            await _call(
+                "post",
+                f"/admin/tenants/{tenant_id}/email/insights/reindex",
+                {"insight_type": "critical_email"},
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "get",
+                f"/admin/tenants/{tenant_id}/email/calendars?account_id=acc-1",
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "put",
+                f"/admin/tenants/{tenant_id}/email/accounts/acc-1/calendar-primary",
+                {"calendar_id": "primary"},
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "delete",
+                f"/admin/tenants/{tenant_id}/email/accounts/acc-1",
+            )
+        ).status == 200
+
+        tenant_admin_manager.put_email_provider_config.assert_awaited_once()
+        tenant_admin_manager.create_email_oauth_start.assert_awaited_once()
+        tenant_admin_manager.exchange_google_oauth_code.assert_awaited_once()
+        tenant_admin_manager.list_email_accounts.assert_awaited_once()
+        tenant_admin_manager.patch_email_account.assert_awaited_once()
+        tenant_admin_manager.sync_email_account.assert_awaited_once()
+        tenant_admin_manager.list_email_critical_items.assert_awaited_once()
+        tenant_admin_manager.list_email_insights.assert_awaited_once()
+        tenant_admin_manager.reindex_email_insights.assert_awaited_once()
+        tenant_admin_manager.list_google_calendars.assert_awaited_once()
+        tenant_admin_manager.set_email_primary_calendar.assert_awaited_once()
+        tenant_admin_manager.delete_email_account.assert_awaited_once()
+
+    async def test_tenant_admin_validation_error_branches(self, admin_client):
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+
+        def _headers() -> dict[str, str]:
+            headers = {"X-API-Secret": "test-secret"}
+            headers.update(_admin_headers(signing_secret="test-secret"))
+            return headers
+
+        missing_role = await admin_client.patch(
+            f"/admin/tenants/{tenant_id}/discord-users/33/role",
+            headers=_headers(),
+            json={"role": ""},
+        )
+        assert missing_role.status == 400
+
+        missing_setting_value = await admin_client.put(
+            f"/admin/tenants/{tenant_id}/settings/models/default_provider",
+            headers=_headers(),
+            json={},
+        )
+        assert missing_setting_value.status == 400
+
+        invalid_binding_bool = await admin_client.put(
+            f"/admin/tenants/{tenant_id}/discord-bindings/guilds/10",
+            headers=_headers(),
+            json={"is_active": "maybe"},
+        )
+        assert invalid_binding_bool.status == 400
+
+        empty_secret = await admin_client.put(
+            f"/admin/tenants/{tenant_id}/secrets/OPENAI_API_KEY",
+            headers=_headers(),
+            json={"value": ""},
+        )
+        assert empty_secret.status == 400
+
+        invalid_limit = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/audit?limit=abc",
+            headers=_headers(),
+        )
+        assert invalid_limit.status == 400
+
+    async def test_tenant_admin_returns_501_when_manager_missing(self, mock_registry):
+        server = SkillsServer(
+            registry=mock_registry, api_secret="test-secret", tenant_admin_manager=None
+        )
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as client:
+            tenant_id = "11111111-1111-1111-1111-111111111111"
+
+            def _headers() -> dict[str, str]:
+                headers = {"X-API-Secret": "test-secret"}
+                headers.update(_admin_headers(signing_secret="test-secret"))
+                return headers
+
+            assert (
+                await client.get(f"/admin/tenants/{tenant_id}/discord-users", headers=_headers())
+            ).status == 501
+            assert (
+                await client.post(
+                    f"/admin/tenants/{tenant_id}/discord-users",
+                    headers=_headers(),
+                    json={"discord_user_id": 1},
+                )
+            ).status == 501
+            assert (
+                await client.delete(
+                    f"/admin/tenants/{tenant_id}/discord-users/1",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.patch(
+                    f"/admin/tenants/{tenant_id}/discord-users/1/role",
+                    headers=_headers(),
+                    json={"role": "admin"},
+                )
+            ).status == 501
+            assert (
+                await client.get(f"/admin/tenants/{tenant_id}/discord-bindings", headers=_headers())
+            ).status == 501
+            assert (
+                await client.put(
+                    f"/admin/tenants/{tenant_id}/discord-bindings/guilds/10",
+                    headers=_headers(),
+                    json={"priority": 1},
+                )
+            ).status == 501
+            assert (
+                await client.put(
+                    f"/admin/tenants/{tenant_id}/discord-bindings/channels/20",
+                    headers=_headers(),
+                    json={"guild_id": 10},
+                )
+            ).status == 501
+            assert (
+                await client.delete(
+                    f"/admin/tenants/{tenant_id}/discord-bindings/channels/20",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.get(f"/admin/tenants/{tenant_id}/settings", headers=_headers())
+            ).status == 501
+            assert (
+                await client.put(
+                    f"/admin/tenants/{tenant_id}/settings/models/default_provider",
+                    headers=_headers(),
+                    json={"value": "groq"},
+                )
+            ).status == 501
+            assert (
+                await client.delete(
+                    f"/admin/tenants/{tenant_id}/settings/models/default_provider",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.get(f"/admin/tenants/{tenant_id}/secrets", headers=_headers())
+            ).status == 501
+            assert (
+                await client.put(
+                    f"/admin/tenants/{tenant_id}/secrets/OPENAI_API_KEY",
+                    headers=_headers(),
+                    json={"value": "sk-live"},
+                )
+            ).status == 501
+            assert (
+                await client.delete(
+                    f"/admin/tenants/{tenant_id}/secrets/OPENAI_API_KEY",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.get(f"/admin/tenants/{tenant_id}/audit", headers=_headers())
+            ).status == 501
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/email/providers/google/oauth-app",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.put(
+                    f"/admin/tenants/{tenant_id}/email/providers/google/oauth-app",
+                    headers=_headers(),
+                    json={"redirect_uri": "https://cgs.example.com/callback"},
+                )
+            ).status == 501
+            assert (
+                await client.post(
+                    f"/admin/tenants/{tenant_id}/email/oauth/google/start",
+                    headers=_headers(),
+                    json={"provider": "google"},
+                )
+            ).status == 501
+            assert (
+                await client.post(
+                    f"/admin/tenants/{tenant_id}/email/oauth/google/exchange",
+                    headers=_headers(),
+                    json={"code": "abc", "state": "xyz"},
+                )
+            ).status == 501
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/email/accounts",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.patch(
+                    f"/admin/tenants/{tenant_id}/email/accounts/acc-1",
+                    headers=_headers(),
+                    json={"status": "connected"},
+                )
+            ).status == 501
+            assert (
+                await client.delete(
+                    f"/admin/tenants/{tenant_id}/email/accounts/acc-1",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.post(
+                    f"/admin/tenants/{tenant_id}/email/accounts/acc-1/sync",
+                    headers=_headers(),
+                    json={"direction": "bi_directional"},
+                )
+            ).status == 501
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/email/critical",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/email/insights",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.post(
+                    f"/admin/tenants/{tenant_id}/email/insights/reindex",
+                    headers=_headers(),
+                    json={},
+                )
+            ).status == 501
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/email/calendars?account_id=acc-1",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.put(
+                    f"/admin/tenants/{tenant_id}/email/accounts/acc-1/calendar-primary",
+                    headers=_headers(),
+                    json={"calendar_id": "primary"},
+                )
+            ).status == 501
 
 
 class TestServerHelperFunctions:

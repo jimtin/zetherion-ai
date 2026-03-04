@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
 import uuid
 from typing import Any
 
@@ -16,10 +20,12 @@ class SkillsClient:
         *,
         base_url: str,
         api_secret: str,
+        actor_signing_secret: str | None = None,
         timeout_seconds: float = 20.0,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._api_secret = api_secret
+        self._actor_signing_secret = (actor_signing_secret or api_secret).strip()
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._session: aiohttp.ClientSession | None = None
 
@@ -43,6 +49,92 @@ class SkillsClient:
             path = f"/{path}"
         return f"{self._base_url}{path}"
 
+    async def request_json(
+        self,
+        method: str,
+        path: str,
+        *,
+        headers: dict[str, str] | None = None,
+        json_body: dict[str, Any] | None = None,
+        query: dict[str, str] | None = None,
+    ) -> tuple[int, Any]:
+        """Call any Skills API route and return status + payload."""
+        merged_headers = {
+            "Content-Type": "application/json",
+            "X-API-Secret": self._api_secret,
+        }
+        if headers:
+            merged_headers.update(headers)
+
+        async with self.session.request(
+            method.upper(),
+            self._url(path),
+            headers=merged_headers,
+            json=json_body,
+            params=query,
+        ) as response:
+            try:
+                payload: Any = await response.json()
+            except Exception:
+                payload = await response.text()
+            return response.status, payload
+
+    def _build_actor_headers(self, actor: dict[str, Any]) -> dict[str, str]:
+        if not self._actor_signing_secret:
+            raise RuntimeError("Skills actor signing secret is not configured")
+        canonical = json.dumps(actor, sort_keys=True, separators=(",", ":"))
+        encoded_actor = (
+            base64.urlsafe_b64encode(canonical.encode("utf-8")).decode("ascii").rstrip("=")
+        )
+        signature = hmac.new(
+            self._actor_signing_secret.encode("utf-8"),
+            encoded_actor.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        return {
+            "X-Admin-Actor": encoded_actor,
+            "X-Admin-Signature": signature,
+        }
+
+    async def request_admin_json(
+        self,
+        method: str,
+        path: str,
+        *,
+        actor: dict[str, Any],
+        json_body: dict[str, Any] | None = None,
+        query: dict[str, str] | None = None,
+    ) -> tuple[int, Any]:
+        """Call tenant-admin Skills routes with signed actor context."""
+        headers = self._build_actor_headers(actor)
+        return await self.request_json(
+            method,
+            path,
+            headers=headers,
+            json_body=json_body,
+            query=query,
+        )
+
+    async def request_tenant_admin_json(
+        self,
+        method: str,
+        *,
+        tenant_id: str,
+        subpath: str,
+        actor: dict[str, Any],
+        json_body: dict[str, Any] | None = None,
+        query: dict[str, str] | None = None,
+    ) -> tuple[int, Any]:
+        """Call typed tenant-admin Skills routes with signed actor context."""
+        path_suffix = subpath if subpath.startswith("/") else f"/{subpath}"
+        return await self.request_admin_json(
+            method,
+            f"/admin/tenants/{tenant_id}{path_suffix}",
+            actor=actor,
+            json_body=json_body,
+            query=query,
+        )
+
     async def handle_intent(
         self,
         *,
@@ -60,13 +152,4 @@ class SkillsClient:
             "message": message,
             "context": context,
         }
-        headers = {
-            "Content-Type": "application/json",
-            "X-API-Secret": self._api_secret,
-        }
-        async with self.session.post(self._url("/handle"), headers=headers, json=body) as response:
-            try:
-                payload: Any = await response.json()
-            except Exception:
-                payload = await response.text()
-            return response.status, payload
+        return await self.request_json("POST", "/handle", json_body=body)

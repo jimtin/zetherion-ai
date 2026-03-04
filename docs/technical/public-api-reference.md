@@ -1,18 +1,25 @@
-# Public API Reference
+# Zetherion Upstream API Reference (Internal)
 
 ## Overview
 
-The Public API runs on port `8443` and is intended for external applications.
-It exposes tenant-scoped session and chat endpoints under `/api/v1`, plus
-optional tenant-scoped YouTube endpoints.
+The upstream API runs on port `8443` and is consumed by the CGS gateway.
+It exposes tenant-scoped session/chat/document/reporting capabilities under `/api/v1`,
+plus optional tenant-scoped YouTube endpoints.
 
-**Base URL:** `http://<host>:8443/api/v1`
+**Internal Base URL:** `http://<host>:8443/api/v1`
 
-This API is distinct from the internal Skills API (`:8080`).
+This API is distinct from the internal Skills API (`:8080`) and is not the public
+client contract. External clients must integrate through CGS `/service/ai/v1`.
 
 Maintenance note (2026-03-01):
 - Internal document upload route parsing/typing hardening was applied.
 - No public API contract changes were introduced.
+
+### Exposure Policy (Authoritative)
+
+- Zetherion `/api/v1` is upstream-only.
+- Direct client/browser access is not supported.
+- CGS `/service/ai/v1` is the only public API surface for client integrations.
 
 ---
 
@@ -56,7 +63,7 @@ Authorization: Bearer zt_sess_...
 
 ### GET /api/v1/health
 
-Public health probe. No authentication required.
+Upstream health probe. No authentication required.
 
 **Response 200:**
 
@@ -464,11 +471,11 @@ Return retrieval provider/model catalog for UI selectors.
 
 ```json
 {
-  "providers": ["groq", "openai", "claude"],
+  "providers": ["groq", "openai", "anthropic"],
   "defaults": {
     "groq": "llama-3.3-70b-versatile",
     "openai": "gpt-5.2",
-    "claude": "claude-sonnet-4-5-20250929"
+    "anthropic": "claude-sonnet-4-5-20250929"
   },
   "allowed_models": ["..."]
 }

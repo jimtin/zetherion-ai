@@ -1,5 +1,7 @@
 """Discord bot implementation."""
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import json
@@ -7,7 +9,7 @@ import re
 import time
 from datetime import time as clock_time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import discord
@@ -17,7 +19,7 @@ from discord import app_commands
 
 from zetherion_ai.agent.core import Agent
 from zetherion_ai.agent.inference import ProviderIssueAlert
-from zetherion_ai.config import get_dynamic, get_secret, get_settings
+from zetherion_ai.config import get_dynamic, get_dynamic_for_tenant, get_secret, get_settings
 from zetherion_ai.constants import KEEP_WARM_INTERVAL_SECONDS, MAX_DISCORD_MESSAGE_LENGTH
 from zetherion_ai.discord.security import (
     RateLimiter,
@@ -34,6 +36,9 @@ from zetherion_ai.queue.models import QueuePriority, QueueTaskType
 from zetherion_ai.scheduler.actions import ActionExecutor
 from zetherion_ai.scheduler.heartbeat import HeartbeatScheduler, QuietHoursWindow
 from zetherion_ai.utils import split_text_chunks
+
+if TYPE_CHECKING:
+    from zetherion_ai.admin import TenantAdminManager
 
 log = get_logger("zetherion_ai.discord.bot")
 
@@ -64,6 +69,7 @@ class ZetherionAIBot(discord.Client):
         memory: QdrantMemory,
         user_manager: UserManager | None = None,
         settings_manager: object | None = None,
+        tenant_admin_manager: TenantAdminManager | None = None,
         queue_manager: QueueManager | None = None,
     ) -> None:
         """Initialize the bot.
@@ -72,6 +78,7 @@ class ZetherionAIBot(discord.Client):
             memory: The memory system.
             user_manager: Optional UserManager for RBAC.
             settings_manager: Optional SettingsManager for runtime config.
+            tenant_admin_manager: Optional tenant-scoped admin manager.
             queue_manager: Optional QueueManager for priority message queue.
         """
         intents = discord.Intents.default()
@@ -86,6 +93,7 @@ class ZetherionAIBot(discord.Client):
         self._rate_limiter = RateLimiter()
         self._user_manager = user_manager
         self._settings_manager = settings_manager
+        self._tenant_admin_manager = tenant_admin_manager
         self._queue_manager = queue_manager
         self._keep_warm_task: asyncio.Task[None] | None = None
         self._provider_watch_task: asyncio.Task[None] | None = None
@@ -549,6 +557,121 @@ class ZetherionAIBot(discord.Client):
             guilds=len(self.guilds),
         )
 
+    @staticmethod
+    def _as_bool(value: Any, default: bool = False) -> bool:
+        """Parse bool-like dynamic setting values."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int | float):
+            return bool(value)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+        return default
+
+    async def _resolve_tenant_for_message(self, message: discord.Message) -> str | None:
+        """Resolve tenant from channel override then guild default."""
+        if self._tenant_admin_manager is None:
+            return None
+        guild_id = message.guild.id if message.guild is not None else None
+        channel_id = message.channel.id if hasattr(message.channel, "id") else None
+        try:
+            resolved = await self._tenant_admin_manager.resolve_tenant_for_discord(
+                guild_id=guild_id if isinstance(guild_id, int) else None,
+                channel_id=channel_id if isinstance(channel_id, int) else None,
+            )
+        except Exception:
+            log.exception("tenant_resolution_failed", guild_id=guild_id, channel_id=channel_id)
+            return None
+        return resolved
+
+    async def _is_message_user_allowed(
+        self,
+        *,
+        message: discord.Message,
+        is_dm: bool,
+    ) -> bool:
+        """Enforce tenant-aware allowlist when enabled, with global fallback."""
+        user_id = message.author.id
+        if is_dm:
+            if self._user_manager is None:
+                return True
+            return await self._user_manager.is_allowed(user_id)
+
+        tenant_id = await self._resolve_tenant_for_message(message)
+        if tenant_id is not None and self._tenant_admin_manager is not None:
+            tenant_enforcement = self._as_bool(
+                get_dynamic_for_tenant(
+                    tenant_id,
+                    "security",
+                    "tenant_admin_enforcement_enabled",
+                    get_dynamic("security", "tenant_admin_enforcement_enabled", False),
+                ),
+                default=False,
+            )
+            if tenant_enforcement:
+                return await self._tenant_admin_manager.is_discord_user_allowed(tenant_id, user_id)
+
+        if tenant_id is None and self._tenant_admin_manager is not None:
+            fail_closed = self._as_bool(get_dynamic("security", "tenant_admin_fail_closed", False))
+            if fail_closed:
+                return False
+
+        if self._user_manager is not None:
+            return await self._user_manager.is_allowed(user_id)
+        return True
+
+    async def _is_interaction_user_allowed(
+        self,
+        interaction: discord.Interaction[discord.Client],
+    ) -> bool:
+        """Allowlist check for slash-command interactions."""
+        user_id = interaction.user.id
+        if interaction.guild_id is None:
+            if self._user_manager is None:
+                return True
+            return await self._user_manager.is_allowed(user_id)
+
+        tenant_id: str | None = None
+        if self._tenant_admin_manager is not None:
+            try:
+                tenant_id = await self._tenant_admin_manager.resolve_tenant_for_discord(
+                    guild_id=interaction.guild_id,
+                    channel_id=interaction.channel_id,
+                )
+            except Exception:
+                log.exception(
+                    "tenant_resolution_failed_for_interaction",
+                    guild_id=interaction.guild_id,
+                    channel_id=interaction.channel_id,
+                )
+                tenant_id = None
+
+        if tenant_id is not None and self._tenant_admin_manager is not None:
+            tenant_enforcement = self._as_bool(
+                get_dynamic_for_tenant(
+                    tenant_id,
+                    "security",
+                    "tenant_admin_enforcement_enabled",
+                    get_dynamic("security", "tenant_admin_enforcement_enabled", False),
+                ),
+                default=False,
+            )
+            if tenant_enforcement:
+                return await self._tenant_admin_manager.is_discord_user_allowed(tenant_id, user_id)
+
+        if tenant_id is None and self._tenant_admin_manager is not None:
+            fail_closed = self._as_bool(get_dynamic("security", "tenant_admin_fail_closed", False))
+            if fail_closed:
+                return False
+
+        if self._user_manager is not None:
+            return await self._user_manager.is_allowed(user_id)
+        return True
+
     async def on_message(self, message: discord.Message) -> None:
         """Handle incoming messages."""
         # Ignore own messages
@@ -598,7 +721,7 @@ class ZetherionAIBot(discord.Client):
         self._last_message_time = time.time()
         try:
             # Check allowlist
-            if self._user_manager and not await self._user_manager.is_allowed(message.author.id):
+            if not await self._is_message_user_allowed(message=message, is_dm=is_dm):
                 log.warning("user_not_allowed")
                 await message.reply(
                     "Sorry, you're not authorized to use this bot.",
@@ -1471,7 +1594,7 @@ class ZetherionAIBot(discord.Client):
 
         Returns True if request is allowed, False if blocked (response already sent).
         """
-        if self._user_manager and not await self._user_manager.is_allowed(interaction.user.id):
+        if not await self._is_interaction_user_allowed(interaction):
             await interaction.response.send_message(
                 "Sorry, you're not authorized to use this bot.",
                 ephemeral=True,
@@ -1677,7 +1800,7 @@ class ZetherionAIBot(discord.Client):
         interaction: discord.Interaction[discord.Client],
     ) -> None:
         """Handle /channels command - list accessible channels."""
-        if self._user_manager and not await self._user_manager.is_allowed(interaction.user.id):
+        if not await self._is_interaction_user_allowed(interaction):
             await interaction.response.send_message(
                 "Sorry, you're not authorized to use this bot.",
                 ephemeral=True,

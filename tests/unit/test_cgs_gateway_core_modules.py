@@ -59,6 +59,7 @@ def test_success_and_error_response_helpers() -> None:
         "error": {
             "code": "AI_BAD_REQUEST",
             "message": "bad input",
+            "retryable": False,
             "details": {"field": "tenant_id"},
         },
     }
@@ -73,6 +74,7 @@ def test_from_exception_maps_gateway_and_generic() -> None:
     assert _response_json(mapped)["error"] == {
         "code": "AI_AUTH_MISSING",
         "message": "missing",
+        "retryable": False,
         "details": {},
     }
 
@@ -81,6 +83,7 @@ def test_from_exception_maps_gateway_and_generic() -> None:
     assert _response_json(generic)["error"] == {
         "code": "AI_INTERNAL_ERROR",
         "message": "Unexpected gateway error",
+        "retryable": True,
         "details": {},
     }
 
