@@ -61,6 +61,12 @@ def _serialise_record(record: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _isoformat_if_datetime(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
 def _extract_json_object(raw: str) -> dict[str, Any]:
     """Best-effort JSON object extraction from model output."""
     text = raw.strip()
@@ -559,7 +565,7 @@ class SkillsServer:
         if revoked_at is not None:
             raise ValueError("Worker session is revoked")
         expires_at = session.get("expires_at")
-        if hasattr(expires_at, "timestamp") and expires_at <= now:
+        if isinstance(expires_at, datetime) and expires_at <= now:
             raise ValueError("Worker session is expired")
 
         expected_token_hash = str(session.get("token_hash") or "").strip().lower()
@@ -2398,7 +2404,7 @@ class SkillsServer:
             context={
                 "method": "POST",
                 "subpath": "/worker/v1/bootstrap",
-                "bootstrap_secret_valid": True,
+                "bootstrap_secret_valid": bootstrap_secret_valid,
             },
         )
         if not decision.allowed:
@@ -2453,11 +2459,7 @@ class SkillsServer:
                     "session_id": session.get("session_id"),
                     "token": session_token,
                     "signing_secret": signing_secret,
-                    "expires_at": (
-                        session.get("expires_at").isoformat()
-                        if hasattr(session.get("expires_at"), "isoformat")
-                        else session.get("expires_at")
-                    ),
+                    "expires_at": _isoformat_if_datetime(session.get("expires_at")),
                 },
             },
             status=201,
@@ -2514,7 +2516,7 @@ class SkillsServer:
             context={
                 "method": "POST",
                 "subpath": "/worker/v1/nodes/register",
-                "bootstrap_secret_valid": True,
+                "bootstrap_secret_valid": bool(session_ctx),
             },
         )
         if not decision.allowed:
@@ -2563,16 +2565,8 @@ class SkillsServer:
                     {
                         "token": rotated_token,
                         "signing_secret": rotated_signing_secret,
-                        "expires_at": (
-                            rotated.get("expires_at").isoformat()
-                            if hasattr(rotated.get("expires_at"), "isoformat")
-                            else rotated.get("expires_at")
-                        ),
-                        "rotated_at": (
-                            rotated.get("rotated_at").isoformat()
-                            if hasattr(rotated.get("rotated_at"), "isoformat")
-                            else rotated.get("rotated_at")
-                        ),
+                        "expires_at": _isoformat_if_datetime(rotated.get("expires_at")),
+                        "rotated_at": _isoformat_if_datetime(rotated.get("rotated_at")),
                     }
                 )
         except ValueError as exc:

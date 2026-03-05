@@ -6290,7 +6290,7 @@ class TenantAdminManager:
 
         async with self._pool.acquire() as conn, conn.transaction():
             node_row = await conn.fetchrow(
-                    """
+                """
                     INSERT INTO tenant_worker_nodes (
                         node_id,
                         tenant_id,
@@ -6330,14 +6330,14 @@ class TenantAdminManager:
                               created_at,
                               updated_at
                     """,
-                    node,
-                    tenant_id,
-                    node_name_value,
-                    node_status,
-                    health_status,
-                    json.dumps(metadata_json),
-                    audit_actor,
-                )
+                node,
+                tenant_id,
+                node_name_value,
+                node_status,
+                health_status,
+                json.dumps(metadata_json),
+                audit_actor,
+            )
             if node_row is None:
                 raise ValueError("Worker node already exists under a different tenant")
 
@@ -6592,7 +6592,7 @@ class TenantAdminManager:
         node_name_value = str(node_name or "").strip() or None
         async with self._pool.acquire() as conn, conn.transaction():
             updated = await conn.fetchrow(
-                    """
+                """
                     UPDATE tenant_worker_nodes
                     SET node_name = COALESCE($3, node_name),
                         status = CASE
@@ -6611,12 +6611,12 @@ class TenantAdminManager:
                       AND node_id = $2
                     RETURNING node_id
                     """,
-                    tenant_id,
-                    node,
-                    node_name_value,
-                    json.dumps(metadata_json),
-                    actor,
-                )
+                tenant_id,
+                node,
+                node_name_value,
+                json.dumps(metadata_json),
+                actor,
+            )
             if updated is None:
                 raise ValueError("Worker node not found")
 

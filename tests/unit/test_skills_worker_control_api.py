@@ -14,6 +14,11 @@ from uuid import uuid4
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
+from zetherion_ai.security.trust_policy import (
+    TrustActionClass,
+    TrustDecisionOutcome,
+    TrustPolicyDecision,
+)
 from zetherion_ai.skills.base import SkillResponse
 from zetherion_ai.skills.registry import SkillRegistry
 from zetherion_ai.skills.server import SkillsServer
@@ -46,14 +51,64 @@ def _admin_headers(*, signing_secret: str) -> dict[str, str]:
         "nonce": uuid4().hex,
         "actor_email": "ops@example.com",
     }
-    encoded = base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8")).decode("ascii").rstrip(
-        "="
+    encoded = (
+        base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8")).decode("ascii").rstrip("=")
     )
     signature = hmac.new(signing_secret.encode("utf-8"), encoded.encode("utf-8"), hashlib.sha256)
     return {
         "X-Admin-Actor": encoded,
         "X-Admin-Signature": signature.hexdigest(),
     }
+
+
+def _worker_headers(
+    *,
+    tenant_id: str,
+    node_id: str,
+    session_id: str,
+    token: str,
+    signing_secret: str,
+    raw_body: str,
+    nonce: str,
+    timestamp: str | None = None,
+) -> dict[str, str]:
+    ts = timestamp or str(int(time.time()))
+    return {
+        "Authorization": f"Bearer {token}",
+        "X-Worker-Session-Id": session_id,
+        "X-Worker-Timestamp": ts,
+        "X-Worker-Nonce": nonce,
+        "X-Worker-Signature": _sign_worker(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            timestamp=ts,
+            nonce=nonce,
+            raw_body=raw_body,
+            secret=signing_secret,
+        ),
+        "Content-Type": "application/json",
+    }
+
+
+def _decision(
+    *,
+    action: str,
+    allowed: bool,
+    status: int = 409,
+    code: str = "AI_TRUST_POLICY_GUARD_FAILED",
+    message: str = "denied",
+) -> TrustPolicyDecision:
+    return TrustPolicyDecision(
+        action=action,
+        action_class=TrustActionClass.SENSITIVE,
+        outcome=TrustDecisionOutcome.ALLOW if allowed else TrustDecisionOutcome.DENY,
+        status=200 if allowed else status,
+        code="AI_TRUST_POLICY_ALLOWED" if allowed else code,
+        message="allowed" if allowed else message,
+        details={},
+        requires_two_person=False,
+    )
 
 
 @pytest.fixture
@@ -130,6 +185,66 @@ def worker_manager() -> MagicMock:
 
 
 class TestSkillsWorkerControlAPI:
+    async def test_worker_health_and_bootstrap_guard_paths(
+        self,
+        mock_registry: SkillRegistry,
+        worker_manager: MagicMock,
+    ) -> None:
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        worker_manager.get_secret_cached = MagicMock(return_value="bootstrap-secret")
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="skills-secret",
+            tenant_admin_manager=worker_manager,
+        )
+        app = server.create_app()
+
+        async with TestClient(TestServer(app)) as client:
+            health = await client.get("/worker/v1/health")
+            assert health.status == 200
+
+            invalid_json = await client.post("/worker/v1/bootstrap", data="not-json")
+            assert invalid_json.status == 400
+
+            missing_tenant = await client.post(
+                "/worker/v1/bootstrap",
+                headers={"X-Worker-Bootstrap-Secret": "bootstrap-secret"},
+                json={"node_id": "node-1"},
+            )
+            assert missing_tenant.status == 400
+
+            invalid_secret = await client.post(
+                "/worker/v1/bootstrap",
+                headers={"X-Worker-Bootstrap-Secret": "wrong"},
+                json={"tenant_id": tenant_id, "node_id": "node-1"},
+            )
+            assert invalid_secret.status == 401
+
+            server._trust_policy_evaluator.evaluate = MagicMock(  # type: ignore[method-assign]
+                return_value=_decision(action="worker.register", allowed=False)
+            )
+            denied = await client.post(
+                "/worker/v1/bootstrap",
+                headers={"X-Worker-Bootstrap-Secret": "bootstrap-secret"},
+                json={"tenant_id": tenant_id, "node_id": "node-1"},
+            )
+            assert denied.status == 409
+            denied_payload = await denied.json()
+            assert denied_payload["code"] == "AI_TRUST_POLICY_GUARD_FAILED"
+
+            worker_manager.bootstrap_worker_node_session.side_effect = ValueError(
+                "metadata must be an object when provided"
+            )
+            server._trust_policy_evaluator.evaluate = MagicMock(  # type: ignore[method-assign]
+                return_value=_decision(action="worker.register", allowed=True)
+            )
+            metadata_bad = await client.post(
+                "/worker/v1/bootstrap",
+                headers={"X-Worker-Bootstrap-Secret": "bootstrap-secret"},
+                json={"tenant_id": tenant_id, "node_id": "node-1", "metadata": []},
+            )
+            assert metadata_bad.status == 400
+
     async def test_worker_bootstrap_register_heartbeat_claim_and_result(
         self,
         mock_registry: SkillRegistry,
@@ -341,6 +456,95 @@ class TestSkillsWorkerControlAPI:
         worker_manager.heartbeat_worker_node.assert_awaited_once()
         assert worker_manager.record_worker_job_event.await_count >= 3
 
+    async def test_worker_register_without_rotation_and_bad_timestamp(
+        self,
+        mock_registry: SkillRegistry,
+        worker_manager: MagicMock,
+    ) -> None:
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        node_id = "node-1"
+        session_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        token = "bootstrap-token"
+        signing_secret = "bootstrap-signing-secret"
+        worker_manager.get_worker_session_auth = AsyncMock(
+            side_effect=[
+                {
+                    "session_id": session_id,
+                    "token_hash": _hash_token(token),
+                    "signing_secret": signing_secret,
+                    "status": "registered",
+                    "health_status": "healthy",
+                    "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                    "revoked_at": None,
+                },
+                {
+                    "session_id": session_id,
+                    "token_hash": _hash_token(token),
+                    "signing_secret": signing_secret,
+                    "status": "registered",
+                    "health_status": "healthy",
+                    "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                    "revoked_at": None,
+                },
+            ]
+        )
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="skills-secret",
+            tenant_admin_manager=worker_manager,
+        )
+        app = server.create_app()
+
+        register_body = {
+            "tenant_id": tenant_id,
+            "node_id": node_id,
+            "capabilities": ["repo.patch"],
+            "rotate_credentials": False,
+        }
+        register_raw = json.dumps(register_body, separators=(",", ":"))
+
+        old_timestamp = str(int(time.time()) - 3600)
+        stale_headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token=token,
+            signing_secret=signing_secret,
+            raw_body=register_raw,
+            nonce="nonce-stale",
+            timestamp=old_timestamp,
+        )
+
+        valid_headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token=token,
+            signing_secret=signing_secret,
+            raw_body=register_raw,
+            nonce="nonce-register-no-rotate",
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            stale = await client.post(
+                "/worker/v1/nodes/register",
+                headers=stale_headers,
+                data=register_raw,
+            )
+            assert stale.status == 401
+
+            ok = await client.post(
+                "/worker/v1/nodes/register",
+                headers=valid_headers,
+                data=register_raw,
+            )
+            assert ok.status == 200
+            payload = await ok.json()
+            assert payload["session"]["session_id"] == session_id
+            assert "token" not in payload["session"]
+
+        worker_manager.rotate_worker_session_credentials.assert_not_awaited()
+
     async def test_worker_nonce_replay_rejected(
         self,
         mock_registry: SkillRegistry,
@@ -501,3 +705,658 @@ class TestSkillsWorkerControlAPI:
             assert response.status == 409
             payload = await response.json()
             assert payload["code"] in {"AI_TRUST_POLICY_GUARD_FAILED", "AI_APPROVAL_REQUIRED"}
+
+    async def test_worker_heartbeat_claim_result_and_admin_inventory_paths(
+        self,
+        mock_registry: SkillRegistry,
+        worker_manager: MagicMock,
+    ) -> None:
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        node_id = "node-1"
+        session_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        token = "rotated-token"
+        signing_secret = "rotated-signing-secret"
+        worker_manager.get_worker_session_auth = AsyncMock(
+            side_effect=[
+                {
+                    "session_id": session_id,
+                    "token_hash": _hash_token(token),
+                    "signing_secret": signing_secret,
+                    "status": "active",
+                    "health_status": "healthy",
+                    "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                    "revoked_at": None,
+                },
+                {
+                    "session_id": session_id,
+                    "token_hash": _hash_token(token),
+                    "signing_secret": signing_secret,
+                    "status": "quarantined",
+                    "health_status": "degraded",
+                    "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                    "revoked_at": None,
+                },
+                {
+                    "session_id": session_id,
+                    "token_hash": _hash_token(token),
+                    "signing_secret": signing_secret,
+                    "status": "active",
+                    "health_status": "healthy",
+                    "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                    "revoked_at": None,
+                },
+            ]
+        )
+        worker_manager.has_worker_capabilities = AsyncMock(side_effect=[False, True])
+        worker_manager.list_worker_nodes = AsyncMock(
+            return_value=[
+                {
+                    "tenant_id": tenant_id,
+                    "node_id": node_id,
+                    "status": "active",
+                    "health_status": "healthy",
+                    "metadata": {},
+                    "created_at": datetime.now(UTC),
+                    "updated_at": datetime.now(UTC),
+                }
+            ]
+        )
+        worker_manager.get_worker_node = AsyncMock(
+            side_effect=[
+                None,
+                {
+                    "tenant_id": tenant_id,
+                    "node_id": node_id,
+                    "status": "active",
+                    "health_status": "healthy",
+                    "capabilities": ["repo.patch"],
+                },
+            ]
+        )
+        worker_manager.set_worker_capabilities = AsyncMock(
+            return_value={
+                "tenant_id": tenant_id,
+                "node_id": node_id,
+                "status": "active",
+                "health_status": "healthy",
+                "capabilities": ["repo.patch", "repo.pr.open"],
+            }
+        )
+
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="skills-secret",
+            tenant_admin_manager=worker_manager,
+            admin_actor_secret="admin-secret",
+        )
+        app = server.create_app()
+
+        heartbeat_body = {"tenant_id": tenant_id, "node_id": "different-node"}
+        heartbeat_raw = json.dumps(heartbeat_body, separators=(",", ":"))
+        heartbeat_headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token=token,
+            signing_secret=signing_secret,
+            raw_body=heartbeat_raw,
+            nonce="nonce-heartbeat-mismatch",
+        )
+
+        claim_body = {"tenant_id": tenant_id, "required_capabilities": ["repo.patch"]}
+        claim_raw = json.dumps(claim_body, separators=(",", ":"))
+        claim_headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token=token,
+            signing_secret=signing_secret,
+            raw_body=claim_raw,
+            nonce="nonce-claim-denied",
+        )
+
+        result_body = {"tenant_id": tenant_id, "status": "succeeded"}
+        result_raw = json.dumps(result_body, separators=(",", ":"))
+        result_headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token=token,
+            signing_secret=signing_secret,
+            raw_body=result_raw,
+            nonce="nonce-result-ok",
+        )
+
+        def _auth_admin_headers() -> dict[str, str]:
+            headers = {"X-API-Secret": "skills-secret"}
+            headers.update(_admin_headers(signing_secret="admin-secret"))
+            return headers
+
+        real_evaluate = server._trust_policy_evaluator.evaluate
+
+        def _evaluate_override(*, tenant_id: str | None, action: str, context: dict | None = None):
+            if action == "worker.job.claim":
+                return _decision(action=action, allowed=False)
+            if action == "worker.job.complete":
+                return _decision(action=action, allowed=True)
+            return real_evaluate(tenant_id=tenant_id, action=action, context=context)
+
+        server._trust_policy_evaluator.evaluate = MagicMock(  # type: ignore[method-assign]
+            side_effect=_evaluate_override
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            heartbeat = await client.post(
+                f"/worker/v1/nodes/{node_id}/heartbeat",
+                headers=heartbeat_headers,
+                data=heartbeat_raw,
+            )
+            assert heartbeat.status == 400
+
+            denied_claim = await client.post(
+                f"/worker/v1/nodes/{node_id}/jobs/claim",
+                headers=claim_headers,
+                data=claim_raw,
+            )
+            assert denied_claim.status == 409
+
+            ok_result = await client.post(
+                f"/worker/v1/nodes/{node_id}/jobs/job-77/result",
+                headers=result_headers,
+                data=result_raw,
+            )
+            assert ok_result.status == 202
+
+            listed = await client.get(
+                f"/admin/tenants/{tenant_id}/workers/nodes?include_inactive=true&limit=20",
+                headers=_auth_admin_headers(),
+            )
+            assert listed.status == 200
+
+            missing = await client.get(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}",
+                headers=_auth_admin_headers(),
+            )
+            assert missing.status == 404
+
+            server._trust_policy_evaluator.evaluate = MagicMock(  # type: ignore[method-assign]
+                return_value=_decision(action="worker.capability.update", allowed=True)
+            )
+            updated = await client.put(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/capabilities",
+                headers=_auth_admin_headers(),
+                json={"capabilities": ["repo.patch", "repo.pr.open"], "explicitly_elevated": True},
+            )
+            assert updated.status == 200
+
+        worker_manager.list_worker_nodes.assert_awaited_once()
+        worker_manager.set_worker_capabilities.assert_awaited_once()
+
+    async def test_worker_routes_require_tenant_admin_manager(
+        self,
+        mock_registry: SkillRegistry,
+    ) -> None:
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="skills-secret",
+            tenant_admin_manager=None,
+            admin_actor_secret="admin-secret",
+        )
+        app = server.create_app()
+        admin_headers = {"X-API-Secret": "skills-secret"}
+        admin_headers.update(_admin_headers(signing_secret="admin-secret"))
+
+        async with TestClient(TestServer(app)) as client:
+            bootstrap = await client.post("/worker/v1/bootstrap", json={"tenant_id": "t"})
+            assert bootstrap.status == 501
+
+            register = await client.post("/worker/v1/nodes/register", json={"tenant_id": "t"})
+            assert register.status == 501
+
+            heartbeat = await client.post(
+                "/worker/v1/nodes/node-1/heartbeat", json={"tenant_id": "t"}
+            )
+            assert heartbeat.status == 501
+
+            claim = await client.post("/worker/v1/nodes/node-1/jobs/claim", json={"tenant_id": "t"})
+            assert claim.status == 501
+
+            result = await client.post(
+                "/worker/v1/nodes/node-1/jobs/job-1/result",
+                json={"tenant_id": "t"},
+            )
+            assert result.status == 501
+
+            admin_list = await client.get(
+                "/admin/tenants/11111111-1111-1111-1111-111111111111/workers/nodes",
+                headers=admin_headers,
+            )
+            assert admin_list.status == 501
+
+    async def test_worker_signature_validation_matrix(
+        self,
+        mock_registry: SkillRegistry,
+        worker_manager: MagicMock,
+    ) -> None:
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        node_id = "node-1"
+        session_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        token = "token-1"
+        signing_secret = "signing-secret-1"
+
+        body = {"tenant_id": tenant_id, "required_capabilities": []}
+        raw = json.dumps(body, separators=(",", ":"))
+        valid_timestamp = str(int(time.time()))
+        valid_session = {
+            "session_id": session_id,
+            "token_hash": _hash_token(token),
+            "signing_secret": signing_secret,
+            "status": "active",
+            "health_status": "healthy",
+            "expires_at": datetime.now(UTC) + timedelta(hours=1),
+            "revoked_at": None,
+        }
+
+        async def _post_claim(
+            *,
+            headers: dict[str, str],
+            session_payload: dict[str, object] | None = None,
+            has_caps: bool = True,
+        ) -> tuple[int, dict[str, object]]:
+            worker_manager.get_worker_session_auth = AsyncMock(return_value=session_payload)
+            worker_manager.has_worker_capabilities = AsyncMock(return_value=has_caps)
+            server = SkillsServer(
+                registry=mock_registry,
+                api_secret="skills-secret",
+                tenant_admin_manager=worker_manager,
+            )
+            app = server.create_app()
+            async with TestClient(TestServer(app)) as client:
+                response = await client.post(
+                    f"/worker/v1/nodes/{node_id}/jobs/claim",
+                    headers=headers,
+                    data=raw,
+                )
+                return response.status, await response.json()
+
+        missing_headers_status, _ = await _post_claim(
+            headers={"Content-Type": "application/json"},
+            session_payload=valid_session,
+        )
+        assert missing_headers_status == 400
+
+        bad_timestamp_headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token=token,
+            signing_secret=signing_secret,
+            raw_body=raw,
+            nonce="nonce-bad-ts",
+            timestamp="not-an-int",
+        )
+        bad_timestamp_status, _ = await _post_claim(
+            headers=bad_timestamp_headers,
+            session_payload=valid_session,
+        )
+        assert bad_timestamp_status == 400
+
+        expired_timestamp = str(int(time.time()) - 7200)
+        expired_headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token=token,
+            signing_secret=signing_secret,
+            raw_body=raw,
+            nonce="nonce-expired-ts",
+            timestamp=expired_timestamp,
+        )
+        expired_status, _ = await _post_claim(
+            headers=expired_headers,
+            session_payload=valid_session,
+        )
+        assert expired_status == 400
+
+        no_session_headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token=token,
+            signing_secret=signing_secret,
+            raw_body=raw,
+            nonce="nonce-no-session",
+            timestamp=valid_timestamp,
+        )
+        no_session_status, _ = await _post_claim(
+            headers=no_session_headers,
+            session_payload=None,
+        )
+        assert no_session_status == 400
+
+        revoked_session = dict(valid_session)
+        revoked_session["revoked_at"] = datetime.now(UTC)
+        revoked_headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token=token,
+            signing_secret=signing_secret,
+            raw_body=raw,
+            nonce="nonce-revoked",
+            timestamp=valid_timestamp,
+        )
+        revoked_status, _ = await _post_claim(
+            headers=revoked_headers,
+            session_payload=revoked_session,
+        )
+        assert revoked_status == 400
+
+        empty_hash_session = dict(valid_session)
+        empty_hash_session["token_hash"] = ""
+        empty_hash_headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token=token,
+            signing_secret=signing_secret,
+            raw_body=raw,
+            nonce="nonce-empty-hash",
+            timestamp=valid_timestamp,
+        )
+        empty_hash_status, _ = await _post_claim(
+            headers=empty_hash_headers,
+            session_payload=empty_hash_session,
+        )
+        assert empty_hash_status == 400
+
+        missing_secret_session = dict(valid_session)
+        missing_secret_session["signing_secret"] = ""
+        missing_secret_headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token=token,
+            signing_secret=signing_secret,
+            raw_body=raw,
+            nonce="nonce-missing-secret",
+            timestamp=valid_timestamp,
+        )
+        missing_secret_status, _ = await _post_claim(
+            headers=missing_secret_headers,
+            session_payload=missing_secret_session,
+        )
+        assert missing_secret_status == 400
+
+        mismatched_token_headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token="wrong-token",
+            signing_secret=signing_secret,
+            raw_body=raw,
+            nonce="nonce-wrong-token",
+            timestamp=valid_timestamp,
+        )
+        mismatched_token_status, _ = await _post_claim(
+            headers=mismatched_token_headers,
+            session_payload=valid_session,
+        )
+        assert mismatched_token_status == 400
+
+        invalid_signature_headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token=token,
+            signing_secret=signing_secret,
+            raw_body=raw,
+            nonce="nonce-bad-signature",
+            timestamp=valid_timestamp,
+        )
+        invalid_signature_headers["X-Worker-Signature"] = "bad-signature"
+        invalid_signature_status, _ = await _post_claim(
+            headers=invalid_signature_headers,
+            session_payload=valid_session,
+        )
+        assert invalid_signature_status == 400
+
+        replay_headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token=token,
+            signing_secret=signing_secret,
+            raw_body=raw,
+            nonce="nonce-replay-check",
+            timestamp=valid_timestamp,
+        )
+        worker_manager.get_worker_session_auth = AsyncMock(return_value=valid_session)
+        worker_manager.has_worker_capabilities = AsyncMock(return_value=True)
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="skills-secret",
+            tenant_admin_manager=worker_manager,
+        )
+        app = server.create_app()
+        async with TestClient(TestServer(app)) as client:
+            first = await client.post(
+                f"/worker/v1/nodes/{node_id}/jobs/claim",
+                headers=replay_headers,
+                data=raw,
+            )
+            assert first.status == 200
+            second = await client.post(
+                f"/worker/v1/nodes/{node_id}/jobs/claim",
+                headers=replay_headers,
+                data=raw,
+            )
+            assert second.status == 409
+
+    async def test_worker_and_admin_error_branches(
+        self,
+        mock_registry: SkillRegistry,
+        worker_manager: MagicMock,
+    ) -> None:
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        node_id = "node-1"
+        session_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        token = "token-1"
+        signing_secret = "signing-secret-1"
+        session_payload = {
+            "session_id": session_id,
+            "token_hash": _hash_token(token),
+            "signing_secret": signing_secret,
+            "status": "active",
+            "health_status": "healthy",
+            "expires_at": datetime.now(UTC) + timedelta(hours=1),
+            "revoked_at": None,
+        }
+        worker_manager.get_worker_session_auth = AsyncMock(return_value=session_payload)
+
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="skills-secret",
+            tenant_admin_manager=worker_manager,
+            admin_actor_secret="admin-secret",
+        )
+        app = server.create_app()
+
+        register_body = {
+            "tenant_id": tenant_id,
+            "node_id": node_id,
+            "capabilities": ["repo.patch"],
+            "rotate_credentials": False,
+        }
+        register_raw = json.dumps(register_body, separators=(",", ":"))
+
+        heartbeat_body = {"tenant_id": tenant_id, "health_status": "healthy"}
+        heartbeat_raw = json.dumps(heartbeat_body, separators=(",", ":"))
+
+        result_body = {"tenant_id": tenant_id, "status": "succeeded"}
+        result_raw = json.dumps(result_body, separators=(",", ":"))
+
+        def _fresh_admin_headers() -> dict[str, str]:
+            headers = {"X-API-Secret": "skills-secret"}
+            headers.update(_admin_headers(signing_secret="admin-secret"))
+            return headers
+
+        async with TestClient(TestServer(app)) as client:
+            first_register = await client.post(
+                "/worker/v1/nodes/register",
+                headers=_worker_headers(
+                    tenant_id=tenant_id,
+                    node_id=node_id,
+                    session_id=session_id,
+                    token=token,
+                    signing_secret=signing_secret,
+                    raw_body=register_raw,
+                    nonce="nonce-register-replay",
+                ),
+                data=register_raw,
+            )
+            assert first_register.status == 200
+
+            replay_register = await client.post(
+                "/worker/v1/nodes/register",
+                headers=_worker_headers(
+                    tenant_id=tenant_id,
+                    node_id=node_id,
+                    session_id=session_id,
+                    token=token,
+                    signing_secret=signing_secret,
+                    raw_body=register_raw,
+                    nonce="nonce-register-replay",
+                ),
+                data=register_raw,
+            )
+            assert replay_register.status == 409
+
+            worker_manager.register_worker_node = AsyncMock(side_effect=Exception("boom"))
+            register_error = await client.post(
+                "/worker/v1/nodes/register",
+                headers=_worker_headers(
+                    tenant_id=tenant_id,
+                    node_id=node_id,
+                    session_id=session_id,
+                    token=token,
+                    signing_secret=signing_secret,
+                    raw_body=register_raw,
+                    nonce="nonce-register-error",
+                ),
+                data=register_raw,
+            )
+            assert register_error.status == 502
+
+            worker_manager.register_worker_node = AsyncMock(
+                return_value={
+                    "tenant_id": tenant_id,
+                    "node_id": node_id,
+                    "status": "active",
+                    "health_status": "healthy",
+                    "capabilities": ["repo.patch"],
+                }
+            )
+            worker_manager.heartbeat_worker_node = AsyncMock(
+                return_value={
+                    "tenant_id": tenant_id,
+                    "node_id": node_id,
+                    "status": "active",
+                    "health_status": "healthy",
+                    "metadata": {},
+                }
+            )
+            worker_manager.record_worker_job_event = AsyncMock(side_effect=RuntimeError("replay"))
+            heartbeat_runtime = await client.post(
+                f"/worker/v1/nodes/{node_id}/heartbeat",
+                headers=_worker_headers(
+                    tenant_id=tenant_id,
+                    node_id=node_id,
+                    session_id=session_id,
+                    token=token,
+                    signing_secret=signing_secret,
+                    raw_body=heartbeat_raw,
+                    nonce="nonce-heartbeat-runtime",
+                ),
+                data=heartbeat_raw,
+            )
+            assert heartbeat_runtime.status == 409
+
+            worker_manager.record_worker_job_event = AsyncMock(return_value={"event_id": 1})
+            worker_manager.heartbeat_worker_node = AsyncMock(side_effect=Exception("boom"))
+            heartbeat_error = await client.post(
+                f"/worker/v1/nodes/{node_id}/heartbeat",
+                headers=_worker_headers(
+                    tenant_id=tenant_id,
+                    node_id=node_id,
+                    session_id=session_id,
+                    token=token,
+                    signing_secret=signing_secret,
+                    raw_body=heartbeat_raw,
+                    nonce="nonce-heartbeat-error",
+                ),
+                data=heartbeat_raw,
+            )
+            assert heartbeat_error.status == 502
+
+            worker_manager.heartbeat_worker_node = AsyncMock(
+                return_value={
+                    "tenant_id": tenant_id,
+                    "node_id": node_id,
+                    "status": "active",
+                    "health_status": "healthy",
+                    "metadata": {},
+                }
+            )
+            worker_manager.has_worker_capabilities = AsyncMock(return_value=True)
+            worker_manager.record_worker_job_event = AsyncMock(side_effect=RuntimeError("replay"))
+            result_runtime = await client.post(
+                f"/worker/v1/nodes/{node_id}/jobs/job-1/result",
+                headers=_worker_headers(
+                    tenant_id=tenant_id,
+                    node_id=node_id,
+                    session_id=session_id,
+                    token=token,
+                    signing_secret=signing_secret,
+                    raw_body=result_raw,
+                    nonce="nonce-result-runtime",
+                ),
+                data=result_raw,
+            )
+            assert result_runtime.status == 409
+
+            worker_manager.record_worker_job_event = AsyncMock(side_effect=Exception("boom"))
+            result_error = await client.post(
+                f"/worker/v1/nodes/{node_id}/jobs/job-2/result",
+                headers=_worker_headers(
+                    tenant_id=tenant_id,
+                    node_id=node_id,
+                    session_id=session_id,
+                    token=token,
+                    signing_secret=signing_secret,
+                    raw_body=result_raw,
+                    nonce="nonce-result-error",
+                ),
+                data=result_raw,
+            )
+            assert result_error.status == 502
+
+            invalid_limit = await client.get(
+                f"/admin/tenants/{tenant_id}/workers/nodes?limit=bad",
+                headers=_fresh_admin_headers(),
+            )
+            assert invalid_limit.status == 400
+
+            worker_manager.get_worker_node = AsyncMock(side_effect=ValueError("bad node"))
+            get_error = await client.get(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}",
+                headers=_fresh_admin_headers(),
+            )
+            assert get_error.status == 400
+
+            put_invalid_json = await client.put(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/capabilities",
+                headers={**_fresh_admin_headers(), "Content-Type": "application/json"},
+                data="{",
+            )
+            assert put_invalid_json.status == 400
