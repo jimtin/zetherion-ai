@@ -3,7 +3,7 @@ info:
   title: CGS AI Gateway API
   version: 1.0.0
   description: Public CGS `/service/ai/v1` contract mapped to internal Zetherion upstream APIs.
-  x-maintenance-note: "2026-03-05: added internal tenant-admin messaging control-plane routes with trust-policy/approval semantics."
+  x-maintenance-note: "2026-03-05: added internal tenant-admin messaging/security hardening routes with trust-policy approval, export/delete, and dashboard semantics."
 servers:
   - url: https://{host}
     variables:
@@ -955,6 +955,62 @@ paths:
       responses:
         '200':
           description: Messaging message list envelope
+    delete:
+      summary: Delete tenant messaging messages under policy-gated filters
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMessagingDeleteRequest'
+      responses:
+        '200':
+          description: Messaging message deletion result envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages/export:
+    get:
+      summary: Export tenant messaging messages under scoped filters
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+            default: whatsapp
+        - name: chat_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: sender_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: direction
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [inbound, outbound, system]
+        - name: include_expired
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5000
+      responses:
+        '200':
+          description: Messaging export envelope
   /service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages/{chat_id}/send:
     post:
       summary: Queue tenant outbound messaging send
@@ -974,6 +1030,73 @@ paths:
       responses:
         '202':
           description: Messaging send queued
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/security/events:
+    get:
+      summary: List tenant security events for policy/security observability
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: event_type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [low, medium, high, critical]
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+      responses:
+        '200':
+          description: Tenant security event list envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/security/dashboard:
+    get:
+      summary: Tenant security dashboard aggregate for alerts and red-team checks
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: window_hours
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 720
+        - name: recent_limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Tenant security dashboard envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/automerge/execute:
+    post:
+      summary: Execute guarded autonomous PR orchestration
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAutomergeExecuteRequest'
+      responses:
+        '200':
+          description: Autonomous merge executed or blocked with details
   /service/ai/v1/internal/admin/tenants/{tenant_id}/changes:
     post:
       summary: Submit a pending admin change for review
@@ -1532,6 +1655,108 @@ components:
         metadata:
           type: object
           additionalProperties: true
+        explicitly_elevated:
+          type: boolean
+          default: false
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminMessagingDeleteRequest:
+      type: object
+      properties:
+        provider:
+          type: string
+          default: whatsapp
+        chat_id:
+          type: string
+          nullable: true
+        sender_id:
+          type: string
+          nullable: true
+        before_created_at:
+          type: string
+          nullable: true
+          description: ISO-8601 timestamp (UTC preferred)
+        message_ids:
+          type: array
+          items:
+            type: string
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 20000
+          default: 5000
+        explicitly_elevated:
+          type: boolean
+          default: false
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminAutomergeExecuteRequest:
+      type: object
+      required: [repository]
+      properties:
+        repository:
+          type: string
+          description: Target repository in owner/repo format
+        base_branch:
+          type: string
+          default: main
+        source_ref:
+          type: string
+          nullable: true
+        head_branch:
+          type: string
+          nullable: true
+        pr_title:
+          type: string
+          nullable: true
+        pr_body:
+          type: string
+        merge_method:
+          type: string
+          enum: [merge, squash, rebase]
+          default: squash
+        commit_title:
+          type: string
+          nullable: true
+        commit_message:
+          type: string
+          nullable: true
+        required_checks:
+          type: array
+          items:
+            type: string
+        allowed_paths:
+          type: array
+          items:
+            type: string
+        forbidden_actions:
+          type: array
+          items:
+            type: string
+        requested_actions:
+          type: array
+          items:
+            type: string
+        max_changed_files:
+          type: integer
+          minimum: 1
+        max_additions:
+          type: integer
+          minimum: 1
+        max_deletions:
+          type: integer
+          minimum: 1
+        post_merge_validation_passed:
+          type: boolean
+          default: true
+        branch_guard_passed:
+          type: boolean
+          default: false
+        risk_guard_passed:
+          type: boolean
+          default: false
         explicitly_elevated:
           type: boolean
           default: false

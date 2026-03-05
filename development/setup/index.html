@@ -2856,6 +2856,9 @@
 <li><strong>Verification</strong> -- tests Qdrant and Ollama connectivity, displays container status</li>
 </ol>
 <p>First run takes approximately 3--9 minutes depending on the backend choice. Subsequent runs take roughly 30 seconds.</p>
+<p>Before first production deployment, set <code>OWNER_USER_ID</code> (and optionally
+<code>ALLOWED_USER_IDS</code>) in <code>.env</code> to ensure deterministic RBAC bootstrap. Keep
+<code>ALLOW_ALL_USERS=false</code> unless you intentionally run temporary bootstrap mode.</p>
 <p><strong>Windows management commands</strong>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">.\</span><span class="n">status</span><span class="p">.</span><span class="n">ps1</span>          <span class="c"># Service health and container summary</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="p">.\</span><span class="n">stop</span><span class="p">.</span><span class="n">ps1</span>            <span class="c"># Graceful shutdown (data preserved)</span>

@@ -1576,6 +1576,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#added-segment-7-security-hardening-observability-and-rollout-2026-03-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 7 Security Hardening, Observability, and Rollout (2026-03-05)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#changed-trust-policy-gate-for-internal-admin-actions-2026-03-05" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1613,6 +1624,17 @@
     <span class="md-ellipsis">
       
         Added - Execution Ledger + Overnight Continuation Loop (2026-03-05)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-autonomous-pr-auto-merge-guardrail-engine-2026-03-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Autonomous PR + Auto-Merge Guardrail Engine (2026-03-05)
       
     </span>
   </a>
@@ -2477,6 +2499,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#added-segment-7-security-hardening-observability-and-rollout-2026-03-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 7 Security Hardening, Observability, and Rollout (2026-03-05)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#changed-trust-policy-gate-for-internal-admin-actions-2026-03-05" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2514,6 +2547,17 @@
     <span class="md-ellipsis">
       
         Added - Execution Ledger + Overnight Continuation Loop (2026-03-05)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-autonomous-pr-auto-merge-guardrail-engine-2026-03-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Autonomous PR + Auto-Merge Guardrail Engine (2026-03-05)
       
     </span>
   </a>
@@ -3237,6 +3281,29 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 </blockquote>
 <hr />
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="added-segment-7-security-hardening-observability-and-rollout-2026-03-05">Added - Segment 7 Security Hardening, Observability, and Rollout (2026-03-05)<a class="headerlink" href="#added-segment-7-security-hardening-observability-and-rollout-2026-03-05" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added tenant security event persistence + aggregation in tenant admin storage:</li>
+<li><code>tenant_security_events</code> table and supporting indexes</li>
+<li>high-severity (<code>high|critical</code>) alert logging on ingest</li>
+<li>dashboard aggregation API support (<code>window</code>, severity totals, top event types, recent events)</li>
+<li>Added Skills internal hardening routes:</li>
+<li><code>GET /admin/tenants/{tenant_id}/messaging/messages/export</code></li>
+<li><code>DELETE /admin/tenants/{tenant_id}/messaging/messages</code></li>
+<li><code>GET /admin/tenants/{tenant_id}/security/events</code></li>
+<li><code>GET /admin/tenants/{tenant_id}/security/dashboard</code></li>
+<li>Added CGS internal admin wrappers for those hardening routes:</li>
+<li><code>GET /service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages/export</code></li>
+<li><code>DELETE /service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages</code></li>
+<li><code>GET /service/ai/v1/internal/admin/tenants/{tenant_id}/security/events</code></li>
+<li><code>GET /service/ai/v1/internal/admin/tenants/{tenant_id}/security/dashboard</code></li>
+<li>Added trust-policy rollout-stage gating for sensitive action namespaces:</li>
+<li>messaging actions check <code>security.messaging_rollout_stage</code> (<code>disabled|canary|general</code>) and optional <code>security.messaging_canary_enabled</code></li>
+<li>automerge actions check <code>security.automerge_rollout_stage</code> (<code>disabled|canary|general</code>) and optional <code>security.automerge_canary_enabled</code></li>
+<li>Added <code>messaging.delete</code> trust-policy action with approval/two-person semantics.</li>
+<li>Added security-event telemetry wiring for bridge signature failures/replay detection and policy-denied ingest/send/automerge paths.</li>
+<li>Added key-rotation runbook coverage for bridge signing and admin actor secrets in the security model docs.</li>
+</ul>
 <h3 id="changed-trust-policy-gate-for-internal-admin-actions-2026-03-05">Changed - Trust Policy Gate for Internal Admin Actions (2026-03-05)<a class="headerlink" href="#changed-trust-policy-gate-for-internal-admin-actions-2026-03-05" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added a centralized trust-policy evaluator for sensitive/critical actions across messaging and autonomous merge control paths.</li>
@@ -3303,6 +3370,26 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 <li><code>POST /admin/tenants/{tenant_id}/execution/plans/{plan_id}/pause</code></li>
 <li><code>POST /admin/tenants/{tenant_id}/execution/plans/{plan_id}/resume</code></li>
 <li><code>POST /admin/tenants/{tenant_id}/execution/plans/{plan_id}/cancel</code></li>
+</ul>
+<h3 id="added-autonomous-pr-auto-merge-guardrail-engine-2026-03-05">Added - Autonomous PR + Auto-Merge Guardrail Engine (2026-03-05)<a class="headerlink" href="#added-autonomous-pr-auto-merge-guardrail-engine-2026-03-05" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added deterministic autonomous merge orchestration module:</li>
+<li>branch ensure/create (<code>codex/*</code>)</li>
+<li>pull request create/reuse</li>
+<li>guardrail evaluation (allowed paths, diff thresholds, forbidden actions)</li>
+<li>required check-run gating before merge</li>
+<li>merge execution + rollback-required escalation state</li>
+<li>Added Skills internal route:</li>
+<li><code>POST /admin/tenants/{tenant_id}/automerge/execute</code></li>
+<li>applies trust-policy gate (<code>automerge.execute</code>) and records admin audit events.</li>
+<li>Added CGS internal admin route:</li>
+<li><code>POST /service/ai/v1/internal/admin/tenants/{tenant_id}/automerge/execute</code></li>
+<li>forwards signed actor context and propagates change-ticket apply/failed status.</li>
+<li>Extended GitHub API client with orchestration primitives:</li>
+<li>git ref get/create + branch ensure</li>
+<li>pull request create/find + changed-files listing</li>
+<li>commit check-run listing for required-check gating.</li>
+<li>Extended execution-step normalization to preserve per-step metadata (<code>steps[].metadata</code>) for deterministic executor routing in plan-ledger workflows.</li>
 </ul>
 <h3 id="changed-windows-deploy-resilience-registration-signal-cleanup-2026-03-05">Changed - Windows Deploy Resilience Registration Signal Cleanup (2026-03-05)<a class="headerlink" href="#changed-windows-deploy-resilience-registration-signal-cleanup-2026-03-05" title="Permanent link">&para;</a></h3>
 <ul>

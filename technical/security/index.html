@@ -1064,6 +1064,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#key-rotation-runbook" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Rotation Runbook
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Key Rotation Runbook">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bridge-signing-secret-whatsapp_bridge_signing_secret" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bridge Signing Secret (WHATSAPP_BRIDGE_SIGNING_SECRET)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skills-api-admin-actor-secret" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skills API + Admin Actor Secret
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#emergency-kill-switch-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Emergency Kill Switch Validation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#related-docs" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2088,6 +2138,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#key-rotation-runbook" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Rotation Runbook
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Key Rotation Runbook">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bridge-signing-secret-whatsapp_bridge_signing_secret" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bridge Signing Secret (WHATSAPP_BRIDGE_SIGNING_SECRET)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skills-api-admin-actor-secret" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skills API + Admin Actor Secret
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#emergency-kill-switch-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Emergency Kill Switch Validation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#related-docs" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2276,6 +2376,30 @@ It uses a shared secret (<code>X-Updater-Secret</code>) and persisted updater st
 <li>Restrict Discord access with allowlist/RBAC.</li>
 <li>Keep <code>SECURITY_BYPASS_ENABLED=false</code> outside tests.</li>
 <li>Review public API credentials and tenant key lifecycle.</li>
+</ul>
+<hr />
+<h2 id="key-rotation-runbook">Key Rotation Runbook<a class="headerlink" href="#key-rotation-runbook" title="Permanent link">&para;</a></h2>
+<h3 id="bridge-signing-secret-whatsapp_bridge_signing_secret">Bridge Signing Secret (<code>WHATSAPP_BRIDGE_SIGNING_SECRET</code>)<a class="headerlink" href="#bridge-signing-secret-whatsapp_bridge_signing_secret" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Generate a new high-entropy secret in the tenant secrets control plane.</li>
+<li>Update tenant secret storage (<code>WHATSAPP_BRIDGE_SIGNING_SECRET</code>) through approved admin flow.</li>
+<li>Restart or reload services that cache tenant secrets (skills + local bridge sidecar).</li>
+<li>Validate bridge ingestion with a newly signed event.</li>
+<li>Confirm old signatures are rejected and replay attempts are logged as security events.</li>
+</ol>
+<h3 id="skills-api-admin-actor-secret">Skills API + Admin Actor Secret<a class="headerlink" href="#skills-api-admin-actor-secret" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Rotate <code>SKILLS_API_SECRET</code> in secret storage.</li>
+<li>Rotate actor-signing secret used between CGS and Skills (<code>ZETHERION_SKILLS_ACTOR_SIGNING_SECRET</code> or inherited secret).</li>
+<li>Deploy CGS and Skills with the new pair in a coordinated window.</li>
+<li>Verify admin envelope signatures pass and nonce replay checks still block duplicates.</li>
+</ol>
+<h3 id="emergency-kill-switch-validation">Emergency Kill Switch Validation<a class="headerlink" href="#emergency-kill-switch-validation" title="Permanent link">&para;</a></h3>
+<p>After rotations or incident response, validate immediate control-plane halt behavior:</p>
+<ul>
+<li><code>MESSAGING_INGESTION_KILL_SWITCH=true</code> blocks bridge ingest (<code>423 AI_KILL_SWITCH_ACTIVE</code>).</li>
+<li><code>MESSAGING_SEND_KILL_SWITCH=true</code> blocks send and delete mutation paths.</li>
+<li><code>AUTO_MERGE_EXECUTION_KILL_SWITCH=true</code> blocks autonomous merge execution.</li>
 </ul>
 <hr />
 <h2 id="related-docs">Related Docs<a class="headerlink" href="#related-docs" title="Permanent link">&para;</a></h2>

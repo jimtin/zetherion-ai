@@ -2840,7 +2840,7 @@
 <p>Embed Links</p>
 </li>
 <li>
-<p><strong>User Allowlist:</strong> If <code>ALLOWED_USER_IDS</code> is set in <code>.env</code>, the user must be included. Leave it empty to allow all users.</p>
+<p><strong>User Allowlist / Owner Bootstrap:</strong> Set <code>OWNER_USER_ID</code> and <code>ALLOWED_USER_IDS</code> in <code>.env</code> for production-safe access control. <code>ALLOW_ALL_USERS=true</code> should only be used as a temporary, explicitly acknowledged bootstrap mode.</p>
 </li>
 <li>
 <p><strong>Rate Limits:</strong> The default rate limit is 10 messages per 60 seconds per user. If you are hitting this limit, wait before sending more messages.</p>
@@ -2900,7 +2900,9 @@
 - <code>ANTHROPIC_API_KEY</code> -- for Claude Sonnet 4.5 (complex tasks)
 - <code>OPENAI_API_KEY</code> -- for GPT-5.2 (alternative complex tasks)
 - <code>GITHUB_TOKEN</code> -- for GitHub integration
-- <code>ALLOWED_USER_IDS</code> -- defaults to allow all users
+- <code>OWNER_USER_ID</code> -- recommended production owner ID bootstrap
+- <code>ALLOWED_USER_IDS</code> -- optional comma-separated additional allowlist
+- <code>ALLOW_ALL_USERS</code> -- defaults to <code>false</code>; set <code>true</code> only for temporary bootstrap
 - <code>QDRANT_HOST</code> -- defaults to "qdrant" in Docker Compose
 - <code>QDRANT_PORT</code> -- defaults to 6333</p>
 <p>If your <code>.env</code> file is missing, create one from the template:

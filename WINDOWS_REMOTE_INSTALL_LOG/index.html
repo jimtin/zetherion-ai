@@ -2024,7 +2024,7 @@
 <strong>Target Machine</strong>: Windows 11 - "Computer-of-awesome" (<WINDOWS_HOST_IP>)
 <strong>Windows User</strong>: james
 <strong>Method</strong>: SSH remoting from macOS to Windows PowerShell
-<strong>Result</strong>: SUCCESS - All 6 services healthy, bot connected to Discord</p>
+<strong>Result</strong>: SUCCESS - Core blue/green runtime healthy, bot connected to Discord</p>
 <hr />
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
 <h3 id="on-windows-one-time-setup-run-as-administrator">On Windows (one-time setup, run as Administrator)<a class="headerlink" href="#on-windows-one-time-setup-run-as-administrator" title="Permanent link">&para;</a></h3>
@@ -2117,11 +2117,11 @@
 <h3 id="step-5-build-and-start-services">Step 5: Build and Start Services<a class="headerlink" href="#step-5-build-and-start-services" title="Permanent link">&para;</a></h3>
 <p><div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nv">$SSH</span><span class="w"> </span><span class="s2">&quot;cd C:\ZetherionAI; docker compose up -d --build&quot;</span>
 </code></pre></div>
-This pulls base images (~3.2GB for Ollama x2, ~200MB for Postgres, ~150MB for Qdrant), builds the bot and skills images, and starts all 6 containers.</p>
+This pulls base images (~3.2GB for Ollama x2, ~200MB for Postgres, ~150MB for Qdrant), builds the runtime images, and starts the full blue/green service topology.</p>
 <h3 id="step-6-verify-all-services-healthy">Step 6: Verify All Services Healthy<a class="headerlink" href="#step-6-verify-all-services-healthy" title="Permanent link">&para;</a></h3>
 <p><div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nv">$SSH</span><span class="w"> </span><span class="s2">&quot;cd C:\ZetherionAI; docker compose ps --format &#39;table {{.Name}}\t{{.Status}}&#39;&quot;</span>
 </code></pre></div>
-Expected: All 6 containers show <code>(healthy)</code>.</p>
+Expected: Core runtime containers report <code>Up</code> with <code>healthy</code> (or <code>no-healthcheck</code> where applicable).</p>
 <h3 id="step-7-pull-ollama-models">Step 7: Pull Ollama Models<a class="headerlink" href="#step-7-pull-ollama-models" title="Permanent link">&para;</a></h3>
 <p>These can be pulled in parallel:
 <div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="c1"># Router model (2.0GB)</span>
@@ -2160,7 +2160,7 @@ Look for: <code>"event": "bot_ready"</code> with your bot's username and guild c
 </code></pre></div>
 <h3 id="step-10-end-to-end-verification">Step 10: End-to-End Verification<a class="headerlink" href="#step-10-end-to-end-verification" title="Permanent link">&para;</a></h3>
 <p>Run this from a container to verify all service-to-service communication works:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="nv">$SSH</span><span class="w"> </span><span class="s2">&quot;docker exec zetherion-ai-skills python -c \&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="nv">$SSH</span><span class="w"> </span><span class="s2">&quot;docker exec zetherion-ai-skills-blue python -c \&quot;</span>
 <a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="s2">import urllib.request, json, time</span>
 <a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>
 <a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="s2">tests = [</span>
@@ -2171,7 +2171,7 @@ Look for: <code>"event": "bot_ready"</code> with your bot's username and guild c
 <a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a><span class="s2">    (&#39;Embeddings&#39;, &#39;http://ollama:11434/api/embed&#39;,</span>
 <a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a><span class="s2">     json.dumps({&#39;model&#39;:&#39;nomic-embed-text&#39;,&#39;input&#39;:&#39;test&#39;}).encode()),</span>
 <a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a><span class="s2">    (&#39;Qdrant&#39;, &#39;http://qdrant:6333/collections&#39;, None),</span>
-<a id="__codelineno-20-12" name="__codelineno-20-12" href="#__codelineno-20-12"></a><span class="s2">    (&#39;Skills&#39;, &#39;http://zetherion-ai-skills:8080/health&#39;, None),</span>
+<a id="__codelineno-20-12" name="__codelineno-20-12" href="#__codelineno-20-12"></a><span class="s2">    (&#39;Skills&#39;, &#39;http://zetherion-ai-skills-blue:8080/health&#39;, None),</span>
 <a id="__codelineno-20-13" name="__codelineno-20-13" href="#__codelineno-20-13"></a><span class="s2">]</span>
 <a id="__codelineno-20-14" name="__codelineno-20-14" href="#__codelineno-20-14"></a>
 <a id="__codelineno-20-15" name="__codelineno-20-15" href="#__codelineno-20-15"></a><span class="s2">for name, url, data in tests:</span>
@@ -2221,7 +2221,8 @@ Look for: <code>"event": "bot_ready"</code> with your bot's username and guild c
 <li><strong>Fix (immediate)</strong>: Insert the user directly into PostgreSQL:
   <div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="nv">$SSH</span><span class="w"> </span><span class="s2">&quot;docker exec zetherion-ai-postgres psql -U zetherion -d zetherion -c \&quot;INSERT INTO users (discord_user_id, role, added_by) VALUES (&lt;YOUR_DISCORD_ID&gt;, &#39;owner&#39;, &lt;YOUR_DISCORD_ID&gt;) ON CONFLICT DO NOTHING;\&quot;&quot;</span>
 </code></pre></div></li>
-<li><strong>Fix (prevent)</strong>: Set <code>ALLOWED_USER_IDS=&lt;your_discord_id&gt;</code> in <code>.env</code> BEFORE first <code>docker compose up</code>. The bootstrap only runs when the <code>users</code> table is empty.</li>
+<li><strong>Fix (prevent)</strong>: Set both <code>OWNER_USER_ID=&lt;your_discord_id&gt;</code> and <code>ALLOWED_USER_IDS=&lt;your_discord_id&gt;</code> in <code>.env</code> BEFORE first <code>docker compose up</code>. Avoid <code>ALLOW_ALL_USERS=true</code> for production.</li>
+<li><strong>Guardrail note</strong>: <code>start.ps1</code> now blocks first-run open access (<code>ALLOW_ALL_USERS=true</code> with no owner/allowlist) unless explicitly acknowledged.</li>
 <li><strong>How to get your Discord User ID</strong>: Enable Developer Mode in Discord Settings &gt; Advanced, then right-click your username &gt; "Copy User ID"</li>
 </ul>
 <h3 id="issue-6-ollama-warmup-404-on-first-start">Issue 6: Ollama Warmup 404 on First Start<a class="headerlink" href="#issue-6-ollama-warmup-404-on-first-start" title="Permanent link">&para;</a></h3>
@@ -2277,9 +2278,33 @@ Look for: <code>"event": "bot_ready"</code> with your bot's username and guild c
 </tr>
 <tr>
 <td>Skills</td>
-<td>zetherion-ai-skills</td>
+<td>zetherion-ai-skills-blue / zetherion-ai-skills-green</td>
 <td>healthy</td>
-<td>HTTP service on port 8080 (internal)</td>
+<td>Internal skills API blue/green</td>
+</tr>
+<tr>
+<td>Public API</td>
+<td>zetherion-ai-api-blue / zetherion-ai-api-green</td>
+<td>healthy</td>
+<td>Tenant public API blue/green</td>
+</tr>
+<tr>
+<td>CGS Gateway</td>
+<td>zetherion-ai-cgs-gateway-blue / zetherion-ai-cgs-gateway-green</td>
+<td>healthy</td>
+<td>Internal admin gateway blue/green</td>
+</tr>
+<tr>
+<td>Dev Agent</td>
+<td>zetherion-ai-dev-agent</td>
+<td>healthy</td>
+<td>Local sub-worker sidecar control plane</td>
+</tr>
+<tr>
+<td>Updater</td>
+<td>zetherion-ai-updater</td>
+<td>healthy</td>
+<td>Rollout/rollback sidecar</td>
 </tr>
 <tr>
 <td>Qdrant</td>
