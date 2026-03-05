@@ -435,6 +435,57 @@ class TestSkillsClient:
                 },
             )
 
+    @pytest.mark.asyncio
+    async def test_emit_announcement_event_success(self) -> None:
+        """emit_announcement_event() should post canonical payload."""
+        client = SkillsClient()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "ok": True,
+            "receipt": {
+                "status": "scheduled",
+                "event_id": "evt-123",
+            },
+        }
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.post = AsyncMock(return_value=mock_response)
+            mock_get.return_value = mock_http_client
+
+            result = await client.emit_announcement_event(
+                source="agent.inference",
+                category="provider.billing",
+                target_user_id=123,
+                title="Provider billing issue",
+                body="Top up credits.",
+                severity="high",
+                payload={"provider": "openai"},
+                fingerprint="openai:billing",
+                idempotency_key="provider-openai-billing-1",
+            )
+
+            assert result["ok"] is True
+            mock_http_client.post.assert_called_once_with(
+                "/announcements/events",
+                json={
+                    "source": "agent.inference",
+                    "category": "provider.billing",
+                    "severity": "high",
+                    "target_user_id": 123,
+                    "title": "Provider billing issue",
+                    "body": "Top up credits.",
+                    "payload": {"provider": "openai"},
+                    "channel": "discord_dm",
+                    "dedupe_window_minutes": 10,
+                    "state": "accepted",
+                    "fingerprint": "openai:billing",
+                    "idempotency_key": "provider-openai-billing-1",
+                },
+            )
+
 
 class TestCreateSkillsClient:
     """Tests for create_skills_client factory function."""
@@ -623,6 +674,48 @@ class TestSkillsClientAuthErrors:
                     changed_by=1,
                 )
 
+    @pytest.mark.asyncio
+    async def test_emit_announcement_auth_error(self) -> None:
+        """emit_announcement_event() should raise SkillsAuthError on 401."""
+        client = SkillsClient()
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.post = AsyncMock(return_value=mock_response)
+            mock_get.return_value = mock_http_client
+
+            with pytest.raises(SkillsAuthError, match="Authentication failed"):
+                await client.emit_announcement_event(
+                    source="test",
+                    category="skill.reminder",
+                    target_user_id=1,
+                    title="test",
+                    body="test",
+                )
+
+    @pytest.mark.asyncio
+    async def test_emit_announcement_authorization_error(self) -> None:
+        """emit_announcement_event() should raise SkillsAuthError on 403."""
+        client = SkillsClient()
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.post = AsyncMock(return_value=mock_response)
+            mock_get.return_value = mock_http_client
+
+            with pytest.raises(SkillsAuthError, match="Authorization failed"):
+                await client.emit_announcement_event(
+                    source="test",
+                    category="skill.reminder",
+                    target_user_id=1,
+                    title="test",
+                    body="test",
+                )
+
 
 class TestSkillsClientConnectionErrors:
     """Tests for connection error handling across client methods."""
@@ -678,6 +771,44 @@ class TestSkillsClientConnectionErrors:
 
             with pytest.raises(SkillsConnectionError, match="Unable to connect"):
                 await client.get_prompt_fragments("user1")
+
+    @pytest.mark.asyncio
+    async def test_emit_announcement_connection_error(self) -> None:
+        """emit_announcement_event() should raise SkillsConnectionError on ConnectError."""
+        client = SkillsClient()
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.post = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+            mock_get.return_value = mock_http_client
+
+            with pytest.raises(SkillsConnectionError, match="Unable to connect"):
+                await client.emit_announcement_event(
+                    source="test",
+                    category="skill.reminder",
+                    target_user_id=1,
+                    title="test",
+                    body="test",
+                )
+
+    @pytest.mark.asyncio
+    async def test_emit_announcement_request_error(self) -> None:
+        """emit_announcement_event() should raise SkillsClientError on RequestError."""
+        client = SkillsClient()
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.post = AsyncMock(side_effect=httpx.RequestError("Timeout"))
+            mock_get.return_value = mock_http_client
+
+            with pytest.raises(SkillsClientError, match="Emit announcement failed"):
+                await client.emit_announcement_event(
+                    source="test",
+                    category="skill.reminder",
+                    target_user_id=1,
+                    title="test",
+                    body="test",
+                )
 
 
 class TestSkillsClientRecreation:

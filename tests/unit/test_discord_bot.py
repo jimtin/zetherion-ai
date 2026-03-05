@@ -2355,7 +2355,7 @@ class TestBotRuntimeHelpers:
         assert owner_id is None
 
     @pytest.mark.asyncio
-    async def test_handle_provider_issue_alert_sends_owner_dm(self, bot):
+    async def test_handle_provider_issue_alert_emits_announcement(self, bot):
         alert = SimpleNamespace(
             provider=SimpleNamespace(value="openai"),
             issue_type="billing",
@@ -2364,8 +2364,6 @@ class TestBotRuntimeHelpers:
             fail_count=3,
             error="Payment required",
         )
-        user = AsyncMock()
-        user.send = AsyncMock()
 
         with (
             patch.object(bot, "is_ready", return_value=True),
@@ -2375,15 +2373,23 @@ class TestBotRuntimeHelpers:
                 new_callable=AsyncMock,
                 return_value=42,
             ),
-            patch.object(bot, "get_user", return_value=user),
+            patch.object(
+                bot,
+                "emit_announcement_event",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as emit_announcement,
         ):
             await bot._handle_provider_issue_alert(alert)
 
-        user.send.assert_awaited_once()
-        sent_message = user.send.call_args[0][0]
-        assert "Billing/Credit issue detected" in sent_message
-        assert "Provider: `OPENAI`" in sent_message
-        assert "Top up credits" in sent_message
+        emit_announcement.assert_awaited_once()
+        payload = emit_announcement.await_args.args[0]
+        assert payload["category"] == "provider.billing"
+        assert payload["severity"] == "high"
+        assert payload["target_user_id"] == 42
+        assert payload["title"] == "Billing/Credit issue detected"
+        assert "Provider: `OPENAI`" in payload["body"]
+        assert "Top up credits" in payload["body"]
 
     @pytest.mark.asyncio
     async def test_handle_provider_issue_alert_skips_when_owner_missing(self, bot):
@@ -2405,6 +2411,175 @@ class TestBotRuntimeHelpers:
             ),
         ):
             await bot._handle_provider_issue_alert(alert)
+
+    @pytest.mark.asyncio
+    async def test_emit_announcement_event_success(self, bot):
+        skills_client = AsyncMock()
+        skills_client.emit_announcement_event = AsyncMock(
+            return_value={
+                "ok": True,
+                "receipt": {"status": "scheduled", "event_id": "evt-1"},
+            }
+        )
+        bot._agent = SimpleNamespace(
+            _get_skills_client=AsyncMock(return_value=skills_client),
+        )
+
+        result = await bot.emit_announcement_event(
+            {
+                "source": "skill.test",
+                "category": "skill.reminder",
+                "severity": "normal",
+                "target_user_id": 123,
+                "title": "Reminder",
+                "body": "Do the thing.",
+            }
+        )
+
+        assert result is True
+        skills_client.emit_announcement_event.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_emit_announcement_event_accepts_string_target_user_id(self, bot):
+        skills_client = AsyncMock()
+        skills_client.emit_announcement_event = AsyncMock(
+            return_value={"ok": True, "receipt": {"status": "scheduled", "event_id": "evt-1"}}
+        )
+        bot._agent = SimpleNamespace(
+            _get_skills_client=AsyncMock(return_value=skills_client),
+        )
+
+        result = await bot.emit_announcement_event(
+            {
+                "source": "skill.test",
+                "category": "skill.reminder",
+                "severity": "normal",
+                "target_user_id": "123",
+                "title": "Reminder",
+                "body": "Do the thing.",
+            }
+        )
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_emit_announcement_event_returns_false_without_agent(self, bot):
+        bot._agent = None
+        result = await bot.emit_announcement_event(
+            {
+                "source": "skill.test",
+                "category": "skill.reminder",
+                "target_user_id": 123,
+                "title": "Reminder",
+                "body": "Do the thing.",
+            }
+        )
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_emit_announcement_event_rejects_invalid_payload(self, bot):
+        result = await bot.emit_announcement_event(
+            {
+                "source": "",
+                "category": "skill.reminder",
+                "target_user_id": 123,
+                "title": "Reminder",
+                "body": "Do the thing.",
+            }
+        )
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_emit_announcement_event_rejects_non_numeric_target_user_id(self, bot):
+        bot._agent = AsyncMock()
+        result = await bot.emit_announcement_event(
+            {
+                "source": "skill.test",
+                "category": "skill.reminder",
+                "target_user_id": "abc",
+                "title": "Reminder",
+                "body": "Do the thing.",
+            }
+        )
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_emit_announcement_event_rejects_invalid_target_user_id(self, bot):
+        bot._agent = AsyncMock()
+        result = await bot.emit_announcement_event(
+            {
+                "source": "skill.test",
+                "category": "skill.reminder",
+                "target_user_id": True,
+                "title": "Reminder",
+                "body": "Do the thing.",
+            }
+        )
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_emit_announcement_event_rejects_unsupported_target_user_id_type(self, bot):
+        bot._agent = AsyncMock()
+        result = await bot.emit_announcement_event(
+            {
+                "source": "skill.test",
+                "category": "skill.reminder",
+                "target_user_id": {"id": 123},
+                "title": "Reminder",
+                "body": "Do the thing.",
+            }
+        )
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_emit_announcement_event_returns_false_without_skills_client(self, bot):
+        bot._agent = SimpleNamespace(_get_skills_client=AsyncMock(return_value=None))
+        result = await bot.emit_announcement_event(
+            {
+                "source": "skill.test",
+                "category": "skill.reminder",
+                "target_user_id": 123,
+                "title": "Reminder",
+                "body": "Do the thing.",
+            }
+        )
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_emit_announcement_event_handles_client_exception(self, bot):
+        skills_client = AsyncMock()
+        skills_client.emit_announcement_event = AsyncMock(side_effect=RuntimeError("boom"))
+        bot._agent = SimpleNamespace(_get_skills_client=AsyncMock(return_value=skills_client))
+
+        result = await bot.emit_announcement_event(
+            {
+                "source": "skill.test",
+                "category": "skill.reminder",
+                "target_user_id": 123,
+                "title": "Reminder",
+                "body": "Do the thing.",
+            }
+        )
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_emit_announcement_event_uses_ok_when_receipt_missing(self, bot):
+        skills_client = AsyncMock()
+        skills_client.emit_announcement_event = AsyncMock(return_value={"ok": True})
+        bot._agent = SimpleNamespace(_get_skills_client=AsyncMock(return_value=skills_client))
+
+        result = await bot.emit_announcement_event(
+            {
+                "source": "skill.test",
+                "category": "skill.reminder",
+                "target_user_id": 123,
+                "title": "Reminder",
+                "body": "Do the thing.",
+            }
+        )
+
+        assert result is True
 
     @pytest.mark.asyncio
     async def test_on_ready_starts_announcement_dispatcher(self, bot):

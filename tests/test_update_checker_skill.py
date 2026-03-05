@@ -363,6 +363,8 @@ class TestOnHeartbeat:
         assert "Update Available" in action.data["message"]
         assert "v2.0.0" in action.data["message"]
         assert "apply update" in action.data["message"]
+        assert action.data["announcement_category"] == "update.available"
+        assert action.data["announcement_severity"] == "normal"
 
     @pytest.mark.asyncio
     async def test_update_available_auto_apply_true_success(self) -> None:
@@ -379,6 +381,8 @@ class TestOnHeartbeat:
         assert action.priority == 8
         assert "Update Applied" in action.data["message"]
         assert "v2.0.0" in action.data["message"]
+        assert action.data["announcement_category"] == "update.available"
+        assert action.data["announcement_severity"] == "normal"
         skill._manager.apply_update.assert_awaited_once_with(release)
 
     @pytest.mark.asyncio
@@ -399,6 +403,8 @@ class TestOnHeartbeat:
         assert "Update Failed" in action.data["message"]
         assert "v2.0.0" in action.data["message"]
         assert "docker build failed" in action.data["message"]
+        assert action.data["announcement_category"] == "deploy.failed"
+        assert action.data["announcement_severity"] == "critical"
 
     @pytest.mark.asyncio
     async def test_empty_user_ids_gives_empty_user_id(self) -> None:

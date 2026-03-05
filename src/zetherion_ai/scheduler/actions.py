@@ -8,7 +8,7 @@ This module defines:
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 from uuid import UUID, uuid4
 
 from zetherion_ai.logging import get_logger
@@ -274,13 +274,130 @@ class ActionExecutor:
             log.error("send_dm_failed", user_id=user_id, error=str(e))
             return False
 
+    def _announcement_emitter(self) -> Any | None:
+        """Return optional announcement emitter from the configured sender."""
+        if self._message_sender is None:
+            return None
+        emit = getattr(self._message_sender, "emit_announcement_event", None)
+        if callable(emit):
+            return cast(Any, emit)
+        return None
+
+    @staticmethod
+    def _as_clean_string(value: Any, default: str) -> str:
+        text = str(value or "").strip()
+        return text if text else default
+
+    def _build_announcement_payload(
+        self,
+        action: HeartbeatAction,
+        *,
+        message: str,
+        default_category: str,
+        default_severity: str,
+        default_title: str,
+    ) -> dict[str, Any] | None:
+        try:
+            target_user_id = int(str(action.user_id).strip())
+        except (TypeError, ValueError):
+            return None
+        if target_user_id <= 0:
+            return None
+
+        category = self._as_clean_string(
+            action.data.get("announcement_category"),
+            default_category,
+        ).lower()
+        severity = self._as_clean_string(
+            action.data.get("announcement_severity"),
+            default_severity,
+        ).lower()
+        title = self._as_clean_string(action.data.get("announcement_title"), default_title)
+        source = self._as_clean_string(
+            action.data.get("announcement_source"),
+            f"skill.{action.skill_name}",
+        )
+
+        raw_payload = action.data.get("announcement_payload")
+        payload: dict[str, Any] = dict(raw_payload) if isinstance(raw_payload, dict) else {}
+        payload.setdefault("skill_name", action.skill_name)
+        payload.setdefault("action_type", action.action_type)
+
+        event_payload: dict[str, Any] = {
+            "source": source,
+            "category": category,
+            "severity": severity,
+            "target_user_id": target_user_id,
+            "title": title,
+            "body": message,
+            "payload": payload,
+        }
+        fingerprint = action.data.get("announcement_fingerprint")
+        if isinstance(fingerprint, str) and fingerprint.strip():
+            event_payload["fingerprint"] = fingerprint.strip()
+        idempotency_key = action.data.get("announcement_idempotency_key")
+        if isinstance(idempotency_key, str) and idempotency_key.strip():
+            event_payload["idempotency_key"] = idempotency_key.strip()
+        dedupe_window_minutes = action.data.get("announcement_dedupe_window_minutes")
+        if isinstance(dedupe_window_minutes, int) and dedupe_window_minutes > 0:
+            event_payload["dedupe_window_minutes"] = dedupe_window_minutes
+        return event_payload
+
+    async def _dispatch_notification(
+        self,
+        action: HeartbeatAction,
+        *,
+        message: str,
+        default_category: str,
+        default_severity: str,
+        default_title: str,
+    ) -> bool:
+        """Dispatch a user-facing notification via announcement API when available."""
+        emit = self._announcement_emitter()
+        if emit is None:
+            return await self._send_dm(action.user_id, message)
+
+        payload = self._build_announcement_payload(
+            action,
+            message=message,
+            default_category=default_category,
+            default_severity=default_severity,
+            default_title=default_title,
+        )
+        if payload is None:
+            log.warning(
+                "announcement_payload_invalid_user_id",
+                user_id=action.user_id,
+                skill=action.skill_name,
+                action_type=action.action_type,
+            )
+            return False
+
+        try:
+            return bool(await emit(payload))
+        except Exception as e:
+            log.error(
+                "announcement_emit_failed",
+                user_id=action.user_id,
+                skill=action.skill_name,
+                action_type=action.action_type,
+                error=str(e),
+            )
+            return False
+
     async def _handle_send_message(self, action: HeartbeatAction) -> ActionResult:
         """Handle generic send_message action."""
         message = action.data.get("message", "")
         if not message:
             return ActionResult(action=action, success=False, error="No message provided")
 
-        sent = await self._send_dm(action.user_id, message)
+        sent = await self._dispatch_notification(
+            action,
+            message=message,
+            default_category="skill.reminder",
+            default_severity="normal",
+            default_title="Skill reminder",
+        )
         return ActionResult(
             action=action,
             success=sent,
@@ -299,7 +416,13 @@ class ActionExecutor:
         else:
             message = f"⏰ You have {count} task(s) due within 24 hours!"
 
-        sent = await self._send_dm(action.user_id, message)
+        sent = await self._dispatch_notification(
+            action,
+            message=message,
+            default_category="skill.reminder",
+            default_severity="normal",
+            default_title="Deadline reminder",
+        )
         return ActionResult(
             action=action,
             success=sent,
@@ -313,7 +436,13 @@ class ActionExecutor:
         count = action.data.get("count", len(tasks))
 
         message = f"🚨 Alert: {count} task(s) are overdue and need attention!"
-        sent = await self._send_dm(action.user_id, message)
+        sent = await self._dispatch_notification(
+            action,
+            message=message,
+            default_category="skill.reminder",
+            default_severity="high",
+            default_title="Overdue tasks",
+        )
         return ActionResult(
             action=action,
             success=sent,
@@ -334,7 +463,13 @@ class ActionExecutor:
         else:
             message = f"☀️ Good morning! You have {count} events scheduled for today."
 
-        sent = await self._send_dm(action.user_id, message)
+        sent = await self._dispatch_notification(
+            action,
+            message=message,
+            default_category="insight.summary",
+            default_severity="normal",
+            default_title="Morning briefing",
+        )
         return ActionResult(
             action=action,
             success=sent,
@@ -350,7 +485,13 @@ class ActionExecutor:
         title = event.get("title", "Meeting")
         message = f"📅 Heads up: '{title}' starts in {minutes} minutes!"
 
-        sent = await self._send_dm(action.user_id, message)
+        sent = await self._dispatch_notification(
+            action,
+            message=message,
+            default_category="skill.reminder",
+            default_severity="normal",
+            default_title="Meeting prep",
+        )
         return ActionResult(
             action=action,
             success=sent,
@@ -368,7 +509,13 @@ class ActionExecutor:
         else:
             message = f"🌙 End of day! Tomorrow you have {count} event(s) scheduled."
 
-        sent = await self._send_dm(action.user_id, message)
+        sent = await self._dispatch_notification(
+            action,
+            message=message,
+            default_category="insight.summary",
+            default_severity="normal",
+            default_title="End of day summary",
+        )
         return ActionResult(
             action=action,
             success=sent,
@@ -385,7 +532,13 @@ class ActionExecutor:
             f"📝 You have {count} task(s) with no updates in 7+ days. "
             "Would you like to review them?"
         )
-        sent = await self._send_dm(action.user_id, message)
+        sent = await self._dispatch_notification(
+            action,
+            message=message,
+            default_category="skill.reminder",
+            default_severity="normal",
+            default_title="Stale task check",
+        )
         return ActionResult(
             action=action,
             success=sent,
@@ -461,7 +614,13 @@ class ActionExecutor:
         value = entry.get("value", "")
 
         message = f"❓ Can you confirm: Is your {key} '{value}'?"
-        sent = await self._send_dm(action.user_id, message)
+        sent = await self._dispatch_notification(
+            action,
+            message=message,
+            default_category="skill.reminder",
+            default_severity="normal",
+            default_title="Profile confirmation",
+        )
         return ActionResult(
             action=action,
             success=sent,
@@ -476,7 +635,13 @@ class ActionExecutor:
 
         cat_str = ", ".join(categories[:3]) if categories else "profile"
         message = f"ℹ️ Some of your {cat_str} information may be outdated ({stale_count} entries)."
-        sent = await self._send_dm(action.user_id, message)
+        sent = await self._dispatch_notification(
+            action,
+            message=message,
+            default_category="insight.summary",
+            default_severity="normal",
+            default_title="Profile decay check",
+        )
         return ActionResult(
             action=action,
             success=sent,
