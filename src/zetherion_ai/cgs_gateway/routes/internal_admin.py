@@ -32,6 +32,7 @@ from zetherion_ai.cgs_gateway.models import (
     TenantAdminMessagingSendRequest,
     TenantAdminSecretPutRequest,
     TenantAdminSettingPutRequest,
+    TenantAdminWorkerCapabilitiesPutRequest,
 )
 from zetherion_ai.cgs_gateway.routes._utils import (
     enforce_mutation_rate_limit,
@@ -190,6 +191,14 @@ def _derive_policy_action(method: str, subpath: str, payload: dict[str, Any] | N
 
     if normalized.startswith("/automerge/") and method_upper == "POST":
         return "automerge.execute"
+    if (
+        normalized.startswith("/workers/nodes/")
+        and normalized.endswith("/capabilities")
+        and method_upper == "PUT"
+    ):
+        return "worker.capability.update"
+    if normalized.startswith("/workers/"):
+        return "tenant_admin.read" if method_upper == "GET" else "tenant_admin.mutate"
 
     if method_upper == "GET":
         return "tenant_admin.read"
@@ -246,6 +255,11 @@ def _derive_policy_context(
         ctx["branch_guard_passed"] = bool(body.get("branch_guard_passed"))
         ctx["risk_guard_passed"] = bool(body.get("risk_guard_passed"))
         ctx["explicitly_elevated"] = bool(body.get("explicitly_elevated"))
+    if normalized.startswith("/workers/") and normalized.endswith("/capabilities"):
+        body = payload or {}
+        ctx["node_registered"] = bool(body.get("node_registered"))
+        ctx["node_healthy"] = bool(body.get("node_healthy"))
+        ctx["explicitly_elevated"] = bool(body.get("explicitly_elevated"))
     return ctx
 
 
@@ -258,10 +272,13 @@ async def _enforce_trust_policy(
     subpath: str,
     payload: dict[str, Any] | None,
     query: dict[str, str] | None,
+    policy_context: dict[str, Any] | None,
     change_ticket_id: str | None,
 ) -> str | None:
     action = _derive_policy_action(method, subpath, payload)
     context = _derive_policy_context(method, subpath, payload, query)
+    if policy_context:
+        context.update(policy_context)
     decision: TrustPolicyDecision = _TRUST_POLICY_EVALUATOR.evaluate(
         tenant_id=zetherion_tenant_id,
         action=action,
@@ -448,6 +465,7 @@ async def _call_admin_upstream(
     subpath: str,
     payload: dict[str, Any] | None = None,
     query: dict[str, str] | None = None,
+    policy_context: dict[str, Any] | None = None,
     change_ticket_id: str | None = None,
 ) -> Any:
     mapping = await resolve_active_mapping(request.app["cgs_storage"], cgs_tenant_id)
@@ -460,6 +478,7 @@ async def _call_admin_upstream(
         subpath=subpath,
         payload=payload,
         query=query,
+        policy_context=policy_context,
         change_ticket_id=change_ticket_id,
     )
     actor = _build_actor_context(request, change_ticket_id=effective_change_ticket_id)
@@ -503,6 +522,7 @@ async def _admin_mutation_response(
     subpath: str,
     payload: dict[str, Any] | None = None,
     query: dict[str, str] | None = None,
+    policy_context: dict[str, Any] | None = None,
     change_ticket_id: str | None = None,
     response_status: int = 200,
 ) -> web.Response:
@@ -529,6 +549,7 @@ async def _admin_mutation_response(
         subpath=subpath,
         payload=payload,
         query=query,
+        policy_context=policy_context,
         change_ticket_id=change_ticket_id,
     )
     envelope = {
@@ -1401,6 +1422,94 @@ async def handle_admin_send_messaging_message(request: web.Request) -> web.Respo
     )
 
 
+async def handle_admin_list_worker_nodes(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=False)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    query: dict[str, str] = {}
+    for key in ("include_inactive", "limit"):
+        value = request.query.get(key)
+        if isinstance(value, str) and value.strip():
+            query[key] = value.strip()
+    data = await _call_admin_upstream(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="GET",
+        subpath="/workers/nodes",
+        query=query or None,
+    )
+    return success_response(request_id(request), data)
+
+
+async def handle_admin_get_worker_node(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=False)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    node_id = request.match_info["node_id"]
+    data = await _call_admin_upstream(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="GET",
+        subpath=f"/workers/nodes/{node_id}",
+    )
+    return success_response(request_id(request), data)
+
+
+async def handle_admin_put_worker_capabilities(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=True)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    node_id = request.match_info["node_id"]
+    raw = await json_object(request)
+    try:
+        body = TenantAdminWorkerCapabilitiesPutRequest.model_validate(raw)
+    except ValidationError as exc:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="Validation failed",
+            status=400,
+            details={"errors": exc.errors()},
+        ) from exc
+
+    node_response = await _call_admin_upstream(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="GET",
+        subpath=f"/workers/nodes/{node_id}",
+    )
+    node_record: dict[str, Any] | None = None
+    if isinstance(node_response, dict):
+        maybe_node = node_response.get("node")
+        if isinstance(maybe_node, dict):
+            node_record = maybe_node
+    if node_record is None:
+        raise GatewayError(
+            code="AI_UPSTREAM_ERROR",
+            message="Worker node lookup returned invalid response",
+            status=502,
+        )
+
+    status_value = str(node_record.get("status") or "").strip().lower()
+    health_value = str(node_record.get("health_status") or "").strip().lower()
+    payload = body.model_dump(mode="json", exclude_none=True)
+    policy_context = {
+        "node_registered": status_value in {"registered", "active"},
+        "node_healthy": (
+            status_value not in {"quarantined", "disabled"} and health_value == "healthy"
+        ),
+        "explicitly_elevated": bool(body.explicitly_elevated),
+    }
+    return await _admin_mutation_response(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="PUT",
+        subpath=f"/workers/nodes/{node_id}/capabilities",
+        payload=payload,
+        policy_context=policy_context,
+        change_ticket_id=_change_ticket_from_request(request, body.change_ticket_id),
+    )
+
+
 async def handle_admin_list_security_events(request: web.Request) -> web.Response:
     _ensure_internal_admin_access(request, mutating=False)
     cgs_tenant_id = request.match_info["tenant_id"]
@@ -1833,6 +1942,15 @@ def register_internal_admin_routes(app: web.Application) -> None:
     app.router.add_post(
         prefix + "/messaging/messages/{chat_id}/send",
         handle_admin_send_messaging_message,
+    )
+    app.router.add_get(prefix + "/workers/nodes", handle_admin_list_worker_nodes)
+    app.router.add_get(
+        prefix + "/workers/nodes/{node_id}",
+        handle_admin_get_worker_node,
+    )
+    app.router.add_put(
+        prefix + "/workers/nodes/{node_id}/capabilities",
+        handle_admin_put_worker_capabilities,
     )
     app.router.add_get(prefix + "/security/events", handle_admin_list_security_events)
     app.router.add_get(prefix + "/security/dashboard", handle_admin_get_security_dashboard)

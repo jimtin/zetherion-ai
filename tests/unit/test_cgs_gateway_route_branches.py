@@ -1269,6 +1269,173 @@ async def test_internal_admin_messaging_send_returns_approval_required_mapping(
 
 
 @pytest.mark.asyncio
+async def test_internal_admin_worker_route_matrix_success_paths() -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin"],
+        principal_claims={"step_up": True, "allowed_tenants": ["tenant-a"]},
+    )
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+
+    async def _request_tenant_admin_json(
+        method: str,
+        *,
+        tenant_id: str,
+        subpath: str,
+        actor: dict[str, object],
+        json_body: dict[str, object] | None = None,
+        query: dict[str, str] | None = None,
+    ) -> tuple[int, dict[str, object]]:
+        del tenant_id, actor, query
+        if method == "GET" and subpath == "/workers/nodes":
+            return 200, {"ok": True, "nodes": []}
+        if method == "GET" and subpath == "/workers/nodes/node-1":
+            return 200, {
+                "ok": True,
+                "node": {"node_id": "node-1", "status": "registered", "health_status": "healthy"},
+            }
+        if method == "PUT" and subpath == "/workers/nodes/node-1/capabilities":
+            return 200, {
+                "ok": True,
+                "node": {
+                    "node_id": "node-1",
+                    "status": "registered",
+                    "health_status": "healthy",
+                    "capabilities": (json_body or {}).get("capabilities", []),
+                },
+            }
+        return 200, {"ok": True}
+
+    app["cgs_skills_client"].request_tenant_admin_json = AsyncMock(
+        side_effect=_request_tenant_admin_json
+    )
+    app["cgs_skills_client"].request_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        listed = await client.get("/service/ai/v1/internal/admin/tenants/tenant-a/workers/nodes")
+        assert listed.status == 200
+
+        node = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/nodes/node-1"
+        )
+        assert node.status == 200
+
+        updated = await client.put(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/nodes/node-1/capabilities",
+            json={
+                "capabilities": ["repo.read", "repo.patch"],
+                "explicitly_elevated": True,
+            },
+        )
+        assert updated.status == 200
+        body = await updated.json()
+        assert body["data"]["node"]["capabilities"] == ["repo.read", "repo.patch"]
+
+    forwarded_subpaths = [
+        call.kwargs.get("subpath")
+        for call in app["cgs_skills_client"].request_tenant_admin_json.await_args_list
+    ]
+    assert "/workers/nodes" in forwarded_subpaths
+    assert "/workers/nodes/node-1" in forwarded_subpaths
+    assert "/workers/nodes/node-1/capabilities" in forwarded_subpaths
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_worker_capability_update_returns_approval_required(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin"],
+        principal_claims={"step_up": True, "allowed_tenants": ["tenant-a"]},
+    )
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+    storage.create_admin_change = AsyncMock(
+        return_value={"change_id": "chg-worker-cap-update", "status": "pending"}
+    )
+
+    allow = TrustPolicyDecision(
+        action="tenant_admin.read",
+        action_class=TrustActionClass.READ,
+        outcome=TrustDecisionOutcome.ALLOW,
+        status=200,
+        code="AI_OK",
+        message="Allowed",
+        details={},
+    )
+    approval_required = TrustPolicyDecision(
+        action="worker.capability.update",
+        action_class=TrustActionClass.CRITICAL,
+        outcome=TrustDecisionOutcome.APPROVAL_REQUIRED,
+        status=409,
+        code="AI_APPROVAL_REQUIRED",
+        message="This action requires approval before apply",
+        details={},
+        requires_two_person=True,
+    )
+
+    def _evaluate(**kwargs: object) -> TrustPolicyDecision:
+        action = str(kwargs.get("action", ""))
+        if action == "worker.capability.update":
+            return approval_required
+        return allow
+
+    monkeypatch.setattr(
+        "zetherion_ai.cgs_gateway.routes.internal_admin._TRUST_POLICY_EVALUATOR",
+        SimpleNamespace(evaluate=_evaluate),
+    )
+
+    async def _request_tenant_admin_json(
+        method: str,
+        *,
+        tenant_id: str,
+        subpath: str,
+        actor: dict[str, object],
+        json_body: dict[str, object] | None = None,
+        query: dict[str, str] | None = None,
+    ) -> tuple[int, dict[str, object]]:
+        del tenant_id, actor, json_body, query
+        if method == "GET" and subpath == "/workers/nodes/node-1":
+            return 200, {
+                "ok": True,
+                "node": {"node_id": "node-1", "status": "registered", "health_status": "healthy"},
+            }
+        return 200, {"ok": True}
+
+    app["cgs_skills_client"].request_tenant_admin_json = AsyncMock(
+        side_effect=_request_tenant_admin_json
+    )
+    app["cgs_skills_client"].request_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.put(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/nodes/node-1/capabilities",
+            json={"capabilities": ["repo.read"]},
+        )
+        assert response.status == 409
+        body = await response.json()
+        assert body["error"]["code"] == "AI_APPROVAL_REQUIRED"
+        assert body["error"]["details"]["change_ticket_id"] == "chg-worker-cap-update"
+
+    forwarded_subpaths = [
+        call.kwargs.get("subpath")
+        for call in app["cgs_skills_client"].request_tenant_admin_json.await_args_list
+    ]
+    assert "/workers/nodes/node-1" in forwarded_subpaths
+    assert "/workers/nodes/node-1/capabilities" not in forwarded_subpaths
+
+
+@pytest.mark.asyncio
 async def test_internal_admin_automerge_execute_success_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
