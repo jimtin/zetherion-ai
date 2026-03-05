@@ -109,7 +109,7 @@ class TestSkillsServerHelpers:
             ("", {}),
             ("[]", {}),
             ('{"ok": true}', {"ok": True}),
-            ("noise before {\"k\": 1} noise after", {"k": 1}),
+            ('noise before {"k": 1} noise after', {"k": 1}),
             ("noise before {bad} noise after", {}),
             ("noise without braces", {}),
             ("broken {json", {}),
