@@ -794,19 +794,24 @@ class TestGitHubClientAdditionalCoverage:
             assert ensured["created"] is False
             assert ensured["sha"] == "abc"
 
-        with patch.object(
-            client,
-            "get_reference",
-            AsyncMock(
-                side_effect=[
-                    None,
-                    {"ref": "refs/heads/main", "object": {"sha": "source-sha"}},
-                ]
+        with (
+            patch.object(
+                client,
+                "get_reference",
+                AsyncMock(
+                    side_effect=[
+                        None,
+                        {"ref": "refs/heads/main", "object": {"sha": "source-sha"}},
+                    ]
+                ),
             ),
-        ), patch.object(
-            client,
-            "create_reference",
-            AsyncMock(return_value={"ref": "refs/heads/feature", "object": {"sha": "source-sha"}}),
+            patch.object(
+                client,
+                "create_reference",
+                AsyncMock(
+                    return_value={"ref": "refs/heads/feature", "object": {"sha": "source-sha"}}
+                ),
+            ),
         ):
             ensured = await client.ensure_branch(
                 "owner",
