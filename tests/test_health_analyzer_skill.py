@@ -283,6 +283,8 @@ class TestOnHeartbeat:
         assert action.priority == 9
         assert "Health Incident Alert" in action.data["message"]
         assert "CPU usage extremely high" in action.data["message"]
+        assert action.data["announcement_category"] == "health.alert"
+        assert action.data["announcement_severity"] == "critical"
 
     @pytest.mark.asyncio
     async def test_heartbeat_no_alert_on_non_critical(self) -> None:
@@ -392,6 +394,8 @@ class TestOnHeartbeat:
         assert len(actions) == 1
         assert "Morning health digest" in actions[0].data["message"]
         assert "OpenAI latency significantly above baseline" in actions[0].data["message"]
+        assert actions[0].data["announcement_category"] == "insight.summary"
+        assert actions[0].data["announcement_severity"] == "normal"
         skill._storage.mark_notification_incident_digest_notified.assert_awaited_once()
 
     @pytest.mark.asyncio

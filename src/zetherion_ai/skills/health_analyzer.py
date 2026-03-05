@@ -369,7 +369,10 @@ class HealthAnalyzerSkill(Skill):
                             "message": (
                                 "**Health Alert**: Critical anomalies detected\n"
                                 + "\n".join(f"- {line}" for line in critical[:5])
-                            )
+                            ),
+                            "announcement_category": "health.alert",
+                            "announcement_severity": "critical",
+                            "announcement_title": "Health alert",
                         },
                         priority=9,
                     )
@@ -456,7 +459,12 @@ class HealthAnalyzerSkill(Skill):
                     skill_name="health_analyzer",
                     action_type="send_message",
                     user_id=user_ids[0],
-                    data={"message": "**Health Incident Alert**\n" + "\n".join(lines)},
+                    data={
+                        "message": "**Health Incident Alert**\n" + "\n".join(lines),
+                        "announcement_category": "health.alert",
+                        "announcement_severity": "critical",
+                        "announcement_title": "Health incident alert",
+                    },
                     priority=9,
                 )
             )
@@ -495,7 +503,10 @@ class HealthAnalyzerSkill(Skill):
                     "message": (
                         f"**Morning health digest**: {len(unresolved)} unresolved incident(s)\n"
                         + "\n".join(lines)
-                    )
+                    ),
+                    "announcement_category": "insight.summary",
+                    "announcement_severity": "normal",
+                    "announcement_title": "Morning health digest",
                 },
                 priority=5,
             )

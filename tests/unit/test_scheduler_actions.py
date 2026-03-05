@@ -151,6 +151,24 @@ class MockMessageSender:
         return self.should_succeed
 
 
+class MockAnnouncementMessageSender(MockMessageSender):
+    """Mock sender that supports announcement emission."""
+
+    def __init__(
+        self,
+        *,
+        should_succeed: bool = True,
+        announcement_should_succeed: bool = True,
+    ) -> None:
+        super().__init__(should_succeed=should_succeed)
+        self.announcement_should_succeed = announcement_should_succeed
+        self.emitted_announcements: list[dict[str, object]] = []
+
+    async def emit_announcement_event(self, payload: dict[str, object]) -> bool:
+        self.emitted_announcements.append(payload)
+        return self.announcement_should_succeed
+
+
 class TestActionExecutor:
     """Tests for ActionExecutor class."""
 
@@ -208,6 +226,89 @@ class TestActionExecutor:
             skill_name="test",
             action_type="send_message",
             user_id="user123",
+            data={"message": "Hello!"},
+        )
+
+        result = await executor.execute(action)
+        assert result.success is False
+
+    @pytest.mark.asyncio
+    async def test_execute_send_message_uses_announcement_api_when_available(self) -> None:
+        """execute should emit announcement events when sender supports it."""
+        sender = MockAnnouncementMessageSender()
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="test",
+            action_type="send_message",
+            user_id="123",
+            data={"message": "Hello!"},
+        )
+
+        result = await executor.execute(action)
+        assert result.success is True
+        assert sender.sent_messages == []
+        assert len(sender.emitted_announcements) == 1
+        payload = sender.emitted_announcements[0]
+        assert payload["category"] == "skill.reminder"
+        assert payload["severity"] == "normal"
+        assert payload["target_user_id"] == 123
+        assert payload["body"] == "Hello!"
+
+    @pytest.mark.asyncio
+    async def test_execute_send_message_announcement_failure_no_dm_fallback(self) -> None:
+        """execute should fail closed when announcement API emission fails."""
+        sender = MockAnnouncementMessageSender(
+            should_succeed=True,
+            announcement_should_succeed=False,
+        )
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="test",
+            action_type="send_message",
+            user_id="123",
+            data={"message": "Hello!"},
+        )
+
+        result = await executor.execute(action)
+        assert result.success is False
+        assert len(sender.emitted_announcements) == 1
+        assert sender.sent_messages == []
+
+    @pytest.mark.asyncio
+    async def test_execute_send_message_announcement_invalid_user_id_fails_closed(self) -> None:
+        """Announcement mode should reject non-numeric user IDs without DM fallback."""
+        sender = MockAnnouncementMessageSender()
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="test",
+            action_type="send_message",
+            user_id="user123",
+            data={"message": "Hello!"},
+        )
+
+        result = await executor.execute(action)
+        assert result.success is False
+        assert sender.emitted_announcements == []
+        assert sender.sent_messages == []
+
+    @pytest.mark.asyncio
+    async def test_execute_send_message_announcement_exception_fails_closed(self) -> None:
+        """Announcement emitter exceptions should be handled and reported as failure."""
+        sender = MockAnnouncementMessageSender()
+
+        async def _raise(_: dict[str, object]) -> bool:
+            raise RuntimeError("boom")
+
+        sender.emit_announcement_event = _raise
+        executor = ActionExecutor(message_sender=sender)
+
+        action = HeartbeatAction(
+            skill_name="test",
+            action_type="send_message",
+            user_id="123",
             data={"message": "Hello!"},
         )
 

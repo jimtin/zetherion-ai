@@ -39,6 +39,7 @@ from zetherion_ai.queue.models import QueuePriority, QueueTaskType
 from zetherion_ai.queue.plan_executor import PlanContinuationExecutor
 from zetherion_ai.scheduler.actions import ActionExecutor
 from zetherion_ai.scheduler.heartbeat import HeartbeatScheduler, QuietHoursWindow
+from zetherion_ai.skills.client import SkillsClientError
 from zetherion_ai.utils import split_text_chunks
 
 if TYPE_CHECKING:
@@ -219,7 +220,7 @@ class ZetherionAIBot(discord.Client):
         # Initialize agent after bot is ready
         self._agent = Agent(memory=self._memory)
 
-        # Wire provider issue alerts from InferenceBroker to owner DM notifications.
+        # Wire provider issue alerts from InferenceBroker to announcement emission.
         inference_broker = getattr(self._agent, "_inference_broker", None)
         if inference_broker is not None and hasattr(inference_broker, "set_provider_issue_handler"):
             try:
@@ -513,25 +514,43 @@ class ZetherionAIBot(discord.Client):
             ]
         )
 
-        try:
-            user = self.get_user(owner_id)
-            if user is None:
-                user = await self.fetch_user(owner_id)
-            if user is None:
-                log.warning("provider_issue_alert_user_not_found", owner_id=owner_id)
-                return
-            await user.send(body)
+        category = {
+            "billing": "provider.billing",
+            "auth": "provider.auth",
+            "rate_limit": "provider.rate_limit",
+        }.get(alert.issue_type, "provider.issue")
+
+        sent = await self.emit_announcement_event(
+            {
+                "source": "agent.inference",
+                "category": category,
+                "severity": "high",
+                "target_user_id": owner_id,
+                "title": issue_title,
+                "body": body,
+                "fingerprint": f"{alert.provider.value}:{alert.issue_type}",
+                "payload": {
+                    "provider": alert.provider.value,
+                    "issue_type": alert.issue_type,
+                    "task_type": alert.task_type,
+                    "model": alert.model,
+                    "fail_count": alert.fail_count,
+                },
+            }
+        )
+        if sent:
             log.info(
                 "provider_issue_alert_sent",
                 owner_id=owner_id,
                 provider=alert.provider.value,
                 issue_type=alert.issue_type,
             )
-        except Exception:
-            log.exception(
-                "provider_issue_alert_send_failed",
+        else:
+            log.error(
+                "provider_issue_alert_emit_failed",
                 owner_id=owner_id,
                 provider=alert.provider.value,
+                issue_type=alert.issue_type,
             )
 
     async def _provider_watch_loop(self) -> None:
@@ -2011,6 +2030,85 @@ class ZetherionAIBot(discord.Client):
         for part in parts:
             if part:
                 await interaction.followup.send(part)
+
+    async def emit_announcement_event(self, event: dict[str, Any]) -> bool:
+        """Emit an announcement event through the internal skills announcement API."""
+        if self._agent is None:
+            log.warning("announcement_emit_skipped_no_agent")
+            return False
+
+        source = str(event.get("source") or "").strip()
+        category = str(event.get("category") or "").strip()
+        title = str(event.get("title") or "").strip()
+        body = str(event.get("body") or "").strip()
+        if not source or not category or not title or not body:
+            log.warning(
+                "announcement_emit_invalid_payload",
+                source=source,
+                category=category,
+                has_title=bool(title),
+                has_body=bool(body),
+            )
+            return False
+
+        target_user_id_raw = event.get("target_user_id")
+        if isinstance(target_user_id_raw, bool):
+            return False
+        if isinstance(target_user_id_raw, int):
+            target_user_id = target_user_id_raw
+        elif isinstance(target_user_id_raw, str):
+            try:
+                target_user_id = int(target_user_id_raw.strip())
+            except ValueError:
+                return False
+        else:
+            return False
+        if target_user_id <= 0:
+            return False
+
+        payload = event.get("payload")
+        payload_json = payload if isinstance(payload, dict) else {}
+
+        try:
+            client = await self._agent._get_skills_client()
+            if client is None:
+                log.warning("announcement_emit_skipped_no_skills_client")
+                return False
+            response = await client.emit_announcement_event(
+                source=source,
+                category=category,
+                severity=str(event.get("severity") or "normal"),
+                target_user_id=target_user_id,
+                title=title,
+                body=body,
+                tenant_id=str(event.get("tenant_id")).strip() if event.get("tenant_id") else None,
+                payload=payload_json,
+                fingerprint=(
+                    str(event.get("fingerprint")).strip() if event.get("fingerprint") else None
+                ),
+                idempotency_key=(
+                    str(event.get("idempotency_key")).strip()
+                    if event.get("idempotency_key")
+                    else None
+                ),
+                occurred_at=(
+                    str(event.get("occurred_at")).strip() if event.get("occurred_at") else None
+                ),
+                channel=str(event.get("channel") or "discord_dm"),
+                dedupe_window_minutes=int(event.get("dedupe_window_minutes", 10)),
+                state=str(event.get("state") or "accepted"),
+            )
+            receipt = response.get("receipt", {}) if isinstance(response, dict) else {}
+            status = str(receipt.get("status") or "").strip().lower()
+            if status in {"accepted", "deduped", "scheduled", "deferred"}:
+                return True
+            return bool(response.get("ok")) if isinstance(response, dict) else False
+        except (SkillsClientError, ValueError, TypeError):
+            log.exception("announcement_emit_failed", source=source, category=category)
+            return False
+        except Exception:
+            log.exception("announcement_emit_unexpected_error", source=source, category=category)
+            return False
 
     async def send_dm(self, user_id: str, message: str) -> bool:
         """Send a DM to a Discord user ID string."""

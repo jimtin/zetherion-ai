@@ -373,6 +373,65 @@ class SkillsClient:
             log.error("skills_secret_failed", error=str(e))
             raise SkillsClientError(f"Update secret failed: {e}") from e
 
+    async def emit_announcement_event(
+        self,
+        *,
+        source: str,
+        category: str,
+        target_user_id: int | str,
+        title: str,
+        body: str,
+        severity: str = "normal",
+        tenant_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+        fingerprint: str | None = None,
+        idempotency_key: str | None = None,
+        occurred_at: str | None = None,
+        channel: str = "discord_dm",
+        dedupe_window_minutes: int = 10,
+        state: str = "accepted",
+    ) -> dict[str, Any]:
+        """Emit an announcement event through the internal skills API."""
+        request_payload: dict[str, Any] = {
+            "source": source,
+            "category": category,
+            "severity": severity,
+            "target_user_id": target_user_id,
+            "title": title,
+            "body": body,
+            "payload": payload or {},
+            "channel": channel,
+            "dedupe_window_minutes": dedupe_window_minutes,
+            "state": state,
+        }
+        if tenant_id:
+            request_payload["tenant_id"] = tenant_id
+        if fingerprint:
+            request_payload["fingerprint"] = fingerprint
+        if idempotency_key:
+            request_payload["idempotency_key"] = idempotency_key
+        if occurred_at:
+            request_payload["occurred_at"] = occurred_at
+
+        try:
+            client = await self._get_client()
+            response = await client.post("/announcements/events", json=request_payload)
+
+            if response.status_code == 401:
+                raise SkillsAuthError("Authentication failed")
+            if response.status_code == 403:
+                raise SkillsAuthError("Authorization failed")
+
+            response.raise_for_status()
+            result: dict[str, Any] = response.json()
+            return result
+        except httpx.ConnectError as e:
+            log.error("skills_announcement_connection_failed", error=str(e))
+            raise SkillsConnectionError(f"Unable to connect to skills service: {e}") from e
+        except httpx.RequestError as e:
+            log.error("skills_announcement_emit_failed", error=str(e))
+            raise SkillsClientError(f"Emit announcement failed: {e}") from e
+
 
 async def create_skills_client(
     base_url: str | None = None,

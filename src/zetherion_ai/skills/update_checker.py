@@ -196,6 +196,9 @@ class UpdateCheckerSkill(Skill):
                                 f"v{self._manager.current_version} "
                                 f"-> v{release.version}"
                             ),
+                            "announcement_category": "update.available",
+                            "announcement_severity": "normal",
+                            "announcement_title": "Update applied",
                         },
                         priority=8,
                     )
@@ -208,6 +211,9 @@ class UpdateCheckerSkill(Skill):
                         user_id=user_ids[0] if user_ids else "",
                         data={
                             "message": (f"**Update Failed**: v{release.version} ({result.error})"),
+                            "announcement_category": "deploy.failed",
+                            "announcement_severity": "critical",
+                            "announcement_title": "Update failed",
                         },
                         priority=9,
                     )
@@ -225,6 +231,9 @@ class UpdateCheckerSkill(Skill):
                             f"(currently v{self._manager.current_version})\n"
                             f"Reply 'apply update' to install."
                         ),
+                        "announcement_category": "update.available",
+                        "announcement_severity": "normal",
+                        "announcement_title": "Update available",
                     },
                     priority=7,
                 )
