@@ -164,6 +164,35 @@ class TrustPolicyEvaluator:
             policy_enabled_key="auto_merge_policy_enabled",
             required_context_flags=("branch_guard_passed", "risk_guard_passed"),
         ),
+        "worker.register": TrustPolicyRule(
+            action="worker.register",
+            action_class=TrustActionClass.SENSITIVE,
+            min_tier=TrustTier.TIER2,
+            required_context_flags=("bootstrap_secret_valid",),
+        ),
+        "worker.job.claim": TrustPolicyRule(
+            action="worker.job.claim",
+            action_class=TrustActionClass.CRITICAL,
+            min_tier=TrustTier.TIER3,
+            kill_switch_key="worker_dispatch_kill_switch",
+            required_context_flags=("node_registered", "node_healthy", "capability_allowlisted"),
+        ),
+        "worker.job.complete": TrustPolicyRule(
+            action="worker.job.complete",
+            action_class=TrustActionClass.CRITICAL,
+            min_tier=TrustTier.TIER3,
+            kill_switch_key="worker_result_accept_kill_switch",
+            required_context_flags=("node_registered", "node_healthy", "capability_allowlisted"),
+        ),
+        "worker.capability.update": TrustPolicyRule(
+            action="worker.capability.update",
+            action_class=TrustActionClass.CRITICAL,
+            min_tier=TrustTier.TIER3,
+            requires_approval=True,
+            requires_two_person=True,
+            required_context_flags=("node_registered", "node_healthy"),
+            elevation_key="worker_capability_update_explicitly_elevated",
+        ),
         # Existing high-risk admin actions continue to route through the
         # established change-ticket approval flow.
         "secret.put": TrustPolicyRule(
@@ -238,7 +267,7 @@ class TrustPolicyEvaluator:
         rule = self._DEFAULT_RULES.get(normalized_action)
         if rule is None:
             # Deny-by-default only for explicitly sensitive namespaces.
-            if normalized_action.startswith(("messaging.", "automerge.")):
+            if normalized_action.startswith(("messaging.", "automerge.", "worker.")):
                 return TrustPolicyDecision(
                     action=normalized_action,
                     action_class=TrustActionClass.SENSITIVE,

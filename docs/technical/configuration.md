@@ -226,6 +226,8 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `MESSAGING_INGESTION_KILL_SWITCH` | `false` | Global kill switch for tenant messaging ingestion actions |
 | `MESSAGING_SEND_KILL_SWITCH` | `false` | Global kill switch for tenant messaging send actions |
 | `AUTO_MERGE_EXECUTION_KILL_SWITCH` | `false` | Global kill switch for autonomous PR merge execution |
+| `WORKER_DISPATCH_KILL_SWITCH` | `false` | Global kill switch for worker dispatch/claim actions |
+| `WORKER_RESULT_ACCEPT_KILL_SWITCH` | `false` | Global kill switch for accepting worker job results |
 | `AUTO_MERGE_POLICY_ENABLED` | `false` | Enable trust-policy auto-merge execution path |
 
 ---
