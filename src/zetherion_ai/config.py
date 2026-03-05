@@ -708,6 +708,30 @@ class Settings(BaseSettings):
         default=True,
         description="Enable automatic SemVer release increment after successful main deploy",
     )
+    announcement_emit_enabled: bool = Field(
+        default=False,
+        description="Enable Windows deploy/promotions announcement event emission",
+    )
+    announcement_api_url: str = Field(
+        default="http://127.0.0.1:8080/announcements/events",
+        description="Internal Skills announcement events endpoint for Windows emit scripts",
+    )
+    announcement_api_secret: SecretStr | None = Field(
+        default=None,
+        description="Shared secret used by Windows scripts for internal announcement API requests",
+    )
+    announcement_target_user_id: str = Field(
+        default="",
+        description="Target user id for Windows deploy/promotions announcement events",
+    )
+    discord_dm_notify_enabled: bool = Field(
+        default=False,
+        description="Legacy alias fallback for announcement emit enablement",
+    )
+    discord_notify_user_id: str = Field(
+        default="",
+        description="Legacy alias fallback for announcement target user id",
+    )
 
     app_watcher_trust_mode: str = Field(
         default="recommend_only",
