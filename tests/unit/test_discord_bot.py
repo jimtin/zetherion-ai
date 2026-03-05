@@ -14,6 +14,7 @@ from aiohttp.test_utils import TestServer
 
 from zetherion_ai.discord.bot import ZetherionAIBot
 from zetherion_ai.memory.qdrant import QdrantMemory
+from zetherion_ai.skills.client import SkillsClientError
 
 
 @pytest.fixture
@@ -2908,3 +2909,504 @@ class TestWorkerOperatorCommands:
             json_body=None,
             query={"limit": "5"},
         )
+
+
+class TestWorkerOperatorHelperCoverage:
+    _TENANT_ID = "11111111-1111-4111-8111-111111111111"
+
+    def test_extract_error_message_matrix(self, bot):
+        assert (
+            bot._extract_error_message(
+                {"error": {"message": "Denied", "code": "AI_DENY"}},
+                fallback="fallback",
+            )
+            == "Denied (`AI_DENY`)"
+        )
+        assert (
+            bot._extract_error_message(
+                {"error": {"message": "Denied only"}},
+                fallback="fallback",
+            )
+            == "Denied only"
+        )
+        assert (
+            bot._extract_error_message(
+                {"error": "flat error"},
+                fallback="fallback",
+            )
+            == "flat error"
+        )
+        assert bot._extract_error_message({"ok": True}, fallback="fallback") == "fallback"
+
+    @pytest.mark.asyncio
+    async def test_build_worker_admin_actor_paths(self, bot, mock_dm_message):
+        owner_settings = SimpleNamespace(owner_user_id=mock_dm_message.author.id)
+        with patch("zetherion_ai.discord.bot.get_settings", return_value=owner_settings):
+            owner_actor = await bot._build_worker_admin_actor(message=mock_dm_message)
+        assert owner_actor["actor_roles"] == ["owner"]
+
+        user_settings = SimpleNamespace(owner_user_id=None)
+        bot._user_manager.get_role = AsyncMock(return_value="Admin")
+        with patch("zetherion_ai.discord.bot.get_settings", return_value=user_settings):
+            admin_actor = await bot._build_worker_admin_actor(message=mock_dm_message)
+        assert admin_actor["actor_roles"] == ["admin"]
+
+        bot._user_manager.get_role = AsyncMock(side_effect=RuntimeError("boom"))
+        with patch("zetherion_ai.discord.bot.get_settings", return_value=user_settings):
+            fallback_actor = await bot._build_worker_admin_actor(message=mock_dm_message)
+        assert fallback_actor["actor_roles"] == ["admin"]
+
+    @pytest.mark.asyncio
+    async def test_resolve_worker_operator_tenant_paths(self, bot, mock_dm_message):
+        tenant_id, remaining, error = await bot._resolve_worker_operator_tenant(
+            message=mock_dm_message,
+            is_dm=True,
+            args=[self._TENANT_ID, "node-1"],
+        )
+        assert tenant_id == self._TENANT_ID
+        assert remaining == ["node-1"]
+        assert error is None
+
+        with patch.object(
+            bot,
+            "_resolve_tenant_for_message",
+            new_callable=AsyncMock,
+            return_value=self._TENANT_ID,
+        ):
+            tenant_id, remaining, error = await bot._resolve_worker_operator_tenant(
+                message=mock_dm_message,
+                is_dm=False,
+                args=["node-1"],
+            )
+        assert tenant_id == self._TENANT_ID
+        assert remaining == ["node-1"]
+        assert error is None
+
+        with patch.object(
+            bot,
+            "_resolve_tenant_for_message",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            tenant_id, remaining, error = await bot._resolve_worker_operator_tenant(
+                message=mock_dm_message,
+                is_dm=False,
+                args=["node-1"],
+            )
+        assert tenant_id is None
+        assert "Could not resolve tenant" in str(error)
+
+        bot._tenant_admin_manager = None
+        tenant_id, _, error = await bot._resolve_worker_operator_tenant(
+            message=mock_dm_message,
+            is_dm=True,
+            args=[],
+        )
+        assert tenant_id is None
+        assert "Tenant resolution is unavailable" in str(error)
+
+        bot._tenant_admin_manager = AsyncMock()
+        bot._tenant_admin_manager.list_tenants_for_discord_user = AsyncMock(
+            side_effect=RuntimeError("boom")
+        )
+        tenant_id, _, error = await bot._resolve_worker_operator_tenant(
+            message=mock_dm_message,
+            is_dm=True,
+            args=[],
+        )
+        assert tenant_id is None
+        assert "Failed to resolve" in str(error)
+
+        bot._tenant_admin_manager.list_tenants_for_discord_user = AsyncMock(
+            return_value=[self._TENANT_ID]
+        )
+        tenant_id, _, error = await bot._resolve_worker_operator_tenant(
+            message=mock_dm_message,
+            is_dm=True,
+            args=[],
+        )
+        assert tenant_id == self._TENANT_ID
+        assert error is None
+
+        bot._tenant_admin_manager.list_tenants_for_discord_user = AsyncMock(return_value=[])
+        tenant_id, _, error = await bot._resolve_worker_operator_tenant(
+            message=mock_dm_message,
+            is_dm=True,
+            args=[],
+        )
+        assert tenant_id is None
+        assert "No tenant membership found" in str(error)
+
+        bot._tenant_admin_manager.list_tenants_for_discord_user = AsyncMock(
+            return_value=[self._TENANT_ID, "22222222-2222-4222-8222-222222222222"]
+        )
+        tenant_id, _, error = await bot._resolve_worker_operator_tenant(
+            message=mock_dm_message,
+            is_dm=True,
+            args=[],
+        )
+        assert tenant_id is None
+        assert "Multiple tenant memberships" in str(error)
+
+    @pytest.mark.asyncio
+    async def test_request_worker_admin_error_paths(self, bot, mock_dm_message):
+        status, payload = await bot._request_worker_admin(
+            message=mock_dm_message,
+            tenant_id=self._TENANT_ID,
+            method="GET",
+            subpath="/workers/jobs",
+        )
+        assert status == 503
+        assert payload["error"] == "Agent is not ready"
+
+        bot._agent = AsyncMock()
+        bot._agent._get_skills_client = AsyncMock(side_effect=RuntimeError("boom"))
+        status, payload = await bot._request_worker_admin(
+            message=mock_dm_message,
+            tenant_id=self._TENANT_ID,
+            method="GET",
+            subpath="/workers/jobs",
+        )
+        assert status == 503
+        assert payload["error"] == "Skills service is unavailable"
+
+        bot._agent._get_skills_client = AsyncMock(return_value=None)
+        status, payload = await bot._request_worker_admin(
+            message=mock_dm_message,
+            tenant_id=self._TENANT_ID,
+            method="GET",
+            subpath="/workers/jobs",
+        )
+        assert status == 503
+
+        no_api_client = SimpleNamespace(request_tenant_admin_json=None)
+        bot._agent._get_skills_client = AsyncMock(return_value=no_api_client)
+        status, payload = await bot._request_worker_admin(
+            message=mock_dm_message,
+            tenant_id=self._TENANT_ID,
+            method="GET",
+            subpath="/workers/jobs",
+        )
+        assert status == 501
+        assert "not supported" in payload["error"]
+
+        failing_client = AsyncMock()
+        failing_client.request_tenant_admin_json = AsyncMock(
+            side_effect=SkillsClientError("upstream")
+        )
+        bot._agent._get_skills_client = AsyncMock(return_value=failing_client)
+        status, payload = await bot._request_worker_admin(
+            message=mock_dm_message,
+            tenant_id=self._TENANT_ID,
+            method="GET",
+            subpath="/workers/jobs",
+        )
+        assert status == 502
+        assert payload["error"] == "upstream"
+
+        failing_client.request_tenant_admin_json = AsyncMock(side_effect=RuntimeError("boom"))
+        status, payload = await bot._request_worker_admin(
+            message=mock_dm_message,
+            tenant_id=self._TENANT_ID,
+            method="GET",
+            subpath="/workers/jobs",
+        )
+        assert status == 502
+        assert "Failed to call worker operator control API" in payload["error"]
+
+    @pytest.mark.asyncio
+    async def test_fetch_pending_dev_agent_approvals_paths(self, bot):
+        with patch("zetherion_ai.discord.bot.get_secret", return_value=""):
+            rows, error = await bot._fetch_pending_dev_agent_approvals()
+        assert rows == []
+        assert "not configured" in str(error)
+
+        with patch("zetherion_ai.discord.bot.get_secret", return_value="token"):
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(side_effect=httpx.RequestError("down"))
+            mock_cm = AsyncMock()
+            mock_cm.__aenter__.return_value = mock_client
+            mock_cm.__aexit__.return_value = False
+            with patch("zetherion_ai.discord.bot.httpx.AsyncClient", return_value=mock_cm):
+                rows, error = await bot._fetch_pending_dev_agent_approvals()
+        assert rows == []
+        assert "Unable to reach dev-agent approvals API" in str(error)
+
+        with patch("zetherion_ai.discord.bot.get_secret", return_value="token"):
+            response = MagicMock()
+            response.status_code = 503
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=response)
+            mock_cm = AsyncMock()
+            mock_cm.__aenter__.return_value = mock_client
+            mock_cm.__aexit__.return_value = False
+            with patch("zetherion_ai.discord.bot.httpx.AsyncClient", return_value=mock_cm):
+                rows, error = await bot._fetch_pending_dev_agent_approvals()
+        assert rows == []
+        assert "HTTP 503" in str(error)
+
+        with patch("zetherion_ai.discord.bot.get_secret", return_value="token"):
+            response = MagicMock()
+            response.status_code = 200
+            response.json.side_effect = ValueError("bad json")
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=response)
+            mock_cm = AsyncMock()
+            mock_cm.__aenter__.return_value = mock_client
+            mock_cm.__aexit__.return_value = False
+            with patch("zetherion_ai.discord.bot.httpx.AsyncClient", return_value=mock_cm):
+                rows, error = await bot._fetch_pending_dev_agent_approvals()
+        assert rows == []
+        assert "invalid JSON" in str(error)
+
+        with patch("zetherion_ai.discord.bot.get_secret", return_value="token"):
+            response = MagicMock()
+            response.status_code = 200
+            response.json.return_value = {"pending": "bad"}
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=response)
+            mock_cm = AsyncMock()
+            mock_cm.__aenter__.return_value = mock_client
+            mock_cm.__aexit__.return_value = False
+            with patch("zetherion_ai.discord.bot.httpx.AsyncClient", return_value=mock_cm):
+                rows, error = await bot._fetch_pending_dev_agent_approvals()
+        assert rows == []
+        assert "unexpected payload" in str(error)
+
+        with patch("zetherion_ai.discord.bot.get_secret", return_value="token"):
+            response = MagicMock()
+            response.status_code = 200
+            response.json.return_value = {
+                "pending": [{"project_id": "p1"}, "bad", {"project_id": "p2"}]
+            }
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=response)
+            mock_cm = AsyncMock()
+            mock_cm.__aenter__.return_value = mock_client
+            mock_cm.__aexit__.return_value = False
+            with patch("zetherion_ai.discord.bot.httpx.AsyncClient", return_value=mock_cm):
+                rows, error = await bot._fetch_pending_dev_agent_approvals()
+        assert error is None
+        assert len(rows) == 2
+
+    @pytest.mark.asyncio
+    async def test_handle_worker_operator_status_and_approvals_paths(self, bot, mock_dm_message):
+        with patch.object(
+            bot,
+            "_request_worker_admin",
+            new_callable=AsyncMock,
+            return_value=(502, {"error": "skills down"}),
+        ):
+            await bot._handle_worker_operator_status(
+                message=mock_dm_message,
+                tenant_id=self._TENANT_ID,
+            )
+        assert "skills down" in mock_dm_message.reply.await_args.args[0]
+        mock_dm_message.reply.reset_mock()
+
+        with patch.object(
+            bot,
+            "_request_worker_admin",
+            new_callable=AsyncMock,
+            side_effect=[
+                (200, {"nodes": [{"status": "active"}]}),
+                (503, {"error": {"message": "jobs unavailable", "code": "E_JOBS"}}),
+            ],
+        ):
+            await bot._handle_worker_operator_status(
+                message=mock_dm_message,
+                tenant_id=self._TENANT_ID,
+            )
+        assert "jobs unavailable (`E_JOBS`)" in mock_dm_message.reply.await_args.args[0]
+        mock_dm_message.reply.reset_mock()
+
+        with (
+            patch.object(
+                bot,
+                "_request_worker_admin",
+                new_callable=AsyncMock,
+                side_effect=[
+                    (200, {"nodes": [{"status": "active"}, "bad"]}),
+                    (200, {"jobs": [{"status": "running"}, "bad"]}),
+                ],
+            ),
+            patch.object(
+                bot,
+                "_fetch_pending_dev_agent_approvals",
+                new_callable=AsyncMock,
+                return_value=([], "approvals api unavailable"),
+            ),
+            patch.object(bot, "_send_long_reply", new_callable=AsyncMock) as send_long,
+        ):
+            await bot._handle_worker_operator_status(
+                message=mock_dm_message,
+                tenant_id=self._TENANT_ID,
+            )
+        assert "Worker Status" in send_long.await_args.args[1]
+        assert "approvals api unavailable" in send_long.await_args.args[1]
+
+        with patch.object(
+            bot,
+            "_fetch_pending_dev_agent_approvals",
+            new_callable=AsyncMock,
+            return_value=([], "api down"),
+        ):
+            await bot._handle_worker_pending_approvals(message=mock_dm_message)
+        assert "api down" in mock_dm_message.reply.await_args.args[0]
+        mock_dm_message.reply.reset_mock()
+
+        with patch.object(
+            bot,
+            "_fetch_pending_dev_agent_approvals",
+            new_callable=AsyncMock,
+            return_value=([], None),
+        ):
+            await bot._handle_worker_pending_approvals(message=mock_dm_message)
+        assert "No pending approvals" in mock_dm_message.reply.await_args.args[0]
+        mock_dm_message.reply.reset_mock()
+
+        approvals = [
+            {"project_id": f"proj-{idx}", "requested_at": "2026-03-06T00:00:00Z"}
+            for idx in range(11)
+        ]
+        with (
+            patch.object(
+                bot,
+                "_fetch_pending_dev_agent_approvals",
+                new_callable=AsyncMock,
+                return_value=(approvals, None),
+            ),
+            patch.object(bot, "_send_long_reply", new_callable=AsyncMock) as send_long,
+        ):
+            await bot._handle_worker_pending_approvals(message=mock_dm_message)
+        assert "Pending Worker Approvals" in send_long.await_args.args[1]
+        assert "...and `1` more" in send_long.await_args.args[1]
+
+    @pytest.mark.asyncio
+    async def test_worker_action_handlers_and_command_fallbacks(self, bot, mock_dm_message):
+        with patch.object(
+            bot,
+            "_request_worker_admin",
+            new_callable=AsyncMock,
+            return_value=(409, {"error": {"message": "blocked", "code": "AI_POLICY"}}),
+        ):
+            await bot._handle_worker_node_control_action(
+                message=mock_dm_message,
+                tenant_id=self._TENANT_ID,
+                action="quarantine",
+                node_id="node-1",
+            )
+        assert "blocked (`AI_POLICY`)" in mock_dm_message.reply.await_args.args[0]
+        mock_dm_message.reply.reset_mock()
+
+        with patch.object(
+            bot,
+            "_request_worker_admin",
+            new_callable=AsyncMock,
+            return_value=(202, {"ok": True}),
+        ):
+            await bot._handle_worker_node_control_action(
+                message=mock_dm_message,
+                tenant_id=self._TENANT_ID,
+                action="quarantine",
+                node_id="node-1",
+            )
+        assert "request accepted" in mock_dm_message.reply.await_args.args[0]
+        mock_dm_message.reply.reset_mock()
+
+        with patch.object(
+            bot,
+            "_request_worker_admin",
+            new_callable=AsyncMock,
+            return_value=(502, {"error": "upstream"}),
+        ):
+            await bot._handle_worker_job_control_action(
+                message=mock_dm_message,
+                tenant_id=self._TENANT_ID,
+                action="retry",
+                job_id="job-1",
+                reason="manual",
+            )
+        assert "upstream" in mock_dm_message.reply.await_args.args[0]
+        mock_dm_message.reply.reset_mock()
+
+        with patch.object(
+            bot,
+            "_request_worker_admin",
+            new_callable=AsyncMock,
+            return_value=(200, {"ok": True}),
+        ):
+            await bot._handle_worker_job_control_action(
+                message=mock_dm_message,
+                tenant_id=self._TENANT_ID,
+                action="cancel",
+                job_id="job-1",
+                reason=None,
+            )
+        assert "request accepted" in mock_dm_message.reply.await_args.args[0]
+
+        handled = await bot._maybe_handle_worker_operator_command(
+            message=mock_dm_message,
+            content="hello there",
+            is_dm=True,
+        )
+        assert handled is False
+
+        with patch.object(bot, "_is_owner_or_admin", new_callable=AsyncMock, return_value=True):
+            handled = await bot._maybe_handle_worker_operator_command(
+                message=mock_dm_message,
+                content=f"worker retry {self._TENANT_ID}",
+                is_dm=True,
+            )
+        assert handled is True
+        assert "Missing job_id" in mock_dm_message.reply.await_args.args[0]
+        mock_dm_message.reply.reset_mock()
+
+        with patch.object(bot, "_is_owner_or_admin", new_callable=AsyncMock, return_value=True):
+            handled = await bot._maybe_handle_worker_operator_command(
+                message=mock_dm_message,
+                content=f"worker unknown {self._TENANT_ID}",
+                is_dm=True,
+            )
+        assert handled is True
+        assert "Unknown worker command" in mock_dm_message.reply.await_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_presence_disabled_and_on_message_worker_short_circuit(
+        self,
+        bot,
+        mock_dm_message,
+        mock_agent,
+    ):
+        with patch("zetherion_ai.discord.bot.get_dynamic", return_value=False):
+            handled = await bot._maybe_handle_presence_quick_reply(
+                message=mock_dm_message,
+                content="are you alive",
+                is_dm=True,
+            )
+        assert handled is False
+
+        bot._agent = mock_agent
+        mock_dm_message.content = f"worker status {self._TENANT_ID}"
+        with (
+            patch.object(
+                bot,
+                "_is_message_user_allowed",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(
+                bot,
+                "_maybe_handle_worker_operator_command",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch.object(
+                bot,
+                "_maybe_handle_dev_watcher_dm",
+                new_callable=AsyncMock,
+            ) as watcher_handler,
+        ):
+            await bot.on_message(mock_dm_message)
+        watcher_handler.assert_not_awaited()
+        mock_agent.generate_response.assert_not_called()

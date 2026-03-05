@@ -615,6 +615,24 @@ class TestSkillsClient:
                     actor={"actor_sub": "discord:1"},
                 )
 
+    @pytest.mark.asyncio
+    async def test_request_admin_json_connect_error(self) -> None:
+        """request_admin_json() should raise SkillsConnectionError on connect failure."""
+        client = SkillsClient(api_secret="skills-secret", actor_signing_secret="actor-secret")
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.request = AsyncMock(
+                side_effect=httpx.ConnectError("Connection refused")
+            )
+            mock_get.return_value = mock_http_client
+
+            with pytest.raises(SkillsConnectionError, match="Unable to connect"):
+                await client.request_admin_json(
+                    "GET",
+                    "/admin/tenants/t1/workers/nodes",
+                    actor={"actor_sub": "discord:1"},
+                )
+
 
 class TestCreateSkillsClient:
     """Tests for create_skills_client factory function."""

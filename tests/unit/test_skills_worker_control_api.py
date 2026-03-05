@@ -1773,3 +1773,294 @@ class TestSkillsWorkerControlAPI:
                 data="{",
             )
             assert put_invalid_json.status == 400
+
+    def test_worker_announcement_throttle_invalid_env_defaults(
+        self,
+        mock_registry: SkillRegistry,
+    ) -> None:
+        with patch.dict(
+            "os.environ",
+            {"WORKER_EVENT_ANNOUNCEMENT_THROTTLE_SECONDS": "not-an-int"},
+            clear=False,
+        ):
+            server = SkillsServer(registry=mock_registry, api_secret="skills-secret")
+        assert server._worker_announcement_throttle_seconds == 60
+
+    @pytest.mark.asyncio
+    async def test_emit_worker_lifecycle_announcement_branches(
+        self,
+        mock_registry: SkillRegistry,
+        worker_manager: MagicMock,
+    ) -> None:
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="skills-secret",
+            tenant_admin_manager=worker_manager,
+        )
+        server._announcement_repository = MagicMock()
+        server._emit_announcement_event = AsyncMock(return_value={"accepted": True})  # type: ignore[method-assign]
+
+        now = datetime.now(UTC)
+        server._worker_announcement_cache = {
+            "expired": now - timedelta(seconds=1),
+            "active": now + timedelta(seconds=60),
+        }
+        server._prune_worker_announcement_cache(now)
+        assert "expired" not in server._worker_announcement_cache
+        assert "active" in server._worker_announcement_cache
+
+        worker_manager.list_discord_users = AsyncMock(
+            return_value=[
+                {"discord_user_id": 1, "role": "owner"},
+                {"discord_user_id": 2, "role": "user"},
+                {"discord_user_id": "not-int", "role": "admin"},
+            ]
+        )
+        await server._emit_worker_lifecycle_announcement(
+            tenant_id=tenant_id,
+            event_type="job_failed",
+            node_id="node-1",
+            job_id="job-1",
+            status="failed",
+            metadata={"reason": "boom"},
+        )
+        assert server._emit_announcement_event.await_count == 1
+        payload = server._emit_announcement_event.await_args.args[0]
+        assert payload["severity"] == "high"
+        assert payload["target_user_id"] == 1
+        assert payload["category"] == "worker.lifecycle.job_failed"
+
+        await server._emit_worker_lifecycle_announcement(
+            tenant_id=tenant_id,
+            event_type="job_failed",
+            node_id="node-1",
+            job_id="job-1",
+            status="failed",
+        )
+        assert server._emit_announcement_event.await_count == 1
+
+        worker_manager.list_discord_users = AsyncMock(side_effect=RuntimeError("lookup-failed"))
+        await server._emit_worker_lifecycle_announcement(
+            tenant_id=tenant_id,
+            event_type="job_started",
+            node_id="node-1",
+            job_id="job-2",
+            status="running",
+        )
+
+        worker_manager.list_discord_users = AsyncMock(return_value=[])
+        await server._emit_worker_lifecycle_announcement(
+            tenant_id=tenant_id,
+            event_type="job_completed",
+            node_id="node-1",
+            job_id="job-3",
+            status="succeeded",
+        )
+
+        worker_manager.list_discord_users = AsyncMock(
+            return_value=[{"discord_user_id": 1, "role": "admin"}]
+        )
+        server._emit_announcement_event = AsyncMock(side_effect=RuntimeError("emit-failed"))  # type: ignore[method-assign]
+        await server._emit_worker_lifecycle_announcement(
+            tenant_id=tenant_id,
+            event_type="job_cancel_requested",
+            node_id="node-1",
+            job_id="job-4",
+            status="cancelled",
+        )
+
+    @pytest.mark.asyncio
+    async def test_admin_worker_routes_not_configured_errors(
+        self,
+        mock_registry: SkillRegistry,
+    ) -> None:
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        node_id = "node-1"
+        job_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="skills-secret",
+            tenant_admin_manager=None,
+            admin_actor_secret="admin-secret",
+        )
+        app = server.create_app()
+
+        def _admin() -> dict[str, str]:
+            headers = {"X-API-Secret": "skills-secret"}
+            headers.update(_admin_headers(signing_secret="admin-secret"))
+            return headers
+
+        async with TestClient(TestServer(app)) as client:
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/workers/jobs",
+                    headers=_admin(),
+                )
+            ).status == 501
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/workers/jobs/{job_id}",
+                    headers=_admin(),
+                )
+            ).status == 501
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/workers/events",
+                    headers=_admin(),
+                )
+            ).status == 501
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}",
+                    headers=_admin(),
+                )
+            ).status == 501
+            assert (
+                await client.put(
+                    f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/capabilities",
+                    headers=_admin(),
+                    json={"capabilities": ["repo.patch"]},
+                )
+            ).status == 501
+            assert (
+                await client.post(
+                    f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/quarantine",
+                    headers=_admin(),
+                    json={},
+                )
+            ).status == 501
+            assert (
+                await client.post(
+                    f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/unquarantine",
+                    headers=_admin(),
+                    json={},
+                )
+            ).status == 501
+            assert (
+                await client.post(
+                    f"/admin/tenants/{tenant_id}/workers/jobs/{job_id}/retry",
+                    headers=_admin(),
+                    json={},
+                )
+            ).status == 501
+            assert (
+                await client.post(
+                    f"/admin/tenants/{tenant_id}/workers/jobs/{job_id}/cancel",
+                    headers=_admin(),
+                    json={},
+                )
+            ).status == 501
+
+    @pytest.mark.asyncio
+    async def test_admin_worker_route_error_mapping_branches(
+        self,
+        mock_registry: SkillRegistry,
+        worker_manager: MagicMock,
+    ) -> None:
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        node_id = "node-1"
+        job_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        worker_manager.get_worker_job = AsyncMock(return_value=None)
+        worker_manager.list_worker_job_events = AsyncMock(return_value=[])
+        worker_manager.get_worker_node = AsyncMock(return_value=None)
+        worker_manager.set_worker_node_status = AsyncMock(
+            side_effect=ValueError("worker node not found")
+        )
+        worker_manager.retry_worker_job = AsyncMock(side_effect=ValueError("worker job not found"))
+        worker_manager.cancel_worker_job = AsyncMock(side_effect=ValueError("bad cancel payload"))
+
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="skills-secret",
+            tenant_admin_manager=worker_manager,
+            admin_actor_secret="admin-secret",
+        )
+        app = server.create_app()
+
+        def _admin() -> dict[str, str]:
+            headers = {"X-API-Secret": "skills-secret"}
+            headers.update(_admin_headers(signing_secret="admin-secret"))
+            return headers
+
+        async with TestClient(TestServer(app)) as client:
+            bad_jobs_limit = await client.get(
+                f"/admin/tenants/{tenant_id}/workers/jobs?limit=bad",
+                headers=_admin(),
+            )
+            assert bad_jobs_limit.status == 400
+
+            missing_job = await client.get(
+                f"/admin/tenants/{tenant_id}/workers/jobs/{job_id}",
+                headers=_admin(),
+            )
+            assert missing_job.status == 404
+
+            bad_events_limit = await client.get(
+                f"/admin/tenants/{tenant_id}/workers/events?limit=bad",
+                headers=_admin(),
+            )
+            assert bad_events_limit.status == 400
+
+            missing_node = await client.put(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/capabilities",
+                headers=_admin(),
+                json={"capabilities": ["repo.patch"]},
+            )
+            assert missing_node.status == 404
+
+            quarantine_bad_payload = await client.post(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/quarantine",
+                headers=_admin(),
+                json=["not-a-dict"],
+            )
+            assert quarantine_bad_payload.status == 400
+
+            quarantine_bad_metadata = await client.post(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/quarantine",
+                headers=_admin(),
+                json={"metadata": ["bad"]},
+            )
+            assert quarantine_bad_metadata.status == 400
+
+            quarantine_not_found = await client.post(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/quarantine",
+                headers=_admin(),
+                json={},
+            )
+            assert quarantine_not_found.status == 404
+
+            unquarantine_bad_payload = await client.post(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/unquarantine",
+                headers=_admin(),
+                json=["not-a-dict"],
+            )
+            assert unquarantine_bad_payload.status == 400
+
+            unquarantine_bad_metadata = await client.post(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/unquarantine",
+                headers=_admin(),
+                json={"metadata": ["bad"]},
+            )
+            assert unquarantine_bad_metadata.status == 400
+
+            unquarantine_not_found = await client.post(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/unquarantine",
+                headers=_admin(),
+                json={},
+            )
+            assert unquarantine_not_found.status == 404
+
+            retry_not_found = await client.post(
+                f"/admin/tenants/{tenant_id}/workers/jobs/{job_id}/retry",
+                headers=_admin(),
+                json={},
+            )
+            assert retry_not_found.status == 404
+
+            cancel_bad = await client.post(
+                f"/admin/tenants/{tenant_id}/workers/jobs/{job_id}/cancel",
+                headers=_admin(),
+                json={},
+            )
+            assert cancel_bad.status == 400
