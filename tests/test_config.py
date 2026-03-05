@@ -169,6 +169,9 @@ class TestDefaultValues:
         """Test that allowed_user_ids defaults to empty list."""
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+        monkeypatch.delenv("ALLOWED_USER_IDS", raising=False)
+        monkeypatch.delenv("OWNER_USER_ID", raising=False)
+        monkeypatch.delenv("ALLOW_ALL_USERS", raising=False)
 
         from zetherion_ai.config import get_settings
 

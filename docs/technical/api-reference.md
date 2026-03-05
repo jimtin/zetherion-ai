@@ -18,6 +18,9 @@ All endpoints require `X-API-Secret` except:
 - `GET /health`
 - `GET /oauth/{provider}/callback`
 - `GET /gmail/callback`
+- `GET /worker/v1/health`
+- `POST /worker/v1/bootstrap`
+- Worker signed endpoints under `/worker/v1/nodes/*`
 
 ```http
 X-API-Secret: <skills-shared-secret>
@@ -262,6 +265,48 @@ authenticated (no admin actor envelope).
 Internal tenant messaging management is available under
 `/admin/tenants/{tenant_id}/messaging/*`, including provider config, chat
 policies, message listing, and queued send operations.
+
+---
+
+## Worker Bridge Control Plane
+
+Worker endpoints are intended for registered sub-worker nodes and are
+authenticated with worker session credentials (not `X-API-Secret`).
+
+Signed worker request headers:
+
+- `Authorization: Bearer <worker-session-token>`
+- `X-Worker-Session-Id`
+- `X-Worker-Timestamp`
+- `X-Worker-Nonce`
+- `X-Worker-Signature`
+
+### GET /worker/v1/health
+
+Worker bridge health probe.
+
+### POST /worker/v1/bootstrap
+
+Bootstrap a worker node session.
+
+- Requires `X-Worker-Bootstrap-Secret`.
+- Returns initial worker session credentials and expiry.
+
+### POST /worker/v1/nodes/register
+
+Complete worker registration and optionally rotate session credentials.
+
+### POST /worker/v1/nodes/{node_id}/heartbeat
+
+Submit node heartbeat and health/capability metadata.
+
+### POST /worker/v1/nodes/{node_id}/jobs/claim
+
+Claim next eligible worker job based on capability policy.
+
+### POST /worker/v1/nodes/{node_id}/jobs/{job_id}/result
+
+Submit terminal status and artifacts for a claimed worker job.
 
 ---
 

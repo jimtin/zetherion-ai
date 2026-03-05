@@ -1,5 +1,6 @@
 """Tests for skills server."""
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -25,6 +26,8 @@ from zetherion_ai.skills.server import (
     SkillsServer,
     _build_google_oauth_authorize_handler,
     _build_google_oauth_handler,
+    _extract_json_object,
+    _isoformat_if_datetime,
     _resolve_google_oauth,
     _resolve_updater_secret,
 )
@@ -95,6 +98,119 @@ class TestSkillsServerAuth:
         mock_request = MagicMock()
         mock_request.headers.get.return_value = "wrong-secret"
         assert server._check_auth(mock_request) is False
+
+
+class TestSkillsServerHelpers:
+    """Focused coverage for helper parsing and config fallback behavior."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("", {}),
+            ("[]", {}),
+            ('{"ok": true}', {"ok": True}),
+            ("noise before {\"k\": 1} noise after", {"k": 1}),
+            ("noise before {bad} noise after", {}),
+            ("noise without braces", {}),
+            ("broken {json", {}),
+        ],
+    )
+    def test_extract_json_object(self, raw, expected):
+        assert _extract_json_object(raw) == expected
+
+    def test_isoformat_if_datetime(self):
+        now = datetime.now(UTC)
+        assert _isoformat_if_datetime(now) == now.isoformat()
+        assert _isoformat_if_datetime("not-a-datetime") == "not-a-datetime"
+
+    @pytest.mark.asyncio
+    async def test_read_json_object_success(self):
+        request = MagicMock()
+        request.json = AsyncMock(return_value={"ok": True})
+        assert await SkillsServer._read_json_object(request) == {"ok": True}
+
+    @pytest.mark.asyncio
+    async def test_read_json_object_rejects_non_object(self):
+        request = MagicMock()
+        request.json = AsyncMock(return_value=["not", "an", "object"])
+        with pytest.raises(ValueError, match="must be an object"):
+            await SkillsServer._read_json_object(request)
+
+    @pytest.mark.asyncio
+    async def test_read_json_object_invalid_json(self):
+        request = MagicMock()
+        request.json = AsyncMock(side_effect=json.JSONDecodeError("bad", "x", 0))
+        with pytest.raises(ValueError, match="Invalid JSON body"):
+            await SkillsServer._read_json_object(request)
+
+    def test_parse_int_and_errors(self):
+        assert SkillsServer._parse_int("12", "limit") == 12
+        with pytest.raises(ValueError, match="Invalid integer for 'limit'"):
+            SkillsServer._parse_int("abc", "limit")
+
+    def test_parse_bool_paths(self):
+        assert SkillsServer._parse_bool(None, "flag", default=False) is False
+        assert SkillsServer._parse_bool(True, "flag") is True
+        assert SkillsServer._parse_bool(0, "flag") is False
+        assert SkillsServer._parse_bool(1, "flag") is True
+        assert SkillsServer._parse_bool("yes", "flag") is True
+        assert SkillsServer._parse_bool("off", "flag") is False
+        with pytest.raises(ValueError, match="Invalid boolean for 'flag'"):
+            SkillsServer._parse_bool("maybe", "flag")
+        with pytest.raises(ValueError, match="Invalid boolean for 'flag'"):
+            SkillsServer._parse_bool([], "flag")
+
+    def test_parse_string_list_paths(self):
+        assert SkillsServer._parse_string_list(None, "caps") == []
+        assert SkillsServer._parse_string_list([" a ", "", "b"], "caps") == ["a", "b"]
+        with pytest.raises(ValueError, match="caps must be an array of strings"):
+            SkillsServer._parse_string_list("not-a-list", "caps")
+        with pytest.raises(ValueError, match="caps must be an array of strings"):
+            SkillsServer._parse_string_list(["ok", 42], "caps")
+
+    def test_init_env_fallbacks_for_invalid_values(self, mock_registry):
+        with patch.dict(
+            os.environ,
+            {
+                "WORKER_SESSION_TTL_SECONDS": "invalid",
+                "MESSAGING_TTL_CLEANUP_INTERVAL_SECONDS": "invalid",
+            },
+            clear=False,
+        ):
+            server = SkillsServer(registry=mock_registry)
+        assert server._worker_session_ttl_seconds == 86400
+        assert server._messaging_ttl_cleanup_interval_seconds == 300
+
+    @pytest.mark.asyncio
+    async def test_messaging_ttl_cleanup_loop_handles_purge_and_cancel(self, mock_registry):
+        server = SkillsServer(registry=mock_registry, tenant_admin_manager=AsyncMock())
+        server._tenant_admin_manager.purge_expired_messaging_messages.return_value = 5
+        with (
+            patch(
+                "zetherion_ai.skills.server.asyncio.sleep",
+                side_effect=[None, asyncio.CancelledError()],
+            ),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await server._messaging_ttl_cleanup_loop()
+        server._tenant_admin_manager.purge_expired_messaging_messages.assert_awaited_once_with(
+            limit=2000
+        )
+
+    @pytest.mark.asyncio
+    async def test_messaging_ttl_cleanup_loop_ignores_purge_errors(self, mock_registry):
+        server = SkillsServer(registry=mock_registry, tenant_admin_manager=AsyncMock())
+        server._tenant_admin_manager.purge_expired_messaging_messages.side_effect = RuntimeError(
+            "boom"
+        )
+        with (
+            patch(
+                "zetherion_ai.skills.server.asyncio.sleep",
+                side_effect=[None, asyncio.CancelledError()],
+            ),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await server._messaging_ttl_cleanup_loop()
 
 
 class TestSkillsServerEndpoints:
@@ -2643,6 +2759,40 @@ class TestServerHelperFunctions:
         assert kwargs["scopes"] == ["email", "profile"]
         integration_storage.upsert_account.assert_awaited_once()
         integration_storage.upsert_destination.assert_awaited_once()
+
+    async def test_google_oauth_callback_handler_uses_returned_refresh_token(self):
+        """Callback handler should skip fallback lookup when refresh_token is returned."""
+        auth = MagicMock()
+        auth.validate_state_token.return_value = 77
+        auth.exchange_code = AsyncMock(
+            return_value={
+                "access_token": "access-token",
+                "refresh_token": "returned-refresh-token",
+                "expires_in": 3600,
+                "scope": "email",
+            }
+        )
+        auth.get_user_email = AsyncMock(return_value="dev@example.com")
+
+        account_manager = AsyncMock()
+        account_manager.get_account_by_email = AsyncMock()
+        account_manager.add_account = AsyncMock(return_value=1002)
+        integration_storage = AsyncMock()
+
+        handler = _build_google_oauth_handler(
+            auth_resolver=lambda: auth,
+            account_manager=account_manager,
+            integration_storage=integration_storage,
+        )
+        request = MagicMock()
+        request.query = {"code": "auth-code", "state": "state-token"}
+
+        result = await handler(request)
+
+        assert result["ok"] is True
+        kwargs = account_manager.add_account.call_args.kwargs
+        assert kwargs["refresh_token"] == "returned-refresh-token"
+        account_manager.get_account_by_email.assert_not_awaited()
 
     async def test_google_oauth_callback_handler_rejects_oauth_error(self):
         """Callback handler should surface provider-side OAuth errors."""

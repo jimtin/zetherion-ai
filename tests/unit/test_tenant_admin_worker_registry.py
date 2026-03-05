@@ -334,3 +334,178 @@ async def test_worker_capability_update_and_job_event_paths() -> None:
             request_nonce="nonce-1",
             payload={},
         )
+
+
+@pytest.mark.asyncio
+async def test_worker_registry_validation_and_edge_paths() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+
+    conn.execute.return_value = "UPDATE 1"
+    touched = await manager.touch_worker_session(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        node_id="node-1",
+        session_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    )
+    assert touched is True
+
+    conn.execute.return_value = "UPDATE 0"
+    touched = await manager.touch_worker_session(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        node_id="node-1",
+        session_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    )
+    assert touched is False
+
+    with pytest.raises(ValueError, match="session_token_hash"):
+        await manager.rotate_worker_session_credentials(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="node-1",
+            session_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            session_token_hash="bad",
+            signing_secret="secret",
+        )
+
+    with pytest.raises(ValueError, match="Missing signing_secret"):
+        await manager.rotate_worker_session_credentials(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="node-1",
+            session_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            session_token_hash="a" * 64,
+            signing_secret="",
+        )
+
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="not found"):
+        await manager.rotate_worker_session_credentials(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="node-1",
+            session_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            session_token_hash="a" * 64,
+            signing_secret="secret",
+        )
+
+    with pytest.raises(ValueError, match="Missing node_id"):
+        await manager.register_worker_node(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="",
+        )
+
+    missing_conn = _FakeConn()
+    missing_conn.fetchrow.return_value = None
+    missing_manager = TenantAdminManager(pool=_FakePool(missing_conn))  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="not found"):
+        await missing_manager.register_worker_node(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="node-missing",
+        )
+
+    runtime_conn = _FakeConn()
+    runtime_conn.fetchrow.return_value = {"node_id": "node-1"}
+    runtime_manager = TenantAdminManager(pool=_FakePool(runtime_conn))  # type: ignore[arg-type]
+    runtime_manager.get_worker_node = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="Failed to load"):
+        await runtime_manager.register_worker_node(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="node-1",
+        )
+
+    with pytest.raises(ValueError, match="Missing node_id"):
+        await manager.heartbeat_worker_node(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="",
+        )
+
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="Worker node not found"):
+        await manager.heartbeat_worker_node(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="node-1",
+        )
+
+    assert (
+        await manager.has_worker_capabilities(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="node-1",
+            required_capabilities=[],
+        )
+        is True
+    )
+
+    manager._fetch = AsyncMock(return_value=[])  # type: ignore[method-assign]
+    listed = await manager.list_worker_nodes(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        include_inactive=False,
+        limit=10,
+    )
+    assert listed == []
+
+    with pytest.raises(ValueError, match="Missing node_id"):
+        await manager.get_worker_node(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="",
+        )
+
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    missing_node = await manager.get_worker_node(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        node_id="node-1",
+    )
+    assert missing_node is None
+
+    with pytest.raises(ValueError, match="Missing node_id"):
+        await manager.set_worker_capabilities(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="",
+            capabilities=["repo.patch"],
+        )
+
+    manager.get_worker_node = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="Worker node not found"):
+        await manager.set_worker_capabilities(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="node-1",
+            capabilities=["repo.patch"],
+        )
+
+    manager.get_worker_node = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            {
+                "tenant_id": "11111111-1111-1111-1111-111111111111",
+                "node_id": "node-1",
+                "status": "active",
+                "health_status": "healthy",
+                "capabilities": ["repo.patch"],
+            },
+            None,
+        ]
+    )
+    with pytest.raises(RuntimeError, match="Failed to load"):
+        await manager.set_worker_capabilities(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="node-1",
+            capabilities=["repo.patch", "repo.pr.open"],
+        )
+
+    with pytest.raises(ValueError, match="Missing node_id"):
+        await manager.record_worker_job_event(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="",
+            event_type="worker.job.claim",
+        )
+
+    with pytest.raises(ValueError, match="Missing event_type"):
+        await manager.record_worker_job_event(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="node-1",
+            event_type="",
+        )
+
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="Failed to record"):
+        await manager.record_worker_job_event(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            node_id="node-1",
+            event_type="worker.job.claim",
+            request_nonce=None,
+        )
