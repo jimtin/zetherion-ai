@@ -369,11 +369,11 @@ def main() -> None:
 
         try:
             passphrase_secret = getattr(settings, "encryption_passphrase", None)
-            passphrase = (
-                passphrase_secret.get_secret_value()
-                if hasattr(passphrase_secret, "get_secret_value")
-                else str(passphrase_secret or "").strip()
-            )
+            passphrase_getter = getattr(passphrase_secret, "get_secret_value", None)
+            if callable(passphrase_getter):
+                passphrase = str(passphrase_getter()).strip()
+            else:
+                passphrase = str(passphrase_secret or "").strip()
             pool = getattr(tenant_manager, "_pool", None)
             if passphrase and pool is not None:
                 key_manager = KeyManager(
