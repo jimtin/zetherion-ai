@@ -1847,6 +1847,19 @@ class TestTenantAdminEndpoints:
         )
         assert invalid_messages_limit.status == 400
 
+        invalid_export_limit = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/messaging/messages/export?chat_id=chat-1&limit=bad",
+            headers=_headers(),
+        )
+        assert invalid_export_limit.status == 400
+
+        invalid_delete_message_ids = await admin_client.delete(
+            f"/admin/tenants/{tenant_id}/messaging/messages",
+            headers=_headers(),
+            json={"provider": "whatsapp", "chat_id": "chat-1", "message_ids": "bad"},
+        )
+        assert invalid_delete_message_ids.status == 400
+
         invalid_send_metadata = await admin_client.post(
             f"/admin/tenants/{tenant_id}/messaging/messages/chat-1/send",
             headers=_headers(),
@@ -1871,6 +1884,18 @@ class TestTenantAdminEndpoints:
             headers=_headers(),
         )
         assert invalid_execution_limit.status == 400
+
+        invalid_security_events_limit = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/security/events?limit=bad",
+            headers=_headers(),
+        )
+        assert invalid_security_events_limit.status == 400
+
+        invalid_security_dashboard_window = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/security/dashboard?window_hours=bad",
+            headers=_headers(),
+        )
+        assert invalid_security_dashboard_window.status == 400
 
         invalid_automerge_checks = await admin_client.post(
             f"/admin/tenants/{tenant_id}/automerge/execute",
@@ -1935,6 +1960,14 @@ class TestTenantAdminEndpoints:
             assert denied_read.status == 403
             denied_payload = await denied_read.json()
             assert denied_payload["code"] == "AI_MESSAGING_CHAT_NOT_ALLOWLISTED"
+
+            denied_export = await client.get(
+                f"/admin/tenants/{tenant_id}/messaging/messages/export?chat_id=chat-1",
+                headers=_headers(),
+            )
+            assert denied_export.status == 403
+            export_payload = await denied_export.json()
+            assert export_payload["code"] == "AI_MESSAGING_CHAT_NOT_ALLOWLISTED"
 
             approval = await client.post(
                 f"/admin/tenants/{tenant_id}/messaging/messages/chat-1/send",
