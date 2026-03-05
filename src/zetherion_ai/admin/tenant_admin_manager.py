@@ -575,12 +575,6 @@ ALTER TABLE tenant_execution_steps
     ADD COLUMN IF NOT EXISTS max_runtime_seconds INT;
 ALTER TABLE tenant_execution_steps
     ADD COLUMN IF NOT EXISTS artifact_contract JSONB NOT NULL DEFAULT '{}'::jsonb;
-UPDATE tenant_execution_steps
-SET required_capabilities = '[]'::jsonb
-WHERE required_capabilities IS NULL;
-UPDATE tenant_execution_steps
-SET artifact_contract = '{}'::jsonb
-WHERE artifact_contract IS NULL;
 
 CREATE TABLE IF NOT EXISTS tenant_execution_step_retries (
     retry_id               UUID         PRIMARY KEY,
