@@ -168,6 +168,11 @@ async def test_internal_admin_validation_error_matrix() -> None:
             "/service/ai/v1/internal/admin/tenants/tenant-a/automerge/execute",
             {"repository": "not-a-repo", "branch_guard_passed": True, "risk_guard_passed": True},
         ),
+        (
+            "delete",
+            "/service/ai/v1/internal/admin/tenants/tenant-a/messaging/messages",
+            {"message_ids": "not-an-array"},
+        ),
         ("post", "/service/ai/v1/internal/admin/tenants/tenant-a/changes", {"action": ""}),
         (
             "post",

@@ -147,6 +147,15 @@ class TrustPolicyEvaluator:
             allowlist_key="messaging_allowlisted_chats",
             elevation_key="messaging_send_explicitly_elevated",
         ),
+        "messaging.delete": TrustPolicyRule(
+            action="messaging.delete",
+            action_class=TrustActionClass.CRITICAL,
+            min_tier=TrustTier.TIER3,
+            kill_switch_key="messaging_send_kill_switch",
+            requires_approval=True,
+            requires_two_person=True,
+            elevation_key="messaging_delete_explicitly_elevated",
+        ),
         "automerge.execute": TrustPolicyRule(
             action="automerge.execute",
             action_class=TrustActionClass.CRITICAL,
@@ -297,6 +306,15 @@ class TrustPolicyEvaluator:
                 requires_two_person=rule.requires_two_person,
             )
 
+        rollout_denial = self._evaluate_rollout_stage(
+            tenant_id=tenant_id,
+            action=normalized_action,
+            action_class=rule.action_class,
+            requires_two_person=rule.requires_two_person,
+        )
+        if rollout_denial is not None:
+            return rollout_denial
+
         if rule.allowlist_key:
             chat_id = str(ctx.get("chat_id") or "").strip()
             allowlisted = self._coerce_allowlist(
@@ -355,6 +373,61 @@ class TrustPolicyEvaluator:
             details={"resolved_tier": current_tier.value},
             requires_two_person=rule.requires_two_person,
         )
+
+    def _evaluate_rollout_stage(
+        self,
+        *,
+        tenant_id: str | None,
+        action: str,
+        action_class: TrustActionClass,
+        requires_two_person: bool,
+    ) -> TrustPolicyDecision | None:
+        stage_key: str | None = None
+        canary_key: str | None = None
+        if action.startswith("messaging."):
+            stage_key = "messaging_rollout_stage"
+            canary_key = "messaging_canary_enabled"
+        elif action.startswith("automerge."):
+            stage_key = "automerge_rollout_stage"
+            canary_key = "automerge_canary_enabled"
+
+        if stage_key is None or canary_key is None:
+            return None
+
+        stage_raw = (
+            str(self._setting_resolver(tenant_id, "security", stage_key, "general") or "general")
+            .strip()
+            .lower()
+        )
+        stage = stage_raw if stage_raw in {"disabled", "canary", "general"} else "general"
+
+        if stage == "disabled":
+            return TrustPolicyDecision(
+                action=action,
+                action_class=action_class,
+                outcome=TrustDecisionOutcome.DENY,
+                status=403,
+                code="AI_ROLLOUT_STAGE_BLOCKED",
+                message="Action is disabled for this tenant rollout stage",
+                details={"rollout_stage": stage, "rollout_key": stage_key},
+                requires_two_person=requires_two_person,
+            )
+        if stage == "canary":
+            canary_enabled = self._as_bool(
+                self._setting_resolver(tenant_id, "security", canary_key, False)
+            )
+            if not canary_enabled:
+                return TrustPolicyDecision(
+                    action=action,
+                    action_class=action_class,
+                    outcome=TrustDecisionOutcome.DENY,
+                    status=403,
+                    code="AI_ROLLOUT_STAGE_BLOCKED",
+                    message="Action is not enabled for tenant canary rollout",
+                    details={"rollout_stage": stage, "required_setting": canary_key},
+                    requires_two_person=requires_two_person,
+                )
+        return None
 
     @staticmethod
     def _as_bool(value: Any) -> bool:

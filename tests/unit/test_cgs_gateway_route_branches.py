@@ -1150,8 +1150,33 @@ async def test_internal_admin_messaging_route_matrix_success_paths() -> None:
             params={"provider": "whatsapp", "chat_id": "chat-1", "limit": "50"},
         )
         assert messages.status == 200
+        exported = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/messaging/messages/export",
+            params={"provider": "whatsapp", "chat_id": "chat-1", "limit": "50"},
+        )
+        assert exported.status == 200
+        deleted = await client.delete(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/messaging/messages",
+            json={
+                "provider": "whatsapp",
+                "chat_id": "chat-1",
+                "message_ids": ["11111111-1111-1111-1111-111111111111"],
+                "explicitly_elevated": True,
+            },
+        )
+        assert deleted.status == 200
+        sec_events = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/security/events",
+            params={"limit": "10"},
+        )
+        assert sec_events.status == 200
+        sec_dash = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/security/dashboard",
+            params={"window_hours": "24"},
+        )
+        assert sec_dash.status == 200
 
-    assert app["cgs_skills_client"].request_tenant_admin_json.await_count >= 6
+    assert app["cgs_skills_client"].request_tenant_admin_json.await_count >= 10
 
 
 @pytest.mark.asyncio

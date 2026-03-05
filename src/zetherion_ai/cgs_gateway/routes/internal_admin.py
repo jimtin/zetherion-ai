@@ -27,6 +27,7 @@ from zetherion_ai.cgs_gateway.models import (
     TenantAdminMailboxSetPrimaryCalendarRequest,
     TenantAdminMailboxSyncRequest,
     TenantAdminMessagingChatPolicyPutRequest,
+    TenantAdminMessagingDeleteRequest,
     TenantAdminMessagingProviderPutRequest,
     TenantAdminMessagingSendRequest,
     TenantAdminSecretPutRequest,
@@ -183,6 +184,8 @@ def _derive_policy_action(method: str, subpath: str, payload: dict[str, Any] | N
             return "messaging.ingest"
         if method_upper == "POST" and normalized.endswith("/send"):
             return "messaging.send"
+        if method_upper == "DELETE" and normalized == "/messaging/messages":
+            return "messaging.delete"
         return "tenant_admin.read" if method_upper == "GET" else "tenant_admin.mutate"
 
     if normalized.startswith("/automerge/") and method_upper == "POST":
@@ -223,10 +226,20 @@ def _derive_policy_context(
         target = _derive_policy_target(subpath, payload)
         if query_chat_id:
             ctx["chat_id"] = query_chat_id
-        elif target and not normalized.endswith("/messages"):
+        elif (
+            target
+            and not normalized.endswith("/messages")
+            and not normalized.endswith("/messages/export")
+        ):
             ctx["chat_id"] = target
         if method.upper() == "POST" and normalized.endswith("/send"):
             body = payload or {}
+            ctx["explicitly_elevated"] = bool(body.get("explicitly_elevated"))
+        if method.upper() == "DELETE" and normalized == "/messaging/messages":
+            body = payload or {}
+            raw_chat_id = str(body.get("chat_id") or "").strip()
+            if raw_chat_id:
+                ctx["chat_id"] = raw_chat_id
             ctx["explicitly_elevated"] = bool(body.get("explicitly_elevated"))
     if normalized.startswith("/automerge/"):
         body = payload or {}
@@ -1316,6 +1329,50 @@ async def handle_admin_list_messaging_messages(request: web.Request) -> web.Resp
     return success_response(request_id(request), data)
 
 
+async def handle_admin_export_messaging_messages(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=False)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    query: dict[str, str] = {}
+    for key in ("provider", "chat_id", "sender_id", "direction", "include_expired", "limit"):
+        value = request.query.get(key)
+        if isinstance(value, str) and value.strip():
+            query[key] = value.strip()
+    data = await _call_admin_upstream(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="GET",
+        subpath="/messaging/messages/export",
+        query=query or None,
+    )
+    return success_response(request_id(request), data)
+
+
+async def handle_admin_delete_messaging_messages(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=True)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    raw = await json_object(request, required=False)
+    try:
+        body = TenantAdminMessagingDeleteRequest.model_validate(raw)
+    except ValidationError as exc:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="Validation failed",
+            status=400,
+            details={"errors": exc.errors()},
+        ) from exc
+    payload = body.model_dump(mode="json", exclude_none=True)
+    return await _admin_mutation_response(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="DELETE",
+        subpath="/messaging/messages",
+        payload=payload,
+        change_ticket_id=_change_ticket_from_request(request, body.change_ticket_id),
+    )
+
+
 async def handle_admin_send_messaging_message(request: web.Request) -> web.Response:
     _ensure_internal_admin_access(request, mutating=True)
     cgs_tenant_id = request.match_info["tenant_id"]
@@ -1342,6 +1399,44 @@ async def handle_admin_send_messaging_message(request: web.Request) -> web.Respo
         change_ticket_id=_change_ticket_from_request(request, body.change_ticket_id),
         response_status=202,
     )
+
+
+async def handle_admin_list_security_events(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=False)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    query: dict[str, str] = {}
+    for key in ("event_type", "severity", "action", "limit"):
+        value = request.query.get(key)
+        if isinstance(value, str) and value.strip():
+            query[key] = value.strip()
+    data = await _call_admin_upstream(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="GET",
+        subpath="/security/events",
+        query=query or None,
+    )
+    return success_response(request_id(request), data)
+
+
+async def handle_admin_get_security_dashboard(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=False)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    query: dict[str, str] = {}
+    for key in ("window_hours", "recent_limit"):
+        value = request.query.get(key)
+        if isinstance(value, str) and value.strip():
+            query[key] = value.strip()
+    data = await _call_admin_upstream(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="GET",
+        subpath="/security/dashboard",
+        query=query or None,
+    )
+    return success_response(request_id(request), data)
 
 
 async def handle_admin_execute_automerge(request: web.Request) -> web.Response:
@@ -1727,10 +1822,20 @@ def register_internal_admin_routes(app: web.Application) -> None:
         prefix + "/messaging/messages",
         handle_admin_list_messaging_messages,
     )
+    app.router.add_get(
+        prefix + "/messaging/messages/export",
+        handle_admin_export_messaging_messages,
+    )
+    app.router.add_delete(
+        prefix + "/messaging/messages",
+        handle_admin_delete_messaging_messages,
+    )
     app.router.add_post(
         prefix + "/messaging/messages/{chat_id}/send",
         handle_admin_send_messaging_message,
     )
+    app.router.add_get(prefix + "/security/events", handle_admin_list_security_events)
+    app.router.add_get(prefix + "/security/dashboard", handle_admin_get_security_dashboard)
     app.router.add_post(
         prefix + "/automerge/execute",
         handle_admin_execute_automerge,

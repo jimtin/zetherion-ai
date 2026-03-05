@@ -38,6 +38,7 @@ VALID_MESSAGING_ACTION_TYPES = frozenset({"send"})
 VALID_MESSAGING_QUEUE_STATUSES = frozenset(
     {"queued", "processing", "sent", "failed", "blocked", "cancelled"}
 )
+VALID_SECURITY_EVENT_SEVERITIES = frozenset({"low", "medium", "high", "critical"})
 DEFAULT_MESSAGING_RETENTION_DAYS = 14
 VALID_EXECUTION_PLAN_STATUSES = frozenset(
     {"queued", "running", "paused", "completed", "failed", "cancelled"}
@@ -339,6 +340,23 @@ CREATE TABLE IF NOT EXISTS tenant_email_events (
 
 CREATE INDEX IF NOT EXISTS idx_tenant_email_events_lookup
     ON tenant_email_events (tenant_id, event_type, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_security_events (
+    event_id              BIGSERIAL    PRIMARY KEY,
+    tenant_id             UUID         NOT NULL,
+    event_type            TEXT         NOT NULL,
+    severity              VARCHAR(20)  NOT NULL
+                         CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+    action                TEXT,
+    source                TEXT,
+    payload_json          JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    created_at            TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_security_events_lookup
+    ON tenant_security_events (tenant_id, severity, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_security_events_type
+    ON tenant_security_events (tenant_id, event_type, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS tenant_messaging_provider_configs (
     tenant_id            UUID         NOT NULL,
@@ -3306,6 +3324,194 @@ class TenantAdminManager:
         return [dict(row) for row in rows]
 
     # ------------------------------------------------------------------
+    # Tenant security events and observability domain
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_security_event_severity(raw: str | None) -> str:
+        value = str(raw or "medium").strip().lower()
+        if value not in VALID_SECURITY_EVENT_SEVERITIES:
+            raise ValueError("severity must be one of: low, medium, high, critical")
+        return value
+
+    async def record_security_event(
+        self,
+        *,
+        tenant_id: str,
+        event_type: str,
+        severity: str = "medium",
+        action: str | None = None,
+        source: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        event_name = str(event_type or "").strip().lower()
+        if not event_name:
+            raise ValueError("Missing event_type")
+        severity_norm = self._normalize_security_event_severity(severity)
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_security_events (
+                tenant_id,
+                event_type,
+                severity,
+                action,
+                source,
+                payload_json
+            ) VALUES ($1::uuid, $2, $3, $4, $5, $6::jsonb)
+            RETURNING event_id,
+                      tenant_id::text AS tenant_id,
+                      event_type,
+                      severity,
+                      action,
+                      source,
+                      payload_json,
+                      created_at
+            """,
+            tenant_id,
+            event_name,
+            severity_norm,
+            str(action).strip() if action else None,
+            str(source).strip() if source else None,
+            json.dumps(payload or {}),
+        )
+        if row is None:
+            raise RuntimeError("Failed to record tenant security event")
+        event = dict(row)
+        if severity_norm in {"high", "critical"}:
+            log.warning(
+                "tenant_security_alert",
+                tenant_id=tenant_id,
+                event_type=event_name,
+                severity=severity_norm,
+                action=event.get("action"),
+                source=event.get("source"),
+            )
+        return event
+
+    async def list_security_events(
+        self,
+        *,
+        tenant_id: str,
+        event_type: str | None = None,
+        severity: str | None = None,
+        action: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        filters: list[str] = ["tenant_id = $1::uuid"]
+        args: list[Any] = [tenant_id]
+        idx = 2
+        if event_type:
+            filters.append(f"event_type = ${idx}")
+            args.append(str(event_type).strip().lower())
+            idx += 1
+        if severity:
+            severity_norm = self._normalize_security_event_severity(severity)
+            filters.append(f"severity = ${idx}")
+            args.append(severity_norm)
+            idx += 1
+        if action:
+            filters.append(f"action = ${idx}")
+            args.append(str(action).strip().lower())
+            idx += 1
+        args.append(max(1, min(limit, 1000)))
+        rows = await self._fetch(
+            f"""
+            SELECT event_id,
+                   tenant_id::text AS tenant_id,
+                   event_type,
+                   severity,
+                   action,
+                   source,
+                   payload_json,
+                   created_at
+            FROM tenant_security_events
+            WHERE {" AND ".join(filters)}
+            ORDER BY created_at DESC
+            LIMIT ${idx}
+            """,  # nosec B608
+            *args,
+        )
+        return [dict(row) for row in rows]
+
+    async def get_security_dashboard(
+        self,
+        *,
+        tenant_id: str,
+        window_hours: int = 24,
+        recent_limit: int = 20,
+    ) -> dict[str, Any]:
+        window = max(1, min(int(window_hours), 24 * 30))
+        recent_max = max(1, min(int(recent_limit), 200))
+        cutoff = datetime.now(UTC) - timedelta(hours=window)
+
+        severity_rows = await self._fetch(
+            """
+            SELECT severity, COUNT(*)::int AS count
+            FROM tenant_security_events
+            WHERE tenant_id = $1::uuid
+              AND created_at >= $2
+            GROUP BY severity
+            ORDER BY severity
+            """,
+            tenant_id,
+            cutoff,
+        )
+        type_rows = await self._fetch(
+            """
+            SELECT event_type, COUNT(*)::int AS count
+            FROM tenant_security_events
+            WHERE tenant_id = $1::uuid
+              AND created_at >= $2
+            GROUP BY event_type
+            ORDER BY count DESC, event_type ASC
+            LIMIT 10
+            """,
+            tenant_id,
+            cutoff,
+        )
+        recent_rows = await self._fetch(
+            """
+            SELECT event_id,
+                   tenant_id::text AS tenant_id,
+                   event_type,
+                   severity,
+                   action,
+                   source,
+                   payload_json,
+                   created_at
+            FROM tenant_security_events
+            WHERE tenant_id = $1::uuid
+            ORDER BY created_at DESC
+            LIMIT $2
+            """,
+            tenant_id,
+            recent_max,
+        )
+
+        severity_counts = {key: 0 for key in VALID_SECURITY_EVENT_SEVERITIES}
+        for row in severity_rows:
+            severity_counts[str(row["severity"])] = int(row["count"])
+        total_window = sum(severity_counts.values())
+        recent_events: list[dict[str, Any]] = []
+        for row in recent_rows:
+            event = dict(row)
+            created_at = event.get("created_at")
+            if isinstance(created_at, datetime):
+                event["created_at"] = created_at.isoformat()
+            recent_events.append(event)
+
+        return {
+            "window_hours": window,
+            "window_started_at": cutoff.isoformat(),
+            "totals": {
+                "events": total_window,
+                "by_severity": severity_counts,
+            },
+            "top_event_types": [dict(row) for row in type_rows],
+            "recent_events": recent_events,
+        }
+
+    # ------------------------------------------------------------------
     # Tenant messaging control-plane domain
     # ------------------------------------------------------------------
 
@@ -3886,6 +4092,171 @@ class TenantAdminManager:
             data = dict(row)
             data["body_text"] = self._decrypt(str(data.get("body_enc") or "")) or ""
             result.append(data)
+        return result
+
+    async def export_messaging_messages(
+        self,
+        *,
+        tenant_id: str,
+        provider: str = "whatsapp",
+        chat_id: str | None = None,
+        sender_id: str | None = None,
+        direction: str | None = None,
+        include_expired: bool = False,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        chat = str(chat_id or "").strip() or None
+        sender = str(sender_id or "").strip() or None
+        if not chat and not sender:
+            raise ValueError("Provide at least one export filter: chat_id or sender_id")
+
+        filters: list[str] = ["tenant_id = $1::uuid", "provider = $2"]
+        args: list[Any] = [tenant_id, self._normalize_messaging_provider(provider)]
+        idx = 3
+        if chat:
+            filters.append(f"chat_id = ${idx}")
+            args.append(chat)
+            idx += 1
+        if sender:
+            filters.append(f"sender_id = ${idx}")
+            args.append(sender)
+            idx += 1
+        if direction:
+            direction_norm = str(direction).strip().lower()
+            if direction_norm not in VALID_MESSAGING_DIRECTIONS:
+                raise ValueError(f"Invalid direction '{direction}'")
+            filters.append(f"direction = ${idx}")
+            args.append(direction_norm)
+            idx += 1
+        if not include_expired:
+            filters.append("expires_at > now()")
+
+        args.append(max(1, min(limit, 5000)))
+        rows = await self._fetch(
+            f"""
+            SELECT message_id::text AS message_id,
+                   tenant_id::text AS tenant_id,
+                   provider,
+                   chat_id,
+                   direction,
+                   sender_id,
+                   sender_name,
+                   body_enc,
+                   metadata,
+                   action_id::text AS action_id,
+                   event_type,
+                   observed_at,
+                   expires_at,
+                   created_at
+            FROM tenant_messaging_messages
+            WHERE {" AND ".join(filters)}
+            ORDER BY created_at DESC
+            LIMIT ${idx}
+            """,  # nosec B608
+            *args,
+        )
+
+        exported: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["body_text"] = self._decrypt(str(item.get("body_enc") or "")) or ""
+            exported.append(item)
+        return exported
+
+    async def delete_messaging_messages(
+        self,
+        *,
+        tenant_id: str,
+        actor: AdminActorContext,
+        provider: str = "whatsapp",
+        chat_id: str | None = None,
+        sender_id: str | None = None,
+        before_created_at: datetime | None = None,
+        message_ids: list[str] | None = None,
+        limit: int = 5000,
+    ) -> dict[str, Any]:
+        chat = str(chat_id or "").strip() or None
+        sender = str(sender_id or "").strip() or None
+        cutoff = before_created_at
+        if cutoff is not None and cutoff.tzinfo is None:
+            cutoff = cutoff.replace(tzinfo=UTC)
+
+        parsed_ids: list[str] = []
+        if message_ids:
+            for raw in message_ids:
+                raw_text = str(raw or "").strip()
+                if not raw_text:
+                    continue
+                try:
+                    parsed_ids.append(str(UUID(raw_text)))
+                except ValueError as exc:
+                    raise ValueError("message_ids must contain UUID values") from exc
+
+        if not chat and not sender and cutoff is None and not parsed_ids:
+            raise ValueError(
+                "At least one delete filter is required: chat_id, sender_id, "
+                "before_created_at, or message_ids"
+            )
+
+        provider_norm = self._normalize_messaging_provider(provider)
+        filters: list[str] = ["tenant_id = $1::uuid", "provider = $2"]
+        args: list[Any] = [tenant_id, provider_norm]
+        idx = 3
+        if chat:
+            filters.append(f"chat_id = ${idx}")
+            args.append(chat)
+            idx += 1
+        if sender:
+            filters.append(f"sender_id = ${idx}")
+            args.append(sender)
+            idx += 1
+        if cutoff is not None:
+            filters.append(f"created_at <= ${idx}")
+            args.append(cutoff)
+            idx += 1
+        if parsed_ids:
+            filters.append(f"message_id = ANY(${idx}::uuid[])")
+            args.append(parsed_ids)
+            idx += 1
+
+        args.append(max(1, min(limit, 20000)))
+        rows = await self._fetch(
+            f"""
+            WITH doomed AS (
+                SELECT message_pk
+                FROM tenant_messaging_messages
+                WHERE {" AND ".join(filters)}
+                ORDER BY created_at ASC
+                LIMIT ${idx}
+            )
+            DELETE FROM tenant_messaging_messages m
+            USING doomed d
+            WHERE m.message_pk = d.message_pk
+            RETURNING m.message_id::text AS message_id,
+                      m.chat_id,
+                      m.sender_id
+            """,  # nosec B608
+            *args,
+        )
+        deleted = [dict(row) for row in rows]
+        result = {
+            "deleted_count": len(deleted),
+            "deleted_message_ids": [str(row.get("message_id")) for row in deleted],
+            "provider": provider_norm,
+            "filters": {
+                "chat_id": chat,
+                "sender_id": sender,
+                "before_created_at": cutoff,
+                "message_ids": parsed_ids,
+            },
+        }
+        await self._write_audit(
+            tenant_id=tenant_id,
+            action="tenant_messaging_messages_deleted",
+            actor=actor,
+            before=None,
+            after=result,
+        )
         return result
 
     async def queue_messaging_send(

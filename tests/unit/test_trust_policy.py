@@ -70,6 +70,30 @@ def test_messaging_send_requires_approval_unless_explicitly_elevated() -> None:
     assert allowed.outcome == TrustDecisionOutcome.ALLOW
 
 
+def test_messaging_delete_requires_approval_unless_explicitly_elevated() -> None:
+    evaluator = TrustPolicyEvaluator(
+        setting_resolver=_resolver_factory(
+            {
+                ("tenant-1", "security", "trust_tier"): "tier3",
+            }
+        )
+    )
+    approval = evaluator.evaluate(
+        tenant_id="tenant-1",
+        action="messaging.delete",
+        context={},
+    )
+    assert approval.outcome == TrustDecisionOutcome.APPROVAL_REQUIRED
+    assert approval.code == "AI_APPROVAL_REQUIRED"
+
+    allowed = evaluator.evaluate(
+        tenant_id="tenant-1",
+        action="messaging.delete",
+        context={"explicitly_elevated": True},
+    )
+    assert allowed.outcome == TrustDecisionOutcome.ALLOW
+
+
 def test_kill_switch_blocks_messaging_ingest() -> None:
     evaluator = TrustPolicyEvaluator(
         setting_resolver=_resolver_factory(
@@ -146,6 +170,61 @@ def test_unknown_non_sensitive_actions_allow_with_method_classification() -> Non
     )
     assert mutate_decision.outcome == TrustDecisionOutcome.ALLOW
     assert mutate_decision.action_class == TrustActionClass.MUTATE
+
+
+def test_rollout_stage_disabled_blocks_sensitive_actions() -> None:
+    evaluator = TrustPolicyEvaluator(
+        setting_resolver=_resolver_factory(
+            {
+                ("tenant-1", "security", "trust_tier"): "tier4",
+                ("tenant-1", "security", "messaging_allowlisted_chats"): ["chat-1"],
+                ("tenant-1", "security", "messaging_rollout_stage"): "disabled",
+            }
+        )
+    )
+    decision = evaluator.evaluate(
+        tenant_id="tenant-1",
+        action="messaging.read",
+        context={"chat_id": "chat-1"},
+    )
+    assert decision.outcome == TrustDecisionOutcome.DENY
+    assert decision.code == "AI_ROLLOUT_STAGE_BLOCKED"
+
+
+def test_rollout_stage_canary_requires_canary_enablement() -> None:
+    evaluator = TrustPolicyEvaluator(
+        setting_resolver=_resolver_factory(
+            {
+                ("tenant-1", "security", "trust_tier"): "tier4",
+                ("tenant-1", "security", "messaging_allowlisted_chats"): ["chat-1"],
+                ("tenant-1", "security", "messaging_rollout_stage"): "canary",
+            }
+        )
+    )
+    blocked = evaluator.evaluate(
+        tenant_id="tenant-1",
+        action="messaging.read",
+        context={"chat_id": "chat-1"},
+    )
+    assert blocked.outcome == TrustDecisionOutcome.DENY
+    assert blocked.code == "AI_ROLLOUT_STAGE_BLOCKED"
+
+    enabled = TrustPolicyEvaluator(
+        setting_resolver=_resolver_factory(
+            {
+                ("tenant-1", "security", "trust_tier"): "tier4",
+                ("tenant-1", "security", "messaging_allowlisted_chats"): ["chat-1"],
+                ("tenant-1", "security", "messaging_rollout_stage"): "canary",
+                ("tenant-1", "security", "messaging_canary_enabled"): True,
+            }
+        )
+    )
+    allowed = enabled.evaluate(
+        tenant_id="tenant-1",
+        action="messaging.read",
+        context={"chat_id": "chat-1"},
+    )
+    assert allowed.outcome == TrustDecisionOutcome.ALLOW
 
 
 def test_numeric_trust_tier_aliases_and_low_tier_denial() -> None:
