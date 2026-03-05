@@ -31,6 +31,13 @@ from zetherion_ai.admin.tenant_admin_manager import (
     TenantAdminManager,
     admin_actor_from_payload,
 )
+from zetherion_ai.announcements.policy import AnnouncementPolicyDecision, AnnouncementPolicyEngine
+from zetherion_ai.announcements.storage import (
+    AnnouncementEventInput,
+    AnnouncementPreferencePatch,
+    AnnouncementRepository,
+    AnnouncementUserPreferences,
+)
 from zetherion_ai.automerge.orchestrator import (
     AutomergeExecutionRequest,
     AutomergeExecutionResult,
@@ -276,6 +283,8 @@ class SkillsServer:
         settings_manager: Any | None = None,
         secrets_manager: Any | None = None,
         tenant_admin_manager: TenantAdminManager | None = None,
+        announcement_repository: AnnouncementRepository | None = None,
+        announcement_policy_engine: AnnouncementPolicyEngine | None = None,
         oauth_handlers: dict[str, OAuthCallbackHandler] | None = None,
         oauth_authorizers: dict[str, OAuthAuthorizeHandler] | None = None,
     ):
@@ -298,6 +307,16 @@ class SkillsServer:
         self._settings_manager = settings_manager
         self._secrets_manager = secrets_manager
         self._tenant_admin_manager = tenant_admin_manager
+        self._announcement_repository = announcement_repository
+        self._announcement_policy_engine = (
+            announcement_policy_engine
+            if announcement_policy_engine is not None
+            else (
+                AnnouncementPolicyEngine(announcement_repository)
+                if announcement_repository is not None
+                else None
+            )
+        )
         self._oauth_handlers = oauth_handlers or {}
         self._oauth_authorizers = oauth_authorizers or {}
         self._admin_nonce_cache: dict[str, datetime] = {}
@@ -958,6 +977,313 @@ class SkillsServer:
         except Exception:
             log.exception("oauth_callback_failed", provider="google")
             return web.json_response({"error": "OAuth callback failed"}, status=500)
+
+    # ------------------------------------------------------------------
+    # Announcement API
+    # ------------------------------------------------------------------
+
+    def _announcement_dependencies(self) -> tuple[AnnouncementRepository, AnnouncementPolicyEngine]:
+        repository = self._announcement_repository
+        policy_engine = self._announcement_policy_engine
+        if repository is None or policy_engine is None:
+            raise RuntimeError("Announcements are not configured")
+        return repository, policy_engine
+
+    @staticmethod
+    def _announcement_preferences_payload(
+        preferences: AnnouncementUserPreferences,
+    ) -> dict[str, Any]:
+        return {
+            "user_id": preferences.user_id,
+            "timezone": preferences.timezone,
+            "digest_enabled": preferences.digest_enabled,
+            "digest_window_local": preferences.digest_window_local,
+            "immediate_categories": preferences.immediate_categories,
+            "muted_categories": preferences.muted_categories,
+            "max_immediate_per_hour": preferences.max_immediate_per_hour,
+            "updated_at": _isoformat_if_datetime(preferences.updated_at),
+        }
+
+    @staticmethod
+    def _announcement_receipt_payload(
+        *,
+        status: str,
+        event_id: str,
+        scheduled_for: datetime | None,
+        reason_code: str | None,
+    ) -> dict[str, Any]:
+        return {
+            "status": status,
+            "event_id": event_id,
+            "scheduled_for": _isoformat_if_datetime(scheduled_for),
+            "reason_code": reason_code,
+        }
+
+    @staticmethod
+    def _parse_announcement_event(payload: dict[str, Any]) -> AnnouncementEventInput:
+        source = str(payload.get("source") or "").strip()
+        category = str(payload.get("category") or "").strip()
+        title = str(payload.get("title") or "").strip()
+        body = str(payload.get("body") or "").strip()
+        if not source:
+            raise ValueError("Missing source")
+        if not category:
+            raise ValueError("Missing category")
+        if not title:
+            raise ValueError("Missing title")
+        if not body:
+            raise ValueError("Missing body")
+
+        target_user_raw = payload.get("target_user_id")
+        try:
+            target_user_id = int(target_user_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Invalid target_user_id") from exc
+        if target_user_id <= 0:
+            raise ValueError("Invalid target_user_id")
+
+        severity = payload.get("severity") or "normal"
+        payload_json = payload.get("payload")
+        if payload_json is None:
+            payload_json = payload.get("payload_json")
+        if not isinstance(payload_json, dict):
+            payload_json = {}
+
+        occurred_at: datetime | None = None
+        occurred_raw = payload.get("occurred_at")
+        if isinstance(occurred_raw, str) and occurred_raw.strip():
+            try:
+                occurred_at = datetime.fromisoformat(occurred_raw.strip())
+            except ValueError as exc:
+                raise ValueError("Invalid occurred_at timestamp") from exc
+            if occurred_at.tzinfo is None:
+                occurred_at = occurred_at.replace(tzinfo=UTC)
+
+        return AnnouncementEventInput(
+            source=source,
+            category=category,
+            severity=str(severity),
+            tenant_id=str(payload.get("tenant_id")).strip() if payload.get("tenant_id") else None,
+            target_user_id=target_user_id,
+            title=title,
+            body=body,
+            payload=payload_json,
+            fingerprint=(
+                str(payload.get("fingerprint")).strip() if payload.get("fingerprint") else None
+            ),
+            idempotency_key=(
+                str(payload.get("idempotency_key")).strip()
+                if payload.get("idempotency_key")
+                else None
+            ),
+            occurred_at=occurred_at,
+            state=str(payload.get("state") or "accepted"),
+        )
+
+    async def _emit_announcement_event(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        repository, policy_engine = self._announcement_dependencies()
+        event = self._parse_announcement_event(payload)
+        decision: AnnouncementPolicyDecision = await policy_engine.evaluate_event(
+            event,
+            personal_profile=payload.get("personal_profile")
+            if isinstance(payload.get("personal_profile"), dict)
+            else None,
+        )
+        event.state = decision.delivery_mode
+        dedupe_window_minutes = max(
+            1,
+            int(payload.get("dedupe_window_minutes", 10)),
+        )
+        persisted = await repository.create_event(
+            event,
+            dedupe_window_minutes=dedupe_window_minutes,
+        )
+
+        receipt_status = persisted.status
+        scheduled_for = decision.scheduled_for
+        reason_code = persisted.reason_code or decision.reason_code
+        if persisted.status != "deduped":
+            if decision.status == "scheduled" and decision.delivery_mode in {"immediate", "digest"}:
+                channel = str(payload.get("channel") or "discord_dm").strip() or "discord_dm"
+                when = decision.scheduled_for or datetime.now(UTC)
+                await repository.create_delivery(
+                    event_id=persisted.event_id,
+                    channel=channel,
+                    scheduled_for=when,
+                )
+                receipt_status = "scheduled"
+                scheduled_for = when
+            elif decision.status == "deferred":
+                receipt_status = "deferred"
+                scheduled_for = decision.scheduled_for
+        return {
+            "receipt": self._announcement_receipt_payload(
+                status=receipt_status,
+                event_id=persisted.event_id,
+                scheduled_for=scheduled_for,
+                reason_code=reason_code,
+            ),
+            "decision": {
+                "delivery_mode": decision.delivery_mode,
+                "severity": decision.severity.value,
+            },
+        }
+
+    async def handle_announcement_emit_event(self, request: web.Request) -> web.Response:
+        try:
+            payload = await self._read_json_object(request)
+            result = await self._emit_announcement_event(payload)
+            return web.json_response({"ok": True, **result})
+        except RuntimeError as exc:
+            return web.json_response({"error": str(exc)}, status=501)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception("announcement_emit_event_failed")
+            return web.json_response({"error": "Failed to emit announcement"}, status=500)
+
+    async def handle_announcement_emit_batch(self, request: web.Request) -> web.Response:
+        try:
+            payload = await self._read_json_object(request)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+        raw_events = payload.get("events")
+        if not isinstance(raw_events, list):
+            return web.json_response({"error": "events must be an array"}, status=400)
+
+        receipts: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+        for idx, raw_event in enumerate(raw_events):
+            if not isinstance(raw_event, dict):
+                errors.append({"index": idx, "error": "event payload must be an object"})
+                continue
+            try:
+                result = await self._emit_announcement_event(raw_event)
+                receipts.append(result["receipt"])
+            except ValueError as exc:
+                errors.append({"index": idx, "error": str(exc)})
+            except RuntimeError as exc:
+                return web.json_response({"error": str(exc)}, status=501)
+            except Exception:
+                log.exception("announcement_emit_batch_item_failed", index=idx)
+                errors.append({"index": idx, "error": "Failed to emit announcement"})
+
+        return web.json_response(
+            {
+                "ok": len(errors) == 0,
+                "count": len(receipts),
+                "receipts": receipts,
+                "errors": errors,
+            }
+        )
+
+    async def handle_announcement_get_preferences(self, request: web.Request) -> web.Response:
+        try:
+            user_id = self._parse_int(request.match_info.get("user_id"), "user_id")
+            repository, _ = self._announcement_dependencies()
+            preferences = await repository.get_user_preferences(user_id)
+            if preferences is None:
+                preferences = AnnouncementUserPreferences(user_id=user_id)
+            return web.json_response(
+                {"ok": True, "preferences": self._announcement_preferences_payload(preferences)}
+            )
+        except RuntimeError as exc:
+            return web.json_response({"error": str(exc)}, status=501)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception("announcement_get_preferences_failed")
+            return web.json_response({"error": "Failed to read preferences"}, status=500)
+
+    async def handle_announcement_put_preferences(self, request: web.Request) -> web.Response:
+        try:
+            user_id = self._parse_int(request.match_info.get("user_id"), "user_id")
+            payload = await self._read_json_object(request)
+            repository, _ = self._announcement_dependencies()
+            patch = AnnouncementPreferencePatch(
+                timezone=str(payload.get("timezone")).strip() if payload.get("timezone") else None,
+                digest_enabled=(
+                    self._parse_bool(payload.get("digest_enabled"), "digest_enabled", default=True)
+                    if "digest_enabled" in payload
+                    else None
+                ),
+                digest_window_local=(
+                    str(payload.get("digest_window_local")).strip()
+                    if payload.get("digest_window_local")
+                    else None
+                ),
+                immediate_categories=(
+                    self._parse_string_list(
+                        payload.get("immediate_categories"),
+                        "immediate_categories",
+                    )
+                    if "immediate_categories" in payload
+                    else None
+                ),
+                muted_categories=(
+                    self._parse_string_list(payload.get("muted_categories"), "muted_categories")
+                    if "muted_categories" in payload
+                    else None
+                ),
+                max_immediate_per_hour=(
+                    self._parse_int(payload.get("max_immediate_per_hour"), "max_immediate_per_hour")
+                    if "max_immediate_per_hour" in payload
+                    else None
+                ),
+            )
+            updated = await repository.upsert_user_preferences(user_id=user_id, patch=patch)
+            return web.json_response(
+                {"ok": True, "preferences": self._announcement_preferences_payload(updated)}
+            )
+        except RuntimeError as exc:
+            return web.json_response({"error": str(exc)}, status=501)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception("announcement_put_preferences_failed")
+            return web.json_response({"error": "Failed to update preferences"}, status=500)
+
+    async def handle_announcement_dispatch_flush(self, request: web.Request) -> web.Response:
+        repository = self._announcement_repository
+        if repository is None:
+            return web.json_response({"error": "Announcements are not configured"}, status=501)
+
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        if payload is None:
+            payload = {}
+        if not isinstance(payload, dict):
+            return web.json_response({"error": "JSON body must be an object"}, status=400)
+
+        try:
+            limit = self._parse_int(payload.get("limit", 100), "limit")
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+        due = await repository.list_due_deliveries(limit=max(1, min(limit, 1000)))
+        return web.json_response(
+            {
+                "ok": True,
+                "count": len(due),
+                "deliveries": [
+                    {
+                        "delivery_id": item.delivery_id,
+                        "event_id": item.event_id,
+                        "channel": item.channel,
+                        "scheduled_for": item.scheduled_for.isoformat(),
+                        "status": item.status,
+                        "retry_count": item.retry_count,
+                    }
+                    for item in due
+                ],
+            }
+        )
 
     # ------------------------------------------------------------------
     # User management API
@@ -3194,6 +3520,20 @@ class SkillsServer:
             "/worker/v1/nodes/{node_id}/jobs/{job_id}/result",
             self.handle_worker_submit_job_result,
         )
+        app.router.add_post("/announcements/events", self.handle_announcement_emit_event)
+        app.router.add_post("/announcements/events/batch", self.handle_announcement_emit_batch)
+        app.router.add_get(
+            "/announcements/users/{user_id}/preferences",
+            self.handle_announcement_get_preferences,
+        )
+        app.router.add_put(
+            "/announcements/users/{user_id}/preferences",
+            self.handle_announcement_put_preferences,
+        )
+        app.router.add_post(
+            "/announcements/dispatch/flush",
+            self.handle_announcement_dispatch_flush,
+        )
 
         # User management routes
         app.router.add_get("/users", self.handle_list_users)
@@ -3451,6 +3791,8 @@ async def run_server(  # pragma: no cover — starts infinite loop
     settings_manager: Any | None = None,
     secrets_manager: Any | None = None,
     tenant_admin_manager: TenantAdminManager | None = None,
+    announcement_repository: AnnouncementRepository | None = None,
+    announcement_policy_engine: AnnouncementPolicyEngine | None = None,
     oauth_handlers: dict[str, OAuthCallbackHandler] | None = None,
     oauth_authorizers: dict[str, OAuthAuthorizeHandler] | None = None,
 ) -> None:
@@ -3473,6 +3815,8 @@ async def run_server(  # pragma: no cover — starts infinite loop
         settings_manager=settings_manager,
         secrets_manager=secrets_manager,
         tenant_admin_manager=tenant_admin_manager,
+        announcement_repository=announcement_repository,
+        announcement_policy_engine=announcement_policy_engine,
         oauth_handlers=oauth_handlers,
         oauth_authorizers=oauth_authorizers,
     )
@@ -3633,6 +3977,8 @@ def main() -> None:  # pragma: no cover — CLI entry-point
         runtime_settings_manager = None
         runtime_secrets_manager = None
         tenant_admin_manager = None
+        announcement_repository = None
+        announcement_policy_engine = None
         encryptor = None
         tenant_vector_memory = None
         personal_db_pool = None
@@ -3684,6 +4030,10 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             runtime_secrets_manager = SecretsManager(encryptor=encryptor)
             await runtime_secrets_manager.initialize(runtime_db_pool)
             set_secret_resolver(SecretResolver(runtime_secrets_manager, settings))
+
+            announcement_repository = AnnouncementRepository()
+            await announcement_repository.initialize(runtime_db_pool)
+            announcement_policy_engine = AnnouncementPolicyEngine(announcement_repository)
 
             try:
                 from zetherion_ai.memory.qdrant import QdrantMemory
@@ -3939,6 +4289,8 @@ def main() -> None:  # pragma: no cover — CLI entry-point
                 settings_manager=runtime_settings_manager,
                 secrets_manager=runtime_secrets_manager,
                 tenant_admin_manager=tenant_admin_manager,
+                announcement_repository=announcement_repository,
+                announcement_policy_engine=announcement_policy_engine,
                 oauth_handlers=oauth_handlers,
                 oauth_authorizers=oauth_authorizers,
             )
