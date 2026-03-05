@@ -254,6 +254,14 @@ class TenantAdminMessagingDeleteRequest(BaseModel):
     change_ticket_id: str | None = None
 
 
+class TenantAdminWorkerCapabilitiesPutRequest(BaseModel):
+    """Replace the allowlisted capability set for one worker node."""
+
+    capabilities: list[str] = Field(default_factory=list)
+    explicitly_elevated: bool = False
+    change_ticket_id: str | None = None
+
+
 class TenantAdminAutomergeExecuteRequest(BaseModel):
     """Execute guarded autonomous PR orchestration for one tenant."""
 

@@ -173,6 +173,11 @@ async def test_internal_admin_validation_error_matrix() -> None:
             "/service/ai/v1/internal/admin/tenants/tenant-a/messaging/messages",
             {"message_ids": "not-an-array"},
         ),
+        (
+            "put",
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/nodes/node-1/capabilities",
+            {"capabilities": "not-an-array"},
+        ),
         ("post", "/service/ai/v1/internal/admin/tenants/tenant-a/changes", {"action": ""}),
         (
             "post",
