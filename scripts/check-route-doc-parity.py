@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import ast
 import re
-import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -31,21 +30,25 @@ def normalize_path(path: str) -> str:
     return cleaned
 
 
-def extract_literal_routes(path: Path) -> set[tuple[str, str]]:
-    routes: set[tuple[str, str]] = set()
-    text = path.read_text(encoding="utf-8")
-    for match in LITERAL_ROUTE_RE.finditer(text):
-        method = match.group(1).upper()
-        route = normalize_path(match.group(2))
-        routes.add((method, route))
-    return routes
-
-
 def _eval_string(expr: ast.AST, env: dict[str, str]) -> str | None:
     if isinstance(expr, ast.Constant) and isinstance(expr.value, str):
         return expr.value
     if isinstance(expr, ast.Name):
         return env.get(expr.id)
+    if isinstance(expr, ast.JoinedStr):
+        parts: list[str] = []
+        for value in expr.values:
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                parts.append(value.value)
+                continue
+            if isinstance(value, ast.FormattedValue):
+                resolved = _eval_string(value.value, env)
+                if resolved is None:
+                    return None
+                parts.append(resolved)
+                continue
+            return None
+        return "".join(parts)
     if isinstance(expr, ast.BinOp) and isinstance(expr.op, ast.Add):
         left = _eval_string(expr.left, env)
         right = _eval_string(expr.right, env)
@@ -84,6 +87,43 @@ def _extract_route_from_call(call: ast.Call, env: dict[str, str]) -> tuple[str, 
         return None
 
     return method, normalize_path(route)
+
+
+def extract_literal_routes(path: Path) -> set[tuple[str, str]]:
+    routes: set[tuple[str, str]] = set()
+    text = path.read_text(encoding="utf-8")
+    for match in LITERAL_ROUTE_RE.finditer(text):
+        method = match.group(1).upper()
+        route = normalize_path(match.group(2))
+        routes.add((method, route))
+    return routes
+
+
+def extract_worker_routes(path: Path) -> set[tuple[str, str]]:
+    source = path.read_text(encoding="utf-8")
+    module = ast.parse(source)
+    routes: set[tuple[str, str]] = set()
+
+    for node in ast.walk(module):
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        env: dict[str, str] = {}
+        for stmt in node.body:
+            if (
+                isinstance(stmt, ast.Assign)
+                and len(stmt.targets) == 1
+                and isinstance(stmt.targets[0], ast.Name)
+            ):
+                resolved = _eval_string(stmt.value, env)
+                if resolved is not None:
+                    env[stmt.targets[0].id] = resolved
+                continue
+            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+                endpoint = _extract_route_from_call(stmt.value, env)
+                if endpoint is not None and "/workers/" in endpoint[1]:
+                    routes.add(endpoint)
+
+    return routes
 
 
 def extract_youtube_routes(path: Path) -> set[tuple[str, str]]:
@@ -132,7 +172,8 @@ def extract_doc_endpoints(path: Path) -> set[tuple[str, str]]:
         if stripped.startswith("```"):
             in_code_block = not in_code_block
             continue
-        # Endpoints are intentionally listed in headings and bullets. Avoid parsing raw HTTP snippets.
+        # Endpoints are intentionally listed in headings/bullets.
+        # Avoid parsing raw HTTP snippets.
         if in_code_block:
             continue
 
@@ -165,7 +206,7 @@ def print_diff(label: str, expected: set[tuple[str, str]], documented: set[tuple
 
 
 def main() -> int:
-    skills_routes = extract_literal_routes(SKILLS_SERVER)
+    skills_routes = extract_literal_routes(SKILLS_SERVER) | extract_worker_routes(SKILLS_SERVER)
     public_routes = extract_literal_routes(PUBLIC_SERVER) | extract_youtube_routes(YOUTUBE_ROUTES)
 
     skills_doc_routes = extract_doc_endpoints(SKILLS_DOC)

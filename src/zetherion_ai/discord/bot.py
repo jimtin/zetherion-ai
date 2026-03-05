@@ -7,6 +7,7 @@ import contextlib
 import json
 import re
 import time
+from datetime import UTC, datetime
 from datetime import time as clock_time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -68,6 +69,18 @@ class ZetherionAIBot(discord.Client):
         "help dev watcher",
     )
     _DEV_WATCHER_WIZARD_TIMEOUT_SECONDS = 900
+    _WORKER_COMMAND_PREFIX = "worker"
+    _PRESENCE_CHECK_PHRASES = frozenset(
+        {
+            "are you online",
+            "you online",
+            "are you there",
+            "you there",
+            "ping",
+            "hello are you online",
+            "hey are you online",
+        }
+    )
 
     def __init__(
         self,
@@ -853,8 +866,22 @@ class ZetherionAIBot(discord.Client):
                 )
                 return
 
+            if await self._maybe_handle_worker_operator_command(
+                message=message,
+                content=content,
+                is_dm=is_dm,
+            ):
+                return
+
             # Owner-only DM wizard for secure dev-agent provisioning.
             if is_dm and await self._maybe_handle_dev_watcher_dm(message, content):
+                return
+
+            if await self._maybe_handle_presence_quick_reply(
+                message=message,
+                content=content,
+                is_dm=is_dm,
+            ):
                 return
 
             # Check for prompt injection
@@ -942,6 +969,40 @@ class ZetherionAIBot(discord.Client):
                 return
 
             await self._send_long_reply(message, response)
+
+    @staticmethod
+    def _normalize_presence_probe(content: str) -> str:
+        """Normalize a short DM message for presence-check matching."""
+        cleaned = re.sub(r"[^a-z0-9\s]", " ", content.lower())
+        return " ".join(cleaned.split())
+
+    async def _maybe_handle_presence_quick_reply(
+        self,
+        *,
+        message: discord.Message,
+        content: str,
+        is_dm: bool,
+    ) -> bool:
+        """Handle simple DM liveness checks without going through LLM routing."""
+        if not is_dm:
+            return False
+
+        enabled = self._as_bool(
+            get_dynamic("assistant", "presence_quick_reply_enabled", True),
+            default=True,
+        )
+        if not enabled:
+            return False
+
+        normalized = self._normalize_presence_probe(content)
+        if normalized not in self._PRESENCE_CHECK_PHRASES:
+            return False
+
+        await message.reply(
+            "I'm online and ready. Ask me anything and I'll jump in.",
+            mention_author=True,
+        )
+        return True
 
     async def _handle_dev_event(self, message: discord.Message) -> None:
         """Handle a dev-agent webhook message by routing to the dev_watcher skill.
@@ -1040,6 +1101,439 @@ class ZetherionAIBot(discord.Client):
             return True
 
         return False
+
+    @staticmethod
+    def _looks_like_tenant_id(value: str) -> bool:
+        return bool(
+            re.fullmatch(
+                r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+                value.strip().lower(),
+            )
+        )
+
+    @staticmethod
+    def _worker_operator_help_text() -> str:
+        return (
+            "Worker operator commands:\n"
+            "- `worker status [tenant_id]`\n"
+            "- `worker pending approvals`\n"
+            "- `worker quarantine [tenant_id] <node_id>`\n"
+            "- `worker unquarantine [tenant_id] <node_id>`\n"
+            "- `worker retry [tenant_id] <job_id> [reason]`\n"
+            "- `worker cancel [tenant_id] <job_id> [reason]`\n"
+            "Tip: in a tenant-bound guild/channel mention, `tenant_id` is optional."
+        )
+
+    @staticmethod
+    def _extract_error_message(payload: Any, *, fallback: str) -> str:
+        if isinstance(payload, dict):
+            error = payload.get("error")
+            if isinstance(error, dict):
+                message = str(error.get("message") or "").strip()
+                code = str(error.get("code") or "").strip()
+                if message and code:
+                    return f"{message} (`{code}`)"
+                if message:
+                    return message
+            if isinstance(error, str) and error.strip():
+                return error.strip()
+        return fallback
+
+    async def _build_worker_admin_actor(self, *, message: discord.Message) -> dict[str, Any]:
+        role = "admin"
+        settings = get_settings()
+        if settings.owner_user_id is not None and settings.owner_user_id == message.author.id:
+            role = "owner"
+        elif self._user_manager is not None:
+            try:
+                resolved = await self._user_manager.get_role(message.author.id)
+                if isinstance(resolved, str) and resolved.strip():
+                    role = resolved.strip().lower()
+            except Exception:
+                log.exception("worker_operator_role_lookup_failed", user_id=message.author.id)
+        return {
+            "actor_sub": f"discord:{message.author.id}",
+            "actor_roles": [role],
+            "request_id": f"discord-worker-{uuid4().hex[:12]}",
+            "timestamp": datetime.now(UTC).isoformat(),
+            "nonce": uuid4().hex,
+            "actor_email": None,
+        }
+
+    async def _resolve_worker_operator_tenant(
+        self,
+        *,
+        message: discord.Message,
+        is_dm: bool,
+        args: list[str],
+    ) -> tuple[str | None, list[str], str | None]:
+        remaining = list(args)
+        explicit_tenant_id: str | None = None
+        if remaining and self._looks_like_tenant_id(remaining[0]):
+            explicit_tenant_id = remaining.pop(0).strip().lower()
+        if explicit_tenant_id:
+            return explicit_tenant_id, remaining, None
+
+        if not is_dm:
+            tenant_id = await self._resolve_tenant_for_message(message)
+            if tenant_id:
+                return tenant_id, remaining, None
+            return (
+                None,
+                remaining,
+                "Could not resolve tenant for this channel. Provide tenant_id explicitly.",
+            )
+
+        if self._tenant_admin_manager is None:
+            return (
+                None,
+                remaining,
+                "Tenant resolution is unavailable. Provide tenant_id explicitly.",
+            )
+
+        try:
+            tenant_ids = await self._tenant_admin_manager.list_tenants_for_discord_user(
+                message.author.id,
+                roles=("owner", "admin"),
+            )
+        except Exception:
+            log.exception("worker_operator_tenant_resolution_failed", user_id=message.author.id)
+            return (
+                None,
+                remaining,
+                "Failed to resolve your tenant memberships. Provide tenant_id explicitly.",
+            )
+
+        if len(tenant_ids) == 1:
+            return tenant_ids[0], remaining, None
+        if not tenant_ids:
+            return (
+                None,
+                remaining,
+                "No tenant membership found for this Discord user. Provide tenant_id explicitly.",
+            )
+        return (
+            None,
+            remaining,
+            "Multiple tenant memberships found. Provide tenant_id explicitly.",
+        )
+
+    async def _request_worker_admin(
+        self,
+        *,
+        message: discord.Message,
+        tenant_id: str,
+        method: str,
+        subpath: str,
+        payload: dict[str, Any] | None = None,
+        query: dict[str, str] | None = None,
+    ) -> tuple[int, Any]:
+        if self._agent is None:
+            return 503, {"error": "Agent is not ready"}
+        try:
+            client = await self._agent._get_skills_client()
+        except Exception:
+            log.exception("worker_operator_skills_client_lookup_failed")
+            return 503, {"error": "Skills service is unavailable"}
+        if client is None:
+            return 503, {"error": "Skills service is unavailable"}
+
+        request_tenant_admin = getattr(client, "request_tenant_admin_json", None)
+        if not callable(request_tenant_admin):
+            return 501, {"error": "Tenant-admin API is not supported by the current skills client"}
+
+        actor = await self._build_worker_admin_actor(message=message)
+        try:
+            status, response_payload = await request_tenant_admin(  # type: ignore[misc]
+                method,
+                tenant_id=tenant_id,
+                subpath=subpath,
+                actor=actor,
+                json_body=payload,
+                query=query,
+            )
+            return int(status), response_payload
+        except SkillsClientError as exc:
+            return 502, {"error": str(exc)}
+        except Exception:
+            log.exception(
+                "worker_operator_admin_request_failed",
+                method=method,
+                subpath=subpath,
+                tenant_id=tenant_id,
+            )
+            return 502, {"error": "Failed to call worker operator control API"}
+
+    async def _fetch_pending_dev_agent_approvals(self) -> tuple[list[dict[str, Any]], str | None]:
+        token = (get_secret("dev_agent_api_token", "") or "").strip()
+        if not token:
+            return [], "Dev-agent API token is not configured."
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.get(
+                    f"{self._dev_agent_base_url()}/v1/approvals/pending",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+        except httpx.RequestError as exc:
+            return [], f"Unable to reach dev-agent approvals API: {exc}"
+        if response.status_code != 200:
+            return [], f"Dev-agent approvals API returned HTTP {response.status_code}"
+        try:
+            payload = response.json()
+        except Exception:
+            return [], "Dev-agent approvals API returned invalid JSON"
+        pending = payload.get("pending", []) if isinstance(payload, dict) else []
+        if not isinstance(pending, list):
+            return [], "Dev-agent approvals API returned unexpected payload"
+        rows = [item for item in pending if isinstance(item, dict)]
+        return rows, None
+
+    async def _handle_worker_operator_status(
+        self,
+        *,
+        message: discord.Message,
+        tenant_id: str,
+    ) -> None:
+        nodes_status, nodes_payload = await self._request_worker_admin(
+            message=message,
+            tenant_id=tenant_id,
+            method="GET",
+            subpath="/workers/nodes",
+            query={"include_inactive": "true", "limit": "200"},
+        )
+        if nodes_status >= 400:
+            error = self._extract_error_message(
+                nodes_payload,
+                fallback=f"Worker node status request failed (HTTP {nodes_status}).",
+            )
+            await message.reply(error, mention_author=True)
+            return
+
+        jobs_status, jobs_payload = await self._request_worker_admin(
+            message=message,
+            tenant_id=tenant_id,
+            method="GET",
+            subpath="/workers/jobs",
+            query={"limit": "200"},
+        )
+        if jobs_status >= 400:
+            error = self._extract_error_message(
+                jobs_payload,
+                fallback=f"Worker job status request failed (HTTP {jobs_status}).",
+            )
+            await message.reply(error, mention_author=True)
+            return
+
+        nodes = nodes_payload.get("nodes", []) if isinstance(nodes_payload, dict) else []
+        jobs = jobs_payload.get("jobs", []) if isinstance(jobs_payload, dict) else []
+        if not isinstance(nodes, list):
+            nodes = []
+        if not isinstance(jobs, list):
+            jobs = []
+
+        node_status_counts: dict[str, int] = {}
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            status = str(node.get("status") or "unknown").strip().lower()
+            node_status_counts[status] = node_status_counts.get(status, 0) + 1
+
+        job_status_counts: dict[str, int] = {}
+        for job in jobs:
+            if not isinstance(job, dict):
+                continue
+            status = str(job.get("status") or "unknown").strip().lower()
+            job_status_counts[status] = job_status_counts.get(status, 0) + 1
+
+        pending_approvals, pending_error = await self._fetch_pending_dev_agent_approvals()
+        pending_approvals_count = len(pending_approvals)
+
+        lines = [
+            f"**Worker Status** (`{tenant_id}`)",
+            f"- Nodes: `{len(nodes)}`",
+            f"- Node status: `{node_status_counts or {'none': 0}}`",
+            f"- Jobs: `{len(jobs)}`",
+            f"- Job status: `{job_status_counts or {'none': 0}}`",
+            f"- Pending approvals: `{pending_approvals_count}`",
+        ]
+        if pending_error:
+            lines.append(f"- Pending approvals note: {pending_error}")
+        await self._send_long_reply(message, "\n".join(lines), mention_author=True)
+
+    async def _handle_worker_pending_approvals(self, *, message: discord.Message) -> None:
+        approvals, error = await self._fetch_pending_dev_agent_approvals()
+        if error:
+            await message.reply(error, mention_author=True)
+            return
+        if not approvals:
+            await message.reply("No pending approvals.", mention_author=True)
+            return
+        lines = ["**Pending Worker Approvals**"]
+        for item in approvals[:10]:
+            project_id = str(item.get("project_id") or item.get("name") or "unknown")
+            requested_at = str(item.get("requested_at") or item.get("created_at") or "unknown")
+            lines.append(f"- `{project_id}` requested_at=`{requested_at}`")
+        if len(approvals) > 10:
+            lines.append(f"- ...and `{len(approvals) - 10}` more")
+        await self._send_long_reply(message, "\n".join(lines), mention_author=True)
+
+    async def _handle_worker_node_control_action(
+        self,
+        *,
+        message: discord.Message,
+        tenant_id: str,
+        action: str,
+        node_id: str,
+    ) -> None:
+        status, payload = await self._request_worker_admin(
+            message=message,
+            tenant_id=tenant_id,
+            method="POST",
+            subpath=f"/workers/nodes/{node_id}/{action}",
+            payload={
+                "metadata": {
+                    "source": "discord_operator",
+                    "requested_by": str(message.author.id),
+                }
+            },
+        )
+        if status >= 400:
+            error = self._extract_error_message(
+                payload,
+                fallback=f"Worker node {action} failed (HTTP {status}).",
+            )
+            await message.reply(error, mention_author=True)
+            return
+        await message.reply(
+            f"Worker node `{node_id}` {action} request accepted for tenant `{tenant_id}`.",
+            mention_author=True,
+        )
+
+    async def _handle_worker_job_control_action(
+        self,
+        *,
+        message: discord.Message,
+        tenant_id: str,
+        action: str,
+        job_id: str,
+        reason: str | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {}
+        reason_value = str(reason or "").strip()
+        if reason_value:
+            payload["reason"] = reason_value
+        status, response_payload = await self._request_worker_admin(
+            message=message,
+            tenant_id=tenant_id,
+            method="POST",
+            subpath=f"/workers/jobs/{job_id}/{action}",
+            payload=payload,
+        )
+        if status >= 400:
+            error = self._extract_error_message(
+                response_payload,
+                fallback=f"Worker job {action} failed (HTTP {status}).",
+            )
+            await message.reply(error, mention_author=True)
+            return
+        await message.reply(
+            f"Worker job `{job_id}` {action} request accepted for tenant `{tenant_id}`.",
+            mention_author=True,
+        )
+
+    async def _maybe_handle_worker_operator_command(
+        self,
+        *,
+        message: discord.Message,
+        content: str,
+        is_dm: bool,
+    ) -> bool:
+        """Handle owner/admin worker operator commands via DM or mention."""
+        text = content.strip()
+        if not text:
+            return False
+        tokens = text.split()
+        if not tokens or tokens[0].strip().lower() != self._WORKER_COMMAND_PREFIX:
+            return False
+
+        if len(tokens) == 1 or (len(tokens) >= 2 and tokens[1].strip().lower() == "help"):
+            await self._send_long_reply(
+                message,
+                self._worker_operator_help_text(),
+                mention_author=True,
+            )
+            return True
+
+        if not await self._is_owner_or_admin(message.author.id):
+            await message.reply(
+                "Worker operator commands are owner/admin only.",
+                mention_author=True,
+            )
+            return True
+
+        if (
+            len(tokens) >= 3
+            and tokens[1].strip().lower() == "pending"
+            and tokens[2].strip().lower() == "approvals"
+        ):
+            await self._handle_worker_pending_approvals(message=message)
+            return True
+
+        action = tokens[1].strip().lower()
+        tenant_id, remaining, tenant_error = await self._resolve_worker_operator_tenant(
+            message=message,
+            is_dm=is_dm,
+            args=tokens[2:],
+        )
+        if tenant_error or not tenant_id:
+            tenant_message = tenant_error or "Tenant resolution failed."
+            await message.reply(
+                f"{tenant_message}\n{self._worker_operator_help_text()}",
+                mention_author=True,
+            )
+            return True
+
+        if action == "status":
+            await self._handle_worker_operator_status(message=message, tenant_id=tenant_id)
+            return True
+
+        if action in {"quarantine", "unquarantine"}:
+            if not remaining:
+                await message.reply(
+                    f"Missing node_id.\n{self._worker_operator_help_text()}",
+                    mention_author=True,
+                )
+                return True
+            await self._handle_worker_node_control_action(
+                message=message,
+                tenant_id=tenant_id,
+                action=action,
+                node_id=remaining[0],
+            )
+            return True
+
+        if action in {"retry", "cancel"}:
+            if not remaining:
+                await message.reply(
+                    f"Missing job_id.\n{self._worker_operator_help_text()}",
+                    mention_author=True,
+                )
+                return True
+            reason = " ".join(remaining[1:]).strip() or None
+            await self._handle_worker_job_control_action(
+                message=message,
+                tenant_id=tenant_id,
+                action=action,
+                job_id=remaining[0],
+                reason=reason,
+            )
+            return True
+
+        await message.reply(
+            f"Unknown worker command `{action}`.\n{self._worker_operator_help_text()}",
+            mention_author=True,
+        )
+        return True
 
     async def _is_owner_or_admin(self, user_id: int) -> bool:
         """Return True when user has owner/admin privileges."""

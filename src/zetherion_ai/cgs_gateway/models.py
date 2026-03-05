@@ -262,6 +262,21 @@ class TenantAdminWorkerCapabilitiesPutRequest(BaseModel):
     change_ticket_id: str | None = None
 
 
+class TenantAdminWorkerNodeStatusPostRequest(BaseModel):
+    """Apply worker node status mutation (quarantine/unquarantine)."""
+
+    health_status: str | None = Field(default=None, min_length=1, max_length=20)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    change_ticket_id: str | None = None
+
+
+class TenantAdminWorkerJobActionPostRequest(BaseModel):
+    """Apply worker job control actions (retry/cancel)."""
+
+    reason: str | None = Field(default=None, max_length=500)
+    change_ticket_id: str | None = None
+
+
 class TenantAdminAutomergeExecuteRequest(BaseModel):
     """Execute guarded autonomous PR orchestration for one tenant."""
 

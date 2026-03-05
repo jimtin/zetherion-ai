@@ -2735,3 +2735,176 @@ class TestTenantAwareAllowlist:
         assert error_fail_closed is False
         assert fallback_allowed is True
         assert dm_allowed is True
+
+
+class TestWorkerOperatorCommands:
+    """Tests for worker operator command parsing and routing."""
+
+    _TENANT_ID = "11111111-1111-4111-8111-111111111111"
+
+    @pytest.mark.asyncio
+    async def test_worker_help_command(self, bot, mock_dm_message):
+        with patch.object(bot, "_send_long_reply", new_callable=AsyncMock) as send_long:
+            handled = await bot._maybe_handle_worker_operator_command(
+                message=mock_dm_message,
+                content="worker help",
+                is_dm=True,
+            )
+
+        assert handled is True
+        send_long.assert_awaited_once()
+        assert "Worker operator commands" in send_long.await_args.args[1]
+
+    @pytest.mark.asyncio
+    async def test_worker_status_command_requires_admin(self, bot, mock_dm_message):
+        with patch.object(bot, "_is_owner_or_admin", new_callable=AsyncMock, return_value=False):
+            handled = await bot._maybe_handle_worker_operator_command(
+                message=mock_dm_message,
+                content=f"worker status {self._TENANT_ID}",
+                is_dm=True,
+            )
+
+        assert handled is True
+        mock_dm_message.reply.assert_awaited_once()
+        assert "owner/admin only" in mock_dm_message.reply.await_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_worker_status_command_routes_with_explicit_tenant(self, bot, mock_dm_message):
+        with (
+            patch.object(bot, "_is_owner_or_admin", new_callable=AsyncMock, return_value=True),
+            patch.object(
+                bot,
+                "_handle_worker_operator_status",
+                new_callable=AsyncMock,
+            ) as status_handler,
+        ):
+            handled = await bot._maybe_handle_worker_operator_command(
+                message=mock_dm_message,
+                content=f"worker status {self._TENANT_ID}",
+                is_dm=True,
+            )
+
+        assert handled is True
+        status_handler.assert_awaited_once_with(
+            message=mock_dm_message,
+            tenant_id=self._TENANT_ID,
+        )
+
+    @pytest.mark.asyncio
+    async def test_worker_pending_approvals_routes(self, bot, mock_dm_message):
+        with (
+            patch.object(bot, "_is_owner_or_admin", new_callable=AsyncMock, return_value=True),
+            patch.object(
+                bot,
+                "_handle_worker_pending_approvals",
+                new_callable=AsyncMock,
+            ) as pending_handler,
+        ):
+            handled = await bot._maybe_handle_worker_operator_command(
+                message=mock_dm_message,
+                content="worker pending approvals",
+                is_dm=True,
+            )
+
+        assert handled is True
+        pending_handler.assert_awaited_once_with(message=mock_dm_message)
+
+    @pytest.mark.asyncio
+    async def test_worker_quarantine_requires_node_id(self, bot, mock_dm_message):
+        with patch.object(bot, "_is_owner_or_admin", new_callable=AsyncMock, return_value=True):
+            handled = await bot._maybe_handle_worker_operator_command(
+                message=mock_dm_message,
+                content=f"worker quarantine {self._TENANT_ID}",
+                is_dm=True,
+            )
+
+        assert handled is True
+        mock_dm_message.reply.assert_awaited_once()
+        assert "Missing node_id" in mock_dm_message.reply.await_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_worker_retry_forwards_reason(self, bot, mock_dm_message):
+        with (
+            patch.object(bot, "_is_owner_or_admin", new_callable=AsyncMock, return_value=True),
+            patch.object(
+                bot,
+                "_handle_worker_job_control_action",
+                new_callable=AsyncMock,
+            ) as job_handler,
+        ):
+            handled = await bot._maybe_handle_worker_operator_command(
+                message=mock_dm_message,
+                content=f"worker retry {self._TENANT_ID} job-123 reason for retry",
+                is_dm=True,
+            )
+
+        assert handled is True
+        job_handler.assert_awaited_once_with(
+            message=mock_dm_message,
+            tenant_id=self._TENANT_ID,
+            action="retry",
+            job_id="job-123",
+            reason="reason for retry",
+        )
+
+    @pytest.mark.asyncio
+    async def test_worker_status_resolves_single_dm_tenant(self, bot, mock_dm_message):
+        bot._tenant_admin_manager = AsyncMock()
+        bot._tenant_admin_manager.list_tenants_for_discord_user = AsyncMock(
+            return_value=[self._TENANT_ID]
+        )
+        with (
+            patch.object(bot, "_is_owner_or_admin", new_callable=AsyncMock, return_value=True),
+            patch.object(
+                bot,
+                "_handle_worker_operator_status",
+                new_callable=AsyncMock,
+            ) as status_handler,
+        ):
+            handled = await bot._maybe_handle_worker_operator_command(
+                message=mock_dm_message,
+                content="worker status",
+                is_dm=True,
+            )
+
+        assert handled is True
+        bot._tenant_admin_manager.list_tenants_for_discord_user.assert_awaited_once_with(
+            mock_dm_message.author.id,
+            roles=("owner", "admin"),
+        )
+        status_handler.assert_awaited_once_with(
+            message=mock_dm_message,
+            tenant_id=self._TENANT_ID,
+        )
+
+    @pytest.mark.asyncio
+    async def test_request_worker_admin_calls_tenant_admin_json(self, bot, mock_dm_message):
+        skills_client = AsyncMock()
+        skills_client.request_tenant_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+        bot._agent = AsyncMock()
+        bot._agent._get_skills_client = AsyncMock(return_value=skills_client)
+
+        with patch.object(
+            bot,
+            "_build_worker_admin_actor",
+            new_callable=AsyncMock,
+            return_value={"actor_sub": "discord:123"},
+        ):
+            status, payload = await bot._request_worker_admin(
+                message=mock_dm_message,
+                tenant_id=self._TENANT_ID,
+                method="GET",
+                subpath="/workers/jobs",
+                query={"limit": "5"},
+            )
+
+        assert status == 200
+        assert payload["ok"] is True
+        skills_client.request_tenant_admin_json.assert_awaited_once_with(
+            "GET",
+            tenant_id=self._TENANT_ID,
+            subpath="/workers/jobs",
+            actor={"actor_sub": "discord:123"},
+            json_body=None,
+            query={"limit": "5"},
+        )

@@ -897,6 +897,46 @@ class TenantAdminManager:
         )
         return [dict(row) for row in rows]
 
+    async def list_tenants_for_discord_user(
+        self,
+        discord_user_id: int,
+        *,
+        roles: tuple[str, ...] | None = None,
+    ) -> list[str]:
+        """Return distinct tenant IDs where this Discord user is explicitly allowlisted."""
+        role_filter: list[str] = []
+        if roles is not None:
+            role_filter = sorted(
+                {
+                    str(role).strip().lower()
+                    for role in roles
+                    if str(role).strip().lower() in VALID_TENANT_ROLES
+                }
+            )
+        if role_filter:
+            rows = await self._fetch(
+                """
+                SELECT DISTINCT tenant_id::text AS tenant_id
+                FROM tenant_discord_users
+                WHERE discord_user_id = $1
+                  AND role = ANY($2::text[])
+                ORDER BY tenant_id::text ASC
+                """,
+                discord_user_id,
+                role_filter,
+            )
+        else:
+            rows = await self._fetch(
+                """
+                SELECT DISTINCT tenant_id::text AS tenant_id
+                FROM tenant_discord_users
+                WHERE discord_user_id = $1
+                ORDER BY tenant_id::text ASC
+                """,
+                discord_user_id,
+            )
+        return [str(row["tenant_id"]) for row in rows]
+
     async def is_discord_user_allowed(self, tenant_id: str, discord_user_id: int) -> bool:
         row = await self._fetchrow(
             """
@@ -7008,6 +7048,14 @@ class TenantAdminManager:
         return value
 
     @staticmethod
+    def _normalize_worker_job_status(raw: str | None, *, default: str) -> str:
+        value = str(raw or default).strip().lower()
+        if value not in VALID_WORKER_JOB_STATUSES:
+            allowed = ", ".join(sorted(VALID_WORKER_JOB_STATUSES))
+            raise ValueError(f"job status must be one of: {allowed}")
+        return value
+
+    @staticmethod
     def _normalize_worker_capabilities(raw: Any) -> list[str]:
         if raw is None:
             return []
@@ -7631,6 +7679,830 @@ class TenantAdminManager:
         result["capabilities"] = [str(cap_row["capability"]) for cap_row in capability_rows]
         result["active_session_count"] = int(session_count or 0)
         return result
+
+    async def list_worker_jobs(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str | None = None,
+        status: str | None = None,
+        plan_id: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        where = ["tenant_id = $1::uuid"]
+        args: list[Any] = [tenant_id]
+        idx = 2
+
+        node = str(node_id or "").strip()
+        if node:
+            where.append(f"claimed_by_node_id = ${idx}")
+            args.append(node)
+            idx += 1
+
+        if status is not None and str(status).strip():
+            job_status = self._normalize_worker_job_status(str(status), default="queued")
+            where.append(f"status = ${idx}")
+            args.append(job_status)
+            idx += 1
+
+        if plan_id is not None and str(plan_id).strip():
+            parsed_plan_id = str(UUID(str(plan_id).strip()))
+            where.append(f"plan_id = ${idx}::uuid")
+            args.append(parsed_plan_id)
+            idx += 1
+
+        args.append(max(1, min(int(limit), 1000)))
+        rows = await self._fetch(
+            f"""
+            SELECT job_id::text AS job_id,
+                   tenant_id::text AS tenant_id,
+                   plan_id::text AS plan_id,
+                   step_id::text AS step_id,
+                   retry_id::text AS retry_id,
+                   execution_target,
+                   target_node_id,
+                   required_capabilities,
+                   max_runtime_seconds,
+                   artifact_contract,
+                   action,
+                   payload_json,
+                   status,
+                   claimed_by_node_id,
+                   lease_token,
+                   lease_expires_at,
+                   started_at,
+                   finished_at,
+                   result_json,
+                   error_json,
+                   created_at,
+                   updated_at
+            FROM tenant_worker_jobs
+            WHERE {" AND ".join(where)}
+            ORDER BY updated_at DESC
+            LIMIT ${idx}
+            """,  # nosec B608
+            *args,
+        )
+        return [dict(row) for row in rows]
+
+    async def get_worker_job(
+        self,
+        *,
+        tenant_id: str,
+        job_id: str,
+    ) -> dict[str, Any] | None:
+        parsed_job_id = str(UUID(str(job_id or "").strip()))
+        row = await self._fetchrow(
+            """
+            SELECT job_id::text AS job_id,
+                   tenant_id::text AS tenant_id,
+                   plan_id::text AS plan_id,
+                   step_id::text AS step_id,
+                   retry_id::text AS retry_id,
+                   execution_target,
+                   target_node_id,
+                   required_capabilities,
+                   max_runtime_seconds,
+                   artifact_contract,
+                   action,
+                   payload_json,
+                   status,
+                   claimed_by_node_id,
+                   lease_token,
+                   lease_expires_at,
+                   started_at,
+                   finished_at,
+                   result_json,
+                   error_json,
+                   created_at,
+                   updated_at
+            FROM tenant_worker_jobs
+            WHERE tenant_id = $1::uuid
+              AND job_id = $2::uuid
+            """,
+            tenant_id,
+            parsed_job_id,
+        )
+        return dict(row) if row is not None else None
+
+    async def list_worker_job_events(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str | None = None,
+        job_id: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        where = ["tenant_id = $1::uuid"]
+        args: list[Any] = [tenant_id]
+        idx = 2
+
+        node = str(node_id or "").strip()
+        if node:
+            where.append(f"node_id = ${idx}")
+            args.append(node)
+            idx += 1
+
+        job = str(job_id or "").strip()
+        if job:
+            where.append(f"job_id = ${idx}")
+            args.append(job)
+            idx += 1
+
+        args.append(max(1, min(int(limit), 1000)))
+        rows = await self._fetch(
+            f"""
+            SELECT event_id,
+                   tenant_id::text AS tenant_id,
+                   node_id,
+                   session_id::text AS session_id,
+                   job_id,
+                   event_type,
+                   request_nonce,
+                   payload_json,
+                   created_at
+            FROM tenant_worker_job_events
+            WHERE {" AND ".join(where)}
+            ORDER BY created_at DESC, event_id DESC
+            LIMIT ${idx}
+            """,  # nosec B608
+            *args,
+        )
+        return [dict(row) for row in rows]
+
+    async def set_worker_node_status(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        status: str,
+        actor: AdminActorContext,
+        health_status: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        node = str(node_id or "").strip()
+        if not node:
+            raise ValueError("Missing node_id")
+        before = await self.get_worker_node(tenant_id=tenant_id, node_id=node)
+        if before is None:
+            raise ValueError("Worker node not found")
+
+        normalized_status = self._normalize_worker_node_status(
+            status,
+            default=str(before.get("status") or "active"),
+        )
+        if health_status is None:
+            normalized_health = str(before.get("health_status") or "unknown").strip().lower()
+            if normalized_status == "quarantined" and normalized_health == "healthy":
+                normalized_health = "degraded"
+            elif normalized_status in {"registered", "active"} and normalized_health == "unknown":
+                normalized_health = "healthy"
+            normalized_health = self._normalize_worker_health_status(
+                normalized_health,
+                default="unknown",
+            )
+        else:
+            normalized_health = self._normalize_worker_health_status(
+                health_status,
+                default=str(before.get("health_status") or "unknown"),
+            )
+
+        row = await self._fetchrow(
+            """
+            UPDATE tenant_worker_nodes
+            SET status = $3,
+                health_status = $4,
+                metadata = metadata || $5::jsonb,
+                updated_by = $6,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid
+              AND node_id = $2
+            RETURNING node_id
+            """,
+            tenant_id,
+            node,
+            normalized_status,
+            normalized_health,
+            json.dumps(metadata or {}),
+            actor.actor_sub,
+        )
+        if row is None:
+            raise RuntimeError("Failed to update worker node status")
+
+        after = await self.get_worker_node(tenant_id=tenant_id, node_id=node)
+        if after is None:
+            raise RuntimeError("Failed to reload worker node after status update")
+        await self._write_audit(
+            tenant_id=tenant_id,
+            action="tenant_worker_node_status_update",
+            actor=actor,
+            before=before,
+            after=after,
+        )
+        return after
+
+    async def retry_worker_job(
+        self,
+        *,
+        tenant_id: str,
+        job_id: str,
+        actor: AdminActorContext,
+    ) -> dict[str, Any]:
+        parsed_job_id = str(UUID(str(job_id or "").strip()))
+        scheduled_for = datetime.now(UTC)
+
+        async with self._pool.acquire() as conn, conn.transaction():
+            job_before_row = await conn.fetchrow(
+                """
+                SELECT job_id::text AS job_id,
+                       tenant_id::text AS tenant_id,
+                       plan_id::text AS plan_id,
+                       step_id::text AS step_id,
+                       retry_id::text AS retry_id,
+                       status,
+                       claimed_by_node_id,
+                       error_json
+                FROM tenant_worker_jobs
+                WHERE tenant_id = $1::uuid
+                  AND job_id = $2::uuid
+                FOR UPDATE
+                """,
+                tenant_id,
+                parsed_job_id,
+            )
+            if job_before_row is None:
+                raise ValueError("Worker job not found")
+            job_before = dict(job_before_row)
+            job_status = str(job_before["status"]).strip().lower()
+            if job_status == "succeeded":
+                raise ValueError("Worker job already succeeded and cannot be retried")
+
+            step_before_row = await conn.fetchrow(
+                """
+                SELECT status
+                FROM tenant_execution_steps
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND step_id = $3::uuid
+                FOR UPDATE
+                """,
+                tenant_id,
+                str(job_before["plan_id"]),
+                str(job_before["step_id"]),
+            )
+            if step_before_row is None:
+                raise ValueError("Execution step not found for worker job")
+            step_status_before = str(step_before_row["status"]).strip().lower()
+
+            plan_before_row = await conn.fetchrow(
+                """
+                SELECT status
+                FROM tenant_execution_plans
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                FOR UPDATE
+                """,
+                tenant_id,
+                str(job_before["plan_id"]),
+            )
+            if plan_before_row is None:
+                raise ValueError("Execution plan not found for worker job")
+            plan_status_before = str(plan_before_row["status"]).strip().lower()
+
+            if job_status in {"queued", "running"}:
+                job_after_row = await conn.fetchrow(
+                    """
+                    UPDATE tenant_worker_jobs
+                    SET status = 'expired',
+                        claimed_by_node_id = NULL,
+                        lease_token = NULL,
+                        lease_expires_at = NULL,
+                        finished_at = now(),
+                        error_json = jsonb_build_object(
+                            'code', 'WORKER_JOB_RETRIED_BY_OPERATOR',
+                            'message', 'Retry requested by operator'
+                        ),
+                        updated_at = now()
+                    WHERE tenant_id = $1::uuid
+                      AND job_id = $2::uuid
+                    RETURNING job_id::text AS job_id,
+                              tenant_id::text AS tenant_id,
+                              plan_id::text AS plan_id,
+                              step_id::text AS step_id,
+                              retry_id::text AS retry_id,
+                              execution_target,
+                              target_node_id,
+                              required_capabilities,
+                              max_runtime_seconds,
+                              artifact_contract,
+                              action,
+                              payload_json,
+                              status,
+                              claimed_by_node_id,
+                              lease_token,
+                              lease_expires_at,
+                              started_at,
+                              finished_at,
+                              result_json,
+                              error_json,
+                              created_at,
+                              updated_at
+                    """,
+                    tenant_id,
+                    parsed_job_id,
+                )
+                if job_after_row is None:
+                    raise RuntimeError("Failed to expire worker job before retry")
+
+            updated_step = await conn.fetchrow(
+                """
+                UPDATE tenant_execution_steps
+                SET status = 'pending',
+                    next_retry_at = NULL,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND step_id = $3::uuid
+                RETURNING step_id::text AS step_id,
+                          plan_id::text AS plan_id,
+                          tenant_id::text AS tenant_id,
+                          step_index,
+                          title,
+                          status,
+                          attempt_count,
+                          max_attempts,
+                          next_retry_at,
+                          last_error_category,
+                          last_error_detail,
+                          execution_target,
+                          required_capabilities,
+                          max_runtime_seconds,
+                          artifact_contract,
+                          updated_at
+                """,
+                tenant_id,
+                str(job_before["plan_id"]),
+                str(job_before["step_id"]),
+            )
+            if updated_step is None:
+                raise RuntimeError("Failed to reset execution step for worker retry")
+
+            updated_plan = await conn.fetchrow(
+                """
+                UPDATE tenant_execution_plans
+                SET status = 'queued',
+                    next_run_at = $3,
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                RETURNING plan_id::text AS plan_id,
+                          tenant_id::text AS tenant_id,
+                          status,
+                          next_run_at,
+                          lease_owner,
+                          lease_expires_at,
+                          current_step_index,
+                          total_steps,
+                          updated_at
+                """,
+                tenant_id,
+                str(job_before["plan_id"]),
+                scheduled_for,
+            )
+            if updated_plan is None:
+                raise RuntimeError("Failed to queue execution plan for worker retry")
+
+            await conn.execute(
+                """
+                UPDATE tenant_execution_step_retries
+                SET outcome = COALESCE(outcome, 'interrupted'),
+                    failure_category = COALESCE(failure_category, 'interrupted'),
+                    failure_detail = COALESCE(
+                        failure_detail,
+                        'Retry requested by operator'
+                    ),
+                    finished_at = COALESCE(finished_at, now())
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND step_id = $3::uuid
+                  AND retry_id = $4::uuid
+                """,
+                tenant_id,
+                str(job_before["plan_id"]),
+                str(job_before["step_id"]),
+                str(job_before["retry_id"]),
+            )
+
+            await conn.execute(
+                """
+                INSERT INTO tenant_execution_transitions (
+                    tenant_id,
+                    plan_id,
+                    step_id,
+                    from_status,
+                    to_status,
+                    reason,
+                    actor_sub,
+                    metadata
+                ) VALUES (
+                    $1::uuid,
+                    $2::uuid,
+                    $3::uuid,
+                    $4,
+                    'pending',
+                    'worker_job_retry_requested',
+                    $5,
+                    $6::jsonb
+                )
+                """,
+                tenant_id,
+                str(job_before["plan_id"]),
+                str(job_before["step_id"]),
+                step_status_before,
+                actor.actor_sub,
+                json.dumps({"job_id": str(job_before["job_id"])}),
+            )
+
+            if plan_status_before != "queued":
+                await conn.execute(
+                    """
+                    INSERT INTO tenant_execution_transitions (
+                        tenant_id,
+                        plan_id,
+                        step_id,
+                        from_status,
+                        to_status,
+                        reason,
+                        actor_sub,
+                        metadata
+                    ) VALUES (
+                        $1::uuid,
+                        $2::uuid,
+                        NULL,
+                        $3,
+                        'queued',
+                        'worker_job_retry_requested',
+                        $4,
+                        $5::jsonb
+                    )
+                    """,
+                    tenant_id,
+                    str(job_before["plan_id"]),
+                    plan_status_before,
+                    actor.actor_sub,
+                    json.dumps({"job_id": str(job_before["job_id"])}),
+                )
+
+            job_after = await conn.fetchrow(
+                """
+                SELECT job_id::text AS job_id,
+                       tenant_id::text AS tenant_id,
+                       plan_id::text AS plan_id,
+                       step_id::text AS step_id,
+                       retry_id::text AS retry_id,
+                       execution_target,
+                       target_node_id,
+                       required_capabilities,
+                       max_runtime_seconds,
+                       artifact_contract,
+                       action,
+                       payload_json,
+                       status,
+                       claimed_by_node_id,
+                       lease_token,
+                       lease_expires_at,
+                       started_at,
+                       finished_at,
+                       result_json,
+                       error_json,
+                       created_at,
+                       updated_at
+                FROM tenant_worker_jobs
+                WHERE tenant_id = $1::uuid
+                  AND job_id = $2::uuid
+                """,
+                tenant_id,
+                parsed_job_id,
+            )
+            if job_after is None:
+                raise RuntimeError("Failed to reload worker job after retry")
+
+        await self.schedule_execution_continuation(
+            tenant_id=tenant_id,
+            plan_id=str(job_before["plan_id"]),
+            scheduled_for=scheduled_for,
+            reason="worker_job_retry_requested",
+            requested_by=actor.actor_sub,
+        )
+        after_payload = {
+            "job": dict(job_after),
+            "step": dict(updated_step),
+            "plan": dict(updated_plan),
+            "scheduled_for": scheduled_for,
+        }
+        await self._write_audit(
+            tenant_id=tenant_id,
+            action="tenant_worker_job_retry",
+            actor=actor,
+            before=job_before,
+            after=after_payload,
+        )
+        return after_payload
+
+    async def cancel_worker_job(
+        self,
+        *,
+        tenant_id: str,
+        job_id: str,
+        actor: AdminActorContext,
+    ) -> dict[str, Any]:
+        parsed_job_id = str(UUID(str(job_id or "").strip()))
+
+        async with self._pool.acquire() as conn, conn.transaction():
+            job_before_row = await conn.fetchrow(
+                """
+                SELECT job_id::text AS job_id,
+                       tenant_id::text AS tenant_id,
+                       plan_id::text AS plan_id,
+                       step_id::text AS step_id,
+                       retry_id::text AS retry_id,
+                       status
+                FROM tenant_worker_jobs
+                WHERE tenant_id = $1::uuid
+                  AND job_id = $2::uuid
+                FOR UPDATE
+                """,
+                tenant_id,
+                parsed_job_id,
+            )
+            if job_before_row is None:
+                raise ValueError("Worker job not found")
+            job_before = dict(job_before_row)
+            job_status = str(job_before["status"]).strip().lower()
+            if job_status in {"cancelled", "expired"}:
+                current = await conn.fetchrow(
+                    """
+                    SELECT job_id::text AS job_id,
+                           tenant_id::text AS tenant_id,
+                           plan_id::text AS plan_id,
+                           step_id::text AS step_id,
+                           retry_id::text AS retry_id,
+                           status,
+                           finished_at,
+                           error_json,
+                           updated_at
+                    FROM tenant_worker_jobs
+                    WHERE tenant_id = $1::uuid
+                      AND job_id = $2::uuid
+                    """,
+                    tenant_id,
+                    parsed_job_id,
+                )
+                return {
+                    "job": dict(current) if current is not None else dict(job_before),
+                    "idempotent": True,
+                }
+            if job_status in {"succeeded", "failed"}:
+                raise ValueError("Worker job is already terminal and cannot be cancelled")
+
+            step_before_row = await conn.fetchrow(
+                """
+                SELECT status
+                FROM tenant_execution_steps
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND step_id = $3::uuid
+                FOR UPDATE
+                """,
+                tenant_id,
+                str(job_before["plan_id"]),
+                str(job_before["step_id"]),
+            )
+            if step_before_row is None:
+                raise ValueError("Execution step not found for worker job")
+            step_status_before = str(step_before_row["status"]).strip().lower()
+
+            plan_before_row = await conn.fetchrow(
+                """
+                SELECT status
+                FROM tenant_execution_plans
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                FOR UPDATE
+                """,
+                tenant_id,
+                str(job_before["plan_id"]),
+            )
+            if plan_before_row is None:
+                raise ValueError("Execution plan not found for worker job")
+            plan_status_before = str(plan_before_row["status"]).strip().lower()
+
+            cancel_detail = "Worker job cancelled by operator"
+            updated_job = await conn.fetchrow(
+                """
+                UPDATE tenant_worker_jobs
+                SET status = 'cancelled',
+                    claimed_by_node_id = NULL,
+                    lease_token = NULL,
+                    lease_expires_at = NULL,
+                    finished_at = now(),
+                    error_json = jsonb_build_object(
+                        'code', 'WORKER_JOB_CANCELLED_BY_OPERATOR',
+                        'message', $3
+                    ),
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND job_id = $2::uuid
+                RETURNING job_id::text AS job_id,
+                          tenant_id::text AS tenant_id,
+                          plan_id::text AS plan_id,
+                          step_id::text AS step_id,
+                          retry_id::text AS retry_id,
+                          execution_target,
+                          target_node_id,
+                          required_capabilities,
+                          max_runtime_seconds,
+                          artifact_contract,
+                          action,
+                          payload_json,
+                          status,
+                          claimed_by_node_id,
+                          lease_token,
+                          lease_expires_at,
+                          started_at,
+                          finished_at,
+                          result_json,
+                          error_json,
+                          created_at,
+                          updated_at
+                """,
+                tenant_id,
+                parsed_job_id,
+                cancel_detail,
+            )
+            if updated_job is None:
+                raise RuntimeError("Failed to cancel worker job")
+
+            updated_step = await conn.fetchrow(
+                """
+                UPDATE tenant_execution_steps
+                SET status = 'blocked',
+                    next_retry_at = NULL,
+                    last_error_category = 'interrupted',
+                    last_error_detail = $4,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND step_id = $3::uuid
+                RETURNING step_id::text AS step_id,
+                          plan_id::text AS plan_id,
+                          tenant_id::text AS tenant_id,
+                          step_index,
+                          title,
+                          status,
+                          attempt_count,
+                          max_attempts,
+                          next_retry_at,
+                          last_error_category,
+                          last_error_detail,
+                          execution_target,
+                          required_capabilities,
+                          max_runtime_seconds,
+                          artifact_contract,
+                          updated_at
+                """,
+                tenant_id,
+                str(job_before["plan_id"]),
+                str(job_before["step_id"]),
+                cancel_detail,
+            )
+            if updated_step is None:
+                raise RuntimeError("Failed to block execution step during worker cancellation")
+
+            updated_plan = await conn.fetchrow(
+                """
+                UPDATE tenant_execution_plans
+                SET status = 'failed',
+                    next_run_at = NULL,
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    last_error_category = 'interrupted',
+                    last_error_detail = $3,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                RETURNING plan_id::text AS plan_id,
+                          tenant_id::text AS tenant_id,
+                          status,
+                          next_run_at,
+                          lease_owner,
+                          lease_expires_at,
+                          last_error_category,
+                          last_error_detail,
+                          updated_at
+                """,
+                tenant_id,
+                str(job_before["plan_id"]),
+                cancel_detail,
+            )
+            if updated_plan is None:
+                raise RuntimeError("Failed to fail execution plan during worker cancellation")
+
+            await conn.execute(
+                """
+                UPDATE tenant_execution_step_retries
+                SET outcome = 'cancelled',
+                    failure_category = 'interrupted',
+                    failure_detail = $5,
+                    retry_backoff_seconds = NULL,
+                    finished_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND step_id = $3::uuid
+                  AND retry_id = $4::uuid
+                """,
+                tenant_id,
+                str(job_before["plan_id"]),
+                str(job_before["step_id"]),
+                str(job_before["retry_id"]),
+                cancel_detail,
+            )
+
+            await conn.execute(
+                """
+                INSERT INTO tenant_execution_transitions (
+                    tenant_id,
+                    plan_id,
+                    step_id,
+                    from_status,
+                    to_status,
+                    reason,
+                    actor_sub,
+                    metadata
+                ) VALUES (
+                    $1::uuid,
+                    $2::uuid,
+                    $3::uuid,
+                    $4,
+                    'blocked',
+                    'worker_job_cancelled_by_operator',
+                    $5,
+                    $6::jsonb
+                )
+                """,
+                tenant_id,
+                str(job_before["plan_id"]),
+                str(job_before["step_id"]),
+                step_status_before,
+                actor.actor_sub,
+                json.dumps({"job_id": str(job_before["job_id"])}),
+            )
+
+            if plan_status_before != "failed":
+                await conn.execute(
+                    """
+                    INSERT INTO tenant_execution_transitions (
+                        tenant_id,
+                        plan_id,
+                        step_id,
+                        from_status,
+                        to_status,
+                        reason,
+                        actor_sub,
+                        metadata
+                    ) VALUES (
+                        $1::uuid,
+                        $2::uuid,
+                        NULL,
+                        $3,
+                        'failed',
+                        'worker_job_cancelled_by_operator',
+                        $4,
+                        $5::jsonb
+                    )
+                    """,
+                    tenant_id,
+                    str(job_before["plan_id"]),
+                    plan_status_before,
+                    actor.actor_sub,
+                    json.dumps({"job_id": str(job_before["job_id"])}),
+                )
+
+        after_payload = {
+            "job": dict(updated_job),
+            "step": dict(updated_step),
+            "plan": dict(updated_plan),
+        }
+        await self._write_audit(
+            tenant_id=tenant_id,
+            action="tenant_worker_job_cancel",
+            actor=actor,
+            before=job_before,
+            after=after_payload,
+        )
+        return {**after_payload, "idempotent": False}
 
     async def set_worker_capabilities(
         self,

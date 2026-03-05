@@ -1,5 +1,9 @@
 """Tests for skills client module."""
 
+import base64
+import hashlib
+import hmac
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -34,7 +38,55 @@ class TestSkillsClient:
         )
         assert client._base_url == "http://custom:9000"  # Trailing slash stripped
         assert client._api_secret == "secret123"
+        assert client._actor_signing_secret == "secret123"
         assert client._timeout == 60.0
+
+    def test_init_custom_actor_signing_secret(self) -> None:
+        """SkillsClient should keep a separate actor signing secret when provided."""
+        client = SkillsClient(
+            base_url="http://custom:9000/",
+            api_secret="secret123",
+            actor_signing_secret="actor-secret",
+            timeout=60.0,
+        )
+        assert client._base_url == "http://custom:9000"
+        assert client._api_secret == "secret123"
+        assert client._actor_signing_secret == "actor-secret"
+        assert client._timeout == 60.0
+
+    def test_build_admin_actor_headers(self) -> None:
+        """_build_admin_actor_headers() should produce deterministic signed headers."""
+        actor = {
+            "actor_sub": "discord:123456789",
+            "actor_roles": ["owner"],
+            "request_id": "req-1",
+            "timestamp": "2026-03-06T00:00:00+00:00",
+            "nonce": "nonce-1",
+            "actor_email": None,
+        }
+        client = SkillsClient(api_secret="skills-secret", actor_signing_secret="actor-secret")
+        headers = client._build_admin_actor_headers(actor)
+
+        expected_encoded = (
+            base64.urlsafe_b64encode(
+                json.dumps(actor, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            )
+            .decode("ascii")
+            .rstrip("=")
+        )
+        expected_signature = hmac.new(
+            b"actor-secret",
+            expected_encoded.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        assert headers["X-Admin-Actor"] == expected_encoded
+        assert headers["X-Admin-Signature"] == expected_signature
+
+    def test_build_admin_actor_headers_requires_signing_secret(self) -> None:
+        """_build_admin_actor_headers() should fail when no signing secret is configured."""
+        client = SkillsClient(api_secret=None, actor_signing_secret="")
+        with pytest.raises(SkillsClientError, match="signing secret"):
+            client._build_admin_actor_headers({"actor_sub": "discord:1"})
 
     @pytest.mark.asyncio
     async def test_get_client_creates_client(self) -> None:
@@ -485,6 +537,83 @@ class TestSkillsClient:
                     "idempotency_key": "provider-openai-billing-1",
                 },
             )
+
+    @pytest.mark.asyncio
+    async def test_request_admin_json_success_with_json_fallback_to_text(self) -> None:
+        """request_admin_json() should return response text when JSON decoding fails."""
+        client = SkillsClient(api_secret="skills-secret", actor_signing_secret="actor-secret")
+        mock_response = MagicMock()
+        mock_response.status_code = 202
+        mock_response.json.side_effect = ValueError("not-json")
+        mock_response.text = "queued"
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.request = AsyncMock(return_value=mock_response)
+            mock_get.return_value = mock_http_client
+
+            status, payload = await client.request_admin_json(
+                "POST",
+                "/admin/tenants/t1/workers/jobs/job-1/retry",
+                actor={
+                    "actor_sub": "discord:123",
+                    "actor_roles": ["owner"],
+                    "request_id": "req-1",
+                    "timestamp": "2026-03-06T00:00:00+00:00",
+                    "nonce": "nonce-1",
+                    "actor_email": None,
+                },
+                json_body={"reason": "manual"},
+                query={"limit": "1"},
+            )
+
+            assert status == 202
+            assert payload == "queued"
+            mock_http_client.request.assert_called_once()
+            request_headers = mock_http_client.request.call_args.kwargs["headers"]
+            assert "X-Admin-Actor" in request_headers
+            assert "X-Admin-Signature" in request_headers
+            assert mock_http_client.request.call_args.kwargs["json"] == {"reason": "manual"}
+            assert mock_http_client.request.call_args.kwargs["params"] == {"limit": "1"}
+
+    @pytest.mark.asyncio
+    async def test_request_tenant_admin_json_builds_tenant_path(self) -> None:
+        """request_tenant_admin_json() should prepend tenant-admin base path."""
+        client = SkillsClient(api_secret="skills-secret", actor_signing_secret="actor-secret")
+        with patch.object(client, "request_admin_json", new_callable=AsyncMock) as req_admin:
+            req_admin.return_value = (200, {"ok": True})
+            status, payload = await client.request_tenant_admin_json(
+                "GET",
+                tenant_id="11111111-1111-1111-1111-111111111111",
+                subpath="workers/nodes",
+                actor={"actor_sub": "discord:1"},
+            )
+
+        assert status == 200
+        assert payload["ok"] is True
+        req_admin.assert_awaited_once_with(
+            method="GET",
+            path="/admin/tenants/11111111-1111-1111-1111-111111111111/workers/nodes",
+            actor={"actor_sub": "discord:1"},
+            json_body=None,
+            query=None,
+        )
+
+    @pytest.mark.asyncio
+    async def test_request_admin_json_request_error(self) -> None:
+        """request_admin_json() should raise SkillsClientError on request failures."""
+        client = SkillsClient(api_secret="skills-secret", actor_signing_secret="actor-secret")
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.request = AsyncMock(side_effect=httpx.RequestError("Timeout"))
+            mock_get.return_value = mock_http_client
+
+            with pytest.raises(SkillsClientError, match="Admin request failed"):
+                await client.request_admin_json(
+                    "GET",
+                    "/admin/tenants/t1/workers/nodes",
+                    actor={"actor_sub": "discord:1"},
+                )
 
 
 class TestCreateSkillsClient:

@@ -178,6 +178,26 @@ async def test_internal_admin_validation_error_matrix() -> None:
             "/service/ai/v1/internal/admin/tenants/tenant-a/workers/nodes/node-1/capabilities",
             {"capabilities": "not-an-array"},
         ),
+        (
+            "post",
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/nodes/node-1/quarantine",
+            {"metadata": "not-an-object"},
+        ),
+        (
+            "post",
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/nodes/node-1/unquarantine",
+            {"health_status": ""},
+        ),
+        (
+            "post",
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/jobs/job-1/retry",
+            {"reason": {"invalid": True}},
+        ),
+        (
+            "post",
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/jobs/job-1/cancel",
+            {"reason": {"invalid": True}},
+        ),
         ("post", "/service/ai/v1/internal/admin/tenants/tenant-a/changes", {"action": ""}),
         (
             "post",

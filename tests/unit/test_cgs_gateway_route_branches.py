@@ -1309,6 +1309,20 @@ async def test_internal_admin_worker_route_matrix_success_paths() -> None:
                     "capabilities": (json_body or {}).get("capabilities", []),
                 },
             }
+        if method == "GET" and subpath == "/workers/jobs":
+            return 200, {"ok": True, "jobs": [{"job_id": "job-1", "status": "running"}]}
+        if method == "GET" and subpath == "/workers/jobs/job-1":
+            return 200, {"ok": True, "job": {"job_id": "job-1", "status": "running"}}
+        if method == "GET" and subpath == "/workers/events":
+            return 200, {"ok": True, "events": [{"event_id": 1}]}
+        if method == "POST" and subpath == "/workers/nodes/node-1/quarantine":
+            return 200, {"ok": True, "node": {"node_id": "node-1", "status": "quarantined"}}
+        if method == "POST" and subpath == "/workers/nodes/node-1/unquarantine":
+            return 200, {"ok": True, "node": {"node_id": "node-1", "status": "active"}}
+        if method == "POST" and subpath == "/workers/jobs/job-1/retry":
+            return 200, {"ok": True, "job": {"job_id": "job-1", "status": "expired"}}
+        if method == "POST" and subpath == "/workers/jobs/job-1/cancel":
+            return 200, {"ok": True, "job": {"job_id": "job-1", "status": "cancelled"}}
         return 200, {"ok": True}
 
     app["cgs_skills_client"].request_tenant_admin_json = AsyncMock(
@@ -1336,6 +1350,45 @@ async def test_internal_admin_worker_route_matrix_success_paths() -> None:
         body = await updated.json()
         assert body["data"]["node"]["capabilities"] == ["repo.read", "repo.patch"]
 
+        quarantined = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/nodes/node-1/quarantine",
+            json={"metadata": {"reason": "manual"}},
+        )
+        assert quarantined.status == 200
+
+        unquarantined = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/nodes/node-1/unquarantine",
+            json={},
+        )
+        assert unquarantined.status == 200
+
+        jobs = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/jobs",
+            params={"status": "running", "limit": "25"},
+        )
+        assert jobs.status == 200
+
+        job = await client.get("/service/ai/v1/internal/admin/tenants/tenant-a/workers/jobs/job-1")
+        assert job.status == 200
+
+        retried = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/jobs/job-1/retry",
+            json={"reason": "manual retry"},
+        )
+        assert retried.status == 200
+
+        cancelled = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/jobs/job-1/cancel",
+            json={"reason": "manual cancel"},
+        )
+        assert cancelled.status == 200
+
+        events = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/events",
+            params={"node_id": "node-1", "limit": "10"},
+        )
+        assert events.status == 200
+
     forwarded_subpaths = [
         call.kwargs.get("subpath")
         for call in app["cgs_skills_client"].request_tenant_admin_json.await_args_list
@@ -1343,6 +1396,13 @@ async def test_internal_admin_worker_route_matrix_success_paths() -> None:
     assert "/workers/nodes" in forwarded_subpaths
     assert "/workers/nodes/node-1" in forwarded_subpaths
     assert "/workers/nodes/node-1/capabilities" in forwarded_subpaths
+    assert "/workers/nodes/node-1/quarantine" in forwarded_subpaths
+    assert "/workers/nodes/node-1/unquarantine" in forwarded_subpaths
+    assert "/workers/jobs" in forwarded_subpaths
+    assert "/workers/jobs/job-1" in forwarded_subpaths
+    assert "/workers/jobs/job-1/retry" in forwarded_subpaths
+    assert "/workers/jobs/job-1/cancel" in forwarded_subpaths
+    assert "/workers/events" in forwarded_subpaths
 
 
 @pytest.mark.asyncio
