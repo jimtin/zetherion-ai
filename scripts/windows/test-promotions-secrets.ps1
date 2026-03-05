@@ -62,16 +62,32 @@ Require-Secret -Secrets $secrets -Name "CGS_BLOG_PUBLISH_TOKEN" | Out-Null
 Require-Secret -Secrets $secrets -Name "OPENAI_API_KEY" | Out-Null
 Require-Secret -Secrets $secrets -Name "ANTHROPIC_API_KEY" | Out-Null
 Require-Secret -Secrets $secrets -Name "GITHUB_PROMOTION_TOKEN" | Out-Null
-Require-Secret -Secrets $secrets -Name "DISCORD_DM_NOTIFY_ENABLED" | Out-Null
+Require-Secret -Secrets $secrets -Name "ANNOUNCEMENT_EMIT_ENABLED" | Out-Null
 
 $primaryModel = Require-Secret -Secrets $secrets -Name "BLOG_MODEL_PRIMARY"
 $secondaryModel = Require-Secret -Secrets $secrets -Name "BLOG_MODEL_SECONDARY"
-$discordDmEnabledRaw = [string]($secrets.DISCORD_DM_NOTIFY_ENABLED)
-$discordDmEnabled = $discordDmEnabledRaw.ToLowerInvariant() -in @("1", "true", "yes", "on")
+$announcementEnabledRaw = [string]($secrets.ANNOUNCEMENT_EMIT_ENABLED)
+if (-not $announcementEnabledRaw) {
+    $announcementEnabledRaw = [string]($secrets.DISCORD_DM_NOTIFY_ENABLED)
+}
+$announcementEnabled = $announcementEnabledRaw.ToLowerInvariant() -in @("1", "true", "yes", "on")
+$announcementApiSecret = [string]($secrets.ANNOUNCEMENT_API_SECRET)
+$announcementTargetUserId = [string]($secrets.ANNOUNCEMENT_TARGET_USER_ID)
 
 $discordBotToken = [string]($secrets.DISCORD_BOT_TOKEN)
 $discordNotifyUserId = [string]($secrets.DISCORD_NOTIFY_USER_ID)
 $ownerUserId = [string]($secrets.OWNER_USER_ID)
+$discordDmEnabledRaw = [string]($secrets.DISCORD_DM_NOTIFY_ENABLED)
+$discordDmEnabled = $discordDmEnabledRaw.ToLowerInvariant() -in @("1", "true", "yes", "on")
+
+if ($announcementEnabled) {
+    if (-not $announcementApiSecret) {
+        throw "ANNOUNCEMENT_API_SECRET is required when ANNOUNCEMENT_EMIT_ENABLED=true."
+    }
+    if (-not $announcementTargetUserId -and -not $discordNotifyUserId -and -not $ownerUserId) {
+        throw "Either ANNOUNCEMENT_TARGET_USER_ID/DISCORD_NOTIFY_USER_ID or OWNER_USER_ID is required when ANNOUNCEMENT_EMIT_ENABLED=true."
+    }
+}
 
 if ($discordDmEnabled) {
     if (-not $discordBotToken) {
@@ -98,6 +114,9 @@ $result = [ordered]@{
     model_secondary = $secondaryModel
     blog_publish_enabled = [string]($secrets.BLOG_PUBLISH_ENABLED ?? "true")
     release_auto_increment_enabled = [string]($secrets.RELEASE_AUTO_INCREMENT_ENABLED ?? "true")
+    announcement_emit_enabled = $announcementEnabledRaw
+    announcement_target_user_id_present = [bool]$announcementTargetUserId
+    announcement_api_secret_present = [bool]$announcementApiSecret
     discord_dm_notify_enabled = $discordDmEnabledRaw
     discord_notify_user_id_present = [bool]$discordNotifyUserId
     owner_user_id_present = [bool]$ownerUserId

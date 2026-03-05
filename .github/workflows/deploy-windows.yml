@@ -403,6 +403,7 @@ jobs:
             verify-result.json
             rollback-result.json
             promotions-run-result.json
+            announcement-flush-result.json
           if-no-files-found: ignore
           retention-days: 30
 
@@ -484,7 +485,7 @@ jobs:
             throw "Receipt check failed: promotions_task_registered (WINDOWS_REQUIRE_PROMOTIONS_TASK=$requireRaw)."
           }
 
-      - name: Send deploy completion Discord DM
+      - name: Emit deploy completion announcement
         if: always()
         shell: pwsh
         continue-on-error: true
@@ -492,9 +493,9 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = "Stop"
 
-          $notifyScript = Join-Path $PWD "scripts\windows\discord-dm-notify.py"
+          $notifyScript = Join-Path $PWD "scripts\windows\announcement-emit.py"
           if (-not (Test-Path $notifyScript)) {
-            Write-Host "Discord DM notifier script not found; skipping notification."
+            Write-Host "Announcement emitter script not found; skipping notification."
             exit 0
           }
 
@@ -513,3 +514,11 @@ jobs:
             --status "$deployStatus" `
             --run-url "$runUrl" `
             --stage-results "$stageDetails" | Out-Null
+
+          $flushScript = Join-Path $PWD "scripts\windows\announcements-flush.ps1"
+          if (Test-Path $flushScript) {
+            $flushOutputPath = Join-Path $PWD "announcement-flush-result.json"
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File $flushScript `
+              -DeployPath "$env:WINDOWS_DEPLOY_PATH" `
+              -OutputPath "$flushOutputPath" | Out-Null
+          }

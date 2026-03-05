@@ -60,6 +60,32 @@ function Write-PromotionEvent {
     }
 }
 
+function Invoke-AnnouncementFlush {
+    param([string]$Reason = "watch")
+
+    try {
+        $flushScript = Join-Path $DeployPath "scripts\windows\announcements-flush.ps1"
+        if (-not (Test-Path $flushScript)) {
+            return
+        }
+
+        $safeReason = if ($Reason) { $Reason } else { "watch" }
+        $flushOutputPath = Join-Path $DeployPath "data\announcements\flush-watch-$safeReason.json"
+        $flushArgs = @(
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-File", $flushScript,
+            "-DeployPath", $DeployPath,
+            "-OutputPath", $flushOutputPath,
+            "-EventSource", $EventSource
+        )
+        & pwsh.exe @flushArgs | Out-Null
+    }
+    catch {
+        # Flush is intentionally non-blocking.
+    }
+}
+
 function Read-PromotionsQueue {
     param([string]$Path)
     $default = [pscustomobject]@{
@@ -189,6 +215,8 @@ if (-not (Test-Path $runnerScript)) {
     throw "Promotions runner script not found: $runnerScript"
 }
 
+Invoke-AnnouncementFlush -Reason "pre"
+
 $queue = Read-PromotionsQueue -Path $QueuePath
 $pendingQueue = @()
 if ($queue.pending) {
@@ -308,5 +336,7 @@ Write-JsonFile -Payload $result -Path $OutputPath
 if ($processed.Count -gt 0) {
     Write-PromotionEvent -Source $EventSource -EntryType "Information" -EventId 7102 -Message "Promotions watch processed $($processed.Count) candidate(s); pending queue size $($newQueue.pending.Count)."
 }
+
+Invoke-AnnouncementFlush -Reason "post"
 
 exit 0

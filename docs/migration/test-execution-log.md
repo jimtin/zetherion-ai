@@ -341,3 +341,10 @@ Append-only bounded-lane execution log in UTC.
 | 2026-03-05T18:46:08.319Z | unit-full | `.venv/bin/python -m pytest tests/ -m not integration and not discord_e2e --cov=src/zetherion_ai --cov-report=term-missing --cov-fail-under=90 -q --tb=short` | passed | 36 |  | - |
 | 2026-03-05T18:46:13.835Z | lint | `ruff check src/ tests/ updater_sidecar/` | passed | 0 |  | - |
 | 2026-03-05T18:46:18.125Z | check | `/usr/local/bin/node /Users/jameshinton/Documents/Developer/PersonalBot/scripts/testing/run-with-heartbeat.mjs --heartbeat-seconds 30 -- bash -lc python3 scripts/check_pipeline_contract.py && python3 scripts/check-endpoint-doc-bundle.py` | passed | 0 |  | - |
+| 2026-03-05T19:08:32.602Z | check | `/usr/local/bin/node /Users/jameshinton/Documents/Developer/PersonalBot/scripts/testing/run-with-heartbeat.mjs --heartbeat-seconds 30 -- bash -lc python3 scripts/check_pipeline_contract.py && python3 scripts/check-endpoint-doc-bundle.py` | passed | 0 |  | - |
+| 2026-03-05T19:08:40.365Z | lint | `ruff check src/ tests/ updater_sidecar/` | failed | 0 | exit:1 | - |
+| 2026-03-05T19:08:56.422Z | lint | `ruff check src/ tests/ updater_sidecar/` | passed | 0 |  | - |
+| 2026-03-05T19:09:00.818Z | targeted-unit | `python3 -m pytest tests/unit -q --tb=short` | failed | 0 | exit:1 | - |
+| 2026-03-05T19:09:26.383Z | targeted-unit | `.venv/bin/python -m pytest tests/unit -q --tb=short --no-cov` | passed | 19 |  | - |
+| 2026-03-05T19:10:16.111Z | unit-full | `.venv/bin/python -m pytest tests/ -m not integration and not discord_e2e --cov=src/zetherion_ai --cov-report=term-missing --cov-fail-under=90 -q --tb=short` | failed | 42 | exit:1 | - |
+| 2026-03-05T19:11:09.877Z | unit-full | `.venv/bin/python -m pytest tests/ -m not integration and not discord_e2e --cov=src/zetherion_ai --cov-report=term-missing --cov-fail-under=90 -q --tb=short` | passed | 41 |  | - |

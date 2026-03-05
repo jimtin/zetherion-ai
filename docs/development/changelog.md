@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Windows Announcement Plane Integration for Deploy/Promotions (2026-03-06)
+
+- Replaced Windows deploy completion notification step to emit internal announcement events via
+  `scripts/windows/announcement-emit.py` instead of direct Discord DM calls.
+- Added `scripts/windows/announcements-flush.ps1` to replay spooled announcement events and wired it into:
+  - deploy workflow completion path
+  - promotions runner pre/post emit path
+  - promotions watch pre/post cycle path
+- Updated promotions runner notification path to `announcement-emit.py` and removed runtime dependency on
+  direct DM notifier calls for deploy/promotions status announcements.
+- Extended Windows promotions secret bootstrap/validation scripts with announcement-specific settings:
+  - `ANNOUNCEMENT_EMIT_ENABLED`
+  - `ANNOUNCEMENT_API_URL`
+  - `ANNOUNCEMENT_API_SECRET`
+  - `ANNOUNCEMENT_TARGET_USER_ID`
+- Updated Windows promotions runbook/docs to validate announcement emit + flush behavior and queue-first
+  retry semantics when announcement API is unavailable.
+
 ### Added - Segment 7 Security Hardening, Observability, and Rollout (2026-03-05)
 
 - Added tenant security event persistence + aggregation in tenant admin storage:

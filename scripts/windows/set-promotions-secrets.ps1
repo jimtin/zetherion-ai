@@ -22,6 +22,14 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$ReleaseAutoIncrementEnabled = "true",
     [Parameter(Mandatory = $false)]
+    [string]$AnnouncementEmitEnabled = "",
+    [Parameter(Mandatory = $false)]
+    [string]$AnnouncementApiUrl = "http://127.0.0.1:8080/announcements/events",
+    [Parameter(Mandatory = $false)]
+    [string]$AnnouncementApiSecret = "",
+    [Parameter(Mandatory = $false)]
+    [string]$AnnouncementTargetUserId = "",
+    [Parameter(Mandatory = $false)]
     [string]$DiscordDmNotifyEnabled = "false",
     [Parameter(Mandatory = $false)]
     [string]$DiscordBotToken = "",
@@ -41,6 +49,19 @@ if ($BlogModelPrimary -ne "gpt-5.2") {
 }
 if ($BlogModelSecondary -ne "claude-sonnet-4-6") {
     throw "BlogModelSecondary must be 'claude-sonnet-4-6'."
+}
+
+$announcementEnabledRaw = if ($AnnouncementEmitEnabled) { $AnnouncementEmitEnabled } else { $DiscordDmNotifyEnabled }
+$announcementEnabled = $announcementEnabledRaw.ToLowerInvariant() -in @("1", "true", "yes", "on")
+$effectiveAnnouncementTargetUserId = if ($AnnouncementTargetUserId) { $AnnouncementTargetUserId } elseif ($DiscordNotifyUserId) { $DiscordNotifyUserId } else { "" }
+
+if ($announcementEnabled) {
+    if (-not $AnnouncementApiSecret) {
+        throw "AnnouncementApiSecret is required when announcement emit is enabled."
+    }
+    if (-not $effectiveAnnouncementTargetUserId -and -not $OwnerUserId) {
+        throw "Either AnnouncementTargetUserId/DiscordNotifyUserId or OwnerUserId is required when announcement emit is enabled."
+    }
 }
 
 $dmEnabled = $DiscordDmNotifyEnabled.ToLowerInvariant() -in @("1", "true", "yes", "on")
@@ -128,6 +149,10 @@ $payload = [ordered]@{
         BLOG_MODEL_SECONDARY = $BlogModelSecondary
         BLOG_PUBLISH_ENABLED = $BlogPublishEnabled
         RELEASE_AUTO_INCREMENT_ENABLED = $ReleaseAutoIncrementEnabled
+        ANNOUNCEMENT_EMIT_ENABLED = $announcementEnabledRaw
+        ANNOUNCEMENT_API_URL = $AnnouncementApiUrl
+        ANNOUNCEMENT_API_SECRET = $AnnouncementApiSecret
+        ANNOUNCEMENT_TARGET_USER_ID = $effectiveAnnouncementTargetUserId
         DISCORD_DM_NOTIFY_ENABLED = $DiscordDmNotifyEnabled
         DISCORD_BOT_TOKEN = $DiscordBotToken
         DISCORD_NOTIFY_USER_ID = $DiscordNotifyUserId
@@ -148,6 +173,9 @@ $result = [ordered]@{
     model_secondary = $BlogModelSecondary
     blog_publish_enabled = $BlogPublishEnabled
     release_auto_increment_enabled = $ReleaseAutoIncrementEnabled
+    announcement_emit_enabled = $announcementEnabledRaw
+    announcement_api_url = $AnnouncementApiUrl
+    announcement_target_user_id = $effectiveAnnouncementTargetUserId
     discord_dm_notify_enabled = $DiscordDmNotifyEnabled
 }
 
