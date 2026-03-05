@@ -255,48 +255,13 @@ Bridge-only tenant messaging ingest endpoint.
   - `X-Bridge-Signature`
 - Rejects replayed nonce values.
 
-### POST /admin/tenants/{tenant_id}/messaging/ingest
+Tenant-admin alias for bridge ingest is available under
+`/admin/tenants/{tenant_id}/messaging/ingest` and is bridge-signature
+authenticated (no admin actor envelope).
 
-Bridge-only signed ingest alias under tenant-admin routing.
-
-- Requires `X-API-Secret`.
-- Requires signed bridge headers:
-  - `X-Bridge-Timestamp`
-  - `X-Bridge-Nonce`
-  - `X-Bridge-Signature`
-- Does not require an admin actor envelope.
-
----
-
-## Tenant Messaging Admin (Internal)
-
-### GET /admin/tenants/{tenant_id}/messaging/providers/{provider}/config
-
-Read tenant messaging provider config (`provider=whatsapp`).
-
-### PUT /admin/tenants/{tenant_id}/messaging/providers/{provider}/config
-
-Create/update messaging provider config.
-
-### GET /admin/tenants/{tenant_id}/messaging/chats/{chat_id}/policy
-
-Read one chat policy (`provider` query defaults to `whatsapp`).
-
-### PUT /admin/tenants/{tenant_id}/messaging/chats/{chat_id}/policy
-
-Create/update one chat policy (`read_enabled`, `send_enabled`, retention, metadata).
-
-### GET /admin/tenants/{tenant_id}/messaging/chats
-
-List chat policies and message counts.
-
-### GET /admin/tenants/{tenant_id}/messaging/messages
-
-List stored encrypted/decrypted chat messages (`chat_id` query required).
-
-### POST /admin/tenants/{tenant_id}/messaging/messages/{chat_id}/send
-
-Queue a policy-gated outbound message send action.
+Internal tenant messaging management is available under
+`/admin/tenants/{tenant_id}/messaging/*`, including provider config, chat
+policies, message listing, and queued send operations.
 
 ---
 
