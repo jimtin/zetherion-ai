@@ -46,6 +46,45 @@ function Add-Check {
     }
 }
 
+function Get-EnvValueFromFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Key
+    )
+
+    if (-not (Test-Path $Path)) {
+        return ""
+    }
+
+    $lines = Get-Content -Path $Path
+    foreach ($line in $lines) {
+        if ($line -match "^\s*#") {
+            continue
+        }
+        if ($line -notmatch "^\s*$([Regex]::Escape($Key))\s*=") {
+            continue
+        }
+
+        $separatorIndex = $line.IndexOf("=")
+        if ($separatorIndex -lt 0) {
+            continue
+        }
+        return $line.Substring($separatorIndex + 1).Trim()
+    }
+
+    return ""
+}
+
+function Test-Truthy {
+    param([string]$Value)
+
+    $normalized = [string]$Value
+    $normalized = $normalized.Trim().ToLowerInvariant()
+    return @("1", "true", "yes", "on") -contains $normalized
+}
+
 # 1. SSH Server
 try {
     $sshService = Get-Service -Name sshd -ErrorAction Stop
@@ -133,19 +172,37 @@ catch {
     }
 }
 
-# 5. Container Health
+# 5. Container Health (blue/green topology)
 $expectedContainers = @(
     "zetherion-ai-bot",
-    "zetherion-ai-skills",
-    "zetherion-ai-api",
+    "zetherion-ai-skills-blue",
+    "zetherion-ai-skills-green",
+    "zetherion-ai-api-blue",
+    "zetherion-ai-api-green",
+    "zetherion-ai-cgs-gateway-blue",
+    "zetherion-ai-cgs-gateway-green",
     "zetherion-ai-ollama",
     "zetherion-ai-ollama-router",
     "zetherion-ai-postgres",
     "zetherion-ai-qdrant",
     "zetherion-ai-traefik",
-    "zetherion-ai-cloudflared",
-    "zetherion-ai-updater"
+    "zetherion-ai-updater",
+    "zetherion-ai-dev-agent"
 )
+
+$envPath = Join-Path $DeploymentPath ".env"
+$cloudflareToken = Get-EnvValueFromFile -Path $envPath -Key "CLOUDFLARE_TUNNEL_TOKEN"
+if ($cloudflareToken) {
+    $expectedContainers += "zetherion-ai-cloudflared"
+}
+
+$whatsappSigningSecret = Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_SIGNING_SECRET"
+$whatsappStateKey = Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_STATE_KEY"
+$whatsappTenantId = Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_TENANT_ID"
+$whatsappIngestUrl = Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_INGEST_URL"
+if ($whatsappSigningSecret -and $whatsappStateKey -and $whatsappTenantId -and $whatsappIngestUrl) {
+    $expectedContainers += "zetherion-ai-whatsapp-bridge"
+}
 
 $allHealthy = $true
 foreach ($container in $expectedContainers) {
@@ -165,7 +222,7 @@ foreach ($container in $expectedContainers) {
 }
 
 if ($allHealthy) {
-    Add-Check -Name "containers" -Status "pass" -Message "All expected containers are running and healthy"
+    Add-Check -Name "containers" -Status "pass" -Message "All expected runtime containers are running and healthy"
 }
 else {
     Add-Check -Name "containers" -Status "fail" -Message "Some containers are not running or unhealthy"
@@ -195,15 +252,39 @@ catch {
     Add-Check -Name "ollama_models" -Status "warn" -Message "Could not check Ollama models"
 }
 
-# 7. RBAC Owner User
+# 7. RBAC owner bootstrap determinism
 try {
-    $userCheck = docker exec zetherion-ai-postgres psql -U zetherion -d zetherion -t -c "SELECT COUNT(*) FROM users WHERE role = 'owner';" 2>&1 | Out-String
-    $ownerCount = [int]($userCheck.Trim())
-    if ($ownerCount -gt 0) {
-        Add-Check -Name "rbac_owner" -Status "pass" -Message "Owner user exists in database ($ownerCount found)"
+    $ownerUserId = Get-EnvValueFromFile -Path $envPath -Key "OWNER_USER_ID"
+    $allowedUserIds = Get-EnvValueFromFile -Path $envPath -Key "ALLOWED_USER_IDS"
+    $allowAllUsers = Test-Truthy -Value (Get-EnvValueFromFile -Path $envPath -Key "ALLOW_ALL_USERS")
+
+    if ($allowAllUsers -and -not $ownerUserId -and -not $allowedUserIds) {
+        Add-Check -Name "rbac_owner" -Status "fail" -Message "ALLOW_ALL_USERS=true with no OWNER_USER_ID/ALLOWED_USER_IDS (unsafe bootstrap)"
+    }
+    elseif ($ownerUserId) {
+        if ($ownerUserId -notmatch "^\d+$") {
+            Add-Check -Name "rbac_owner" -Status "fail" -Message "OWNER_USER_ID is configured but not numeric"
+        }
+        else {
+            $ownerExistsRaw = docker exec zetherion-ai-postgres psql -U zetherion -d zetherion -t -c "SELECT COUNT(*) FROM users WHERE discord_user_id = $ownerUserId AND role = 'owner';" 2>&1 | Out-String
+            $ownerExists = [int]($ownerExistsRaw.Trim())
+            if ($ownerExists -gt 0) {
+                Add-Check -Name "rbac_owner" -Status "pass" -Message "Configured OWNER_USER_ID exists with owner role in database"
+            }
+            else {
+                Add-Check -Name "rbac_owner" -Status "fail" -Message "Configured OWNER_USER_ID is not present with owner role in database"
+            }
+        }
     }
     else {
-        Add-Check -Name "rbac_owner" -Status "fail" -Message "No owner user in database — bot will reject all messages"
+        $ownerCountRaw = docker exec zetherion-ai-postgres psql -U zetherion -d zetherion -t -c "SELECT COUNT(*) FROM users WHERE role = 'owner';" 2>&1 | Out-String
+        $ownerCount = [int]($ownerCountRaw.Trim())
+        if ($ownerCount -gt 0) {
+            Add-Check -Name "rbac_owner" -Status "warn" -Message "Owner exists in database but OWNER_USER_ID is not set in .env"
+        }
+        else {
+            Add-Check -Name "rbac_owner" -Status "fail" -Message "No owner user in database and OWNER_USER_ID is not configured"
+        }
     }
 }
 catch {

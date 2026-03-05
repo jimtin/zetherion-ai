@@ -19,7 +19,7 @@ This guide covers common issues and their solutions when running Zetherion AI. I
    - Read Messages / View Channels
    - Embed Links
 
-3. **User Allowlist:** If `ALLOWED_USER_IDS` is set in `.env`, the user must be included. Leave it empty to allow all users.
+3. **User Allowlist / Owner Bootstrap:** Set `OWNER_USER_ID` and `ALLOWED_USER_IDS` in `.env` for production-safe access control. `ALLOW_ALL_USERS=true` should only be used as a temporary, explicitly acknowledged bootstrap mode.
 
 4. **Rate Limits:** The default rate limit is 10 messages per 60 seconds per user. If you are hitting this limit, wait before sending more messages.
 
@@ -91,7 +91,9 @@ To get your Discord user ID, enable Developer Mode in Discord (Settings > Advanc
 - `ANTHROPIC_API_KEY` -- for Claude Sonnet 4.5 (complex tasks)
 - `OPENAI_API_KEY` -- for GPT-5.2 (alternative complex tasks)
 - `GITHUB_TOKEN` -- for GitHub integration
-- `ALLOWED_USER_IDS` -- defaults to allow all users
+- `OWNER_USER_ID` -- recommended production owner ID bootstrap
+- `ALLOWED_USER_IDS` -- optional comma-separated additional allowlist
+- `ALLOW_ALL_USERS` -- defaults to `false`; set `true` only for temporary bootstrap
 - `QDRANT_HOST` -- defaults to "qdrant" in Docker Compose
 - `QDRANT_PORT` -- defaults to 6333
 

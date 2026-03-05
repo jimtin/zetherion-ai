@@ -5,7 +5,7 @@
 **Target Machine**: Windows 11 - "Computer-of-awesome" (<WINDOWS_HOST_IP>)
 **Windows User**: james
 **Method**: SSH remoting from macOS to Windows PowerShell
-**Result**: SUCCESS - All 6 services healthy, bot connected to Discord
+**Result**: SUCCESS - Core blue/green runtime healthy, bot connected to Discord
 
 ---
 
@@ -113,13 +113,13 @@ Minimum required keys: `DISCORD_TOKEN`, `GEMINI_API_KEY`, `ENCRYPTION_PASSPHRASE
 ```bash
 $SSH "cd C:\ZetherionAI; docker compose up -d --build"
 ```
-This pulls base images (~3.2GB for Ollama x2, ~200MB for Postgres, ~150MB for Qdrant), builds the bot and skills images, and starts all 6 containers.
+This pulls base images (~3.2GB for Ollama x2, ~200MB for Postgres, ~150MB for Qdrant), builds the runtime images, and starts the full blue/green service topology.
 
 ### Step 6: Verify All Services Healthy
 ```bash
 $SSH "cd C:\ZetherionAI; docker compose ps --format 'table {{.Name}}\t{{.Status}}'"
 ```
-Expected: All 6 containers show `(healthy)`.
+Expected: Core runtime containers report `Up` with `healthy` (or `no-healthcheck` where applicable).
 
 ### Step 7: Pull Ollama Models
 These can be pulled in parallel:
@@ -171,7 +171,7 @@ $SSH "Copy-Item ~\.docker\config.json.bak ~\.docker\config.json -Force"
 Run this from a container to verify all service-to-service communication works:
 
 ```bash
-$SSH "docker exec zetherion-ai-skills python -c \"
+$SSH "docker exec zetherion-ai-skills-blue python -c \"
 import urllib.request, json, time
 
 tests = [
@@ -182,7 +182,7 @@ tests = [
     ('Embeddings', 'http://ollama:11434/api/embed',
      json.dumps({'model':'nomic-embed-text','input':'test'}).encode()),
     ('Qdrant', 'http://qdrant:6333/collections', None),
-    ('Skills', 'http://zetherion-ai-skills:8080/health', None),
+    ('Skills', 'http://zetherion-ai-skills-blue:8080/health', None),
 ]
 
 for name, url, data in tests:
@@ -232,7 +232,8 @@ Expected: All 5 tests pass. Router and generation should respond in <3 seconds e
   ```bash
   $SSH "docker exec zetherion-ai-postgres psql -U zetherion -d zetherion -c \"INSERT INTO users (discord_user_id, role, added_by) VALUES (<YOUR_DISCORD_ID>, 'owner', <YOUR_DISCORD_ID>) ON CONFLICT DO NOTHING;\""
   ```
-- **Fix (prevent)**: Set `ALLOWED_USER_IDS=<your_discord_id>` in `.env` BEFORE first `docker compose up`. The bootstrap only runs when the `users` table is empty.
+- **Fix (prevent)**: Set both `OWNER_USER_ID=<your_discord_id>` and `ALLOWED_USER_IDS=<your_discord_id>` in `.env` BEFORE first `docker compose up`. Avoid `ALLOW_ALL_USERS=true` for production.
+- **Guardrail note**: `start.ps1` now blocks first-run open access (`ALLOW_ALL_USERS=true` with no owner/allowlist) unless explicitly acknowledged.
 - **How to get your Discord User ID**: Enable Developer Mode in Discord Settings > Advanced, then right-click your username > "Copy User ID"
 
 ### Issue 6: Ollama Warmup 404 on First Start
@@ -277,7 +278,11 @@ Expected: All 5 tests pass. Router and generation should respond in <3 seconds e
 | Service | Container | Status | Notes |
 |---------|-----------|--------|-------|
 | Bot | zetherion-ai-bot | healthy | Connected to Discord as SecureClaw#7693 |
-| Skills | zetherion-ai-skills | healthy | HTTP service on port 8080 (internal) |
+| Skills | zetherion-ai-skills-blue / zetherion-ai-skills-green | healthy | Internal skills API blue/green |
+| Public API | zetherion-ai-api-blue / zetherion-ai-api-green | healthy | Tenant public API blue/green |
+| CGS Gateway | zetherion-ai-cgs-gateway-blue / zetherion-ai-cgs-gateway-green | healthy | Internal admin gateway blue/green |
+| Dev Agent | zetherion-ai-dev-agent | healthy | Local sub-worker sidecar control plane |
+| Updater | zetherion-ai-updater | healthy | Rollout/rollback sidecar |
 | Qdrant | zetherion-ai-qdrant | healthy | Vector DB on port 6333 |
 | PostgreSQL | zetherion-ai-postgres | healthy | Relational DB on port 5432 |
 | Ollama (Generation) | zetherion-ai-ollama | healthy | llama3.1:8b + nomic-embed-text |

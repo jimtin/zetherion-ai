@@ -94,6 +94,46 @@ function Get-DiskFreeSpaceGB {
     return [math]::Round($freeSpace / 1GB, 1)
 }
 
+function Get-EnvValueFromFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Key
+    )
+
+    if (-not (Test-Path $Path)) {
+        return ""
+    }
+
+    $lines = Get-Content -Path $Path
+    for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+        $line = $lines[$i]
+        if ($line -match "^\s*#") {
+            continue
+        }
+        if ($line -notmatch "^\s*$([Regex]::Escape($Key))\s*=") {
+            continue
+        }
+
+        $separatorIndex = $line.IndexOf("=")
+        if ($separatorIndex -lt 0) {
+            continue
+        }
+        return $line.Substring($separatorIndex + 1).Trim()
+    }
+
+    return ""
+}
+
+function Test-Truthy {
+    param([string]$Value)
+
+    $normalized = [string]$Value
+    $normalized = $normalized.Trim().ToLowerInvariant()
+    return @("1", "true", "yes", "on") -contains $normalized
+}
+
 # ============================================================
 # PHASE 1: PREREQUISITES CHECK & AUTO-INSTALL
 # ============================================================
@@ -328,6 +368,30 @@ else {
     }
 
     Write-Success "Required configuration present"
+
+    $ownerUserId = Get-EnvValueFromFile -Path ".env" -Key "OWNER_USER_ID"
+    $allowedUserIds = Get-EnvValueFromFile -Path ".env" -Key "ALLOWED_USER_IDS"
+    $allowAllUsersRaw = Get-EnvValueFromFile -Path ".env" -Key "ALLOW_ALL_USERS"
+    $allowAllUsers = Test-Truthy -Value $allowAllUsersRaw
+
+    # Security guard: block first-run open-access mode unless explicitly acknowledged.
+    if ($allowAllUsers -and -not $ownerUserId -and -not $allowedUserIds) {
+        $fileAck = Get-EnvValueFromFile -Path ".env" -Key "ALLOW_ALL_USERS_BOOTSTRAP_ACK"
+        $runAck = [string]$env:ZETHERION_ALLOW_ALL_USERS_ACK
+        $effectiveAck = if ($runAck.Trim()) { $runAck } else { $fileAck }
+        if (-not (Test-Truthy -Value $effectiveAck)) {
+            Write-Failure "Unsafe bootstrap configuration detected."
+            Write-Warning-Message "ALLOW_ALL_USERS=true with no OWNER_USER_ID/ALLOWED_USER_IDS."
+            Write-Warning-Message "This would allow all Discord users on first startup."
+            Write-Info-Message "Recommended: set OWNER_USER_ID and ALLOWED_USER_IDS in .env."
+            Write-Info-Message "To explicitly acknowledge temporary open access, set:"
+            Write-Info-Message "  - ZETHERION_ALLOW_ALL_USERS_ACK=true (one run), or"
+            Write-Info-Message "  - ALLOW_ALL_USERS_BOOTSTRAP_ACK=true in .env"
+            exit 1
+        }
+
+        Write-Warning-Message "Proceeding with ALLOW_ALL_USERS bootstrap due explicit acknowledgment."
+    }
 }
 
 # Get router backend from .env
@@ -378,7 +442,45 @@ Write-Success "Containers started"
 Write-Info-Message "Waiting for services to become healthy..."
 $maxWait = 120  # 2 minutes
 $waited = 0
-$services = @("zetherion-ai-qdrant", "zetherion-ai-skills", "zetherion-ai-bot")
+$services = @(
+    "zetherion-ai-postgres",
+    "zetherion-ai-qdrant",
+    "zetherion-ai-ollama",
+    "zetherion-ai-ollama-router",
+    "zetherion-ai-skills-blue",
+    "zetherion-ai-skills-green",
+    "zetherion-ai-api-blue",
+    "zetherion-ai-api-green",
+    "zetherion-ai-cgs-gateway-blue",
+    "zetherion-ai-cgs-gateway-green",
+    "zetherion-ai-updater",
+    "zetherion-ai-dev-agent",
+    "zetherion-ai-bot"
+)
+
+$cloudflareToken = Get-EnvValueFromFile -Path ".env" -Key "CLOUDFLARE_TUNNEL_TOKEN"
+if ($cloudflareToken.Trim()) {
+    $services += "zetherion-ai-cloudflared"
+}
+else {
+    Write-Info-Message "Skipping cloudflared health gate (CLOUDFLARE_TUNNEL_TOKEN is not set)."
+}
+
+$whatsappSigningSecret = Get-EnvValueFromFile -Path ".env" -Key "WHATSAPP_BRIDGE_SIGNING_SECRET"
+$whatsappStateKey = Get-EnvValueFromFile -Path ".env" -Key "WHATSAPP_BRIDGE_STATE_KEY"
+$whatsappTenantId = Get-EnvValueFromFile -Path ".env" -Key "WHATSAPP_BRIDGE_TENANT_ID"
+$whatsappIngestUrl = Get-EnvValueFromFile -Path ".env" -Key "WHATSAPP_BRIDGE_INGEST_URL"
+if (
+    $whatsappSigningSecret.Trim() -and
+    $whatsappStateKey.Trim() -and
+    $whatsappTenantId.Trim() -and
+    $whatsappIngestUrl.Trim()
+) {
+    $services += "zetherion-ai-whatsapp-bridge"
+}
+else {
+    Write-Info-Message "Skipping WhatsApp bridge health gate (required bridge env vars are incomplete)."
+}
 
 while ($waited -lt $maxWait) {
     Start-Sleep -Seconds 5
@@ -386,8 +488,22 @@ while ($waited -lt $maxWait) {
 
     $allHealthy = $true
     foreach ($service in $services) {
-        $health = docker inspect --format='{{.State.Health.Status}}' $service 2>&1
-        if ($health -ne "healthy") {
+        $inspect = docker inspect --format='{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' $service 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $inspect) {
+            $allHealthy = $false
+            Write-Host "." -NoNewline
+            break
+        }
+
+        $parts = $inspect -split "\|"
+        $state = if ($parts.Count -gt 0) { $parts[0].Trim() } else { "" }
+        $health = if ($parts.Count -gt 1) { $parts[1].Trim() } else { "" }
+        $isHealthy = (
+            $state -eq "running" -and
+            ($health -eq "healthy" -or $health -eq "no-healthcheck")
+        )
+
+        if (-not $isHealthy) {
             $allHealthy = $false
             Write-Host "." -NoNewline
             break
