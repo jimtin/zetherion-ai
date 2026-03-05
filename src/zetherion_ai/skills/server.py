@@ -1035,10 +1035,17 @@ class SkillsServer:
             raise ValueError("Missing body")
 
         target_user_raw = payload.get("target_user_id")
-        try:
-            target_user_id = int(target_user_raw)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("Invalid target_user_id") from exc
+        if isinstance(target_user_raw, bool):
+            raise ValueError("Invalid target_user_id")
+        if isinstance(target_user_raw, int):
+            target_user_id = target_user_raw
+        elif isinstance(target_user_raw, str) and target_user_raw.strip():
+            try:
+                target_user_id = int(target_user_raw.strip())
+            except ValueError as exc:
+                raise ValueError("Invalid target_user_id") from exc
+        else:
+            raise ValueError("Invalid target_user_id")
         if target_user_id <= 0:
             raise ValueError("Invalid target_user_id")
 

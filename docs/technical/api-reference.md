@@ -268,6 +268,32 @@ policies, message listing, and queued send operations.
 
 ---
 
+## Announcement Control Plane
+
+Internal announcement producers should emit events via the announcement API.
+
+### POST /announcements/events
+
+Emit one announcement event and receive an ingestion receipt.
+
+### POST /announcements/events/batch
+
+Emit multiple announcement events in one request (for spool replay or bulk ingest).
+
+### GET /announcements/users/{user_id}/preferences
+
+Read effective announcement preferences for one user.
+
+### PUT /announcements/users/{user_id}/preferences
+
+Update announcement preferences for one user.
+
+### POST /announcements/dispatch/flush
+
+Trigger one manual dispatch tick for due deliveries.
+
+---
+
 ## Worker Bridge Control Plane
 
 Worker endpoints are intended for registered sub-worker nodes and are
