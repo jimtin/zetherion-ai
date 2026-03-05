@@ -945,6 +945,46 @@ async def test_internal_admin_change_workflow_endpoints() -> None:
 
 
 @pytest.mark.asyncio
+async def test_internal_admin_change_approve_success_and_reject_error_paths() -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin"],
+        principal_claims={"step_up": True},
+    )
+    storage.get_admin_change = AsyncMock(
+        side_effect=[
+            {"change_id": "chg_ok", "cgs_tenant_id": "tenant-a", "requested_by": "another"},
+            None,
+            {"change_id": "chg_bad", "cgs_tenant_id": "tenant-a", "requested_by": "another"},
+        ]
+    )
+    storage.approve_admin_change = AsyncMock(
+        return_value={"change_id": "chg_ok", "status": "approved"}
+    )
+    storage.reject_admin_change = AsyncMock(return_value=None)
+
+    async with TestClient(TestServer(app)) as client:
+        approved = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/changes/chg_ok/approve",
+            json={"reason": "approve"},
+        )
+        assert approved.status == 200
+        approved_body = await approved.json()
+        assert approved_body["data"]["status"] == "approved"
+
+        reject_missing = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/changes/chg_missing/reject",
+            json={"reason": "reject"},
+        )
+        assert reject_missing.status == 404
+
+        reject_invalid = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/changes/chg_bad/reject",
+            json={"reason": "reject"},
+        )
+        assert reject_invalid.status == 409
+
+
+@pytest.mark.asyncio
 async def test_internal_admin_email_route_matrix_and_high_risk_controls() -> None:
     app, storage, _ = _runtime_app(
         principal_scopes=["cgs:internal", "cgs:zetherion-admin", "cgs:zetherion-secrets-admin"],
