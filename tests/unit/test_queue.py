@@ -560,6 +560,31 @@ class TestQueueProcessorsDispatch:
         executor.execute.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_plan_continuation_missing_execute_handler(self) -> None:
+        class _NoExecute:
+            pass
+
+        procs = QueueProcessors(plan_executor=_NoExecute())
+        result = await procs.process(
+            QueueTaskType.PLAN_CONTINUATION,
+            {"tenant_id": "tenant-1", "plan_id": "plan-1"},
+        )
+        assert result.success is False
+        assert "missing execute" in (result.error or "")
+
+    @pytest.mark.asyncio
+    async def test_plan_continuation_non_dict_result_still_succeeds(self) -> None:
+        executor = AsyncMock()
+        executor.execute = AsyncMock(return_value="ok")
+        procs = QueueProcessors(plan_executor=executor)
+        result = await procs.process(
+            QueueTaskType.PLAN_CONTINUATION,
+            {"tenant_id": "tenant-1", "plan_id": "plan-1"},
+        )
+        assert result.success is True
+        assert result.data == {}
+
+    @pytest.mark.asyncio
     async def test_processor_catches_exceptions(self) -> None:
         bot = MagicMock()
         agent = AsyncMock()
