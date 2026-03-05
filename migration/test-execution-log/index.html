@@ -1957,7 +1957,17 @@
 | 2026-03-05T15:42:17.065Z | targeted-unit | <code>bash -lc .venv/bin/python -m pytest tests/unit/test_tenant_admin_manager.py tests/unit/test_tenant_admin_worker_registry.py tests/unit/test_queue_plan_executor.py tests/unit/test_skills_worker_control_api.py -q --tb=short -o addopts="--strict-markers --tb=short --no-cov"</code> | passed | 2 |  | - |
 | 2026-03-05T15:43:00.466Z | unit-full | <code>bash -lc .venv/bin/python -m pytest tests/ -m "not integration and not discord_e2e" --cov=src/zetherion_ai --cov-report=term-missing --cov-fail-under=90 -q --tb=short</code> | passed | 43 |  | - |
 | 2026-03-05T15:44:06.390Z | lint | <code>bash -lc .venv/bin/ruff check src/ tests/ updater_sidecar/ &amp;&amp; .venv/bin/ruff format --check src/ tests/</code> | passed | 0 |  | - |
-| 2026-03-05T15:44:13.386Z | targeted-unit | <code>bash -lc .venv/bin/python -m pytest tests/unit/test_skills_worker_control_api.py tests/unit/test_tenant_admin_worker_registry.py -q --tb=short -o addopts="--strict-markers --tb=short --no-cov"</code> | passed | 1 |  | - |</p>
+| 2026-03-05T15:44:13.386Z | targeted-unit | <code>bash -lc .venv/bin/python -m pytest tests/unit/test_skills_worker_control_api.py tests/unit/test_tenant_admin_worker_registry.py -q --tb=short -o addopts="--strict-markers --tb=short --no-cov"</code> | passed | 1 |  | - |
+| 2026-03-05T15:54:47.470Z | check | <code>/usr/local/bin/node /Users/jameshinton/Documents/Developer/PersonalBot/scripts/testing/run-with-heartbeat.mjs --heartbeat-seconds 30 -- bash -lc python3 scripts/check_pipeline_contract.py &amp;&amp; python3 scripts/check-endpoint-doc-bundle.py</code> | passed | 0 |  | - |
+| 2026-03-05T15:54:54.020Z | lint | <code>bash -lc .venv/bin/ruff check src/ tests/ updater_sidecar/ &amp;&amp; .venv/bin/ruff format --check src/ tests/</code> | passed | 0 |  | - |
+| 2026-03-05T15:55:02.156Z | targeted-unit | <code>bash -lc .venv/bin/python -m pytest tests/unit/test_tenant_admin_manager.py tests/unit/test_tenant_admin_worker_registry.py tests/unit/test_skills_worker_control_api.py tests/unit/test_queue_plan_executor.py -q --tb=short -o addopts="--strict-markers --tb=short --no-cov"</code> | passed | 2 |  | - |
+| 2026-03-05T15:55:50.914Z | unit-full | <code>bash -lc .venv/bin/python -m pytest tests/ -m "not integration and not discord_e2e" --cov=src/zetherion_ai --cov-report=term-missing --cov-fail-under=90 -q --tb=short</code> | passed | 41 |  | - |
+| 2026-03-05T16:06:19.189Z | check | <code>/usr/local/bin/node /Users/jameshinton/Documents/Developer/PersonalBot/scripts/testing/run-with-heartbeat.mjs --heartbeat-seconds 30 -- bash -lc python3 scripts/check_pipeline_contract.py &amp;&amp; python3 scripts/check-endpoint-doc-bundle.py</code> | passed | 0 |  | - |
+| 2026-03-05T16:06:24.181Z | lint | <code>ruff check src/ tests/ updater_sidecar/</code> | failed | 0 | exit:1 | - |
+| 2026-03-05T16:06:32.960Z | lint | <code>ruff check src/ tests/ updater_sidecar/</code> | passed | 0 |  | - |
+| 2026-03-05T16:06:39.355Z | targeted-unit | <code>./.venv/bin/python -m pytest tests/unit/test_tenant_admin_manager.py -q --tb=short -o addopts=--strict-markers --tb=short --no-cov</code> | passed | 0 |  | - |
+| 2026-03-05T16:06:46.483Z | unit-full | <code>python3 -m pytest tests/ -m not integration and not discord_e2e --cov=src/zetherion_ai --cov-report=term-missing --cov-fail-under=90 -q --tb=short</code> | failed | 0 | exit:1 | - |
+| 2026-03-05T16:07:39.125Z | unit-full | <code>./.venv/bin/python -m pytest tests/ -m not integration and not discord_e2e --cov=src/zetherion_ai --cov-report=term-missing --cov-fail-under=90 -q --tb=short</code> | passed | 41 |  | - |</p>
 
 
 
