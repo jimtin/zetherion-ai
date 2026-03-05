@@ -200,6 +200,29 @@ class TestNotificationDispatcher:
         assert count == 1
         assert len(good_channel.sent) == 1
 
+    @pytest.mark.asyncio
+    async def test_dispatch_does_not_count_unsuccessful_send(self):
+        """Test that dispatch does not count a channel when send() returns False."""
+
+        class FalseChannel(MockChannel):
+            async def send(self, notification: Notification) -> bool:
+                self.sent.append(notification)
+                return False
+
+        dispatcher = NotificationDispatcher()
+        channel = FalseChannel()
+        dispatcher.register_channel(channel)
+
+        notification = Notification(
+            type=NotificationType.MODEL_DISCOVERED,
+            title="Test",
+            message="Test",
+        )
+        count = await dispatcher.dispatch(notification)
+
+        assert count == 0
+        assert len(channel.sent) == 1
+
     def test_type_filtering(self):
         """Test enabling/disabling notification types."""
         dispatcher = NotificationDispatcher()
@@ -262,6 +285,22 @@ class TestNotificationDispatcher:
 
         assert count == 1
         assert channel.sent[0].type == NotificationType.MODEL_DEPRECATED
+
+    @pytest.mark.asyncio
+    async def test_notify_missing_pricing(self):
+        """Test convenience method for missing pricing."""
+        dispatcher = NotificationDispatcher()
+        channel = MockChannel()
+        dispatcher.register_channel(channel)
+
+        count = await dispatcher.notify_missing_pricing(
+            model_id="unknown-model",
+            provider="openai",
+        )
+
+        assert count == 1
+        assert channel.sent[0].type == NotificationType.MODEL_MISSING_PRICING
+        assert "unknown-model" in channel.sent[0].message
 
     @pytest.mark.asyncio
     async def test_notify_budget_warning(self):

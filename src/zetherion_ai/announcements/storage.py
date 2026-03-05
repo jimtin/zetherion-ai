@@ -54,6 +54,26 @@ class AnnouncementEventInput:
 
 
 @dataclass
+class AnnouncementEvent:
+    """Persisted announcement event record."""
+
+    event_id: str
+    source: str
+    category: str
+    severity: AnnouncementSeverity
+    tenant_id: str | None
+    target_user_id: int
+    title: str
+    body: str
+    payload: dict[str, Any] = field(default_factory=dict)
+    fingerprint: str | None = None
+    idempotency_key: str | None = None
+    occurred_at: datetime | None = None
+    created_at: datetime | None = None
+    state: str = "accepted"
+
+
+@dataclass
 class AnnouncementReceipt:
     """Persistence receipt for event ingestion."""
 
@@ -477,6 +497,50 @@ class AnnouncementRepository:
             )
         return self._delivery_from_row(row)
 
+    async def claim_due_deliveries(
+        self,
+        *,
+        as_of: datetime | None = None,
+        limit: int = 100,
+    ) -> list[AnnouncementDelivery]:
+        """Claim due deliveries for dispatch processing."""
+        pool = self._require_pool()
+        cursor_time = as_of or datetime.now(UTC)
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                WITH due AS (
+                    SELECT delivery_id
+                    FROM announcement_deliveries
+                    WHERE status IN ('scheduled', 'retry')
+                      AND scheduled_for <= $1
+                    ORDER BY scheduled_for ASC
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT $2
+                )
+                UPDATE announcement_deliveries AS deliveries
+                SET status = 'processing',
+                    updated_at = NOW()
+                FROM due
+                WHERE deliveries.delivery_id = due.delivery_id
+                RETURNING
+                    deliveries.delivery_id,
+                    deliveries.event_id,
+                    deliveries.channel,
+                    deliveries.scheduled_for,
+                    deliveries.sent_at,
+                    deliveries.status,
+                    deliveries.error_code,
+                    deliveries.error_detail,
+                    deliveries.retry_count,
+                    deliveries.created_at,
+                    deliveries.updated_at
+                """,
+                cursor_time,
+                max(1, min(1000, int(limit))),
+            )
+        return [self._delivery_from_row(row) for row in rows]
+
     async def list_due_deliveries(
         self,
         *,
@@ -736,6 +800,36 @@ class AnnouncementRepository:
                 category_filter or None,
             )
         return int(count or 0)
+
+    async def get_event(self, event_id: str) -> AnnouncementEvent | None:
+        """Look up an announcement event by ID."""
+        pool = self._require_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT
+                    event_id,
+                    source,
+                    category,
+                    severity,
+                    tenant_id,
+                    target_user_id,
+                    title,
+                    body,
+                    payload_json,
+                    fingerprint,
+                    idempotency_key,
+                    occurred_at,
+                    created_at,
+                    state
+                FROM announcement_events
+                WHERE event_id = $1
+                """,
+                event_id,
+            )
+        if row is None:
+            return None
+        return self._event_from_row(row)
 
     async def get_digest_state(self, user_id: int) -> dict[str, Any] | None:
         pool = self._require_pool()
@@ -1021,6 +1115,34 @@ class AnnouncementRepository:
             retry_count=int(row["retry_count"] or 0),
             created_at=_coerce_datetime(row["created_at"]) or datetime.now(UTC),
             updated_at=_coerce_datetime(row["updated_at"]) or datetime.now(UTC),
+        )
+
+    @staticmethod
+    def _event_from_row(row: Any) -> AnnouncementEvent:
+        payload_raw = row.get("payload_json", {})
+        if isinstance(payload_raw, str):
+            try:
+                payload_raw = json.loads(payload_raw)
+            except json.JSONDecodeError:
+                payload_raw = {}
+        payload = payload_raw if isinstance(payload_raw, dict) else {}
+        return AnnouncementEvent(
+            event_id=str(row["event_id"]),
+            source=str(row["source"]),
+            category=str(row["category"]),
+            severity=AnnouncementSeverity.coerce(row.get("severity", "normal")),
+            tenant_id=str(row["tenant_id"]).strip() if row["tenant_id"] is not None else None,
+            target_user_id=int(row["target_user_id"]),
+            title=str(row["title"]),
+            body=str(row["body"]),
+            payload=payload,
+            fingerprint=str(row["fingerprint"]).strip() if row["fingerprint"] is not None else None,
+            idempotency_key=(
+                str(row["idempotency_key"]).strip() if row["idempotency_key"] is not None else None
+            ),
+            occurred_at=_coerce_datetime(row.get("occurred_at", None)),
+            created_at=_coerce_datetime(row.get("created_at", None)),
+            state=str(row["state"] if "state" in row and row["state"] else "accepted"),
         )
 
     @staticmethod

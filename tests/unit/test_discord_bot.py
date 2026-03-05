@@ -2407,7 +2407,22 @@ class TestBotRuntimeHelpers:
             await bot._handle_provider_issue_alert(alert)
 
     @pytest.mark.asyncio
+    async def test_on_ready_starts_announcement_dispatcher(self, bot):
+        dispatcher = AsyncMock()
+        dispatcher.is_running = False
+        dispatcher.start = AsyncMock()
+        bot._announcement_dispatcher = dispatcher
+
+        await bot.on_ready()
+
+        dispatcher.start.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_close_stops_runtime_components(self, bot):
+        dispatcher = AsyncMock()
+        dispatcher.stop = AsyncMock()
+        bot._announcement_dispatcher = dispatcher
+
         scheduler = AsyncMock()
         scheduler.stop = AsyncMock()
         bot._heartbeat_scheduler = scheduler
@@ -2434,6 +2449,7 @@ class TestBotRuntimeHelpers:
         with patch.object(discord.Client, "close", new_callable=AsyncMock) as client_close:
             await bot.close()
 
+        dispatcher.stop.assert_awaited_once()
         scheduler.stop.assert_awaited_once()
         queue_manager.stop.assert_awaited_once()
         broker.close.assert_awaited_once()
