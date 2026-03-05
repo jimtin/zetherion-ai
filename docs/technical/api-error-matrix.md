@@ -14,6 +14,7 @@ Exposure rule:
 - Added centralized upstream error mapping policy across runtime/internal/admin/reporting route families.
 - Added upstream document lifecycle error mappings for archive/delete + restore routes.
 - Archive/purge execution failures are asynchronous and surface via document/job status fields, not synchronous DELETE request failures.
+- Added tenant messaging policy-gated upstream/public and CGS-admin error mappings.
 
 ## Public API (`/api/v1`)
 
@@ -23,6 +24,7 @@ Exposure rule:
 | Tenant/session forbidden/inactive | `403` | `{"error":"..."}` | Tenant isolation/security rule |
 | Unknown resource | `404` | `{"error":"..."}` | Missing session/document/replay chunk |
 | Validation failures | `400` | `{"error":"..."}` | Invalid JSON/body/query/path payload |
+| Messaging trust-policy deny/approval-required | `403`/`409` | `{"error":"...","code":"AI_*"}` | Trust tier, allowlist, or approval policy gates |
 | Oversized document uploads | `413` | `{"error":"Upload too large ..."}` | Max upload limit in route guard |
 | Upstream dependencies unavailable | `503` | `{"error":"..."}` | Inference service/object storage unavailable |
 | Unexpected server failures | `500` | `{"error":"..."}` | Unhandled internal exceptions |
@@ -96,3 +98,13 @@ Retryability rules:
 | `DELETE /service/ai/v1/internal/admin/tenants/{tenant_id}/email/mailboxes/{mailbox_id}` | Missing approved ticket | `409` + `AI_APPROVAL_REQUIRED` |
 | `GET /service/ai/v1/internal/admin/tenants/{tenant_id}/email/calendars` | Missing `mailbox_id` query | `400` + `AI_BAD_REQUEST` |
 | `POST /service/ai/v1/internal/admin/tenants/{tenant_id}/email/mailboxes/{mailbox_id}/sync` | Invalid direction/status payload | `400` + `AI_BAD_REQUEST` |
+
+## Messaging Endpoint Specifics
+
+| Endpoint | Failure Case | Result |
+|---|---|---|
+| `GET /api/v1/messaging/messages` | Missing `chat_id` query | `400` |
+| `GET /api/v1/messaging/messages` | Chat not allowlisted | `403` + `AI_MESSAGING_CHAT_NOT_ALLOWLISTED` |
+| `POST /api/v1/messaging/messages/{chat_id}/send` | Approval required by policy | `409` + `AI_APPROVAL_REQUIRED` |
+| `POST /api/v1/messaging/messages/{chat_id}/send` | Chat not allowlisted | `403` + `AI_MESSAGING_CHAT_NOT_ALLOWLISTED` |
+| `POST /service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages/{chat_id}/send` | High-risk send without approved ticket | `409` + `AI_APPROVAL_REQUIRED` |

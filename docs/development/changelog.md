@@ -43,6 +43,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bridge ingest now stores signed inbound events into encrypted tenant message storage and enforces chat allowlist policy.
 - Added TTL cleanup loop in Skills server to continuously purge expired tenant messaging payloads.
 
+### Added - Tenant Messaging CGS + Public API Surfaces (2026-03-05)
+
+- Added CGS internal admin messaging route family under:
+  - `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/...`
+  - includes provider config, chat policy CRUD, chat/message list, and send queue endpoints.
+- Added tenant public upstream messaging routes:
+  - `GET /api/v1/messaging/chats`
+  - `GET /api/v1/messaging/messages`
+  - `POST /api/v1/messaging/messages/{chat_id}/send`
+- Added trust-policy/approval propagation for CGS messaging send:
+  - high-risk send requests return `AI_APPROVAL_REQUIRED` with generated `change_ticket_id` when required.
+- Added public messaging route trust-policy checks for read/send decisions and policy-coded error responses.
+- Updated OpenAPI and docs bundles for both upstream and CGS gateway contracts.
+
 ### Changed - Windows Deploy Resilience Registration Signal Cleanup (2026-03-05)
 
 - Updated `Deploy Windows` resilience registration step behavior to remain explicitly non-blocking without

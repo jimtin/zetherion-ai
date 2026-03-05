@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -15,6 +16,11 @@ from zetherion_ai.cgs_gateway.routes.internal_admin import register_internal_adm
 from zetherion_ai.cgs_gateway.routes.reporting import register_reporting_routes
 from zetherion_ai.cgs_gateway.routes.runtime import register_runtime_routes
 from zetherion_ai.cgs_gateway.server import create_error_middleware
+from zetherion_ai.security.trust_policy import (
+    TrustActionClass,
+    TrustDecisionOutcome,
+    TrustPolicyDecision,
+)
 
 
 def _runtime_app(
@@ -1089,6 +1095,112 @@ async def test_internal_admin_email_route_matrix_and_high_risk_controls() -> Non
 
     assert app["cgs_skills_client"].request_tenant_admin_json.await_count >= 12
     assert storage.mark_admin_change_applied.await_count >= 2
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_messaging_route_matrix_success_paths() -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin"],
+        principal_claims={"step_up": True, "allowed_tenants": ["tenant-a"]},
+    )
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+    app["cgs_skills_client"].request_tenant_admin_json = AsyncMock(
+        return_value=(200, {"ok": True, "chats": [], "messages": []})
+    )
+    app["cgs_skills_client"].request_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        provider_get = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/messaging/providers/whatsapp/config"
+        )
+        assert provider_get.status == 200
+
+        provider_put = await client.put(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/messaging/providers/whatsapp/config",
+            json={"enabled": True, "bridge_mode": "local_sidecar"},
+        )
+        assert provider_put.status == 200
+
+        policy_put = await client.put(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/messaging/chats/chat-1/policy",
+            json={"provider": "whatsapp", "read_enabled": True, "send_enabled": True},
+        )
+        assert policy_put.status == 200
+
+        policy_get = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/messaging/chats/chat-1/policy",
+            params={"provider": "whatsapp"},
+        )
+        assert policy_get.status == 200
+
+        chats = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/messaging/chats",
+            params={"provider": "whatsapp", "limit": "50"},
+        )
+        assert chats.status == 200
+
+        messages = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/messaging/messages",
+            params={"provider": "whatsapp", "chat_id": "chat-1", "limit": "50"},
+        )
+        assert messages.status == 200
+
+    assert app["cgs_skills_client"].request_tenant_admin_json.await_count >= 6
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_messaging_send_returns_approval_required_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin"],
+        principal_claims={"step_up": True, "allowed_tenants": ["tenant-a"]},
+    )
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+    storage.create_admin_change = AsyncMock(
+        return_value={"change_id": "chg_msg_send", "status": "pending"}
+    )
+    approval_required = TrustPolicyDecision(
+        action="messaging.send",
+        action_class=TrustActionClass.CRITICAL,
+        outcome=TrustDecisionOutcome.APPROVAL_REQUIRED,
+        status=409,
+        code="AI_APPROVAL_REQUIRED",
+        message="This action requires approval before apply",
+        details={},
+        requires_two_person=True,
+    )
+    monkeypatch.setattr(
+        "zetherion_ai.cgs_gateway.routes.internal_admin._TRUST_POLICY_EVALUATOR",
+        SimpleNamespace(evaluate=lambda **_: approval_required),
+    )
+
+    app["cgs_skills_client"].request_tenant_admin_json = AsyncMock(return_value=(202, {"ok": True}))
+    app["cgs_skills_client"].request_admin_json = AsyncMock(return_value=(202, {"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/messaging/messages/chat-1/send",
+            json={"provider": "whatsapp", "text": "hello"},
+        )
+        assert response.status == 409
+        body = await response.json()
+        assert body["error"]["code"] == "AI_APPROVAL_REQUIRED"
+        assert body["error"]["details"]["change_ticket_id"] == "chg_msg_send"
+
+    app["cgs_skills_client"].request_tenant_admin_json.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -31,6 +31,8 @@ It does not cover external gateway/public API mapping.
 
 ## Implementation Status Update (2026-03-05)
 
+- Upstream tenant messaging endpoints were added (`/api/v1/messaging/*`) with trust-policy gating;
+  document archive/delete contracts in this spec remain unchanged.
 - Archive jobs are now processed by `DocumentService` maintenance methods:
   - `process_archive_jobs(...)`
   - `process_due_purges(...)`

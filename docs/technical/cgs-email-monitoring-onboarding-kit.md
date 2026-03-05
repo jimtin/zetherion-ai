@@ -12,6 +12,7 @@ Authoritative exposure rule:
 
 - Zetherion-only boundary recovery removed in-repo CGS website/UI assets.
 - Email monitoring API contracts in this onboarding kit are unchanged.
+- Tenant messaging admin routes were added under the same internal admin prefix with shared trust-policy/approval behavior.
 - Internal trust-policy gating now enforces deny-by-default for sensitive namespaces and approval flow reuse for high-risk actions.
 
 ## Capability Outcome

@@ -209,6 +209,38 @@ class TenantAdminInsightsReindexRequest(BaseModel):
     change_ticket_id: str | None = None
 
 
+class TenantAdminMessagingProviderPutRequest(BaseModel):
+    """Configure tenant messaging provider connectivity/options."""
+
+    enabled: bool = True
+    bridge_mode: str = Field(default="local_sidecar", min_length=1, max_length=40)
+    account_ref: str | None = Field(default=None, max_length=255)
+    session_ref: str | None = Field(default=None, max_length=255)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    change_ticket_id: str | None = None
+
+
+class TenantAdminMessagingChatPolicyPutRequest(BaseModel):
+    """Configure per-chat messaging access policy."""
+
+    provider: str = Field(default="whatsapp", min_length=1, max_length=40)
+    read_enabled: bool = False
+    send_enabled: bool = False
+    retention_days: int | None = Field(default=None, ge=1, le=3650)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    change_ticket_id: str | None = None
+
+
+class TenantAdminMessagingSendRequest(BaseModel):
+    """Queue a tenant messaging outbound send."""
+
+    provider: str = Field(default="whatsapp", min_length=1, max_length=40)
+    text: str = Field(min_length=1, max_length=10000)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    explicitly_elevated: bool = False
+    change_ticket_id: str | None = None
+
+
 class TenantAdminChangeCreateRequest(BaseModel):
     """Submit pending high-risk admin change for review."""
 

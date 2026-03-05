@@ -9,6 +9,7 @@ This guide maps CGS `/service/ai/v1` routes to expected frontend flows.
 - Added blog publish adapter route mapping for operator tooling and promotion worker integration.
 - Clarified that CGS website/UI is owned outside this repository; this document only maps CGS API routes to UI screens.
 - Added tenant email admin route mapping for OAuth app setup, mailbox linking, sync/triage, and calendar selection.
+- Added tenant messaging admin route mapping for provider config, chat policy management, chat/message views, and policy-gated sends.
 - Added trust-policy enforcement note for sensitive internal admin actions; UI should handle deny/approval-required outcomes consistently.
 
 ## Document Center Screens
@@ -49,6 +50,11 @@ This guide maps CGS `/service/ai/v1` routes to expected frontend flows.
 | Secret metadata list | `/service/ai/v1/internal/admin/tenants/{tenant_id}/secrets` | `GET` | Requires `cgs:zetherion-secrets-admin` |
 | Secret rotate/delete | `/service/ai/v1/internal/admin/tenants/{tenant_id}/secrets/{name}` | `PUT`/`DELETE` | Requires approved `change_ticket_id` |
 | Audit timeline | `/service/ai/v1/internal/admin/tenants/{tenant_id}/audit` | `GET` | Immutable upstream audit trail |
+| Messaging provider config | `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/providers/{provider}/config` | `GET`/`PUT` | Mutating route requires step-up auth |
+| Messaging chat policy | `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/chats/{chat_id}/policy` | `GET`/`PUT` | Controls read/send allowlist and retention |
+| Messaging chat list | `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/chats` | `GET` | Supports `provider`, `include_inactive`, `limit` |
+| Messaging message list | `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages` | `GET` | Requires `chat_id` query |
+| Messaging send queue | `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages/{chat_id}/send` | `POST` | May require approval (`AI_APPROVAL_REQUIRED`) |
 | Change queue | `/service/ai/v1/internal/admin/tenants/{tenant_id}/changes` | `GET` | Shows pending/approved/applied/rejected |
 | Submit change | `/service/ai/v1/internal/admin/tenants/{tenant_id}/changes` | `POST` | Creates pending review ticket |
 | Approve/reject change | `/service/ai/v1/internal/admin/tenants/{tenant_id}/changes/{change_id}/approve` or `/reject` | `POST` | Two-person approval enforced |

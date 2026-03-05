@@ -159,6 +159,7 @@ class TestAuthMiddleware:
         app.router.add_get("/api/v1/analytics/funnel", protected)
         app.router.add_get("/api/v1/analytics/recommendations/tenant", protected)
         app.router.add_post("/api/v1/releases/markers", protected)
+        app.router.add_get("/api/v1/messaging/messages", protected)
 
         return app
 
@@ -279,6 +280,21 @@ class TestAuthMiddleware:
         async with TestClient(TestServer(app)) as client:
             resp = await client.get("/api/v1/analytics/funnel")
             assert resp.status == 401
+
+    @pytest.mark.asyncio
+    async def test_messaging_messages_route_uses_api_key_auth(self):
+        """Messaging read route remains API-key authenticated."""
+        tm = AsyncMock()
+        tm.authenticate_api_key = AsyncMock(
+            return_value={"tenant_id": "tenant-msg", "is_active": True}
+        )
+        app = self._make_app(tenant_manager=tm)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/api/v1/messaging/messages",
+                headers={"X-API-Key": "sk_live_valid"},
+            )
+            assert resp.status == 200
 
     @pytest.mark.asyncio
     async def test_session_auth_tenant_inactive_403(self):

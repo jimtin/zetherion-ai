@@ -25,6 +25,9 @@ from zetherion_ai.cgs_gateway.models import (
     TenantAdminMailboxPatchRequest,
     TenantAdminMailboxSetPrimaryCalendarRequest,
     TenantAdminMailboxSyncRequest,
+    TenantAdminMessagingChatPolicyPutRequest,
+    TenantAdminMessagingProviderPutRequest,
+    TenantAdminMessagingSendRequest,
     TenantAdminSecretPutRequest,
     TenantAdminSettingPutRequest,
 )
@@ -179,7 +182,7 @@ def _derive_policy_action(method: str, subpath: str, payload: dict[str, Any] | N
             return "messaging.ingest"
         if method_upper == "POST" and normalized.endswith("/send"):
             return "messaging.send"
-        return "messaging.read"
+        return "tenant_admin.read" if method_upper == "GET" else "tenant_admin.mutate"
 
     if normalized.startswith("/automerge/") and method_upper == "POST":
         return "automerge.execute"
@@ -207,6 +210,7 @@ def _derive_policy_context(
     method: str,
     subpath: str,
     payload: dict[str, Any] | None,
+    query: dict[str, str] | None,
 ) -> dict[str, Any]:
     ctx: dict[str, Any] = {
         "method": method.upper(),
@@ -214,9 +218,15 @@ def _derive_policy_context(
     }
     normalized = subpath.lower()
     if normalized.startswith("/messaging/"):
+        query_chat_id = str((query or {}).get("chat_id") or "").strip()
         target = _derive_policy_target(subpath, payload)
-        if target:
+        if query_chat_id:
+            ctx["chat_id"] = query_chat_id
+        elif target and not normalized.endswith("/messages"):
             ctx["chat_id"] = target
+        if method.upper() == "POST" and normalized.endswith("/send"):
+            body = payload or {}
+            ctx["explicitly_elevated"] = bool(body.get("explicitly_elevated"))
     if normalized.startswith("/automerge/"):
         body = payload or {}
         ctx["branch_guard_passed"] = bool(body.get("branch_guard_passed"))
@@ -233,10 +243,11 @@ async def _enforce_trust_policy(
     method: str,
     subpath: str,
     payload: dict[str, Any] | None,
+    query: dict[str, str] | None,
     change_ticket_id: str | None,
 ) -> str | None:
     action = _derive_policy_action(method, subpath, payload)
-    context = _derive_policy_context(method, subpath, payload)
+    context = _derive_policy_context(method, subpath, payload, query)
     decision: TrustPolicyDecision = _TRUST_POLICY_EVALUATOR.evaluate(
         tenant_id=zetherion_tenant_id,
         action=action,
@@ -434,6 +445,7 @@ async def _call_admin_upstream(
         method=method,
         subpath=subpath,
         payload=payload,
+        query=query,
         change_ticket_id=change_ticket_id,
     )
     actor = _build_actor_context(request, change_ticket_id=effective_change_ticket_id)
@@ -1174,6 +1186,163 @@ async def handle_admin_reindex_email_insights(request: web.Request) -> web.Respo
     )
 
 
+async def handle_admin_get_messaging_provider_config(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=False)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    provider = request.match_info.get("provider", "whatsapp")
+    data = await _call_admin_upstream(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="GET",
+        subpath=f"/messaging/providers/{provider}/config",
+    )
+    return success_response(request_id(request), data)
+
+
+async def handle_admin_put_messaging_provider_config(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=True)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    provider = request.match_info.get("provider", "whatsapp")
+    raw = await json_object(request)
+    try:
+        body = TenantAdminMessagingProviderPutRequest.model_validate(raw)
+    except ValidationError as exc:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="Validation failed",
+            status=400,
+            details={"errors": exc.errors()},
+        ) from exc
+
+    payload = body.model_dump(mode="json", exclude_none=True)
+    return await _admin_mutation_response(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="PUT",
+        subpath=f"/messaging/providers/{provider}/config",
+        payload=payload,
+        change_ticket_id=_change_ticket_from_request(request, body.change_ticket_id),
+    )
+
+
+async def handle_admin_get_messaging_chat_policy(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=False)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    chat_id = request.match_info["chat_id"]
+    provider = request.query.get("provider", "whatsapp").strip() or "whatsapp"
+    data = await _call_admin_upstream(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="GET",
+        subpath=f"/messaging/chats/{chat_id}/policy",
+        query={"provider": provider},
+    )
+    return success_response(request_id(request), data)
+
+
+async def handle_admin_put_messaging_chat_policy(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=True)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    chat_id = request.match_info["chat_id"]
+    raw = await json_object(request)
+    try:
+        body = TenantAdminMessagingChatPolicyPutRequest.model_validate(raw)
+    except ValidationError as exc:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="Validation failed",
+            status=400,
+            details={"errors": exc.errors()},
+        ) from exc
+
+    payload = body.model_dump(mode="json", exclude_none=True)
+    return await _admin_mutation_response(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="PUT",
+        subpath=f"/messaging/chats/{chat_id}/policy",
+        payload=payload,
+        change_ticket_id=_change_ticket_from_request(request, body.change_ticket_id),
+    )
+
+
+async def handle_admin_list_messaging_chats(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=False)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    query: dict[str, str] = {}
+    for key in ("provider", "include_inactive", "limit"):
+        value = request.query.get(key)
+        if isinstance(value, str) and value.strip():
+            query[key] = value.strip()
+    data = await _call_admin_upstream(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="GET",
+        subpath="/messaging/chats",
+        query=query or None,
+    )
+    return success_response(request_id(request), data)
+
+
+async def handle_admin_list_messaging_messages(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=False)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    chat_id = request.query.get("chat_id", "").strip()
+    if not chat_id:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="Missing chat_id query parameter",
+            status=400,
+        )
+    query: dict[str, str] = {"chat_id": chat_id}
+    for key in ("provider", "direction", "limit"):
+        value = request.query.get(key)
+        if isinstance(value, str) and value.strip():
+            query[key] = value.strip()
+    data = await _call_admin_upstream(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="GET",
+        subpath="/messaging/messages",
+        query=query,
+    )
+    return success_response(request_id(request), data)
+
+
+async def handle_admin_send_messaging_message(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=True)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    chat_id = request.match_info["chat_id"]
+    raw = await json_object(request)
+    try:
+        body = TenantAdminMessagingSendRequest.model_validate(raw)
+    except ValidationError as exc:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="Validation failed",
+            status=400,
+            details={"errors": exc.errors()},
+        ) from exc
+
+    payload = body.model_dump(mode="json", exclude_none=True)
+    return await _admin_mutation_response(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="POST",
+        subpath=f"/messaging/messages/{chat_id}/send",
+        payload=payload,
+        change_ticket_id=_change_ticket_from_request(request, body.change_ticket_id),
+        response_status=202,
+    )
+
+
 async def handle_admin_submit_change(request: web.Request) -> web.Response:
     _ensure_internal_admin_access(request, mutating=True)
     rid = request_id(request)
@@ -1493,6 +1662,31 @@ def register_internal_admin_routes(app: web.Application) -> None:
     app.router.add_post(
         prefix + "/email/insights/reindex",
         handle_admin_reindex_email_insights,
+    )
+    app.router.add_get(
+        prefix + "/messaging/providers/{provider}/config",
+        handle_admin_get_messaging_provider_config,
+    )
+    app.router.add_put(
+        prefix + "/messaging/providers/{provider}/config",
+        handle_admin_put_messaging_provider_config,
+    )
+    app.router.add_get(
+        prefix + "/messaging/chats/{chat_id}/policy",
+        handle_admin_get_messaging_chat_policy,
+    )
+    app.router.add_put(
+        prefix + "/messaging/chats/{chat_id}/policy",
+        handle_admin_put_messaging_chat_policy,
+    )
+    app.router.add_get(prefix + "/messaging/chats", handle_admin_list_messaging_chats)
+    app.router.add_get(
+        prefix + "/messaging/messages",
+        handle_admin_list_messaging_messages,
+    )
+    app.router.add_post(
+        prefix + "/messaging/messages/{chat_id}/send",
+        handle_admin_send_messaging_message,
     )
 
     app.router.add_post(prefix + "/changes", handle_admin_submit_change)
