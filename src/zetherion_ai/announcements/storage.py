@@ -566,7 +566,12 @@ class AnnouncementRepository:
             )
         return _row_count(status) > 0
 
-    async def get_user_preferences(self, user_id: int) -> AnnouncementUserPreferences:
+    async def get_user_preferences(
+        self,
+        user_id: int,
+        *,
+        with_defaults: bool = True,
+    ) -> AnnouncementUserPreferences | None:
         pool = self._require_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -586,7 +591,9 @@ class AnnouncementRepository:
                 user_id,
             )
         if row is None:
-            return AnnouncementUserPreferences(user_id=user_id)
+            if with_defaults:
+                return AnnouncementUserPreferences(user_id=user_id)
+            return None
         return AnnouncementUserPreferences(
             user_id=int(row["user_id"]),
             timezone=str(row["timezone"] or "UTC"),
@@ -604,6 +611,8 @@ class AnnouncementRepository:
         patch: AnnouncementPreferencePatch,
     ) -> AnnouncementUserPreferences:
         existing = await self.get_user_preferences(user_id)
+        if existing is None:
+            existing = AnnouncementUserPreferences(user_id=user_id)
         merged = AnnouncementUserPreferences(
             user_id=user_id,
             timezone=(patch.timezone or existing.timezone or "UTC").strip() or "UTC",
@@ -666,7 +675,67 @@ class AnnouncementRepository:
                 json.dumps(merged.muted_categories),
                 merged.max_immediate_per_hour,
             )
-        return await self.get_user_preferences(user_id)
+        updated = await self.get_user_preferences(user_id)
+        if updated is None:  # pragma: no cover
+            return merged
+        return updated
+
+    async def get_personal_profile_preferences(self, user_id: int) -> dict[str, Any]:
+        pool = self._require_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT timezone, preferences
+                FROM personal_profile
+                WHERE user_id = $1
+                LIMIT 1
+                """,
+                user_id,
+            )
+        if row is None:
+            return {}
+        raw_preferences = row.get("preferences")
+        if isinstance(raw_preferences, str):
+            try:
+                raw_preferences = json.loads(raw_preferences)
+            except json.JSONDecodeError:
+                raw_preferences = {}
+        if not isinstance(raw_preferences, dict):
+            raw_preferences = {}
+        timezone = row.get("timezone")
+        timezone_value = str(timezone).strip() if timezone else ""
+        return {
+            "timezone": timezone_value or None,
+            "preferences": raw_preferences,
+        }
+
+    async def count_recent_events(
+        self,
+        *,
+        target_user_id: int,
+        since: datetime,
+        severities: list[str] | None = None,
+        categories: list[str] | None = None,
+    ) -> int:
+        pool = self._require_pool()
+        severity_filter = [str(item).strip() for item in severities or [] if str(item).strip()]
+        category_filter = [str(item).strip() for item in categories or [] if str(item).strip()]
+        async with pool.acquire() as conn:
+            count = await conn.fetchval(
+                """
+                SELECT COUNT(*)::int AS event_count
+                FROM announcement_events
+                WHERE target_user_id = $1
+                  AND occurred_at >= $2
+                  AND ($3::text[] IS NULL OR severity = ANY($3::text[]))
+                  AND ($4::text[] IS NULL OR category = ANY($4::text[]))
+                """,
+                target_user_id,
+                since,
+                severity_filter or None,
+                category_filter or None,
+            )
+        return int(count or 0)
 
     async def get_digest_state(self, user_id: int) -> dict[str, Any] | None:
         pool = self._require_pool()
