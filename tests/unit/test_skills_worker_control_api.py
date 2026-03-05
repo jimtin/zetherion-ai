@@ -821,9 +821,7 @@ class TestSkillsWorkerControlAPI:
             )
             assert bad_error.status == 400
 
-            worker_manager.submit_worker_job_result = AsyncMock(
-                side_effect=RuntimeError("db-down")
-            )
+            worker_manager.submit_worker_job_result = AsyncMock(side_effect=RuntimeError("db-down"))
             runtime_raw = json.dumps(
                 {"tenant_id": tenant_id, "status": "succeeded"},
                 separators=(",", ":"),

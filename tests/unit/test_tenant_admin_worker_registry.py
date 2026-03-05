@@ -145,9 +145,7 @@ async def test_bootstrap_worker_session_validation_errors() -> None:
     with pytest.raises(ValueError, match="Missing node_id"):
         await manager.bootstrap_worker_node_session(**{**base_kwargs, "node_id": ""})
     with pytest.raises(ValueError, match="Missing session_token_hash"):
-        await manager.bootstrap_worker_node_session(
-            **{**base_kwargs, "session_token_hash": ""}
-        )
+        await manager.bootstrap_worker_node_session(**{**base_kwargs, "session_token_hash": ""})
     with pytest.raises(ValueError, match="SHA-256 hex digest"):
         await manager.bootstrap_worker_node_session(
             **{**base_kwargs, "session_token_hash": "not-a-sha256"}
