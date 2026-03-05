@@ -16,6 +16,8 @@ Maintenance note (2026-03-05):
 - Internal tenant messaging admin routes were added under `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/*`.
 - Internal tenant security observability routes were added under `/service/ai/v1/internal/admin/tenants/{tenant_id}/security/*`.
 - Internal autonomous merge execution route was added under `/service/ai/v1/internal/admin/tenants/{tenant_id}/automerge/execute`.
+- Worker operator control routes were added under `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*`
+  for node inventory, quarantine/unquarantine, job inspection, retry/cancel, and lifecycle events.
 - Public CGS client-facing document intelligence endpoints in this kit are unchanged.
 
 ## Integration Outcome

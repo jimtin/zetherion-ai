@@ -10,6 +10,8 @@ Maintenance note (2026-03-04):
 - Added tenant email admin control-plane routes under `/service/ai/v1/internal/admin/tenants/{tenant_id}/email/*` with step-up + approval requirements for high-risk actions.
 - Added tenant messaging admin control-plane routes under `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/*` with trust-policy gating and approval-required send semantics.
 - Added tenant security observability + data-subject controls under `/service/ai/v1/internal/admin/tenants/{tenant_id}/security/*` and messaging export/delete routes.
+- Added worker operator control routes under `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*`
+  for node quarantine/unquarantine, capability updates, job retry/cancel, and lifecycle events.
 - Zetherion-only boundary recovery removed in-repo CGS website/UI assets; integration contract remains CGS-only.
 - Internal trust-policy gating now applies to sensitive admin actions before upstream apply, without changing external route contracts.
 

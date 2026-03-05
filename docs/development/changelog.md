@@ -13,6 +13,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment 14 Worker Operator Control Surface (2026-03-06)
+
+- Added worker operator control routes across Skills and CGS internal admin surfaces:
+  - node quarantine/unquarantine
+  - node capability updates
+  - worker job list/get
+  - worker job retry/cancel
+  - worker lifecycle/event listing
+- Added Discord worker operator command handling for status, pending approvals,
+  quarantine/unquarantine, and retry/cancel flows with tenant-aware admin checks.
+- Expanded unit coverage for worker operator paths in:
+  - Skills client/server routing and payload handling
+  - CGS internal admin route branches and validation models
+  - tenant admin manager helper behavior
+  - Discord command routing and failure messaging
+- Updated CGS route docs/OpenAPI and frontend route-wiring mappings for new
+  worker operator endpoints.
+- Fixed CI pipeline-contract doc bundle drift by updating required CGS
+  onboarding/spec docs when CGS route files change.
+- Updated bounded test lane defaults so pytest-heavy lanes run under heartbeat
+  wrappers (`targeted-unit`, `unit-full`, `api-integration-coverage`,
+  `e2e-mocked`) to prevent false stall failures.
+
 ### Changed - Segment 13 Announcement DM Guardrails (2026-03-06)
 
 - Added `scripts/check-announcement-dm-guard.py` guardrail to block direct `user.send(...)`
