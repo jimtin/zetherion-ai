@@ -33,6 +33,7 @@ from zetherion_ai.logging import get_logger
 from zetherion_ai.memory.qdrant import QdrantMemory
 from zetherion_ai.queue.manager import QueueManager
 from zetherion_ai.queue.models import QueuePriority, QueueTaskType
+from zetherion_ai.queue.plan_executor import PlanContinuationExecutor
 from zetherion_ai.scheduler.actions import ActionExecutor
 from zetherion_ai.scheduler.heartbeat import HeartbeatScheduler, QuietHoursWindow
 from zetherion_ai.utils import split_text_chunks
@@ -275,11 +276,17 @@ class ZetherionAIBot(discord.Client):
         # Shared integrations for queue workers and heartbeat scheduler
         skills_client = None
         action_executor = ActionExecutor(message_sender=self)
+        plan_executor = None
         if self._agent is not None:
             try:
                 skills_client = await self._agent._get_skills_client()
             except Exception:
                 log.exception("skills_client_init_failed")
+        if self._tenant_admin_manager is not None:
+            plan_executor = PlanContinuationExecutor(
+                tenant_admin_manager=self._tenant_admin_manager,
+                agent=self._agent,
+            )
 
         # Wire queue processors with bot/agent/deps, then start workers
         if self._queue_manager is not None:
@@ -287,6 +294,7 @@ class ZetherionAIBot(discord.Client):
             self._queue_manager._processors._agent = self._agent
             self._queue_manager._processors._skills_client = skills_client
             self._queue_manager._processors._action_executor = action_executor
+            self._queue_manager._processors._plan_executor = plan_executor
             await self._queue_manager.start()
             log.info("queue_manager_started")
 

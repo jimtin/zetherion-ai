@@ -1664,6 +1664,163 @@ class SkillsServer:
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
 
+    async def handle_tenant_create_execution_plan(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            actor = self._admin_actor(request)
+            data = await self._read_json_object(request)
+            metadata = data.get("metadata")
+            if metadata is not None and not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object when provided")
+            start_at: datetime | None = None
+            start_at_raw = data.get("start_at")
+            if isinstance(start_at_raw, str) and start_at_raw.strip():
+                start_at = datetime.fromisoformat(start_at_raw.replace("Z", "+00:00"))
+                if start_at.tzinfo is None:
+                    start_at = start_at.replace(tzinfo=UTC)
+
+            created = await self._tenant_admin_manager.create_execution_plan(
+                tenant_id=tenant_id,
+                title=str(data.get("title") or "").strip(),
+                goal=str(data.get("goal") or "").strip(),
+                steps=data.get("steps"),
+                actor=actor,
+                metadata=metadata,
+                max_step_attempts=(
+                    self._parse_int(data.get("max_step_attempts"), "max_step_attempts")
+                    if data.get("max_step_attempts") is not None
+                    else 3
+                ),
+                continuation_interval_seconds=(
+                    self._parse_int(
+                        data.get("continuation_interval_seconds"),
+                        "continuation_interval_seconds",
+                    )
+                    if data.get("continuation_interval_seconds") is not None
+                    else 60
+                ),
+                start_at=start_at,
+            )
+            return web.json_response(
+                {
+                    "ok": True,
+                    "plan": _serialise_record(created.get("plan", {})),
+                    "steps": [_serialise_record(step) for step in created.get("steps", [])],
+                },
+                status=201,
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_list_execution_plans(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            limit = self._parse_int(request.query.get("limit", "100"), "limit")
+            rows = await self._tenant_admin_manager.list_execution_plans(
+                tenant_id=tenant_id,
+                status=request.query.get("status"),
+                limit=limit,
+            )
+            return web.json_response({"plans": [_serialise_record(row) for row in rows]})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_get_execution_plan(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        plan_id = request.match_info["plan_id"]
+        try:
+            include_steps = self._parse_bool(
+                request.query.get("include_steps"),
+                "include_steps",
+                default=True,
+            )
+            include_prompt = self._parse_bool(
+                request.query.get("include_prompt"),
+                "include_prompt",
+                default=True,
+            )
+            plan = await self._tenant_admin_manager.get_execution_plan(
+                tenant_id=tenant_id,
+                plan_id=plan_id,
+            )
+            if plan is None:
+                return web.json_response({"error": "Execution plan not found"}, status=404)
+
+            payload: dict[str, Any] = {"plan": _serialise_record(plan)}
+            if include_steps:
+                steps = await self._tenant_admin_manager.list_execution_plan_steps(
+                    tenant_id=tenant_id,
+                    plan_id=plan_id,
+                    include_prompt=include_prompt,
+                )
+                payload["steps"] = [_serialise_record(row) for row in steps]
+            return web.json_response(payload)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_pause_execution_plan(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        plan_id = request.match_info["plan_id"]
+        try:
+            actor = self._admin_actor(request)
+            plan = await self._tenant_admin_manager.pause_execution_plan(
+                tenant_id=tenant_id,
+                plan_id=plan_id,
+                actor=actor,
+            )
+            return web.json_response({"ok": True, "plan": _serialise_record(plan)})
+        except ValueError as exc:
+            message = str(exc)
+            status = 404 if "not found" in message.lower() else 400
+            return web.json_response({"error": message}, status=status)
+
+    async def handle_tenant_resume_execution_plan(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        plan_id = request.match_info["plan_id"]
+        try:
+            actor = self._admin_actor(request)
+            data = await self._read_json_object(request)
+            immediate = self._parse_bool(data.get("immediate"), "immediate", default=True)
+            plan = await self._tenant_admin_manager.resume_execution_plan(
+                tenant_id=tenant_id,
+                plan_id=plan_id,
+                actor=actor,
+                immediately=immediate,
+            )
+            return web.json_response({"ok": True, "plan": _serialise_record(plan)})
+        except ValueError as exc:
+            message = str(exc)
+            status = 404 if "not found" in message.lower() else 400
+            return web.json_response({"error": message}, status=status)
+
+    async def handle_tenant_cancel_execution_plan(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        plan_id = request.match_info["plan_id"]
+        try:
+            actor = self._admin_actor(request)
+            plan = await self._tenant_admin_manager.cancel_execution_plan(
+                tenant_id=tenant_id,
+                plan_id=plan_id,
+                actor=actor,
+            )
+            return web.json_response({"ok": True, "plan": _serialise_record(plan)})
+        except ValueError as exc:
+            message = str(exc)
+            status = 404 if "not found" in message.lower() else 400
+            return web.json_response({"error": message}, status=status)
+
     async def _handle_signed_bridge_messaging_ingest(self, request: web.Request) -> web.Response:
         tenant_id = request.match_info["tenant_id"]
         if self._tenant_admin_manager is None:
@@ -1972,6 +2129,30 @@ class SkillsServer:
         app.router.add_post(
             tenant_prefix + "/messaging/messages/{chat_id}/send",
             self.handle_tenant_send_messaging_message,
+        )
+        app.router.add_post(
+            tenant_prefix + "/execution/plans",
+            self.handle_tenant_create_execution_plan,
+        )
+        app.router.add_get(
+            tenant_prefix + "/execution/plans",
+            self.handle_tenant_list_execution_plans,
+        )
+        app.router.add_get(
+            tenant_prefix + "/execution/plans/{plan_id}",
+            self.handle_tenant_get_execution_plan,
+        )
+        app.router.add_post(
+            tenant_prefix + "/execution/plans/{plan_id}/pause",
+            self.handle_tenant_pause_execution_plan,
+        )
+        app.router.add_post(
+            tenant_prefix + "/execution/plans/{plan_id}/resume",
+            self.handle_tenant_resume_execution_plan,
+        )
+        app.router.add_post(
+            tenant_prefix + "/execution/plans/{plan_id}/cancel",
+            self.handle_tenant_cancel_execution_plan,
         )
         app.router.add_post(
             tenant_prefix + "/messaging/ingest",
