@@ -532,3 +532,618 @@ async def test_worker_registry_validation_and_edge_paths() -> None:
             event_type="worker.job.claim",
             request_nonce=None,
         )
+
+
+@pytest.mark.asyncio
+async def test_worker_job_listing_and_detail_paths() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    tenant_id = "11111111-1111-1111-1111-111111111111"
+    plan_id = "22222222-2222-2222-2222-222222222222"
+    job_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+
+    manager._fetch = AsyncMock(  # type: ignore[method-assign]
+        return_value=[{"job_id": job_id, "status": "running"}]
+    )
+    jobs = await manager.list_worker_jobs(
+        tenant_id=tenant_id,
+        node_id="node-1",
+        status="RUNNING",
+        plan_id=plan_id,
+        limit=5000,
+    )
+    assert jobs == [{"job_id": job_id, "status": "running"}]
+    list_call = manager._fetch.await_args
+    assert "claimed_by_node_id" in list_call.args[0]
+    assert "plan_id" in list_call.args[0]
+    assert list_call.args[-1] == 1000
+    assert list_call.args[1] == tenant_id
+    assert list_call.args[2] == "node-1"
+    assert list_call.args[3] == "running"
+    assert list_call.args[4] == plan_id
+
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        return_value={"job_id": job_id, "status": "queued"}
+    )
+    fetched_job = await manager.get_worker_job(tenant_id=tenant_id, job_id=job_id)
+    assert fetched_job == {"job_id": job_id, "status": "queued"}
+
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    missing_job = await manager.get_worker_job(tenant_id=tenant_id, job_id=job_id)
+    assert missing_job is None
+
+    manager._fetch = AsyncMock(  # type: ignore[method-assign]
+        return_value=[{"event_id": 3, "job_id": "job-1"}]
+    )
+    events = await manager.list_worker_job_events(
+        tenant_id=tenant_id,
+        node_id="node-1",
+        job_id="job-1",
+        limit=0,
+    )
+    assert events == [{"event_id": 3, "job_id": "job-1"}]
+    event_call = manager._fetch.await_args
+    assert "node_id" in event_call.args[0]
+    assert "job_id" in event_call.args[0]
+    assert event_call.args[-1] == 1
+    assert event_call.args[1] == tenant_id
+    assert event_call.args[2] == "node-1"
+    assert event_call.args[3] == "job-1"
+
+
+@pytest.mark.asyncio
+async def test_set_worker_node_status_updates_and_audits() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    tenant_id = "11111111-1111-1111-1111-111111111111"
+    before = {
+        "tenant_id": tenant_id,
+        "node_id": "node-1",
+        "status": "active",
+        "health_status": "healthy",
+        "capabilities": ["repo.patch"],
+    }
+    after = {
+        "tenant_id": tenant_id,
+        "node_id": "node-1",
+        "status": "quarantined",
+        "health_status": "degraded",
+        "capabilities": ["repo.patch"],
+    }
+    manager.get_worker_node = AsyncMock(side_effect=[before, after])  # type: ignore[method-assign]
+    manager._fetchrow = AsyncMock(return_value={"node_id": "node-1"})  # type: ignore[method-assign]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    updated = await manager.set_worker_node_status(
+        tenant_id=tenant_id,
+        node_id="node-1",
+        status="quarantined",
+        actor=_actor(),
+        metadata={"reason": "manual-review"},
+    )
+    assert updated["status"] == "quarantined"
+    assert updated["health_status"] == "degraded"
+
+    update_call = manager._fetchrow.await_args
+    assert update_call.args[3] == "quarantined"
+    assert update_call.args[4] == "degraded"
+    assert update_call.args[5] == '{"reason": "manual-review"}'
+    manager._write_audit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_retry_worker_job_success_path() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    tenant_id = "11111111-1111-1111-1111-111111111111"
+    job_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    plan_id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    step_id = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    retry_id = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+
+    conn.fetchrow.side_effect = [
+        {
+            "job_id": job_id,
+            "tenant_id": tenant_id,
+            "plan_id": plan_id,
+            "step_id": step_id,
+            "retry_id": retry_id,
+            "status": "running",
+            "claimed_by_node_id": "node-1",
+            "error_json": None,
+        },
+        {"status": "running"},
+        {"status": "running"},
+        {"job_id": job_id, "status": "expired"},
+        {"step_id": step_id, "status": "pending"},
+        {"plan_id": plan_id, "status": "queued"},
+        {"job_id": job_id, "status": "expired"},
+    ]
+    manager.schedule_execution_continuation = AsyncMock(  # type: ignore[method-assign]
+        return_value=None
+    )
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    payload = await manager.retry_worker_job(
+        tenant_id=tenant_id,
+        job_id=job_id,
+        actor=_actor(),
+    )
+    assert payload["job"]["status"] == "expired"
+    assert payload["step"]["status"] == "pending"
+    assert payload["plan"]["status"] == "queued"
+    assert isinstance(payload["scheduled_for"], datetime)
+    assert conn.execute.await_count == 3
+    manager.schedule_execution_continuation.assert_awaited_once()
+    manager._write_audit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cancel_worker_job_success_and_idempotent_paths() -> None:
+    tenant_id = "11111111-1111-1111-1111-111111111111"
+    job_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    plan_id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    step_id = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    retry_id = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    conn.fetchrow.side_effect = [
+        {
+            "job_id": job_id,
+            "tenant_id": tenant_id,
+            "plan_id": plan_id,
+            "step_id": step_id,
+            "retry_id": retry_id,
+            "status": "running",
+        },
+        {"status": "running"},
+        {"status": "running"},
+        {"job_id": job_id, "status": "cancelled"},
+        {"step_id": step_id, "status": "blocked"},
+        {"plan_id": plan_id, "status": "failed"},
+    ]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    cancelled = await manager.cancel_worker_job(
+        tenant_id=tenant_id,
+        job_id=job_id,
+        actor=_actor(),
+    )
+    assert cancelled["idempotent"] is False
+    assert cancelled["job"]["status"] == "cancelled"
+    assert cancelled["step"]["status"] == "blocked"
+    assert cancelled["plan"]["status"] == "failed"
+    assert conn.execute.await_count == 3
+    manager._write_audit.assert_awaited_once()
+
+    idem_conn = _FakeConn()
+    idem_manager = TenantAdminManager(pool=_FakePool(idem_conn))  # type: ignore[arg-type]
+    idem_manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    idem_conn.fetchrow.side_effect = [
+        {
+            "job_id": job_id,
+            "tenant_id": tenant_id,
+            "plan_id": plan_id,
+            "step_id": step_id,
+            "retry_id": retry_id,
+            "status": "cancelled",
+        },
+        {"job_id": job_id, "status": "cancelled"},
+    ]
+
+    idempotent = await idem_manager.cancel_worker_job(
+        tenant_id=tenant_id,
+        job_id=job_id,
+        actor=_actor(),
+    )
+    assert idempotent["idempotent"] is True
+    assert idempotent["job"]["status"] == "cancelled"
+    idem_manager._write_audit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_worker_status_update_validation_and_reload_paths() -> None:
+    tenant_id = "11111111-1111-1111-1111-111111111111"
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="job status must be one of"):
+        await manager.list_worker_jobs(tenant_id=tenant_id, status="bad-status")
+
+    with pytest.raises(ValueError, match="Missing node_id"):
+        await manager.set_worker_node_status(
+            tenant_id=tenant_id,
+            node_id="",
+            status="active",
+            actor=_actor(),
+        )
+
+    manager.get_worker_node = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="Worker node not found"):
+        await manager.set_worker_node_status(
+            tenant_id=tenant_id,
+            node_id="node-1",
+            status="active",
+            actor=_actor(),
+        )
+
+    active_conn = _FakeConn()
+    active_manager = TenantAdminManager(pool=_FakePool(active_conn))  # type: ignore[arg-type]
+    active_manager.get_worker_node = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            {
+                "tenant_id": tenant_id,
+                "node_id": "node-1",
+                "status": "registered",
+                "health_status": "unknown",
+            },
+            {
+                "tenant_id": tenant_id,
+                "node_id": "node-1",
+                "status": "active",
+                "health_status": "healthy",
+            },
+        ]
+    )
+    active_manager._fetchrow = AsyncMock(return_value={"node_id": "node-1"})  # type: ignore[method-assign]
+    active_manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    await active_manager.set_worker_node_status(
+        tenant_id=tenant_id,
+        node_id="node-1",
+        status="active",
+        actor=_actor(),
+        health_status=None,
+    )
+    active_call = active_manager._fetchrow.await_args
+    assert active_call.args[4] == "healthy"
+
+    explicit_conn = _FakeConn()
+    explicit_manager = TenantAdminManager(pool=_FakePool(explicit_conn))  # type: ignore[arg-type]
+    explicit_manager.get_worker_node = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            {
+                "tenant_id": tenant_id,
+                "node_id": "node-1",
+                "status": "active",
+                "health_status": "healthy",
+            },
+            {
+                "tenant_id": tenant_id,
+                "node_id": "node-1",
+                "status": "active",
+                "health_status": "degraded",
+            },
+        ]
+    )
+    explicit_manager._fetchrow = AsyncMock(return_value={"node_id": "node-1"})  # type: ignore[method-assign]
+    explicit_manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    await explicit_manager.set_worker_node_status(
+        tenant_id=tenant_id,
+        node_id="node-1",
+        status="active",
+        actor=_actor(),
+        health_status="degraded",
+    )
+    explicit_call = explicit_manager._fetchrow.await_args
+    assert explicit_call.args[4] == "degraded"
+
+    update_fail_manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    update_fail_manager.get_worker_node = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "tenant_id": tenant_id,
+            "node_id": "node-1",
+            "status": "active",
+            "health_status": "healthy",
+        }
+    )
+    update_fail_manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="Failed to update worker node status"):
+        await update_fail_manager.set_worker_node_status(
+            tenant_id=tenant_id,
+            node_id="node-1",
+            status="quarantined",
+            actor=_actor(),
+        )
+
+    reload_fail_manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    reload_fail_manager.get_worker_node = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            {
+                "tenant_id": tenant_id,
+                "node_id": "node-1",
+                "status": "active",
+                "health_status": "healthy",
+            },
+            None,
+        ]
+    )
+    reload_fail_manager._fetchrow = AsyncMock(return_value={"node_id": "node-1"})  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="Failed to reload worker node"):
+        await reload_fail_manager.set_worker_node_status(
+            tenant_id=tenant_id,
+            node_id="node-1",
+            status="quarantined",
+            actor=_actor(),
+        )
+
+
+def _worker_job_record(
+    *,
+    tenant_id: str,
+    job_id: str,
+    plan_id: str,
+    step_id: str,
+    retry_id: str,
+    status: str,
+) -> dict[str, str]:
+    return {
+        "job_id": job_id,
+        "tenant_id": tenant_id,
+        "plan_id": plan_id,
+        "step_id": step_id,
+        "retry_id": retry_id,
+        "status": status,
+    }
+
+
+@pytest.mark.asyncio
+async def test_retry_worker_job_error_paths() -> None:
+    tenant_id = "11111111-1111-1111-1111-111111111111"
+    job_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    plan_id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    step_id = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    retry_id = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+
+    def _manager_with_rows(rows: list[Any]) -> TenantAdminManager:
+        conn = _FakeConn()
+        conn.fetchrow.side_effect = rows
+        manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+        manager.schedule_execution_continuation = AsyncMock(return_value=None)  # type: ignore[method-assign]
+        manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+        return manager
+
+    with pytest.raises(ValueError, match="Worker job not found"):
+        await _manager_with_rows([None]).retry_worker_job(
+            tenant_id=tenant_id,
+            job_id=job_id,
+            actor=_actor(),
+        )
+
+    with pytest.raises(ValueError, match="already succeeded"):
+        await _manager_with_rows(
+            [
+                _worker_job_record(
+                    tenant_id=tenant_id,
+                    job_id=job_id,
+                    plan_id=plan_id,
+                    step_id=step_id,
+                    retry_id=retry_id,
+                    status="succeeded",
+                )
+            ]
+        ).retry_worker_job(tenant_id=tenant_id, job_id=job_id, actor=_actor())
+
+    with pytest.raises(ValueError, match="Execution step not found"):
+        await _manager_with_rows(
+            [
+                _worker_job_record(
+                    tenant_id=tenant_id,
+                    job_id=job_id,
+                    plan_id=plan_id,
+                    step_id=step_id,
+                    retry_id=retry_id,
+                    status="running",
+                ),
+                None,
+            ]
+        ).retry_worker_job(tenant_id=tenant_id, job_id=job_id, actor=_actor())
+
+    with pytest.raises(ValueError, match="Execution plan not found"):
+        await _manager_with_rows(
+            [
+                _worker_job_record(
+                    tenant_id=tenant_id,
+                    job_id=job_id,
+                    plan_id=plan_id,
+                    step_id=step_id,
+                    retry_id=retry_id,
+                    status="running",
+                ),
+                {"status": "running"},
+                None,
+            ]
+        ).retry_worker_job(tenant_id=tenant_id, job_id=job_id, actor=_actor())
+
+    with pytest.raises(RuntimeError, match="Failed to expire worker job"):
+        await _manager_with_rows(
+            [
+                _worker_job_record(
+                    tenant_id=tenant_id,
+                    job_id=job_id,
+                    plan_id=plan_id,
+                    step_id=step_id,
+                    retry_id=retry_id,
+                    status="running",
+                ),
+                {"status": "running"},
+                {"status": "running"},
+                None,
+            ]
+        ).retry_worker_job(tenant_id=tenant_id, job_id=job_id, actor=_actor())
+
+    with pytest.raises(RuntimeError, match="Failed to reset execution step"):
+        await _manager_with_rows(
+            [
+                _worker_job_record(
+                    tenant_id=tenant_id,
+                    job_id=job_id,
+                    plan_id=plan_id,
+                    step_id=step_id,
+                    retry_id=retry_id,
+                    status="running",
+                ),
+                {"status": "running"},
+                {"status": "running"},
+                {"job_id": job_id, "status": "expired"},
+                None,
+            ]
+        ).retry_worker_job(tenant_id=tenant_id, job_id=job_id, actor=_actor())
+
+    with pytest.raises(RuntimeError, match="Failed to queue execution plan"):
+        await _manager_with_rows(
+            [
+                _worker_job_record(
+                    tenant_id=tenant_id,
+                    job_id=job_id,
+                    plan_id=plan_id,
+                    step_id=step_id,
+                    retry_id=retry_id,
+                    status="running",
+                ),
+                {"status": "running"},
+                {"status": "running"},
+                {"job_id": job_id, "status": "expired"},
+                {"step_id": step_id, "status": "pending"},
+                None,
+            ]
+        ).retry_worker_job(tenant_id=tenant_id, job_id=job_id, actor=_actor())
+
+    with pytest.raises(RuntimeError, match="Failed to reload worker job"):
+        await _manager_with_rows(
+            [
+                _worker_job_record(
+                    tenant_id=tenant_id,
+                    job_id=job_id,
+                    plan_id=plan_id,
+                    step_id=step_id,
+                    retry_id=retry_id,
+                    status="running",
+                ),
+                {"status": "running"},
+                {"status": "running"},
+                {"job_id": job_id, "status": "expired"},
+                {"step_id": step_id, "status": "pending"},
+                {"plan_id": plan_id, "status": "queued"},
+                None,
+            ]
+        ).retry_worker_job(tenant_id=tenant_id, job_id=job_id, actor=_actor())
+
+
+@pytest.mark.asyncio
+async def test_cancel_worker_job_error_paths() -> None:
+    tenant_id = "11111111-1111-1111-1111-111111111111"
+    job_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    plan_id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    step_id = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    retry_id = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+
+    def _manager_with_rows(rows: list[Any]) -> TenantAdminManager:
+        conn = _FakeConn()
+        conn.fetchrow.side_effect = rows
+        manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+        manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+        return manager
+
+    with pytest.raises(ValueError, match="Worker job not found"):
+        await _manager_with_rows([None]).cancel_worker_job(
+            tenant_id=tenant_id,
+            job_id=job_id,
+            actor=_actor(),
+        )
+
+    with pytest.raises(ValueError, match="already terminal"):
+        await _manager_with_rows(
+            [
+                _worker_job_record(
+                    tenant_id=tenant_id,
+                    job_id=job_id,
+                    plan_id=plan_id,
+                    step_id=step_id,
+                    retry_id=retry_id,
+                    status="succeeded",
+                )
+            ]
+        ).cancel_worker_job(tenant_id=tenant_id, job_id=job_id, actor=_actor())
+
+    with pytest.raises(ValueError, match="Execution step not found"):
+        await _manager_with_rows(
+            [
+                _worker_job_record(
+                    tenant_id=tenant_id,
+                    job_id=job_id,
+                    plan_id=plan_id,
+                    step_id=step_id,
+                    retry_id=retry_id,
+                    status="running",
+                ),
+                None,
+            ]
+        ).cancel_worker_job(tenant_id=tenant_id, job_id=job_id, actor=_actor())
+
+    with pytest.raises(ValueError, match="Execution plan not found"):
+        await _manager_with_rows(
+            [
+                _worker_job_record(
+                    tenant_id=tenant_id,
+                    job_id=job_id,
+                    plan_id=plan_id,
+                    step_id=step_id,
+                    retry_id=retry_id,
+                    status="running",
+                ),
+                {"status": "running"},
+                None,
+            ]
+        ).cancel_worker_job(tenant_id=tenant_id, job_id=job_id, actor=_actor())
+
+    with pytest.raises(RuntimeError, match="Failed to cancel worker job"):
+        await _manager_with_rows(
+            [
+                _worker_job_record(
+                    tenant_id=tenant_id,
+                    job_id=job_id,
+                    plan_id=plan_id,
+                    step_id=step_id,
+                    retry_id=retry_id,
+                    status="running",
+                ),
+                {"status": "running"},
+                {"status": "running"},
+                None,
+            ]
+        ).cancel_worker_job(tenant_id=tenant_id, job_id=job_id, actor=_actor())
+
+    with pytest.raises(RuntimeError, match="Failed to block execution step"):
+        await _manager_with_rows(
+            [
+                _worker_job_record(
+                    tenant_id=tenant_id,
+                    job_id=job_id,
+                    plan_id=plan_id,
+                    step_id=step_id,
+                    retry_id=retry_id,
+                    status="running",
+                ),
+                {"status": "running"},
+                {"status": "running"},
+                {"job_id": job_id, "status": "cancelled"},
+                None,
+            ]
+        ).cancel_worker_job(tenant_id=tenant_id, job_id=job_id, actor=_actor())
+
+    with pytest.raises(RuntimeError, match="Failed to fail execution plan"):
+        await _manager_with_rows(
+            [
+                _worker_job_record(
+                    tenant_id=tenant_id,
+                    job_id=job_id,
+                    plan_id=plan_id,
+                    step_id=step_id,
+                    retry_id=retry_id,
+                    status="running",
+                ),
+                {"status": "running"},
+                {"status": "running"},
+                {"job_id": job_id, "status": "cancelled"},
+                {"step_id": step_id, "status": "blocked"},
+                None,
+            ]
+        ).cancel_worker_job(tenant_id=tenant_id, job_id=job_id, actor=_actor())
