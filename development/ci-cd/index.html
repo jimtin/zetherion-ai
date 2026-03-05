@@ -1681,10 +1681,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#4-verify-discord-dm-notification-path" class="md-nav__link">
+  <a href="#4-verify-announcement-notification-path" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. Verify Discord DM notification path
+        4. Verify announcement notification path
       
     </span>
   </a>
@@ -2362,10 +2362,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#4-verify-discord-dm-notification-path" class="md-nav__link">
+  <a href="#4-verify-announcement-notification-path" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. Verify Discord DM notification path
+        4. Verify announcement notification path
       
     </span>
   </a>
@@ -2855,11 +2855,12 @@
 <a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>  <span class="n">-AnthropicApiKey</span> <span class="s2">&quot;&lt;anthropic-key&gt;&quot;</span> <span class="p">`</span>
 <a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>  <span class="n">-GitHubPromotionToken</span> <span class="s2">&quot;&lt;github-token&gt;&quot;</span> <span class="p">`</span>
 <a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>  <span class="n">-GitHubRepository</span> <span class="s2">&quot;jimtin/zetherion-ai&quot;</span> <span class="p">`</span>
-<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>  <span class="n">-DiscordDmNotifyEnabled</span> <span class="s2">&quot;true&quot;</span> <span class="p">`</span>
-<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>  <span class="n">-DiscordBotToken</span> <span class="s2">&quot;&lt;discord-bot-token&gt;&quot;</span> <span class="p">`</span>
-<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>  <span class="n">-DiscordNotifyUserId</span> <span class="s2">&quot;&lt;discord-user-id&gt;&quot;</span>
-<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>
-<a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="n">pwsh</span> <span class="o">-File</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">windows</span><span class="p">\</span><span class="nb">test-promotions</span><span class="n">-secrets</span><span class="p">.</span><span class="n">ps1</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>  <span class="n">-AnnouncementEmitEnabled</span> <span class="s2">&quot;true&quot;</span> <span class="p">`</span>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>  <span class="n">-AnnouncementApiSecret</span> <span class="s2">&quot;&lt;skills-api-secret&gt;&quot;</span> <span class="p">`</span>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>  <span class="n">-AnnouncementApiUrl</span> <span class="s2">&quot;http://127.0.0.1:8080/announcements/events&quot;</span> <span class="p">`</span>
+<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a>  <span class="n">-AnnouncementTargetUserId</span> <span class="s2">&quot;&lt;discord-user-id&gt;&quot;</span>
+<a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a>
+<a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="n">pwsh</span> <span class="o">-File</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">windows</span><span class="p">\</span><span class="nb">test-promotions</span><span class="n">-secrets</span><span class="p">.</span><span class="n">ps1</span>
 </code></pre></div>
 <h4 id="2-bootstrap-resilience-scheduled-tasks-run-elevated">2. Bootstrap resilience scheduled tasks (run elevated)<a class="headerlink" href="#2-bootstrap-resilience-scheduled-tasks-run-elevated" title="Permanent link">&para;</a></h4>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">pwsh</span> <span class="o">-File</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">windows</span><span class="p">\</span><span class="n">bootstrap-resilience-tasks</span><span class="p">.</span><span class="n">ps1</span> <span class="p">`</span>
@@ -2876,16 +2877,22 @@
 - <code>watchdog_task_registered=true</code>
 - <code>promotions_task_registered=true</code>
 - <code>all_tasks_registered=true</code></p>
-<h4 id="4-verify-discord-dm-notification-path">4. Verify Discord DM notification path<a class="headerlink" href="#4-verify-discord-dm-notification-path" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">python</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">windows</span><span class="p">\</span><span class="n">discord-dm-notify</span><span class="p">.</span><span class="n">py</span> <span class="p">`</span>
+<h4 id="4-verify-announcement-notification-path">4. Verify announcement notification path<a class="headerlink" href="#4-verify-announcement-notification-path" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">python</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">windows</span><span class="p">\</span><span class="n">announcement-emit</span><span class="p">.</span><span class="n">py</span> <span class="p">`</span>
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>  <span class="p">-</span><span class="n">-event</span> <span class="n">deploy</span> <span class="p">`</span>
 <a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>  <span class="p">-</span><span class="n">-sha</span> <span class="s2">&quot;&lt;sha&gt;&quot;</span> <span class="p">`</span>
 <a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>  <span class="p">-</span><span class="n">-status</span> <span class="n">success</span> <span class="p">`</span>
 <a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>  <span class="p">-</span><span class="n">-run-url</span> <span class="s2">&quot;https://github.com/jimtin/zetherion-ai/actions/runs/&lt;run-id&gt;&quot;</span> <span class="p">`</span>
 <a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>  <span class="p">-</span><span class="n">-stage-results</span> <span class="s2">&quot;manual=smoke&quot;</span> <span class="p">`</span>
 <a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>  <span class="p">-</span><span class="n">-dry-run</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="n">pwsh</span> <span class="o">-File</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">windows</span><span class="p">\</span><span class="n">announcements-flush</span><span class="p">.</span><span class="n">ps1</span> <span class="p">`</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>  <span class="n">-DeployPath</span> <span class="s2">&quot;C:\ZetherionAI&quot;</span> <span class="p">`</span>
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>  <span class="n">-OutputPath</span> <span class="s2">&quot;C:\ZetherionAI\data\announcements\flush-manual.json&quot;</span>
 </code></pre></div>
-<p>If this returns <code>status: "dry_run"</code> or <code>status: "deduped"</code>, secret resolution and idempotency wiring are working.</p>
+<p>Expected statuses:
+- <code>dry_run</code> or <code>deduped</code>: secret resolution and idempotency wiring are working.
+- <code>queued_non_blocking</code>: API path was unavailable and event was safely spooled for retry.</p>
 <h4 id="5-troubleshoot-cgs-publish-contract-and-promotions-pipeline">5. Troubleshoot CGS publish contract and promotions pipeline<a class="headerlink" href="#5-troubleshoot-cgs-publish-contract-and-promotions-pipeline" title="Permanent link">&para;</a></h4>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">pwsh</span> <span class="o">-File</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">windows</span><span class="p">\</span><span class="n">promotions-runner</span><span class="p">.</span><span class="n">ps1</span> <span class="p">`</span>
 <a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>  <span class="n">-Sha</span> <span class="s2">&quot;&lt;sha&gt;&quot;</span> <span class="p">`</span>
@@ -2951,6 +2958,9 @@
 <p><strong>dependency-audit</strong> -- Runs <code>pip-audit -r requirements.txt --strict --desc on</code> to check all dependencies for known CVEs.</p>
 <p><strong>license-check</strong> -- Runs <code>pip-licenses</code> to verify all dependency licenses are in the approved allow-list (MIT, BSD, Apache, ISC, PSF, MPL-2.0, Unlicense, CC0, Zlib).</p>
 <p><strong>pre-commit</strong> -- Runs all pre-commit hooks via the <code>pre-commit/action@v3</code> GitHub Action.</p>
+<p><strong>docs-contract</strong> -- Runs docs navigation/link checks and route/env parity checks, then builds docs with <code>mkdocs build --strict</code>.</p>
+<p><strong>pipeline-contract</strong> -- Validates CI pipeline-contract mappings plus endpoint docs bundle and announcement DM guardrails (<code>scripts/check-announcement-dm-guard.py</code>) to block direct <code>user.send(...)</code> regressions in announcement-producing paths.</p>
+<p><strong>zetherion-boundary-check</strong> -- Enforces Zetherion-only repository boundary and fails when top-level <code>cgs/**</code> UI paths are introduced.</p>
 <p><strong>test</strong> -- Matrix build across Python 3.12 and 3.13. Runs <code>pytest tests/ -m "not integration"</code> with coverage. Uploads coverage XML to Codecov (Python 3.12 only). Uploads HTML coverage report as a build artifact (retained 30 days).</p>
 <p><strong>docker-build</strong> -- Builds the Docker image using Buildx with GHA caching. Runs Trivy vulnerability scanner (CRITICAL + HIGH severity). Generates an SPDX SBOM via Anchore. Validates <code>docker-compose.yml</code> syntax. Uploads Trivy SARIF to GitHub Security tab and SBOM as a build artifact (retained 90 days).</p>
 <p><strong>summary</strong> -- Waits for all other jobs. Checks every job result. Posts a markdown results table to the PR summary. Exits with failure if any required job failed.</p>

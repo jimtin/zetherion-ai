@@ -1576,6 +1576,39 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#changed-segment-13-announcement-dm-guardrails-2026-03-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Segment 13 Announcement DM Guardrails (2026-03-06)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-ci-conservation-guardrails-for-local-validation-2026-03-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - CI Conservation Guardrails for Local Validation (2026-03-06)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-windows-announcement-plane-integration-for-deploypromotions-2026-03-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Windows Announcement Plane Integration for Deploy/Promotions (2026-03-06)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added-segment-7-security-hardening-observability-and-rollout-2026-03-05" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2499,6 +2532,39 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#changed-segment-13-announcement-dm-guardrails-2026-03-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Segment 13 Announcement DM Guardrails (2026-03-06)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-ci-conservation-guardrails-for-local-validation-2026-03-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - CI Conservation Guardrails for Local Validation (2026-03-06)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-windows-announcement-plane-integration-for-deploypromotions-2026-03-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Windows Announcement Plane Integration for Deploy/Promotions (2026-03-06)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added-segment-7-security-hardening-observability-and-rollout-2026-03-05" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3281,6 +3347,52 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 </blockquote>
 <hr />
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="changed-segment-13-announcement-dm-guardrails-2026-03-06">Changed - Segment 13 Announcement DM Guardrails (2026-03-06)<a class="headerlink" href="#changed-segment-13-announcement-dm-guardrails-2026-03-06" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added <code>scripts/check-announcement-dm-guard.py</code> guardrail to block direct <code>user.send(...)</code>
+  calls in announcement-producing paths, with allowlist restricted to
+  <code>src/zetherion_ai/announcements/discord_adapter.py</code>.</li>
+<li>Added unit coverage in <code>tests/unit/test_check_announcement_dm_guard.py</code> for
+  allowlisted and violation paths.</li>
+<li>Wired the guard into:</li>
+<li>bounded local <code>check</code> lane (<code>scripts/testing/lanes.mjs</code>)</li>
+<li>CI <code>pipeline-contract</code> fast-fail checks (<code>.github/workflows/ci.yml</code>)</li>
+<li>Updated bounded local <code>lint</code> lane to run <code>ruff format --check</code> in addition to
+  <code>ruff check</code>, matching CI lint behavior and preventing format-only CI failures.</li>
+<li>Updated CI/CD documentation to include announcement DM guardrail enforcement in
+  pipeline-contract checks.</li>
+</ul>
+<h3 id="changed-ci-conservation-guardrails-for-local-validation-2026-03-06">Changed - CI Conservation Guardrails for Local Validation (2026-03-06)<a class="headerlink" href="#changed-ci-conservation-guardrails-for-local-validation-2026-03-06" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Expanded bounded <code>check</code> lane to include documentation contract checks:</li>
+<li><code>check-docs-nav.py</code></li>
+<li><code>check-docs-links.py</code></li>
+<li><code>check-route-doc-parity.py</code></li>
+<li><code>check-cgs-route-doc-parity.py</code></li>
+<li><code>check-env-doc-parity.py</code></li>
+<li>Updated <code>scripts/testing/run-bounded.mjs</code> to auto-prefer <code>.venv/bin/python</code> for local pytest lanes
+  when available, preventing repeated <code>python3: No module named pytest</code> failures.</li>
+<li>Added <code>scripts/github/create-pr-safe.sh</code> wrapper that requires <code>--body-file</code> for PR creation
+  to avoid shell backtick expansion regressions.</li>
+</ul>
+<h3 id="changed-windows-announcement-plane-integration-for-deploypromotions-2026-03-06">Changed - Windows Announcement Plane Integration for Deploy/Promotions (2026-03-06)<a class="headerlink" href="#changed-windows-announcement-plane-integration-for-deploypromotions-2026-03-06" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Replaced Windows deploy completion notification step to emit internal announcement events via
+  <code>scripts/windows/announcement-emit.py</code> instead of direct Discord DM calls.</li>
+<li>Added <code>scripts/windows/announcements-flush.ps1</code> to replay spooled announcement events and wired it into:</li>
+<li>deploy workflow completion path</li>
+<li>promotions runner pre/post emit path</li>
+<li>promotions watch pre/post cycle path</li>
+<li>Updated promotions runner notification path to <code>announcement-emit.py</code> and removed runtime dependency on
+  direct DM notifier calls for deploy/promotions status announcements.</li>
+<li>Extended Windows promotions secret bootstrap/validation scripts with announcement-specific settings:</li>
+<li><code>ANNOUNCEMENT_EMIT_ENABLED</code></li>
+<li><code>ANNOUNCEMENT_API_URL</code></li>
+<li><code>ANNOUNCEMENT_API_SECRET</code></li>
+<li><code>ANNOUNCEMENT_TARGET_USER_ID</code></li>
+<li>Updated Windows promotions runbook/docs to validate announcement emit + flush behavior and queue-first
+  retry semantics when announcement API is unavailable.</li>
+</ul>
 <h3 id="added-segment-7-security-hardening-observability-and-rollout-2026-03-05">Added - Segment 7 Security Hardening, Observability, and Rollout (2026-03-05)<a class="headerlink" href="#added-segment-7-security-hardening-observability-and-rollout-2026-03-05" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added tenant security event persistence + aggregation in tenant admin storage:</li>

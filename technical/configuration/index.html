@@ -3121,6 +3121,36 @@ in <code>config.py</code>.</p>
 <td>Windows promotions toggle for mandatory GitHub SemVer patch release increment</td>
 </tr>
 <tr>
+<td><code>ANNOUNCEMENT_EMIT_ENABLED</code></td>
+<td><code>false</code></td>
+<td>Windows deploy/promotions announcement emit toggle</td>
+</tr>
+<tr>
+<td><code>ANNOUNCEMENT_API_URL</code></td>
+<td><code>http://127.0.0.1:8080/announcements/events</code></td>
+<td>Internal Skills announcement event endpoint used by Windows scripts</td>
+</tr>
+<tr>
+<td><code>ANNOUNCEMENT_API_SECRET</code></td>
+<td>unset</td>
+<td>Shared secret for <code>X-API-Secret</code> when Windows emits internal announcement events</td>
+</tr>
+<tr>
+<td><code>ANNOUNCEMENT_TARGET_USER_ID</code></td>
+<td>unset</td>
+<td>Announcement recipient user id for Windows deploy/promotions events</td>
+</tr>
+<tr>
+<td><code>DISCORD_DM_NOTIFY_ENABLED</code></td>
+<td>legacy</td>
+<td>Legacy alias fallback for announcement enablement (kept for compatibility)</td>
+</tr>
+<tr>
+<td><code>DISCORD_NOTIFY_USER_ID</code></td>
+<td>legacy</td>
+<td>Legacy alias fallback for announcement target user id (kept for compatibility)</td>
+</tr>
+<tr>
 <td><code>ANALYTICS_EVENT_RETENTION_DAYS</code></td>
 <td><code>90</code></td>
 <td>Retention window for raw web events</td>

@@ -1305,6 +1305,78 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#announcement-control-plane" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Announcement Control Plane
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Announcement Control Plane">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#post-announcementsevents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /announcements/events
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-announcementseventsbatch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /announcements/events/batch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-announcementsusersuser_idpreferences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /announcements/users/{user_id}/preferences
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#put-announcementsusersuser_idpreferences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PUT /announcements/users/{user_id}/preferences
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-announcementsdispatchflush" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /announcements/dispatch/flush
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#worker-bridge-control-plane" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2455,6 +2527,78 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#announcement-control-plane" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Announcement Control Plane
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Announcement Control Plane">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#post-announcementsevents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /announcements/events
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-announcementseventsbatch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /announcements/events/batch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get-announcementsusersuser_idpreferences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /announcements/users/{user_id}/preferences
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#put-announcementsusersuser_idpreferences" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PUT /announcements/users/{user_id}/preferences
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-announcementsdispatchflush" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /announcements/dispatch/flush
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#worker-bridge-control-plane" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2947,6 +3091,19 @@ authenticated (no admin actor envelope).</p>
 <p>Internal tenant messaging management is available under
 <code>/admin/tenants/{tenant_id}/messaging/*</code>, including provider config, chat
 policies, message listing, and queued send operations.</p>
+<hr />
+<h2 id="announcement-control-plane">Announcement Control Plane<a class="headerlink" href="#announcement-control-plane" title="Permanent link">&para;</a></h2>
+<p>Internal announcement producers should emit events via the announcement API.</p>
+<h3 id="post-announcementsevents">POST /announcements/events<a class="headerlink" href="#post-announcementsevents" title="Permanent link">&para;</a></h3>
+<p>Emit one announcement event and receive an ingestion receipt.</p>
+<h3 id="post-announcementseventsbatch">POST /announcements/events/batch<a class="headerlink" href="#post-announcementseventsbatch" title="Permanent link">&para;</a></h3>
+<p>Emit multiple announcement events in one request (for spool replay or bulk ingest).</p>
+<h3 id="get-announcementsusersuser_idpreferences">GET /announcements/users/{user_id}/preferences<a class="headerlink" href="#get-announcementsusersuser_idpreferences" title="Permanent link">&para;</a></h3>
+<p>Read effective announcement preferences for one user.</p>
+<h3 id="put-announcementsusersuser_idpreferences">PUT /announcements/users/{user_id}/preferences<a class="headerlink" href="#put-announcementsusersuser_idpreferences" title="Permanent link">&para;</a></h3>
+<p>Update announcement preferences for one user.</p>
+<h3 id="post-announcementsdispatchflush">POST /announcements/dispatch/flush<a class="headerlink" href="#post-announcementsdispatchflush" title="Permanent link">&para;</a></h3>
+<p>Trigger one manual dispatch tick for due deliveries.</p>
 <hr />
 <h2 id="worker-bridge-control-plane">Worker Bridge Control Plane<a class="headerlink" href="#worker-bridge-control-plane" title="Permanent link">&para;</a></h2>
 <p>Worker endpoints are intended for registered sub-worker nodes and are
