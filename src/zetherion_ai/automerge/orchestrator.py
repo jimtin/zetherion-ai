@@ -444,22 +444,22 @@ class AutomergeOrchestrator:
             return {"blocked": False, "required": [], "missing": [], "pending": [], "failed": []}
 
         latest_by_name: dict[str, dict[str, Any]] = {}
-        for run in check_runs:
-            name = str(run.get("name") or "").strip()
+        for check_run in check_runs:
+            name = str(check_run.get("name") or "").strip()
             if not name:
                 continue
-            latest_by_name[name] = run
+            latest_by_name[name] = check_run
 
         missing: list[str] = []
         pending: list[str] = []
         failed: list[str] = []
         for required_name in required:
-            run = latest_by_name.get(required_name)
-            if run is None:
+            required_run = latest_by_name.get(required_name)
+            if required_run is None:
                 missing.append(required_name)
                 continue
-            status = str(run.get("status") or "").strip().lower()
-            conclusion = str(run.get("conclusion") or "").strip().lower()
+            status = str(required_run.get("status") or "").strip().lower()
+            conclusion = str(required_run.get("conclusion") or "").strip().lower()
             if status != "completed":
                 pending.append(required_name)
                 continue
