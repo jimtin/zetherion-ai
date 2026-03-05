@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from zetherion_ai.admin.tenant_admin_manager import (
+    _SCHEMA_SQL,
     AdminActorContext,
     TenantAdminManager,
     admin_actor_from_payload,
@@ -56,6 +57,20 @@ def _actor(change_ticket_id: str | None = None) -> AdminActorContext:
         actor_email="ops@example.com",
         change_ticket_id=change_ticket_id,
     )
+
+
+def test_schema_adds_execution_target_column_before_dispatch_index() -> None:
+    add_column_sql = (
+        "ALTER TABLE tenant_execution_steps\n"
+        "    ADD COLUMN IF NOT EXISTS execution_target TEXT NOT NULL DEFAULT 'windows_local';"
+    )
+    dispatch_index_sql = (
+        "CREATE INDEX IF NOT EXISTS idx_tenant_execution_steps_dispatch\n"
+        "    ON tenant_execution_steps (tenant_id, plan_id, execution_target, "
+        "status, updated_at DESC);"
+    )
+
+    assert _SCHEMA_SQL.index(add_column_sql) < _SCHEMA_SQL.index(dispatch_index_sql)
 
 
 @pytest.mark.asyncio
