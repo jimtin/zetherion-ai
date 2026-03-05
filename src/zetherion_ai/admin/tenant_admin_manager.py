@@ -39,6 +39,23 @@ VALID_MESSAGING_QUEUE_STATUSES = frozenset(
     {"queued", "processing", "sent", "failed", "blocked", "cancelled"}
 )
 DEFAULT_MESSAGING_RETENTION_DAYS = 14
+VALID_EXECUTION_PLAN_STATUSES = frozenset(
+    {"queued", "running", "paused", "completed", "failed", "cancelled"}
+)
+VALID_EXECUTION_STEP_STATUSES = frozenset(
+    {"pending", "running", "completed", "failed", "blocked", "cancelled"}
+)
+VALID_EXECUTION_RETRY_OUTCOMES = frozenset(
+    {"succeeded", "retryable_failed", "terminal_failed", "cancelled", "interrupted"}
+)
+RETRYABLE_EXECUTION_FAILURE_CATEGORIES = frozenset(
+    {"timeout", "transient", "dependency", "rate_limit", "interrupted"}
+)
+DEFAULT_EXECUTION_MAX_STEP_ATTEMPTS = 3
+DEFAULT_EXECUTION_CONTINUATION_INTERVAL_SECONDS = 60
+DEFAULT_EXECUTION_LEASE_SECONDS = 90
+DEFAULT_EXECUTION_STALE_STEP_SECONDS = 300
+EXECUTION_RETRY_BACKOFF_SECONDS = (60, 300, 900, 1800)
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS tenant_discord_users (
@@ -442,6 +459,148 @@ CREATE TABLE IF NOT EXISTS tenant_messaging_action_queue (
 
 CREATE INDEX IF NOT EXISTS idx_tenant_messaging_action_queue_lookup
     ON tenant_messaging_action_queue (tenant_id, provider, chat_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_execution_plans (
+    plan_id                        UUID         PRIMARY KEY,
+    tenant_id                      UUID         NOT NULL,
+    title                          TEXT         NOT NULL,
+    goal                           TEXT         NOT NULL,
+    status                         VARCHAR(20)  NOT NULL DEFAULT 'queued'
+                                   CHECK (
+                                       status IN (
+                                           'queued',
+                                           'running',
+                                           'paused',
+                                           'completed',
+                                           'failed',
+                                           'cancelled'
+                                       )
+                                   ),
+    current_step_index             INT          NOT NULL DEFAULT 0,
+    total_steps                    INT          NOT NULL DEFAULT 0,
+    max_step_attempts              INT          NOT NULL DEFAULT 3,
+    continuation_interval_seconds  INT          NOT NULL DEFAULT 60,
+    next_run_at                    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    lease_owner                    TEXT,
+    lease_expires_at               TIMESTAMPTZ,
+    metadata                       JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    last_error_category            TEXT,
+    last_error_detail              TEXT,
+    created_by                     TEXT,
+    updated_by                     TEXT,
+    created_at                     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at                     TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_execution_plans_lookup
+    ON tenant_execution_plans (tenant_id, status, next_run_at, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_execution_steps (
+    step_id               UUID         PRIMARY KEY,
+    plan_id               UUID         NOT NULL
+                         REFERENCES tenant_execution_plans(plan_id) ON DELETE CASCADE,
+    tenant_id             UUID         NOT NULL,
+    step_index            INT          NOT NULL,
+    title                 TEXT         NOT NULL,
+    prompt_text           TEXT         NOT NULL,
+    idempotency_key       TEXT         NOT NULL,
+    status                VARCHAR(20)  NOT NULL DEFAULT 'pending'
+                         CHECK (
+                             status IN (
+                                 'pending',
+                                 'running',
+                                 'completed',
+                                 'failed',
+                                 'blocked',
+                                 'cancelled'
+                             )
+                         ),
+    attempt_count         INT          NOT NULL DEFAULT 0,
+    max_attempts          INT          NOT NULL DEFAULT 3,
+    next_retry_at         TIMESTAMPTZ,
+    last_error_category   TEXT,
+    last_error_detail     TEXT,
+    output_json           JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    metadata              JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    created_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (plan_id, step_index),
+    UNIQUE (plan_id, idempotency_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_execution_steps_lookup
+    ON tenant_execution_steps (tenant_id, plan_id, status, step_index);
+CREATE INDEX IF NOT EXISTS idx_tenant_execution_steps_retry
+    ON tenant_execution_steps (tenant_id, plan_id, next_retry_at)
+    WHERE status = 'failed';
+
+CREATE TABLE IF NOT EXISTS tenant_execution_step_retries (
+    retry_id               UUID         PRIMARY KEY,
+    tenant_id              UUID         NOT NULL,
+    plan_id                UUID         NOT NULL
+                          REFERENCES tenant_execution_plans(plan_id) ON DELETE CASCADE,
+    step_id                UUID         NOT NULL
+                          REFERENCES tenant_execution_steps(step_id) ON DELETE CASCADE,
+    attempt_number         INT          NOT NULL,
+    worker_id              TEXT,
+    lease_token            TEXT,
+    outcome                VARCHAR(30)
+                          CHECK (
+                              outcome IS NULL OR outcome IN (
+                                  'succeeded',
+                                  'retryable_failed',
+                                  'terminal_failed',
+                                  'cancelled',
+                                  'interrupted'
+                              )
+                          ),
+    failure_category       TEXT,
+    failure_detail         TEXT,
+    retry_backoff_seconds  INT,
+    started_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    finished_at            TIMESTAMPTZ,
+    metadata               JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    created_at             TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_execution_step_retries_lookup
+    ON tenant_execution_step_retries (tenant_id, plan_id, step_id, attempt_number DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_execution_artifacts (
+    artifact_id            UUID         PRIMARY KEY,
+    tenant_id              UUID         NOT NULL,
+    plan_id                UUID         NOT NULL
+                          REFERENCES tenant_execution_plans(plan_id) ON DELETE CASCADE,
+    step_id                UUID
+                          REFERENCES tenant_execution_steps(step_id) ON DELETE CASCADE,
+    retry_id               UUID
+                          REFERENCES tenant_execution_step_retries(retry_id) ON DELETE SET NULL,
+    artifact_type          VARCHAR(40)  NOT NULL,
+    artifact_ref           TEXT,
+    artifact_json          JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    created_at             TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_execution_artifacts_lookup
+    ON tenant_execution_artifacts (tenant_id, plan_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_execution_transitions (
+    transition_id          BIGSERIAL    PRIMARY KEY,
+    tenant_id              UUID         NOT NULL,
+    plan_id                UUID         NOT NULL
+                          REFERENCES tenant_execution_plans(plan_id) ON DELETE CASCADE,
+    step_id                UUID
+                          REFERENCES tenant_execution_steps(step_id) ON DELETE CASCADE,
+    from_status            VARCHAR(30),
+    to_status              VARCHAR(30)  NOT NULL,
+    reason                 TEXT,
+    actor_sub              TEXT,
+    metadata               JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    created_at             TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_execution_transitions_lookup
+    ON tenant_execution_transitions (tenant_id, plan_id, created_at DESC);
 """
 
 
@@ -3870,6 +4029,1711 @@ class TenantAdminManager:
                 max_rows,
             )
         return _rowcount_from_execute(result)
+
+    # ------------------------------------------------------------------
+    # Tenant execution ledger + overnight continuation domain
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _coerce_execution_steps(raw_steps: Any) -> list[dict[str, str]]:
+        if not isinstance(raw_steps, list) or not raw_steps:
+            raise ValueError("steps must be a non-empty array")
+
+        normalized: list[dict[str, str]] = []
+        for idx, raw in enumerate(raw_steps, start=1):
+            title = f"Step {idx}"
+            prompt = ""
+            idempotency_key = f"step-{idx}"
+
+            if isinstance(raw, str):
+                prompt = raw.strip()
+            elif isinstance(raw, dict):
+                title = str(raw.get("title") or title).strip() or title
+                prompt = str(
+                    raw.get("prompt")
+                    or raw.get("instruction")
+                    or raw.get("text")
+                    or raw.get("message")
+                    or ""
+                ).strip()
+                candidate = str(raw.get("idempotency_key") or "").strip().lower()
+                if candidate:
+                    idempotency_key = re.sub(r"[^a-z0-9_.:-]+", "-", candidate).strip("-") or (
+                        f"step-{idx}"
+                    )
+            else:
+                raise ValueError(f"steps[{idx - 1}] must be a string or object")
+
+            if not prompt:
+                raise ValueError(f"steps[{idx - 1}] is missing non-empty prompt text")
+            normalized.append(
+                {
+                    "title": title[:200],
+                    "prompt_text": prompt,
+                    "idempotency_key": idempotency_key[:120],
+                }
+            )
+        return normalized
+
+    @staticmethod
+    def _coerce_execution_actor_user_id(actor_sub: str | None) -> int:
+        raw = str(actor_sub or "").strip()
+        if not raw:
+            return 0
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            return 0
+
+    @staticmethod
+    def _execution_retry_backoff_seconds(attempt_count: int) -> int:
+        idx = min(max(attempt_count - 1, 0), len(EXECUTION_RETRY_BACKOFF_SECONDS) - 1)
+        return int(EXECUTION_RETRY_BACKOFF_SECONDS[idx])
+
+    async def schedule_execution_continuation(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+        scheduled_for: datetime | None = None,
+        reason: str = "continuation",
+        requested_by: str | None = None,
+        priority: int = 2,
+    ) -> str | None:
+        run_at = scheduled_for or datetime.now(UTC)
+        if run_at.tzinfo is None:
+            run_at = run_at.replace(tzinfo=UTC)
+
+        queue_item_id = str(uuid4())
+        payload = {
+            "tenant_id": tenant_id,
+            "plan_id": plan_id,
+            "reason": str(reason or "continuation"),
+            "requested_by": str(requested_by or ""),
+            "requested_at": datetime.now(UTC).isoformat(),
+        }
+        user_id = self._coerce_execution_actor_user_id(requested_by)
+        try:
+            await self._execute(
+                """
+                INSERT INTO message_queue (
+                    id,
+                    priority,
+                    status,
+                    task_type,
+                    user_id,
+                    payload,
+                    max_attempts,
+                    scheduled_for,
+                    correlation_id
+                ) VALUES (
+                    $1::uuid, $2, 'queued', 'plan_continuation', $3, $4::jsonb, 5, $5, $6
+                )
+                """,
+                queue_item_id,
+                max(0, min(int(priority), 3)),
+                user_id,
+                json.dumps(payload),
+                run_at,
+                f"execution-plan:{plan_id}",
+            )
+            return queue_item_id
+        except Exception:
+            log.warning(
+                "execution_continuation_enqueue_failed",
+                tenant_id=tenant_id,
+                plan_id=plan_id,
+                scheduled_for=run_at.isoformat(),
+            )
+            return None
+
+    async def create_execution_plan(
+        self,
+        *,
+        tenant_id: str,
+        title: str,
+        goal: str,
+        steps: Any,
+        actor: AdminActorContext,
+        metadata: dict[str, Any] | None = None,
+        max_step_attempts: int = DEFAULT_EXECUTION_MAX_STEP_ATTEMPTS,
+        continuation_interval_seconds: int = DEFAULT_EXECUTION_CONTINUATION_INTERVAL_SECONDS,
+        start_at: datetime | None = None,
+    ) -> dict[str, Any]:
+        plan_title = str(title or "").strip()
+        if not plan_title:
+            raise ValueError("Missing non-empty title")
+        plan_goal = str(goal or "").strip()
+        if not plan_goal:
+            raise ValueError("Missing non-empty goal")
+        normalized_steps = self._coerce_execution_steps(steps)
+        max_attempts = max(1, min(int(max_step_attempts), 10))
+        continuation_seconds = max(1, min(int(continuation_interval_seconds), 3600))
+        run_at = start_at or datetime.now(UTC)
+        if run_at.tzinfo is None:
+            run_at = run_at.replace(tzinfo=UTC)
+
+        plan_id = str(uuid4())
+        step_rows: list[dict[str, Any]] = []
+        plan_row: dict[str, Any] | None = None
+
+        async with self._pool.acquire() as conn, conn.transaction():
+            inserted_plan = await conn.fetchrow(
+                """
+                INSERT INTO tenant_execution_plans (
+                    plan_id,
+                    tenant_id,
+                    title,
+                    goal,
+                    status,
+                    current_step_index,
+                    total_steps,
+                    max_step_attempts,
+                    continuation_interval_seconds,
+                    next_run_at,
+                    metadata,
+                    created_by,
+                    updated_by
+                ) VALUES (
+                    $1::uuid,
+                    $2::uuid,
+                    $3,
+                    $4,
+                    'queued',
+                    0,
+                    $5,
+                    $6,
+                    $7,
+                    $8,
+                    $9::jsonb,
+                    $10,
+                    $10
+                )
+                RETURNING plan_id::text AS plan_id,
+                          tenant_id::text AS tenant_id,
+                          title,
+                          goal,
+                          status,
+                          current_step_index,
+                          total_steps,
+                          max_step_attempts,
+                          continuation_interval_seconds,
+                          next_run_at,
+                          lease_owner,
+                          lease_expires_at,
+                          metadata,
+                          last_error_category,
+                          last_error_detail,
+                          created_by,
+                          updated_by,
+                          created_at,
+                          updated_at
+                """,
+                plan_id,
+                tenant_id,
+                plan_title,
+                plan_goal,
+                len(normalized_steps),
+                max_attempts,
+                continuation_seconds,
+                run_at,
+                json.dumps(metadata or {}),
+                actor.actor_sub,
+            )
+            if inserted_plan is None:
+                raise RuntimeError("Failed to create execution plan")
+            plan_row = dict(inserted_plan)
+
+            await conn.execute(
+                """
+                INSERT INTO tenant_execution_transitions (
+                    tenant_id,
+                    plan_id,
+                    step_id,
+                    from_status,
+                    to_status,
+                    reason,
+                    actor_sub,
+                    metadata
+                ) VALUES (
+                    $1::uuid,
+                    $2::uuid,
+                    NULL,
+                    NULL,
+                    'queued',
+                    'plan_created',
+                    $3,
+                    $4::jsonb
+                )
+                """,
+                tenant_id,
+                plan_id,
+                actor.actor_sub,
+                json.dumps({"step_count": len(normalized_steps)}),
+            )
+
+            for idx, step in enumerate(normalized_steps):
+                step_id = str(uuid4())
+                inserted_step = await conn.fetchrow(
+                    """
+                    INSERT INTO tenant_execution_steps (
+                        step_id,
+                        plan_id,
+                        tenant_id,
+                        step_index,
+                        title,
+                        prompt_text,
+                        idempotency_key,
+                        status,
+                        attempt_count,
+                        max_attempts,
+                        next_retry_at,
+                        output_json,
+                        metadata
+                    ) VALUES (
+                        $1::uuid,
+                        $2::uuid,
+                        $3::uuid,
+                        $4,
+                        $5,
+                        $6,
+                        $7,
+                        'pending',
+                        0,
+                        $8,
+                        NULL,
+                        '{}'::jsonb,
+                        '{}'::jsonb
+                    )
+                    RETURNING step_id::text AS step_id,
+                              plan_id::text AS plan_id,
+                              tenant_id::text AS tenant_id,
+                              step_index,
+                              title,
+                              prompt_text,
+                              idempotency_key,
+                              status,
+                              attempt_count,
+                              max_attempts,
+                              next_retry_at,
+                              last_error_category,
+                              last_error_detail,
+                              output_json,
+                              metadata,
+                              created_at,
+                              updated_at
+                    """,
+                    step_id,
+                    plan_id,
+                    tenant_id,
+                    idx,
+                    step["title"],
+                    step["prompt_text"],
+                    step["idempotency_key"],
+                    max_attempts,
+                )
+                if inserted_step is None:
+                    raise RuntimeError("Failed to create execution step")
+                step_dict = dict(inserted_step)
+                step_rows.append(step_dict)
+
+                await conn.execute(
+                    """
+                    INSERT INTO tenant_execution_transitions (
+                        tenant_id,
+                        plan_id,
+                        step_id,
+                        from_status,
+                        to_status,
+                        reason,
+                        actor_sub,
+                        metadata
+                    ) VALUES (
+                        $1::uuid,
+                        $2::uuid,
+                        $3::uuid,
+                        NULL,
+                        'pending',
+                        'step_created',
+                        $4,
+                        $5::jsonb
+                    )
+                    """,
+                    tenant_id,
+                    plan_id,
+                    step_id,
+                    actor.actor_sub,
+                    json.dumps({"step_index": idx}),
+                )
+
+        await self.schedule_execution_continuation(
+            tenant_id=tenant_id,
+            plan_id=plan_id,
+            scheduled_for=run_at,
+            reason="plan_created",
+            requested_by=actor.actor_sub,
+        )
+
+        await self._write_audit(
+            tenant_id=tenant_id,
+            action="tenant_execution_plan_created",
+            actor=actor,
+            before=None,
+            after={
+                "plan_id": plan_id,
+                "title": plan_title,
+                "goal": plan_goal,
+                "status": "queued",
+                "steps": len(step_rows),
+            },
+        )
+        return {"plan": plan_row or {}, "steps": step_rows}
+
+    async def list_execution_plans(
+        self,
+        *,
+        tenant_id: str,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        filters = ["tenant_id = $1::uuid"]
+        args: list[Any] = [tenant_id]
+        idx = 2
+        if status is not None and str(status).strip():
+            status_norm = str(status).strip().lower()
+            if status_norm not in VALID_EXECUTION_PLAN_STATUSES:
+                raise ValueError(f"Invalid execution plan status '{status}'")
+            filters.append(f"status = ${idx}")
+            args.append(status_norm)
+            idx += 1
+        args.append(max(1, min(limit, 500)))
+        rows = await self._fetch(
+            f"""
+            SELECT plan_id::text AS plan_id,
+                   tenant_id::text AS tenant_id,
+                   title,
+                   goal,
+                   status,
+                   current_step_index,
+                   total_steps,
+                   max_step_attempts,
+                   continuation_interval_seconds,
+                   next_run_at,
+                   lease_owner,
+                   lease_expires_at,
+                   metadata,
+                   last_error_category,
+                   last_error_detail,
+                   created_by,
+                   updated_by,
+                   created_at,
+                   updated_at
+            FROM tenant_execution_plans
+            WHERE {" AND ".join(filters)}
+            ORDER BY updated_at DESC
+            LIMIT ${idx}
+            """,  # nosec B608
+            *args,
+        )
+        return [dict(row) for row in rows]
+
+    async def get_execution_plan(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+    ) -> dict[str, Any] | None:
+        row = await self._fetchrow(
+            """
+            SELECT plan_id::text AS plan_id,
+                   tenant_id::text AS tenant_id,
+                   title,
+                   goal,
+                   status,
+                   current_step_index,
+                   total_steps,
+                   max_step_attempts,
+                   continuation_interval_seconds,
+                   next_run_at,
+                   lease_owner,
+                   lease_expires_at,
+                   metadata,
+                   last_error_category,
+                   last_error_detail,
+                   created_by,
+                   updated_by,
+                   created_at,
+                   updated_at
+            FROM tenant_execution_plans
+            WHERE tenant_id = $1::uuid
+              AND plan_id = $2::uuid
+            LIMIT 1
+            """,
+            tenant_id,
+            plan_id,
+        )
+        if row is None:
+            return None
+        return dict(row)
+
+    async def list_execution_plan_steps(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+        include_prompt: bool = True,
+    ) -> list[dict[str, Any]]:
+        rows = await self._fetch(
+            """
+            SELECT step_id::text AS step_id,
+                   plan_id::text AS plan_id,
+                   tenant_id::text AS tenant_id,
+                   step_index,
+                   title,
+                   prompt_text,
+                   idempotency_key,
+                   status,
+                   attempt_count,
+                   max_attempts,
+                   next_retry_at,
+                   last_error_category,
+                   last_error_detail,
+                   output_json,
+                   metadata,
+                   created_at,
+                   updated_at
+            FROM tenant_execution_steps
+            WHERE tenant_id = $1::uuid
+              AND plan_id = $2::uuid
+            ORDER BY step_index ASC
+            """,
+            tenant_id,
+            plan_id,
+        )
+        output: list[dict[str, Any]] = []
+        for row in rows:
+            data = dict(row)
+            if not include_prompt:
+                data.pop("prompt_text", None)
+            output.append(data)
+        return output
+
+    async def pause_execution_plan(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+        actor: AdminActorContext,
+    ) -> dict[str, Any]:
+        before = await self.get_execution_plan(tenant_id=tenant_id, plan_id=plan_id)
+        if before is None:
+            raise ValueError("Execution plan not found")
+        row = await self._fetchrow(
+            """
+            UPDATE tenant_execution_plans
+            SET status = 'paused',
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                next_run_at = NULL,
+                updated_by = $3,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid
+              AND plan_id = $2::uuid
+              AND status IN ('queued', 'running', 'failed', 'paused')
+            RETURNING plan_id::text AS plan_id,
+                      tenant_id::text AS tenant_id,
+                      title,
+                      goal,
+                      status,
+                      current_step_index,
+                      total_steps,
+                      max_step_attempts,
+                      continuation_interval_seconds,
+                      next_run_at,
+                      lease_owner,
+                      lease_expires_at,
+                      metadata,
+                      last_error_category,
+                      last_error_detail,
+                      created_by,
+                      updated_by,
+                      created_at,
+                      updated_at
+            """,
+            tenant_id,
+            plan_id,
+            actor.actor_sub,
+        )
+        if row is None:
+            raise ValueError("Execution plan could not be paused")
+        await self._execute(
+            """
+            UPDATE tenant_execution_steps
+            SET status = 'pending',
+                next_retry_at = NULL,
+                last_error_category = COALESCE(last_error_category, 'paused'),
+                last_error_detail = COALESCE(last_error_detail, 'paused by operator'),
+                updated_at = now()
+            WHERE tenant_id = $1::uuid
+              AND plan_id = $2::uuid
+              AND status = 'running'
+            """,
+            tenant_id,
+            plan_id,
+        )
+        await self._execute(
+            """
+            INSERT INTO tenant_execution_transitions (
+                tenant_id,
+                plan_id,
+                step_id,
+                from_status,
+                to_status,
+                reason,
+                actor_sub,
+                metadata
+            ) VALUES (
+                $1::uuid, $2::uuid, NULL, $3, 'paused', 'plan_paused', $4, '{}'::jsonb
+            )
+            """,
+            tenant_id,
+            plan_id,
+            str(before.get("status") or ""),
+            actor.actor_sub,
+        )
+        after = dict(row)
+        await self._write_audit(
+            tenant_id=tenant_id,
+            action="tenant_execution_plan_paused",
+            actor=actor,
+            before=before,
+            after=after,
+        )
+        return after
+
+    async def resume_execution_plan(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+        actor: AdminActorContext,
+        immediately: bool = True,
+    ) -> dict[str, Any]:
+        before = await self.get_execution_plan(tenant_id=tenant_id, plan_id=plan_id)
+        if before is None:
+            raise ValueError("Execution plan not found")
+        run_at = (
+            datetime.now(UTC)
+            if immediately
+            else (before.get("next_run_at") or datetime.now(UTC))
+        )
+        row = await self._fetchrow(
+            """
+            UPDATE tenant_execution_plans
+            SET status = 'queued',
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                next_run_at = $3,
+                updated_by = $4,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid
+              AND plan_id = $2::uuid
+              AND status IN ('paused', 'failed', 'queued', 'running')
+            RETURNING plan_id::text AS plan_id,
+                      tenant_id::text AS tenant_id,
+                      title,
+                      goal,
+                      status,
+                      current_step_index,
+                      total_steps,
+                      max_step_attempts,
+                      continuation_interval_seconds,
+                      next_run_at,
+                      lease_owner,
+                      lease_expires_at,
+                      metadata,
+                      last_error_category,
+                      last_error_detail,
+                      created_by,
+                      updated_by,
+                      created_at,
+                      updated_at
+            """,
+            tenant_id,
+            plan_id,
+            run_at,
+            actor.actor_sub,
+        )
+        if row is None:
+            raise ValueError("Execution plan could not be resumed")
+        await self._execute(
+            """
+            UPDATE tenant_execution_steps
+            SET status = 'pending',
+                next_retry_at = NULL,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid
+              AND plan_id = $2::uuid
+              AND status = 'running'
+            """,
+            tenant_id,
+            plan_id,
+        )
+        await self._execute(
+            """
+            INSERT INTO tenant_execution_transitions (
+                tenant_id,
+                plan_id,
+                step_id,
+                from_status,
+                to_status,
+                reason,
+                actor_sub,
+                metadata
+            ) VALUES (
+                $1::uuid, $2::uuid, NULL, $3, 'queued', 'plan_resumed', $4, '{}'::jsonb
+            )
+            """,
+            tenant_id,
+            plan_id,
+            str(before.get("status") or ""),
+            actor.actor_sub,
+        )
+        await self.schedule_execution_continuation(
+            tenant_id=tenant_id,
+            plan_id=plan_id,
+            scheduled_for=run_at,
+            reason="plan_resumed",
+            requested_by=actor.actor_sub,
+        )
+        after = dict(row)
+        await self._write_audit(
+            tenant_id=tenant_id,
+            action="tenant_execution_plan_resumed",
+            actor=actor,
+            before=before,
+            after=after,
+        )
+        return after
+
+    async def cancel_execution_plan(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+        actor: AdminActorContext,
+    ) -> dict[str, Any]:
+        before = await self.get_execution_plan(tenant_id=tenant_id, plan_id=plan_id)
+        if before is None:
+            raise ValueError("Execution plan not found")
+        row = await self._fetchrow(
+            """
+            UPDATE tenant_execution_plans
+            SET status = 'cancelled',
+                lease_owner = NULL,
+                lease_expires_at = NULL,
+                next_run_at = NULL,
+                updated_by = $3,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid
+              AND plan_id = $2::uuid
+              AND status <> 'completed'
+            RETURNING plan_id::text AS plan_id,
+                      tenant_id::text AS tenant_id,
+                      title,
+                      goal,
+                      status,
+                      current_step_index,
+                      total_steps,
+                      max_step_attempts,
+                      continuation_interval_seconds,
+                      next_run_at,
+                      lease_owner,
+                      lease_expires_at,
+                      metadata,
+                      last_error_category,
+                      last_error_detail,
+                      created_by,
+                      updated_by,
+                      created_at,
+                      updated_at
+            """,
+            tenant_id,
+            plan_id,
+            actor.actor_sub,
+        )
+        if row is None:
+            raise ValueError("Execution plan could not be cancelled")
+        await self._execute(
+            """
+            UPDATE tenant_execution_steps
+            SET status = 'cancelled',
+                next_retry_at = NULL,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid
+              AND plan_id = $2::uuid
+              AND status IN ('pending', 'running', 'failed', 'blocked')
+            """,
+            tenant_id,
+            plan_id,
+        )
+        await self._execute(
+            """
+            INSERT INTO tenant_execution_transitions (
+                tenant_id,
+                plan_id,
+                step_id,
+                from_status,
+                to_status,
+                reason,
+                actor_sub,
+                metadata
+            ) VALUES (
+                $1::uuid, $2::uuid, NULL, $3, 'cancelled', 'plan_cancelled', $4, '{}'::jsonb
+            )
+            """,
+            tenant_id,
+            plan_id,
+            str(before.get("status") or ""),
+            actor.actor_sub,
+        )
+        after = dict(row)
+        await self._write_audit(
+            tenant_id=tenant_id,
+            action="tenant_execution_plan_cancelled",
+            actor=actor,
+            before=before,
+            after=after,
+        )
+        return after
+
+    async def claim_execution_plan_lease(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+        worker_id: str,
+        lease_seconds: int = DEFAULT_EXECUTION_LEASE_SECONDS,
+    ) -> dict[str, Any] | None:
+        worker = str(worker_id or "").strip()
+        if not worker:
+            raise ValueError("Missing worker_id")
+        lease_window = max(15, min(int(lease_seconds), 3600))
+        row = await self._fetchrow(
+            """
+            UPDATE tenant_execution_plans
+            SET lease_owner = $3,
+                lease_expires_at = now() + ($4 * interval '1 second'),
+                status = CASE WHEN status = 'queued' THEN 'running' ELSE status END,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid
+              AND plan_id = $2::uuid
+              AND status IN ('queued', 'running')
+              AND next_run_at <= now()
+              AND (
+                  lease_expires_at IS NULL
+                  OR lease_expires_at < now()
+                  OR lease_owner = $3
+              )
+            RETURNING plan_id::text AS plan_id,
+                      tenant_id::text AS tenant_id,
+                      title,
+                      goal,
+                      status,
+                      current_step_index,
+                      total_steps,
+                      max_step_attempts,
+                      continuation_interval_seconds,
+                      next_run_at,
+                      lease_owner,
+                      lease_expires_at,
+                      metadata,
+                      last_error_category,
+                      last_error_detail,
+                      created_by,
+                      updated_by,
+                      created_at,
+                      updated_at
+            """,
+            tenant_id,
+            plan_id,
+            worker,
+            lease_window,
+        )
+        if row is None:
+            return None
+        return dict(row)
+
+    async def claim_next_execution_step(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+        worker_id: str,
+        lease_token: str,
+        stale_running_seconds: int = DEFAULT_EXECUTION_STALE_STEP_SECONDS,
+    ) -> dict[str, Any] | None:
+        stale_seconds = max(30, min(int(stale_running_seconds), 7200))
+        worker = str(worker_id or "").strip()
+        if not worker:
+            raise ValueError("Missing worker_id")
+        token = str(lease_token or "").strip() or uuid4().hex
+
+        async with self._pool.acquire() as conn, conn.transaction():
+            candidate = await conn.fetchrow(
+                """
+                SELECT step_id::text AS step_id,
+                       step_index,
+                       status
+                FROM tenant_execution_steps
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND (
+                      status = 'pending'
+                      OR (
+                          status = 'failed'
+                          AND attempt_count < max_attempts
+                          AND COALESCE(next_retry_at, now()) <= now()
+                      )
+                      OR (
+                          status = 'running'
+                          AND updated_at <= now() - ($3 * interval '1 second')
+                      )
+                  )
+                ORDER BY step_index ASC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+                """,
+                tenant_id,
+                plan_id,
+                stale_seconds,
+            )
+            if candidate is None:
+                return None
+
+            step_id = str(candidate["step_id"])
+            from_status = str(candidate["status"])
+            updated_step = await conn.fetchrow(
+                """
+                UPDATE tenant_execution_steps
+                SET status = 'running',
+                    attempt_count = attempt_count + 1,
+                    next_retry_at = NULL,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND step_id = $3::uuid
+                RETURNING step_id::text AS step_id,
+                          plan_id::text AS plan_id,
+                          tenant_id::text AS tenant_id,
+                          step_index,
+                          title,
+                          prompt_text,
+                          idempotency_key,
+                          status,
+                          attempt_count,
+                          max_attempts,
+                          next_retry_at,
+                          last_error_category,
+                          last_error_detail,
+                          output_json,
+                          metadata,
+                          created_at,
+                          updated_at
+                """,
+                tenant_id,
+                plan_id,
+                step_id,
+            )
+            if updated_step is None:
+                return None
+            step_data = dict(updated_step)
+            attempt_number = int(step_data["attempt_count"])
+            retry_id = str(uuid4())
+
+            await conn.execute(
+                """
+                INSERT INTO tenant_execution_step_retries (
+                    retry_id,
+                    tenant_id,
+                    plan_id,
+                    step_id,
+                    attempt_number,
+                    worker_id,
+                    lease_token,
+                    metadata
+                ) VALUES (
+                    $1::uuid,
+                    $2::uuid,
+                    $3::uuid,
+                    $4::uuid,
+                    $5,
+                    $6,
+                    $7,
+                    $8::jsonb
+                )
+                """,
+                retry_id,
+                tenant_id,
+                plan_id,
+                step_id,
+                attempt_number,
+                worker,
+                token,
+                json.dumps({"reclaimed_running_step": from_status == "running"}),
+            )
+
+            await conn.execute(
+                """
+                UPDATE tenant_execution_plans
+                SET current_step_index = $3,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                """,
+                tenant_id,
+                plan_id,
+                int(step_data["step_index"]),
+            )
+
+            await conn.execute(
+                """
+                INSERT INTO tenant_execution_transitions (
+                    tenant_id,
+                    plan_id,
+                    step_id,
+                    from_status,
+                    to_status,
+                    reason,
+                    actor_sub,
+                    metadata
+                ) VALUES (
+                    $1::uuid,
+                    $2::uuid,
+                    $3::uuid,
+                    $4,
+                    'running',
+                    'step_claimed',
+                    $5,
+                    $6::jsonb
+                )
+                """,
+                tenant_id,
+                plan_id,
+                step_id,
+                from_status,
+                worker,
+                json.dumps({"lease_token": token, "attempt_number": attempt_number}),
+            )
+
+        return {
+            "step": step_data,
+            "retry": {
+                "retry_id": retry_id,
+                "attempt_number": attempt_number,
+                "lease_token": token,
+                "worker_id": worker,
+            },
+        }
+
+    async def release_execution_plan_lease(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+        worker_id: str | None = None,
+    ) -> None:
+        worker = str(worker_id or "").strip()
+        if worker:
+            await self._execute(
+                """
+                UPDATE tenant_execution_plans
+                SET lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND (lease_owner = $3 OR lease_owner IS NULL)
+                """,
+                tenant_id,
+                plan_id,
+                worker,
+            )
+            return
+        await self._execute(
+            """
+            UPDATE tenant_execution_plans
+            SET lease_owner = NULL,
+                lease_expires_at = NULL,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid
+              AND plan_id = $2::uuid
+            """,
+            tenant_id,
+            plan_id,
+        )
+
+    async def reconcile_execution_plan_status(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+    ) -> dict[str, Any] | None:
+        async with self._pool.acquire() as conn, conn.transaction():
+            plan_row = await conn.fetchrow(
+                """
+                SELECT status,
+                       continuation_interval_seconds
+                FROM tenant_execution_plans
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                FOR UPDATE
+                """,
+                tenant_id,
+                plan_id,
+            )
+            if plan_row is None:
+                return None
+            status = str(plan_row["status"])
+            if status in {"completed", "cancelled"}:
+                final_row = await conn.fetchrow(
+                    """
+                    SELECT plan_id::text AS plan_id,
+                           tenant_id::text AS tenant_id,
+                           title,
+                           goal,
+                           status,
+                           current_step_index,
+                           total_steps,
+                           max_step_attempts,
+                           continuation_interval_seconds,
+                           next_run_at,
+                           lease_owner,
+                           lease_expires_at,
+                           metadata,
+                           last_error_category,
+                           last_error_detail,
+                           created_by,
+                           updated_by,
+                           created_at,
+                           updated_at
+                    FROM tenant_execution_plans
+                    WHERE tenant_id = $1::uuid
+                      AND plan_id = $2::uuid
+                    LIMIT 1
+                    """,
+                    tenant_id,
+                    plan_id,
+                )
+                return dict(final_row) if final_row is not None else None
+
+            remaining = await conn.fetchval(
+                """
+                SELECT COUNT(*)::int
+                FROM tenant_execution_steps
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND status NOT IN ('completed', 'cancelled')
+                """,
+                tenant_id,
+                plan_id,
+            )
+            if int(remaining or 0) == 0:
+                await conn.execute(
+                    """
+                    UPDATE tenant_execution_plans
+                    SET status = 'completed',
+                        next_run_at = NULL,
+                        lease_owner = NULL,
+                        lease_expires_at = NULL,
+                        updated_at = now()
+                    WHERE tenant_id = $1::uuid
+                      AND plan_id = $2::uuid
+                    """,
+                    tenant_id,
+                    plan_id,
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO tenant_execution_transitions (
+                        tenant_id,
+                        plan_id,
+                        step_id,
+                        from_status,
+                        to_status,
+                        reason,
+                        actor_sub,
+                        metadata
+                    ) VALUES (
+                        $1::uuid,
+                        $2::uuid,
+                        NULL,
+                        $3,
+                        'completed',
+                        'plan_reconciled_complete',
+                        NULL,
+                        '{}'::jsonb
+                    )
+                    """,
+                    tenant_id,
+                    plan_id,
+                    status,
+                )
+
+            final_row = await conn.fetchrow(
+                """
+                SELECT plan_id::text AS plan_id,
+                       tenant_id::text AS tenant_id,
+                       title,
+                       goal,
+                       status,
+                       current_step_index,
+                       total_steps,
+                       max_step_attempts,
+                       continuation_interval_seconds,
+                       next_run_at,
+                       lease_owner,
+                       lease_expires_at,
+                       metadata,
+                       last_error_category,
+                       last_error_detail,
+                       created_by,
+                       updated_by,
+                       created_at,
+                       updated_at
+                FROM tenant_execution_plans
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                LIMIT 1
+                """,
+                tenant_id,
+                plan_id,
+            )
+            return dict(final_row) if final_row is not None else None
+
+    async def complete_execution_step(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+        step_id: str,
+        retry_id: str,
+        worker_id: str,
+        output_json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        async with self._pool.acquire() as conn, conn.transaction():
+            plan_row = await conn.fetchrow(
+                """
+                SELECT status,
+                       continuation_interval_seconds
+                FROM tenant_execution_plans
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                FOR UPDATE
+                """,
+                tenant_id,
+                plan_id,
+            )
+            if plan_row is None:
+                raise ValueError("Execution plan not found")
+            plan_status_before = str(plan_row["status"])
+            continuation_seconds = int(plan_row["continuation_interval_seconds"])
+
+            step_before = await conn.fetchrow(
+                """
+                SELECT step_index, status
+                FROM tenant_execution_steps
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND step_id = $3::uuid
+                FOR UPDATE
+                """,
+                tenant_id,
+                plan_id,
+                step_id,
+            )
+            if step_before is None:
+                raise ValueError("Execution step not found")
+            step_status_before = str(step_before["status"])
+            step_index = int(step_before["step_index"])
+
+            updated_step = await conn.fetchrow(
+                """
+                UPDATE tenant_execution_steps
+                SET status = 'completed',
+                    output_json = $4::jsonb,
+                    next_retry_at = NULL,
+                    last_error_category = NULL,
+                    last_error_detail = NULL,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND step_id = $3::uuid
+                RETURNING step_id::text AS step_id,
+                          plan_id::text AS plan_id,
+                          tenant_id::text AS tenant_id,
+                          step_index,
+                          title,
+                          prompt_text,
+                          idempotency_key,
+                          status,
+                          attempt_count,
+                          max_attempts,
+                          next_retry_at,
+                          last_error_category,
+                          last_error_detail,
+                          output_json,
+                          metadata,
+                          created_at,
+                          updated_at
+                """,
+                tenant_id,
+                plan_id,
+                step_id,
+                json.dumps(output_json or {}),
+            )
+            if updated_step is None:
+                raise RuntimeError("Failed to complete execution step")
+
+            await conn.execute(
+                """
+                UPDATE tenant_execution_step_retries
+                SET outcome = 'succeeded',
+                    finished_at = now(),
+                    failure_category = NULL,
+                    failure_detail = NULL,
+                    retry_backoff_seconds = NULL
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND step_id = $3::uuid
+                  AND retry_id = $4::uuid
+                """,
+                tenant_id,
+                plan_id,
+                step_id,
+                retry_id,
+            )
+            await conn.execute(
+                """
+                INSERT INTO tenant_execution_transitions (
+                    tenant_id,
+                    plan_id,
+                    step_id,
+                    from_status,
+                    to_status,
+                    reason,
+                    actor_sub,
+                    metadata
+                ) VALUES (
+                    $1::uuid, $2::uuid, $3::uuid, $4, 'completed', 'step_completed', $5, '{}'::jsonb
+                )
+                """,
+                tenant_id,
+                plan_id,
+                step_id,
+                step_status_before,
+                worker_id,
+            )
+
+            next_step = await conn.fetchrow(
+                """
+                SELECT step_index
+                FROM tenant_execution_steps
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND step_index > $3
+                  AND status IN ('pending', 'failed', 'running', 'blocked')
+                ORDER BY step_index ASC
+                LIMIT 1
+                """,
+                tenant_id,
+                plan_id,
+                step_index,
+            )
+
+            if next_step is None:
+                next_status = "completed"
+                next_run_at: datetime | None = None
+                next_step_index = step_index + 1
+            else:
+                next_status = "running"
+                next_run_at = datetime.now(UTC) + timedelta(
+                    seconds=max(1, continuation_seconds),
+                )
+                next_step_index = int(next_step["step_index"])
+
+            updated_plan = await conn.fetchrow(
+                """
+                UPDATE tenant_execution_plans
+                SET status = $3,
+                    current_step_index = $4,
+                    next_run_at = $5,
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                RETURNING plan_id::text AS plan_id,
+                          tenant_id::text AS tenant_id,
+                          title,
+                          goal,
+                          status,
+                          current_step_index,
+                          total_steps,
+                          max_step_attempts,
+                          continuation_interval_seconds,
+                          next_run_at,
+                          lease_owner,
+                          lease_expires_at,
+                          metadata,
+                          last_error_category,
+                          last_error_detail,
+                          created_by,
+                          updated_by,
+                          created_at,
+                          updated_at
+                """,
+                tenant_id,
+                plan_id,
+                next_status,
+                next_step_index,
+                next_run_at,
+            )
+            if updated_plan is None:
+                raise RuntimeError("Failed to update execution plan state")
+
+            if plan_status_before != next_status:
+                await conn.execute(
+                    """
+                    INSERT INTO tenant_execution_transitions (
+                        tenant_id,
+                        plan_id,
+                        step_id,
+                        from_status,
+                        to_status,
+                        reason,
+                        actor_sub,
+                        metadata
+                    ) VALUES (
+                        $1::uuid, $2::uuid, NULL, $3, $4, 'plan_progressed', $5, '{}'::jsonb
+                    )
+                    """,
+                    tenant_id,
+                    plan_id,
+                    plan_status_before,
+                    next_status,
+                    worker_id,
+                )
+
+            return {
+                "plan": dict(updated_plan),
+                "step": dict(updated_step),
+                "has_more": next_step is not None,
+                "next_run_at": next_run_at,
+            }
+
+    async def fail_execution_step(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+        step_id: str,
+        retry_id: str,
+        worker_id: str,
+        failure_category: str,
+        failure_detail: str,
+        retryable: bool | None = None,
+    ) -> dict[str, Any]:
+        category = str(failure_category or "transient").strip().lower()
+        if not category:
+            category = "transient"
+        detail = str(failure_detail or "").strip()[:4000]
+        if retryable is None:
+            retryable = category in RETRYABLE_EXECUTION_FAILURE_CATEGORIES
+
+        async with self._pool.acquire() as conn, conn.transaction():
+            plan_row = await conn.fetchrow(
+                """
+                SELECT status
+                FROM tenant_execution_plans
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                FOR UPDATE
+                """,
+                tenant_id,
+                plan_id,
+            )
+            if plan_row is None:
+                raise ValueError("Execution plan not found")
+            plan_status_before = str(plan_row["status"])
+
+            step_row = await conn.fetchrow(
+                """
+                SELECT status,
+                       attempt_count,
+                       max_attempts
+                FROM tenant_execution_steps
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND step_id = $3::uuid
+                FOR UPDATE
+                """,
+                tenant_id,
+                plan_id,
+                step_id,
+            )
+            if step_row is None:
+                raise ValueError("Execution step not found")
+            step_status_before = str(step_row["status"])
+            attempts = int(step_row["attempt_count"])
+            max_attempts = int(step_row["max_attempts"])
+            should_retry = bool(retryable) and attempts < max_attempts
+
+            backoff_seconds: int | None = None
+            next_retry_at: datetime | None = None
+            if should_retry:
+                backoff_seconds = self._execution_retry_backoff_seconds(attempts)
+                next_retry_at = datetime.now(UTC) + timedelta(seconds=backoff_seconds)
+                step_status = "failed"
+                plan_status = "running"
+                retry_outcome = "retryable_failed"
+            else:
+                step_status = "blocked"
+                plan_status = "failed"
+                retry_outcome = "terminal_failed"
+
+            updated_step = await conn.fetchrow(
+                """
+                UPDATE tenant_execution_steps
+                SET status = $4,
+                    next_retry_at = $5,
+                    last_error_category = $6,
+                    last_error_detail = $7,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND step_id = $3::uuid
+                RETURNING step_id::text AS step_id,
+                          plan_id::text AS plan_id,
+                          tenant_id::text AS tenant_id,
+                          step_index,
+                          title,
+                          prompt_text,
+                          idempotency_key,
+                          status,
+                          attempt_count,
+                          max_attempts,
+                          next_retry_at,
+                          last_error_category,
+                          last_error_detail,
+                          output_json,
+                          metadata,
+                          created_at,
+                          updated_at
+                """,
+                tenant_id,
+                plan_id,
+                step_id,
+                step_status,
+                next_retry_at,
+                category,
+                detail,
+            )
+            if updated_step is None:
+                raise RuntimeError("Failed to update execution step failure state")
+
+            updated_plan = await conn.fetchrow(
+                """
+                UPDATE tenant_execution_plans
+                SET status = $3,
+                    next_run_at = $4,
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    last_error_category = $5,
+                    last_error_detail = $6,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                RETURNING plan_id::text AS plan_id,
+                          tenant_id::text AS tenant_id,
+                          title,
+                          goal,
+                          status,
+                          current_step_index,
+                          total_steps,
+                          max_step_attempts,
+                          continuation_interval_seconds,
+                          next_run_at,
+                          lease_owner,
+                          lease_expires_at,
+                          metadata,
+                          last_error_category,
+                          last_error_detail,
+                          created_by,
+                          updated_by,
+                          created_at,
+                          updated_at
+                """,
+                tenant_id,
+                plan_id,
+                plan_status,
+                next_retry_at,
+                category,
+                detail,
+            )
+            if updated_plan is None:
+                raise RuntimeError("Failed to update execution plan failure state")
+
+            await conn.execute(
+                """
+                UPDATE tenant_execution_step_retries
+                SET outcome = $5,
+                    failure_category = $6,
+                    failure_detail = $7,
+                    retry_backoff_seconds = $8,
+                    finished_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND step_id = $3::uuid
+                  AND retry_id = $4::uuid
+                """,
+                tenant_id,
+                plan_id,
+                step_id,
+                retry_id,
+                retry_outcome,
+                category,
+                detail,
+                backoff_seconds,
+            )
+
+            await conn.execute(
+                """
+                INSERT INTO tenant_execution_transitions (
+                    tenant_id,
+                    plan_id,
+                    step_id,
+                    from_status,
+                    to_status,
+                    reason,
+                    actor_sub,
+                    metadata
+                ) VALUES (
+                    $1::uuid,
+                    $2::uuid,
+                    $3::uuid,
+                    $4,
+                    $5,
+                    'step_failed',
+                    $6,
+                    $7::jsonb
+                )
+                """,
+                tenant_id,
+                plan_id,
+                step_id,
+                step_status_before,
+                step_status,
+                worker_id,
+                json.dumps(
+                    {
+                        "failure_category": category,
+                        "retryable": should_retry,
+                        "backoff_seconds": backoff_seconds,
+                    }
+                ),
+            )
+
+            if plan_status_before != plan_status:
+                await conn.execute(
+                    """
+                    INSERT INTO tenant_execution_transitions (
+                        tenant_id,
+                        plan_id,
+                        step_id,
+                        from_status,
+                        to_status,
+                        reason,
+                        actor_sub,
+                        metadata
+                    ) VALUES (
+                        $1::uuid, $2::uuid, NULL, $3, $4, 'plan_failure_state', $5, $6::jsonb
+                    )
+                    """,
+                    tenant_id,
+                    plan_id,
+                    plan_status_before,
+                    plan_status,
+                    worker_id,
+                    json.dumps({"failure_category": category}),
+                )
+
+            return {
+                "plan": dict(updated_plan),
+                "step": dict(updated_step),
+                "retry_scheduled": should_retry,
+                "next_run_at": next_retry_at,
+                "backoff_seconds": backoff_seconds,
+                "failure_category": category,
+            }
+
+    async def record_execution_artifact(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+        step_id: str | None = None,
+        retry_id: str | None = None,
+        artifact_type: str,
+        artifact_ref: str | None = None,
+        artifact_json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        artifact_kind = str(artifact_type or "").strip().lower()
+        if not artifact_kind:
+            raise ValueError("Missing artifact_type")
+        artifact_row = await self._fetchrow(
+            """
+            INSERT INTO tenant_execution_artifacts (
+                artifact_id,
+                tenant_id,
+                plan_id,
+                step_id,
+                retry_id,
+                artifact_type,
+                artifact_ref,
+                artifact_json
+            ) VALUES (
+                $1::uuid,
+                $2::uuid,
+                $3::uuid,
+                $4::uuid,
+                $5::uuid,
+                $6,
+                $7,
+                $8::jsonb
+            )
+            RETURNING artifact_id::text AS artifact_id,
+                      tenant_id::text AS tenant_id,
+                      plan_id::text AS plan_id,
+                      step_id::text AS step_id,
+                      retry_id::text AS retry_id,
+                      artifact_type,
+                      artifact_ref,
+                      artifact_json,
+                      created_at
+            """,
+            str(uuid4()),
+            tenant_id,
+            plan_id,
+            step_id,
+            retry_id,
+            artifact_kind,
+            artifact_ref,
+            json.dumps(artifact_json or {}),
+        )
+        if artifact_row is None:
+            raise RuntimeError("Failed to record execution artifact")
+        return dict(artifact_row)
 
     async def _write_audit(
         self,

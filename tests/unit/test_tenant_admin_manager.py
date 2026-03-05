@@ -1998,3 +1998,267 @@ async def test_messaging_additional_runtime_and_filter_branches() -> None:
             provider="whatsapp",
             chat_id="   ",
         )
+
+
+@pytest.mark.asyncio
+async def test_create_execution_plan_schedules_continuation_and_audit() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+    manager.schedule_execution_continuation = AsyncMock(return_value="queue-1")  # type: ignore[method-assign]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    plan_id = "11111111-1111-1111-1111-111111111111"
+    step_1 = "22222222-2222-2222-2222-222222222222"
+    step_2 = "33333333-3333-3333-3333-333333333333"
+    conn.fetchrow.side_effect = [
+        {
+            "plan_id": plan_id,
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "title": "Night Build",
+            "goal": "Ship overnight",
+            "status": "queued",
+            "current_step_index": 0,
+            "total_steps": 2,
+            "max_step_attempts": 3,
+            "continuation_interval_seconds": 60,
+            "next_run_at": datetime.now(UTC),
+            "lease_owner": None,
+            "lease_expires_at": None,
+            "metadata": {},
+            "last_error_category": None,
+            "last_error_detail": None,
+            "created_by": "operator-1",
+            "updated_by": "operator-1",
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        },
+        {
+            "step_id": step_1,
+            "plan_id": plan_id,
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "step_index": 0,
+            "title": "Step 1",
+            "prompt_text": "Design schema",
+            "idempotency_key": "step-1",
+            "status": "pending",
+            "attempt_count": 0,
+            "max_attempts": 3,
+            "next_retry_at": None,
+            "last_error_category": None,
+            "last_error_detail": None,
+            "output_json": {},
+            "metadata": {},
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        },
+        {
+            "step_id": step_2,
+            "plan_id": plan_id,
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "step_index": 1,
+            "title": "Step 2",
+            "prompt_text": "Implement routes",
+            "idempotency_key": "step-2",
+            "status": "pending",
+            "attempt_count": 0,
+            "max_attempts": 3,
+            "next_retry_at": None,
+            "last_error_category": None,
+            "last_error_detail": None,
+            "output_json": {},
+            "metadata": {},
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        },
+    ]
+
+    created = await manager.create_execution_plan(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        title="Night Build",
+        goal="Ship overnight",
+        steps=["Design schema", {"title": "Step 2", "prompt": "Implement routes"}],
+        actor=_actor(),
+    )
+
+    assert created["plan"]["status"] == "queued"
+    assert len(created["steps"]) == 2
+    manager.schedule_execution_continuation.assert_awaited_once()
+    manager._write_audit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_claim_next_execution_step_returns_retry_context() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+
+    conn.fetchrow.side_effect = [
+        {
+            "step_id": "22222222-2222-2222-2222-222222222222",
+            "step_index": 0,
+            "status": "running",
+        },
+        {
+            "step_id": "22222222-2222-2222-2222-222222222222",
+            "plan_id": "11111111-1111-1111-1111-111111111111",
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "step_index": 0,
+            "title": "Step 1",
+            "prompt_text": "Design schema",
+            "idempotency_key": "step-1",
+            "status": "running",
+            "attempt_count": 2,
+            "max_attempts": 3,
+            "next_retry_at": None,
+            "last_error_category": None,
+            "last_error_detail": None,
+            "output_json": {},
+            "metadata": {},
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        },
+    ]
+
+    claimed = await manager.claim_next_execution_step(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        worker_id="worker-1",
+        lease_token="lease-1",
+    )
+
+    assert claimed is not None
+    assert claimed["step"]["status"] == "running"
+    assert claimed["retry"]["attempt_number"] == 2
+    assert conn.execute.await_count >= 3
+
+
+@pytest.mark.asyncio
+async def test_complete_execution_step_marks_plan_complete_on_last_step() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+
+    conn.fetchrow.side_effect = [
+        {"status": "running", "continuation_interval_seconds": 60},
+        {"step_index": 1, "status": "running"},
+        {
+            "step_id": "22222222-2222-2222-2222-222222222222",
+            "plan_id": "11111111-1111-1111-1111-111111111111",
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "step_index": 1,
+            "title": "Step 2",
+            "prompt_text": "Implement routes",
+            "idempotency_key": "step-2",
+            "status": "completed",
+            "attempt_count": 1,
+            "max_attempts": 3,
+            "next_retry_at": None,
+            "last_error_category": None,
+            "last_error_detail": None,
+            "output_json": {"response_text": "done"},
+            "metadata": {},
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        },
+        None,
+        {
+            "plan_id": "11111111-1111-1111-1111-111111111111",
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "title": "Night Build",
+            "goal": "Ship overnight",
+            "status": "completed",
+            "current_step_index": 2,
+            "total_steps": 2,
+            "max_step_attempts": 3,
+            "continuation_interval_seconds": 60,
+            "next_run_at": None,
+            "lease_owner": None,
+            "lease_expires_at": None,
+            "metadata": {},
+            "last_error_category": None,
+            "last_error_detail": None,
+            "created_by": "operator-1",
+            "updated_by": "operator-1",
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        },
+    ]
+
+    completed = await manager.complete_execution_step(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        step_id="22222222-2222-2222-2222-222222222222",
+        retry_id="33333333-3333-3333-3333-333333333333",
+        worker_id="worker-1",
+        output_json={"response_text": "done"},
+    )
+
+    assert completed["has_more"] is False
+    assert completed["plan"]["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_fail_execution_step_retry_and_terminal_paths() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+
+    conn.fetchrow.side_effect = [
+        {"status": "running"},
+        {"status": "running", "attempt_count": 1, "max_attempts": 3},
+        {
+            "step_id": "22222222-2222-2222-2222-222222222222",
+            "plan_id": "11111111-1111-1111-1111-111111111111",
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "step_index": 0,
+            "title": "Step 1",
+            "prompt_text": "Design schema",
+            "idempotency_key": "step-1",
+            "status": "failed",
+            "attempt_count": 1,
+            "max_attempts": 3,
+            "next_retry_at": datetime.now(UTC),
+            "last_error_category": "timeout",
+            "last_error_detail": "timeout",
+            "output_json": {},
+            "metadata": {},
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        },
+        {
+            "plan_id": "11111111-1111-1111-1111-111111111111",
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "title": "Night Build",
+            "goal": "Ship overnight",
+            "status": "running",
+            "current_step_index": 0,
+            "total_steps": 2,
+            "max_step_attempts": 3,
+            "continuation_interval_seconds": 60,
+            "next_run_at": datetime.now(UTC),
+            "lease_owner": None,
+            "lease_expires_at": None,
+            "metadata": {},
+            "last_error_category": "timeout",
+            "last_error_detail": "timeout",
+            "created_by": "operator-1",
+            "updated_by": "operator-1",
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        },
+    ]
+
+    failed_retryable = await manager.fail_execution_step(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        step_id="22222222-2222-2222-2222-222222222222",
+        retry_id="33333333-3333-3333-3333-333333333333",
+        worker_id="worker-1",
+        failure_category="timeout",
+        failure_detail="timeout",
+    )
+
+    assert failed_retryable["retry_scheduled"] is True
+    assert failed_retryable["backoff_seconds"] == 60
+    assert failed_retryable["plan"]["status"] == "running"

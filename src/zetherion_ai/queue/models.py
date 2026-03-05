@@ -39,6 +39,7 @@ class QueueTaskType(str, Enum):
     SKILL_REQUEST = "skill_request"
     HEARTBEAT_ACTION = "heartbeat_action"
     BULK_INGESTION = "bulk_ingestion"
+    PLAN_CONTINUATION = "plan_continuation"
 
 
 @dataclass

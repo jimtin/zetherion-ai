@@ -1044,6 +1044,68 @@ class TestTenantAdminEndpoints:
             return_value={"message_id": "77777777-7777-7777-7777-777777777777"}
         )
         mgr.purge_expired_messaging_messages = AsyncMock(return_value=0)
+        mgr.create_execution_plan = AsyncMock(
+            return_value={
+                "plan": {
+                    "plan_id": "99999999-9999-9999-9999-999999999999",
+                    "status": "queued",
+                    "title": "Night Build",
+                    "goal": "Ship overnight",
+                },
+                "steps": [
+                    {
+                        "step_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                        "step_index": 0,
+                        "status": "pending",
+                    }
+                ],
+            }
+        )
+        mgr.list_execution_plans = AsyncMock(
+            return_value=[
+                {
+                    "plan_id": "99999999-9999-9999-9999-999999999999",
+                    "status": "queued",
+                    "title": "Night Build",
+                }
+            ]
+        )
+        mgr.get_execution_plan = AsyncMock(
+            return_value={
+                "plan_id": "99999999-9999-9999-9999-999999999999",
+                "status": "queued",
+                "title": "Night Build",
+                "goal": "Ship overnight",
+            }
+        )
+        mgr.list_execution_plan_steps = AsyncMock(
+            return_value=[
+                {
+                    "step_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                    "step_index": 0,
+                    "status": "pending",
+                    "prompt_text": "Design schema",
+                }
+            ]
+        )
+        mgr.pause_execution_plan = AsyncMock(
+            return_value={
+                "plan_id": "99999999-9999-9999-9999-999999999999",
+                "status": "paused",
+            }
+        )
+        mgr.resume_execution_plan = AsyncMock(
+            return_value={
+                "plan_id": "99999999-9999-9999-9999-999999999999",
+                "status": "queued",
+            }
+        )
+        mgr.cancel_execution_plan = AsyncMock(
+            return_value={
+                "plan_id": "99999999-9999-9999-9999-999999999999",
+                "status": "cancelled",
+            }
+        )
         return mgr
 
     @pytest.fixture
@@ -1423,6 +1485,72 @@ class TestTenantAdminEndpoints:
         tenant_admin_manager.queue_messaging_send.assert_awaited_once()
         tenant_admin_manager.ingest_messaging_message.assert_awaited_once()
 
+    async def test_tenant_admin_execution_plan_matrix_success(
+        self, admin_client, tenant_admin_manager
+    ):
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+
+        async def _call(method: str, path: str, json_payload: dict | None = None):
+            headers = {"X-API-Secret": "test-secret"}
+            headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg-1"))
+            kwargs = {"headers": headers}
+            if json_payload is not None:
+                kwargs["json"] = json_payload
+            return await getattr(admin_client, method)(path, **kwargs)
+
+        created = await _call(
+            "post",
+            f"/admin/tenants/{tenant_id}/execution/plans",
+            {
+                "title": "Night Build",
+                "goal": "Ship overnight",
+                "steps": ["Design schema", "Implement routes"],
+            },
+        )
+        assert created.status == 201
+
+        listed = await _call(
+            "get",
+            f"/admin/tenants/{tenant_id}/execution/plans?status=queued&limit=50",
+        )
+        assert listed.status == 200
+
+        plan_id = "99999999-9999-9999-9999-999999999999"
+        detail = await _call(
+            "get",
+            f"/admin/tenants/{tenant_id}/execution/plans/{plan_id}?include_steps=true",
+        )
+        assert detail.status == 200
+
+        paused = await _call(
+            "post",
+            f"/admin/tenants/{tenant_id}/execution/plans/{plan_id}/pause",
+            {},
+        )
+        assert paused.status == 200
+
+        resumed = await _call(
+            "post",
+            f"/admin/tenants/{tenant_id}/execution/plans/{plan_id}/resume",
+            {"immediate": True},
+        )
+        assert resumed.status == 200
+
+        cancelled = await _call(
+            "post",
+            f"/admin/tenants/{tenant_id}/execution/plans/{plan_id}/cancel",
+            {},
+        )
+        assert cancelled.status == 200
+
+        tenant_admin_manager.create_execution_plan.assert_awaited_once()
+        tenant_admin_manager.list_execution_plans.assert_awaited_once()
+        tenant_admin_manager.get_execution_plan.assert_awaited_once()
+        tenant_admin_manager.list_execution_plan_steps.assert_awaited_once()
+        tenant_admin_manager.pause_execution_plan.assert_awaited_once()
+        tenant_admin_manager.resume_execution_plan.assert_awaited_once()
+        tenant_admin_manager.cancel_execution_plan.assert_awaited_once()
+
     async def test_tenant_admin_validation_error_branches(self, admin_client):
         tenant_id = "11111111-1111-1111-1111-111111111111"
 
@@ -1503,6 +1631,24 @@ class TestTenantAdminEndpoints:
             json={"text": "hello", "metadata": "bad"},
         )
         assert invalid_send_metadata.status == 400
+
+        invalid_execution_metadata = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/execution/plans",
+            headers=_headers(),
+            json={
+                "title": "Night Build",
+                "goal": "Ship overnight",
+                "steps": ["Design schema"],
+                "metadata": "bad",
+            },
+        )
+        assert invalid_execution_metadata.status == 400
+
+        invalid_execution_limit = await admin_client.get(
+            f"/admin/tenants/{tenant_id}/execution/plans?limit=bad",
+            headers=_headers(),
+        )
+        assert invalid_execution_limit.status == 400
 
     async def test_tenant_admin_messaging_policy_denial_paths(
         self,
@@ -1929,6 +2075,50 @@ class TestTenantAdminEndpoints:
                     f"/admin/tenants/{tenant_id}/messaging/ingest",
                     headers={"X-API-Secret": "test-secret"},
                     json={"event_type": "whatsapp.message.inbound", "chat_id": "chat-1"},
+                )
+            ).status == 501
+            assert (
+                await client.post(
+                    f"/admin/tenants/{tenant_id}/execution/plans",
+                    headers=_headers(),
+                    json={
+                        "title": "Night Build",
+                        "goal": "Ship overnight",
+                        "steps": ["Design schema"],
+                    },
+                )
+            ).status == 501
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/execution/plans",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/execution/plans/plan-1",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.post(
+                    f"/admin/tenants/{tenant_id}/execution/plans/plan-1/pause",
+                    headers=_headers(),
+                    json={},
+                )
+            ).status == 501
+            assert (
+                await client.post(
+                    f"/admin/tenants/{tenant_id}/execution/plans/plan-1/resume",
+                    headers=_headers(),
+                    json={},
+                )
+            ).status == 501
+            assert (
+                await client.post(
+                    f"/admin/tenants/{tenant_id}/execution/plans/plan-1/cancel",
+                    headers=_headers(),
+                    json={},
                 )
             ).status == 501
 

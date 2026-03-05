@@ -57,6 +57,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added public messaging route trust-policy checks for read/send decisions and policy-coded error responses.
 - Updated OpenAPI and docs bundles for both upstream and CGS gateway contracts.
 
+### Added - Execution Ledger + Overnight Continuation Loop (2026-03-05)
+
+- Added tenant execution-ledger persistence tables:
+  - `tenant_execution_plans`
+  - `tenant_execution_steps`
+  - `tenant_execution_step_retries`
+  - `tenant_execution_artifacts`
+  - `tenant_execution_transitions`
+- Added queue-integrated continuation task type:
+  - `plan_continuation`
+  - dispatched by `QueueProcessors` and executed via `PlanContinuationExecutor`.
+- Added lease-based plan claiming and step claim/re-run semantics in tenant admin domain, including:
+  - idempotent completed-step skip behavior
+  - stale running-step reclaim
+  - explicit failure category capture + retry backoff scheduling.
+- Added Skills internal tenant execution-plan routes:
+  - `POST /admin/tenants/{tenant_id}/execution/plans`
+  - `GET /admin/tenants/{tenant_id}/execution/plans`
+  - `GET /admin/tenants/{tenant_id}/execution/plans/{plan_id}`
+  - `POST /admin/tenants/{tenant_id}/execution/plans/{plan_id}/pause`
+  - `POST /admin/tenants/{tenant_id}/execution/plans/{plan_id}/resume`
+  - `POST /admin/tenants/{tenant_id}/execution/plans/{plan_id}/cancel`
+
 ### Changed - Windows Deploy Resilience Registration Signal Cleanup (2026-03-05)
 
 - Updated `Deploy Windows` resilience registration step behavior to remain explicitly non-blocking without

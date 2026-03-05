@@ -145,6 +145,7 @@ class TestQueueEnums:
         assert QueueTaskType.SKILL_REQUEST == "skill_request"
         assert QueueTaskType.HEARTBEAT_ACTION == "heartbeat_action"
         assert QueueTaskType.BULK_INGESTION == "bulk_ingestion"
+        assert QueueTaskType.PLAN_CONTINUATION == "plan_continuation"
 
     def test_priority_values(self) -> None:
         assert QueuePriority.INTERACTIVE == 0
@@ -534,6 +535,29 @@ class TestQueueProcessorsDispatch:
             {"source": "email", "operation": "sync"},
         )
         assert result.success is False
+
+    @pytest.mark.asyncio
+    async def test_plan_continuation_without_executor(self) -> None:
+        procs = QueueProcessors()
+        result = await procs.process(
+            QueueTaskType.PLAN_CONTINUATION,
+            {"tenant_id": "tenant-1", "plan_id": "plan-1"},
+        )
+        assert result.success is False
+        assert "Plan executor not available" in (result.error or "")
+
+    @pytest.mark.asyncio
+    async def test_plan_continuation_dispatches_executor(self) -> None:
+        executor = AsyncMock()
+        executor.execute = AsyncMock(return_value={"accepted": True, "status": "running"})
+        procs = QueueProcessors(plan_executor=executor)
+        result = await procs.process(
+            QueueTaskType.PLAN_CONTINUATION,
+            {"tenant_id": "tenant-1", "plan_id": "plan-1"},
+        )
+        assert result.success is True
+        assert result.data["accepted"] is True
+        executor.execute.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_processor_catches_exceptions(self) -> None:

@@ -86,11 +86,13 @@ class QueueProcessors:
         agent: Agent | None = None,
         skills_client: SkillsClient | None = None,
         action_executor: ActionExecutor | None = None,
+        plan_executor: Any = None,
     ) -> None:
         self._bot = bot
         self._agent = agent
         self._skills_client = skills_client
         self._action_executor = action_executor
+        self._plan_executor = plan_executor
 
     async def process(self, task_type: str, payload: dict[str, Any]) -> ProcessorResult:
         """Route a queue item to its handler.
@@ -107,6 +109,7 @@ class QueueProcessors:
             QueueTaskType.SKILL_REQUEST: self._handle_skill_request,
             QueueTaskType.HEARTBEAT_ACTION: self._handle_heartbeat_action,
             QueueTaskType.BULK_INGESTION: self._handle_bulk_ingestion,
+            QueueTaskType.PLAN_CONTINUATION: self._handle_plan_continuation,
         }
 
         try:
@@ -294,6 +297,18 @@ class QueueProcessors:
 
         log.warning("bulk_ingestion_no_client", source=source)
         return ProcessorResult(success=False, error="No skills client for bulk ingestion")
+
+    async def _handle_plan_continuation(self, payload: dict[str, Any]) -> ProcessorResult:
+        """Process one execution-plan continuation tick."""
+        if self._plan_executor is None:
+            return ProcessorResult(success=False, error="Plan executor not available")
+        if not hasattr(self._plan_executor, "execute"):
+            return ProcessorResult(success=False, error="Plan executor missing execute()")
+
+        result = await self._plan_executor.execute(payload)
+        if isinstance(result, dict):
+            return ProcessorResult(success=True, data=result)
+        return ProcessorResult(success=True)
 
     # ------------------------------------------------------------------
     # Helpers
