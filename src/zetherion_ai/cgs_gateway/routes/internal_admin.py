@@ -191,19 +191,6 @@ def _derive_policy_action(method: str, subpath: str, payload: dict[str, Any] | N
     if normalized.startswith("/automerge/") and method_upper == "POST":
         return "automerge.execute"
 
-    if normalized.startswith("/workers/"):
-        if method_upper == "POST" and normalized.endswith("/register"):
-            return "worker.register"
-        if method_upper == "POST" and normalized.endswith("/jobs/claim"):
-            return "worker.job.claim"
-        if method_upper == "POST" and normalized.endswith("/result"):
-            return "worker.job.complete"
-        if method_upper in {"PUT", "PATCH"} and (
-            "/capabilities" in normalized or "/scope" in normalized
-        ):
-            return "worker.capability.update"
-        return "tenant_admin.read" if method_upper == "GET" else "tenant_admin.mutate"
-
     if method_upper == "GET":
         return "tenant_admin.read"
     return "tenant_admin.mutate"
@@ -218,10 +205,6 @@ def _derive_policy_target(subpath: str, payload: dict[str, Any] | None) -> str |
     parts = [part for part in subpath.split("/") if part]
     if not parts:
         return None
-    if "nodes" in parts:
-        node_index = parts.index("nodes")
-        if node_index + 1 < len(parts):
-            return parts[node_index + 1]
     if parts[-1] == "send" and len(parts) >= 2:
         return parts[-2]
     return parts[-1]
@@ -263,14 +246,6 @@ def _derive_policy_context(
         ctx["branch_guard_passed"] = bool(body.get("branch_guard_passed"))
         ctx["risk_guard_passed"] = bool(body.get("risk_guard_passed"))
         ctx["explicitly_elevated"] = bool(body.get("explicitly_elevated"))
-    if normalized.startswith("/workers/"):
-        body = payload or {}
-        ctx["bootstrap_secret_valid"] = bool(body.get("bootstrap_secret_valid"))
-        ctx["node_registered"] = bool(body.get("node_registered"))
-        ctx["node_healthy"] = bool(body.get("node_healthy"))
-        ctx["capability_allowlisted"] = bool(body.get("capability_allowlisted"))
-        ctx["explicitly_elevated"] = bool(body.get("explicitly_elevated"))
-        ctx["repo_scope_expansion"] = bool(body.get("repo_scope_expansion"))
     return ctx
 
 
