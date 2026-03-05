@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Self
 
@@ -13,12 +14,20 @@ if TYPE_CHECKING:
 from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_DISABLE_ENV_FILE = str(os.getenv("ZETHERION_DISABLE_ENV_FILE", "")).strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+_SETTINGS_ENV_FILE: str | None = None if _DISABLE_ENV_FILE else ".env"
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_SETTINGS_ENV_FILE,
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",

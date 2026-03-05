@@ -106,3 +106,22 @@ Append-only bounded-lane execution log in UTC.
 | 2026-03-05T01:08:37.917Z | unit-full | `env -u SSL_CERT_FILE .venv/bin/python -m pytest tests/ -m not integration and not discord_e2e --cov=src/zetherion_ai --cov-report=term-missing --cov-fail-under=90 -q --tb=short` | failed | 49 | exit:1 | - |
 | 2026-03-05T01:08:57.159Z | targeted-unit | `.venv/bin/python -m pytest tests/unit/test_tenant_admin_manager.py tests/unit/test_queue_plan_executor.py tests/unit/test_queue.py --cov=src/zetherion_ai/admin/tenant_admin_manager.py --cov=src/zetherion_ai/queue/plan_executor.py --cov=src/zetherion_ai/queue/processors.py --cov-report=term-missing -q --tb=short -o addopts=--strict-markers --tb=short` | passed | 1 |  | - |
 | 2026-03-05T01:09:07.654Z | targeted-unit | `.venv/bin/python -m pytest tests/unit/test_tenant_admin_manager.py tests/unit/test_queue_plan_executor.py tests/unit/test_queue.py --cov=zetherion_ai.admin.tenant_admin_manager --cov=zetherion_ai.queue.plan_executor --cov=zetherion_ai.queue.processors --cov-report=term-missing -q --tb=short -o addopts=--strict-markers --tb=short` | passed | 2 |  | - |
+| 2026-03-05T01:10:32.137Z | targeted-unit | `.venv/bin/python -c import os; import ssl; print(os.environ.get('SSL_CERT_FILE','')); ssl.create_default_context(cafile=os.environ.get('SSL_CERT_FILE'))` | passed | 0 |  | - |
+| 2026-03-05T01:10:37.900Z | targeted-unit | `.venv/bin/python -m pytest tests/unit/test_tenant_admin_manager.py tests/unit/test_queue_plan_executor.py tests/unit/test_queue.py -q --tb=short -o addopts=--strict-markers --tb=short --no-cov` | passed | 1 |  | - |
+| 2026-03-05T01:11:31.819Z | unit-full | `.venv/bin/python -m pytest tests/ -m not integration and not discord_e2e --cov=src/zetherion_ai --cov-report=term-missing --cov-fail-under=90 -q --tb=short` | failed | 45 | exit:1 | - |
+| 2026-03-05T01:12:25.192Z | lint | `.venv/bin/ruff check src/ tests/ updater_sidecar/` | failed | 0 | exit:1 | - |
+| 2026-03-05T01:12:34.350Z | lint | `.venv/bin/ruff check src/ tests/ updater_sidecar/` | passed | 0 |  | - |
+| 2026-03-05T01:13:17.202Z | unit-full | `.venv/bin/python -m pytest tests/ -m not integration and not discord_e2e --cov=src/zetherion_ai --cov-report=term-missing --cov-fail-under=90 -q --tb=short` | failed | 39 | exit:1 | - |
+| 2026-03-05T01:17:11.071Z | targeted-unit | `.venv/bin/python -m pytest tests/test_config.py -q --tb=short` | failed | 2 | exit:1 | - |
+| 2026-03-05T01:17:17.133Z | targeted-unit | `.venv/bin/python -m pytest tests/test_config.py -q --tb=short -o addopts=--strict-markers --tb=short --no-cov` | passed | 0 |  | - |
+| 2026-03-05T01:17:59.668Z | targeted-unit | `.venv/bin/python -` | passed | 0 |  | - |
+| 2026-03-05T01:18:11.439Z | targeted-unit | `.venv/bin/python -c import os; from zetherion_ai.config import Settings; print(os.getenv('ZETHERION_DISABLE_ENV_FILE')); print(Settings.model_config.get('env_file'))` | passed | 0 |  | - |
+| 2026-03-05T01:19:12.595Z | unit-full | `.venv/bin/python -m pytest tests/ -m not integration and not discord_e2e --cov=src/zetherion_ai --cov-report=term-missing --cov-fail-under=90 -q --tb=short` | failed | 41 | exit:1 | - |
+| 2026-03-05T01:19:46.247Z | targeted-unit | `.venv/bin/python -m pytest tests/test_config.py -q --tb=short -o addopts=--strict-markers --tb=short --no-cov` | passed | 0 |  | - |
+| 2026-03-05T01:20:28.933Z | unit-full | `.venv/bin/python -m pytest tests/ -m not integration and not discord_e2e --cov=src/zetherion_ai --cov-report=term-missing --cov-fail-under=90 -q --tb=short` | passed | 39 |  | - |
+| 2026-03-05T01:20:34.853Z | lint | `.venv/bin/ruff check src/ tests/ updater_sidecar/` | passed | 0 |  | - |
+| 2026-03-05T01:21:20.543Z | targeted-unit | `.venv/bin/python -m pytest tests/test_config.py -q --tb=short -o addopts=--strict-markers --tb=short --no-cov` | passed | 0 |  | - |
+| 2026-03-05T01:22:01.993Z | unit-full | `.venv/bin/python -m pytest tests/ -m not integration and not discord_e2e --cov=src/zetherion_ai --cov-report=term-missing --cov-fail-under=90 -q --tb=short` | passed | 41 |  | - |
+| 2026-03-05T01:22:02.072Z | lint | `.venv/bin/ruff check src/ tests/ updater_sidecar/` | passed | 0 |  | - |
+| 2026-03-05T01:23:34.345Z | lint | `.venv/bin/ruff check src/ tests/ updater_sidecar/` | passed | 0 |  | - |
+| 2026-03-05T01:24:16.404Z | unit-full | `.venv/bin/python -m pytest tests/ -m not integration and not discord_e2e --cov=src/zetherion_ai --cov-report=term-missing --cov-fail-under=90 -q --tb=short` | passed | 42 |  | - |

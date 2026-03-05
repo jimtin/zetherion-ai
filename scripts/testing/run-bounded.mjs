@@ -161,6 +161,67 @@ function killProcessTree(pid) {
   return killer.status ?? 0;
 }
 
+function isReadableFile(filePath) {
+  return typeof filePath === "string" && filePath.trim() !== "" && existsSync(filePath);
+}
+
+function candidatePythonExecutables(command, args) {
+  const values = [command, ...args].map((value) => String(value ?? "").trim());
+  const matches = values.filter((value) => /(^|\/)python([0-9]+(\.[0-9]+)*)?$/.test(value));
+  const deduped = [];
+  for (const executable of [...matches, "python3"]) {
+    if (executable && !deduped.includes(executable)) {
+      deduped.push(executable);
+    }
+  }
+  return deduped;
+}
+
+function resolvePythonCaBundle(command, args, env) {
+  const inherited = String(env.SSL_CERT_FILE ?? "").trim();
+  if (isReadableFile(inherited)) {
+    return inherited;
+  }
+
+  const preferredPaths = ["/etc/ssl/cert.pem", "/private/etc/ssl/cert.pem"];
+  for (const candidate of preferredPaths) {
+    if (isReadableFile(candidate)) {
+      return candidate;
+    }
+  }
+
+  const probeScript = "import certifi; print(certifi.where())";
+  for (const executable of candidatePythonExecutables(command, args)) {
+    const result = spawnSync(executable, ["-c", probeScript], {
+      cwd: process.cwd(),
+      env,
+      encoding: "utf-8",
+    });
+    if (result.status !== 0) {
+      continue;
+    }
+    const candidate = String(result.stdout ?? "").trim();
+    if (isReadableFile(candidate)) {
+      return candidate;
+    }
+  }
+
+  return inherited;
+}
+
+function isPytestInvocation(command, args) {
+  const values = [command, ...args].map((value) => String(value ?? "").trim());
+  if (values.some((value) => /(^|\/)pytest$/.test(value))) {
+    return true;
+  }
+  for (let i = 0; i < values.length - 1; i += 1) {
+    if (values[i] === "-m" && values[i + 1] === "pytest") {
+      return true;
+    }
+  }
+  return false;
+}
+
 function captureDiagnostics({ lane, reason, diagnosticsRoot, pid }) {
   const stamp = nowIso().replaceAll(":", "-");
   const outDir = path.resolve(diagnosticsRoot, `${lane}-${stamp}`);
@@ -210,10 +271,18 @@ async function run() {
   let terminatedReason = "";
   let diagnosticsPath = "";
   let watchdogSettled = false;
+  const childEnv = { ...process.env };
+  const caBundle = resolvePythonCaBundle(command, args, childEnv);
+  if (isReadableFile(caBundle)) {
+    childEnv.SSL_CERT_FILE = caBundle;
+  }
+  if (isPytestInvocation(command, args)) {
+    childEnv.ZETHERION_DISABLE_ENV_FILE = "1";
+  }
 
   const child = spawn(command, args, {
     cwd: process.cwd(),
-    env: process.env,
+    env: childEnv,
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
   });
