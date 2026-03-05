@@ -222,6 +222,39 @@ function isPytestInvocation(command, args) {
   return false;
 }
 
+function isPythonExecutable(command) {
+  const value = String(command ?? "").trim();
+  return /(^|\/)python([0-9]+(\.[0-9]+)*)?$/.test(value);
+}
+
+function prefersLocalVenvPytest(command, args) {
+  if (process.env.CI) {
+    return { command, args, rewritten: false };
+  }
+  if (!isPytestInvocation(command, args)) {
+    return { command, args, rewritten: false };
+  }
+
+  const venvPython = path.resolve(".venv/bin/python");
+  if (!isReadableFile(venvPython)) {
+    return { command, args, rewritten: false };
+  }
+
+  if (isPythonExecutable(command)) {
+    return { command: venvPython, args, rewritten: true };
+  }
+
+  if (/(^|\/)pytest$/.test(String(command ?? "").trim())) {
+    return {
+      command: venvPython,
+      args: ["-m", "pytest", ...args],
+      rewritten: true,
+    };
+  }
+
+  return { command, args, rewritten: false };
+}
+
 function captureDiagnostics({ lane, reason, diagnosticsRoot, pid }) {
   const stamp = nowIso().replaceAll(":", "-");
   const outDir = path.resolve(diagnosticsRoot, `${lane}-${stamp}`);
@@ -264,8 +297,14 @@ async function run() {
   const logFile = ensureLogFile(opts.logFile);
 
   const lane = laneCommand(opts);
-  const [command, ...args] = lane.command;
-  const commandDisplay = lane.command.join(" ");
+  const [rawCommand, ...rawArgs] = lane.command;
+  const rewritten = prefersLocalVenvPytest(rawCommand, rawArgs);
+  const command = rewritten.command;
+  const args = rewritten.args;
+  const commandDisplay = [command, ...args].join(" ");
+  if (rewritten.rewritten) {
+    process.stdout.write(`run-bounded: using ${command} for pytest lane execution\n`);
+  }
   const startedAtMs = Date.now();
   let lastOutputAtMs = Date.now();
   let terminatedReason = "";

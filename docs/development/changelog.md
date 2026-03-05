@@ -13,6 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - CI Conservation Guardrails for Local Validation (2026-03-06)
+
+- Expanded bounded `check` lane to include documentation contract checks:
+  - `check-docs-nav.py`
+  - `check-docs-links.py`
+  - `check-route-doc-parity.py`
+  - `check-cgs-route-doc-parity.py`
+  - `check-env-doc-parity.py`
+- Updated `scripts/testing/run-bounded.mjs` to auto-prefer `.venv/bin/python` for local pytest lanes
+  when available, preventing repeated `python3: No module named pytest` failures.
+- Added `scripts/github/create-pr-safe.sh` wrapper that requires `--body-file` for PR creation
+  to avoid shell backtick expansion regressions.
+
 ### Changed - Windows Announcement Plane Integration for Deploy/Promotions (2026-03-06)
 
 - Replaced Windows deploy completion notification step to emit internal announcement events via
