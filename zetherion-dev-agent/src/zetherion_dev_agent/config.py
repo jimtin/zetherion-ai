@@ -17,6 +17,7 @@ CONFIG_DIR = Path(
 CONFIG_FILE = CONFIG_DIR / "config.toml"
 STATE_FILE = CONFIG_DIR / "state.json"
 DATABASE_FILE = CONFIG_DIR / "daemon.db"
+WORKER_LOG_DIR = CONFIG_DIR / "worker-jobs"
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -71,6 +72,29 @@ class AgentConfig:
     database_path: str = str(DATABASE_FILE)
     bootstrap_secret: str = ""
     bootstrap_require_once: bool = True
+    worker_base_url: str = "http://127.0.0.1:8000/worker/v1"
+    worker_tenant_id: str = ""
+    worker_node_id: str = ""
+    worker_node_name: str = ""
+    worker_bootstrap_secret: str = ""
+    worker_capabilities: list[str] = field(
+        default_factory=lambda: ["repo.patch", "repo.commit", "repo.pr.open"]
+    )
+    worker_claim_required_capabilities: list[str] = field(default_factory=lambda: ["repo.patch"])
+    worker_poll_after_seconds: int = 15
+    worker_heartbeat_interval_seconds: int = 30
+    worker_runner: str = "noop"
+    worker_allowed_repo_roots: list[str] = field(default_factory=list)
+    worker_allowed_actions: list[str] = field(
+        default_factory=lambda: ["worker.noop", "repo.patch", "repo.commit", "repo.pr.open"]
+    )
+    worker_allowed_commands: list[str] = field(
+        default_factory=lambda: ["git", "python", "python3", "pytest", "ruff", "bash", "sh"]
+    )
+    worker_max_runtime_seconds: int = 600
+    worker_max_memory_mb: int = 512
+    worker_max_artifact_bytes: int = 131_072
+    worker_log_dir: str = str(WORKER_LOG_DIR)
 
     @classmethod
     def load(cls) -> AgentConfig:
@@ -99,6 +123,35 @@ class AgentConfig:
             database_path=data.get("database_path", str(DATABASE_FILE)),
             bootstrap_secret=data.get("bootstrap_secret", ""),
             bootstrap_require_once=data.get("bootstrap_require_once", True),
+            worker_base_url=data.get("worker_base_url", "http://127.0.0.1:8000/worker/v1"),
+            worker_tenant_id=data.get("worker_tenant_id", ""),
+            worker_node_id=data.get("worker_node_id", ""),
+            worker_node_name=data.get("worker_node_name", ""),
+            worker_bootstrap_secret=data.get("worker_bootstrap_secret", ""),
+            worker_capabilities=data.get(
+                "worker_capabilities",
+                ["repo.patch", "repo.commit", "repo.pr.open"],
+            ),
+            worker_claim_required_capabilities=data.get(
+                "worker_claim_required_capabilities",
+                ["repo.patch"],
+            ),
+            worker_poll_after_seconds=data.get("worker_poll_after_seconds", 15),
+            worker_heartbeat_interval_seconds=data.get("worker_heartbeat_interval_seconds", 30),
+            worker_runner=data.get("worker_runner", "noop"),
+            worker_allowed_repo_roots=data.get("worker_allowed_repo_roots", []),
+            worker_allowed_actions=data.get(
+                "worker_allowed_actions",
+                ["worker.noop", "repo.patch", "repo.commit", "repo.pr.open"],
+            ),
+            worker_allowed_commands=data.get(
+                "worker_allowed_commands",
+                ["git", "python", "python3", "pytest", "ruff", "bash", "sh"],
+            ),
+            worker_max_runtime_seconds=data.get("worker_max_runtime_seconds", 600),
+            worker_max_memory_mb=data.get("worker_max_memory_mb", 512),
+            worker_max_artifact_bytes=data.get("worker_max_artifact_bytes", 131_072),
+            worker_log_dir=data.get("worker_log_dir", str(WORKER_LOG_DIR)),
         )
         return cls._apply_env_overrides(loaded)
 
@@ -108,7 +161,9 @@ class AgentConfig:
         cfg.agent_name = os.environ.get("DEV_AGENT_NAME", cfg.agent_name)
         cfg.repos = _env_list("DEV_AGENT_REPOS", cfg.repos)
         cfg.scan_interval = _env_int("DEV_AGENT_SCAN_INTERVAL", cfg.scan_interval)
-        cfg.claude_code_enabled = _env_bool("DEV_AGENT_CLAUDE_CODE_ENABLED", cfg.claude_code_enabled)
+        cfg.claude_code_enabled = _env_bool(
+            "DEV_AGENT_CLAUDE_CODE_ENABLED", cfg.claude_code_enabled
+        )
         cfg.annotations_enabled = _env_bool(
             "DEV_AGENT_ANNOTATIONS_ENABLED", cfg.annotations_enabled
         )
@@ -130,6 +185,55 @@ class AgentConfig:
         cfg.bootstrap_require_once = _env_bool(
             "DEV_AGENT_BOOTSTRAP_REQUIRE_ONCE", cfg.bootstrap_require_once
         )
+        cfg.worker_base_url = os.environ.get("DEV_AGENT_WORKER_BASE_URL", cfg.worker_base_url)
+        cfg.worker_tenant_id = os.environ.get("DEV_AGENT_WORKER_TENANT_ID", cfg.worker_tenant_id)
+        cfg.worker_node_id = os.environ.get("DEV_AGENT_WORKER_NODE_ID", cfg.worker_node_id)
+        cfg.worker_node_name = os.environ.get("DEV_AGENT_WORKER_NODE_NAME", cfg.worker_node_name)
+        cfg.worker_bootstrap_secret = os.environ.get(
+            "DEV_AGENT_WORKER_BOOTSTRAP_SECRET",
+            cfg.worker_bootstrap_secret,
+        )
+        cfg.worker_capabilities = _env_list(
+            "DEV_AGENT_WORKER_CAPABILITIES", cfg.worker_capabilities
+        )
+        cfg.worker_claim_required_capabilities = _env_list(
+            "DEV_AGENT_WORKER_CLAIM_REQUIRED_CAPABILITIES",
+            cfg.worker_claim_required_capabilities,
+        )
+        cfg.worker_poll_after_seconds = _env_int(
+            "DEV_AGENT_WORKER_POLL_AFTER_SECONDS",
+            cfg.worker_poll_after_seconds,
+        )
+        cfg.worker_heartbeat_interval_seconds = _env_int(
+            "DEV_AGENT_WORKER_HEARTBEAT_INTERVAL_SECONDS",
+            cfg.worker_heartbeat_interval_seconds,
+        )
+        cfg.worker_runner = os.environ.get("DEV_AGENT_WORKER_RUNNER", cfg.worker_runner)
+        cfg.worker_allowed_repo_roots = _env_list(
+            "DEV_AGENT_WORKER_ALLOWED_REPO_ROOTS",
+            cfg.worker_allowed_repo_roots,
+        )
+        cfg.worker_allowed_actions = _env_list(
+            "DEV_AGENT_WORKER_ALLOWED_ACTIONS",
+            cfg.worker_allowed_actions,
+        )
+        cfg.worker_allowed_commands = _env_list(
+            "DEV_AGENT_WORKER_ALLOWED_COMMANDS",
+            cfg.worker_allowed_commands,
+        )
+        cfg.worker_max_runtime_seconds = _env_int(
+            "DEV_AGENT_WORKER_MAX_RUNTIME_SECONDS",
+            cfg.worker_max_runtime_seconds,
+        )
+        cfg.worker_max_memory_mb = _env_int(
+            "DEV_AGENT_WORKER_MAX_MEMORY_MB",
+            cfg.worker_max_memory_mb,
+        )
+        cfg.worker_max_artifact_bytes = _env_int(
+            "DEV_AGENT_WORKER_MAX_ARTIFACT_BYTES",
+            cfg.worker_max_artifact_bytes,
+        )
+        cfg.worker_log_dir = os.environ.get("DEV_AGENT_WORKER_LOG_DIR", cfg.worker_log_dir)
         return cfg
 
     def save(self) -> None:
@@ -155,6 +259,23 @@ class AgentConfig:
             f'database_path = "{self.database_path}"',
             f'bootstrap_secret = "{self.bootstrap_secret}"',
             f"bootstrap_require_once = {'true' if self.bootstrap_require_once else 'false'}",
+            f'worker_base_url = "{self.worker_base_url}"',
+            f'worker_tenant_id = "{self.worker_tenant_id}"',
+            f'worker_node_id = "{self.worker_node_id}"',
+            f'worker_node_name = "{self.worker_node_name}"',
+            f'worker_bootstrap_secret = "{self.worker_bootstrap_secret}"',
+            f"worker_capabilities = {self.worker_capabilities!r}",
+            f"worker_claim_required_capabilities = {self.worker_claim_required_capabilities!r}",
+            f"worker_poll_after_seconds = {self.worker_poll_after_seconds}",
+            ("worker_heartbeat_interval_seconds = " f"{self.worker_heartbeat_interval_seconds}"),
+            f'worker_runner = "{self.worker_runner}"',
+            f"worker_allowed_repo_roots = {self.worker_allowed_repo_roots!r}",
+            f"worker_allowed_actions = {self.worker_allowed_actions!r}",
+            f"worker_allowed_commands = {self.worker_allowed_commands!r}",
+            f"worker_max_runtime_seconds = {self.worker_max_runtime_seconds}",
+            f"worker_max_memory_mb = {self.worker_max_memory_mb}",
+            f"worker_max_artifact_bytes = {self.worker_max_artifact_bytes}",
+            f'worker_log_dir = "{self.worker_log_dir}"',
         ]
         CONFIG_FILE.write_text("\n".join(lines) + "\n")
 
