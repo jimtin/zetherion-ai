@@ -189,6 +189,13 @@ def worker_manager() -> MagicMock:
     mgr.list_worker_nodes = AsyncMock(return_value=[])
     mgr.get_worker_node = AsyncMock(return_value=None)
     mgr.set_worker_capabilities = AsyncMock(return_value={})
+    mgr.set_worker_node_status = AsyncMock(return_value={})
+    mgr.list_worker_jobs = AsyncMock(return_value=[])
+    mgr.get_worker_job = AsyncMock(return_value=None)
+    mgr.retry_worker_job = AsyncMock(return_value={"job": {}, "step": {}, "plan": {}})
+    mgr.cancel_worker_job = AsyncMock(return_value={"job": {}, "idempotent": False})
+    mgr.list_worker_job_events = AsyncMock(return_value=[])
+    mgr.list_discord_users = AsyncMock(return_value=[])
     return mgr
 
 
@@ -1188,6 +1195,154 @@ class TestSkillsWorkerControlAPI:
                 headers=admin_headers,
             )
             assert admin_list.status == 501
+
+    async def test_admin_worker_operator_routes(
+        self,
+        mock_registry: SkillRegistry,
+        worker_manager: MagicMock,
+    ) -> None:
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        node_id = "node-1"
+        job_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        now = datetime.now(UTC)
+        worker_manager.list_worker_jobs = AsyncMock(
+            return_value=[
+                {
+                    "job_id": job_id,
+                    "tenant_id": tenant_id,
+                    "plan_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                    "step_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+                    "retry_id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+                    "status": "running",
+                    "updated_at": now,
+                }
+            ]
+        )
+        worker_manager.get_worker_job = AsyncMock(
+            return_value={
+                "job_id": job_id,
+                "tenant_id": tenant_id,
+                "status": "running",
+                "updated_at": now,
+            }
+        )
+        worker_manager.list_worker_job_events = AsyncMock(
+            return_value=[
+                {
+                    "event_id": 101,
+                    "tenant_id": tenant_id,
+                    "node_id": node_id,
+                    "job_id": job_id,
+                    "event_type": "worker.job.claim",
+                    "created_at": now,
+                }
+            ]
+        )
+        worker_manager.set_worker_node_status = AsyncMock(
+            side_effect=[
+                {
+                    "tenant_id": tenant_id,
+                    "node_id": node_id,
+                    "status": "quarantined",
+                    "health_status": "degraded",
+                },
+                {
+                    "tenant_id": tenant_id,
+                    "node_id": node_id,
+                    "status": "active",
+                    "health_status": "healthy",
+                },
+            ]
+        )
+        worker_manager.retry_worker_job = AsyncMock(
+            return_value={
+                "job": {"job_id": job_id, "status": "expired"},
+                "step": {"step_id": "cccccccc-cccc-cccc-cccc-cccccccccccc", "status": "pending"},
+                "plan": {"plan_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "status": "queued"},
+                "scheduled_for": now,
+            }
+        )
+        worker_manager.cancel_worker_job = AsyncMock(
+            return_value={
+                "job": {"job_id": job_id, "status": "cancelled"},
+                "step": {"step_id": "cccccccc-cccc-cccc-cccc-cccccccccccc", "status": "blocked"},
+                "plan": {"plan_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "status": "failed"},
+                "idempotent": False,
+            }
+        )
+        worker_manager.list_discord_users = AsyncMock(return_value=[])
+
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="skills-secret",
+            tenant_admin_manager=worker_manager,
+            admin_actor_secret="admin-secret",
+        )
+        app = server.create_app()
+
+        def _admin() -> dict[str, str]:
+            headers = {"X-API-Secret": "skills-secret"}
+            headers.update(_admin_headers(signing_secret="admin-secret"))
+            return headers
+
+        async with TestClient(TestServer(app)) as client:
+            listed = await client.get(
+                f"/admin/tenants/{tenant_id}/workers/jobs?status=running&limit=10",
+                headers=_admin(),
+            )
+            assert listed.status == 200
+            listed_payload = await listed.json()
+            assert listed_payload["ok"] is True
+            assert len(listed_payload["jobs"]) == 1
+
+            fetched = await client.get(
+                f"/admin/tenants/{tenant_id}/workers/jobs/{job_id}",
+                headers=_admin(),
+            )
+            assert fetched.status == 200
+
+            events = await client.get(
+                f"/admin/tenants/{tenant_id}/workers/events?node_id={node_id}&limit=5",
+                headers=_admin(),
+            )
+            assert events.status == 200
+
+            quarantined = await client.post(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/quarantine",
+                headers=_admin(),
+                json={"metadata": {"reason": "manual"}},
+            )
+            assert quarantined.status == 200
+
+            unquarantined = await client.post(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/unquarantine",
+                headers=_admin(),
+                json={},
+            )
+            assert unquarantined.status == 200
+
+            retried = await client.post(
+                f"/admin/tenants/{tenant_id}/workers/jobs/{job_id}/retry",
+                headers=_admin(),
+                json={"reason": "manual retry"},
+            )
+            assert retried.status == 200
+            retried_payload = await retried.json()
+            assert retried_payload["ok"] is True
+
+            cancelled = await client.post(
+                f"/admin/tenants/{tenant_id}/workers/jobs/{job_id}/cancel",
+                headers=_admin(),
+                json={"reason": "manual cancel"},
+            )
+            assert cancelled.status == 200
+
+        worker_manager.list_worker_jobs.assert_awaited_once()
+        worker_manager.get_worker_job.assert_awaited_once()
+        worker_manager.list_worker_job_events.assert_awaited_once()
+        assert worker_manager.set_worker_node_status.await_count == 2
+        worker_manager.retry_worker_job.assert_awaited_once()
+        worker_manager.cancel_worker_job.assert_awaited_once()
 
     async def test_worker_signature_validation_matrix(
         self,

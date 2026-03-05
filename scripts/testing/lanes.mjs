@@ -67,11 +67,13 @@ export const LANE_DEFINITIONS = {
   "targeted-unit": {
     description: "Targeted unit suite for changed files",
     timeoutSeconds: 900,
+    heartbeat: true,
     command: ["python3", "-m", "pytest", "tests/unit", "-q", "--tb=short", "--no-cov"],
   },
   "unit-full": {
     description: "Full unit test lane with coverage gate",
     timeoutSeconds: 1800,
+    heartbeat: true,
     command: [
       "python3",
       "-m",
@@ -89,6 +91,7 @@ export const LANE_DEFINITIONS = {
   "api-integration-coverage": {
     description: "API/integration shard coverage report lane",
     timeoutSeconds: 2400,
+    heartbeat: true,
     command: [
       "python3",
       "-m",
@@ -105,6 +108,7 @@ export const LANE_DEFINITIONS = {
   "e2e-mocked": {
     description: "Mocked E2E lane",
     timeoutSeconds: 1800,
+    heartbeat: true,
     command: [
       "python3",
       "-m",

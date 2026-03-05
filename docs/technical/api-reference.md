@@ -336,6 +336,53 @@ Submit terminal status and artifacts for a claimed worker job.
 
 ---
 
+## Tenant Admin Worker Operator API
+
+Tenant-admin worker control routes are available for trusted internal callers
+using `X-API-Secret` plus signed admin actor headers.
+
+### GET /admin/tenants/{tenant_id}/workers/nodes
+
+List registered worker nodes for one tenant.
+
+### GET /admin/tenants/{tenant_id}/workers/nodes/{node_id}
+
+Get one tenant worker node.
+
+### POST /admin/tenants/{tenant_id}/workers/nodes/{node_id}/quarantine
+
+Quarantine a worker node and optionally attach metadata.
+
+### POST /admin/tenants/{tenant_id}/workers/nodes/{node_id}/unquarantine
+
+Restore a quarantined worker node to active status.
+
+### PUT /admin/tenants/{tenant_id}/workers/nodes/{node_id}/capabilities
+
+Replace allowlisted capabilities for one worker node.
+
+### GET /admin/tenants/{tenant_id}/workers/jobs
+
+List worker jobs (optional filters: `status`, `node_id`, `plan_id`, `limit`).
+
+### GET /admin/tenants/{tenant_id}/workers/jobs/{job_id}
+
+Get one worker job.
+
+### POST /admin/tenants/{tenant_id}/workers/jobs/{job_id}/retry
+
+Expire/reset a worker job and re-queue plan continuation.
+
+### POST /admin/tenants/{tenant_id}/workers/jobs/{job_id}/cancel
+
+Cancel a worker job and mark the associated step/plan blocked/failed.
+
+### GET /admin/tenants/{tenant_id}/workers/events
+
+List worker lifecycle/job events (optional filters: `node_id`, `job_id`, `limit`).
+
+---
+
 ## User Management
 
 ### GET /users

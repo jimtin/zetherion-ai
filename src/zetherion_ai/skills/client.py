@@ -5,6 +5,10 @@ service over the internal Docker network. It handles authentication,
 request serialization, and error handling.
 """
 
+import base64
+import hashlib
+import hmac
+import json
 from typing import Any
 
 import httpx
@@ -52,6 +56,7 @@ class SkillsClient:
         self,
         base_url: str = "http://zetherion_ai-skills:8080",
         api_secret: str | None = None,
+        actor_signing_secret: str | None = None,
         timeout: float = 30.0,
     ):
         """Initialize the skills client.
@@ -63,6 +68,7 @@ class SkillsClient:
         """
         self._base_url = base_url.rstrip("/")
         self._api_secret = api_secret
+        self._actor_signing_secret = (actor_signing_secret or api_secret or "").strip()
         self._timeout = timeout
         self._client: httpx.AsyncClient | None = None
 
@@ -91,6 +97,76 @@ class SkillsClient:
             await self._client.aclose()
             self._client = None
             log.debug("skills_client_closed")
+
+    def _build_admin_actor_headers(self, actor: dict[str, Any]) -> dict[str, str]:
+        """Build signed admin actor envelope headers for tenant-admin endpoints."""
+        if not self._actor_signing_secret:
+            raise SkillsClientError("Admin actor signing secret is not configured")
+        canonical = json.dumps(actor, sort_keys=True, separators=(",", ":"))
+        encoded_actor = (
+            base64.urlsafe_b64encode(canonical.encode("utf-8")).decode("ascii").rstrip("=")
+        )
+        signature = hmac.new(
+            self._actor_signing_secret.encode("utf-8"),
+            encoded_actor.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        return {
+            "X-Admin-Actor": encoded_actor,
+            "X-Admin-Signature": signature,
+        }
+
+    async def request_admin_json(
+        self,
+        method: str,
+        path: str,
+        *,
+        actor: dict[str, Any],
+        json_body: dict[str, Any] | None = None,
+        query: dict[str, str] | None = None,
+    ) -> tuple[int, Any]:
+        """Call a Skills tenant-admin route with signed actor context."""
+        try:
+            client = await self._get_client()
+            headers = self._build_admin_actor_headers(actor)
+            response = await client.request(
+                method.upper(),
+                path,
+                headers=headers,
+                json=json_body,
+                params=query,
+            )
+            try:
+                payload: Any = response.json()
+            except Exception:
+                payload = response.text
+            return response.status_code, payload
+        except httpx.ConnectError as e:
+            log.error("skills_admin_connection_failed", error=str(e), method=method, path=path)
+            raise SkillsConnectionError(f"Unable to connect to skills service: {e}") from e
+        except httpx.RequestError as e:
+            log.error("skills_admin_request_failed", error=str(e), method=method, path=path)
+            raise SkillsClientError(f"Admin request failed: {e}") from e
+
+    async def request_tenant_admin_json(
+        self,
+        method: str,
+        *,
+        tenant_id: str,
+        subpath: str,
+        actor: dict[str, Any],
+        json_body: dict[str, Any] | None = None,
+        query: dict[str, str] | None = None,
+    ) -> tuple[int, Any]:
+        """Call a typed tenant-admin Skills route with signed actor context."""
+        path_suffix = subpath if subpath.startswith("/") else f"/{subpath}"
+        return await self.request_admin_json(
+            method=method,
+            path=f"/admin/tenants/{tenant_id}{path_suffix}",
+            actor=actor,
+            json_body=json_body,
+            query=query,
+        )
 
     async def health_check(self) -> bool:
         """Check if the skills service is healthy.

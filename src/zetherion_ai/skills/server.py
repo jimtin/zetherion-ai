@@ -330,6 +330,14 @@ class SkillsServer:
         self._worker_nonce_ttl = timedelta(minutes=10)
         self._worker_max_skew = timedelta(minutes=5)
         self._worker_bootstrap_secret = os.environ.get("WORKER_BRIDGE_BOOTSTRAP_SECRET", "").strip()
+        self._worker_announcement_cache: dict[str, datetime] = {}
+        try:
+            throttle_seconds_raw = int(
+                os.environ.get("WORKER_EVENT_ANNOUNCEMENT_THROTTLE_SECONDS", "60")
+            )
+        except ValueError:
+            throttle_seconds_raw = 60
+        self._worker_announcement_throttle_seconds = max(10, min(throttle_seconds_raw, 3600))
         try:
             worker_session_ttl_raw = int(os.environ.get("WORKER_SESSION_TTL_SECONDS", "86400"))
         except ValueError:
@@ -762,6 +770,93 @@ class SkillsServer:
                 action=action,
                 source=source,
             )
+
+    def _prune_worker_announcement_cache(self, now: datetime) -> None:
+        expired = [key for key, expiry in self._worker_announcement_cache.items() if expiry <= now]
+        for key in expired:
+            self._worker_announcement_cache.pop(key, None)
+
+    async def _emit_worker_lifecycle_announcement(
+        self,
+        *,
+        tenant_id: str,
+        event_type: str,
+        node_id: str,
+        job_id: str | None = None,
+        status: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        manager = self._tenant_admin_manager
+        if manager is None or self._announcement_repository is None:
+            return
+
+        fingerprint = (
+            f"worker:{tenant_id}:{event_type}:{node_id}:{job_id or '-'}:{status or '-'}"
+        ).lower()
+        now = datetime.now(UTC)
+        self._prune_worker_announcement_cache(now)
+        if fingerprint in self._worker_announcement_cache:
+            return
+        self._worker_announcement_cache[fingerprint] = now + timedelta(
+            seconds=self._worker_announcement_throttle_seconds
+        )
+
+        try:
+            users = await manager.list_discord_users(tenant_id)
+        except Exception:
+            log.exception("worker_lifecycle_announcement_users_lookup_failed", tenant_id=tenant_id)
+            return
+
+        target_user_ids = [
+            int(item["discord_user_id"])
+            for item in users
+            if str(item.get("role") or "").strip().lower() in {"owner", "admin"}
+            and isinstance(item.get("discord_user_id"), int)
+        ]
+        if not target_user_ids:
+            return
+
+        severity = (
+            "high" if str(status or "").strip().lower() in {"failed", "blocked"} else "normal"
+        )
+        title = f"Worker event: {event_type}"
+        job_fragment = f" job `{job_id}`" if job_id else ""
+        status_fragment = f" status `{status}`" if status else ""
+        body = f"Node `{node_id}`{job_fragment}{status_fragment}"
+        payload_json = {
+            "tenant_id": tenant_id,
+            "node_id": node_id,
+            "job_id": job_id,
+            "status": status,
+            "event_type": event_type,
+            "metadata": metadata or {},
+        }
+
+        for user_id in target_user_ids:
+            try:
+                await self._emit_announcement_event(
+                    {
+                        "source": "worker-control-plane",
+                        "category": f"worker.lifecycle.{event_type}",
+                        "severity": severity,
+                        "tenant_id": tenant_id,
+                        "target_user_id": user_id,
+                        "title": title,
+                        "body": body,
+                        "payload": payload_json,
+                        "fingerprint": f"{fingerprint}:{user_id}",
+                        "idempotency_key": f"{fingerprint}:{user_id}",
+                        "dedupe_window_minutes": 30,
+                    }
+                )
+            except Exception:
+                log.exception(
+                    "worker_lifecycle_announcement_emit_failed",
+                    tenant_id=tenant_id,
+                    node_id=node_id,
+                    job_id=job_id,
+                    event_type=event_type,
+                )
 
     async def handle_health(self, request: web.Request) -> web.Response:
         """Health check endpoint.
@@ -3067,6 +3162,15 @@ class SkillsServer:
                     ),
                 },
             )
+            if claimed_job_payload is not None:
+                await self._emit_worker_lifecycle_announcement(
+                    tenant_id=tenant_id,
+                    event_type="job_claimed",
+                    node_id=node_id,
+                    job_id=str(claimed_job_payload.get("job_id") or ""),
+                    status=str(claimed_job_payload.get("action") or "claimed"),
+                    metadata={"required_capabilities": required_capabilities},
+                )
             poll_after_seconds = max(
                 5,
                 min(
@@ -3182,6 +3286,14 @@ class SkillsServer:
                     "idempotent": bool(submit_outcome.get("idempotent")),
                 },
             )
+            await self._emit_worker_lifecycle_announcement(
+                tenant_id=tenant_id,
+                event_type="job_result",
+                node_id=node_id,
+                job_id=job_id,
+                status=str(submit_outcome.get("status") or completion_status),
+                metadata={"idempotent": bool(submit_outcome.get("idempotent"))},
+            )
         except RuntimeError as exc:
             message = str(exc)
             if "replay" in message.lower():
@@ -3220,6 +3332,67 @@ class SkillsServer:
             },
             status=202,
         )
+
+    async def handle_tenant_list_worker_jobs(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            self._admin_actor(request)
+            limit = self._parse_int(request.query.get("limit", 200), "limit")
+            status = request.query.get("status")
+            node_id = request.query.get("node_id")
+            plan_id = request.query.get("plan_id")
+            jobs = await self._tenant_admin_manager.list_worker_jobs(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                status=status,
+                plan_id=plan_id,
+                limit=limit,
+            )
+            return web.json_response(
+                {"ok": True, "jobs": [_serialise_record(dict(job)) for job in jobs]}
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_get_worker_job(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        job_id = request.match_info["job_id"]
+        try:
+            self._admin_actor(request)
+            job = await self._tenant_admin_manager.get_worker_job(
+                tenant_id=tenant_id,
+                job_id=job_id,
+            )
+            if job is None:
+                return web.json_response({"error": "Worker job not found"}, status=404)
+            return web.json_response({"ok": True, "job": _serialise_record(job)})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_list_worker_events(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            self._admin_actor(request)
+            limit = self._parse_int(request.query.get("limit", 200), "limit")
+            node_id = request.query.get("node_id")
+            job_id = request.query.get("job_id")
+            events = await self._tenant_admin_manager.list_worker_job_events(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                job_id=job_id,
+                limit=limit,
+            )
+            return web.json_response(
+                {"ok": True, "events": [_serialise_record(dict(event)) for event in events]}
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
 
     async def handle_tenant_list_worker_nodes(self, request: web.Request) -> web.Response:
         if self._tenant_admin_manager is None:
@@ -3315,6 +3488,153 @@ class SkillsServer:
             return web.json_response({"error": "Invalid JSON body"}, status=400)
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_quarantine_worker_node(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        node_id = request.match_info["node_id"]
+        try:
+            actor = self._admin_actor(request)
+            payload = await request.json()
+            if payload is None:
+                payload = {}
+            if not isinstance(payload, dict):
+                raise ValueError("JSON body must be an object")
+            metadata = payload.get("metadata")
+            if metadata is not None and not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object when provided")
+            node = await self._tenant_admin_manager.set_worker_node_status(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                status="quarantined",
+                actor=actor,
+                health_status=str(payload.get("health_status") or "degraded"),
+                metadata=metadata if isinstance(metadata, dict) else None,
+            )
+            await self._emit_worker_lifecycle_announcement(
+                tenant_id=tenant_id,
+                event_type="node_quarantined",
+                node_id=node_id,
+                status=str(node.get("status") or "quarantined"),
+                metadata={"actor_sub": actor.actor_sub},
+            )
+            return web.json_response({"ok": True, "node": _serialise_record(node)})
+        except JSONDecodeError:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+        except ValueError as exc:
+            message = str(exc)
+            status = 404 if "not found" in message.lower() else 400
+            return web.json_response({"error": message}, status=status)
+
+    async def handle_tenant_unquarantine_worker_node(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        node_id = request.match_info["node_id"]
+        try:
+            actor = self._admin_actor(request)
+            payload = await request.json()
+            if payload is None:
+                payload = {}
+            if not isinstance(payload, dict):
+                raise ValueError("JSON body must be an object")
+            metadata = payload.get("metadata")
+            if metadata is not None and not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object when provided")
+            node = await self._tenant_admin_manager.set_worker_node_status(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                status="active",
+                actor=actor,
+                health_status=str(payload.get("health_status") or "healthy"),
+                metadata=metadata if isinstance(metadata, dict) else None,
+            )
+            await self._emit_worker_lifecycle_announcement(
+                tenant_id=tenant_id,
+                event_type="node_unquarantined",
+                node_id=node_id,
+                status=str(node.get("status") or "active"),
+                metadata={"actor_sub": actor.actor_sub},
+            )
+            return web.json_response({"ok": True, "node": _serialise_record(node)})
+        except JSONDecodeError:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+        except ValueError as exc:
+            message = str(exc)
+            status = 404 if "not found" in message.lower() else 400
+            return web.json_response({"error": message}, status=status)
+
+    async def handle_tenant_retry_worker_job(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        job_id = request.match_info["job_id"]
+        try:
+            actor = self._admin_actor(request)
+            outcome = await self._tenant_admin_manager.retry_worker_job(
+                tenant_id=tenant_id,
+                job_id=job_id,
+                actor=actor,
+            )
+            node_id = str(outcome.get("job", {}).get("claimed_by_node_id") or "").strip()
+            await self._emit_worker_lifecycle_announcement(
+                tenant_id=tenant_id,
+                event_type="job_retry_requested",
+                node_id=node_id or "unknown",
+                job_id=str(outcome.get("job", {}).get("job_id") or job_id),
+                status=str(outcome.get("job", {}).get("status") or "expired"),
+                metadata={"actor_sub": actor.actor_sub},
+            )
+            return web.json_response(
+                {
+                    "ok": True,
+                    "job": _serialise_record(dict(outcome.get("job", {}))),
+                    "step": _serialise_record(dict(outcome.get("step", {}))),
+                    "plan": _serialise_record(dict(outcome.get("plan", {}))),
+                    "scheduled_for": _isoformat_if_datetime(outcome.get("scheduled_for")),
+                }
+            )
+        except ValueError as exc:
+            message = str(exc)
+            status = 404 if "not found" in message.lower() else 400
+            return web.json_response({"error": message}, status=status)
+
+    async def handle_tenant_cancel_worker_job(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        job_id = request.match_info["job_id"]
+        try:
+            actor = self._admin_actor(request)
+            outcome = await self._tenant_admin_manager.cancel_worker_job(
+                tenant_id=tenant_id,
+                job_id=job_id,
+                actor=actor,
+            )
+            node_id = str(outcome.get("job", {}).get("claimed_by_node_id") or "").strip()
+            await self._emit_worker_lifecycle_announcement(
+                tenant_id=tenant_id,
+                event_type="job_cancel_requested",
+                node_id=node_id or "unknown",
+                job_id=str(outcome.get("job", {}).get("job_id") or job_id),
+                status=str(outcome.get("job", {}).get("status") or "cancelled"),
+                metadata={"actor_sub": actor.actor_sub},
+            )
+            payload: dict[str, Any] = {
+                "ok": True,
+                "job": _serialise_record(dict(outcome.get("job", {}))),
+                "idempotent": bool(outcome.get("idempotent")),
+            }
+            if isinstance(outcome.get("step"), dict):
+                payload["step"] = _serialise_record(dict(outcome["step"]))
+            if isinstance(outcome.get("plan"), dict):
+                payload["plan"] = _serialise_record(dict(outcome["plan"]))
+            return web.json_response(payload)
+        except ValueError as exc:
+            message = str(exc)
+            status = 404 if "not found" in message.lower() else 400
+            return web.json_response({"error": message}, status=status)
 
     async def _handle_signed_bridge_messaging_ingest(self, request: web.Request) -> web.Response:
         tenant_id = request.match_info["tenant_id"]
@@ -3743,9 +4063,37 @@ class SkillsServer:
             tenant_prefix + "/workers/nodes/{node_id}",
             self.handle_tenant_get_worker_node,
         )
+        app.router.add_post(
+            tenant_prefix + "/workers/nodes/{node_id}/quarantine",
+            self.handle_tenant_quarantine_worker_node,
+        )
+        app.router.add_post(
+            tenant_prefix + "/workers/nodes/{node_id}/unquarantine",
+            self.handle_tenant_unquarantine_worker_node,
+        )
         app.router.add_put(
             tenant_prefix + "/workers/nodes/{node_id}/capabilities",
             self.handle_tenant_put_worker_capabilities,
+        )
+        app.router.add_get(
+            tenant_prefix + "/workers/jobs",
+            self.handle_tenant_list_worker_jobs,
+        )
+        app.router.add_get(
+            tenant_prefix + "/workers/jobs/{job_id}",
+            self.handle_tenant_get_worker_job,
+        )
+        app.router.add_post(
+            tenant_prefix + "/workers/jobs/{job_id}/retry",
+            self.handle_tenant_retry_worker_job,
+        )
+        app.router.add_post(
+            tenant_prefix + "/workers/jobs/{job_id}/cancel",
+            self.handle_tenant_cancel_worker_job,
+        )
+        app.router.add_get(
+            tenant_prefix + "/workers/events",
+            self.handle_tenant_list_worker_events,
         )
         app.router.add_post(
             tenant_prefix + "/messaging/ingest",

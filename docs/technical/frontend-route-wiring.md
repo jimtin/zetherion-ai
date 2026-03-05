@@ -58,6 +58,16 @@ This guide maps CGS `/service/ai/v1` routes to expected frontend flows.
 | Messaging message export | `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages/export` | `GET` | Requires scoped filter (`chat_id` or `sender_id`) |
 | Messaging message delete | `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages` | `DELETE` | Requires policy allow/approval (`messaging.delete`) |
 | Messaging send queue | `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages/{chat_id}/send` | `POST` | May require approval (`AI_APPROVAL_REQUIRED`) |
+| Worker node list | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes` | `GET` | Supports `include_inactive`, `limit` |
+| Worker node detail | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}` | `GET` | Returns node status, health, capabilities |
+| Worker node quarantine | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/quarantine` | `POST` | Mutating route requires step-up auth |
+| Worker node unquarantine | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/unquarantine` | `POST` | Mutating route requires step-up auth |
+| Worker capability update | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/capabilities` | `PUT` | Capability elevation may require approval (`AI_APPROVAL_REQUIRED`) |
+| Worker job list | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/jobs` | `GET` | Supports `status`, `node_id`, `plan_id`, `limit` |
+| Worker job detail | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/jobs/{job_id}` | `GET` | Returns job payload, lease, result/error fields |
+| Worker job retry | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/jobs/{job_id}/retry` | `POST` | Resets step to pending and requeues continuation |
+| Worker job cancel | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/jobs/{job_id}/cancel` | `POST` | Cancels running/queued job and blocks step |
+| Worker event feed | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/events` | `GET` | Supports `node_id`, `job_id`, `limit` |
 | Security event feed | `/service/ai/v1/internal/admin/tenants/{tenant_id}/security/events` | `GET` | Supports `event_type`, `severity`, `action`, `limit` |
 | Security dashboard | `/service/ai/v1/internal/admin/tenants/{tenant_id}/security/dashboard` | `GET` | Supports `window_hours`, `recent_limit` |
 | Autonomous merge execute | `/service/ai/v1/internal/admin/tenants/{tenant_id}/automerge/execute` | `POST` | Requires trust-policy branch/risk guards + required checks |

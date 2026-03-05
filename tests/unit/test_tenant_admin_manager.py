@@ -460,6 +460,42 @@ async def test_discord_lookup_helpers_cover_allowed_and_missing_paths() -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_tenants_for_discord_user_role_filtering() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+    manager._fetch = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            [{"tenant_id": "tenant-admin"}, {"tenant_id": "tenant-owner"}],
+            [{"tenant_id": "tenant-owner"}],
+            [{"tenant_id": "tenant-owner"}],
+        ]
+    )
+
+    filtered = await manager.list_tenants_for_discord_user(
+        7,
+        roles=("OWNER", "admin", "invalid", ""),
+    )
+    unfiltered = await manager.list_tenants_for_discord_user(7)
+    invalid_roles = await manager.list_tenants_for_discord_user(7, roles=("invalid",))
+
+    assert filtered == ["tenant-admin", "tenant-owner"]
+    assert unfiltered == ["tenant-owner"]
+    assert invalid_roles == ["tenant-owner"]
+
+    first_call = manager._fetch.await_args_list[0].args
+    assert first_call[1] == 7
+    assert first_call[2] == ["admin", "owner"]
+    second_call = manager._fetch.await_args_list[1].args
+    assert "tenant_discord_users" in second_call[0]
+    assert "WHERE discord_user_id = $1" in second_call[0]
+    assert second_call[1] == 7
+    third_call = manager._fetch.await_args_list[2].args
+    assert third_call[1] == 7
+    assert len(third_call) == 2
+
+
+@pytest.mark.asyncio
 async def test_discord_mutation_error_and_false_paths() -> None:
     conn = _FakeConn()
     pool = _FakePool(conn)
