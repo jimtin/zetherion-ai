@@ -8,9 +8,7 @@ from pathlib import Path
 
 
 def _load_module():
-    module_path = (
-        Path(__file__).resolve().parents[2] / "scripts" / "check-announcement-dm-guard.py"
-    )
+    module_path = Path(__file__).resolve().parents[2] / "scripts" / "check-announcement-dm-guard.py"
     spec = importlib.util.spec_from_file_location("check_announcement_dm_guard_module", module_path)
     assert spec is not None
     assert spec.loader is not None
