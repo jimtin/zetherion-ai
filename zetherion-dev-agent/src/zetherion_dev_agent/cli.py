@@ -10,6 +10,7 @@ import click  # type: ignore[import-not-found]
 from zetherion_dev_agent.config import AgentConfig
 from zetherion_dev_agent.daemon import DevAutopilotDaemon
 from zetherion_dev_agent.policy_store import PolicyStore
+from zetherion_dev_agent.worker_runtime import WorkerRuntime, WorkerRuntimeError
 
 
 @click.group()  # type: ignore[misc]
@@ -88,13 +89,23 @@ def status() -> None:
     click.echo(f"\nClaude Code: {'enabled' if config.claude_code_enabled else 'disabled'}")
     click.echo(f"Annotations: {'enabled' if config.annotations_enabled else 'disabled'}")
     click.echo(f"Git:         {'enabled' if config.git_enabled else 'disabled'}")
-    click.echo(f"Container monitor: {'enabled' if config.container_monitor_enabled else 'disabled'}")
+    click.echo(
+        f"Container monitor: {'enabled' if config.container_monitor_enabled else 'disabled'}"
+    )
     click.echo(f"Cleanup:           {'enabled' if config.cleanup_enabled else 'disabled'}")
     click.echo(
-        f"Cleanup schedule:  {config.cleanup_hour:02d}:{config.cleanup_minute:02d} "
-        "(local time)"
+        f"Cleanup schedule:  {config.cleanup_hour:02d}:{config.cleanup_minute:02d} " "(local time)"
     )
     click.echo(f"Autopilot API:     http://{config.api_host}:{config.api_port}/v1")
+    click.echo("\nWorker mode:")
+    click.echo(f"  Base URL:        {config.worker_base_url}")
+    click.echo(f"  Tenant ID:       {config.worker_tenant_id or 'NOT SET'}")
+    click.echo(f"  Node ID:         {config.worker_node_id or 'NOT SET'}")
+    click.echo(f"  Runner:          {config.worker_runner}")
+    allowlist_display = (
+        ", ".join(config.worker_allowed_repo_roots) if config.worker_allowed_repo_roots else "none"
+    )
+    click.echo(f"  Repo allowlist:  {allowlist_display}")
 
 
 @main.command()  # type: ignore[misc]
@@ -133,6 +144,53 @@ def daemon(once: bool, dry_run_cleanup: bool, verbose: bool) -> None:
         asyncio.run(_run_daemon(config, verbose=verbose))
     except KeyboardInterrupt:
         click.echo("Daemon stopped.")
+
+
+@main.command(name="worker")  # type: ignore[misc]
+@click.option("--once", is_flag=True, help="Claim and process at most one job")  # type: ignore[misc]
+@click.option(  # type: ignore[misc]
+    "--runner",
+    type=click.Choice(["noop", "codex"]),
+    default="",
+    help="Override configured worker runner for this invocation",
+)
+def worker_command(once: bool, runner: str) -> None:
+    """Run dev-agent in controlled sub-worker mode."""
+    config = AgentConfig.load()
+    if runner:
+        config.worker_runner = runner
+    try:
+        runtime = WorkerRuntime(config)
+    except WorkerRuntimeError as exc:
+        click.echo(f"Error: {exc}")
+        sys.exit(1)
+
+    if once:
+        try:
+            outcome = asyncio.run(runtime.run_once())
+            click.echo(
+                "Worker cycle complete: "
+                f"claimed_job={outcome.claimed_job}, "
+                f"job_id={outcome.job_id or 'none'}, "
+                f"status={outcome.status}, "
+                f"poll_after_seconds={outcome.poll_after_seconds}"
+            )
+        finally:
+            asyncio.run(runtime.close())
+        return
+
+    click.echo(
+        "Worker mode active: "
+        f"tenant={config.worker_tenant_id or '<unset>'}, "
+        f"node={config.worker_node_id or '<unset>'}, "
+        f"runner={config.worker_runner}"
+    )
+    try:
+        asyncio.run(runtime.run_forever())
+    except KeyboardInterrupt:
+        click.echo("Worker stopped.")
+    finally:
+        asyncio.run(runtime.close())
 
 
 @main.group()  # type: ignore[misc]
