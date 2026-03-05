@@ -851,6 +851,7 @@ class TestLoggingConfiguration:
         """Test that logging settings have correct defaults."""
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+        monkeypatch.delenv("LOG_FILE_PREFIX", raising=False)
         monkeypatch.delenv("LOG_TO_FILE", raising=False)
         monkeypatch.delenv("LOG_DIRECTORY", raising=False)
         monkeypatch.delenv("LOG_FILE_MAX_BYTES", raising=False)
@@ -870,6 +871,7 @@ class TestLoggingConfiguration:
         """Test that log_file_path property is constructed correctly."""
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+        monkeypatch.delenv("LOG_FILE_PREFIX", raising=False)
 
         from zetherion_ai.config import get_settings
 
@@ -882,6 +884,7 @@ class TestLoggingConfiguration:
         """Test log_file_path with custom directory."""
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+        monkeypatch.delenv("LOG_FILE_PREFIX", raising=False)
         monkeypatch.setenv("LOG_DIRECTORY", "/var/log/zetherion_ai")
 
         from zetherion_ai.config import get_settings
@@ -895,6 +898,7 @@ class TestLoggingConfiguration:
         """Test that log_to_file can be disabled."""
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+        monkeypatch.delenv("LOG_FILE_PREFIX", raising=False)
         monkeypatch.setenv("LOG_TO_FILE", "false")
 
         from zetherion_ai.config import get_settings
@@ -908,6 +912,7 @@ class TestLoggingConfiguration:
         """Test that logging configuration can be customized."""
         monkeypatch.setenv("DISCORD_TOKEN", "test-discord-token")
         monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+        monkeypatch.delenv("LOG_FILE_PREFIX", raising=False)
         monkeypatch.setenv("LOG_TO_FILE", "true")
         monkeypatch.setenv("LOG_DIRECTORY", "custom_logs")
         monkeypatch.setenv("LOG_FILE_MAX_BYTES", "20971520")  # 20MB
