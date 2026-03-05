@@ -974,6 +974,20 @@ paths:
       responses:
         '202':
           description: Messaging send queued
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/automerge/execute:
+    post:
+      summary: Execute guarded autonomous PR orchestration
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAutomergeExecuteRequest'
+      responses:
+        '200':
+          description: Autonomous merge executed or blocked with details
   /service/ai/v1/internal/admin/tenants/{tenant_id}/changes:
     post:
       summary: Submit a pending admin change for review
@@ -1532,6 +1546,77 @@ components:
         metadata:
           type: object
           additionalProperties: true
+        explicitly_elevated:
+          type: boolean
+          default: false
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminAutomergeExecuteRequest:
+      type: object
+      required: [repository]
+      properties:
+        repository:
+          type: string
+          description: Target repository in owner/repo format
+        base_branch:
+          type: string
+          default: main
+        source_ref:
+          type: string
+          nullable: true
+        head_branch:
+          type: string
+          nullable: true
+        pr_title:
+          type: string
+          nullable: true
+        pr_body:
+          type: string
+        merge_method:
+          type: string
+          enum: [merge, squash, rebase]
+          default: squash
+        commit_title:
+          type: string
+          nullable: true
+        commit_message:
+          type: string
+          nullable: true
+        required_checks:
+          type: array
+          items:
+            type: string
+        allowed_paths:
+          type: array
+          items:
+            type: string
+        forbidden_actions:
+          type: array
+          items:
+            type: string
+        requested_actions:
+          type: array
+          items:
+            type: string
+        max_changed_files:
+          type: integer
+          minimum: 1
+        max_additions:
+          type: integer
+          minimum: 1
+        max_deletions:
+          type: integer
+          minimum: 1
+        post_merge_validation_passed:
+          type: boolean
+          default: true
+        branch_guard_passed:
+          type: boolean
+          default: false
+        risk_guard_passed:
+          type: boolean
+          default: false
         explicitly_elevated:
           type: boolean
           default: false

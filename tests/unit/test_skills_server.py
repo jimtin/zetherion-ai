@@ -962,7 +962,14 @@ class TestTenantAdminEndpoints:
         mgr.set_email_primary_calendar = AsyncMock(
             return_value={"account_id": "acc-1", "primary_calendar_id": "primary"}
         )
-        mgr.get_secret_cached = MagicMock(return_value="bridge-signing-secret")
+        def _secret_lookup(_tenant_id: str, name: str, default: str | None = None):
+            if name == "github_token":
+                return "ghp_test_token"
+            if name == "WHATSAPP_BRIDGE_SIGNING_SECRET":
+                return "bridge-signing-secret"
+            return "bridge-signing-secret" if default is None else default
+
+        mgr.get_secret_cached = MagicMock(side_effect=_secret_lookup)
         mgr.get_messaging_provider_config = AsyncMock(
             return_value={
                 "provider": "whatsapp",
@@ -1106,6 +1113,7 @@ class TestTenantAdminEndpoints:
                 "status": "cancelled",
             }
         )
+        mgr.record_admin_event = AsyncMock(return_value=None)
         return mgr
 
     @pytest.fixture
@@ -1551,6 +1559,146 @@ class TestTenantAdminEndpoints:
         tenant_admin_manager.resume_execution_plan.assert_awaited_once()
         tenant_admin_manager.cancel_execution_plan.assert_awaited_once()
 
+    async def test_tenant_admin_automerge_execute_success(
+        self,
+        admin_client,
+        tenant_admin_manager,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        from zetherion_ai.skills.github.models import PullRequest
+
+        class _FakeGitHubClient:
+            def __init__(self, token: str, timeout: float):
+                self.token = token
+                self.timeout = timeout
+
+            async def ensure_branch(self, *_args, **_kwargs):
+                return {"created": True, "ref": "refs/heads/codex/automerge-1", "sha": "abc123"}
+
+            async def find_open_pull_request(self, *_args, **_kwargs):
+                return None
+
+            async def create_pull_request(self, *_args, **_kwargs):
+                return PullRequest(
+                    number=45,
+                    title="Automerge",
+                    head_ref="codex/automerge-1",
+                    base_ref="main",
+                    additions=12,
+                    deletions=2,
+                    changed_files=2,
+                    html_url="https://example.com/pr/45",
+                )
+
+            async def get_pull_request(self, *_args, **_kwargs):
+                return PullRequest(
+                    number=45,
+                    title="Automerge",
+                    head_ref="codex/automerge-1",
+                    base_ref="main",
+                    additions=12,
+                    deletions=2,
+                    changed_files=2,
+                    html_url="https://example.com/pr/45",
+                )
+
+            async def list_pull_request_files(self, *_args, **_kwargs):
+                return [{"filename": "src/app.py"}, {"filename": "tests/test_app.py"}]
+
+            async def list_check_runs(self, *_args, **_kwargs):
+                return [
+                    {
+                        "name": "CI/CD Pipeline",
+                        "status": "completed",
+                        "conclusion": "success",
+                    }
+                ]
+
+            async def merge_pull_request(self, *_args, **_kwargs):
+                return {"merged": True, "message": "Pull Request successfully merged"}
+
+            async def close(self):
+                return None
+
+        monkeypatch.setattr(
+            "zetherion_ai.skills.server.GitHubClient",
+            _FakeGitHubClient,
+        )
+
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        headers = {"X-API-Secret": "test-secret"}
+        headers.update(_admin_headers(signing_secret="test-secret", change_ticket_id="chg-1"))
+        response = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/automerge/execute",
+            headers=headers,
+            json={
+                "repository": "openclaw/openclaw",
+                "base_branch": "main",
+                "source_ref": "main",
+                "head_branch": "codex/automerge-1",
+                "branch_guard_passed": True,
+                "risk_guard_passed": True,
+                "required_checks": ["CI/CD Pipeline"],
+                "allowed_paths": ["src/", "tests/"],
+                "max_changed_files": 10,
+                "max_additions": 500,
+                "max_deletions": 250,
+            },
+        )
+        assert response.status == 200
+        payload = await response.json()
+        assert payload["ok"] is True
+        assert payload["result"]["status"] == "merged"
+        assert payload["result"]["pr_number"] == 45
+        tenant_admin_manager.record_admin_event.assert_awaited_once()
+
+    async def test_tenant_admin_automerge_denied_by_policy(
+        self,
+        mock_registry,
+        tenant_admin_manager,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="test-secret",
+            tenant_admin_manager=tenant_admin_manager,
+        )
+        server._trust_policy_evaluator = SimpleNamespace(
+            evaluate=lambda **_kwargs: SimpleNamespace(
+                allowed=False,
+                approval_required=False,
+                status=403,
+                code="AI_TRUST_POLICY_DENIED",
+                message="Action is blocked by trust policy",
+                details={"action": "automerge.execute"},
+                requires_two_person=False,
+            )
+        )
+        app = server.create_app()
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+
+        class _FakeGitHubClient:
+            def __init__(self, *_args, **_kwargs):
+                raise AssertionError("GitHub client should not be constructed on deny")
+
+        monkeypatch.setattr("zetherion_ai.skills.server.GitHubClient", _FakeGitHubClient)
+
+        headers = {"X-API-Secret": "test-secret"}
+        headers.update(_admin_headers(signing_secret="test-secret"))
+        async with TestClient(TestServer(app)) as client:
+            denied = await client.post(
+                f"/admin/tenants/{tenant_id}/automerge/execute",
+                headers=headers,
+                json={
+                    "repository": "openclaw/openclaw",
+                    "branch_guard_passed": True,
+                    "risk_guard_passed": True,
+                },
+            )
+            assert denied.status == 403
+            payload = await denied.json()
+            assert payload["code"] == "AI_TRUST_POLICY_DENIED"
+
     async def test_tenant_admin_validation_error_branches(self, admin_client):
         tenant_id = "11111111-1111-1111-1111-111111111111"
 
@@ -1649,6 +1797,18 @@ class TestTenantAdminEndpoints:
             headers=_headers(),
         )
         assert invalid_execution_limit.status == 400
+
+        invalid_automerge_checks = await admin_client.post(
+            f"/admin/tenants/{tenant_id}/automerge/execute",
+            headers=_headers(),
+            json={
+                "repository": "openclaw/openclaw",
+                "branch_guard_passed": True,
+                "risk_guard_passed": True,
+                "required_checks": "CI/CD Pipeline",
+            },
+        )
+        assert invalid_automerge_checks.status == 400
 
     async def test_tenant_admin_messaging_policy_denial_paths(
         self,
@@ -2068,6 +2228,17 @@ class TestTenantAdminEndpoints:
                     f"/admin/tenants/{tenant_id}/messaging/messages/chat-1/send",
                     headers=_headers(),
                     json={"text": "hello"},
+                )
+            ).status == 501
+            assert (
+                await client.post(
+                    f"/admin/tenants/{tenant_id}/automerge/execute",
+                    headers=_headers(),
+                    json={
+                        "repository": "openclaw/openclaw",
+                        "branch_guard_passed": True,
+                        "risk_guard_passed": True,
+                    },
                 )
             ).status == 501
             assert (

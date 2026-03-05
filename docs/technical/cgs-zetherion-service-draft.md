@@ -183,6 +183,7 @@ Messaging admin routes (local-bridge first):
 - `GET /messaging/chats`
 - `GET /messaging/messages`
 - `POST /messaging/messages/{chat_id}/send`
+- `POST /automerge/execute`
 
 Security rules:
 - Operator auth + `cgs:zetherion-admin` required.
@@ -190,6 +191,7 @@ Security rules:
 - OAuth app read/write additionally require `cgs:zetherion-secrets-admin`.
 - OAuth app writes and mailbox disconnects require approved `change_ticket_id`.
 - Messaging send may return `AI_APPROVAL_REQUIRED` and requires approved `change_ticket_id` when policy is not explicitly elevated.
+- Automerge execute requires trust-policy allow (`automerge.execute`) including policy enabled + branch/risk guard flags.
 
 ### 6.3 Company Reporting Endpoints
 

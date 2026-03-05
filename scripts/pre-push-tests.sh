@@ -25,6 +25,60 @@ elif [ -f "$REPO_DIR/.venv/bin/activate" ]; then
     source "$REPO_DIR/.venv/bin/activate"
 fi
 
+resolve_python_bin() {
+    local candidate
+    for candidate in \
+        "$REPO_DIR/.venv/bin/python" \
+        "$REPO_DIR/venv/bin/python" \
+        "$REPO_DIR/.venv/bin/python3" \
+        "$REPO_DIR/venv/bin/python3"; do
+        if [ -x "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    if command -v python >/dev/null 2>&1; then
+        command -v python
+        return 0
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        command -v python3
+        return 0
+    fi
+    return 1
+}
+
+PYTHON_BIN="$(resolve_python_bin || true)"
+if [ -z "$PYTHON_BIN" ]; then
+    echo "ERROR: Could not find Python executable (expected .venv/bin/python or python3 on PATH)."
+    exit 1
+fi
+
+resolve_ruff_bin() {
+    local candidate
+    for candidate in \
+        "$REPO_DIR/.venv/bin/ruff" \
+        "$REPO_DIR/venv/bin/ruff"; do
+        if [ -x "$candidate" ]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    if command -v ruff >/dev/null 2>&1; then
+        command -v ruff
+        return 0
+    fi
+    return 1
+}
+
+RUFF_BIN="$(resolve_ruff_bin || true)"
+if [ -z "$RUFF_BIN" ]; then
+    echo "ERROR: Could not find ruff executable (expected .venv/bin/ruff or ruff on PATH)."
+    exit 1
+fi
+
 # ── Tool version pins (must match CI and requirements-dev.txt) ────────
 EXPECTED_RUFF="0.8.4"
 
@@ -78,7 +132,7 @@ ensure_python_ca_bundle() {
 
     local ca_bundle
     ca_bundle="$(
-        python - <<'PY'
+        "$PYTHON_BIN" - <<'PY'
 import os
 import ssl
 from pathlib import Path
@@ -117,7 +171,7 @@ PY
 }
 
 can_bind_local_socket() {
-    python - <<'PY' >/dev/null 2>&1
+    "$PYTHON_BIN" - <<'PY' >/dev/null 2>&1
 import socket
 
 sock = socket.socket()
@@ -140,7 +194,12 @@ compose_down() {
 
 contains_skips() {
     local log_file="$1"
-    rg -q "[1-9][0-9]* skipped|\\bSKIPPED\\b" "$log_file"
+    local pattern="[1-9][0-9]* skipped|\\bSKIPPED\\b"
+    if command -v rg >/dev/null 2>&1; then
+        rg -q "$pattern" "$log_file"
+    else
+        grep -Eq "$pattern" "$log_file"
+    fi
 }
 
 assert_no_skips_in_log() {
@@ -429,7 +488,7 @@ echo ""
 echo "[$(ts)] [1/5] Static analysis..."
 
 # 1a. Ruff version check — prevents version-drift formatting failures
-ACTUAL_RUFF=$(ruff version 2>/dev/null | awk '{print $2}' || echo "unknown")
+ACTUAL_RUFF=$("$RUFF_BIN" --version 2>/dev/null | awk '{print $2}' || echo "unknown")
 if [ "$ACTUAL_RUFF" != "$EXPECTED_RUFF" ]; then
     echo "ERROR: ruff version mismatch: local=$ACTUAL_RUFF, expected=$EXPECTED_RUFF"
     echo "  Fix: pip install ruff==$EXPECTED_RUFF (see requirements-dev.txt)"
@@ -438,16 +497,16 @@ fi
 
 echo "[$(ts)]   Launching static checks in parallel..."
 
-start_static_check "ruff lint" "ruff check $SRC_DIRS"
-start_static_check "ruff format" "ruff format --check $SRC_DIRS"
+start_static_check "ruff lint" "$RUFF_BIN check $SRC_DIRS"
+start_static_check "ruff format" "$RUFF_BIN format --check $SRC_DIRS"
 if [ "$RUN_BANDIT_CHECK" = "true" ]; then
     start_static_check "bandit" "bandit -c pyproject.toml -r $LINT_DIRS -q"
 else
     echo "  [skip] bandit disabled (RUN_BANDIT_CHECK=false)"
 fi
-start_static_check "pipeline contract" "python scripts/check_pipeline_contract.py"
-start_static_check "endpoint docs bundle" "python scripts/check-endpoint-doc-bundle.py"
-start_static_check "cgs route-doc parity" "python scripts/check-cgs-route-doc-parity.py"
+start_static_check "pipeline contract" "$PYTHON_BIN scripts/check_pipeline_contract.py"
+start_static_check "endpoint docs bundle" "$PYTHON_BIN scripts/check-endpoint-doc-bundle.py"
+start_static_check "cgs route-doc parity" "$PYTHON_BIN scripts/check-cgs-route-doc-parity.py"
 
 if command -v gitleaks >/dev/null 2>&1; then
     start_static_check "gitleaks" "gitleaks detect --no-git --redact --config=.gitleaks.toml"
@@ -539,7 +598,7 @@ else
 fi
 
 # Run unit tests in foreground (so output streams live)
-python -m pytest tests/ \
+"$PYTHON_BIN" -m pytest tests/ \
     -m "not integration and not discord_e2e" \
     -n 8 \
     --timeout=30 \
@@ -606,7 +665,7 @@ echo "[$(ts)] [2/5] Unit tests + mypy + pip-audit passed."
 echo ""
 echo "[$(ts)] [3/5] In-process integration tests..."
 INTEGRATION_LOG="$(mktemp)"
-if ! python -m pytest \
+if ! "$PYTHON_BIN" -m pytest \
     tests/integration/test_skills_http.py \
     tests/integration/test_heartbeat_cycle.py \
     tests/integration/test_email_personality_persistence_integration.py \
@@ -678,7 +737,7 @@ HEARTBEAT_PID=$!
 # Launch required test groups concurrently.
 # Keep Discord first in wait order so a Discord failure fails fast.
 if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
-    DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
+    DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true "$PYTHON_BIN" -m pytest \
         tests/integration/test_discord_e2e.py \
         -m "discord_e2e and not optional_e2e" --timeout=180 -v --tb=short -s --no-cov \
         > "$E2E_LOG_C" 2>&1 &
@@ -689,14 +748,14 @@ else
     echo "[$(ts)] Discord required E2E skipped (set RUN_DISCORD_E2E_REQUIRED=true to enforce)."
 fi
 
-DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
+DOCKER_MANAGED_EXTERNALLY=true "$PYTHON_BIN" -m pytest \
     tests/integration/test_e2e.py \
     -m "integration and not optional_e2e" --timeout=120 -v --tb=short -s --no-cov \
     > "$E2E_LOG_A" 2>&1 &
 E2E_PIDS+=($!)
 E2E_NAMES+=("Docker E2E tests (test_e2e.py)")
 
-DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
+DOCKER_MANAGED_EXTERNALLY=true "$PYTHON_BIN" -m pytest \
     tests/integration/test_health_e2e.py \
     tests/integration/test_update_e2e.py \
     tests/integration/test_telemetry_e2e.py \
@@ -773,7 +832,7 @@ fi
 if [ "$RUN_OPTIONAL_E2E" = "true" ]; then
     echo ""
     echo "[$(ts)] Running optional E2E tests (non-blocking)..."
-    if DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true python -m pytest \
+    if DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true "$PYTHON_BIN" -m pytest \
         tests/integration/test_inbound_groq_rollout_e2e.py \
         tests/integration/test_health_e2e.py \
         tests/integration/test_discord_e2e.py \

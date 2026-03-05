@@ -2088,6 +2088,69 @@ async def test_create_execution_plan_schedules_continuation_and_audit() -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_execution_plan_persists_step_metadata() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    manager.schedule_execution_continuation = AsyncMock(return_value="queue-1")  # type: ignore[method-assign]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    plan_id = "11111111-1111-1111-1111-111111111111"
+    step_id = "22222222-2222-2222-2222-222222222222"
+    conn.fetchrow.side_effect = [
+        {
+            "plan_id": plan_id,
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "title": "Night Build",
+            "goal": "Ship overnight",
+            "status": "queued",
+            "current_step_index": 0,
+            "total_steps": 1,
+            "max_step_attempts": 3,
+            "continuation_interval_seconds": 60,
+            "next_run_at": datetime.now(UTC),
+            "lease_owner": None,
+            "lease_expires_at": None,
+            "metadata": {},
+            "last_error_category": None,
+            "last_error_detail": None,
+            "created_by": "operator-1",
+            "updated_by": "operator-1",
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        },
+        {
+            "step_id": step_id,
+            "plan_id": plan_id,
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "step_index": 0,
+            "title": "Step 1",
+            "prompt_text": "Execute automerge",
+            "idempotency_key": "step-1",
+            "status": "pending",
+            "attempt_count": 0,
+            "max_attempts": 3,
+            "next_retry_at": None,
+            "last_error_category": None,
+            "last_error_detail": None,
+            "output_json": {},
+            "metadata": {"executor": "automerge"},
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        },
+    ]
+
+    created = await manager.create_execution_plan(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        title="Night Build",
+        goal="Ship overnight",
+        steps=[{"prompt": "Execute automerge", "metadata": {"executor": "automerge"}}],
+        actor=_actor(),
+    )
+
+    assert created["steps"][0]["metadata"] == {"executor": "automerge"}
+
+
+@pytest.mark.asyncio
 async def test_claim_next_execution_step_returns_retry_context() -> None:
     conn = _FakeConn()
     pool = _FakePool(conn)
@@ -2326,10 +2389,20 @@ def _execution_step_row(
 
 def test_execution_step_coercion_and_actor_id_helpers() -> None:
     normalized = TenantAdminManager._coerce_execution_steps(
-        ["Draft plan", {"title": "Build", "prompt": "Implement", "idempotency_key": "A B C"}]
+        [
+            "Draft plan",
+            {
+                "title": "Build",
+                "prompt": "Implement",
+                "idempotency_key": "A B C",
+                "metadata": {"executor": "automerge"},
+            },
+        ]
     )
     assert len(normalized) == 2
     assert normalized[1]["idempotency_key"] == "a-b-c"
+    assert normalized[0]["metadata"] == {}
+    assert normalized[1]["metadata"] == {"executor": "automerge"}
     assert TenantAdminManager._coerce_execution_actor_user_id("42") == 42
     assert TenantAdminManager._coerce_execution_actor_user_id("not-a-number") == 0
     assert TenantAdminManager._execution_retry_backoff_seconds(999) > 0
@@ -2340,6 +2413,10 @@ def test_execution_step_coercion_and_actor_id_helpers() -> None:
         TenantAdminManager._coerce_execution_steps([123])  # type: ignore[list-item]
     with pytest.raises(ValueError, match=r"steps\[0\] is missing non-empty prompt text"):
         TenantAdminManager._coerce_execution_steps(["   "])
+    with pytest.raises(ValueError, match=r"steps\[0\]\.metadata must be an object"):
+        TenantAdminManager._coerce_execution_steps(
+            [{"prompt": "ship", "metadata": "bad"}]  # type: ignore[list-item]
+        )
 
 
 @pytest.mark.asyncio
@@ -2806,3 +2883,17 @@ async def test_record_execution_artifact_validation_and_failure_paths() -> None:
         artifact_json={"k": "v"},
     )
     assert recorded["artifact_id"] == "a1"
+
+
+@pytest.mark.asyncio
+async def test_record_admin_event_wraps_audit_write() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    await manager.record_admin_event(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        action="tenant_automerge_execute",
+        actor=_actor(),
+        details={"status": "merged"},
+    )
+    manager._write_audit.assert_awaited_once()

@@ -6,6 +6,7 @@
 !src/
 !updater_sidecar/
 !zetherion-dev-agent/
+!zetherion-whatsapp-bridge/
 
 # Exclude Python caches from included dirs
 **/__pycache__

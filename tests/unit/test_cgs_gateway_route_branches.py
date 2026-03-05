@@ -1204,6 +1204,118 @@ async def test_internal_admin_messaging_send_returns_approval_required_mapping(
 
 
 @pytest.mark.asyncio
+async def test_internal_admin_automerge_execute_success_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin"],
+        principal_claims={"step_up": True, "allowed_tenants": ["tenant-a"]},
+    )
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+    storage.mark_admin_change_applied = AsyncMock(return_value=None)
+    storage.mark_admin_change_failed = AsyncMock(return_value=None)
+
+    allow = TrustPolicyDecision(
+        action="automerge.execute",
+        action_class=TrustActionClass.CRITICAL,
+        outcome=TrustDecisionOutcome.ALLOW,
+        status=200,
+        code="AI_OK",
+        message="Allowed",
+        details={},
+    )
+    monkeypatch.setattr(
+        "zetherion_ai.cgs_gateway.routes.internal_admin._TRUST_POLICY_EVALUATOR",
+        SimpleNamespace(evaluate=lambda **_: allow),
+    )
+
+    app["cgs_skills_client"].request_tenant_admin_json = AsyncMock(
+        return_value=(200, {"ok": True, "result": {"status": "merged", "pr_number": 77}})
+    )
+    app["cgs_skills_client"].request_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/automerge/execute",
+            json={
+                "repository": "openclaw/openclaw",
+                "base_branch": "main",
+                "head_branch": "codex/automerge-1",
+                "branch_guard_passed": True,
+                "risk_guard_passed": True,
+                "change_ticket_id": "chg-automerge-1",
+                "required_checks": ["CI/CD Pipeline"],
+                "allowed_paths": ["src/", "tests/"],
+                "requested_actions": [],
+            },
+        )
+        assert response.status == 200
+        body = await response.json()
+        assert body["data"]["result"]["status"] == "merged"
+        assert body["data"]["result"]["pr_number"] == 77
+
+    app["cgs_skills_client"].request_tenant_admin_json.assert_awaited_once()
+    forwarded = app["cgs_skills_client"].request_tenant_admin_json.await_args.kwargs
+    assert forwarded["subpath"] == "/automerge/execute"
+    assert forwarded["json_body"]["repository"] == "openclaw/openclaw"
+    storage.mark_admin_change_applied.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_automerge_execute_guard_failure_blocks_upstream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin"],
+        principal_claims={"step_up": True, "allowed_tenants": ["tenant-a"]},
+    )
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+    deny = TrustPolicyDecision(
+        action="automerge.execute",
+        action_class=TrustActionClass.CRITICAL,
+        outcome=TrustDecisionOutcome.DENY,
+        status=409,
+        code="AI_TRUST_POLICY_GUARD_FAILED",
+        message="Required guardrail check failed",
+        details={"failed_guard": "risk_guard_passed"},
+    )
+    monkeypatch.setattr(
+        "zetherion_ai.cgs_gateway.routes.internal_admin._TRUST_POLICY_EVALUATOR",
+        SimpleNamespace(evaluate=lambda **_: deny),
+    )
+
+    app["cgs_skills_client"].request_tenant_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+    app["cgs_skills_client"].request_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        blocked = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/automerge/execute",
+            json={
+                "repository": "openclaw/openclaw",
+                "branch_guard_passed": True,
+                "risk_guard_passed": False,
+            },
+        )
+        assert blocked.status == 409
+        payload = await blocked.json()
+        assert payload["error"]["code"] == "AI_TRUST_POLICY_GUARD_FAILED"
+
+    app["cgs_skills_client"].request_tenant_admin_json.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_internal_list_update_deactivate_rotate_and_release_success() -> None:
     app, storage, public_client = _runtime_app()
     storage.list_tenant_mappings = AsyncMock(

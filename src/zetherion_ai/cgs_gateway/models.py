@@ -241,6 +241,50 @@ class TenantAdminMessagingSendRequest(BaseModel):
     change_ticket_id: str | None = None
 
 
+class TenantAdminAutomergeExecuteRequest(BaseModel):
+    """Execute guarded autonomous PR orchestration for one tenant."""
+
+    repository: str = Field(min_length=3, max_length=255)
+    base_branch: str = Field(default="main", min_length=1, max_length=255)
+    source_ref: str | None = Field(default=None, min_length=1, max_length=255)
+    head_branch: str | None = Field(default=None, min_length=1, max_length=255)
+    pr_title: str | None = Field(default=None, max_length=255)
+    pr_body: str = ""
+    merge_method: str = Field(default="squash", min_length=1, max_length=20)
+    commit_title: str | None = Field(default=None, max_length=255)
+    commit_message: str | None = None
+    required_checks: list[str] = Field(default_factory=lambda: ["CI/CD Pipeline"])
+    allowed_paths: list[str] = Field(default_factory=list)
+    forbidden_actions: list[str] = Field(default_factory=list)
+    requested_actions: list[str] = Field(default_factory=list)
+    max_changed_files: int = Field(default=120, ge=1, le=10000)
+    max_additions: int = Field(default=6000, ge=1, le=200000)
+    max_deletions: int = Field(default=3000, ge=1, le=200000)
+    post_merge_validation_passed: bool = True
+    branch_guard_passed: bool = False
+    risk_guard_passed: bool = False
+    explicitly_elevated: bool = False
+    change_ticket_id: str | None = None
+
+    @field_validator("repository")
+    @classmethod
+    def validate_repository(cls, value: str) -> str:
+        normalized = value.strip()
+        parts = normalized.split("/", 1)
+        if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+            raise ValueError("repository must be in owner/repo format")
+        return normalized
+
+    @field_validator("merge_method")
+    @classmethod
+    def validate_merge_method(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        allowed = {"merge", "squash", "rebase"}
+        if normalized not in allowed:
+            raise ValueError(f"merge_method must be one of {sorted(allowed)}")
+        return normalized
+
+
 class TenantAdminChangeCreateRequest(BaseModel):
     """Submit pending high-risk admin change for review."""
 

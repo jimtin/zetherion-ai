@@ -531,6 +531,7 @@ Tenant admin route set:
 - `GET /messaging/chats`
 - `GET /messaging/messages`
 - `POST /messaging/messages/{chat_id}/send`
+- `POST /automerge/execute`
 - `POST|GET /changes`
 - `POST /changes/{change_id}/approve`
 - `POST /changes/{change_id}/reject`
@@ -602,6 +603,7 @@ Internal tenant-admin maps to Skills REST endpoints:
 - `/admin/tenants/{tenant_id}/messaging/chats`
 - `/admin/tenants/{tenant_id}/messaging/messages`
 - `/admin/tenants/{tenant_id}/messaging/messages/{chat_id}/send`
+- `/admin/tenants/{tenant_id}/automerge/execute`
 
 Actor attribution to Skills tenant-admin endpoints is mandatory:
 - signed actor envelope includes `actor_sub`, `actor_roles`, `request_id`, `timestamp`, `nonce`

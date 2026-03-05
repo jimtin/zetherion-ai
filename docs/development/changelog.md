@@ -80,6 +80,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `POST /admin/tenants/{tenant_id}/execution/plans/{plan_id}/resume`
   - `POST /admin/tenants/{tenant_id}/execution/plans/{plan_id}/cancel`
 
+### Added - Autonomous PR + Auto-Merge Guardrail Engine (2026-03-05)
+
+- Added deterministic autonomous merge orchestration module:
+  - branch ensure/create (`codex/*`)
+  - pull request create/reuse
+  - guardrail evaluation (allowed paths, diff thresholds, forbidden actions)
+  - required check-run gating before merge
+  - merge execution + rollback-required escalation state
+- Added Skills internal route:
+  - `POST /admin/tenants/{tenant_id}/automerge/execute`
+  - applies trust-policy gate (`automerge.execute`) and records admin audit events.
+- Added CGS internal admin route:
+  - `POST /service/ai/v1/internal/admin/tenants/{tenant_id}/automerge/execute`
+  - forwards signed actor context and propagates change-ticket apply/failed status.
+- Extended GitHub API client with orchestration primitives:
+  - git ref get/create + branch ensure
+  - pull request create/find + changed-files listing
+  - commit check-run listing for required-check gating.
+- Extended execution-step normalization to preserve per-step metadata (`steps[].metadata`) for deterministic executor routing in plan-ledger workflows.
+
 ### Changed - Windows Deploy Resilience Registration Signal Cleanup (2026-03-05)
 
 - Updated `Deploy Windows` resilience registration step behavior to remain explicitly non-blocking without

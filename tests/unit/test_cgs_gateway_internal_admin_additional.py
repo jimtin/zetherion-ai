@@ -163,6 +163,11 @@ async def test_internal_admin_validation_error_matrix() -> None:
             "/service/ai/v1/internal/admin/tenants/tenant-a/email/insights/reindex",
             {"insight_type": "x" * 121},
         ),
+        (
+            "post",
+            "/service/ai/v1/internal/admin/tenants/tenant-a/automerge/execute",
+            {"repository": "not-a-repo", "branch_guard_passed": True, "risk_guard_passed": True},
+        ),
         ("post", "/service/ai/v1/internal/admin/tenants/tenant-a/changes", {"action": ""}),
         (
             "post",
