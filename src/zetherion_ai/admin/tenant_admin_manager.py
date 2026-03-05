@@ -564,8 +564,6 @@ CREATE INDEX IF NOT EXISTS idx_tenant_execution_steps_lookup
 CREATE INDEX IF NOT EXISTS idx_tenant_execution_steps_retry
     ON tenant_execution_steps (tenant_id, plan_id, next_retry_at)
     WHERE status = 'failed';
-CREATE INDEX IF NOT EXISTS idx_tenant_execution_steps_dispatch
-    ON tenant_execution_steps (tenant_id, plan_id, execution_target, status, updated_at DESC);
 
 ALTER TABLE tenant_execution_steps
     ADD COLUMN IF NOT EXISTS execution_target TEXT NOT NULL DEFAULT 'windows_local';
@@ -575,6 +573,8 @@ ALTER TABLE tenant_execution_steps
     ADD COLUMN IF NOT EXISTS max_runtime_seconds INT;
 ALTER TABLE tenant_execution_steps
     ADD COLUMN IF NOT EXISTS artifact_contract JSONB NOT NULL DEFAULT '{}'::jsonb;
+CREATE INDEX IF NOT EXISTS idx_tenant_execution_steps_dispatch
+    ON tenant_execution_steps (tenant_id, plan_id, execution_target, status, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS tenant_execution_step_retries (
     retry_id               UUID         PRIMARY KEY,

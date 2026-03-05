@@ -346,6 +346,10 @@ try {
         }
 
         docker compose up -d --build
+        $composeExitCode = $LASTEXITCODE
+        if ($composeExitCode -ne 0) {
+            throw "docker compose up -d --build failed with exit code $composeExitCode"
+        }
 
         $result.deployed_sha = $deployedSha
         $result.status = "deployed"
