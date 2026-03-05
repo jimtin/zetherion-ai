@@ -273,6 +273,12 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `BLOG_MODEL_SECONDARY` | `claude-sonnet-4-6` | Required Claude model for Windows promotion refine/humanization pass |
 | `BLOG_PUBLISH_ENABLED` | `true` | Windows promotions toggle for blog generation/publish |
 | `RELEASE_AUTO_INCREMENT_ENABLED` | `true` | Windows promotions toggle for mandatory GitHub SemVer patch release increment |
+| `ANNOUNCEMENT_EMIT_ENABLED` | `false` | Windows deploy/promotions announcement emit toggle |
+| `ANNOUNCEMENT_API_URL` | `http://127.0.0.1:8080/announcements/events` | Internal Skills announcement event endpoint used by Windows scripts |
+| `ANNOUNCEMENT_API_SECRET` | unset | Shared secret for `X-API-Secret` when Windows emits internal announcement events |
+| `ANNOUNCEMENT_TARGET_USER_ID` | unset | Announcement recipient user id for Windows deploy/promotions events |
+| `DISCORD_DM_NOTIFY_ENABLED` | legacy | Legacy alias fallback for announcement enablement (kept for compatibility) |
+| `DISCORD_NOTIFY_USER_ID` | legacy | Legacy alias fallback for announcement target user id (kept for compatibility) |
 | `ANALYTICS_EVENT_RETENTION_DAYS` | `90` | Retention window for raw web events |
 | `ANALYTICS_REPLAY_RETENTION_DAYS` | `14` | Retention window for replay chunk metadata |
 | `ANALYTICS_REPLAY_ENABLED_DEFAULT` | `false` | Default replay ingest policy for tenants |

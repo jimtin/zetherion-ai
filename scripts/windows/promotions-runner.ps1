@@ -162,7 +162,33 @@ function Ensure-QueueEntry {
     Write-JsonFile -Payload $queue -Path $Path
 }
 
-function Invoke-DiscordDmNotification {
+function Invoke-AnnouncementFlush {
+    param([string]$Reason = "manual")
+
+    try {
+        $flushScript = Join-Path $DeployPath "scripts\windows\announcements-flush.ps1"
+        if (-not (Test-Path $flushScript)) {
+            return
+        }
+
+        $safeReason = if ($Reason) { $Reason } else { "manual" }
+        $flushOutputPath = Join-Path $DeployPath "data\announcements\flush-$safeReason.json"
+        $flushArgs = @(
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-File", $flushScript,
+            "-DeployPath", $DeployPath,
+            "-OutputPath", $flushOutputPath,
+            "-EventSource", $EventSource
+        )
+        & pwsh.exe @flushArgs | Out-Null
+    }
+    catch {
+        # Flush is intentionally non-blocking.
+    }
+}
+
+function Invoke-AnnouncementNotification {
     param(
         [string]$Status,
         [string]$Details
@@ -173,7 +199,7 @@ function Invoke-DiscordDmNotification {
             return
         }
 
-        $notifyScript = Join-Path $DeployPath "scripts\windows\discord-dm-notify.py"
+        $notifyScript = Join-Path $DeployPath "scripts\windows\announcement-emit.py"
         if (-not (Test-Path $notifyScript)) {
             return
         }
@@ -188,9 +214,10 @@ function Invoke-DiscordDmNotification {
             "--stage-results", $Details
         )
         & $pythonExe @notifyArgs | Out-Null
+        Invoke-AnnouncementFlush -Reason "post_emit"
     }
     catch {
-        # DM notification is intentionally non-blocking.
+        # Announcement notification is intentionally non-blocking.
     }
 }
 
@@ -228,6 +255,8 @@ try {
         throw "Deploy path not found: $DeployPath"
     }
 
+    Invoke-AnnouncementFlush -Reason "pre_run"
+
     if (-not $Sha -and $ReceiptPath) {
         $Sha = Resolve-ShaFromReceipt -Path $ReceiptPath
     }
@@ -251,7 +280,7 @@ try {
                 $result.retryable = $false
                 $result.exit_code = 0
                 Write-JsonFile -Payload $result -Path $OutputPath
-                Invoke-DiscordDmNotification -Status "skipped_existing_success" -Details "promotions_already_successful=true"
+                Invoke-AnnouncementNotification -Status "skipped_existing_success" -Details "promotions_already_successful=true"
                 exit 0
             }
         }
@@ -322,7 +351,7 @@ try {
         $result.retryable = $false
         Write-PromotionEvent -Source $EventSource -EntryType "Information" -EventId 7100 -Message "Post-deploy promotion succeeded for SHA $Sha."
         Write-JsonFile -Payload $result -Path $OutputPath
-        Invoke-DiscordDmNotification -Status "success" -Details "runner_status=success;pipeline_exit=0;retryable=false"
+        Invoke-AnnouncementNotification -Status "success" -Details "runner_status=success;pipeline_exit=0;retryable=false"
         exit 0
     }
 
@@ -333,7 +362,7 @@ try {
         Ensure-QueueEntry -Path $QueuePath -Sha $Sha -Reason $result.error
         Write-PromotionEvent -Source $EventSource -EntryType "Warning" -EventId 7101 -Message "Post-deploy promotion deferred for SHA $Sha (retry queued)."
         Write-JsonFile -Payload $result -Path $OutputPath
-        Invoke-DiscordDmNotification -Status "retryable_failure" -Details "runner_status=retryable_failure;pipeline_exit=2;retryable=true"
+        Invoke-AnnouncementNotification -Status "retryable_failure" -Details "runner_status=retryable_failure;pipeline_exit=2;retryable=true"
         exit 2
     }
 
@@ -343,7 +372,7 @@ try {
         $result.error = "Promotions pipeline returned non-retryable exit code."
         Write-PromotionEvent -Source $EventSource -EntryType "Error" -EventId 7199 -Message "Post-deploy promotion failed for SHA $Sha (non-retryable)."
         Write-JsonFile -Payload $result -Path $OutputPath
-        Invoke-DiscordDmNotification -Status "non_retryable_failure" -Details "runner_status=non_retryable_failure;pipeline_exit=3;retryable=false"
+        Invoke-AnnouncementNotification -Status "non_retryable_failure" -Details "runner_status=non_retryable_failure;pipeline_exit=3;retryable=false"
         exit 3
     }
 
@@ -352,7 +381,7 @@ try {
     $result.error = "Promotions pipeline exited with unexpected code $exitCode."
     Write-PromotionEvent -Source $EventSource -EntryType "Error" -EventId 7199 -Message "Post-deploy promotion failed for SHA $Sha with unexpected exit=$exitCode (not queued)."
     Write-JsonFile -Payload $result -Path $OutputPath
-    Invoke-DiscordDmNotification -Status "non_retryable_failure" -Details "runner_status=non_retryable_failure;pipeline_exit=$exitCode;retryable=false"
+    Invoke-AnnouncementNotification -Status "non_retryable_failure" -Details "runner_status=non_retryable_failure;pipeline_exit=$exitCode;retryable=false"
     exit 3
 }
 catch {
@@ -361,6 +390,6 @@ catch {
     $result.error = $_.Exception.Message
     Write-PromotionEvent -Source $EventSource -EntryType "Error" -EventId 7198 -Message "Post-deploy promotion runner error: $($result.error)"
     Write-JsonFile -Payload $result -Path $OutputPath
-    Invoke-DiscordDmNotification -Status "non_retryable_failure" -Details "runner_status=exception;retryable=false"
+    Invoke-AnnouncementNotification -Status "non_retryable_failure" -Details "runner_status=exception;retryable=false"
     exit 3
 }

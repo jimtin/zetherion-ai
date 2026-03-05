@@ -192,9 +192,10 @@ pwsh -File .\scripts\windows\set-promotions-secrets.ps1 `
   -AnthropicApiKey "<anthropic-key>" `
   -GitHubPromotionToken "<github-token>" `
   -GitHubRepository "jimtin/zetherion-ai" `
-  -DiscordDmNotifyEnabled "true" `
-  -DiscordBotToken "<discord-bot-token>" `
-  -DiscordNotifyUserId "<discord-user-id>"
+  -AnnouncementEmitEnabled "true" `
+  -AnnouncementApiSecret "<skills-api-secret>" `
+  -AnnouncementApiUrl "http://127.0.0.1:8080/announcements/events" `
+  -AnnouncementTargetUserId "<discord-user-id>"
 
 pwsh -File .\scripts\windows\test-promotions-secrets.ps1
 ```
@@ -221,19 +222,25 @@ Expected `checks` in the JSON output:
 - `promotions_task_registered=true`
 - `all_tasks_registered=true`
 
-#### 4. Verify Discord DM notification path
+#### 4. Verify announcement notification path
 
 ```powershell
-python .\scripts\windows\discord-dm-notify.py `
+python .\scripts\windows\announcement-emit.py `
   --event deploy `
   --sha "<sha>" `
   --status success `
   --run-url "https://github.com/jimtin/zetherion-ai/actions/runs/<run-id>" `
   --stage-results "manual=smoke" `
   --dry-run
+
+pwsh -File .\scripts\windows\announcements-flush.ps1 `
+  -DeployPath "C:\ZetherionAI" `
+  -OutputPath "C:\ZetherionAI\data\announcements\flush-manual.json"
 ```
 
-If this returns `status: "dry_run"` or `status: "deduped"`, secret resolution and idempotency wiring are working.
+Expected statuses:
+- `dry_run` or `deduped`: secret resolution and idempotency wiring are working.
+- `queued_non_blocking`: API path was unavailable and event was safely spooled for retry.
 
 #### 5. Troubleshoot CGS publish contract and promotions pipeline
 
