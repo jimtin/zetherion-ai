@@ -14,6 +14,8 @@ It is based on the code currently implemented in this repository (not only draft
 - Added tenant email admin control-plane routes for OAuth app setup, mailbox linking, sync, critical message triage, calendar binding, and insight reindex.
 - Added tenant messaging admin control-plane routes for provider config, chat policy, message read, and policy-gated send.
 - Added Segment 7 security-hardening routes for messaging export/delete controls and tenant security observability dashboards.
+- Added worker operator control-plane routes under `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*`
+  for node quarantine/unquarantine, job list/get, job retry/cancel, and worker lifecycle events.
 - Zetherion-only boundary recovery removed in-repo CGS website/UI assets; endpoint contracts stay CGS-first and unchanged.
 - Internal admin trust-policy enforcement was added for sensitive actions; endpoint shapes remain unchanged.
 
