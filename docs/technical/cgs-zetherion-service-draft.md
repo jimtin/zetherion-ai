@@ -9,6 +9,7 @@ Maintenance note (2026-03-04):
 - Public + gateway service contracts defined in this draft remain unchanged.
 - Added tenant email admin control-plane routes under `/service/ai/v1/internal/admin/tenants/{tenant_id}/email/*` with step-up + approval requirements for high-risk actions.
 - Added tenant messaging admin control-plane routes under `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/*` with trust-policy gating and approval-required send semantics.
+- Added tenant security observability + data-subject controls under `/service/ai/v1/internal/admin/tenants/{tenant_id}/security/*` and messaging export/delete routes.
 - Zetherion-only boundary recovery removed in-repo CGS website/UI assets; integration contract remains CGS-only.
 - Internal trust-policy gating now applies to sensitive admin actions before upstream apply, without changing external route contracts.
 
@@ -181,8 +182,11 @@ Messaging admin routes (local-bridge first):
 - `GET|PUT /messaging/providers/{provider}/config`
 - `GET|PUT /messaging/chats/{chat_id}/policy`
 - `GET /messaging/chats`
-- `GET /messaging/messages`
+- `GET|DELETE /messaging/messages`
+- `GET /messaging/messages/export`
 - `POST /messaging/messages/{chat_id}/send`
+- `GET /security/events`
+- `GET /security/dashboard`
 - `POST /automerge/execute`
 
 Security rules:

@@ -48,6 +48,7 @@ async def bridge_client(monkeypatch: pytest.MonkeyPatch, mock_registry: SkillReg
         return_value={"message_id": "99999999-9999-9999-9999-999999999999"}
     )
     tenant_admin_manager.purge_expired_messaging_messages = AsyncMock(return_value=0)
+    tenant_admin_manager.record_security_event = AsyncMock(return_value={"event_id": 1})
     server = SkillsServer(
         registry=mock_registry,
         api_secret="skills-secret",
@@ -168,6 +169,7 @@ class TestSkillsBridgeIngest:
             return_value={"message_id": "99999999-9999-9999-9999-999999999999"}
         )
         tenant_admin_manager.purge_expired_messaging_messages = AsyncMock(return_value=0)
+        tenant_admin_manager.record_security_event = AsyncMock(return_value={"event_id": 1})
         server = SkillsServer(
             registry=mock_registry,
             api_secret="skills-secret",
@@ -231,6 +233,7 @@ class TestSkillsBridgeIngest:
             return_value={"message_id": "99999999-9999-9999-9999-999999999999"}
         )
         tenant_admin_manager.purge_expired_messaging_messages = AsyncMock(return_value=0)
+        tenant_admin_manager.record_security_event = AsyncMock(return_value={"event_id": 1})
         server = SkillsServer(
             registry=mock_registry,
             api_secret="skills-secret",

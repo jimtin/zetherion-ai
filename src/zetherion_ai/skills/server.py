@@ -564,6 +564,48 @@ class SkillsServer:
             raise ValueError("Missing admin actor context")
         return actor
 
+    @staticmethod
+    def _policy_error_payload(decision: Any) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "error": decision.message,
+            "code": decision.code,
+            "details": decision.details,
+        }
+        if bool(getattr(decision, "requires_two_person", False)):
+            payload["requires_two_person"] = True
+        return payload
+
+    async def _record_security_event(
+        self,
+        *,
+        tenant_id: str,
+        event_type: str,
+        severity: str = "medium",
+        action: str | None = None,
+        source: str = "skills-admin",
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        manager = self._tenant_admin_manager
+        if manager is None or not hasattr(manager, "record_security_event"):
+            return
+        try:
+            await manager.record_security_event(
+                tenant_id=tenant_id,
+                event_type=event_type,
+                severity=severity,
+                action=action,
+                source=source,
+                payload=payload or {},
+            )
+        except Exception:
+            log.exception(
+                "tenant_security_event_record_failed",
+                tenant_id=tenant_id,
+                event_type=event_type,
+                action=action,
+                source=source,
+            )
+
     async def handle_health(self, request: web.Request) -> web.Response:
         """Health check endpoint.
 
@@ -1600,10 +1642,18 @@ class SkillsServer:
             context={"method": "GET", "subpath": "/messaging/messages", "chat_id": chat_id},
         )
         if not decision.allowed:
-            return web.json_response(
-                {"error": decision.message, "code": decision.code, "details": decision.details},
-                status=decision.status,
+            await self._record_security_event(
+                tenant_id=tenant_id,
+                event_type="trust_policy_denied",
+                severity="medium",
+                action="messaging.read",
+                payload={
+                    "chat_id": chat_id,
+                    "code": decision.code,
+                    "status": decision.status,
+                },
             )
+            return web.json_response(self._policy_error_payload(decision), status=decision.status)
         try:
             await self._tenant_admin_manager.purge_expired_messaging_messages(
                 tenant_id=tenant_id,
@@ -1645,24 +1695,24 @@ class SkillsServer:
                     ),
                 },
             )
-            if decision.approval_required:
-                return web.json_response(
-                    {
-                        "error": decision.message,
+            if decision.approval_required or not decision.allowed:
+                await self._record_security_event(
+                    tenant_id=tenant_id,
+                    event_type=(
+                        "trust_policy_approval_required"
+                        if decision.approval_required
+                        else "trust_policy_denied"
+                    ),
+                    severity="high",
+                    action="messaging.send",
+                    payload={
+                        "chat_id": chat_id,
                         "code": decision.code,
-                        "details": decision.details,
-                        "requires_two_person": decision.requires_two_person,
+                        "status": decision.status,
                     },
-                    status=decision.status,
                 )
-            if not decision.allowed:
                 return web.json_response(
-                    {
-                        "error": decision.message,
-                        "code": decision.code,
-                        "details": decision.details,
-                        "requires_two_person": decision.requires_two_person,
-                    },
+                    self._policy_error_payload(decision),
                     status=decision.status,
                 )
             metadata = data.get("metadata")
@@ -1684,6 +1734,179 @@ class SkillsServer:
                 },
                 status=202,
             )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_export_messaging_messages(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        chat_id = str(request.query.get("chat_id") or "").strip() or None
+        sender_id = str(request.query.get("sender_id") or "").strip() or None
+        decision = self._trust_policy_evaluator.evaluate(
+            tenant_id=tenant_id,
+            action="messaging.read",
+            context={
+                "method": "GET",
+                "subpath": "/messaging/messages/export",
+                "chat_id": chat_id or "",
+            },
+        )
+        if not decision.allowed:
+            await self._record_security_event(
+                tenant_id=tenant_id,
+                event_type="trust_policy_denied",
+                severity="medium",
+                action="messaging.read",
+                payload={
+                    "chat_id": chat_id,
+                    "sender_id": sender_id,
+                    "code": decision.code,
+                    "status": decision.status,
+                },
+            )
+            return web.json_response(self._policy_error_payload(decision), status=decision.status)
+
+        try:
+            limit = self._parse_int(request.query.get("limit", "1000"), "limit")
+            include_expired = self._parse_bool(
+                request.query.get("include_expired"),
+                "include_expired",
+                default=False,
+            )
+            rows = await self._tenant_admin_manager.export_messaging_messages(
+                tenant_id=tenant_id,
+                provider=request.query.get("provider", "whatsapp"),
+                chat_id=chat_id,
+                sender_id=sender_id,
+                direction=request.query.get("direction"),
+                include_expired=include_expired,
+                limit=limit,
+            )
+            return web.json_response(
+                {
+                    "ok": True,
+                    "count": len(rows),
+                    "messages": [_serialise_record(row) for row in rows],
+                }
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_delete_messaging_messages(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            actor = self._admin_actor(request)
+            data = await self._read_json_object(request)
+            chat_id = str(data.get("chat_id") or "").strip() or None
+            decision = self._trust_policy_evaluator.evaluate(
+                tenant_id=tenant_id,
+                action="messaging.delete",
+                context={
+                    "method": "DELETE",
+                    "subpath": "/messaging/messages",
+                    "chat_id": chat_id or "",
+                    "explicitly_elevated": self._parse_bool(
+                        data.get("explicitly_elevated"),
+                        "explicitly_elevated",
+                        default=False,
+                    ),
+                },
+            )
+            if decision.approval_required or not decision.allowed:
+                await self._record_security_event(
+                    tenant_id=tenant_id,
+                    event_type=(
+                        "trust_policy_approval_required"
+                        if decision.approval_required
+                        else "trust_policy_denied"
+                    ),
+                    severity="high",
+                    action="messaging.delete",
+                    payload={
+                        "chat_id": chat_id,
+                        "sender_id": str(data.get("sender_id") or "").strip() or None,
+                        "code": decision.code,
+                        "status": decision.status,
+                    },
+                )
+                return web.json_response(
+                    self._policy_error_payload(decision),
+                    status=decision.status,
+                )
+
+            raw_before = data.get("before_created_at")
+            before_created_at: datetime | None = None
+            if isinstance(raw_before, str) and raw_before.strip():
+                before_created_at = datetime.fromisoformat(raw_before.replace("Z", "+00:00"))
+                if before_created_at.tzinfo is None:
+                    before_created_at = before_created_at.replace(tzinfo=UTC)
+            raw_message_ids = data.get("message_ids")
+            message_ids = None
+            if raw_message_ids is not None:
+                if not isinstance(raw_message_ids, list):
+                    raise ValueError("message_ids must be an array of UUID strings")
+                message_ids = [str(value) for value in raw_message_ids]
+
+            deleted = await self._tenant_admin_manager.delete_messaging_messages(
+                tenant_id=tenant_id,
+                actor=actor,
+                provider=str(data.get("provider") or "whatsapp"),
+                chat_id=chat_id,
+                sender_id=str(data.get("sender_id") or "").strip() or None,
+                before_created_at=before_created_at,
+                message_ids=message_ids,
+                limit=(
+                    self._parse_int(data.get("limit"), "limit")
+                    if data.get("limit") is not None
+                    else 5000
+                ),
+            )
+            return web.json_response({"ok": True, "result": _serialise_record(deleted)})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_list_security_events(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        if not hasattr(self._tenant_admin_manager, "list_security_events"):
+            return web.json_response({"error": "Security event service unavailable"}, status=501)
+
+        try:
+            limit = self._parse_int(request.query.get("limit", "200"), "limit")
+            rows = await self._tenant_admin_manager.list_security_events(
+                tenant_id=tenant_id,
+                event_type=str(request.query.get("event_type") or "").strip() or None,
+                severity=str(request.query.get("severity") or "").strip() or None,
+                action=str(request.query.get("action") or "").strip() or None,
+                limit=limit,
+            )
+            return web.json_response({"events": [_serialise_record(row) for row in rows]})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_security_dashboard(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        if not hasattr(self._tenant_admin_manager, "get_security_dashboard"):
+            return web.json_response(
+                {"error": "Security dashboard service unavailable"},
+                status=501,
+            )
+
+        try:
+            window_hours = self._parse_int(request.query.get("window_hours", "24"), "window_hours")
+            recent_limit = self._parse_int(request.query.get("recent_limit", "20"), "recent_limit")
+            dashboard = await self._tenant_admin_manager.get_security_dashboard(
+                tenant_id=tenant_id,
+                window_hours=window_hours,
+                recent_limit=recent_limit,
+            )
+            return web.json_response({"dashboard": _serialise_record(dashboard)})
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
 
@@ -1727,13 +1950,21 @@ class SkillsServer:
                 },
             )
             if not decision.allowed:
-                payload = {
-                    "error": decision.message,
-                    "code": decision.code,
-                    "details": decision.details,
-                    "requires_two_person": decision.requires_two_person,
-                }
-                return web.json_response(payload, status=decision.status)
+                await self._record_security_event(
+                    tenant_id=tenant_id,
+                    event_type="trust_policy_denied",
+                    severity="high",
+                    action="automerge.execute",
+                    payload={
+                        "repository": repository,
+                        "code": decision.code,
+                        "status": decision.status,
+                    },
+                )
+                return web.json_response(
+                    self._policy_error_payload(decision),
+                    status=decision.status,
+                )
 
             from zetherion_ai.config import get_settings
 
@@ -2004,6 +2235,7 @@ class SkillsServer:
         except Exception:
             return web.json_response({"error": "Invalid JSON body"}, status=400)
 
+        chat_id_hint = str(payload.get("chat_id") or "").strip() or None
         try:
             self._verify_bridge_signature(
                 request=request,
@@ -2011,8 +2243,24 @@ class SkillsServer:
                 raw_body=raw_body,
             )
         except RuntimeError as exc:
+            await self._record_security_event(
+                tenant_id=tenant_id,
+                event_type="bridge_nonce_replay",
+                severity="high",
+                action="messaging.ingest",
+                source="bridge",
+                payload={"chat_id": chat_id_hint, "error": str(exc)},
+            )
             return web.json_response({"error": str(exc)}, status=409)
         except ValueError as exc:
+            await self._record_security_event(
+                tenant_id=tenant_id,
+                event_type="bridge_signature_invalid",
+                severity="high",
+                action="messaging.ingest",
+                source="bridge",
+                payload={"chat_id": chat_id_hint, "error": str(exc)},
+            )
             return web.json_response({"error": str(exc)}, status=401)
 
         event_type = str(payload.get("event_type") or "").strip()
@@ -2032,6 +2280,18 @@ class SkillsServer:
             },
         )
         if not decision.allowed:
+            await self._record_security_event(
+                tenant_id=tenant_id,
+                event_type="trust_policy_denied",
+                severity="high",
+                action="messaging.ingest",
+                source="bridge",
+                payload={
+                    "chat_id": chat_id,
+                    "code": decision.code,
+                    "status": decision.status,
+                },
+            )
             return web.json_response(
                 {
                     "error": decision.message,
@@ -2052,6 +2312,14 @@ class SkillsServer:
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
         if not allowlisted:
+            await self._record_security_event(
+                tenant_id=tenant_id,
+                event_type="messaging_chat_not_allowlisted",
+                severity="medium",
+                action="messaging.ingest",
+                source="bridge",
+                payload={"chat_id": chat_id, "provider": provider},
+            )
             return web.json_response(
                 {
                     "error": "Chat is not allowlisted for messaging ingest",
@@ -2295,9 +2563,25 @@ class SkillsServer:
             tenant_prefix + "/messaging/messages",
             self.handle_tenant_list_messaging_messages,
         )
+        app.router.add_get(
+            tenant_prefix + "/messaging/messages/export",
+            self.handle_tenant_export_messaging_messages,
+        )
+        app.router.add_delete(
+            tenant_prefix + "/messaging/messages",
+            self.handle_tenant_delete_messaging_messages,
+        )
         app.router.add_post(
             tenant_prefix + "/messaging/messages/{chat_id}/send",
             self.handle_tenant_send_messaging_message,
+        )
+        app.router.add_get(
+            tenant_prefix + "/security/events",
+            self.handle_tenant_list_security_events,
+        )
+        app.router.add_get(
+            tenant_prefix + "/security/dashboard",
+            self.handle_tenant_security_dashboard,
         )
         app.router.add_post(
             tenant_prefix + "/automerge/execute",

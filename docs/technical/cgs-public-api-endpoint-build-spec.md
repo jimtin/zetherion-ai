@@ -13,6 +13,7 @@ It is based on the code currently implemented in this repository (not only draft
 - Added CGS route-doc parity gate for lifecycle/reporting/admin/blog surfaces.
 - Added tenant email admin control-plane routes for OAuth app setup, mailbox linking, sync, critical message triage, calendar binding, and insight reindex.
 - Added tenant messaging admin control-plane routes for provider config, chat policy, message read, and policy-gated send.
+- Added Segment 7 security-hardening routes for messaging export/delete controls and tenant security observability dashboards.
 - Zetherion-only boundary recovery removed in-repo CGS website/UI assets; endpoint contracts stay CGS-first and unchanged.
 - Internal admin trust-policy enforcement was added for sensitive actions; endpoint shapes remain unchanged.
 
@@ -529,8 +530,11 @@ Tenant admin route set:
 - `GET|PUT /messaging/providers/{provider}/config`
 - `GET|PUT /messaging/chats/{chat_id}/policy`
 - `GET /messaging/chats`
-- `GET /messaging/messages`
+- `GET|DELETE /messaging/messages`
+- `GET /messaging/messages/export`
 - `POST /messaging/messages/{chat_id}/send`
+- `GET /security/events`
+- `GET /security/dashboard`
 - `POST /automerge/execute`
 - `POST|GET /changes`
 - `POST /changes/{change_id}/approve`
@@ -602,7 +606,10 @@ Internal tenant-admin maps to Skills REST endpoints:
 - `/admin/tenants/{tenant_id}/messaging/chats/{chat_id}/policy`
 - `/admin/tenants/{tenant_id}/messaging/chats`
 - `/admin/tenants/{tenant_id}/messaging/messages`
+- `/admin/tenants/{tenant_id}/messaging/messages/export`
 - `/admin/tenants/{tenant_id}/messaging/messages/{chat_id}/send`
+- `/admin/tenants/{tenant_id}/security/events`
+- `/admin/tenants/{tenant_id}/security/dashboard`
 - `/admin/tenants/{tenant_id}/automerge/execute`
 
 Actor attribution to Skills tenant-admin endpoints is mandatory:

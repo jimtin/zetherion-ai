@@ -10,6 +10,7 @@ This guide maps CGS `/service/ai/v1` routes to expected frontend flows.
 - Clarified that CGS website/UI is owned outside this repository; this document only maps CGS API routes to UI screens.
 - Added tenant email admin route mapping for OAuth app setup, mailbox linking, sync/triage, and calendar selection.
 - Added tenant messaging admin route mapping for provider config, chat policy management, chat/message views, and policy-gated sends.
+- Added tenant security observability mapping and data-subject message export/delete controls for operator flows.
 - Added trust-policy enforcement note for sensitive internal admin actions; UI should handle deny/approval-required outcomes consistently.
 
 ## Document Center Screens
@@ -54,7 +55,11 @@ This guide maps CGS `/service/ai/v1` routes to expected frontend flows.
 | Messaging chat policy | `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/chats/{chat_id}/policy` | `GET`/`PUT` | Controls read/send allowlist and retention |
 | Messaging chat list | `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/chats` | `GET` | Supports `provider`, `include_inactive`, `limit` |
 | Messaging message list | `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages` | `GET` | Requires `chat_id` query |
+| Messaging message export | `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages/export` | `GET` | Requires scoped filter (`chat_id` or `sender_id`) |
+| Messaging message delete | `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages` | `DELETE` | Requires policy allow/approval (`messaging.delete`) |
 | Messaging send queue | `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages/{chat_id}/send` | `POST` | May require approval (`AI_APPROVAL_REQUIRED`) |
+| Security event feed | `/service/ai/v1/internal/admin/tenants/{tenant_id}/security/events` | `GET` | Supports `event_type`, `severity`, `action`, `limit` |
+| Security dashboard | `/service/ai/v1/internal/admin/tenants/{tenant_id}/security/dashboard` | `GET` | Supports `window_hours`, `recent_limit` |
 | Autonomous merge execute | `/service/ai/v1/internal/admin/tenants/{tenant_id}/automerge/execute` | `POST` | Requires trust-policy branch/risk guards + required checks |
 | Change queue | `/service/ai/v1/internal/admin/tenants/{tenant_id}/changes` | `GET` | Shows pending/approved/applied/rejected |
 | Submit change | `/service/ai/v1/internal/admin/tenants/{tenant_id}/changes` | `POST` | Creates pending review ticket |

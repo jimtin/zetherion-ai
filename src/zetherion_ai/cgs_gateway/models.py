@@ -241,6 +241,19 @@ class TenantAdminMessagingSendRequest(BaseModel):
     change_ticket_id: str | None = None
 
 
+class TenantAdminMessagingDeleteRequest(BaseModel):
+    """Delete tenant messaging records under policy-gated filters."""
+
+    provider: str = Field(default="whatsapp", min_length=1, max_length=40)
+    chat_id: str | None = Field(default=None, max_length=255)
+    sender_id: str | None = Field(default=None, max_length=255)
+    before_created_at: str | None = Field(default=None, max_length=80)
+    message_ids: list[str] = Field(default_factory=list)
+    limit: int = Field(default=5000, ge=1, le=20000)
+    explicitly_elevated: bool = False
+    change_ticket_id: str | None = None
+
+
 class TenantAdminAutomergeExecuteRequest(BaseModel):
     """Execute guarded autonomous PR orchestration for one tenant."""
 

@@ -13,6 +13,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Segment 7 Security Hardening, Observability, and Rollout (2026-03-05)
+
+- Added tenant security event persistence + aggregation in tenant admin storage:
+  - `tenant_security_events` table and supporting indexes
+  - high-severity (`high|critical`) alert logging on ingest
+  - dashboard aggregation API support (`window`, severity totals, top event types, recent events)
+- Added Skills internal hardening routes:
+  - `GET /admin/tenants/{tenant_id}/messaging/messages/export`
+  - `DELETE /admin/tenants/{tenant_id}/messaging/messages`
+  - `GET /admin/tenants/{tenant_id}/security/events`
+  - `GET /admin/tenants/{tenant_id}/security/dashboard`
+- Added CGS internal admin wrappers for those hardening routes:
+  - `GET /service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages/export`
+  - `DELETE /service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages`
+  - `GET /service/ai/v1/internal/admin/tenants/{tenant_id}/security/events`
+  - `GET /service/ai/v1/internal/admin/tenants/{tenant_id}/security/dashboard`
+- Added trust-policy rollout-stage gating for sensitive action namespaces:
+  - messaging actions check `security.messaging_rollout_stage` (`disabled|canary|general`) and optional `security.messaging_canary_enabled`
+  - automerge actions check `security.automerge_rollout_stage` (`disabled|canary|general`) and optional `security.automerge_canary_enabled`
+- Added `messaging.delete` trust-policy action with approval/two-person semantics.
+- Added security-event telemetry wiring for bridge signature failures/replay detection and policy-denied ingest/send/automerge paths.
+- Added key-rotation runbook coverage for bridge signing and admin actor secrets in the security model docs.
+
 ### Changed - Trust Policy Gate for Internal Admin Actions (2026-03-05)
 
 - Added a centralized trust-policy evaluator for sensitive/critical actions across messaging and autonomous merge control paths.

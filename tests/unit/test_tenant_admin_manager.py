@@ -2001,6 +2001,168 @@ async def test_messaging_additional_runtime_and_filter_branches() -> None:
 
 
 @pytest.mark.asyncio
+async def test_security_event_record_list_and_dashboard_paths() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "event_id": 1,
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+            "event_type": "trust_policy_denied",
+            "severity": "high",
+            "action": "messaging.send",
+            "source": "skills-admin",
+            "payload_json": {"code": "AI_APPROVAL_REQUIRED"},
+            "created_at": datetime.now(UTC),
+        }
+    )
+    manager._fetch = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            [
+                {
+                    "event_id": 2,
+                    "tenant_id": "11111111-1111-1111-1111-111111111111",
+                    "event_type": "bridge_signature_invalid",
+                    "severity": "high",
+                    "action": "messaging.ingest",
+                    "source": "bridge",
+                    "payload_json": {"error": "Invalid bridge signature"},
+                    "created_at": datetime.now(UTC),
+                }
+            ],
+            [{"severity": "high", "count": 3}, {"severity": "medium", "count": 1}],
+            [{"event_type": "trust_policy_denied", "count": 2}],
+            [
+                {
+                    "event_id": 3,
+                    "tenant_id": "11111111-1111-1111-1111-111111111111",
+                    "event_type": "trust_policy_denied",
+                    "severity": "high",
+                    "action": "automerge.execute",
+                    "source": "skills-admin",
+                    "payload_json": {"code": "AI_TRUST_POLICY_DENIED"},
+                    "created_at": datetime.now(UTC),
+                }
+            ],
+        ]
+    )
+
+    created = await manager.record_security_event(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        event_type="trust_policy_denied",
+        severity="high",
+        action="messaging.send",
+        source="skills-admin",
+        payload={"code": "AI_APPROVAL_REQUIRED"},
+    )
+    assert created["event_type"] == "trust_policy_denied"
+
+    listed = await manager.list_security_events(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        severity="high",
+        limit=10,
+    )
+    assert listed[0]["event_type"] == "bridge_signature_invalid"
+
+    dashboard = await manager.get_security_dashboard(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        window_hours=24,
+        recent_limit=10,
+    )
+    assert dashboard["totals"]["events"] == 4
+    assert dashboard["totals"]["by_severity"]["high"] == 3
+    assert dashboard["top_event_types"][0]["event_type"] == "trust_policy_denied"
+    assert len(dashboard["recent_events"]) == 1
+
+    with pytest.raises(ValueError, match="severity must be one of"):
+        await manager.list_security_events(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            severity="urgent",
+        )
+
+
+@pytest.mark.asyncio
+async def test_messaging_export_and_delete_paths() -> None:
+    conn = _FakeConn()
+    pool = _FakePool(conn)
+    manager = TenantAdminManager(pool=pool)  # type: ignore[arg-type]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager._fetch = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            [
+                {
+                    "message_id": "11111111-1111-1111-1111-111111111111",
+                    "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                    "provider": "whatsapp",
+                    "chat_id": "chat-1",
+                    "direction": "inbound",
+                    "sender_id": "sender-1",
+                    "sender_name": "Sender",
+                    "body_enc": "hello",
+                    "metadata": {"source": "bridge"},
+                    "action_id": None,
+                    "event_type": "whatsapp.message.inbound",
+                    "observed_at": datetime.now(UTC),
+                    "expires_at": datetime.now(UTC) + timedelta(days=14),
+                    "created_at": datetime.now(UTC),
+                }
+            ],
+            [
+                {
+                    "message_id": "11111111-1111-1111-1111-111111111111",
+                    "chat_id": "chat-1",
+                    "sender_id": "sender-1",
+                }
+            ],
+        ]
+    )
+
+    exported = await manager.export_messaging_messages(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        provider="whatsapp",
+        chat_id="chat-1",
+        limit=50,
+    )
+    assert exported[0]["body_text"] == "hello"
+
+    deleted = await manager.delete_messaging_messages(
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        actor=_actor(),
+        provider="whatsapp",
+        chat_id="chat-1",
+        message_ids=["11111111-1111-1111-1111-111111111111"],
+        limit=100,
+    )
+    assert deleted["deleted_count"] == 1
+    assert deleted["deleted_message_ids"] == ["11111111-1111-1111-1111-111111111111"]
+    manager._write_audit.assert_awaited_once()
+
+    with pytest.raises(ValueError, match="at least one export filter"):
+        await manager.export_messaging_messages(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            provider="whatsapp",
+        )
+
+    with pytest.raises(ValueError, match="At least one delete filter"):
+        await manager.delete_messaging_messages(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            actor=_actor(),
+            provider="whatsapp",
+        )
+
+    with pytest.raises(ValueError, match="UUID"):
+        await manager.delete_messaging_messages(
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            actor=_actor(),
+            provider="whatsapp",
+            chat_id="chat-1",
+            message_ids=["not-a-uuid"],
+        )
+
+
+@pytest.mark.asyncio
 async def test_create_execution_plan_schedules_continuation_and_audit() -> None:
     conn = _FakeConn()
     pool = _FakePool(conn)

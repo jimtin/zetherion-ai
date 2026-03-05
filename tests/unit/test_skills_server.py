@@ -1034,6 +1034,24 @@ class TestTenantAdminEndpoints:
                 }
             ]
         )
+        mgr.export_messaging_messages = AsyncMock(
+            return_value=[
+                {
+                    "provider": "whatsapp",
+                    "chat_id": "chat-1",
+                    "message_id": "11111111-1111-1111-1111-111111111111",
+                    "direction": "inbound",
+                    "sender_id": "sender-1",
+                    "body_text": "hello",
+                }
+            ]
+        )
+        mgr.delete_messaging_messages = AsyncMock(
+            return_value={
+                "deleted_count": 1,
+                "deleted_message_ids": ["11111111-1111-1111-1111-111111111111"],
+            }
+        )
         mgr.queue_messaging_send = AsyncMock(
             return_value={
                 "action": {
@@ -1052,6 +1070,26 @@ class TestTenantAdminEndpoints:
             return_value={"message_id": "77777777-7777-7777-7777-777777777777"}
         )
         mgr.purge_expired_messaging_messages = AsyncMock(return_value=0)
+        mgr.record_security_event = AsyncMock(return_value={"event_id": 1})
+        mgr.list_security_events = AsyncMock(
+            return_value=[
+                {
+                    "event_id": 1,
+                    "event_type": "trust_policy_denied",
+                    "severity": "high",
+                    "action": "messaging.send",
+                }
+            ]
+        )
+        mgr.get_security_dashboard = AsyncMock(
+            return_value={
+                "window_hours": 24,
+                "window_started_at": "2026-03-05T00:00:00+00:00",
+                "totals": {"events": 1, "by_severity": {"high": 1}},
+                "top_event_types": [{"event_type": "trust_policy_denied", "count": 1}],
+                "recent_events": [],
+            }
+        )
         mgr.create_execution_plan = AsyncMock(
             return_value={
                 "plan": {
@@ -1446,6 +1484,25 @@ class TestTenantAdminEndpoints:
         ).status == 200
         assert (
             await _call(
+                "get",
+                f"/admin/tenants/{tenant_id}/messaging/messages/export"
+                "?provider=whatsapp&chat_id=chat-1&limit=50",
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "delete",
+                f"/admin/tenants/{tenant_id}/messaging/messages",
+                {
+                    "provider": "whatsapp",
+                    "chat_id": "chat-1",
+                    "message_ids": ["11111111-1111-1111-1111-111111111111"],
+                    "explicitly_elevated": True,
+                },
+            )
+        ).status == 200
+        assert (
+            await _call(
                 "post",
                 f"/admin/tenants/{tenant_id}/messaging/messages/chat-1/send",
                 {
@@ -1455,6 +1512,18 @@ class TestTenantAdminEndpoints:
                 },
             )
         ).status == 202
+        assert (
+            await _call(
+                "get",
+                f"/admin/tenants/{tenant_id}/security/events?limit=20",
+            )
+        ).status == 200
+        assert (
+            await _call(
+                "get",
+                f"/admin/tenants/{tenant_id}/security/dashboard?window_hours=24",
+            )
+        ).status == 200
 
         bridge_payload = {
             "event_type": "whatsapp.message.inbound",
@@ -1491,8 +1560,12 @@ class TestTenantAdminEndpoints:
         tenant_admin_manager.get_messaging_chat_policy.assert_awaited_once()
         tenant_admin_manager.list_messaging_chats.assert_awaited_once()
         tenant_admin_manager.list_messaging_messages.assert_awaited_once()
+        tenant_admin_manager.export_messaging_messages.assert_awaited_once()
+        tenant_admin_manager.delete_messaging_messages.assert_awaited_once()
         tenant_admin_manager.queue_messaging_send.assert_awaited_once()
         tenant_admin_manager.ingest_messaging_message.assert_awaited_once()
+        tenant_admin_manager.list_security_events.assert_awaited_once()
+        tenant_admin_manager.get_security_dashboard.assert_awaited_once()
 
     async def test_tenant_admin_execution_plan_matrix_success(
         self, admin_client, tenant_admin_manager
@@ -1873,7 +1946,18 @@ class TestTenantAdminEndpoints:
             assert approval_payload["code"] == "AI_APPROVAL_REQUIRED"
             assert approval_payload["requires_two_person"] is True
 
+            delete_approval = await client.delete(
+                f"/admin/tenants/{tenant_id}/messaging/messages",
+                headers=_headers(),
+                json={"provider": "whatsapp", "chat_id": "chat-1"},
+            )
+            assert delete_approval.status == 409
+            delete_payload = await delete_approval.json()
+            assert delete_payload["code"] == "AI_APPROVAL_REQUIRED"
+            assert delete_payload["requires_two_person"] is True
+
         tenant_admin_manager.queue_messaging_send.assert_not_awaited()
+        tenant_admin_manager.delete_messaging_messages.assert_not_awaited()
 
     async def test_tenant_admin_send_messaging_denied_without_approval(
         self,
@@ -2225,10 +2309,35 @@ class TestTenantAdminEndpoints:
                 )
             ).status == 501
             assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/messaging/messages/export?chat_id=chat-1",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.delete(
+                    f"/admin/tenants/{tenant_id}/messaging/messages",
+                    headers=_headers(),
+                    json={"chat_id": "chat-1"},
+                )
+            ).status == 501
+            assert (
                 await client.post(
                     f"/admin/tenants/{tenant_id}/messaging/messages/chat-1/send",
                     headers=_headers(),
                     json={"text": "hello"},
+                )
+            ).status == 501
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/security/events",
+                    headers=_headers(),
+                )
+            ).status == 501
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/security/dashboard",
+                    headers=_headers(),
                 )
             ).status == 501
             assert (

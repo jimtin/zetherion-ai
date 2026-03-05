@@ -139,6 +139,33 @@ Key controls:
 
 ---
 
+## Key Rotation Runbook
+
+### Bridge Signing Secret (`WHATSAPP_BRIDGE_SIGNING_SECRET`)
+
+1. Generate a new high-entropy secret in the tenant secrets control plane.
+2. Update tenant secret storage (`WHATSAPP_BRIDGE_SIGNING_SECRET`) through approved admin flow.
+3. Restart or reload services that cache tenant secrets (skills + local bridge sidecar).
+4. Validate bridge ingestion with a newly signed event.
+5. Confirm old signatures are rejected and replay attempts are logged as security events.
+
+### Skills API + Admin Actor Secret
+
+1. Rotate `SKILLS_API_SECRET` in secret storage.
+2. Rotate actor-signing secret used between CGS and Skills (`ZETHERION_SKILLS_ACTOR_SIGNING_SECRET` or inherited secret).
+3. Deploy CGS and Skills with the new pair in a coordinated window.
+4. Verify admin envelope signatures pass and nonce replay checks still block duplicates.
+
+### Emergency Kill Switch Validation
+
+After rotations or incident response, validate immediate control-plane halt behavior:
+
+- `MESSAGING_INGESTION_KILL_SWITCH=true` blocks bridge ingest (`423 AI_KILL_SWITCH_ACTIVE`).
+- `MESSAGING_SEND_KILL_SWITCH=true` blocks send and delete mutation paths.
+- `AUTO_MERGE_EXECUTION_KILL_SWITCH=true` blocks autonomous merge execution.
+
+---
+
 ## Related Docs
 
 - [Architecture](architecture.md)
