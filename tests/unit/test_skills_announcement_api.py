@@ -149,6 +149,91 @@ async def test_announcement_emit_event_deduped_does_not_schedule_delivery(
 
 
 @pytest.mark.asyncio
+async def test_announcement_emit_event_accepts_string_target_user_id(
+    mock_registry: SkillRegistry,
+) -> None:
+    repository = MagicMock()
+    policy = MagicMock()
+    policy.evaluate_event = AsyncMock(
+        return_value=AnnouncementPolicyDecision(
+            status="scheduled",
+            delivery_mode="immediate",
+            severity=AnnouncementSeverity.CRITICAL,
+            scheduled_for=datetime(2026, 3, 6, 10, 0, tzinfo=UTC),
+            reason_code="critical_immediate",
+            suppression_id=99,
+        )
+    )
+    repository.create_event = AsyncMock(
+        return_value=AnnouncementReceipt(
+            status="accepted",
+            event_id="evt-parse-str",
+            reason_code="accepted_new",
+        )
+    )
+    repository.create_delivery = AsyncMock(return_value=None)
+
+    server = SkillsServer(
+        registry=mock_registry,
+        api_secret="skills-secret",
+        announcement_repository=repository,
+        announcement_policy_engine=policy,
+    )
+    app = server.create_app()
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/announcements/events",
+            headers=_headers(),
+            json={
+                "source": "provider_monitor",
+                "category": "provider.billing",
+                "target_user_id": "42",
+                "title": "Billing issue",
+                "body": "Credits exhausted",
+            },
+        )
+        assert response.status == 200
+
+    create_event_call = repository.create_event.await_args
+    assert create_event_call is not None
+    assert create_event_call.args[0].target_user_id == 42
+
+
+@pytest.mark.asyncio
+async def test_announcement_emit_event_rejects_boolean_target_user_id(
+    mock_registry: SkillRegistry,
+) -> None:
+    repository = MagicMock()
+    policy = MagicMock()
+    server = SkillsServer(
+        registry=mock_registry,
+        api_secret="skills-secret",
+        announcement_repository=repository,
+        announcement_policy_engine=policy,
+    )
+    app = server.create_app()
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/announcements/events",
+            headers=_headers(),
+            json={
+                "source": "provider_monitor",
+                "category": "provider.billing",
+                "target_user_id": True,
+                "title": "Billing issue",
+                "body": "Credits exhausted",
+            },
+        )
+        assert response.status == 400
+        payload = await response.json()
+        assert payload["error"] == "Invalid target_user_id"
+
+    repository.create_event.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_announcement_batch_and_flush_paths(mock_registry: SkillRegistry) -> None:
     repository = MagicMock()
     policy = MagicMock()

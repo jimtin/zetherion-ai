@@ -46,11 +46,11 @@ class AnnouncementDispatcher:
         batch_size: int = 25,
         max_retry_delay_seconds: int = 3600,
     ) -> None:
-        self._repository = repository
-        self._adapter = adapter
-        self._poll_interval_seconds = max(1, int(poll_interval_seconds))
-        self._batch_size = max(1, min(500, int(batch_size)))
-        self._max_retry_delay_seconds = max(30, int(max_retry_delay_seconds))
+        self._repository: AnnouncementRepository = repository
+        self._adapter: AnnouncementChannelAdapter = adapter
+        self._poll_interval_seconds: int = max(1, int(poll_interval_seconds))
+        self._batch_size: int = max(1, min(500, int(batch_size)))
+        self._max_retry_delay_seconds: int = max(30, int(max_retry_delay_seconds))
         self._running = False
         self._task: asyncio.Task[None] | None = None
 
@@ -169,6 +169,7 @@ class AnnouncementDispatcher:
 
     def _retry_delay_seconds(self, retry_count: int) -> int:
         attempt = max(1, int(retry_count))
-        delay = 60 * (2 ** (attempt - 1))
-        return min(self._max_retry_delay_seconds, delay)
-
+        delay = 60 * (1 << (attempt - 1))
+        if delay > self._max_retry_delay_seconds:
+            return self._max_retry_delay_seconds
+        return delay

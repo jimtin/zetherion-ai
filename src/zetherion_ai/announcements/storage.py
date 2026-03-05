@@ -463,9 +463,7 @@ class AnnouncementRepository:
     ) -> AnnouncementDelivery:
         pool = self._require_pool()
         when = (
-            scheduled_for
-            if scheduled_for.tzinfo is not None
-            else scheduled_for.replace(tzinfo=UTC)
+            scheduled_for if scheduled_for.tzinfo is not None else scheduled_for.replace(tzinfo=UTC)
         )
         async with pool.acquire() as conn:
             row = await conn.fetchrow(

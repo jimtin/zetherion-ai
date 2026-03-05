@@ -131,4 +131,3 @@ class DiscordDMChannelAdapter:
     @staticmethod
     def _is_retryable_status(status: int | None) -> bool:
         return status in {429, 500, 502, 503, 504}
-
