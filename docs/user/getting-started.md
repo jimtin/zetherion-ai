@@ -103,6 +103,10 @@ The setup script handles the entire installation process:
 You do not need to edit any configuration files manually. The script generates
 everything for you.
 
+For production-safe access control, set `OWNER_USER_ID` (and optionally
+`ALLOWED_USER_IDS`) in `.env` before first long-running deployment. Avoid
+`ALLOW_ALL_USERS=true` except for temporary, explicitly acknowledged bootstrap.
+
 ---
 
 ## Step 3: Invite Your Bot
@@ -147,9 +151,16 @@ You should see healthy/running state for core services including:
 - `zetherion-ai-bot`
 - `zetherion-ai-skills-blue` and `zetherion-ai-skills-green`
 - `zetherion-ai-api-blue` and `zetherion-ai-api-green`
+- `zetherion-ai-cgs-gateway-blue` and `zetherion-ai-cgs-gateway-green`
 - `zetherion-ai-traefik`
 - `zetherion-ai-updater`
+- `zetherion-ai-dev-agent`
 - `postgres`, `qdrant`, `ollama`, `ollama-router`
+
+Optional services appear when configured:
+
+- `zetherion-ai-cloudflared`
+- `zetherion-ai-whatsapp-bridge`
 
 ### Test in Discord
 
@@ -200,9 +211,10 @@ browser to verify the vector database is running and accessible.
 
 ### Known Drift (Temporary)
 
-`start.sh` and `status.sh` still include some legacy single-service checks
-(for example, `zetherion-ai-skills`). If script output and compose output
-conflict, use `docker compose ps` as the source of truth.
+Linux/macOS helper scripts (`start.sh` and `status.sh`) still include some
+legacy single-service checks (for example, `zetherion-ai-skills`). If script
+output and compose output conflict, use `docker compose ps` as source of truth.
+Windows helper scripts are aligned to the current blue/green topology.
 
 ### Troubleshooting
 

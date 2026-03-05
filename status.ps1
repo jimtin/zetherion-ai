@@ -6,7 +6,7 @@
 
 .DESCRIPTION
     This script checks the status of all Zetherion AI Docker containers
-    and services.
+    and services for the current blue/green runtime topology.
 
 .EXAMPLE
     .\status.ps1
@@ -29,223 +29,247 @@ function Write-Header {
     Write-Host ""
 }
 
+function Get-EnvValueFromFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Key
+    )
+
+    if (-not (Test-Path $Path)) {
+        return ""
+    }
+
+    $lines = Get-Content -Path $Path
+    for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+        $line = $lines[$i]
+        if ($line -match "^\s*#") {
+            continue
+        }
+        if ($line -notmatch "^\s*$([Regex]::Escape($Key))\s*=") {
+            continue
+        }
+
+        $separatorIndex = $line.IndexOf("=")
+        if ($separatorIndex -lt 0) {
+            continue
+        }
+
+        return $line.Substring($separatorIndex + 1).Trim()
+    }
+
+    return ""
+}
+
+function Get-ContainerState {
+    param([string]$ContainerName)
+
+    $exists = docker ps -a --format "{{.Names}}" | Select-String -Pattern "^$ContainerName$" -Quiet
+    if (-not $exists) {
+        return [pscustomobject]@{
+            Exists = $false
+            Running = $false
+            State = "missing"
+            Health = "missing"
+        }
+    }
+
+    $inspect = docker inspect --format "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" $ContainerName 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $inspect) {
+        return [pscustomobject]@{
+            Exists = $true
+            Running = $false
+            State = "unknown"
+            Health = "unknown"
+        }
+    }
+
+    $parts = $inspect -split "\|"
+    $state = if ($parts.Count -gt 0) { $parts[0].Trim() } else { "unknown" }
+    $health = if ($parts.Count -gt 1) { $parts[1].Trim() } else { "unknown" }
+
+    return [pscustomobject]@{
+        Exists = $true
+        Running = ($state -eq "running")
+        State = $state
+        Health = $health
+    }
+}
+
+function Test-ServiceContainer {
+    param(
+        [string]$ContainerName,
+        [string]$Label
+    )
+
+    $state = Get-ContainerState -ContainerName $ContainerName
+    if (-not $state.Exists) {
+        Write-Failure "$Label container not found ($ContainerName)"
+        return $false
+    }
+
+    if (-not $state.Running) {
+        Write-Warning-Message "$Label is not running (state: $($state.State))"
+        return $false
+    }
+
+    if ($state.Health -eq "healthy" -or $state.Health -eq "no-healthcheck") {
+        Write-Success "$Label is running ($($state.Health))"
+        return $true
+    }
+
+    if ($state.Health -eq "starting") {
+        Write-Info-Message "$Label is starting"
+        return $false
+    }
+
+    Write-Warning-Message "$Label is running but unhealthy (health: $($state.Health))"
+    return $false
+}
+
 Write-Header "Zetherion AI Status"
 
-# Check Qdrant
-Write-Info-Message "Checking Qdrant..."
-$qdrantRunning = docker ps --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-qdrant$" -Quiet
-
-if ($qdrantRunning) {
+# Qdrant host check
+Write-Info-Message "Checking Qdrant endpoint..."
+$qdrantContainer = Get-ContainerState -ContainerName "zetherion-ai-qdrant"
+if ($qdrantContainer.Running) {
     try {
         $response = Invoke-WebRequest -Uri "http://localhost:6333/healthz" -UseBasicParsing -TimeoutSec 2
         if ($response.StatusCode -eq 200) {
-            Write-Success "Qdrant is running and healthy"
-
-            # Get collection count
-            try {
-                $collections = Invoke-RestMethod -Uri "http://localhost:6333/collections" -UseBasicParsing -TimeoutSec 2
-                $collectionCount = $collections.result.collections.Count
-                Write-Host "    Collections: $collectionCount"
-            }
-            catch {
-                Write-Host "    Collections: Unable to retrieve"
-            }
+            Write-Success "Qdrant endpoint is healthy"
         }
         else {
-            Write-Warning-Message "Qdrant container is running but not responding"
+            Write-Warning-Message "Qdrant endpoint returned status $($response.StatusCode)"
         }
     }
     catch {
-        Write-Warning-Message "Qdrant container is running but not responding"
+        Write-Warning-Message "Qdrant container is running but localhost health probe failed"
     }
 }
 else {
-    $qdrantExists = docker ps -a --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-qdrant$" -Quiet
-
-    if ($qdrantExists) {
-        Write-Warning-Message "Qdrant container exists but is not running"
-    }
-    else {
-        Write-Failure "Qdrant container not found"
-    }
+    Write-Warning-Message "Qdrant container is not running"
 }
 
 Write-Host ""
 
-# Check Ollama Router Container (for fast routing)
-Write-Info-Message "Checking Ollama Router Container..."
-$ollamaRouterRunning = docker ps --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-ollama-router$" -Quiet
-
-if ($ollamaRouterRunning) {
+# Ollama Router check
+Write-Info-Message "Checking Ollama Router endpoint..."
+$routerContainer = Get-ContainerState -ContainerName "zetherion-ai-ollama-router"
+if ($routerContainer.Running) {
     try {
-        # Router container is internal only (no port exposed to host), check via docker exec
         $routerHealth = docker exec zetherion-ai-ollama-router curl -s http://localhost:11434/api/tags 2>&1
         if ($routerHealth -match "models") {
-            Write-Success "Ollama Router is running and healthy"
-
-            # Get model list
-            try {
-                $models = $routerHealth | ConvertFrom-Json
-                $modelCount = $models.models.Count
-                Write-Host "    Models: $modelCount (router models)"
-                if ($modelCount -gt 0) {
-                    foreach ($model in $models.models) {
-                        Write-Host "      - $($model.name)"
-                    }
-                }
-            }
-            catch {
-                Write-Host "    Models: Unable to retrieve"
-            }
+            Write-Success "Ollama Router endpoint is healthy"
         }
         else {
-            Write-Warning-Message "Ollama Router container is running but not responding"
+            Write-Warning-Message "Ollama Router health probe did not return model list"
         }
     }
     catch {
-        Write-Warning-Message "Ollama Router container is running but not responding"
+        Write-Warning-Message "Ollama Router container is running but probe failed"
     }
 }
 else {
-    $ollamaRouterExists = docker ps -a --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-ollama-router$" -Quiet
-
-    if ($ollamaRouterExists) {
-        Write-Warning-Message "Ollama Router container exists but is not running"
-    }
-    else {
-        Write-Info-Message "Ollama Router container not found (optional, used with ROUTER_BACKEND=ollama)"
-    }
+    Write-Warning-Message "Ollama Router container is not running"
 }
 
 Write-Host ""
 
-# Check Ollama Generation Container (for complex queries + embeddings)
-Write-Info-Message "Checking Ollama Generation Container..."
-$ollamaRunning = docker ps --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-ollama$" -Quiet
-
-if ($ollamaRunning) {
+# Ollama Generation check
+Write-Info-Message "Checking Ollama Generation endpoint..."
+$ollamaContainer = Get-ContainerState -ContainerName "zetherion-ai-ollama"
+if ($ollamaContainer.Running) {
     try {
         $response = Invoke-WebRequest -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2
         if ($response.StatusCode -eq 200) {
-            Write-Success "Ollama Generation is running and healthy"
-
-            # Get model list
-            try {
-                $models = Invoke-RestMethod -Uri "http://localhost:11434/api/tags" -UseBasicParsing -TimeoutSec 2
-                $modelCount = $models.models.Count
-                Write-Host "    Models: $modelCount (generation + embedding models)"
-                if ($modelCount -gt 0) {
-                    foreach ($model in $models.models) {
-                        Write-Host "      - $($model.name)"
-                    }
-                }
-            }
-            catch {
-                Write-Host "    Models: Unable to retrieve"
-            }
+            Write-Success "Ollama Generation endpoint is healthy"
         }
         else {
-            Write-Warning-Message "Ollama Generation container is running but not responding"
+            Write-Warning-Message "Ollama Generation endpoint returned status $($response.StatusCode)"
         }
     }
     catch {
-        Write-Warning-Message "Ollama Generation container is running but not responding"
+        Write-Warning-Message "Ollama Generation container is running but localhost probe failed"
     }
 }
 else {
-    $ollamaExists = docker ps -a --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-ollama$" -Quiet
+    Write-Warning-Message "Ollama Generation container is not running"
+}
 
-    if ($ollamaExists) {
-        Write-Warning-Message "Ollama Generation container exists but is not running"
-    }
-    else {
-        Write-Info-Message "Ollama Generation container not found (optional, used with ROUTER_BACKEND=ollama)"
+Write-Host ""
+
+Write-Info-Message "Checking core blue/green runtime containers..."
+$coreServices = @(
+    @{ Name = "zetherion-ai-postgres"; Label = "PostgreSQL" },
+    @{ Name = "zetherion-ai-qdrant"; Label = "Qdrant" },
+    @{ Name = "zetherion-ai-ollama"; Label = "Ollama Generation" },
+    @{ Name = "zetherion-ai-ollama-router"; Label = "Ollama Router" },
+    @{ Name = "zetherion-ai-traefik"; Label = "Traefik" },
+    @{ Name = "zetherion-ai-skills-blue"; Label = "Skills Blue" },
+    @{ Name = "zetherion-ai-skills-green"; Label = "Skills Green" },
+    @{ Name = "zetherion-ai-api-blue"; Label = "API Blue" },
+    @{ Name = "zetherion-ai-api-green"; Label = "API Green" },
+    @{ Name = "zetherion-ai-cgs-gateway-blue"; Label = "CGS Gateway Blue" },
+    @{ Name = "zetherion-ai-cgs-gateway-green"; Label = "CGS Gateway Green" },
+    @{ Name = "zetherion-ai-updater"; Label = "Updater" },
+    @{ Name = "zetherion-ai-dev-agent"; Label = "Dev Agent" },
+    @{ Name = "zetherion-ai-bot"; Label = "Bot" }
+)
+
+$allCoreHealthy = $true
+foreach ($service in $coreServices) {
+    if (-not (Test-ServiceContainer -ContainerName $service.Name -Label $service.Label)) {
+        $allCoreHealthy = $false
     }
 }
 
 Write-Host ""
 
-# Check Skills Service
-Write-Info-Message "Checking Skills service..."
-$skillsRunning = docker ps --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-skills$" -Quiet
-
-if ($skillsRunning) {
-    $skillsHealth = docker inspect --format='{{.State.Health.Status}}' zetherion-ai-skills 2>&1
-    if ($skillsHealth -eq "healthy") {
-        Write-Success "Skills service is running and healthy"
-    }
-    elseif ($skillsHealth -eq "starting") {
-        Write-Info-Message "Skills service is starting..."
-    }
-    else {
-        Write-Warning-Message "Skills service is running but unhealthy"
-    }
-}
-else {
-    $skillsExists = docker ps -a --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-skills$" -Quiet
-
-    if ($skillsExists) {
-        Write-Warning-Message "Skills container exists but is not running"
-    }
-    else {
-        Write-Failure "Skills container not found"
-    }
+$optionalServices = @()
+$cloudflareToken = Get-EnvValueFromFile -Path ".env" -Key "CLOUDFLARE_TUNNEL_TOKEN"
+if ($cloudflareToken.Trim()) {
+    $optionalServices += @{ Name = "zetherion-ai-cloudflared"; Label = "Cloudflared" }
 }
 
-Write-Host ""
+$whatsappSigningSecret = Get-EnvValueFromFile -Path ".env" -Key "WHATSAPP_BRIDGE_SIGNING_SECRET"
+$whatsappStateKey = Get-EnvValueFromFile -Path ".env" -Key "WHATSAPP_BRIDGE_STATE_KEY"
+$whatsappTenantId = Get-EnvValueFromFile -Path ".env" -Key "WHATSAPP_BRIDGE_TENANT_ID"
+$whatsappIngestUrl = Get-EnvValueFromFile -Path ".env" -Key "WHATSAPP_BRIDGE_INGEST_URL"
+if (
+    $whatsappSigningSecret.Trim() -and
+    $whatsappStateKey.Trim() -and
+    $whatsappTenantId.Trim() -and
+    $whatsappIngestUrl.Trim()
+) {
+    $optionalServices += @{ Name = "zetherion-ai-whatsapp-bridge"; Label = "WhatsApp Bridge" }
+}
 
-# Check Bot
-Write-Info-Message "Checking bot..."
-$botRunning = docker ps --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-bot$" -Quiet
-
-if ($botRunning) {
-    $botHealth = docker inspect --format='{{.State.Health.Status}}' zetherion-ai-bot 2>&1
-    if ($botHealth -eq "healthy") {
-        Write-Success "Bot is running and healthy"
-
-        # Get uptime
-        $startTime = docker inspect --format='{{.State.StartedAt}}' zetherion-ai-bot 2>&1
-        if ($startTime) {
-            try {
-                $start = [DateTime]::Parse($startTime)
-                $uptime = (Get-Date) - $start
-                $uptimeString = "{0:dd}d {0:hh}h {0:mm}m {0:ss}s" -f $uptime
-                Write-Host "    Uptime: $uptimeString"
-            }
-            catch {}
+$optionalFailures = 0
+if ($optionalServices.Count -gt 0) {
+    Write-Info-Message "Checking configured optional runtime containers..."
+    foreach ($service in $optionalServices) {
+        if (-not (Test-ServiceContainer -ContainerName $service.Name -Label $service.Label)) {
+            $optionalFailures += 1
         }
     }
-    elseif ($botHealth -eq "starting") {
-        Write-Info-Message "Bot is starting..."
-    }
-    else {
-        Write-Warning-Message "Bot is running but unhealthy"
-    }
+    Write-Host ""
 }
 else {
-    $botExists = docker ps -a --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-bot$" -Quiet
-
-    if ($botExists) {
-        Write-Warning-Message "Bot container exists but is not running"
-    }
-    else {
-        Write-Failure "Bot container not found"
-    }
+    Write-Info-Message "No optional services configured for strict checks (cloudflared/whatsapp bridge)."
+    Write-Host ""
 }
-
-Write-Host ""
 
 # Overall status
 Write-Info-Message "Overall Status:"
-$qdrantRunning = docker ps --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-qdrant$" -Quiet
-$botRunning = docker ps --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-bot$" -Quiet
-$skillsRunning = docker ps --format "{{.Names}}" | Select-String -Pattern "^zetherion-ai-skills$" -Quiet
-
-if ($qdrantRunning -and $botRunning -and $skillsRunning) {
-    Write-Success "Zetherion AI is fully operational"
+if ($allCoreHealthy) {
+    Write-Success "Core runtime is operational"
+    if ($optionalFailures -gt 0) {
+        Write-Warning-Message "Optional configured services have failures: $optionalFailures"
+    }
 }
 else {
-    Write-Warning-Message "Zetherion AI is not fully running"
+    Write-Warning-Message "Core runtime is not fully healthy"
     Write-Host ""
     Write-Info-Message "To start Zetherion AI, run: .\start.ps1"
 }

@@ -83,6 +83,10 @@ The `start.ps1` script performs the following automatically:
 
 First run takes approximately 3--9 minutes depending on the backend choice. Subsequent runs take roughly 30 seconds.
 
+Before first production deployment, set `OWNER_USER_ID` (and optionally
+`ALLOWED_USER_IDS`) in `.env` to ensure deterministic RBAC bootstrap. Keep
+`ALLOW_ALL_USERS=false` unless you intentionally run temporary bootstrap mode.
+
 **Windows management commands**:
 
 ```powershell
