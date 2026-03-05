@@ -38,7 +38,11 @@ export const LANE_DEFINITIONS = {
   lint: {
     description: "Ruff lint pass for repository Python sources",
     timeoutSeconds: 900,
-    command: ["ruff", "check", "src/", "tests/", "updater_sidecar/"],
+    command: [
+      "bash",
+      "-lc",
+      "ruff check src/ tests/ updater_sidecar/ && ruff format --check src/ tests/",
+    ],
   },
   "nextjs-only-audit": {
     unavailable: true,

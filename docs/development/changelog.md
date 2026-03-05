@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Wired the guard into:
   - bounded local `check` lane (`scripts/testing/lanes.mjs`)
   - CI `pipeline-contract` fast-fail checks (`.github/workflows/ci.yml`)
+- Updated bounded local `lint` lane to run `ruff format --check` in addition to
+  `ruff check`, matching CI lint behavior and preventing format-only CI failures.
 - Updated CI/CD documentation to include announcement DM guardrail enforcement in
   pipeline-contract checks.
 
