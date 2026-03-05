@@ -728,6 +728,12 @@ class Settings(BaseSettings):
     auto_merge_execution_kill_switch: bool = Field(
         default=False, description="Global kill switch for autonomous PR merge execution"
     )
+    worker_dispatch_kill_switch: bool = Field(
+        default=False, description="Global kill switch for worker dispatch and claim actions"
+    )
+    worker_result_accept_kill_switch: bool = Field(
+        default=False, description="Global kill switch for accepting worker job results"
+    )
     auto_merge_policy_enabled: bool = Field(
         default=False, description="Enable trust-policy auto-merge execution path"
     )

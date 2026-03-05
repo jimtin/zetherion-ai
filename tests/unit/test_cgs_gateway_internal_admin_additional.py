@@ -93,6 +93,63 @@ def test_internal_admin_scope_claims_and_step_up_helpers() -> None:
     assert _has_step_up({"amr": ["pwd"]}) is False
 
 
+def test_internal_admin_worker_policy_mapping_helpers() -> None:
+    assert (
+        internal_admin_routes._derive_policy_action(
+            "POST",
+            "/workers/nodes/register",
+            {"bootstrap_secret_valid": True},
+        )
+        == "worker.register"
+    )
+    assert (
+        internal_admin_routes._derive_policy_action(
+            "POST",
+            "/workers/nodes/node-1/jobs/claim",
+            {"node_registered": True, "node_healthy": True, "capability_allowlisted": True},
+        )
+        == "worker.job.claim"
+    )
+    assert (
+        internal_admin_routes._derive_policy_action(
+            "POST",
+            "/workers/nodes/node-1/jobs/job-9/result",
+            {"node_registered": True, "node_healthy": True, "capability_allowlisted": True},
+        )
+        == "worker.job.complete"
+    )
+    assert (
+        internal_admin_routes._derive_policy_action(
+            "PATCH",
+            "/workers/nodes/node-1/capabilities",
+            {"repo_scope_expansion": True},
+        )
+        == "worker.capability.update"
+    )
+
+    ctx = internal_admin_routes._derive_policy_context(
+        "POST",
+        "/workers/nodes/node-1/jobs/claim",
+        {
+            "node_registered": True,
+            "node_healthy": True,
+            "capability_allowlisted": True,
+            "repo_scope_expansion": False,
+        },
+        None,
+    )
+    assert ctx["node_registered"] is True
+    assert ctx["node_healthy"] is True
+    assert ctx["capability_allowlisted"] is True
+    assert ctx["repo_scope_expansion"] is False
+
+    target = internal_admin_routes._derive_policy_target(
+        "/workers/nodes/node-1/jobs/job-9/result",
+        None,
+    )
+    assert target == "node-1"
+
+
 @pytest.mark.asyncio
 async def test_internal_admin_validation_error_matrix() -> None:
     app, storage, skills = _admin_app(

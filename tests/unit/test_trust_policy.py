@@ -151,6 +151,14 @@ def test_unknown_sensitive_actions_are_denied_by_default() -> None:
     assert decision.outcome == TrustDecisionOutcome.DENY
     assert decision.code == "AI_TRUST_POLICY_DENIED"
 
+    worker_decision = evaluator.evaluate(
+        tenant_id="tenant-1",
+        action="worker.super-secret",
+        context={},
+    )
+    assert worker_decision.outcome == TrustDecisionOutcome.DENY
+    assert worker_decision.code == "AI_TRUST_POLICY_DENIED"
+
 
 def test_unknown_non_sensitive_actions_allow_with_method_classification() -> None:
     evaluator = TrustPolicyEvaluator(setting_resolver=_resolver_factory({}))
@@ -257,3 +265,114 @@ def test_coercion_helpers_cover_string_and_numeric_paths() -> None:
     assert TrustPolicyEvaluator._coerce_allowlist("[not-json]") == {"[not-json]"}
     assert TrustPolicyEvaluator._coerce_allowlist("   ") == set()
     assert TrustPolicyEvaluator._coerce_allowlist(None) == set()
+
+
+def test_worker_job_claim_enforces_node_and_capability_flags() -> None:
+    evaluator = TrustPolicyEvaluator(
+        setting_resolver=_resolver_factory(
+            {
+                ("tenant-1", "security", "trust_tier"): "tier3",
+            }
+        )
+    )
+
+    denied = evaluator.evaluate(
+        tenant_id="tenant-1",
+        action="worker.job.claim",
+        context={
+            "node_registered": True,
+            "node_healthy": True,
+            "capability_allowlisted": False,
+        },
+    )
+    assert denied.outcome == TrustDecisionOutcome.DENY
+    assert denied.code == "AI_TRUST_POLICY_GUARD_FAILED"
+
+    allowed = evaluator.evaluate(
+        tenant_id="tenant-1",
+        action="worker.job.claim",
+        context={
+            "node_registered": True,
+            "node_healthy": True,
+            "capability_allowlisted": True,
+        },
+    )
+    assert allowed.outcome == TrustDecisionOutcome.ALLOW
+
+
+def test_worker_job_claim_respects_dispatch_kill_switch() -> None:
+    evaluator = TrustPolicyEvaluator(
+        setting_resolver=_resolver_factory(
+            {
+                ("tenant-1", "security", "trust_tier"): "tier3",
+                ("tenant-1", "security", "worker_dispatch_kill_switch"): True,
+            }
+        )
+    )
+    decision = evaluator.evaluate(
+        tenant_id="tenant-1",
+        action="worker.job.claim",
+        context={
+            "node_registered": True,
+            "node_healthy": True,
+            "capability_allowlisted": True,
+        },
+    )
+    assert decision.outcome == TrustDecisionOutcome.DENY
+    assert decision.code == "AI_KILL_SWITCH_ACTIVE"
+
+
+def test_worker_job_complete_respects_result_kill_switch() -> None:
+    evaluator = TrustPolicyEvaluator(
+        setting_resolver=_resolver_factory(
+            {
+                ("tenant-1", "security", "trust_tier"): "tier3",
+                ("tenant-1", "security", "worker_result_accept_kill_switch"): True,
+            }
+        )
+    )
+    decision = evaluator.evaluate(
+        tenant_id="tenant-1",
+        action="worker.job.complete",
+        context={
+            "node_registered": True,
+            "node_healthy": True,
+            "capability_allowlisted": True,
+        },
+    )
+    assert decision.outcome == TrustDecisionOutcome.DENY
+    assert decision.code == "AI_KILL_SWITCH_ACTIVE"
+
+
+def test_worker_capability_update_requires_two_person_approval() -> None:
+    evaluator = TrustPolicyEvaluator(
+        setting_resolver=_resolver_factory(
+            {
+                ("tenant-1", "security", "trust_tier"): "tier3",
+            }
+        )
+    )
+    approval = evaluator.evaluate(
+        tenant_id="tenant-1",
+        action="worker.capability.update",
+        context={
+            "node_registered": True,
+            "node_healthy": True,
+            "repo_scope_expansion": True,
+        },
+    )
+    assert approval.outcome == TrustDecisionOutcome.APPROVAL_REQUIRED
+    assert approval.code == "AI_APPROVAL_REQUIRED"
+    assert approval.requires_two_person is True
+
+    allowed = evaluator.evaluate(
+        tenant_id="tenant-1",
+        action="worker.capability.update",
+        context={
+            "node_registered": True,
+            "node_healthy": True,
+            "repo_scope_expansion": True,
+            "explicitly_elevated": True,
+        },
+    )
+    assert allowed.outcome == TrustDecisionOutcome.ALLOW
