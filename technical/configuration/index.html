@@ -2930,6 +2930,26 @@ in <code>config.py</code>.</p>
 <td>Global kill switch for autonomous PR merge execution</td>
 </tr>
 <tr>
+<td><code>WORKER_DISPATCH_KILL_SWITCH</code></td>
+<td><code>false</code></td>
+<td>Global kill switch for worker dispatch/claim actions</td>
+</tr>
+<tr>
+<td><code>WORKER_RESULT_ACCEPT_KILL_SWITCH</code></td>
+<td><code>false</code></td>
+<td>Global kill switch for accepting worker job results</td>
+</tr>
+<tr>
+<td><code>WORKER_BRIDGE_BOOTSTRAP_SECRET</code></td>
+<td>empty</td>
+<td>Bootstrap secret required for <code>POST /worker/v1/bootstrap</code></td>
+</tr>
+<tr>
+<td><code>WORKER_SESSION_TTL_SECONDS</code></td>
+<td><code>86400</code></td>
+<td>Worker session credential TTL (seconds) for signed <code>/worker/v1</code> requests</td>
+</tr>
+<tr>
 <td><code>AUTO_MERGE_POLICY_ENABLED</code></td>
 <td><code>false</code></td>
 <td>Enable trust-policy auto-merge execution path</td>

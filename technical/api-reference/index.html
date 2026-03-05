@@ -1305,6 +1305,89 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#worker-bridge-control-plane" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Worker Bridge Control Plane
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Worker Bridge Control Plane">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get-workerv1health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /worker/v1/health
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-workerv1bootstrap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /worker/v1/bootstrap
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-workerv1nodesregister" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /worker/v1/nodes/register
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-workerv1nodesnode_idheartbeat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /worker/v1/nodes/{node_id}/heartbeat
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-workerv1nodesnode_idjobsclaim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /worker/v1/nodes/{node_id}/jobs/claim
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-workerv1nodesnode_idjobsjob_idresult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /worker/v1/nodes/{node_id}/jobs/{job_id}/result
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#user-management" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2372,6 +2455,89 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#worker-bridge-control-plane" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Worker Bridge Control Plane
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Worker Bridge Control Plane">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get-workerv1health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /worker/v1/health
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-workerv1bootstrap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /worker/v1/bootstrap
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-workerv1nodesregister" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /worker/v1/nodes/register
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-workerv1nodesnode_idheartbeat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /worker/v1/nodes/{node_id}/heartbeat
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-workerv1nodesnode_idjobsclaim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /worker/v1/nodes/{node_id}/jobs/claim
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-workerv1nodesnode_idjobsjob_idresult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /worker/v1/nodes/{node_id}/jobs/{job_id}/result
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#user-management" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2609,6 +2775,9 @@
 <li><code>GET /health</code></li>
 <li><code>GET /oauth/{provider}/callback</code></li>
 <li><code>GET /gmail/callback</code></li>
+<li><code>GET /worker/v1/health</code></li>
+<li><code>POST /worker/v1/bootstrap</code></li>
+<li>Worker signed endpoints under <code>/worker/v1/nodes/*</code></li>
 </ul>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="err">X-API-Secret: &lt;skills-shared-secret&gt;</span>
 </code></pre></div>
@@ -2778,6 +2947,34 @@ authenticated (no admin actor envelope).</p>
 <p>Internal tenant messaging management is available under
 <code>/admin/tenants/{tenant_id}/messaging/*</code>, including provider config, chat
 policies, message listing, and queued send operations.</p>
+<hr />
+<h2 id="worker-bridge-control-plane">Worker Bridge Control Plane<a class="headerlink" href="#worker-bridge-control-plane" title="Permanent link">&para;</a></h2>
+<p>Worker endpoints are intended for registered sub-worker nodes and are
+authenticated with worker session credentials (not <code>X-API-Secret</code>).</p>
+<p>Signed worker request headers:</p>
+<ul>
+<li><code>Authorization: Bearer &lt;worker-session-token&gt;</code></li>
+<li><code>X-Worker-Session-Id</code></li>
+<li><code>X-Worker-Timestamp</code></li>
+<li><code>X-Worker-Nonce</code></li>
+<li><code>X-Worker-Signature</code></li>
+</ul>
+<h3 id="get-workerv1health">GET /worker/v1/health<a class="headerlink" href="#get-workerv1health" title="Permanent link">&para;</a></h3>
+<p>Worker bridge health probe.</p>
+<h3 id="post-workerv1bootstrap">POST /worker/v1/bootstrap<a class="headerlink" href="#post-workerv1bootstrap" title="Permanent link">&para;</a></h3>
+<p>Bootstrap a worker node session.</p>
+<ul>
+<li>Requires <code>X-Worker-Bootstrap-Secret</code>.</li>
+<li>Returns initial worker session credentials and expiry.</li>
+</ul>
+<h3 id="post-workerv1nodesregister">POST /worker/v1/nodes/register<a class="headerlink" href="#post-workerv1nodesregister" title="Permanent link">&para;</a></h3>
+<p>Complete worker registration and optionally rotate session credentials.</p>
+<h3 id="post-workerv1nodesnode_idheartbeat">POST /worker/v1/nodes/{node_id}/heartbeat<a class="headerlink" href="#post-workerv1nodesnode_idheartbeat" title="Permanent link">&para;</a></h3>
+<p>Submit node heartbeat and health/capability metadata.</p>
+<h3 id="post-workerv1nodesnode_idjobsclaim">POST /worker/v1/nodes/{node_id}/jobs/claim<a class="headerlink" href="#post-workerv1nodesnode_idjobsclaim" title="Permanent link">&para;</a></h3>
+<p>Claim next eligible worker job based on capability policy.</p>
+<h3 id="post-workerv1nodesnode_idjobsjob_idresult">POST /worker/v1/nodes/{node_id}/jobs/{job_id}/result<a class="headerlink" href="#post-workerv1nodesnode_idjobsjob_idresult" title="Permanent link">&para;</a></h3>
+<p>Submit terminal status and artifacts for a claimed worker job.</p>
 <hr />
 <h2 id="user-management">User Management<a class="headerlink" href="#user-management" title="Permanent link">&para;</a></h2>
 <h3 id="get-users">GET /users<a class="headerlink" href="#get-users" title="Permanent link">&para;</a></h3>
