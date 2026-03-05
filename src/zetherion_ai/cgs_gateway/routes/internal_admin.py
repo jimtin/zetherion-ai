@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from zetherion_ai.cgs_gateway.errors import GatewayError, map_upstream_error, success_response
 from zetherion_ai.cgs_gateway.middleware import principal_is_operator
 from zetherion_ai.cgs_gateway.models import (
+    TenantAdminAutomergeExecuteRequest,
     TenantAdminChangeCreateRequest,
     TenantAdminChangeDecisionRequest,
     TenantAdminChannelBindingRequest,
@@ -1343,6 +1344,48 @@ async def handle_admin_send_messaging_message(request: web.Request) -> web.Respo
     )
 
 
+async def handle_admin_execute_automerge(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=True)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    raw = await json_object(request)
+    try:
+        body = TenantAdminAutomergeExecuteRequest.model_validate(raw)
+    except ValidationError as exc:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="Validation failed",
+            status=400,
+            details={"errors": exc.errors(include_context=False)},
+        ) from exc
+
+    payload = body.model_dump(mode="json", exclude_none=True)
+    applied_change_id = _change_ticket_from_request(request, body.change_ticket_id)
+    try:
+        response = await _admin_mutation_response(
+            request,
+            cgs_tenant_id=cgs_tenant_id,
+            method="POST",
+            subpath="/automerge/execute",
+            payload=payload,
+            change_ticket_id=applied_change_id,
+        )
+    except Exception:
+        if applied_change_id:
+            await request.app["cgs_storage"].mark_admin_change_failed(
+                change_id=applied_change_id,
+                result={"status": "failed", "operation": "automerge.execute"},
+            )
+        raise
+
+    if applied_change_id:
+        await request.app["cgs_storage"].mark_admin_change_applied(
+            change_id=applied_change_id,
+            result={"status": "applied", "operation": "automerge.execute"},
+        )
+    return response
+
+
 async def handle_admin_submit_change(request: web.Request) -> web.Response:
     _ensure_internal_admin_access(request, mutating=True)
     rid = request_id(request)
@@ -1687,6 +1730,10 @@ def register_internal_admin_routes(app: web.Application) -> None:
     app.router.add_post(
         prefix + "/messaging/messages/{chat_id}/send",
         handle_admin_send_messaging_message,
+    )
+    app.router.add_post(
+        prefix + "/automerge/execute",
+        handle_admin_execute_automerge,
     )
 
     app.router.add_post(prefix + "/changes", handle_admin_submit_change)

@@ -29,10 +29,17 @@ from zetherion_ai.admin.tenant_admin_manager import (
     TenantAdminManager,
     admin_actor_from_payload,
 )
+from zetherion_ai.automerge.orchestrator import (
+    AutomergeExecutionRequest,
+    AutomergeExecutionResult,
+    AutomergeGuardrails,
+    AutomergeOrchestrator,
+)
 from zetherion_ai.logging import get_logger
 from zetherion_ai.routing.models import DestinationType
 from zetherion_ai.security.trust_policy import TrustPolicyEvaluator
 from zetherion_ai.skills.base import SkillRequest
+from zetherion_ai.skills.github.client import GitHubAPIError, GitHubClient
 from zetherion_ai.skills.registry import SkillRegistry
 
 log = get_logger("zetherion_ai.skills.server")
@@ -354,6 +361,22 @@ class SkillsServer:
             if normalized in {"0", "false", "no", "off"}:
                 return False
         raise ValueError(f"Invalid boolean for '{field_name}'")
+
+    @staticmethod
+    def _parse_string_list(raw: Any, field_name: str) -> list[str]:
+        """Parse a list of strings and strip empty entries."""
+        if raw is None:
+            return []
+        if not isinstance(raw, list):
+            raise ValueError(f"{field_name} must be an array of strings")
+        output: list[str] = []
+        for value in raw:
+            if not isinstance(value, str):
+                raise ValueError(f"{field_name} must be an array of strings")
+            normalized = value.strip()
+            if normalized:
+                output.append(normalized)
+        return output
 
     @staticmethod
     def _is_bridge_only_tenant_path(path: str) -> bool:
@@ -1664,6 +1687,152 @@ class SkillsServer:
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
 
+    async def handle_tenant_execute_automerge(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            actor = self._admin_actor(request)
+            data = await self._read_json_object(request)
+            repository = str(data.get("repository") or "").strip()
+            if not repository:
+                raise ValueError("Missing repository")
+
+            branch_guard_passed = self._parse_bool(
+                data.get("branch_guard_passed"),
+                "branch_guard_passed",
+                default=False,
+            )
+            risk_guard_passed = self._parse_bool(
+                data.get("risk_guard_passed"),
+                "risk_guard_passed",
+                default=False,
+            )
+            explicitly_elevated = self._parse_bool(
+                data.get("explicitly_elevated"),
+                "explicitly_elevated",
+                default=False,
+            )
+
+            decision = self._trust_policy_evaluator.evaluate(
+                tenant_id=tenant_id,
+                action="automerge.execute",
+                context={
+                    "method": "POST",
+                    "subpath": "/automerge/execute",
+                    "branch_guard_passed": branch_guard_passed,
+                    "risk_guard_passed": risk_guard_passed,
+                    "explicitly_elevated": explicitly_elevated,
+                },
+            )
+            if not decision.allowed:
+                payload = {
+                    "error": decision.message,
+                    "code": decision.code,
+                    "details": decision.details,
+                    "requires_two_person": decision.requires_two_person,
+                }
+                return web.json_response(payload, status=decision.status)
+
+            from zetherion_ai.config import get_settings
+
+            settings = get_settings()
+            token = str(
+                self._tenant_admin_manager.get_secret_cached(tenant_id, "github_token", "") or ""
+            ).strip()
+            if not token and settings.github_token is not None:
+                token = settings.github_token.get_secret_value().strip()
+            if not token:
+                raise ValueError("GitHub token is not configured for this tenant")
+
+            required_checks = self._parse_string_list(
+                data.get("required_checks"),
+                "required_checks",
+            )
+            allowed_paths = self._parse_string_list(data.get("allowed_paths"), "allowed_paths")
+            forbidden_actions = self._parse_string_list(
+                data.get("forbidden_actions"),
+                "forbidden_actions",
+            )
+            requested_actions = self._parse_string_list(
+                data.get("requested_actions"),
+                "requested_actions",
+            )
+
+            guardrails = AutomergeGuardrails(
+                allowed_paths=tuple(allowed_paths),
+                max_changed_files=(
+                    self._parse_int(data.get("max_changed_files"), "max_changed_files")
+                    if data.get("max_changed_files") is not None
+                    else 120
+                ),
+                max_additions=(
+                    self._parse_int(data.get("max_additions"), "max_additions")
+                    if data.get("max_additions") is not None
+                    else 6000
+                ),
+                max_deletions=(
+                    self._parse_int(data.get("max_deletions"), "max_deletions")
+                    if data.get("max_deletions") is not None
+                    else 3000
+                ),
+                required_checks=tuple(required_checks) if required_checks else ("CI/CD Pipeline",),
+                forbidden_actions=tuple(forbidden_actions) if forbidden_actions else (),
+            )
+            orchestrator = AutomergeOrchestrator()
+            execution_request = AutomergeExecutionRequest(
+                tenant_id=tenant_id,
+                repository=repository,
+                base_branch=str(data.get("base_branch") or "main"),
+                source_ref=str(data.get("source_ref") or "").strip() or None,
+                head_branch=str(data.get("head_branch") or "").strip() or None,
+                pr_title=str(data.get("pr_title") or "").strip() or None,
+                pr_body=str(data.get("pr_body") or ""),
+                merge_method=str(data.get("merge_method") or "squash"),
+                commit_title=str(data.get("commit_title") or "").strip() or None,
+                commit_message=str(data.get("commit_message") or "").strip() or None,
+                requested_actions=tuple(requested_actions),
+                guardrails=guardrails,
+                post_merge_validation_passed=self._parse_bool(
+                    data.get("post_merge_validation_passed"),
+                    "post_merge_validation_passed",
+                    default=True,
+                ),
+            )
+
+            github_client = GitHubClient(token=token, timeout=float(settings.github_api_timeout))
+            try:
+                result: AutomergeExecutionResult = await orchestrator.execute(
+                    request=execution_request,
+                    api=github_client,
+                )
+            finally:
+                await github_client.close()
+
+            await self._tenant_admin_manager.record_admin_event(
+                tenant_id=tenant_id,
+                action="tenant_automerge_execute",
+                actor=actor,
+                details=result.to_dict(),
+            )
+            status_code = 200 if result.status == "merged" else 409
+            return web.json_response(
+                {
+                    "ok": result.status == "merged",
+                    "result": result.to_dict(),
+                },
+                status=status_code,
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except GitHubAPIError as exc:
+            log.exception("tenant_automerge_execute_failed", tenant_id=tenant_id)
+            return web.json_response(
+                {"error": f"GitHub orchestration failed: {exc}"},
+                status=502,
+            )
+
     async def handle_tenant_create_execution_plan(self, request: web.Request) -> web.Response:
         if self._tenant_admin_manager is None:
             return web.json_response({"error": "Tenant admin is not configured"}, status=501)
@@ -2129,6 +2298,10 @@ class SkillsServer:
         app.router.add_post(
             tenant_prefix + "/messaging/messages/{chat_id}/send",
             self.handle_tenant_send_messaging_message,
+        )
+        app.router.add_post(
+            tenant_prefix + "/automerge/execute",
+            self.handle_tenant_execute_automerge,
         )
         app.router.add_post(
             tenant_prefix + "/execution/plans",

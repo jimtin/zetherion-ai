@@ -4035,15 +4035,16 @@ class TenantAdminManager:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _coerce_execution_steps(raw_steps: Any) -> list[dict[str, str]]:
+    def _coerce_execution_steps(raw_steps: Any) -> list[dict[str, Any]]:
         if not isinstance(raw_steps, list) or not raw_steps:
             raise ValueError("steps must be a non-empty array")
 
-        normalized: list[dict[str, str]] = []
+        normalized: list[dict[str, Any]] = []
         for idx, raw in enumerate(raw_steps, start=1):
             title = f"Step {idx}"
             prompt = ""
             idempotency_key = f"step-{idx}"
+            metadata: dict[str, Any] = {}
 
             if isinstance(raw, str):
                 prompt = raw.strip()
@@ -4061,6 +4062,10 @@ class TenantAdminManager:
                     idempotency_key = re.sub(r"[^a-z0-9_.:-]+", "-", candidate).strip("-") or (
                         f"step-{idx}"
                     )
+                raw_metadata = raw.get("metadata")
+                if raw_metadata is not None and not isinstance(raw_metadata, dict):
+                    raise ValueError(f"steps[{idx - 1}].metadata must be an object")
+                metadata = dict(raw_metadata or {})
             else:
                 raise ValueError(f"steps[{idx - 1}] must be a string or object")
 
@@ -4071,6 +4076,7 @@ class TenantAdminManager:
                     "title": title[:200],
                     "prompt_text": prompt,
                     "idempotency_key": idempotency_key[:120],
+                    "metadata": metadata,
                 }
             )
         return normalized
@@ -4303,7 +4309,7 @@ class TenantAdminManager:
                         $8,
                         NULL,
                         '{}'::jsonb,
-                        '{}'::jsonb
+                        $9::jsonb
                     )
                     RETURNING step_id::text AS step_id,
                               plan_id::text AS plan_id,
@@ -4331,6 +4337,7 @@ class TenantAdminManager:
                     step["prompt_text"],
                     step["idempotency_key"],
                     max_attempts,
+                    json.dumps(step.get("metadata") or {}),
                 )
                 if inserted_step is None:
                     raise RuntimeError("Failed to create execution step")
@@ -5732,6 +5739,23 @@ class TenantAdminManager:
         if artifact_row is None:
             raise RuntimeError("Failed to record execution artifact")
         return dict(artifact_row)
+
+    async def record_admin_event(
+        self,
+        *,
+        tenant_id: str,
+        action: str,
+        actor: AdminActorContext,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Persist a tenant-admin audit event."""
+        await self._write_audit(
+            tenant_id=tenant_id,
+            action=action,
+            actor=actor,
+            before=None,
+            after=details or {},
+        )
 
     async def _write_audit(
         self,

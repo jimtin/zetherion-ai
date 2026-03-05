@@ -275,6 +275,127 @@ class GitHubClient:
             return Repository.from_api(data)
         raise GitHubAPIError("Unexpected response format")
 
+    async def get_reference(self, owner: str, repo: str, ref: str) -> dict[str, Any] | None:
+        """Get one git reference by name.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            ref: Ref name (for example ``heads/main``).
+
+        Returns:
+            The ref payload, or ``None`` when missing.
+        """
+        normalized = str(ref or "").strip().removeprefix("refs/")
+        if not normalized:
+            raise ValueError("ref is required")
+        try:
+            data = await self._request("GET", f"/repos/{owner}/{repo}/git/ref/{normalized}")
+        except GitHubNotFoundError:
+            return None
+        if isinstance(data, dict):
+            return data
+        raise GitHubAPIError("Unexpected response format")
+
+    async def create_reference(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        ref: str,
+        sha: str,
+    ) -> dict[str, Any]:
+        """Create a git reference.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            ref: Ref name (for example ``heads/feature``).
+            sha: Target commit SHA.
+        """
+        normalized = str(ref or "").strip().removeprefix("refs/")
+        if not normalized:
+            raise ValueError("ref is required")
+        commit_sha = str(sha or "").strip()
+        if not commit_sha:
+            raise ValueError("sha is required")
+        data = await self._request(
+            "POST",
+            f"/repos/{owner}/{repo}/git/refs",
+            json={
+                "ref": f"refs/{normalized}",
+                "sha": commit_sha,
+            },
+        )
+        if isinstance(data, dict):
+            return data
+        raise GitHubAPIError("Unexpected response format")
+
+    async def ensure_branch(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        branch: str,
+        source_ref: str,
+    ) -> dict[str, Any]:
+        """Ensure a branch exists, creating from source ref when needed."""
+        branch_name = str(branch or "").strip().removeprefix("refs/heads/").removeprefix("heads/")
+        if not branch_name:
+            raise ValueError("branch is required")
+
+        target_ref = f"heads/{branch_name}"
+        existing = await self.get_reference(owner, repo, target_ref)
+        if existing is not None:
+            object_payload = existing.get("object")
+            existing_sha = ""
+            if isinstance(object_payload, dict):
+                existing_sha = str(object_payload.get("sha") or "")
+            return {
+                "created": False,
+                "ref": str(existing.get("ref") or f"refs/{target_ref}"),
+                "sha": existing_sha,
+            }
+
+        raw_source = str(source_ref or "").strip()
+        if not raw_source:
+            raise ValueError("source_ref is required")
+        if raw_source.startswith("refs/"):
+            normalized_source = raw_source.removeprefix("refs/")
+        elif raw_source.startswith("heads/"):
+            normalized_source = raw_source
+        else:
+            normalized_source = f"heads/{raw_source}"
+
+        source = await self.get_reference(owner, repo, normalized_source)
+        if source is None:
+            raise GitHubNotFoundError(
+                f"Source ref not found: {normalized_source}",
+                status_code=404,
+            )
+        source_obj = source.get("object")
+        if not isinstance(source_obj, dict):
+            raise GitHubAPIError("Source ref payload is malformed")
+        source_sha = str(source_obj.get("sha") or "").strip()
+        if not source_sha:
+            raise GitHubAPIError("Source ref did not include an object sha")
+
+        created = await self.create_reference(
+            owner,
+            repo,
+            ref=target_ref,
+            sha=source_sha,
+        )
+        created_obj = created.get("object")
+        created_sha = ""
+        if isinstance(created_obj, dict):
+            created_sha = str(created_obj.get("sha") or "")
+        return {
+            "created": True,
+            "ref": str(created.get("ref") or f"refs/{target_ref}"),
+            "sha": created_sha or source_sha,
+        }
+
     async def list_repositories(
         self,
         per_page: int = DEFAULT_PER_PAGE,
@@ -635,6 +756,85 @@ class GitHubClient:
             return PullRequest.from_api(data, repository=f"{owner}/{repo}")
         raise GitHubAPIError("Unexpected response format")
 
+    async def create_pull_request(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        title: str,
+        head: str,
+        base: str,
+        body: str = "",
+        draft: bool = False,
+    ) -> PullRequest:
+        """Create a pull request."""
+        title_text = str(title or "").strip()
+        if not title_text:
+            raise ValueError("title is required")
+        head_ref = str(head or "").strip()
+        base_ref = str(base or "").strip()
+        if not head_ref or not base_ref:
+            raise ValueError("head and base are required")
+        payload: dict[str, Any] = {
+            "title": title_text,
+            "head": head_ref,
+            "base": base_ref,
+            "body": str(body or ""),
+            "draft": bool(draft),
+        }
+        data = await self._request("POST", f"/repos/{owner}/{repo}/pulls", json=payload)
+        if isinstance(data, dict):
+            log.info(
+                "pr_created",
+                repo=f"{owner}/{repo}",
+                number=data.get("number"),
+                head=head_ref,
+                base=base_ref,
+            )
+            return PullRequest.from_api(data, repository=f"{owner}/{repo}")
+        raise GitHubAPIError("Unexpected response format")
+
+    async def find_open_pull_request(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        head: str,
+        base: str,
+    ) -> PullRequest | None:
+        """Find one open pull request for head -> base."""
+        head_owner_ref = f"{owner}:{head}"
+        prs = await self.list_pull_requests(
+            owner=owner,
+            repo=repo,
+            state="open",
+            head=head_owner_ref,
+            base=base,
+            per_page=1,
+        )
+        if not prs:
+            return None
+        return prs[0]
+
+    async def list_pull_request_files(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        *,
+        per_page: int = 100,
+        page: int = 1,
+    ) -> list[dict[str, Any]]:
+        """List changed files for one pull request."""
+        data = await self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pr_number}/files",
+            params={"per_page": per_page, "page": page},
+        )
+        if isinstance(data, list):
+            return [dict(row) for row in data if isinstance(row, dict)]
+        return []
+
     async def get_pr_diff(self, owner: str, repo: str, pr_number: int) -> str:
         """Get the diff for a pull request.
 
@@ -747,6 +947,30 @@ class GitHubClient:
             runs = data.get("workflow_runs", [])
             return [WorkflowRun.from_api(r, repository=repository) for r in runs]
         return []
+
+    async def list_check_runs(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        ref: str,
+        per_page: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List check runs for a ref (branch/sha)."""
+        ref_name = str(ref or "").strip()
+        if not ref_name:
+            raise ValueError("ref is required")
+        data = await self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/commits/{ref_name}/check-runs",
+            params={"per_page": per_page},
+        )
+        if not isinstance(data, dict):
+            return []
+        runs = data.get("check_runs", [])
+        if not isinstance(runs, list):
+            return []
+        return [dict(row) for row in runs if isinstance(row, dict)]
 
     async def rerun_workflow(self, owner: str, repo: str, run_id: int) -> None:
         """Re-run a workflow.

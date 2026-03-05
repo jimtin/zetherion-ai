@@ -737,3 +737,156 @@ class TestGitHubClientAdditionalCoverage:
         with patch.object(client, "_request", AsyncMock(return_value=[])):
             with pytest.raises(GitHubAPIError):
                 await client.create_label("owner", "repo", "triage")
+
+    @pytest.mark.asyncio
+    async def test_get_reference_and_create_reference_paths(self, client):
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(return_value={"ref": "refs/heads/main", "object": {"sha": "abc"}}),
+        ) as mock_req:
+            ref = await client.get_reference("owner", "repo", "refs/heads/main")
+            assert ref is not None
+            assert ref["ref"] == "refs/heads/main"
+            assert mock_req.await_args.args[1] == "/repos/owner/repo/git/ref/heads/main"
+
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(side_effect=GitHubNotFoundError("missing")),
+        ):
+            ref = await client.get_reference("owner", "repo", "heads/missing")
+            assert ref is None
+
+        with pytest.raises(ValueError, match="ref is required"):
+            await client.create_reference("owner", "repo", ref="", sha="abc")
+        with pytest.raises(ValueError, match="sha is required"):
+            await client.create_reference("owner", "repo", ref="heads/feature", sha="")
+
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(return_value={"ref": "refs/heads/feature", "object": {"sha": "abc"}}),
+        ) as mock_req:
+            created = await client.create_reference(
+                "owner",
+                "repo",
+                ref="heads/feature",
+                sha="abc",
+            )
+            assert created["ref"] == "refs/heads/feature"
+            payload = mock_req.await_args.kwargs["json"]
+            assert payload == {"ref": "refs/heads/feature", "sha": "abc"}
+
+    @pytest.mark.asyncio
+    async def test_ensure_branch_existing_and_create_paths(self, client):
+        with patch.object(
+            client,
+            "get_reference",
+            AsyncMock(return_value={"ref": "refs/heads/feature", "object": {"sha": "abc"}}),
+        ):
+            ensured = await client.ensure_branch(
+                "owner",
+                "repo",
+                branch="feature",
+                source_ref="main",
+            )
+            assert ensured["created"] is False
+            assert ensured["sha"] == "abc"
+
+        with patch.object(
+            client,
+            "get_reference",
+            AsyncMock(
+                side_effect=[
+                    None,
+                    {"ref": "refs/heads/main", "object": {"sha": "source-sha"}},
+                ]
+            ),
+        ), patch.object(
+            client,
+            "create_reference",
+            AsyncMock(return_value={"ref": "refs/heads/feature", "object": {"sha": "source-sha"}}),
+        ):
+            ensured = await client.ensure_branch(
+                "owner",
+                "repo",
+                branch="feature",
+                source_ref="main",
+            )
+            assert ensured["created"] is True
+            assert ensured["sha"] == "source-sha"
+
+    @pytest.mark.asyncio
+    async def test_create_find_pr_files_and_check_runs_paths(self, client):
+        with pytest.raises(ValueError, match="title is required"):
+            await client.create_pull_request(
+                "owner",
+                "repo",
+                title="",
+                head="feature",
+                base="main",
+            )
+        with pytest.raises(ValueError, match="head and base are required"):
+            await client.create_pull_request(
+                "owner",
+                "repo",
+                title="t",
+                head="",
+                base="main",
+            )
+
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(return_value={"number": 9, "title": "PR", "state": "open"}),
+        ):
+            pr = await client.create_pull_request(
+                "owner",
+                "repo",
+                title="PR",
+                head="feature",
+                base="main",
+            )
+            assert pr.number == 9
+
+        with patch.object(
+            client,
+            "list_pull_requests",
+            AsyncMock(return_value=[MagicMock(number=9)]),
+        ):
+            pr = await client.find_open_pull_request(
+                "owner",
+                "repo",
+                head="feature",
+                base="main",
+            )
+            assert pr is not None
+            assert pr.number == 9
+
+        with patch.object(client, "_request", AsyncMock(return_value=[])):
+            files = await client.list_pull_request_files("owner", "repo", 1)
+            assert files == []
+
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(return_value=[{"filename": "src/app.py"}]),
+        ):
+            files = await client.list_pull_request_files("owner", "repo", 1)
+            assert files[0]["filename"] == "src/app.py"
+
+        with pytest.raises(ValueError, match="ref is required"):
+            await client.list_check_runs("owner", "repo", ref="")
+
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(return_value={"check_runs": [{"name": "CI/CD Pipeline"}]}),
+        ):
+            runs = await client.list_check_runs("owner", "repo", ref="main")
+            assert runs[0]["name"] == "CI/CD Pipeline"
+
+        with patch.object(client, "_request", AsyncMock(return_value={})):
+            runs = await client.list_check_runs("owner", "repo", ref="main")
+            assert runs == []

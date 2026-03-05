@@ -55,6 +55,7 @@ This guide maps CGS `/service/ai/v1` routes to expected frontend flows.
 | Messaging chat list | `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/chats` | `GET` | Supports `provider`, `include_inactive`, `limit` |
 | Messaging message list | `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages` | `GET` | Requires `chat_id` query |
 | Messaging send queue | `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages/{chat_id}/send` | `POST` | May require approval (`AI_APPROVAL_REQUIRED`) |
+| Autonomous merge execute | `/service/ai/v1/internal/admin/tenants/{tenant_id}/automerge/execute` | `POST` | Requires trust-policy branch/risk guards + required checks |
 | Change queue | `/service/ai/v1/internal/admin/tenants/{tenant_id}/changes` | `GET` | Shows pending/approved/applied/rejected |
 | Submit change | `/service/ai/v1/internal/admin/tenants/{tenant_id}/changes` | `POST` | Creates pending review ticket |
 | Approve/reject change | `/service/ai/v1/internal/admin/tenants/{tenant_id}/changes/{change_id}/approve` or `/reject` | `POST` | Two-person approval enforced |
