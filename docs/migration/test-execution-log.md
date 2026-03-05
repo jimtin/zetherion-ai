@@ -148,3 +148,4 @@ Append-only bounded-lane execution log in UTC.
 | 2026-03-05T01:55:25.811Z | e2e-fullstack-critical | `./scripts/test-full.sh` | failed | 0 | exit:1 | - |
 | 2026-03-05T02:09:12.397Z | e2e-fullstack-critical | `./scripts/test-full.sh` | failed | 811 | exit:1 | - |
 | 2026-03-05T02:15:39.677Z | e2e-fullstack-critical | `./scripts/test-full.sh` | passed | 132 |  | - |
+| 2026-03-05T02:18:38.616Z | lint | `bash -lc .venv/bin/ruff check src/ tests/ && .venv/bin/ruff format --check src/ tests/` | passed | 0 |  | - |

@@ -962,6 +962,7 @@ class TestTenantAdminEndpoints:
         mgr.set_email_primary_calendar = AsyncMock(
             return_value={"account_id": "acc-1", "primary_calendar_id": "primary"}
         )
+
         def _secret_lookup(_tenant_id: str, name: str, default: str | None = None):
             if name == "github_token":
                 return "ghp_test_token"
