@@ -1,5 +1,11 @@
 """Announcement domain storage and models."""
 
+from zetherion_ai.announcements.discord_adapter import DiscordDMChannelAdapter
+from zetherion_ai.announcements.dispatcher import (
+    AnnouncementChannelAdapter,
+    AnnouncementDispatcher,
+    AnnouncementDispatchError,
+)
 from zetherion_ai.announcements.policy import (
     AnnouncementPolicyDecision,
     AnnouncementPolicyEngine,
@@ -7,6 +13,7 @@ from zetherion_ai.announcements.policy import (
 )
 from zetherion_ai.announcements.storage import (
     AnnouncementDelivery,
+    AnnouncementEvent,
     AnnouncementEventInput,
     AnnouncementPreferencePatch,
     AnnouncementReceipt,
@@ -18,7 +25,12 @@ from zetherion_ai.announcements.storage import (
 
 __all__ = [
     "AnnouncementDelivery",
+    "AnnouncementEvent",
     "AnnouncementEventInput",
+    "AnnouncementChannelAdapter",
+    "AnnouncementDispatchError",
+    "AnnouncementDispatcher",
+    "DiscordDMChannelAdapter",
     "AnnouncementPolicyDecision",
     "AnnouncementPolicyEngine",
     "AnnouncementPreferencePatch",

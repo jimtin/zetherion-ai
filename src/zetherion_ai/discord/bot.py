@@ -19,6 +19,9 @@ from discord import app_commands
 
 from zetherion_ai.agent.core import Agent
 from zetherion_ai.agent.inference import ProviderIssueAlert
+from zetherion_ai.announcements import AnnouncementRepository
+from zetherion_ai.announcements.discord_adapter import DiscordDMChannelAdapter
+from zetherion_ai.announcements.dispatcher import AnnouncementDispatcher
 from zetherion_ai.config import get_dynamic, get_dynamic_for_tenant, get_secret, get_settings
 from zetherion_ai.constants import KEEP_WARM_INTERVAL_SECONDS, MAX_DISCORD_MESSAGE_LENGTH
 from zetherion_ai.discord.security import (
@@ -101,6 +104,8 @@ class ZetherionAIBot(discord.Client):
         self._security_pipeline: SecurityPipeline | None = None
         self._security_ai_analyzer: SecurityAIAnalyzer | None = None
         self._heartbeat_scheduler: HeartbeatScheduler | None = None
+        self._announcement_repository: AnnouncementRepository | None = None
+        self._announcement_dispatcher: AnnouncementDispatcher | None = None
         self._last_message_time: float = 0.0
         self._dev_watcher_wizards: dict[int, dict[str, Any]] = {}
 
@@ -318,6 +323,47 @@ class ZetherionAIBot(discord.Client):
                 log.exception("heartbeat_user_list_failed")
         await self._heartbeat_scheduler.start()
 
+        runtime_pool = None
+        if self._user_manager is not None:
+            user_manager_dict = getattr(self._user_manager, "__dict__", {})
+            if "_pool" in user_manager_dict:
+                runtime_pool = getattr(self._user_manager, "_pool", None)
+        if runtime_pool is not None:
+            try:
+                repository = AnnouncementRepository()
+                await repository.initialize(runtime_pool)
+                poll_interval = max(
+                    1,
+                    self._as_int(
+                        get_dynamic("notifications", "announcement_dispatch_interval_seconds", 15),
+                        15,
+                    ),
+                )
+                batch_size = max(
+                    1,
+                    self._as_int(
+                        get_dynamic("notifications", "announcement_dispatch_batch_size", 25),
+                        25,
+                    ),
+                )
+                adapter = DiscordDMChannelAdapter(self)
+                self._announcement_repository = repository
+                self._announcement_dispatcher = AnnouncementDispatcher(
+                    repository,
+                    adapter,
+                    poll_interval_seconds=poll_interval,
+                    batch_size=batch_size,
+                )
+                log.info(
+                    "announcement_dispatcher_initialized",
+                    poll_interval_seconds=poll_interval,
+                    batch_size=batch_size,
+                )
+            except Exception:
+                log.exception("announcement_dispatcher_init_failed")
+                self._announcement_repository = None
+                self._announcement_dispatcher = None
+
         # Sync commands
         await self._tree.sync()
         log.info("commands_synced")
@@ -516,6 +562,13 @@ class ZetherionAIBot(discord.Client):
 
     async def close(self) -> None:
         """Clean up resources when bot is closing."""
+        dispatcher = self._announcement_dispatcher
+        if dispatcher is not None:
+            await dispatcher.stop()
+            self._announcement_dispatcher = None
+            log.info("announcement_dispatcher_stopped")
+        self._announcement_repository = None
+
         # Stop heartbeat scheduler first so no new queue tasks are generated.
         scheduler = self._heartbeat_scheduler
         if scheduler is not None:
@@ -559,11 +612,36 @@ class ZetherionAIBot(discord.Client):
 
     async def on_ready(self) -> None:
         """Called when the bot is fully ready."""
+        dispatcher = self._announcement_dispatcher
+        if dispatcher is not None and not dispatcher.is_running:
+            try:
+                await dispatcher.start()
+            except Exception:
+                log.exception("announcement_dispatcher_start_failed")
+
         log.info(
             "bot_ready",
             user=str(self.user),
             guilds=len(self.guilds),
         )
+
+    @staticmethod
+    def _as_int(value: Any, default: int = 0) -> int:
+        """Parse integer-like dynamic setting values."""
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return int(value)
+        if isinstance(value, str):
+            raw = value.strip()
+            if raw:
+                try:
+                    return int(raw)
+                except ValueError:
+                    return default
+        return default
 
     @staticmethod
     def _as_bool(value: Any, default: bool = False) -> bool:

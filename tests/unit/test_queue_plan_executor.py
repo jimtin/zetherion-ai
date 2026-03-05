@@ -24,6 +24,14 @@ async def test_execute_no_lease_returns_noop() -> None:
 
 
 @pytest.mark.asyncio
+async def test_execute_requires_tenant_and_plan_ids() -> None:
+    executor = PlanContinuationExecutor(tenant_admin_manager=AsyncMock(), agent=None)
+
+    with pytest.raises(ValueError, match="tenant_id and plan_id"):
+        await executor.execute({"tenant_id": "tenant-only"})
+
+
+@pytest.mark.asyncio
 async def test_execute_success_records_artifacts_and_schedules_next() -> None:
     manager = AsyncMock()
     manager.claim_execution_plan_lease = AsyncMock(return_value={"created_by": "42"})

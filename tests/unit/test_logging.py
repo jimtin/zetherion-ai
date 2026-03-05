@@ -311,6 +311,33 @@ class TestSetupLoggingFileHandler:
         file_handlers = [h for h in logging.root.handlers if isinstance(h, RotatingFileHandler)]
         assert len(file_handlers) == 1
 
+    def test_setup_logging_error_file_handler_creation_failure(self, tmp_path):
+        """Test that error-file handler setup failure is handled gracefully."""
+        log_dir = tmp_path / "logs"
+        mock_settings = MagicMock()
+        mock_settings.log_level = "INFO"
+        mock_settings.log_to_file = True
+        mock_settings.log_directory = str(log_dir)
+        mock_settings.log_file_path = str(log_dir / "zetherion_ai.log")
+        mock_settings.error_log_file_path = str(log_dir / "zetherion_ai_error.log")
+        mock_settings.log_file_max_bytes = 10485760
+        mock_settings.log_file_backup_count = 5
+        mock_settings.is_development = False
+        mock_settings.log_error_file_enabled = True
+
+        primary_handler = MagicMock(spec=RotatingFileHandler)
+        primary_handler.level = logging.INFO
+
+        with patch("zetherion_ai.logging.get_settings", return_value=mock_settings):
+            with patch(
+                "zetherion_ai.logging.RotatingFileHandler",
+                side_effect=[primary_handler, PermissionError("cannot write error log")],
+            ):
+                setup_logging()
+
+        assert primary_handler in logging.root.handlers
+        assert logging.root.handlers.count(primary_handler) == 1
+
 
 class TestGetLogger:
     """Tests for get_logger function."""
