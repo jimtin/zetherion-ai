@@ -4623,9 +4623,7 @@ class TenantAdminManager:
         if before is None:
             raise ValueError("Execution plan not found")
         run_at = (
-            datetime.now(UTC)
-            if immediately
-            else (before.get("next_run_at") or datetime.now(UTC))
+            datetime.now(UTC) if immediately else (before.get("next_run_at") or datetime.now(UTC))
         )
         row = await self._fetchrow(
             """
