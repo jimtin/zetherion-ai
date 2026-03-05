@@ -16,11 +16,13 @@ import hmac
 import json
 import math
 import os
+import secrets
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from aiohttp import web
 
@@ -299,6 +301,15 @@ class SkillsServer:
         self._bridge_nonce_ttl = timedelta(minutes=10)
         self._bridge_max_skew = timedelta(minutes=5)
         self._bridge_signing_secret = os.environ.get("WHATSAPP_BRIDGE_SIGNING_SECRET", "").strip()
+        self._worker_nonce_cache: dict[str, datetime] = {}
+        self._worker_nonce_ttl = timedelta(minutes=10)
+        self._worker_max_skew = timedelta(minutes=5)
+        self._worker_bootstrap_secret = os.environ.get("WORKER_BRIDGE_BOOTSTRAP_SECRET", "").strip()
+        try:
+            worker_session_ttl_raw = int(os.environ.get("WORKER_SESSION_TTL_SECONDS", "86400"))
+        except ValueError:
+            worker_session_ttl_raw = 86400
+        self._worker_session_ttl_seconds = max(300, min(worker_session_ttl_raw, 60 * 60 * 24 * 30))
         self._trust_policy_evaluator = TrustPolicyEvaluator()
         try:
             interval_raw = int(os.environ.get("MESSAGING_TTL_CLEANUP_INTERVAL_SECONDS", "300"))
@@ -383,6 +394,10 @@ class SkillsServer:
         return path.startswith("/admin/tenants/") and path.endswith("/messaging/ingest")
 
     @staticmethod
+    def _is_worker_api_path(path: str) -> bool:
+        return path.startswith("/worker/v1/")
+
+    @staticmethod
     def _is_tenant_admin_path(path: str) -> bool:
         """Return True for tenant-admin endpoints requiring actor envelope."""
         return path.startswith("/admin/tenants/") and not SkillsServer._is_bridge_only_tenant_path(
@@ -415,6 +430,11 @@ class SkillsServer:
         expired = [nonce for nonce, expiry in self._bridge_nonce_cache.items() if expiry <= now]
         for nonce in expired:
             self._bridge_nonce_cache.pop(nonce, None)
+
+    def _prune_worker_nonce_cache(self, now: datetime) -> None:
+        expired = [nonce for nonce, expiry in self._worker_nonce_cache.items() if expiry <= now]
+        for nonce in expired:
+            self._worker_nonce_cache.pop(nonce, None)
 
     def _resolve_bridge_signing_secret(self, tenant_id: str) -> str:
         if self._tenant_admin_manager is not None:
@@ -469,6 +489,114 @@ class SkillsServer:
         if nonce_key in self._bridge_nonce_cache:
             raise RuntimeError("Bridge nonce replay detected")
         self._bridge_nonce_cache[nonce_key] = now + self._bridge_nonce_ttl
+
+    def _resolve_worker_bootstrap_secret(self, tenant_id: str) -> str:
+        if self._tenant_admin_manager is not None:
+            tenant_secret = self._tenant_admin_manager.get_secret_cached(
+                tenant_id,
+                "WORKER_BRIDGE_BOOTSTRAP_SECRET",
+                default="",
+            )
+            if tenant_secret:
+                return str(tenant_secret)
+        return self._worker_bootstrap_secret
+
+    @staticmethod
+    def _resolve_worker_auth_token(request: web.Request) -> str:
+        header = request.headers.get("Authorization", "")
+        if isinstance(header, str) and header.lower().startswith("bearer "):
+            token = header[7:].strip()
+            if token:
+                return token
+        return request.headers.get("X-Worker-Token", "").strip()
+
+    @staticmethod
+    def _hash_worker_token(token: str) -> str:
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    async def _verify_worker_signature(
+        self,
+        *,
+        request: web.Request,
+        tenant_id: str,
+        node_id: str,
+        raw_body: str,
+    ) -> dict[str, Any]:
+        if self._tenant_admin_manager is None:
+            raise ValueError("Tenant admin is not configured")
+
+        session_id = request.headers.get("X-Worker-Session-Id", "").strip()
+        timestamp = request.headers.get("X-Worker-Timestamp", "").strip()
+        nonce = request.headers.get("X-Worker-Nonce", "").strip()
+        provided_signature = request.headers.get("X-Worker-Signature", "").strip().lower()
+        if not session_id or not timestamp or not nonce or not provided_signature:
+            raise ValueError("Missing worker signature headers")
+
+        token = self._resolve_worker_auth_token(request)
+        if not token:
+            raise ValueError("Missing worker bearer token")
+
+        try:
+            timestamp_int = int(timestamp)
+        except ValueError as exc:
+            raise ValueError("Invalid X-Worker-Timestamp header") from exc
+
+        now = datetime.now(UTC)
+        signed_at = datetime.fromtimestamp(timestamp_int, tz=UTC)
+        skew = now - signed_at
+        if skew > self._worker_max_skew or skew < -self._worker_max_skew:
+            raise ValueError("Expired worker signature timestamp")
+
+        session = await self._tenant_admin_manager.get_worker_session_auth(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+        )
+        if session is None:
+            raise ValueError("Worker session not found")
+
+        revoked_at = session.get("revoked_at")
+        if revoked_at is not None:
+            raise ValueError("Worker session is revoked")
+        expires_at = session.get("expires_at")
+        if hasattr(expires_at, "timestamp") and expires_at <= now:
+            raise ValueError("Worker session is expired")
+
+        expected_token_hash = str(session.get("token_hash") or "").strip().lower()
+        if not expected_token_hash:
+            raise ValueError("Worker session token hash is unavailable")
+        provided_token_hash = self._hash_worker_token(token)
+        if not hmac.compare_digest(provided_token_hash, expected_token_hash):
+            raise ValueError("Invalid worker token")
+
+        signing_secret = str(session.get("signing_secret") or "").strip()
+        if not signing_secret:
+            raise ValueError("Worker signing secret is unavailable")
+        canonical = f"{tenant_id}.{node_id}.{session_id}.{timestamp}.{nonce}.{raw_body}"
+        expected_signature = hmac.new(
+            signing_secret.encode("utf-8"),
+            canonical.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(provided_signature, expected_signature):
+            raise ValueError("Invalid worker signature")
+
+        self._prune_worker_nonce_cache(now)
+        nonce_key = f"{tenant_id}:{node_id}:{session_id}:{nonce}"
+        if nonce_key in self._worker_nonce_cache:
+            raise RuntimeError("Worker nonce replay detected")
+        self._worker_nonce_cache[nonce_key] = now + self._worker_nonce_ttl
+
+        await self._tenant_admin_manager.touch_worker_session(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+        )
+
+        session["session_id"] = session_id
+        session["request_nonce"] = nonce
+        session["request_timestamp"] = timestamp
+        return session
 
     @staticmethod
     def _decode_actor_payload(encoded: str) -> dict[str, Any]:
@@ -539,6 +667,10 @@ class SkillsServer:
         if request.path == "/gmail/callback" or (
             request.path.startswith("/oauth/") and request.path.endswith("/callback")
         ):
+            response = await handler(request)
+            return response
+
+        if self._is_worker_api_path(request.path):
             response = await handler(request)
             return response
 
@@ -2221,6 +2353,583 @@ class SkillsServer:
             status = 404 if "not found" in message.lower() else 400
             return web.json_response({"error": message}, status=status)
 
+    async def handle_worker_health(self, _request: web.Request) -> web.Response:
+        return web.json_response({"status": "ok", "surface": "worker-bridge"})
+
+    async def handle_worker_bootstrap(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+
+        try:
+            raw_body = await request.text()
+        except Exception:
+            raw_body = ""
+        payload = _extract_json_object(raw_body)
+        if not payload:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        tenant_id = str(payload.get("tenant_id") or "").strip()
+        if not tenant_id:
+            return web.json_response({"error": "Missing tenant_id"}, status=400)
+        node_id = str(payload.get("node_id") or uuid4().hex).strip()
+        if not node_id:
+            return web.json_response({"error": "Missing node_id"}, status=400)
+
+        expected_bootstrap_secret = self._resolve_worker_bootstrap_secret(tenant_id)
+        provided_bootstrap_secret = request.headers.get("X-Worker-Bootstrap-Secret", "").strip()
+        bootstrap_secret_valid = bool(expected_bootstrap_secret) and hmac.compare_digest(
+            provided_bootstrap_secret,
+            expected_bootstrap_secret,
+        )
+        if not bootstrap_secret_valid:
+            await self._record_security_event(
+                tenant_id=tenant_id,
+                event_type="worker_bootstrap_invalid_secret",
+                severity="high",
+                action="worker.register",
+                source="worker-bridge",
+                payload={"node_id": node_id},
+            )
+            return web.json_response({"error": "Invalid worker bootstrap secret"}, status=401)
+
+        decision = self._trust_policy_evaluator.evaluate(
+            tenant_id=tenant_id,
+            action="worker.register",
+            context={
+                "method": "POST",
+                "subpath": "/worker/v1/bootstrap",
+                "bootstrap_secret_valid": True,
+            },
+        )
+        if not decision.allowed:
+            await self._record_security_event(
+                tenant_id=tenant_id,
+                event_type="worker_bootstrap_denied",
+                severity="high",
+                action="worker.register",
+                source="worker-bridge",
+                payload={"node_id": node_id, "code": decision.code, "status": decision.status},
+            )
+            return web.json_response(
+                self._policy_error_payload(decision),
+                status=decision.status,
+            )
+
+        try:
+            capabilities = self._parse_string_list(payload.get("capabilities"), "capabilities")
+            node_name = str(payload.get("node_name") or payload.get("label") or "").strip() or None
+            metadata = payload.get("metadata")
+            if metadata is not None and not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object when provided")
+            session_id = str(uuid4())
+            session_token = secrets.token_urlsafe(32)
+            signing_secret = secrets.token_urlsafe(32)
+            created = await self._tenant_admin_manager.bootstrap_worker_node_session(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                node_name=node_name,
+                capabilities=capabilities,
+                metadata=metadata if isinstance(metadata, dict) else None,
+                session_id=session_id,
+                session_token_hash=self._hash_worker_token(session_token),
+                signing_secret=signing_secret,
+                session_ttl_seconds=self._worker_session_ttl_seconds,
+                actor_sub="worker-bootstrap",
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception("worker_bootstrap_failed", tenant_id=tenant_id, node_id=node_id)
+            return web.json_response({"error": "Failed to bootstrap worker node"}, status=502)
+
+        session = dict(created.get("session") or {})
+        return web.json_response(
+            {
+                "ok": True,
+                "tenant_id": tenant_id,
+                "node": _serialise_record(dict(created.get("node") or {})),
+                "capabilities": list(created.get("capabilities") or []),
+                "session": {
+                    "session_id": session.get("session_id"),
+                    "token": session_token,
+                    "signing_secret": signing_secret,
+                    "expires_at": (
+                        session.get("expires_at").isoformat()
+                        if hasattr(session.get("expires_at"), "isoformat")
+                        else session.get("expires_at")
+                    ),
+                },
+            },
+            status=201,
+        )
+
+    async def handle_worker_register_node(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+
+        try:
+            raw_body = await request.text()
+        except Exception:
+            raw_body = ""
+        payload = _extract_json_object(raw_body)
+        if not payload:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        tenant_id = str(payload.get("tenant_id") or "").strip()
+        node_id = str(payload.get("node_id") or "").strip()
+        if not tenant_id or not node_id:
+            return web.json_response({"error": "Missing tenant_id or node_id"}, status=400)
+
+        try:
+            session_ctx = await self._verify_worker_signature(
+                request=request,
+                tenant_id=tenant_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+        except RuntimeError as exc:
+            await self._record_security_event(
+                tenant_id=tenant_id,
+                event_type="worker_nonce_replay",
+                severity="high",
+                action="worker.register",
+                source="worker-bridge",
+                payload={"node_id": node_id, "error": str(exc)},
+            )
+            return web.json_response({"error": str(exc)}, status=409)
+        except ValueError as exc:
+            await self._record_security_event(
+                tenant_id=tenant_id,
+                event_type="worker_signature_invalid",
+                severity="high",
+                action="worker.register",
+                source="worker-bridge",
+                payload={"node_id": node_id, "error": str(exc)},
+            )
+            return web.json_response({"error": str(exc)}, status=401)
+
+        decision = self._trust_policy_evaluator.evaluate(
+            tenant_id=tenant_id,
+            action="worker.register",
+            context={
+                "method": "POST",
+                "subpath": "/worker/v1/nodes/register",
+                "bootstrap_secret_valid": True,
+            },
+        )
+        if not decision.allowed:
+            return web.json_response(
+                self._policy_error_payload(decision),
+                status=decision.status,
+            )
+
+        try:
+            node_name = str(payload.get("node_name") or payload.get("label") or "").strip() or None
+            capabilities: list[str] | None = None
+            if "capabilities" in payload:
+                capabilities = self._parse_string_list(payload.get("capabilities"), "capabilities")
+            metadata = payload.get("metadata")
+            if metadata is not None and not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object when provided")
+            node = await self._tenant_admin_manager.register_worker_node(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                node_name=node_name,
+                capabilities=capabilities,
+                metadata=metadata if isinstance(metadata, dict) else None,
+                actor_sub="worker-register",
+            )
+            rotate_credentials = self._parse_bool(
+                payload.get("rotate_credentials"),
+                "rotate_credentials",
+                default=True,
+            )
+            session_payload: dict[str, Any] = {
+                "session_id": str(session_ctx.get("session_id") or "")
+            }
+            if rotate_credentials:
+                rotated_token = secrets.token_urlsafe(32)
+                rotated_signing_secret = secrets.token_urlsafe(32)
+                rotated = await self._tenant_admin_manager.rotate_worker_session_credentials(
+                    tenant_id=tenant_id,
+                    node_id=node_id,
+                    session_id=str(session_ctx.get("session_id") or ""),
+                    session_token_hash=self._hash_worker_token(rotated_token),
+                    signing_secret=rotated_signing_secret,
+                    session_ttl_seconds=self._worker_session_ttl_seconds,
+                    metadata={"rotated_via": "worker_register"},
+                )
+                session_payload.update(
+                    {
+                        "token": rotated_token,
+                        "signing_secret": rotated_signing_secret,
+                        "expires_at": (
+                            rotated.get("expires_at").isoformat()
+                            if hasattr(rotated.get("expires_at"), "isoformat")
+                            else rotated.get("expires_at")
+                        ),
+                        "rotated_at": (
+                            rotated.get("rotated_at").isoformat()
+                            if hasattr(rotated.get("rotated_at"), "isoformat")
+                            else rotated.get("rotated_at")
+                        ),
+                    }
+                )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception("worker_register_failed", tenant_id=tenant_id, node_id=node_id)
+            return web.json_response({"error": "Failed to register worker node"}, status=502)
+
+        return web.json_response(
+            {
+                "ok": True,
+                "tenant_id": tenant_id,
+                "node": _serialise_record(node),
+                "session": session_payload,
+            }
+        )
+
+    async def handle_worker_node_heartbeat(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        node_id = str(request.match_info["node_id"]).strip()
+        if not node_id:
+            return web.json_response({"error": "Missing node_id"}, status=400)
+
+        try:
+            raw_body = await request.text()
+        except Exception:
+            raw_body = ""
+        payload = _extract_json_object(raw_body)
+        if not payload:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+        tenant_id = str(payload.get("tenant_id") or "").strip()
+        if not tenant_id:
+            return web.json_response({"error": "Missing tenant_id"}, status=400)
+        body_node = str(payload.get("node_id") or "").strip()
+        if body_node and body_node != node_id:
+            return web.json_response({"error": "node_id does not match route"}, status=400)
+
+        try:
+            session_ctx = await self._verify_worker_signature(
+                request=request,
+                tenant_id=tenant_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+            metadata = payload.get("metadata")
+            if metadata is not None and not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object when provided")
+            health_status = str(payload.get("health_status") or "healthy")
+            node = await self._tenant_admin_manager.heartbeat_worker_node(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                health_status=health_status,
+                metadata=metadata if isinstance(metadata, dict) else None,
+                actor_sub="worker-heartbeat",
+            )
+            await self._tenant_admin_manager.record_worker_job_event(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                session_id=str(session_ctx.get("session_id") or ""),
+                event_type="worker.heartbeat",
+                request_nonce=str(session_ctx.get("request_nonce") or ""),
+                payload={"health_status": node.get("health_status")},
+            )
+        except RuntimeError as exc:
+            return web.json_response({"error": str(exc)}, status=409)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception("worker_heartbeat_failed", tenant_id=tenant_id, node_id=node_id)
+            return web.json_response({"error": "Failed to process heartbeat"}, status=502)
+
+        return web.json_response({"ok": True, "node": _serialise_record(node)})
+
+    async def handle_worker_claim_job(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        node_id = str(request.match_info["node_id"]).strip()
+        if not node_id:
+            return web.json_response({"error": "Missing node_id"}, status=400)
+
+        try:
+            raw_body = await request.text()
+        except Exception:
+            raw_body = ""
+        payload = _extract_json_object(raw_body)
+        if not payload:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+        tenant_id = str(payload.get("tenant_id") or "").strip()
+        if not tenant_id:
+            return web.json_response({"error": "Missing tenant_id"}, status=400)
+
+        try:
+            session_ctx = await self._verify_worker_signature(
+                request=request,
+                tenant_id=tenant_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+            required_capabilities = self._parse_string_list(
+                payload.get("required_capabilities"),
+                "required_capabilities",
+            )
+            status_value = str(session_ctx.get("status") or "").strip().lower()
+            health_value = str(session_ctx.get("health_status") or "").strip().lower()
+            node_registered = status_value in {"registered", "active"}
+            node_healthy = (
+                status_value not in {"quarantined", "disabled"} and health_value == "healthy"
+            )
+            capability_allowlisted = await self._tenant_admin_manager.has_worker_capabilities(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                required_capabilities=required_capabilities,
+            )
+            decision = self._trust_policy_evaluator.evaluate(
+                tenant_id=tenant_id,
+                action="worker.job.claim",
+                context={
+                    "method": "POST",
+                    "subpath": f"/worker/v1/nodes/{node_id}/jobs/claim",
+                    "node_registered": node_registered,
+                    "node_healthy": node_healthy,
+                    "capability_allowlisted": capability_allowlisted,
+                },
+            )
+            if not decision.allowed:
+                return web.json_response(
+                    self._policy_error_payload(decision),
+                    status=decision.status,
+                )
+            await self._tenant_admin_manager.record_worker_job_event(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                session_id=str(session_ctx.get("session_id") or ""),
+                event_type="worker.job.claim",
+                request_nonce=str(session_ctx.get("request_nonce") or ""),
+                payload={"required_capabilities": required_capabilities},
+            )
+            poll_after_seconds = max(
+                5,
+                min(
+                    self._parse_int(
+                        payload.get("poll_after_seconds", 15),
+                        "poll_after_seconds",
+                    ),
+                    120,
+                ),
+            )
+        except RuntimeError as exc:
+            return web.json_response({"error": str(exc)}, status=409)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception("worker_job_claim_failed", tenant_id=tenant_id, node_id=node_id)
+            return web.json_response({"error": "Failed to claim worker job"}, status=502)
+
+        return web.json_response(
+            {
+                "ok": True,
+                "tenant_id": tenant_id,
+                "node_id": node_id,
+                "job": None,
+                "reason": "no_jobs_available",
+                "poll_after_seconds": poll_after_seconds,
+            }
+        )
+
+    async def handle_worker_submit_job_result(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        node_id = str(request.match_info["node_id"]).strip()
+        job_id = str(request.match_info["job_id"]).strip()
+        if not node_id or not job_id:
+            return web.json_response({"error": "Missing node_id or job_id"}, status=400)
+
+        try:
+            raw_body = await request.text()
+        except Exception:
+            raw_body = ""
+        payload = _extract_json_object(raw_body)
+        if not payload:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+        tenant_id = str(payload.get("tenant_id") or "").strip()
+        if not tenant_id:
+            return web.json_response({"error": "Missing tenant_id"}, status=400)
+
+        try:
+            session_ctx = await self._verify_worker_signature(
+                request=request,
+                tenant_id=tenant_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+            required_capabilities = self._parse_string_list(
+                payload.get("required_capabilities"),
+                "required_capabilities",
+            )
+            status_value = str(session_ctx.get("status") or "").strip().lower()
+            health_value = str(session_ctx.get("health_status") or "").strip().lower()
+            node_registered = status_value in {"registered", "active"}
+            node_healthy = (
+                status_value not in {"quarantined", "disabled"} and health_value == "healthy"
+            )
+            capability_allowlisted = await self._tenant_admin_manager.has_worker_capabilities(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                required_capabilities=required_capabilities,
+            )
+            decision = self._trust_policy_evaluator.evaluate(
+                tenant_id=tenant_id,
+                action="worker.job.complete",
+                context={
+                    "method": "POST",
+                    "subpath": f"/worker/v1/nodes/{node_id}/jobs/{job_id}/result",
+                    "node_registered": node_registered,
+                    "node_healthy": node_healthy,
+                    "capability_allowlisted": capability_allowlisted,
+                },
+            )
+            if not decision.allowed:
+                return web.json_response(
+                    self._policy_error_payload(decision),
+                    status=decision.status,
+                )
+            completion_status = str(payload.get("status") or "completed").strip().lower()
+            await self._tenant_admin_manager.record_worker_job_event(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                session_id=str(session_ctx.get("session_id") or ""),
+                job_id=job_id,
+                event_type=f"worker.job.result.{completion_status}",
+                request_nonce=str(session_ctx.get("request_nonce") or ""),
+                payload={
+                    "status": completion_status,
+                    "output": payload.get("output"),
+                    "error": payload.get("error"),
+                },
+            )
+        except RuntimeError as exc:
+            return web.json_response({"error": str(exc)}, status=409)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception(
+                "worker_job_result_failed",
+                tenant_id=tenant_id,
+                node_id=node_id,
+                job_id=job_id,
+            )
+            return web.json_response({"error": "Failed to accept worker result"}, status=502)
+
+        return web.json_response(
+            {
+                "ok": True,
+                "tenant_id": tenant_id,
+                "node_id": node_id,
+                "job_id": job_id,
+                "accepted": True,
+            },
+            status=202,
+        )
+
+    async def handle_tenant_list_worker_nodes(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            self._admin_actor(request)
+            include_inactive = self._parse_bool(
+                request.query.get("include_inactive"),
+                "include_inactive",
+                default=False,
+            )
+            limit = self._parse_int(request.query.get("limit", 200), "limit")
+            nodes = await self._tenant_admin_manager.list_worker_nodes(
+                tenant_id=tenant_id,
+                include_inactive=include_inactive,
+                limit=limit,
+            )
+            return web.json_response(
+                {"ok": True, "nodes": [_serialise_record(dict(node)) for node in nodes]}
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_get_worker_node(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        node_id = request.match_info["node_id"]
+        try:
+            self._admin_actor(request)
+            node = await self._tenant_admin_manager.get_worker_node(
+                tenant_id=tenant_id,
+                node_id=node_id,
+            )
+            if node is None:
+                return web.json_response({"error": "Worker node not found"}, status=404)
+            return web.json_response({"ok": True, "node": _serialise_record(node)})
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_put_worker_capabilities(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        node_id = request.match_info["node_id"]
+        try:
+            actor = self._admin_actor(request)
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                raise ValueError("JSON body must be an object")
+            capabilities = self._parse_string_list(payload.get("capabilities"), "capabilities")
+            explicitly_elevated = self._parse_bool(
+                payload.get("explicitly_elevated"),
+                "explicitly_elevated",
+                default=False,
+            )
+            existing = await self._tenant_admin_manager.get_worker_node(
+                tenant_id=tenant_id,
+                node_id=node_id,
+            )
+            if existing is None:
+                return web.json_response({"error": "Worker node not found"}, status=404)
+            status_value = str(existing.get("status") or "").strip().lower()
+            health_value = str(existing.get("health_status") or "").strip().lower()
+            decision = self._trust_policy_evaluator.evaluate(
+                tenant_id=tenant_id,
+                action="worker.capability.update",
+                context={
+                    "method": "PUT",
+                    "subpath": f"/workers/nodes/{node_id}/capabilities",
+                    "node_registered": status_value in {"registered", "active"},
+                    "node_healthy": (
+                        status_value not in {"quarantined", "disabled"}
+                        and health_value == "healthy"
+                    ),
+                    "explicitly_elevated": explicitly_elevated,
+                },
+            )
+            if not decision.allowed:
+                return web.json_response(
+                    self._policy_error_payload(decision),
+                    status=decision.status,
+                )
+            updated = await self._tenant_admin_manager.set_worker_capabilities(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                capabilities=capabilities,
+                actor=actor,
+            )
+            return web.json_response({"ok": True, "node": _serialise_record(updated)})
+        except JSONDecodeError:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
     async def _handle_signed_bridge_messaging_ingest(self, request: web.Request) -> web.Response:
         tenant_id = request.match_info["tenant_id"]
         if self._tenant_admin_manager is None:
@@ -2417,6 +3126,21 @@ class SkillsServer:
             "/bridge/v1/tenants/{tenant_id}/messaging/ingest",
             self.handle_bridge_messaging_ingest,
         )
+        app.router.add_get("/worker/v1/health", self.handle_worker_health)
+        app.router.add_post("/worker/v1/bootstrap", self.handle_worker_bootstrap)
+        app.router.add_post("/worker/v1/nodes/register", self.handle_worker_register_node)
+        app.router.add_post(
+            "/worker/v1/nodes/{node_id}/heartbeat",
+            self.handle_worker_node_heartbeat,
+        )
+        app.router.add_post(
+            "/worker/v1/nodes/{node_id}/jobs/claim",
+            self.handle_worker_claim_job,
+        )
+        app.router.add_post(
+            "/worker/v1/nodes/{node_id}/jobs/{job_id}/result",
+            self.handle_worker_submit_job_result,
+        )
 
         # User management routes
         app.router.add_get("/users", self.handle_list_users)
@@ -2610,6 +3334,18 @@ class SkillsServer:
         app.router.add_post(
             tenant_prefix + "/execution/plans/{plan_id}/cancel",
             self.handle_tenant_cancel_execution_plan,
+        )
+        app.router.add_get(
+            tenant_prefix + "/workers/nodes",
+            self.handle_tenant_list_worker_nodes,
+        )
+        app.router.add_get(
+            tenant_prefix + "/workers/nodes/{node_id}",
+            self.handle_tenant_get_worker_node,
+        )
+        app.router.add_put(
+            tenant_prefix + "/workers/nodes/{node_id}/capabilities",
+            self.handle_tenant_put_worker_capabilities,
         )
         app.router.add_post(
             tenant_prefix + "/messaging/ingest",
