@@ -32,13 +32,17 @@ export const LANE_DEFINITIONS = {
     command: [
       "bash",
       "-lc",
-      "python3 scripts/check_pipeline_contract.py && python3 scripts/check-endpoint-doc-bundle.py && scripts/check-docs-nav.py && scripts/check-docs-links.py && scripts/check-route-doc-parity.py && scripts/check-cgs-route-doc-parity.py && scripts/check-env-doc-parity.py",
+      "python3 scripts/check_pipeline_contract.py && python3 scripts/check-endpoint-doc-bundle.py && scripts/check-docs-nav.py && scripts/check-docs-links.py && scripts/check-route-doc-parity.py && scripts/check-cgs-route-doc-parity.py && scripts/check-env-doc-parity.py && python3 scripts/check-announcement-dm-guard.py",
     ],
   },
   lint: {
     description: "Ruff lint pass for repository Python sources",
     timeoutSeconds: 900,
-    command: ["ruff", "check", "src/", "tests/", "updater_sidecar/"],
+    command: [
+      "bash",
+      "-lc",
+      "ruff check src/ tests/ updater_sidecar/ && ruff format --check src/ tests/",
+    ],
   },
   "nextjs-only-audit": {
     unavailable: true,

@@ -13,6 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment 13 Announcement DM Guardrails (2026-03-06)
+
+- Added `scripts/check-announcement-dm-guard.py` guardrail to block direct `user.send(...)`
+  calls in announcement-producing paths, with allowlist restricted to
+  `src/zetherion_ai/announcements/discord_adapter.py`.
+- Added unit coverage in `tests/unit/test_check_announcement_dm_guard.py` for
+  allowlisted and violation paths.
+- Wired the guard into:
+  - bounded local `check` lane (`scripts/testing/lanes.mjs`)
+  - CI `pipeline-contract` fast-fail checks (`.github/workflows/ci.yml`)
+- Updated bounded local `lint` lane to run `ruff format --check` in addition to
+  `ruff check`, matching CI lint behavior and preventing format-only CI failures.
+- Updated CI/CD documentation to include announcement DM guardrail enforcement in
+  pipeline-contract checks.
+
 ### Changed - CI Conservation Guardrails for Local Validation (2026-03-06)
 
 - Expanded bounded `check` lane to include documentation contract checks:
