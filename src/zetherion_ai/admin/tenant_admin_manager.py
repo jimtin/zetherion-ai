@@ -43,6 +43,9 @@ VALID_WORKER_NODE_STATUSES = frozenset(
     {"bootstrap_pending", "registered", "active", "quarantined", "disabled"}
 )
 VALID_WORKER_HEALTH_STATUSES = frozenset({"unknown", "healthy", "degraded", "offline"})
+VALID_WORKER_JOB_STATUSES = frozenset(
+    {"queued", "running", "succeeded", "failed", "cancelled", "expired"}
+)
 DEFAULT_MESSAGING_RETENTION_DAYS = 14
 VALID_EXECUTION_PLAN_STATUSES = frozenset(
     {"queued", "running", "paused", "completed", "failed", "cancelled"}
@@ -60,6 +63,8 @@ DEFAULT_EXECUTION_MAX_STEP_ATTEMPTS = 3
 DEFAULT_EXECUTION_CONTINUATION_INTERVAL_SECONDS = 60
 DEFAULT_EXECUTION_LEASE_SECONDS = 90
 DEFAULT_EXECUTION_STALE_STEP_SECONDS = 300
+DEFAULT_EXECUTION_STEP_MAX_RUNTIME_SECONDS = 900
+VALID_EXECUTION_TARGETS = frozenset({"windows_local", "any_worker"})
 EXECUTION_RETRY_BACKOFF_SECONDS = (60, 300, 900, 1800)
 
 _SCHEMA_SQL = """\
@@ -542,6 +547,10 @@ CREATE TABLE IF NOT EXISTS tenant_execution_steps (
     next_retry_at         TIMESTAMPTZ,
     last_error_category   TEXT,
     last_error_detail     TEXT,
+    execution_target      TEXT         NOT NULL DEFAULT 'windows_local',
+    required_capabilities JSONB        NOT NULL DEFAULT '[]'::jsonb,
+    max_runtime_seconds   INT,
+    artifact_contract     JSONB        NOT NULL DEFAULT '{}'::jsonb,
     output_json           JSONB        NOT NULL DEFAULT '{}'::jsonb,
     metadata              JSONB        NOT NULL DEFAULT '{}'::jsonb,
     created_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -555,6 +564,23 @@ CREATE INDEX IF NOT EXISTS idx_tenant_execution_steps_lookup
 CREATE INDEX IF NOT EXISTS idx_tenant_execution_steps_retry
     ON tenant_execution_steps (tenant_id, plan_id, next_retry_at)
     WHERE status = 'failed';
+CREATE INDEX IF NOT EXISTS idx_tenant_execution_steps_dispatch
+    ON tenant_execution_steps (tenant_id, plan_id, execution_target, status, updated_at DESC);
+
+ALTER TABLE tenant_execution_steps
+    ADD COLUMN IF NOT EXISTS execution_target TEXT NOT NULL DEFAULT 'windows_local';
+ALTER TABLE tenant_execution_steps
+    ADD COLUMN IF NOT EXISTS required_capabilities JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE tenant_execution_steps
+    ADD COLUMN IF NOT EXISTS max_runtime_seconds INT;
+ALTER TABLE tenant_execution_steps
+    ADD COLUMN IF NOT EXISTS artifact_contract JSONB NOT NULL DEFAULT '{}'::jsonb;
+UPDATE tenant_execution_steps
+SET required_capabilities = '[]'::jsonb
+WHERE required_capabilities IS NULL;
+UPDATE tenant_execution_steps
+SET artifact_contract = '{}'::jsonb
+WHERE artifact_contract IS NULL;
 
 CREATE TABLE IF NOT EXISTS tenant_execution_step_retries (
     retry_id               UUID         PRIMARY KEY,
@@ -715,6 +741,52 @@ CREATE INDEX IF NOT EXISTS idx_tenant_worker_job_events_lookup
 CREATE INDEX IF NOT EXISTS idx_tenant_worker_job_events_job
     ON tenant_worker_job_events (tenant_id, job_id, created_at DESC)
     WHERE job_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS tenant_worker_jobs (
+    job_id                 UUID         PRIMARY KEY,
+    tenant_id              UUID         NOT NULL,
+    plan_id                UUID         NOT NULL
+                          REFERENCES tenant_execution_plans(plan_id) ON DELETE CASCADE,
+    step_id                UUID         NOT NULL
+                          REFERENCES tenant_execution_steps(step_id) ON DELETE CASCADE,
+    retry_id               UUID         NOT NULL
+                          REFERENCES tenant_execution_step_retries(retry_id) ON DELETE CASCADE,
+    execution_target       TEXT         NOT NULL,
+    target_node_id         TEXT,
+    required_capabilities  JSONB        NOT NULL DEFAULT '[]'::jsonb,
+    max_runtime_seconds    INT,
+    artifact_contract      JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    action                 TEXT         NOT NULL DEFAULT 'worker.noop',
+    payload_json           JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    status                 VARCHAR(20)  NOT NULL DEFAULT 'queued'
+                          CHECK (
+                              status IN (
+                                  'queued',
+                                  'running',
+                                  'succeeded',
+                                  'failed',
+                                  'cancelled',
+                                  'expired'
+                              )
+                          ),
+    claimed_by_node_id     TEXT,
+    lease_token            TEXT,
+    lease_expires_at       TIMESTAMPTZ,
+    started_at             TIMESTAMPTZ,
+    finished_at            TIMESTAMPTZ,
+    result_json            JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    error_json             JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    created_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, plan_id, step_id, retry_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_worker_jobs_claim
+    ON tenant_worker_jobs (tenant_id, status, execution_target, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_tenant_worker_jobs_node
+    ON tenant_worker_jobs (tenant_id, claimed_by_node_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_worker_jobs_step
+    ON tenant_worker_jobs (tenant_id, plan_id, step_id, created_at DESC);
 """
 
 
@@ -4512,6 +4584,10 @@ class TenantAdminManager:
             prompt = ""
             idempotency_key = f"step-{idx}"
             metadata: dict[str, Any] = {}
+            execution_target = "windows_local"
+            required_capabilities: list[str] = []
+            max_runtime_seconds: int | None = None
+            artifact_contract: dict[str, Any] = {}
 
             if isinstance(raw, str):
                 prompt = raw.strip()
@@ -4533,6 +4609,21 @@ class TenantAdminManager:
                 if raw_metadata is not None and not isinstance(raw_metadata, dict):
                     raise ValueError(f"steps[{idx - 1}].metadata must be an object")
                 metadata = dict(raw_metadata or {})
+
+                execution_target = TenantAdminManager._normalize_execution_target(
+                    raw.get("execution_target", metadata.get("execution_target")),
+                    default="windows_local",
+                )
+                required_capabilities = TenantAdminManager._normalize_worker_capabilities(
+                    raw.get("required_capabilities", metadata.get("required_capabilities", []))
+                )
+                max_runtime_seconds = TenantAdminManager._coerce_execution_runtime_seconds(
+                    raw.get("max_runtime_seconds", metadata.get("max_runtime_seconds"))
+                )
+                artifact_contract = TenantAdminManager._coerce_execution_artifact_contract(
+                    raw.get("artifact_contract", metadata.get("artifact_contract")),
+                    step_index=idx - 1,
+                )
             else:
                 raise ValueError(f"steps[{idx - 1}] must be a string or object")
 
@@ -4543,10 +4634,90 @@ class TenantAdminManager:
                     "title": title[:200],
                     "prompt_text": prompt,
                     "idempotency_key": idempotency_key[:120],
+                    "execution_target": execution_target,
+                    "required_capabilities": required_capabilities,
+                    "max_runtime_seconds": max_runtime_seconds,
+                    "artifact_contract": artifact_contract,
                     "metadata": metadata,
                 }
             )
         return normalized
+
+    @staticmethod
+    def _normalize_execution_target(raw: Any, *, default: str = "windows_local") -> str:
+        value = str(raw or default).strip().lower()
+        if value in VALID_EXECUTION_TARGETS:
+            return value
+        if value.startswith("worker:"):
+            node_id = value[7:].strip()
+            if not node_id:
+                raise ValueError("execution_target worker target is missing node id")
+            if not re.fullmatch(r"[a-z0-9._:\-]{1,120}", node_id):
+                raise ValueError("execution_target worker node id must match [a-z0-9._:-]{1,120}")
+            return f"worker:{node_id}"
+        allowed = ", ".join(sorted(VALID_EXECUTION_TARGETS | {"worker:<node_id>"}))
+        raise ValueError(f"execution_target must be one of: {allowed}")
+
+    @staticmethod
+    def _coerce_execution_runtime_seconds(raw: Any) -> int | None:
+        if raw is None or raw == "":
+            return None
+        try:
+            parsed = int(raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("max_runtime_seconds must be an integer when provided") from exc
+        return max(30, min(parsed, 86_400))
+
+    @staticmethod
+    def _coerce_execution_artifact_contract(raw: Any, *, step_index: int) -> dict[str, Any]:
+        if raw is None:
+            return {}
+        if not isinstance(raw, dict):
+            raise ValueError(f"steps[{step_index}].artifact_contract must be an object")
+        return dict(raw)
+
+    @staticmethod
+    def _execution_target_node_id(execution_target: str) -> str | None:
+        target = str(execution_target or "").strip().lower()
+        if not target.startswith("worker:"):
+            return None
+        node = target[7:].strip()
+        return node or None
+
+    @staticmethod
+    def _worker_result_outcome(raw_status: str | None) -> tuple[str, bool]:
+        value = str(raw_status or "completed").strip().lower()
+        if value in {"succeeded", "success", "completed", "ok"}:
+            return "succeeded", True
+        if value in {"failed", "error", "errored", "timeout", "cancelled", "canceled"}:
+            return "failed", False
+        return "failed", False
+
+    @staticmethod
+    def _worker_result_failure_category(
+        *,
+        output: dict[str, Any] | None = None,
+        error: dict[str, Any] | None = None,
+    ) -> str:
+        payloads: list[dict[str, Any]] = []
+        if isinstance(error, dict):
+            payloads.append(error)
+        if isinstance(output, dict):
+            payloads.append(output)
+        text = " ".join(
+            str(candidate.get(key) or "").lower()
+            for candidate in payloads
+            for key in ("code", "message", "detail", "failure_category")
+        )
+        if "timeout" in text:
+            return "timeout"
+        if "rate" in text and "limit" in text:
+            return "rate_limit"
+        if "dependency" in text or "unavailable" in text:
+            return "dependency"
+        if "interrupt" in text or "cancel" in text:
+            return "interrupted"
+        return "transient"
 
     @staticmethod
     def _coerce_execution_actor_user_id(actor_sub: str | None) -> int:
@@ -4761,6 +4932,10 @@ class TenantAdminManager:
                         attempt_count,
                         max_attempts,
                         next_retry_at,
+                        execution_target,
+                        required_capabilities,
+                        max_runtime_seconds,
+                        artifact_contract,
                         output_json,
                         metadata
                     ) VALUES (
@@ -4775,8 +4950,12 @@ class TenantAdminManager:
                         0,
                         $8,
                         NULL,
+                        $9,
+                        $10::jsonb,
+                        $11,
+                        $12::jsonb,
                         '{}'::jsonb,
-                        $9::jsonb
+                        $13::jsonb
                     )
                     RETURNING step_id::text AS step_id,
                               plan_id::text AS plan_id,
@@ -4791,6 +4970,10 @@ class TenantAdminManager:
                               next_retry_at,
                               last_error_category,
                               last_error_detail,
+                              execution_target,
+                              required_capabilities,
+                              max_runtime_seconds,
+                              artifact_contract,
                               output_json,
                               metadata,
                               created_at,
@@ -4804,6 +4987,10 @@ class TenantAdminManager:
                     step["prompt_text"],
                     step["idempotency_key"],
                     max_attempts,
+                    step.get("execution_target") or "windows_local",
+                    json.dumps(step.get("required_capabilities") or []),
+                    step.get("max_runtime_seconds"),
+                    json.dumps(step.get("artifact_contract") or {}),
                     json.dumps(step.get("metadata") or {}),
                 )
                 if inserted_step is None:
@@ -4972,6 +5159,10 @@ class TenantAdminManager:
                    next_retry_at,
                    last_error_category,
                    last_error_detail,
+                   execution_target,
+                   required_capabilities,
+                   max_runtime_seconds,
+                   artifact_contract,
                    output_json,
                    metadata,
                    created_at,
@@ -5408,6 +5599,10 @@ class TenantAdminManager:
                           next_retry_at,
                           last_error_category,
                           last_error_detail,
+                          execution_target,
+                          required_capabilities,
+                          max_runtime_seconds,
+                          artifact_contract,
                           output_json,
                           metadata,
                           created_at,
@@ -5506,6 +5701,7 @@ class TenantAdminManager:
                 "lease_token": token,
                 "worker_id": worker,
             },
+            "from_status": from_status,
         }
 
     async def release_execution_plan_lease(
@@ -5754,6 +5950,10 @@ class TenantAdminManager:
                           next_retry_at,
                           last_error_category,
                           last_error_detail,
+                          execution_target,
+                          required_capabilities,
+                          max_runtime_seconds,
+                          artifact_contract,
                           output_json,
                           metadata,
                           created_at,
@@ -5998,6 +6198,10 @@ class TenantAdminManager:
                           next_retry_at,
                           last_error_category,
                           last_error_detail,
+                          execution_target,
+                          required_capabilities,
+                          max_runtime_seconds,
+                          artifact_contract,
                           output_json,
                           metadata,
                           created_at,
@@ -6148,6 +6352,588 @@ class TenantAdminManager:
                 "backoff_seconds": backoff_seconds,
                 "failure_category": category,
             }
+
+    async def dispatch_execution_step_to_worker(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+        step: dict[str, Any],
+        retry: dict[str, Any],
+        dispatcher_id: str,
+        from_status: str | None = None,
+    ) -> dict[str, Any]:
+        step_id = str(step.get("step_id") or "").strip()
+        retry_id = str(retry.get("retry_id") or "").strip()
+        if not step_id or not retry_id:
+            raise ValueError("dispatch step/retry payload is missing identifiers")
+
+        execution_target = self._normalize_execution_target(
+            step.get("execution_target"),
+            default="windows_local",
+        )
+        if execution_target == "windows_local":
+            raise ValueError(
+                "step execution_target is windows_local and cannot be worker dispatched"
+            )
+
+        required_capabilities = self._normalize_worker_capabilities(
+            step.get("required_capabilities") or []
+        )
+        max_runtime_seconds = self._coerce_execution_runtime_seconds(
+            step.get("max_runtime_seconds")
+        )
+        if max_runtime_seconds is None:
+            max_runtime_seconds = DEFAULT_EXECUTION_STEP_MAX_RUNTIME_SECONDS
+        artifact_contract = self._coerce_execution_artifact_contract(
+            step.get("artifact_contract"),
+            step_index=int(step.get("step_index") or 0),
+        )
+
+        metadata = step.get("metadata")
+        if metadata is None:
+            metadata = {}
+        if not isinstance(metadata, dict):
+            raise ValueError("execution step metadata must be an object")
+        action = str(metadata.get("action") or "worker.noop").strip().lower() or "worker.noop"
+        runner = str(metadata.get("runner") or "noop").strip().lower() or "noop"
+        payload_json: dict[str, Any] = {
+            "tenant_id": tenant_id,
+            "plan_id": plan_id,
+            "step_id": step_id,
+            "retry_id": retry_id,
+            "step_index": step.get("step_index"),
+            "title": step.get("title"),
+            "prompt_text": step.get("prompt_text"),
+            "runner": runner,
+            "max_runtime_seconds": max_runtime_seconds,
+            "artifact_contract": artifact_contract,
+            "metadata": metadata,
+        }
+        custom_payload = metadata.get("payload")
+        if isinstance(custom_payload, dict):
+            payload_json.update(custom_payload)
+
+        target_node_id = self._execution_target_node_id(execution_target)
+        actor_sub = str(dispatcher_id or "execution-dispatcher").strip() or "execution-dispatcher"
+        previous_step_status = str(from_status or "running").strip().lower() or "running"
+
+        async with self._pool.acquire() as conn, conn.transaction():
+            # Expire stale queued/running jobs from prior retries for this step.
+            await conn.execute(
+                """
+                UPDATE tenant_worker_jobs
+                SET status = 'expired',
+                    finished_at = now(),
+                    updated_at = now(),
+                    error_json = jsonb_build_object(
+                        'code', 'WORKER_JOB_SUPERSEDED',
+                        'message', 'Superseded by newer retry dispatch'
+                    )
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                  AND step_id = $3::uuid
+                  AND retry_id <> $4::uuid
+                  AND status IN ('queued', 'running')
+                """,
+                tenant_id,
+                plan_id,
+                step_id,
+                retry_id,
+            )
+
+            row = await conn.fetchrow(
+                """
+                INSERT INTO tenant_worker_jobs (
+                    job_id,
+                    tenant_id,
+                    plan_id,
+                    step_id,
+                    retry_id,
+                    execution_target,
+                    target_node_id,
+                    required_capabilities,
+                    max_runtime_seconds,
+                    artifact_contract,
+                    action,
+                    payload_json,
+                    status
+                ) VALUES (
+                    $1::uuid,
+                    $2::uuid,
+                    $3::uuid,
+                    $4::uuid,
+                    $5::uuid,
+                    $6,
+                    $7,
+                    $8::jsonb,
+                    $9,
+                    $10::jsonb,
+                    $11,
+                    $12::jsonb,
+                    'queued'
+                )
+                ON CONFLICT (tenant_id, plan_id, step_id, retry_id)
+                DO UPDATE
+                    SET execution_target = EXCLUDED.execution_target,
+                        target_node_id = EXCLUDED.target_node_id,
+                        required_capabilities = EXCLUDED.required_capabilities,
+                        max_runtime_seconds = EXCLUDED.max_runtime_seconds,
+                        artifact_contract = EXCLUDED.artifact_contract,
+                        action = EXCLUDED.action,
+                        payload_json = EXCLUDED.payload_json,
+                        updated_at = now()
+                RETURNING job_id::text AS job_id,
+                          tenant_id::text AS tenant_id,
+                          plan_id::text AS plan_id,
+                          step_id::text AS step_id,
+                          retry_id::text AS retry_id,
+                          execution_target,
+                          target_node_id,
+                          required_capabilities,
+                          max_runtime_seconds,
+                          artifact_contract,
+                          action,
+                          payload_json,
+                          status,
+                          claimed_by_node_id,
+                          lease_token,
+                          lease_expires_at,
+                          started_at,
+                          finished_at,
+                          result_json,
+                          error_json,
+                          created_at,
+                          updated_at
+                """,
+                str(uuid4()),
+                tenant_id,
+                plan_id,
+                step_id,
+                retry_id,
+                execution_target,
+                target_node_id,
+                json.dumps(required_capabilities),
+                max_runtime_seconds,
+                json.dumps(artifact_contract),
+                action,
+                json.dumps(payload_json),
+            )
+            if row is None:
+                raise RuntimeError("Failed to enqueue worker job")
+            job = dict(row)
+
+            await conn.execute(
+                """
+                INSERT INTO tenant_execution_transitions (
+                    tenant_id,
+                    plan_id,
+                    step_id,
+                    from_status,
+                    to_status,
+                    reason,
+                    actor_sub,
+                    metadata
+                ) VALUES (
+                    $1::uuid,
+                    $2::uuid,
+                    $3::uuid,
+                    $4,
+                    'dispatched',
+                    'worker_job_dispatched',
+                    $5,
+                    $6::jsonb
+                )
+                """,
+                tenant_id,
+                plan_id,
+                step_id,
+                previous_step_status,
+                actor_sub,
+                json.dumps(
+                    {
+                        "job_id": job.get("job_id"),
+                        "execution_target": execution_target,
+                        "required_capabilities": required_capabilities,
+                    }
+                ),
+            )
+            return job
+
+    async def claim_worker_dispatch_job(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        required_capabilities: list[str] | None = None,
+    ) -> dict[str, Any] | None:
+        node = str(node_id or "").strip()
+        if not node:
+            raise ValueError("Missing node_id")
+        worker_capabilities = self._normalize_worker_capabilities(required_capabilities or [])
+        target = f"worker:{node}"
+
+        async with self._pool.acquire() as conn, conn.transaction():
+            candidates = await conn.fetch(
+                """
+                SELECT job_id::text AS job_id,
+                       tenant_id::text AS tenant_id,
+                       plan_id::text AS plan_id,
+                       step_id::text AS step_id,
+                       retry_id::text AS retry_id,
+                       execution_target,
+                       target_node_id,
+                       required_capabilities,
+                       max_runtime_seconds,
+                       artifact_contract,
+                       action,
+                       payload_json,
+                       status,
+                       claimed_by_node_id,
+                       lease_token,
+                       lease_expires_at,
+                       started_at,
+                       finished_at,
+                       result_json,
+                       error_json,
+                       created_at,
+                       updated_at
+                FROM tenant_worker_jobs
+                WHERE tenant_id = $1::uuid
+                  AND (
+                        status = 'queued'
+                        OR (
+                            status = 'running'
+                            AND lease_expires_at IS NOT NULL
+                            AND lease_expires_at <= now()
+                        )
+                  )
+                  AND execution_target IN ('any_worker', $2)
+                ORDER BY created_at ASC
+                LIMIT 25
+                FOR UPDATE SKIP LOCKED
+                """,
+                tenant_id,
+                target,
+            )
+            if not candidates:
+                return None
+
+            for candidate_row in candidates:
+                candidate = dict(candidate_row)
+                job_required = self._normalize_worker_capabilities(
+                    candidate.get("required_capabilities") or []
+                )
+                if worker_capabilities and not set(job_required).issubset(set(worker_capabilities)):
+                    continue
+                if job_required:
+                    capability_count = await conn.fetchval(
+                        """
+                        SELECT COUNT(*)::int
+                        FROM tenant_worker_capabilities
+                        WHERE tenant_id = $1::uuid
+                          AND node_id = $2
+                          AND allowlisted = TRUE
+                          AND capability = ANY($3::text[])
+                        """,
+                        tenant_id,
+                        node,
+                        job_required,
+                    )
+                    if int(capability_count or 0) < len(job_required):
+                        continue
+
+                max_runtime_seconds = self._coerce_execution_runtime_seconds(
+                    candidate.get("max_runtime_seconds")
+                )
+                if max_runtime_seconds is None:
+                    max_runtime_seconds = DEFAULT_EXECUTION_STEP_MAX_RUNTIME_SECONDS
+                lease_seconds = max(30, min(max_runtime_seconds + 120, 86_400))
+                lease_token = uuid4().hex
+                claimed = await conn.fetchrow(
+                    """
+                    UPDATE tenant_worker_jobs
+                    SET status = 'running',
+                        claimed_by_node_id = $3,
+                        lease_token = $4,
+                        lease_expires_at = now() + ($5 * interval '1 second'),
+                        started_at = COALESCE(started_at, now()),
+                        updated_at = now()
+                    WHERE tenant_id = $1::uuid
+                      AND job_id = $2::uuid
+                      AND status IN ('queued', 'running')
+                    RETURNING job_id::text AS job_id,
+                              tenant_id::text AS tenant_id,
+                              plan_id::text AS plan_id,
+                              step_id::text AS step_id,
+                              retry_id::text AS retry_id,
+                              execution_target,
+                              target_node_id,
+                              required_capabilities,
+                              max_runtime_seconds,
+                              artifact_contract,
+                              action,
+                              payload_json,
+                              status,
+                              claimed_by_node_id,
+                              lease_token,
+                              lease_expires_at,
+                              started_at,
+                              finished_at,
+                              result_json,
+                              error_json,
+                              created_at,
+                              updated_at
+                    """,
+                    tenant_id,
+                    candidate["job_id"],
+                    node,
+                    lease_token,
+                    lease_seconds,
+                )
+                if claimed is None:
+                    continue
+
+                previous_status = str(candidate.get("status") or "queued").strip().lower()
+                await conn.execute(
+                    """
+                    INSERT INTO tenant_execution_transitions (
+                        tenant_id,
+                        plan_id,
+                        step_id,
+                        from_status,
+                        to_status,
+                        reason,
+                        actor_sub,
+                        metadata
+                    ) VALUES (
+                        $1::uuid,
+                        $2::uuid,
+                        $3::uuid,
+                        'dispatched',
+                        'running',
+                        $4,
+                        $5,
+                        $6::jsonb
+                    )
+                    """,
+                    tenant_id,
+                    str(claimed["plan_id"]),
+                    str(claimed["step_id"]),
+                    (
+                        "worker_job_reclaimed"
+                        if previous_status == "running"
+                        else "worker_job_claimed"
+                    ),
+                    f"worker:{node}",
+                    json.dumps(
+                        {
+                            "job_id": str(claimed["job_id"]),
+                            "lease_token": lease_token,
+                        }
+                    ),
+                )
+                return dict(claimed)
+            return None
+
+    async def submit_worker_job_result(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        job_id: str,
+        completion_status: str,
+        output: dict[str, Any] | None = None,
+        error: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        node = str(node_id or "").strip()
+        if not node:
+            raise ValueError("Missing node_id")
+        job = str(job_id or "").strip()
+        if not job:
+            raise ValueError("Missing job_id")
+
+        output_payload = dict(output or {})
+        error_payload = dict(error or {})
+        outcome, succeeded = self._worker_result_outcome(completion_status)
+
+        async with self._pool.acquire() as conn, conn.transaction():
+            existing = await conn.fetchrow(
+                """
+                SELECT job_id::text AS job_id,
+                       tenant_id::text AS tenant_id,
+                       plan_id::text AS plan_id,
+                       step_id::text AS step_id,
+                       retry_id::text AS retry_id,
+                       status,
+                       claimed_by_node_id
+                FROM tenant_worker_jobs
+                WHERE tenant_id = $1::uuid
+                  AND job_id = $2::uuid
+                FOR UPDATE
+                """,
+                tenant_id,
+                job,
+            )
+            if existing is None:
+                raise ValueError("Worker job not found")
+
+            current_status = str(existing["status"]).strip().lower()
+            if current_status in {"succeeded", "failed", "cancelled", "expired"}:
+                return {
+                    "accepted": True,
+                    "idempotent": True,
+                    "job_id": str(existing["job_id"]),
+                    "status": current_status,
+                }
+            if current_status != "running":
+                raise ValueError("Worker job is not running")
+            claimed_by_node = str(existing["claimed_by_node_id"] or "").strip()
+            if claimed_by_node and claimed_by_node != node:
+                raise ValueError("Worker node does not own this job lease")
+
+            updated = await conn.fetchrow(
+                """
+                UPDATE tenant_worker_jobs
+                SET status = $3,
+                    result_json = $4::jsonb,
+                    error_json = $5::jsonb,
+                    finished_at = now(),
+                    lease_token = NULL,
+                    lease_expires_at = NULL,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND job_id = $2::uuid
+                RETURNING job_id::text AS job_id,
+                          tenant_id::text AS tenant_id,
+                          plan_id::text AS plan_id,
+                          step_id::text AS step_id,
+                          retry_id::text AS retry_id,
+                          execution_target,
+                          target_node_id,
+                          required_capabilities,
+                          max_runtime_seconds,
+                          artifact_contract,
+                          action,
+                          payload_json,
+                          status,
+                          claimed_by_node_id,
+                          lease_token,
+                          lease_expires_at,
+                          started_at,
+                          finished_at,
+                          result_json,
+                          error_json,
+                          created_at,
+                          updated_at
+                """,
+                tenant_id,
+                job,
+                "succeeded" if succeeded else "failed",
+                json.dumps(output_payload),
+                json.dumps(error_payload),
+            )
+            if updated is None:
+                raise RuntimeError("Failed to update worker job result")
+            job_row = dict(updated)
+
+            await conn.execute(
+                """
+                INSERT INTO tenant_execution_transitions (
+                    tenant_id,
+                    plan_id,
+                    step_id,
+                    from_status,
+                    to_status,
+                    reason,
+                    actor_sub,
+                    metadata
+                ) VALUES (
+                    $1::uuid,
+                    $2::uuid,
+                    $3::uuid,
+                    'running',
+                    $4,
+                    'worker_result_received',
+                    $5,
+                    $6::jsonb
+                )
+                """,
+                tenant_id,
+                str(job_row["plan_id"]),
+                str(job_row["step_id"]),
+                "completed" if succeeded else "failed",
+                f"worker:{node}",
+                json.dumps({"job_id": str(job_row["job_id"]), "outcome": outcome}),
+            )
+
+        step_id = str(job_row["step_id"])
+        retry_id = str(job_row["retry_id"])
+        plan_ref = str(job_row["plan_id"])
+        worker_actor = f"worker:{node}"
+
+        if succeeded:
+            completion = await self.complete_execution_step(
+                tenant_id=tenant_id,
+                plan_id=plan_ref,
+                step_id=step_id,
+                retry_id=retry_id,
+                worker_id=worker_actor,
+                output_json={
+                    "worker_job_id": job,
+                    "worker_node_id": node,
+                    "output": output_payload,
+                },
+            )
+            if completion.get("has_more") and completion.get("next_run_at") is not None:
+                await self.schedule_execution_continuation(
+                    tenant_id=tenant_id,
+                    plan_id=plan_ref,
+                    scheduled_for=completion["next_run_at"],
+                    reason="worker_result_completed",
+                    requested_by=worker_actor,
+                )
+            return {
+                "accepted": True,
+                "idempotent": False,
+                "job": job_row,
+                "status": "succeeded",
+                "plan": completion.get("plan"),
+                "step": completion.get("step"),
+            }
+
+        failure_category = self._worker_result_failure_category(
+            output=output_payload,
+            error=error_payload,
+        )
+        failure_detail = (
+            str(error_payload.get("message") or error_payload.get("detail") or "")
+            or json.dumps(error_payload, separators=(",", ":"), default=str)
+        )[:4000]
+        failure = await self.fail_execution_step(
+            tenant_id=tenant_id,
+            plan_id=plan_ref,
+            step_id=step_id,
+            retry_id=retry_id,
+            worker_id=worker_actor,
+            failure_category=failure_category,
+            failure_detail=failure_detail,
+        )
+        if failure.get("retry_scheduled") and failure.get("next_run_at") is not None:
+            await self.schedule_execution_continuation(
+                tenant_id=tenant_id,
+                plan_id=plan_ref,
+                scheduled_for=failure["next_run_at"],
+                reason="worker_result_retry",
+                requested_by=worker_actor,
+            )
+        return {
+            "accepted": True,
+            "idempotent": False,
+            "job": job_row,
+            "status": "failed",
+            "failure": failure,
+        }
 
     async def record_execution_artifact(
         self,

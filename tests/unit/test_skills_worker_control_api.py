@@ -177,6 +177,14 @@ def worker_manager() -> MagicMock:
         }
     )
     mgr.has_worker_capabilities = AsyncMock(return_value=True)
+    mgr.claim_worker_dispatch_job = AsyncMock(return_value=None)
+    mgr.submit_worker_job_result = AsyncMock(
+        return_value={
+            "accepted": True,
+            "idempotent": False,
+            "status": "succeeded",
+        }
+    )
     mgr.record_worker_job_event = AsyncMock(return_value={"event_id": 1})
     mgr.list_worker_nodes = AsyncMock(return_value=[])
     mgr.get_worker_node = AsyncMock(return_value=None)
@@ -606,6 +614,254 @@ class TestSkillsWorkerControlAPI:
                 data=raw,
             )
             assert second.status == 409
+
+    async def test_worker_claim_returns_job_payload_when_dispatch_available(
+        self,
+        mock_registry: SkillRegistry,
+        worker_manager: MagicMock,
+    ) -> None:
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        node_id = "node-1"
+        session_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        token = "token"
+        signing_secret = "signing-secret"
+        worker_manager.get_worker_session_auth = AsyncMock(
+            return_value={
+                "session_id": session_id,
+                "token_hash": _hash_token(token),
+                "signing_secret": signing_secret,
+                "status": "active",
+                "health_status": "healthy",
+                "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                "revoked_at": None,
+            }
+        )
+        worker_manager.claim_worker_dispatch_job = AsyncMock(
+            return_value={
+                "job_id": "job-123",
+                "plan_id": "plan-1",
+                "step_id": "step-1",
+                "retry_id": "retry-1",
+                "execution_target": "any_worker",
+                "action": "worker.noop",
+                "required_capabilities": ["repo.patch"],
+                "max_runtime_seconds": 600,
+                "artifact_contract": {"expect": "summary"},
+                "payload_json": {"runner": "noop", "prompt_text": "Run task"},
+            }
+        )
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="skills-secret",
+            tenant_admin_manager=worker_manager,
+        )
+        app = server.create_app()
+
+        claim_body = {"tenant_id": tenant_id, "required_capabilities": ["repo.patch"]}
+        claim_raw = json.dumps(claim_body, separators=(",", ":"))
+        headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token=token,
+            signing_secret=signing_secret,
+            raw_body=claim_raw,
+            nonce="nonce-claim-job-payload",
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            response = await client.post(
+                f"/worker/v1/nodes/{node_id}/jobs/claim",
+                headers=headers,
+                data=claim_raw,
+            )
+            assert response.status == 200
+            payload = await response.json()
+            assert payload["job"]["job_id"] == "job-123"
+            assert payload["job"]["runner"] == "noop"
+            assert payload["job"]["payload"]["prompt_text"] == "Run task"
+
+    async def test_worker_claim_returns_502_when_dispatch_claim_raises_unexpected(
+        self,
+        mock_registry: SkillRegistry,
+        worker_manager: MagicMock,
+    ) -> None:
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        node_id = "node-1"
+        session_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        token = "token"
+        signing_secret = "signing-secret"
+        worker_manager.get_worker_session_auth = AsyncMock(
+            return_value={
+                "session_id": session_id,
+                "token_hash": _hash_token(token),
+                "signing_secret": signing_secret,
+                "status": "active",
+                "health_status": "healthy",
+                "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                "revoked_at": None,
+            }
+        )
+        worker_manager.claim_worker_dispatch_job = AsyncMock(side_effect=Exception("boom"))
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="skills-secret",
+            tenant_admin_manager=worker_manager,
+        )
+        app = server.create_app()
+
+        claim_body = {"tenant_id": tenant_id, "required_capabilities": ["repo.patch"]}
+        claim_raw = json.dumps(claim_body, separators=(",", ":"))
+        headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token=token,
+            signing_secret=signing_secret,
+            raw_body=claim_raw,
+            nonce="nonce-claim-failure",
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            response = await client.post(
+                f"/worker/v1/nodes/{node_id}/jobs/claim",
+                headers=headers,
+                data=claim_raw,
+            )
+            assert response.status == 502
+
+    async def test_worker_submit_result_validation_and_runtime_error_paths(
+        self,
+        mock_registry: SkillRegistry,
+        worker_manager: MagicMock,
+    ) -> None:
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        node_id = "node-1"
+        session_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        token = "token"
+        signing_secret = "signing-secret"
+        worker_manager.get_worker_session_auth = AsyncMock(
+            return_value={
+                "session_id": session_id,
+                "token_hash": _hash_token(token),
+                "signing_secret": signing_secret,
+                "status": "active",
+                "health_status": "healthy",
+                "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                "revoked_at": None,
+            }
+        )
+        worker_manager.submit_worker_job_result = AsyncMock(
+            return_value={"accepted": True, "idempotent": False, "status": "succeeded"}
+        )
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="skills-secret",
+            tenant_admin_manager=worker_manager,
+        )
+        app = server.create_app()
+
+        async with TestClient(TestServer(app)) as client:
+            missing_ids = await client.post(
+                "/worker/v1/nodes/%20/jobs/%20/result",
+                data='{"tenant_id":"x"}',
+                headers={"Content-Type": "application/json"},
+            )
+            assert missing_ids.status == 400
+
+            invalid_json = await client.post(
+                f"/worker/v1/nodes/{node_id}/jobs/job-1/result",
+                data="{",
+                headers={"Content-Type": "application/json"},
+            )
+            assert invalid_json.status == 400
+
+            missing_tenant = await client.post(
+                f"/worker/v1/nodes/{node_id}/jobs/job-1/result",
+                data='{"status":"succeeded"}',
+                headers={"Content-Type": "application/json"},
+            )
+            assert missing_tenant.status == 400
+
+            bad_output_raw = json.dumps(
+                {"tenant_id": tenant_id, "status": "succeeded", "output": "bad"},
+                separators=(",", ":"),
+            )
+            bad_output = await client.post(
+                f"/worker/v1/nodes/{node_id}/jobs/job-1/result",
+                data=bad_output_raw,
+                headers=_worker_headers(
+                    tenant_id=tenant_id,
+                    node_id=node_id,
+                    session_id=session_id,
+                    token=token,
+                    signing_secret=signing_secret,
+                    raw_body=bad_output_raw,
+                    nonce="nonce-result-bad-output",
+                ),
+            )
+            assert bad_output.status == 400
+
+            bad_error_raw = json.dumps(
+                {"tenant_id": tenant_id, "status": "failed", "error": "bad"},
+                separators=(",", ":"),
+            )
+            bad_error = await client.post(
+                f"/worker/v1/nodes/{node_id}/jobs/job-1/result",
+                data=bad_error_raw,
+                headers=_worker_headers(
+                    tenant_id=tenant_id,
+                    node_id=node_id,
+                    session_id=session_id,
+                    token=token,
+                    signing_secret=signing_secret,
+                    raw_body=bad_error_raw,
+                    nonce="nonce-result-bad-error",
+                ),
+            )
+            assert bad_error.status == 400
+
+            worker_manager.submit_worker_job_result = AsyncMock(side_effect=RuntimeError("db-down"))
+            runtime_raw = json.dumps(
+                {"tenant_id": tenant_id, "status": "succeeded"},
+                separators=(",", ":"),
+            )
+            runtime_error = await client.post(
+                f"/worker/v1/nodes/{node_id}/jobs/job-1/result",
+                data=runtime_raw,
+                headers=_worker_headers(
+                    tenant_id=tenant_id,
+                    node_id=node_id,
+                    session_id=session_id,
+                    token=token,
+                    signing_secret=signing_secret,
+                    raw_body=runtime_raw,
+                    nonce="nonce-result-runtime-409",
+                ),
+            )
+            assert runtime_error.status == 409
+
+            worker_manager.submit_worker_job_result = AsyncMock(
+                side_effect=ValueError("bad-result-payload")
+            )
+            value_raw = json.dumps(
+                {"tenant_id": tenant_id, "status": "succeeded"},
+                separators=(",", ":"),
+            )
+            value_error = await client.post(
+                f"/worker/v1/nodes/{node_id}/jobs/job-1/result",
+                data=value_raw,
+                headers=_worker_headers(
+                    tenant_id=tenant_id,
+                    node_id=node_id,
+                    session_id=session_id,
+                    token=token,
+                    signing_secret=signing_secret,
+                    raw_body=value_raw,
+                    nonce="nonce-result-value-400",
+                ),
+            )
+            assert value_error.status == 400
 
     async def test_worker_signature_invalid_and_admin_route_not_accessible(
         self,
@@ -1323,7 +1579,9 @@ class TestSkillsWorkerControlAPI:
                 ),
                 data=result_raw,
             )
-            assert result_runtime.status == 409
+            assert result_runtime.status == 202
+            runtime_payload = await result_runtime.json()
+            assert runtime_payload["idempotent"] is True
 
             worker_manager.record_worker_job_event = AsyncMock(side_effect=Exception("boom"))
             result_error = await client.post(

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -87,6 +87,49 @@ class PlanContinuationExecutor:
             claimed_retry = retry_data
             step_id = str(claimed_step["step_id"])
             retry_id = str(claimed_retry["retry_id"])
+            execution_target = self._execution_target_for_step(claimed_step)
+
+            if execution_target != "windows_local":
+                dispatch = await self._tenant_admin_manager.dispatch_execution_step_to_worker(
+                    tenant_id=tenant_id,
+                    plan_id=plan_id,
+                    step=claimed_step,
+                    retry=claimed_retry,
+                    dispatcher_id=worker_id,
+                    from_status=str(claim.get("from_status") or "pending"),
+                )
+                await self._tenant_admin_manager.record_execution_artifact(
+                    tenant_id=tenant_id,
+                    plan_id=plan_id,
+                    step_id=step_id,
+                    retry_id=retry_id,
+                    artifact_type="step_dispatched",
+                    artifact_json={
+                        "execution_target": execution_target,
+                        "job_id": dispatch.get("job_id"),
+                        "step_index": claimed_step.get("step_index"),
+                        "attempt_number": claimed_retry.get("attempt_number"),
+                    },
+                )
+                monitor_at = datetime.now(UTC) + timedelta(seconds=self._stale_step_seconds)
+                await self._tenant_admin_manager.schedule_execution_continuation(
+                    tenant_id=tenant_id,
+                    plan_id=plan_id,
+                    scheduled_for=monitor_at,
+                    reason="worker_dispatch_monitor",
+                    requested_by=worker_id,
+                )
+                return {
+                    "accepted": True,
+                    "tenant_id": tenant_id,
+                    "plan_id": plan_id,
+                    "step_id": step_id,
+                    "execution_target": execution_target,
+                    "dispatched": True,
+                    "job_id": dispatch.get("job_id"),
+                    "has_more": True,
+                }
+
             prompt_text = str(claimed_step.get("prompt_text") or "").strip()
             if not prompt_text:
                 raise ValueError("Execution step prompt is empty")
@@ -237,3 +280,12 @@ class PlanContinuationExecutor:
         if "cancel" in text or "interrupted" in text:
             return "interrupted"
         return "transient"
+
+    @staticmethod
+    def _execution_target_for_step(step: dict[str, Any]) -> str:
+        raw = str(step.get("execution_target") or "windows_local").strip().lower()
+        if raw in {"windows_local", "any_worker"}:
+            return raw
+        if raw.startswith("worker:") and raw[7:].strip():
+            return raw
+        return "windows_local"

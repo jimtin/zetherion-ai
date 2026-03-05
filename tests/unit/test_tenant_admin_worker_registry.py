@@ -132,6 +132,29 @@ async def test_bootstrap_worker_session_and_auth_lookup_paths() -> None:
 
 
 @pytest.mark.asyncio
+async def test_bootstrap_worker_session_validation_errors() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    base_kwargs = {
+        "tenant_id": "11111111-1111-1111-1111-111111111111",
+        "node_id": "node-1",
+        "session_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "session_token_hash": "a" * 64,
+        "signing_secret": "signing-secret",
+    }
+
+    with pytest.raises(ValueError, match="Missing node_id"):
+        await manager.bootstrap_worker_node_session(**{**base_kwargs, "node_id": ""})
+    with pytest.raises(ValueError, match="Missing session_token_hash"):
+        await manager.bootstrap_worker_node_session(**{**base_kwargs, "session_token_hash": ""})
+    with pytest.raises(ValueError, match="SHA-256 hex digest"):
+        await manager.bootstrap_worker_node_session(
+            **{**base_kwargs, "session_token_hash": "not-a-sha256"}
+        )
+    with pytest.raises(ValueError, match="Missing signing_secret"):
+        await manager.bootstrap_worker_node_session(**{**base_kwargs, "signing_secret": ""})
+
+
+@pytest.mark.asyncio
 async def test_worker_registry_mutations_and_queries_paths() -> None:
     conn = _FakeConn()
     conn.fetchrow.return_value = {"node_id": "node-1"}
