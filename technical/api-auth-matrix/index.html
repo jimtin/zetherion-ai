@@ -1861,6 +1861,10 @@
 <ul>
 <li>Added token-authenticated CGS blog publish adapter route:</li>
 <li><code>POST /service/ai/v1/internal/blog/publish</code></li>
+<li>Added tenant messaging upstream API routes:</li>
+<li><code>GET /api/v1/messaging/chats</code></li>
+<li><code>GET /api/v1/messaging/messages</code></li>
+<li><code>POST /api/v1/messaging/messages/{chat_id}/send</code></li>
 <li>Internal lifecycle tenant mutations now enforce claims-to-tenant policy in addition to operator scope checks.</li>
 <li>Auth requirements for public document routes remain API-key based, including:</li>
 <li><code>DELETE /api/v1/documents/{document_id}</code></li>
@@ -1902,6 +1906,12 @@
 <td>API key</td>
 <td><code>X-API-Key</code></td>
 <td>tenant resolved from API key</td>
+</tr>
+<tr>
+<td>Messaging chats/messages/send</td>
+<td>API key + trust policy</td>
+<td><code>X-API-Key</code></td>
+<td>tenant resolved from API key + trust-policy allowlist/tier checks</td>
 </tr>
 <tr>
 <td>Documents + RAG + model catalog</td>

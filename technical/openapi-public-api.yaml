@@ -3,7 +3,7 @@ info:
   title: Zetherion Upstream API
   version: 1.0.0
   description: Internal `/api/v1` upstream contract consumed by the CGS gateway. External clients should use CGS `/service/ai/v1`.
-  x-maintenance-note: "2026-03-05: added document archive/delete + restore routes, include_archived list filtering, archive/purge maintenance loops, and archived-state RAG exclusion."
+  x-maintenance-note: "2026-03-05: added tenant messaging read/send routes plus document archive/delete + restore lifecycle updates."
 servers:
   - url: https://{host}
     variables:
@@ -161,6 +161,74 @@ paths:
       responses:
         '200':
           description: Interactions list
+  /api/v1/messaging/chats:
+    get:
+      summary: List tenant messaging chats and policy snapshots
+      responses:
+        '200':
+          description: Messaging chat list
+  /api/v1/messaging/messages:
+    get:
+      summary: List tenant messaging messages for one chat
+      parameters:
+        - name: chat_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+            default: whatsapp
+        - name: direction
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [inbound, outbound]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        '200':
+          description: Messaging message list
+  /api/v1/messaging/messages/{chat_id}/send:
+    post:
+      summary: Queue outbound tenant messaging send
+      parameters:
+        - name: chat_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                provider:
+                  type: string
+                  default: whatsapp
+                text:
+                  type: string
+                metadata:
+                  type: object
+                  additionalProperties: true
+                explicitly_elevated:
+                  type: boolean
+                  default: false
+      responses:
+        '202':
+          description: Messaging send queued
   /api/v1/releases/markers:
     post:
       summary: Ingest release marker

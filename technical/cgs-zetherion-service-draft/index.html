@@ -2240,7 +2240,9 @@ Owners: <code>Catalyst Group Solutions (CGS) Platform</code>, <code>Zetherion Ba
 - Internal document route typing/multipart parsing hardening was applied.
 - Public + gateway service contracts defined in this draft remain unchanged.
 - Added tenant email admin control-plane routes under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/email/*</code> with step-up + approval requirements for high-risk actions.
-- Zetherion-only boundary recovery removed in-repo CGS website/UI assets; integration contract remains CGS-only.</p>
+- Added tenant messaging admin control-plane routes under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/*</code> with trust-policy gating and approval-required send semantics.
+- Zetherion-only boundary recovery removed in-repo CGS website/UI assets; integration contract remains CGS-only.
+- Internal trust-policy gating now applies to sensitive admin actions before upstream apply, without changing external route contracts.</p>
 <h2 id="1-purpose">1. Purpose<a class="headerlink" href="#1-purpose" title="Permanent link">&para;</a></h2>
 <p>This draft defines the service contract that lets CGS act as the API provider for company apps while Zetherion acts as the backend AI provider.</p>
 <p>Goals:
@@ -2561,11 +2563,18 @@ Owners: <code>Catalyst Group Solutions (CGS) Platform</code>, <code>Zetherion Ba
 - <code>PUT /email/mailboxes/{mailbox_id}/calendar-primary</code>
 - <code>GET /email/insights</code>
 - <code>POST /email/insights/reindex</code></p>
+<p>Messaging admin routes (local-bridge first):
+- <code>GET|PUT /messaging/providers/{provider}/config</code>
+- <code>GET|PUT /messaging/chats/{chat_id}/policy</code>
+- <code>GET /messaging/chats</code>
+- <code>GET /messaging/messages</code>
+- <code>POST /messaging/messages/{chat_id}/send</code></p>
 <p>Security rules:
 - Operator auth + <code>cgs:zetherion-admin</code> required.
 - Mutating routes require step-up auth.
 - OAuth app read/write additionally require <code>cgs:zetherion-secrets-admin</code>.
-- OAuth app writes and mailbox disconnects require approved <code>change_ticket_id</code>.</p>
+- OAuth app writes and mailbox disconnects require approved <code>change_ticket_id</code>.
+- Messaging send may return <code>AI_APPROVAL_REQUIRED</code> and requires approved <code>change_ticket_id</code> when policy is not explicitly elevated.</p>
 <h3 id="63-company-reporting-endpoints">6.3 Company Reporting Endpoints<a class="headerlink" href="#63-company-reporting-endpoints" title="Permanent link">&para;</a></h3>
 <table>
 <thead>

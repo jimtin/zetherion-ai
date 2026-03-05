@@ -2059,6 +2059,8 @@
 <li>Added blog publish adapter route mapping for operator tooling and promotion worker integration.</li>
 <li>Clarified that CGS website/UI is owned outside this repository; this document only maps CGS API routes to UI screens.</li>
 <li>Added tenant email admin route mapping for OAuth app setup, mailbox linking, sync/triage, and calendar selection.</li>
+<li>Added tenant messaging admin route mapping for provider config, chat policy management, chat/message views, and policy-gated sends.</li>
+<li>Added trust-policy enforcement note for sensitive internal admin actions; UI should handle deny/approval-required outcomes consistently.</li>
 </ul>
 <h2 id="document-center-screens">Document Center Screens<a class="headerlink" href="#document-center-screens" title="Permanent link">&para;</a></h2>
 <table>
@@ -2240,6 +2242,36 @@
 <td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/audit</code></td>
 <td><code>GET</code></td>
 <td>Immutable upstream audit trail</td>
+</tr>
+<tr>
+<td>Messaging provider config</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/providers/{provider}/config</code></td>
+<td><code>GET</code>/<code>PUT</code></td>
+<td>Mutating route requires step-up auth</td>
+</tr>
+<tr>
+<td>Messaging chat policy</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/chats/{chat_id}/policy</code></td>
+<td><code>GET</code>/<code>PUT</code></td>
+<td>Controls read/send allowlist and retention</td>
+</tr>
+<tr>
+<td>Messaging chat list</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/chats</code></td>
+<td><code>GET</code></td>
+<td>Supports <code>provider</code>, <code>include_inactive</code>, <code>limit</code></td>
+</tr>
+<tr>
+<td>Messaging message list</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages</code></td>
+<td><code>GET</code></td>
+<td>Requires <code>chat_id</code> query</td>
+</tr>
+<tr>
+<td>Messaging send queue</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages/{chat_id}/send</code></td>
+<td><code>POST</code></td>
+<td>May require approval (<code>AI_APPROVAL_REQUIRED</code>)</td>
 </tr>
 <tr>
 <td>Change queue</td>

@@ -2192,6 +2192,10 @@ All integration is through CGS <code>/service/ai/v1</code>.</p>
 <p>For the full technical implementation scope CGS must deliver to go live, use:
 - <code>.agent-handoff/CGS_GO_LIVE_IMPLEMENTATION_CHECKLIST.md</code>
 - <code>docs/technical/cgs-email-monitoring-onboarding-kit.md</code> (tenant multi-mailbox monitoring and intelligence)</p>
+<p>Maintenance note (2026-03-05):
+- Internal trust-policy enforcement was added for sensitive internal admin actions.
+- Internal tenant messaging admin routes were added under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/*</code>.
+- Public CGS client-facing document intelligence endpoints in this kit are unchanged.</p>
 <h2 id="integration-outcome">Integration Outcome<a class="headerlink" href="#integration-outcome" title="Permanent link">&para;</a></h2>
 <p>After implementing this kit, client applications can:
 - Upload documents.

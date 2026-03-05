@@ -2424,7 +2424,9 @@
 <li>Added gateway envelope field <code>error.retryable</code> for all failure responses.</li>
 <li>Added CGS route-doc parity gate for lifecycle/reporting/admin/blog surfaces.</li>
 <li>Added tenant email admin control-plane routes for OAuth app setup, mailbox linking, sync, critical message triage, calendar binding, and insight reindex.</li>
+<li>Added tenant messaging admin control-plane routes for provider config, chat policy, message read, and policy-gated send.</li>
 <li>Zetherion-only boundary recovery removed in-repo CGS website/UI assets; endpoint contracts stay CGS-first and unchanged.</li>
+<li>Internal admin trust-policy enforcement was added for sensitive actions; endpoint shapes remain unchanged.</li>
 </ul>
 <h2 id="2-scope">2. Scope<a class="headerlink" href="#2-scope" title="Permanent link">&para;</a></h2>
 <p>In scope:</p>
@@ -2832,6 +2834,11 @@ Used by frontend provider/model selector UI.</p>
 - <code>PUT /email/mailboxes/{mailbox_id}/calendar-primary</code>
 - <code>GET /email/insights</code>
 - <code>POST /email/insights/reindex</code>
+- <code>GET|PUT /messaging/providers/{provider}/config</code>
+- <code>GET|PUT /messaging/chats/{chat_id}/policy</code>
+- <code>GET /messaging/chats</code>
+- <code>GET /messaging/messages</code>
+- <code>POST /messaging/messages/{chat_id}/send</code>
 - <code>POST|GET /changes</code>
 - <code>POST /changes/{change_id}/approve</code>
 - <code>POST /changes/{change_id}/reject</code></p>
@@ -2883,7 +2890,12 @@ Used by frontend provider/model selector UI.</p>
 - <code>/admin/tenants/{tenant_id}/email/accounts*</code>
 - <code>/admin/tenants/{tenant_id}/email/critical</code>
 - <code>/admin/tenants/{tenant_id}/email/calendars</code>
-- <code>/admin/tenants/{tenant_id}/email/insights*</code></p>
+- <code>/admin/tenants/{tenant_id}/email/insights*</code>
+- <code>/admin/tenants/{tenant_id}/messaging/providers/{provider}/config</code>
+- <code>/admin/tenants/{tenant_id}/messaging/chats/{chat_id}/policy</code>
+- <code>/admin/tenants/{tenant_id}/messaging/chats</code>
+- <code>/admin/tenants/{tenant_id}/messaging/messages</code>
+- <code>/admin/tenants/{tenant_id}/messaging/messages/{chat_id}/send</code></p>
 <p>Actor attribution to Skills tenant-admin endpoints is mandatory:
 - signed actor envelope includes <code>actor_sub</code>, <code>actor_roles</code>, <code>request_id</code>, <code>timestamp</code>, <code>nonce</code>
 - replay-protection is enforced upstream (nonce/timestamp validation)</p>

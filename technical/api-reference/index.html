@@ -1277,6 +1277,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#bridge-ingest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bridge Ingest
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Bridge Ingest">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#post-bridgev1tenantstenant_idmessagingingest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /bridge/v1/tenants/{tenant_id}/messaging/ingest
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#user-management" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2316,6 +2344,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#bridge-ingest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bridge Ingest
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Bridge Ingest">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#post-bridgev1tenantstenant_idmessagingingest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /bridge/v1/tenants/{tenant_id}/messaging/ingest
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#user-management" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2704,6 +2760,24 @@
 <h3 id="get-gmailcallback">GET /gmail/callback<a class="headerlink" href="#get-gmailcallback" title="Permanent link">&para;</a></h3>
 <p>Backward-compatible alias for the Google provider callback
 (<code>GET /oauth/{provider}/callback</code> with <code>provider=google</code>).</p>
+<hr />
+<h2 id="bridge-ingest">Bridge Ingest<a class="headerlink" href="#bridge-ingest" title="Permanent link">&para;</a></h2>
+<h3 id="post-bridgev1tenantstenant_idmessagingingest">POST /bridge/v1/tenants/{tenant_id}/messaging/ingest<a class="headerlink" href="#post-bridgev1tenantstenant_idmessagingingest" title="Permanent link">&para;</a></h3>
+<p>Bridge-only tenant messaging ingest endpoint.</p>
+<ul>
+<li>Requires <code>X-API-Secret</code>.</li>
+<li>Requires signed bridge headers:</li>
+<li><code>X-Bridge-Timestamp</code></li>
+<li><code>X-Bridge-Nonce</code></li>
+<li><code>X-Bridge-Signature</code></li>
+<li>Rejects replayed nonce values.</li>
+</ul>
+<p>Tenant-admin alias for bridge ingest is available under
+<code>/admin/tenants/{tenant_id}/messaging/ingest</code> and is bridge-signature
+authenticated (no admin actor envelope).</p>
+<p>Internal tenant messaging management is available under
+<code>/admin/tenants/{tenant_id}/messaging/*</code>, including provider config, chat
+policies, message listing, and queued send operations.</p>
 <hr />
 <h2 id="user-management">User Management<a class="headerlink" href="#user-management" title="Permanent link">&para;</a></h2>
 <h3 id="get-users">GET /users<a class="headerlink" href="#get-users" title="Permanent link">&para;</a></h3>

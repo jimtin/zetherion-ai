@@ -1576,6 +1576,50 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#changed-trust-policy-gate-for-internal-admin-actions-2026-03-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Trust Policy Gate for Internal Admin Actions (2026-03-05)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-tenant-messaging-persistence-skills-internal-control-plane-2026-03-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Tenant Messaging Persistence + Skills Internal Control Plane (2026-03-05)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-tenant-messaging-cgs-public-api-surfaces-2026-03-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Tenant Messaging CGS + Public API Surfaces (2026-03-05)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-execution-ledger-overnight-continuation-loop-2026-03-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Execution Ledger + Overnight Continuation Loop (2026-03-05)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#changed-windows-deploy-resilience-registration-signal-cleanup-2026-03-05" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2433,6 +2477,50 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#changed-trust-policy-gate-for-internal-admin-actions-2026-03-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Trust Policy Gate for Internal Admin Actions (2026-03-05)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-tenant-messaging-persistence-skills-internal-control-plane-2026-03-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Tenant Messaging Persistence + Skills Internal Control Plane (2026-03-05)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-tenant-messaging-cgs-public-api-surfaces-2026-03-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Tenant Messaging CGS + Public API Surfaces (2026-03-05)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-execution-ledger-overnight-continuation-loop-2026-03-05" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Execution Ledger + Overnight Continuation Loop (2026-03-05)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#changed-windows-deploy-resilience-registration-signal-cleanup-2026-03-05" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3149,6 +3237,73 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 </blockquote>
 <hr />
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="changed-trust-policy-gate-for-internal-admin-actions-2026-03-05">Changed - Trust Policy Gate for Internal Admin Actions (2026-03-05)<a class="headerlink" href="#changed-trust-policy-gate-for-internal-admin-actions-2026-03-05" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added a centralized trust-policy evaluator for sensitive/critical actions across messaging and autonomous merge control paths.</li>
+<li>Wired CGS internal admin tenant routes through trust-policy enforcement before upstream apply calls.</li>
+<li>Added global trust controls and kill switches:</li>
+<li><code>MESSAGING_INGESTION_KILL_SWITCH</code></li>
+<li><code>MESSAGING_SEND_KILL_SWITCH</code></li>
+<li><code>AUTO_MERGE_EXECUTION_KILL_SWITCH</code></li>
+<li><code>AUTO_MERGE_POLICY_ENABLED</code></li>
+<li><code>SECURITY_DEFAULT_TRUST_TIER</code></li>
+<li>No external endpoint shape changes; contract docs bundle updated to reflect policy and configuration coverage.</li>
+</ul>
+<h3 id="added-tenant-messaging-persistence-skills-internal-control-plane-2026-03-05">Added - Tenant Messaging Persistence + Skills Internal Control Plane (2026-03-05)<a class="headerlink" href="#added-tenant-messaging-persistence-skills-internal-control-plane-2026-03-05" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added tenant messaging persistence tables:</li>
+<li><code>tenant_messaging_provider_configs</code></li>
+<li><code>tenant_messaging_accounts</code></li>
+<li><code>tenant_messaging_chat_policies</code></li>
+<li><code>tenant_messaging_messages</code> (encrypted full-text bodies with expiry timestamps)</li>
+<li><code>tenant_messaging_action_queue</code> (queued send actions with request/change refs)</li>
+<li>Added Skills internal tenant messaging routes:</li>
+<li><code>GET/PUT /admin/tenants/{tenant_id}/messaging/providers/{provider}/config</code></li>
+<li><code>GET/PUT /admin/tenants/{tenant_id}/messaging/chats/{chat_id}/policy</code></li>
+<li><code>GET /admin/tenants/{tenant_id}/messaging/chats</code></li>
+<li><code>GET /admin/tenants/{tenant_id}/messaging/messages</code></li>
+<li><code>POST /admin/tenants/{tenant_id}/messaging/messages/{chat_id}/send</code></li>
+<li><code>POST /admin/tenants/{tenant_id}/messaging/ingest</code></li>
+<li>Bridge ingest now stores signed inbound events into encrypted tenant message storage and enforces chat allowlist policy.</li>
+<li>Added TTL cleanup loop in Skills server to continuously purge expired tenant messaging payloads.</li>
+</ul>
+<h3 id="added-tenant-messaging-cgs-public-api-surfaces-2026-03-05">Added - Tenant Messaging CGS + Public API Surfaces (2026-03-05)<a class="headerlink" href="#added-tenant-messaging-cgs-public-api-surfaces-2026-03-05" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added CGS internal admin messaging route family under:</li>
+<li><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/...</code></li>
+<li>includes provider config, chat policy CRUD, chat/message list, and send queue endpoints.</li>
+<li>Added tenant public upstream messaging routes:</li>
+<li><code>GET /api/v1/messaging/chats</code></li>
+<li><code>GET /api/v1/messaging/messages</code></li>
+<li><code>POST /api/v1/messaging/messages/{chat_id}/send</code></li>
+<li>Added trust-policy/approval propagation for CGS messaging send:</li>
+<li>high-risk send requests return <code>AI_APPROVAL_REQUIRED</code> with generated <code>change_ticket_id</code> when required.</li>
+<li>Added public messaging route trust-policy checks for read/send decisions and policy-coded error responses.</li>
+<li>Updated OpenAPI and docs bundles for both upstream and CGS gateway contracts.</li>
+</ul>
+<h3 id="added-execution-ledger-overnight-continuation-loop-2026-03-05">Added - Execution Ledger + Overnight Continuation Loop (2026-03-05)<a class="headerlink" href="#added-execution-ledger-overnight-continuation-loop-2026-03-05" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added tenant execution-ledger persistence tables:</li>
+<li><code>tenant_execution_plans</code></li>
+<li><code>tenant_execution_steps</code></li>
+<li><code>tenant_execution_step_retries</code></li>
+<li><code>tenant_execution_artifacts</code></li>
+<li><code>tenant_execution_transitions</code></li>
+<li>Added queue-integrated continuation task type:</li>
+<li><code>plan_continuation</code></li>
+<li>dispatched by <code>QueueProcessors</code> and executed via <code>PlanContinuationExecutor</code>.</li>
+<li>Added lease-based plan claiming and step claim/re-run semantics in tenant admin domain, including:</li>
+<li>idempotent completed-step skip behavior</li>
+<li>stale running-step reclaim</li>
+<li>explicit failure category capture + retry backoff scheduling.</li>
+<li>Added Skills internal tenant execution-plan routes:</li>
+<li><code>POST /admin/tenants/{tenant_id}/execution/plans</code></li>
+<li><code>GET /admin/tenants/{tenant_id}/execution/plans</code></li>
+<li><code>GET /admin/tenants/{tenant_id}/execution/plans/{plan_id}</code></li>
+<li><code>POST /admin/tenants/{tenant_id}/execution/plans/{plan_id}/pause</code></li>
+<li><code>POST /admin/tenants/{tenant_id}/execution/plans/{plan_id}/resume</code></li>
+<li><code>POST /admin/tenants/{tenant_id}/execution/plans/{plan_id}/cancel</code></li>
+</ul>
 <h3 id="changed-windows-deploy-resilience-registration-signal-cleanup-2026-03-05">Changed - Windows Deploy Resilience Registration Signal Cleanup (2026-03-05)<a class="headerlink" href="#changed-windows-deploy-resilience-registration-signal-cleanup-2026-03-05" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Updated <code>Deploy Windows</code> resilience registration step behavior to remain explicitly non-blocking without

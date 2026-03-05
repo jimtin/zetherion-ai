@@ -1249,6 +1249,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#messaging-endpoint-specifics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Messaging Endpoint Specifics
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1832,6 +1843,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#messaging-endpoint-specifics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Messaging Endpoint Specifics
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1865,6 +1887,7 @@
 <li>Added centralized upstream error mapping policy across runtime/internal/admin/reporting route families.</li>
 <li>Added upstream document lifecycle error mappings for archive/delete + restore routes.</li>
 <li>Archive/purge execution failures are asynchronous and surface via document/job status fields, not synchronous DELETE request failures.</li>
+<li>Added tenant messaging policy-gated upstream/public and CGS-admin error mappings.</li>
 </ul>
 <h2 id="public-api-apiv1">Public API (<code>/api/v1</code>)<a class="headerlink" href="#public-api-apiv1" title="Permanent link">&para;</a></h2>
 <table>
@@ -1900,6 +1923,12 @@
 <td><code>400</code></td>
 <td><code>{"error":"..."}</code></td>
 <td>Invalid JSON/body/query/path payload</td>
+</tr>
+<tr>
+<td>Messaging trust-policy deny/approval-required</td>
+<td><code>403</code>/<code>409</code></td>
+<td><code>{"error":"...","code":"AI_*"}</code></td>
+<td>Trust tier, allowlist, or approval policy gates</td>
 </tr>
 <tr>
 <td>Oversized document uploads</td>
@@ -2149,6 +2178,43 @@
 <td><code>POST /service/ai/v1/internal/admin/tenants/{tenant_id}/email/mailboxes/{mailbox_id}/sync</code></td>
 <td>Invalid direction/status payload</td>
 <td><code>400</code> + <code>AI_BAD_REQUEST</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="messaging-endpoint-specifics">Messaging Endpoint Specifics<a class="headerlink" href="#messaging-endpoint-specifics" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Failure Case</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /api/v1/messaging/messages</code></td>
+<td>Missing <code>chat_id</code> query</td>
+<td><code>400</code></td>
+</tr>
+<tr>
+<td><code>GET /api/v1/messaging/messages</code></td>
+<td>Chat not allowlisted</td>
+<td><code>403</code> + <code>AI_MESSAGING_CHAT_NOT_ALLOWLISTED</code></td>
+</tr>
+<tr>
+<td><code>POST /api/v1/messaging/messages/{chat_id}/send</code></td>
+<td>Approval required by policy</td>
+<td><code>409</code> + <code>AI_APPROVAL_REQUIRED</code></td>
+</tr>
+<tr>
+<td><code>POST /api/v1/messaging/messages/{chat_id}/send</code></td>
+<td>Chat not allowlisted</td>
+<td><code>403</code> + <code>AI_MESSAGING_CHAT_NOT_ALLOWLISTED</code></td>
+</tr>
+<tr>
+<td><code>POST /service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages/{chat_id}/send</code></td>
+<td>High-risk send without approved ticket</td>
+<td><code>409</code> + <code>AI_APPROVAL_REQUIRED</code></td>
 </tr>
 </tbody>
 </table>
