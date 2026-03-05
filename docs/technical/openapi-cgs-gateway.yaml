@@ -1030,6 +1030,59 @@ paths:
       responses:
         '202':
           description: Messaging send queued
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes:
+    get:
+      summary: List registered tenant worker nodes
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: include_inactive
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        '200':
+          description: Tenant worker node list envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}:
+    get:
+      summary: Get one tenant worker node
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: node_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tenant worker node envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/capabilities:
+    put:
+      summary: Replace allowlisted capabilities for one tenant worker node
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: node_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWorkerCapabilitiesPutRequest'
+      responses:
+        '200':
+          description: Worker capability update accepted
   /service/ai/v1/internal/admin/tenants/{tenant_id}/security/events:
     get:
       summary: List tenant security events for policy/security observability
@@ -1686,6 +1739,19 @@ components:
           minimum: 1
           maximum: 20000
           default: 5000
+        explicitly_elevated:
+          type: boolean
+          default: false
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminWorkerCapabilitiesPutRequest:
+      type: object
+      properties:
+        capabilities:
+          type: array
+          items:
+            type: string
         explicitly_elevated:
           type: boolean
           default: false
