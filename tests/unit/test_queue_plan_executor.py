@@ -107,3 +107,113 @@ async def test_execute_failure_marks_retry_and_reschedules() -> None:
     manager.fail_execution_step.assert_awaited_once()
     manager.schedule_execution_continuation.assert_awaited_once()
     manager.release_execution_plan_lease.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_no_claimable_step_reconciles_and_releases() -> None:
+    manager = AsyncMock()
+    manager.claim_execution_plan_lease = AsyncMock(return_value={"created_by": "7"})
+    manager.claim_next_execution_step = AsyncMock(return_value=None)
+    manager.reconcile_execution_plan_status = AsyncMock(return_value={"status": "completed"})
+    manager.release_execution_plan_lease = AsyncMock(return_value=None)
+
+    executor = PlanContinuationExecutor(tenant_admin_manager=manager, agent=None)
+    result = await executor.execute({"tenant_id": "tenant-1", "plan_id": "plan-1"})
+
+    assert result["noop"] == "no_claimable_step"
+    assert result["plan"]["status"] == "completed"
+    manager.reconcile_execution_plan_status.assert_awaited_once()
+    manager.release_execution_plan_lease.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_malformed_claim_returns_failure_without_step_mutation() -> None:
+    manager = AsyncMock()
+    manager.claim_execution_plan_lease = AsyncMock(return_value={"created_by": "7"})
+    manager.claim_next_execution_step = AsyncMock(return_value={"step": "bad", "retry": "bad"})
+    manager.release_execution_plan_lease = AsyncMock(return_value=None)
+
+    executor = PlanContinuationExecutor(tenant_admin_manager=manager, agent=None)
+    result = await executor.execute({"tenant_id": "tenant-1", "plan_id": "plan-1"})
+
+    assert result["failure_category"] == "transient"
+    manager.fail_execution_step.assert_not_awaited()
+    manager.release_execution_plan_lease.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_empty_prompt_fails_step_and_records_failure_artifact() -> None:
+    manager = AsyncMock()
+    manager.claim_execution_plan_lease = AsyncMock(return_value={"created_by": "7"})
+    manager.claim_next_execution_step = AsyncMock(
+        return_value={
+            "step": {
+                "step_id": "11111111-1111-1111-1111-111111111111",
+                "step_index": 0,
+                "title": "Step 1",
+                "prompt_text": "   ",
+            },
+            "retry": {
+                "retry_id": "22222222-2222-2222-2222-222222222222",
+                "attempt_number": 1,
+            },
+        }
+    )
+    manager.fail_execution_step = AsyncMock(
+        return_value={
+            "retry_scheduled": False,
+            "next_run_at": None,
+            "failure_category": "transient",
+        }
+    )
+    manager.record_execution_artifact = AsyncMock(return_value={"artifact_id": "a1"})
+    manager.release_execution_plan_lease = AsyncMock(return_value=None)
+
+    executor = PlanContinuationExecutor(tenant_admin_manager=manager, agent=None)
+    result = await executor.execute({"tenant_id": "tenant-1", "plan_id": "plan-1"})
+
+    assert result["failure_category"] == "transient"
+    manager.fail_execution_step.assert_awaited_once()
+    manager.record_execution_artifact.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_prompt_agent_fallback_and_empty_response_paths() -> None:
+    manager = AsyncMock()
+    fallback_executor = PlanContinuationExecutor(tenant_admin_manager=manager, agent=None)
+    fallback = await fallback_executor._prompt_agent(  # noqa: SLF001 - direct branch coverage
+        prompt_text="build",
+        plan={"created_by": "abc"},
+        step={"title": "No Agent"},
+    )
+    assert "Recorded step without agent runtime" in fallback
+
+    agent = AsyncMock()
+    agent.generate_response = AsyncMock(return_value="")
+    active_executor = PlanContinuationExecutor(tenant_admin_manager=manager, agent=agent)
+    empty = await active_executor._prompt_agent(  # noqa: SLF001 - direct branch coverage
+        prompt_text="build",
+        plan={"created_by": "not-numeric"},
+        step={"title": "Step 1"},
+    )
+    assert empty == "Agent returned empty output."
+    call_kwargs = agent.generate_response.await_args.kwargs
+    assert call_kwargs["user_id"] == 0
+
+
+def test_categorize_failure_variants() -> None:
+    assert (
+        PlanContinuationExecutor._categorize_failure(RuntimeError("request timeout")) == "timeout"
+    )
+    assert (
+        PlanContinuationExecutor._categorize_failure(RuntimeError("rate limit exceeded"))
+        == "rate_limit"
+    )
+    assert (
+        PlanContinuationExecutor._categorize_failure(RuntimeError("dependency unavailable"))
+        == "dependency"
+    )
+    assert (
+        PlanContinuationExecutor._categorize_failure(RuntimeError("operation interrupted"))
+        == "interrupted"
+    )

@@ -2262,3 +2262,547 @@ async def test_fail_execution_step_retry_and_terminal_paths() -> None:
     assert failed_retryable["retry_scheduled"] is True
     assert failed_retryable["backoff_seconds"] == 60
     assert failed_retryable["plan"]["status"] == "running"
+
+
+def _execution_plan_row(
+    *,
+    status: str = "queued",
+    next_run_at: datetime | None = None,
+    current_step_index: int = 0,
+) -> dict[str, Any]:
+    now = datetime.now(UTC)
+    return {
+        "plan_id": "11111111-1111-1111-1111-111111111111",
+        "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "title": "Night Build",
+        "goal": "Ship overnight",
+        "status": status,
+        "current_step_index": current_step_index,
+        "total_steps": 2,
+        "max_step_attempts": 3,
+        "continuation_interval_seconds": 60,
+        "next_run_at": next_run_at,
+        "lease_owner": None,
+        "lease_expires_at": None,
+        "metadata": {},
+        "last_error_category": None,
+        "last_error_detail": None,
+        "created_by": "operator-1",
+        "updated_by": "operator-1",
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+def _execution_step_row(
+    *,
+    status: str = "pending",
+    attempt_count: int = 0,
+    max_attempts: int = 3,
+    step_index: int = 0,
+    prompt_text: str = "Do the next task",
+) -> dict[str, Any]:
+    now = datetime.now(UTC)
+    return {
+        "step_id": "22222222-2222-2222-2222-222222222222",
+        "plan_id": "11111111-1111-1111-1111-111111111111",
+        "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "step_index": step_index,
+        "title": f"Step {step_index + 1}",
+        "prompt_text": prompt_text,
+        "idempotency_key": f"step-{step_index + 1}",
+        "status": status,
+        "attempt_count": attempt_count,
+        "max_attempts": max_attempts,
+        "next_retry_at": None,
+        "last_error_category": None,
+        "last_error_detail": None,
+        "output_json": {},
+        "metadata": {},
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+def test_execution_step_coercion_and_actor_id_helpers() -> None:
+    normalized = TenantAdminManager._coerce_execution_steps(
+        ["Draft plan", {"title": "Build", "prompt": "Implement", "idempotency_key": "A B C"}]
+    )
+    assert len(normalized) == 2
+    assert normalized[1]["idempotency_key"] == "a-b-c"
+    assert TenantAdminManager._coerce_execution_actor_user_id("42") == 42
+    assert TenantAdminManager._coerce_execution_actor_user_id("not-a-number") == 0
+    assert TenantAdminManager._execution_retry_backoff_seconds(999) > 0
+
+    with pytest.raises(ValueError, match="steps must be a non-empty array"):
+        TenantAdminManager._coerce_execution_steps([])
+    with pytest.raises(ValueError, match=r"steps\[0\] must be a string or object"):
+        TenantAdminManager._coerce_execution_steps([123])  # type: ignore[list-item]
+    with pytest.raises(ValueError, match=r"steps\[0\] is missing non-empty prompt text"):
+        TenantAdminManager._coerce_execution_steps(["   "])
+
+
+@pytest.mark.asyncio
+async def test_schedule_execution_continuation_success_and_failure_paths() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    manager._execute = AsyncMock(return_value="INSERT 1")  # type: ignore[method-assign]
+
+    queued = await manager.schedule_execution_continuation(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        requested_by="42",
+        scheduled_for=datetime(2026, 1, 1, 12, 0, 0),
+        priority=9,
+    )
+    assert queued is not None
+    manager._execute.assert_awaited_once()
+    execute_args = manager._execute.await_args.args
+    assert execute_args[3] == 42
+
+    manager._execute = AsyncMock(side_effect=RuntimeError("db down"))  # type: ignore[method-assign]
+    failed = await manager.schedule_execution_continuation(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+    )
+    assert failed is None
+
+
+@pytest.mark.asyncio
+async def test_execution_plan_listing_get_and_steps_paths() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    manager._fetch = AsyncMock(return_value=[_execution_plan_row(status="running")])  # type: ignore[method-assign]
+
+    plans = await manager.list_execution_plans(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        status="running",
+        limit=9999,
+    )
+    assert len(plans) == 1
+    with pytest.raises(ValueError, match="Invalid execution plan status"):
+        await manager.list_execution_plans(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            status="bogus",
+        )
+
+    manager._fetchrow = AsyncMock(side_effect=[None, _execution_plan_row(status="queued")])  # type: ignore[method-assign]
+    missing = await manager.get_execution_plan(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+    )
+    assert missing is None
+    found = await manager.get_execution_plan(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+    )
+    assert found is not None
+    assert found["status"] == "queued"
+
+    manager._fetch = AsyncMock(return_value=[_execution_step_row(prompt_text="secret prompt")])  # type: ignore[method-assign]
+    steps = await manager.list_execution_plan_steps(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        include_prompt=False,
+    )
+    assert "prompt_text" not in steps[0]
+
+
+@pytest.mark.asyncio
+async def test_pause_resume_cancel_execution_plan_happy_paths() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    manager.get_execution_plan = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            _execution_plan_row(status="running"),
+            _execution_plan_row(
+                status="paused", next_run_at=datetime.now(UTC) + timedelta(minutes=10)
+            ),
+            _execution_plan_row(status="queued"),
+        ]
+    )
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            _execution_plan_row(status="paused"),
+            _execution_plan_row(status="queued"),
+            _execution_plan_row(status="cancelled"),
+        ]
+    )
+    manager._execute = AsyncMock(return_value="UPDATE 1")  # type: ignore[method-assign]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager.schedule_execution_continuation = AsyncMock(return_value="queue-1")  # type: ignore[method-assign]
+
+    paused = await manager.pause_execution_plan(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        actor=_actor(),
+    )
+    resumed = await manager.resume_execution_plan(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        actor=_actor(),
+        immediately=False,
+    )
+    cancelled = await manager.cancel_execution_plan(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        actor=_actor(),
+    )
+
+    assert paused["status"] == "paused"
+    assert resumed["status"] == "queued"
+    assert cancelled["status"] == "cancelled"
+    assert manager._execute.await_count == 6
+    manager.schedule_execution_continuation.assert_awaited_once()
+    assert manager._write_audit.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_pause_resume_cancel_execution_plan_error_paths() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    manager.get_execution_plan = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="Execution plan not found"):
+        await manager.pause_execution_plan(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            actor=_actor(),
+        )
+    with pytest.raises(ValueError, match="Execution plan not found"):
+        await manager.resume_execution_plan(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            actor=_actor(),
+        )
+    with pytest.raises(ValueError, match="Execution plan not found"):
+        await manager.cancel_execution_plan(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            actor=_actor(),
+        )
+
+    manager.get_execution_plan = AsyncMock(return_value=_execution_plan_row(status="running"))  # type: ignore[method-assign]
+    with pytest.raises(ValueError, match="Execution plan could not be paused"):
+        await manager.pause_execution_plan(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            actor=_actor(),
+        )
+    with pytest.raises(ValueError, match="Execution plan could not be resumed"):
+        await manager.resume_execution_plan(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            actor=_actor(),
+        )
+    with pytest.raises(ValueError, match="Execution plan could not be cancelled"):
+        await manager.cancel_execution_plan(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            actor=_actor(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_claim_and_release_execution_plan_lease_paths() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[None, _execution_plan_row(status="running")]
+    )
+    manager._execute = AsyncMock(return_value="UPDATE 1")  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError, match="Missing worker_id"):
+        await manager.claim_execution_plan_lease(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            worker_id="",
+        )
+
+    miss = await manager.claim_execution_plan_lease(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        worker_id="worker-1",
+    )
+    assert miss is None
+
+    claimed = await manager.claim_execution_plan_lease(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        worker_id="worker-1",
+    )
+    assert claimed is not None
+    assert claimed["status"] == "running"
+
+    await manager.release_execution_plan_lease(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        worker_id="worker-1",
+    )
+    await manager.release_execution_plan_lease(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+    )
+    assert manager._execute.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_claim_next_execution_step_empty_and_partial_paths() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="Missing worker_id"):
+        await manager.claim_next_execution_step(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            worker_id="",
+            lease_token="",
+        )
+
+    conn.fetchrow.side_effect = [None]
+    assert (
+        await manager.claim_next_execution_step(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            worker_id="worker-1",
+            lease_token="token-1",
+        )
+        is None
+    )
+
+    conn.fetchrow.side_effect = [
+        {"step_id": "22222222-2222-2222-2222-222222222222", "step_index": 0, "status": "pending"},
+        None,
+    ]
+    assert (
+        await manager.claim_next_execution_step(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            worker_id="worker-1",
+            lease_token="token-1",
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_reconcile_execution_plan_status_paths() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+
+    conn.fetchrow.side_effect = [None]
+    assert (
+        await manager.reconcile_execution_plan_status(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+        )
+        is None
+    )
+
+    conn.fetchrow.side_effect = [{"status": "completed"}, _execution_plan_row(status="completed")]
+    done = await manager.reconcile_execution_plan_status(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+    )
+    assert done is not None
+    assert done["status"] == "completed"
+
+    conn.fetchrow.side_effect = [{"status": "running"}, _execution_plan_row(status="completed")]
+    conn.fetchval.side_effect = [0]
+    reconciled = await manager.reconcile_execution_plan_status(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+    )
+    assert reconciled is not None
+    assert conn.execute.await_count >= 2
+
+    conn.fetchrow.side_effect = [{"status": "running"}, None]
+    conn.fetchval.side_effect = [2]
+    assert (
+        await manager.reconcile_execution_plan_status(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_complete_execution_step_additional_paths() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+
+    conn.fetchrow.side_effect = [None]
+    with pytest.raises(ValueError, match="Execution plan not found"):
+        await manager.complete_execution_step(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            step_id="22222222-2222-2222-2222-222222222222",
+            retry_id="33333333-3333-3333-3333-333333333333",
+            worker_id="worker-1",
+        )
+
+    conn.fetchrow.side_effect = [{"status": "running", "continuation_interval_seconds": 60}, None]
+    with pytest.raises(ValueError, match="Execution step not found"):
+        await manager.complete_execution_step(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            step_id="22222222-2222-2222-2222-222222222222",
+            retry_id="33333333-3333-3333-3333-333333333333",
+            worker_id="worker-1",
+        )
+
+    conn.fetchrow.side_effect = [
+        {"status": "running", "continuation_interval_seconds": 60},
+        {"step_index": 0, "status": "running"},
+        None,
+    ]
+    with pytest.raises(RuntimeError, match="Failed to complete execution step"):
+        await manager.complete_execution_step(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            step_id="22222222-2222-2222-2222-222222222222",
+            retry_id="33333333-3333-3333-3333-333333333333",
+            worker_id="worker-1",
+        )
+
+    conn.fetchrow.side_effect = [
+        {"status": "running", "continuation_interval_seconds": 60},
+        {"step_index": 0, "status": "running"},
+        _execution_step_row(status="completed", attempt_count=1, step_index=0),
+        {"step_index": 1},
+        _execution_plan_row(status="running", next_run_at=datetime.now(UTC), current_step_index=1),
+    ]
+    progressed = await manager.complete_execution_step(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        step_id="22222222-2222-2222-2222-222222222222",
+        retry_id="33333333-3333-3333-3333-333333333333",
+        worker_id="worker-1",
+    )
+    assert progressed["has_more"] is True
+    assert progressed["plan"]["status"] == "running"
+
+    conn.fetchrow.side_effect = [
+        {"status": "running", "continuation_interval_seconds": 60},
+        {"step_index": 0, "status": "running"},
+        _execution_step_row(status="completed", attempt_count=1, step_index=0),
+        {"step_index": 1},
+        None,
+    ]
+    with pytest.raises(RuntimeError, match="Failed to update execution plan state"):
+        await manager.complete_execution_step(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            step_id="22222222-2222-2222-2222-222222222222",
+            retry_id="33333333-3333-3333-3333-333333333333",
+            worker_id="worker-1",
+        )
+
+
+@pytest.mark.asyncio
+async def test_fail_execution_step_terminal_and_error_paths() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+
+    conn.fetchrow.side_effect = [None]
+    with pytest.raises(ValueError, match="Execution plan not found"):
+        await manager.fail_execution_step(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            step_id="22222222-2222-2222-2222-222222222222",
+            retry_id="33333333-3333-3333-3333-333333333333",
+            worker_id="worker-1",
+            failure_category="timeout",
+            failure_detail="timeout",
+        )
+
+    conn.fetchrow.side_effect = [{"status": "running"}, None]
+    with pytest.raises(ValueError, match="Execution step not found"):
+        await manager.fail_execution_step(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            step_id="22222222-2222-2222-2222-222222222222",
+            retry_id="33333333-3333-3333-3333-333333333333",
+            worker_id="worker-1",
+            failure_category="timeout",
+            failure_detail="timeout",
+        )
+
+    conn.fetchrow.side_effect = [
+        {"status": "running"},
+        {"status": "running", "attempt_count": 3, "max_attempts": 3},
+        _execution_step_row(status="blocked", attempt_count=3, max_attempts=3),
+        _execution_plan_row(status="failed"),
+    ]
+    terminal = await manager.fail_execution_step(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        step_id="22222222-2222-2222-2222-222222222222",
+        retry_id="33333333-3333-3333-3333-333333333333",
+        worker_id="worker-1",
+        failure_category="dependency",
+        failure_detail="upstream unavailable",
+        retryable=False,
+    )
+    assert terminal["retry_scheduled"] is False
+    assert terminal["plan"]["status"] == "failed"
+
+    conn.fetchrow.side_effect = [
+        {"status": "running"},
+        {"status": "running", "attempt_count": 1, "max_attempts": 3},
+        None,
+    ]
+    with pytest.raises(RuntimeError, match="Failed to update execution step failure state"):
+        await manager.fail_execution_step(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            step_id="22222222-2222-2222-2222-222222222222",
+            retry_id="33333333-3333-3333-3333-333333333333",
+            worker_id="worker-1",
+            failure_category="timeout",
+            failure_detail="timeout",
+        )
+
+    conn.fetchrow.side_effect = [
+        {"status": "running"},
+        {"status": "running", "attempt_count": 1, "max_attempts": 3},
+        _execution_step_row(status="failed", attempt_count=1, max_attempts=3),
+        None,
+    ]
+    with pytest.raises(RuntimeError, match="Failed to update execution plan failure state"):
+        await manager.fail_execution_step(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            step_id="22222222-2222-2222-2222-222222222222",
+            retry_id="33333333-3333-3333-3333-333333333333",
+            worker_id="worker-1",
+            failure_category="timeout",
+            failure_detail="timeout",
+        )
+
+
+@pytest.mark.asyncio
+async def test_record_execution_artifact_validation_and_failure_paths() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[None, {"artifact_id": "a1", "artifact_type": "step_prompt"}]
+    )
+
+    with pytest.raises(ValueError, match="Missing artifact_type"):
+        await manager.record_execution_artifact(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            artifact_type="",
+        )
+
+    with pytest.raises(RuntimeError, match="Failed to record execution artifact"):
+        await manager.record_execution_artifact(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            artifact_type="step_prompt",
+        )
+
+    recorded = await manager.record_execution_artifact(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        artifact_type="STEP_PROMPT",
+        artifact_json={"k": "v"},
+    )
+    assert recorded["artifact_id"] == "a1"
