@@ -64,9 +64,15 @@ if [[ ! -f "$BODY_FILE" ]]; then
   exit 2
 fi
 
-gh pr create \
-  --base "$BASE" \
-  --head "$HEAD" \
-  --title "$TITLE" \
-  --body-file "$BODY_FILE" \
-  "${EXTRA_ARGS[@]}"
+PR_ARGS=(
+  --base "$BASE"
+  --head "$HEAD"
+  --title "$TITLE"
+  --body-file "$BODY_FILE"
+)
+
+if ((${#EXTRA_ARGS[@]} > 0)); then
+  PR_ARGS+=("${EXTRA_ARGS[@]}")
+fi
+
+gh pr create "${PR_ARGS[@]}"
