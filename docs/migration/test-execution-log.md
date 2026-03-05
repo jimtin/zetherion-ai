@@ -193,3 +193,11 @@ Append-only bounded-lane execution log in UTC.
 | 2026-03-05T07:17:32.703Z | check | `/usr/local/bin/node /Users/jameshinton/Documents/Developer/PersonalBot/scripts/testing/run-with-heartbeat.mjs --heartbeat-seconds 30 -- bash -lc export DOCS_BUNDLE_BASE_SHA=origin/main; python3 scripts/check_pipeline_contract.py && python3 scripts/check-endpoint-doc-bundle.py && scripts/check-docs-nav.py && scripts/check-docs-links.py && scripts/check-route-doc-parity.py && scripts/check-cgs-route-doc-parity.py && scripts/check-env-doc-parity.py` | passed | 0 |  | - |
 | 2026-03-05T07:17:39.708Z | lint | `ruff check src/ tests/ updater_sidecar/` | passed | 0 |  | - |
 | 2026-03-05T07:17:46.044Z | targeted-unit | `bash -lc .venv/bin/python -m pytest tests/unit/test_trust_policy.py -q --tb=short -o addopts=--strict-markers --tb=short --no-cov` | passed | 0 |  | - |
+| 2026-03-05T07:36:34.840Z | check | `/usr/local/bin/node /Users/jameshinton/Documents/Developer/PersonalBot/scripts/testing/run-with-heartbeat.mjs --heartbeat-seconds 30 -- bash -lc python3 scripts/check_pipeline_contract.py && python3 scripts/check-endpoint-doc-bundle.py` | passed | 0 |  | - |
+| 2026-03-05T07:36:38.561Z | lint | `ruff check src/ tests/ updater_sidecar/` | failed | 0 | exit:1 | - |
+| 2026-03-05T07:38:11.684Z | lint | `ruff check src/ tests/ updater_sidecar/` | passed | 0 |  | - |
+| 2026-03-05T07:38:17.518Z | targeted-unit | `python3 -m pytest tests/unit -q --tb=short` | failed | 0 | exit:1 | - |
+| 2026-03-05T07:38:51.695Z | targeted-unit | `./.venv/bin/python -m pytest tests/unit -q --tb=short` | failed | 25 | exit:1 | - |
+| 2026-03-05T07:39:27.857Z | lint | `ruff check src/ tests/ updater_sidecar/` | passed | 0 |  | - |
+| 2026-03-05T07:39:49.421Z | targeted-unit | `./.venv/bin/python -m pytest tests/unit -q --tb=short --no-cov` | passed | 17 |  | - |
+| 2026-03-05T07:39:55.301Z | check | `/usr/local/bin/node /Users/jameshinton/Documents/Developer/PersonalBot/scripts/testing/run-with-heartbeat.mjs --heartbeat-seconds 30 -- bash -lc python3 scripts/check_pipeline_contract.py && python3 scripts/check-endpoint-doc-bundle.py` | passed | 0 |  | - |

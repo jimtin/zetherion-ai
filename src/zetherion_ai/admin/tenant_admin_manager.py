@@ -39,6 +39,10 @@ VALID_MESSAGING_QUEUE_STATUSES = frozenset(
     {"queued", "processing", "sent", "failed", "blocked", "cancelled"}
 )
 VALID_SECURITY_EVENT_SEVERITIES = frozenset({"low", "medium", "high", "critical"})
+VALID_WORKER_NODE_STATUSES = frozenset(
+    {"bootstrap_pending", "registered", "active", "quarantined", "disabled"}
+)
+VALID_WORKER_HEALTH_STATUSES = frozenset({"unknown", "healthy", "degraded", "offline"})
 DEFAULT_MESSAGING_RETENTION_DAYS = 14
 VALID_EXECUTION_PLAN_STATUSES = frozenset(
     {"queued", "running", "paused", "completed", "failed", "cancelled"}
@@ -619,6 +623,98 @@ CREATE TABLE IF NOT EXISTS tenant_execution_transitions (
 
 CREATE INDEX IF NOT EXISTS idx_tenant_execution_transitions_lookup
     ON tenant_execution_transitions (tenant_id, plan_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_worker_nodes (
+    node_id               TEXT         PRIMARY KEY,
+    tenant_id             UUID         NOT NULL,
+    node_name             TEXT,
+    status                VARCHAR(30)  NOT NULL DEFAULT 'bootstrap_pending'
+                         CHECK (
+                             status IN (
+                                 'bootstrap_pending',
+                                 'registered',
+                                 'active',
+                                 'quarantined',
+                                 'disabled'
+                             )
+                         ),
+    health_status         VARCHAR(20)  NOT NULL DEFAULT 'unknown'
+                         CHECK (
+                             health_status IN (
+                                 'unknown',
+                                 'healthy',
+                                 'degraded',
+                                 'offline'
+                             )
+                         ),
+    metadata              JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    last_heartbeat_at     TIMESTAMPTZ,
+    created_by            TEXT,
+    updated_by            TEXT,
+    created_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at            TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_worker_nodes_lookup
+    ON tenant_worker_nodes (tenant_id, status, health_status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_worker_capabilities (
+    tenant_id             UUID         NOT NULL,
+    node_id               TEXT         NOT NULL
+                         REFERENCES tenant_worker_nodes(node_id) ON DELETE CASCADE,
+    capability            TEXT         NOT NULL,
+    allowlisted           BOOLEAN      NOT NULL DEFAULT TRUE,
+    metadata              JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    created_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, node_id, capability)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_worker_capabilities_lookup
+    ON tenant_worker_capabilities (tenant_id, node_id, allowlisted, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_worker_sessions (
+    session_id            UUID         PRIMARY KEY,
+    tenant_id             UUID         NOT NULL,
+    node_id               TEXT         NOT NULL
+                         REFERENCES tenant_worker_nodes(node_id) ON DELETE CASCADE,
+    token_hash            TEXT         NOT NULL,
+    signing_secret_enc    TEXT         NOT NULL,
+    issued_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    expires_at            TIMESTAMPTZ  NOT NULL,
+    rotated_at            TIMESTAMPTZ,
+    revoked_at            TIMESTAMPTZ,
+    last_seen_at          TIMESTAMPTZ,
+    metadata              JSONB        NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_worker_sessions_lookup
+    ON tenant_worker_sessions (tenant_id, node_id, expires_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_worker_sessions_active
+    ON tenant_worker_sessions (tenant_id, node_id, revoked_at, expires_at DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_worker_job_events (
+    event_id              BIGSERIAL    PRIMARY KEY,
+    tenant_id             UUID         NOT NULL,
+    node_id               TEXT         NOT NULL
+                         REFERENCES tenant_worker_nodes(node_id) ON DELETE CASCADE,
+    session_id            UUID
+                         REFERENCES tenant_worker_sessions(session_id) ON DELETE SET NULL,
+    job_id                TEXT,
+    event_type            TEXT         NOT NULL,
+    request_nonce         TEXT,
+    payload_json          JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    created_at            TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tenant_worker_job_events_nonce
+    ON tenant_worker_job_events (tenant_id, node_id, request_nonce)
+    WHERE request_nonce IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tenant_worker_job_events_lookup
+    ON tenant_worker_job_events (tenant_id, node_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_worker_job_events_job
+    ON tenant_worker_job_events (tenant_id, job_id, created_at DESC)
+    WHERE job_id IS NOT NULL;
 """
 
 
@@ -6110,6 +6206,790 @@ class TenantAdminManager:
         if artifact_row is None:
             raise RuntimeError("Failed to record execution artifact")
         return dict(artifact_row)
+
+    # ------------------------------------------------------------------
+    # Tenant worker registry + secure control-plane domain
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_worker_node_status(raw: str | None, *, default: str) -> str:
+        value = str(raw or default).strip().lower()
+        if value not in VALID_WORKER_NODE_STATUSES:
+            allowed = ", ".join(sorted(VALID_WORKER_NODE_STATUSES))
+            raise ValueError(f"status must be one of: {allowed}")
+        return value
+
+    @staticmethod
+    def _normalize_worker_health_status(raw: str | None, *, default: str) -> str:
+        value = str(raw or default).strip().lower()
+        if value not in VALID_WORKER_HEALTH_STATUSES:
+            allowed = ", ".join(sorted(VALID_WORKER_HEALTH_STATUSES))
+            raise ValueError(f"health_status must be one of: {allowed}")
+        return value
+
+    @staticmethod
+    def _normalize_worker_capabilities(raw: Any) -> list[str]:
+        if raw is None:
+            return []
+        if not isinstance(raw, list):
+            raise ValueError("capabilities must be an array of strings")
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in raw:
+            if not isinstance(item, str):
+                raise ValueError("capabilities must be an array of strings")
+            capability = item.strip().lower()
+            if not capability:
+                continue
+            if not re.fullmatch(r"[a-z0-9._:\-]{1,80}", capability):
+                raise ValueError("capabilities entries must match [a-z0-9._:-]{1,80}")
+            if capability in seen:
+                continue
+            seen.add(capability)
+            normalized.append(capability)
+        return normalized
+
+    async def bootstrap_worker_node_session(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        session_id: str,
+        session_token_hash: str,
+        signing_secret: str,
+        node_name: str | None = None,
+        capabilities: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+        session_ttl_seconds: int = 3600,
+        actor_sub: str | None = None,
+    ) -> dict[str, Any]:
+        node = str(node_id or "").strip()
+        if not node:
+            raise ValueError("Missing node_id")
+        parsed_session_id = str(UUID(str(session_id or "").strip()))
+        token_hash = str(session_token_hash or "").strip().lower()
+        if not token_hash:
+            raise ValueError("Missing session_token_hash")
+        if not re.fullmatch(r"[0-9a-f]{64}", token_hash):
+            raise ValueError("session_token_hash must be a SHA-256 hex digest")
+        signing_secret_value = str(signing_secret or "").strip()
+        if not signing_secret_value:
+            raise ValueError("Missing signing_secret")
+
+        node_name_value = str(node_name or "").strip() or None
+        node_status = self._normalize_worker_node_status(
+            "bootstrap_pending",
+            default="bootstrap_pending",
+        )
+        health_status = self._normalize_worker_health_status("unknown", default="unknown")
+        capabilities_norm = self._normalize_worker_capabilities(capabilities or [])
+        metadata_json = metadata or {}
+        ttl_seconds = max(300, min(int(session_ttl_seconds), 60 * 60 * 24 * 30))
+        session_expires_at = datetime.now(UTC) + timedelta(seconds=ttl_seconds)
+        audit_actor = str(actor_sub or "worker-bootstrap").strip() or "worker-bootstrap"
+
+        async with self._pool.acquire() as conn, conn.transaction():
+            node_row = await conn.fetchrow(
+                    """
+                    INSERT INTO tenant_worker_nodes (
+                        node_id,
+                        tenant_id,
+                        node_name,
+                        status,
+                        health_status,
+                        metadata,
+                        created_by,
+                        updated_by
+                    ) VALUES (
+                        $1,
+                        $2::uuid,
+                        $3,
+                        $4,
+                        $5,
+                        $6::jsonb,
+                        $7,
+                        $7
+                    )
+                    ON CONFLICT (node_id) DO UPDATE
+                    SET node_name = COALESCE(EXCLUDED.node_name, tenant_worker_nodes.node_name),
+                        status = EXCLUDED.status,
+                        health_status = EXCLUDED.health_status,
+                        metadata = tenant_worker_nodes.metadata || EXCLUDED.metadata,
+                        updated_by = EXCLUDED.updated_by,
+                        updated_at = now()
+                    WHERE tenant_worker_nodes.tenant_id = EXCLUDED.tenant_id
+                    RETURNING node_id,
+                              tenant_id::text AS tenant_id,
+                              node_name,
+                              status,
+                              health_status,
+                              metadata,
+                              last_heartbeat_at,
+                              created_by,
+                              updated_by,
+                              created_at,
+                              updated_at
+                    """,
+                    node,
+                    tenant_id,
+                    node_name_value,
+                    node_status,
+                    health_status,
+                    json.dumps(metadata_json),
+                    audit_actor,
+                )
+            if node_row is None:
+                raise ValueError("Worker node already exists under a different tenant")
+
+            await conn.execute(
+                """
+                UPDATE tenant_worker_sessions
+                SET revoked_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND node_id = $2
+                  AND revoked_at IS NULL
+                """,
+                tenant_id,
+                node,
+            )
+
+            await conn.execute(
+                """
+                DELETE FROM tenant_worker_capabilities
+                WHERE tenant_id = $1::uuid
+                  AND node_id = $2
+                """,
+                tenant_id,
+                node,
+            )
+            for capability in capabilities_norm:
+                await conn.execute(
+                    """
+                    INSERT INTO tenant_worker_capabilities (
+                        tenant_id,
+                        node_id,
+                        capability,
+                        allowlisted,
+                        metadata
+                    ) VALUES (
+                        $1::uuid,
+                        $2,
+                        $3,
+                        TRUE,
+                        '{}'::jsonb
+                    )
+                    """,
+                    tenant_id,
+                    node,
+                    capability,
+                )
+
+            session_row = await conn.fetchrow(
+                """
+                INSERT INTO tenant_worker_sessions (
+                    session_id,
+                    tenant_id,
+                    node_id,
+                    token_hash,
+                    signing_secret_enc,
+                    expires_at,
+                    metadata
+                ) VALUES (
+                    $1::uuid,
+                    $2::uuid,
+                    $3,
+                    $4,
+                    $5,
+                    $6,
+                    $7::jsonb
+                )
+                RETURNING session_id::text AS session_id,
+                          tenant_id::text AS tenant_id,
+                          node_id,
+                          issued_at,
+                          expires_at,
+                          rotated_at,
+                          revoked_at,
+                          last_seen_at,
+                          metadata
+                """,
+                parsed_session_id,
+                tenant_id,
+                node,
+                token_hash,
+                self._encrypt(signing_secret_value),
+                session_expires_at,
+                json.dumps(metadata_json),
+            )
+            if session_row is None:
+                raise RuntimeError("Failed to create worker session")
+
+        return {
+            "node": dict(node_row),
+            "session": dict(session_row),
+            "capabilities": capabilities_norm,
+        }
+
+    async def get_worker_session_auth(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        session_id: str,
+    ) -> dict[str, Any] | None:
+        node = str(node_id or "").strip()
+        if not node:
+            raise ValueError("Missing node_id")
+        parsed_session_id = str(UUID(str(session_id or "").strip()))
+        row = await self._fetchrow(
+            """
+            SELECT s.session_id::text AS session_id,
+                   s.tenant_id::text AS tenant_id,
+                   s.node_id,
+                   s.token_hash,
+                   s.signing_secret_enc,
+                   s.issued_at,
+                   s.expires_at,
+                   s.rotated_at,
+                   s.revoked_at,
+                   s.last_seen_at,
+                   s.metadata AS session_metadata,
+                   n.node_name,
+                   n.status,
+                   n.health_status,
+                   n.metadata AS node_metadata,
+                   n.last_heartbeat_at
+            FROM tenant_worker_sessions s
+            JOIN tenant_worker_nodes n
+              ON n.node_id = s.node_id
+             AND n.tenant_id = s.tenant_id
+            WHERE s.tenant_id = $1::uuid
+              AND s.node_id = $2
+              AND s.session_id = $3::uuid
+            """,
+            tenant_id,
+            node,
+            parsed_session_id,
+        )
+        if row is None:
+            return None
+        result = dict(row)
+        signing_secret = self._decrypt(str(result.pop("signing_secret_enc") or ""))
+        if signing_secret is None:
+            return None
+        capability_rows = await self._fetch(
+            """
+            SELECT capability
+            FROM tenant_worker_capabilities
+            WHERE tenant_id = $1::uuid
+              AND node_id = $2
+              AND allowlisted = TRUE
+            ORDER BY capability ASC
+            """,
+            tenant_id,
+            node,
+        )
+        result["signing_secret"] = signing_secret
+        result["capabilities"] = [str(cap_row["capability"]) for cap_row in capability_rows]
+        return result
+
+    async def touch_worker_session(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        session_id: str,
+    ) -> bool:
+        node = str(node_id or "").strip()
+        parsed_session_id = str(UUID(str(session_id or "").strip()))
+        result = await self._execute(
+            """
+            UPDATE tenant_worker_sessions
+            SET last_seen_at = now()
+            WHERE tenant_id = $1::uuid
+              AND node_id = $2
+              AND session_id = $3::uuid
+              AND revoked_at IS NULL
+            """,
+            tenant_id,
+            node,
+            parsed_session_id,
+        )
+        return result == "UPDATE 1"
+
+    async def rotate_worker_session_credentials(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        session_id: str,
+        session_token_hash: str,
+        signing_secret: str,
+        session_ttl_seconds: int = 3600,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        node = str(node_id or "").strip()
+        parsed_session_id = str(UUID(str(session_id or "").strip()))
+        token_hash = str(session_token_hash or "").strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", token_hash):
+            raise ValueError("session_token_hash must be a SHA-256 hex digest")
+        signing_secret_value = str(signing_secret or "").strip()
+        if not signing_secret_value:
+            raise ValueError("Missing signing_secret")
+        ttl_seconds = max(300, min(int(session_ttl_seconds), 60 * 60 * 24 * 30))
+        expires_at = datetime.now(UTC) + timedelta(seconds=ttl_seconds)
+        row = await self._fetchrow(
+            """
+            UPDATE tenant_worker_sessions
+            SET token_hash = $4,
+                signing_secret_enc = $5,
+                expires_at = $6,
+                rotated_at = now(),
+                last_seen_at = now(),
+                metadata = metadata || $7::jsonb
+            WHERE tenant_id = $1::uuid
+              AND node_id = $2
+              AND session_id = $3::uuid
+              AND revoked_at IS NULL
+            RETURNING session_id::text AS session_id,
+                      tenant_id::text AS tenant_id,
+                      node_id,
+                      issued_at,
+                      expires_at,
+                      rotated_at,
+                      revoked_at,
+                      last_seen_at,
+                      metadata
+            """,
+            tenant_id,
+            node,
+            parsed_session_id,
+            token_hash,
+            self._encrypt(signing_secret_value),
+            expires_at,
+            json.dumps(metadata or {}),
+        )
+        if row is None:
+            raise ValueError("Worker session not found")
+        return dict(row)
+
+    async def register_worker_node(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        node_name: str | None = None,
+        capabilities: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+        actor_sub: str | None = None,
+    ) -> dict[str, Any]:
+        node = str(node_id or "").strip()
+        if not node:
+            raise ValueError("Missing node_id")
+        capabilities_norm = self._normalize_worker_capabilities(capabilities)
+        actor = str(actor_sub or "worker-register").strip() or "worker-register"
+        metadata_json = metadata or {}
+        node_name_value = str(node_name or "").strip() or None
+        async with self._pool.acquire() as conn, conn.transaction():
+            updated = await conn.fetchrow(
+                    """
+                    UPDATE tenant_worker_nodes
+                    SET node_name = COALESCE($3, node_name),
+                        status = CASE
+                            WHEN status IN ('quarantined', 'disabled') THEN status
+                            ELSE 'registered'
+                        END,
+                        health_status = CASE
+                            WHEN status IN ('quarantined', 'disabled') THEN health_status
+                            ELSE 'healthy'
+                        END,
+                        last_heartbeat_at = now(),
+                        metadata = metadata || $4::jsonb,
+                        updated_by = $5,
+                        updated_at = now()
+                    WHERE tenant_id = $1::uuid
+                      AND node_id = $2
+                    RETURNING node_id
+                    """,
+                    tenant_id,
+                    node,
+                    node_name_value,
+                    json.dumps(metadata_json),
+                    actor,
+                )
+            if updated is None:
+                raise ValueError("Worker node not found")
+
+            if capabilities is not None:
+                await conn.execute(
+                    """
+                    DELETE FROM tenant_worker_capabilities
+                    WHERE tenant_id = $1::uuid
+                      AND node_id = $2
+                    """,
+                    tenant_id,
+                    node,
+                )
+                for capability in capabilities_norm:
+                    await conn.execute(
+                        """
+                        INSERT INTO tenant_worker_capabilities (
+                            tenant_id,
+                            node_id,
+                            capability,
+                            allowlisted,
+                            metadata
+                        ) VALUES (
+                            $1::uuid,
+                            $2,
+                            $3,
+                            TRUE,
+                            '{}'::jsonb
+                        )
+                        """,
+                        tenant_id,
+                        node,
+                        capability,
+                    )
+
+        node_record = await self.get_worker_node(tenant_id=tenant_id, node_id=node)
+        if node_record is None:
+            raise RuntimeError("Failed to load worker node after registration")
+        return node_record
+
+    async def heartbeat_worker_node(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        health_status: str = "healthy",
+        metadata: dict[str, Any] | None = None,
+        actor_sub: str | None = None,
+    ) -> dict[str, Any]:
+        node = str(node_id or "").strip()
+        if not node:
+            raise ValueError("Missing node_id")
+        health = self._normalize_worker_health_status(health_status, default="healthy")
+        actor = str(actor_sub or "worker-heartbeat").strip() or "worker-heartbeat"
+        row = await self._fetchrow(
+            """
+            UPDATE tenant_worker_nodes
+            SET health_status = $3,
+                status = CASE
+                    WHEN status IN ('bootstrap_pending', 'registered') THEN 'active'
+                    ELSE status
+                END,
+                last_heartbeat_at = now(),
+                metadata = metadata || $4::jsonb,
+                updated_by = $5,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid
+              AND node_id = $2
+            RETURNING node_id,
+                      tenant_id::text AS tenant_id,
+                      node_name,
+                      status,
+                      health_status,
+                      metadata,
+                      last_heartbeat_at,
+                      created_by,
+                      updated_by,
+                      created_at,
+                      updated_at
+            """,
+            tenant_id,
+            node,
+            health,
+            json.dumps(metadata or {}),
+            actor,
+        )
+        if row is None:
+            raise ValueError("Worker node not found")
+        return dict(row)
+
+    async def has_worker_capabilities(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        required_capabilities: list[str] | None = None,
+    ) -> bool:
+        required = self._normalize_worker_capabilities(required_capabilities or [])
+        if not required:
+            return True
+        count = await self._fetchval(
+            """
+            SELECT COUNT(*)::int
+            FROM tenant_worker_capabilities
+            WHERE tenant_id = $1::uuid
+              AND node_id = $2
+              AND allowlisted = TRUE
+              AND capability = ANY($3::text[])
+            """,
+            tenant_id,
+            str(node_id or "").strip(),
+            required,
+        )
+        return int(count or 0) >= len(required)
+
+    async def list_worker_nodes(
+        self,
+        *,
+        tenant_id: str,
+        include_inactive: bool = False,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        where = ["tenant_id = $1::uuid"]
+        args: list[Any] = [tenant_id]
+        idx = 2
+        if not include_inactive:
+            where.append("status <> 'disabled'")
+        args.append(max(1, min(int(limit), 1000)))
+        rows = await self._fetch(
+            f"""
+            SELECT node_id,
+                   tenant_id::text AS tenant_id,
+                   node_name,
+                   status,
+                   health_status,
+                   metadata,
+                   last_heartbeat_at,
+                   created_by,
+                   updated_by,
+                   created_at,
+                   updated_at
+            FROM tenant_worker_nodes
+            WHERE {" AND ".join(where)}
+            ORDER BY updated_at DESC
+            LIMIT ${idx}
+            """,  # nosec B608
+            *args,
+        )
+        if not rows:
+            return []
+        node_ids = [str(row["node_id"]) for row in rows]
+        capability_rows = await self._fetch(
+            """
+            SELECT node_id, capability
+            FROM tenant_worker_capabilities
+            WHERE tenant_id = $1::uuid
+              AND node_id = ANY($2::text[])
+              AND allowlisted = TRUE
+            ORDER BY capability ASC
+            """,
+            tenant_id,
+            node_ids,
+        )
+        capabilities_by_node: dict[str, list[str]] = {node_id: [] for node_id in node_ids}
+        for cap_row in capability_rows:
+            capabilities_by_node.setdefault(str(cap_row["node_id"]), []).append(
+                str(cap_row["capability"])
+            )
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            node = dict(row)
+            node["capabilities"] = capabilities_by_node.get(str(row["node_id"]), [])
+            out.append(node)
+        return out
+
+    async def get_worker_node(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+    ) -> dict[str, Any] | None:
+        node = str(node_id or "").strip()
+        if not node:
+            raise ValueError("Missing node_id")
+        row = await self._fetchrow(
+            """
+            SELECT node_id,
+                   tenant_id::text AS tenant_id,
+                   node_name,
+                   status,
+                   health_status,
+                   metadata,
+                   last_heartbeat_at,
+                   created_by,
+                   updated_by,
+                   created_at,
+                   updated_at
+            FROM tenant_worker_nodes
+            WHERE tenant_id = $1::uuid
+              AND node_id = $2
+            """,
+            tenant_id,
+            node,
+        )
+        if row is None:
+            return None
+        capability_rows = await self._fetch(
+            """
+            SELECT capability
+            FROM tenant_worker_capabilities
+            WHERE tenant_id = $1::uuid
+              AND node_id = $2
+              AND allowlisted = TRUE
+            ORDER BY capability ASC
+            """,
+            tenant_id,
+            node,
+        )
+        session_count = await self._fetchval(
+            """
+            SELECT COUNT(*)::int
+            FROM tenant_worker_sessions
+            WHERE tenant_id = $1::uuid
+              AND node_id = $2
+              AND revoked_at IS NULL
+              AND expires_at > now()
+            """,
+            tenant_id,
+            node,
+        )
+        result = dict(row)
+        result["capabilities"] = [str(cap_row["capability"]) for cap_row in capability_rows]
+        result["active_session_count"] = int(session_count or 0)
+        return result
+
+    async def set_worker_capabilities(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        capabilities: list[str] | None,
+        actor: AdminActorContext | None = None,
+    ) -> dict[str, Any]:
+        node = str(node_id or "").strip()
+        if not node:
+            raise ValueError("Missing node_id")
+        before = await self.get_worker_node(tenant_id=tenant_id, node_id=node)
+        if before is None:
+            raise ValueError("Worker node not found")
+        capabilities_norm = self._normalize_worker_capabilities(capabilities or [])
+        async with self._pool.acquire() as conn, conn.transaction():
+            await conn.execute(
+                """
+                DELETE FROM tenant_worker_capabilities
+                WHERE tenant_id = $1::uuid
+                  AND node_id = $2
+                """,
+                tenant_id,
+                node,
+            )
+            for capability in capabilities_norm:
+                await conn.execute(
+                    """
+                    INSERT INTO tenant_worker_capabilities (
+                        tenant_id,
+                        node_id,
+                        capability,
+                        allowlisted,
+                        metadata
+                    ) VALUES (
+                        $1::uuid,
+                        $2,
+                        $3,
+                        TRUE,
+                        '{}'::jsonb
+                    )
+                    """,
+                    tenant_id,
+                    node,
+                    capability,
+                )
+            await conn.execute(
+                """
+                UPDATE tenant_worker_nodes
+                SET updated_by = $3,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND node_id = $2
+                """,
+                tenant_id,
+                node,
+                actor.actor_sub if actor else "worker-capability-update",
+            )
+
+        after = await self.get_worker_node(tenant_id=tenant_id, node_id=node)
+        if after is None:
+            raise RuntimeError("Failed to load worker node capabilities")
+        if actor is not None:
+            await self._write_audit(
+                tenant_id=tenant_id,
+                action="tenant_worker_capabilities_upsert",
+                actor=actor,
+                before=before,
+                after=after,
+            )
+        return after
+
+    async def record_worker_job_event(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        event_type: str,
+        session_id: str | None = None,
+        job_id: str | None = None,
+        request_nonce: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        node = str(node_id or "").strip()
+        if not node:
+            raise ValueError("Missing node_id")
+        event_name = str(event_type or "").strip().lower()
+        if not event_name:
+            raise ValueError("Missing event_type")
+        nonce = str(request_nonce or "").strip() or None
+        parsed_session_id: str | None = None
+        if session_id:
+            parsed_session_id = str(UUID(str(session_id).strip()))
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_worker_job_events (
+                tenant_id,
+                node_id,
+                session_id,
+                job_id,
+                event_type,
+                request_nonce,
+                payload_json
+            ) VALUES (
+                $1::uuid,
+                $2,
+                $3::uuid,
+                $4,
+                $5,
+                $6,
+                $7::jsonb
+            )
+            ON CONFLICT (tenant_id, node_id, request_nonce)
+            WHERE request_nonce IS NOT NULL
+            DO NOTHING
+            RETURNING event_id,
+                      tenant_id::text AS tenant_id,
+                      node_id,
+                      session_id::text AS session_id,
+                      job_id,
+                      event_type,
+                      request_nonce,
+                      payload_json,
+                      created_at
+            """,
+            tenant_id,
+            node,
+            parsed_session_id,
+            str(job_id).strip() if job_id else None,
+            event_name,
+            nonce,
+            json.dumps(payload or {}),
+        )
+        if row is None and nonce is not None:
+            raise RuntimeError("Worker nonce replay detected")
+        if row is None:
+            raise RuntimeError("Failed to record worker job event")
+        return dict(row)
 
     async def record_admin_event(
         self,

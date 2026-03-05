@@ -228,6 +228,8 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `AUTO_MERGE_EXECUTION_KILL_SWITCH` | `false` | Global kill switch for autonomous PR merge execution |
 | `WORKER_DISPATCH_KILL_SWITCH` | `false` | Global kill switch for worker dispatch/claim actions |
 | `WORKER_RESULT_ACCEPT_KILL_SWITCH` | `false` | Global kill switch for accepting worker job results |
+| `WORKER_BRIDGE_BOOTSTRAP_SECRET` | empty | Bootstrap secret required for `POST /worker/v1/bootstrap` |
+| `WORKER_SESSION_TTL_SECONDS` | `86400` | Worker session credential TTL (seconds) for signed `/worker/v1` requests |
 | `AUTO_MERGE_POLICY_ENABLED` | `false` | Enable trust-policy auto-merge execution path |
 
 ---
