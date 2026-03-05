@@ -2526,6 +2526,8 @@ def _execution_step_row(
     max_attempts: int = 3,
     step_index: int = 0,
     prompt_text: str = "Do the next task",
+    execution_target: str = "windows_local",
+    required_capabilities: list[str] | None = None,
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
     return {
@@ -2542,8 +2544,46 @@ def _execution_step_row(
         "next_retry_at": None,
         "last_error_category": None,
         "last_error_detail": None,
+        "execution_target": execution_target,
+        "required_capabilities": required_capabilities or [],
+        "max_runtime_seconds": 600,
+        "artifact_contract": {},
         "output_json": {},
         "metadata": {},
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+def _worker_job_row(
+    *,
+    status: str = "queued",
+    execution_target: str = "any_worker",
+    required_capabilities: list[str] | None = None,
+    claimed_by_node_id: str | None = None,
+) -> dict[str, Any]:
+    now = datetime.now(UTC)
+    return {
+        "job_id": "44444444-4444-4444-4444-444444444444",
+        "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "plan_id": "11111111-1111-1111-1111-111111111111",
+        "step_id": "22222222-2222-2222-2222-222222222222",
+        "retry_id": "33333333-3333-3333-3333-333333333333",
+        "execution_target": execution_target,
+        "target_node_id": None,
+        "required_capabilities": required_capabilities or ["repo.patch"],
+        "max_runtime_seconds": 600,
+        "artifact_contract": {},
+        "action": "worker.noop",
+        "payload_json": {"runner": "noop", "prompt_text": "Do the task"},
+        "status": status,
+        "claimed_by_node_id": claimed_by_node_id,
+        "lease_token": None,
+        "lease_expires_at": None,
+        "started_at": now if status in {"running", "succeeded", "failed"} else None,
+        "finished_at": now if status in {"succeeded", "failed"} else None,
+        "result_json": {},
+        "error_json": {},
         "created_at": now,
         "updated_at": now,
     }
@@ -2557,6 +2597,10 @@ def test_execution_step_coercion_and_actor_id_helpers() -> None:
                 "title": "Build",
                 "prompt": "Implement",
                 "idempotency_key": "A B C",
+                "execution_target": "worker:node-1",
+                "required_capabilities": ["repo.patch", "repo.pr.open"],
+                "max_runtime_seconds": 1200,
+                "artifact_contract": {"expect": "diff-summary"},
                 "metadata": {"executor": "automerge"},
             },
         ]
@@ -2565,6 +2609,11 @@ def test_execution_step_coercion_and_actor_id_helpers() -> None:
     assert normalized[1]["idempotency_key"] == "a-b-c"
     assert normalized[0]["metadata"] == {}
     assert normalized[1]["metadata"] == {"executor": "automerge"}
+    assert normalized[0]["execution_target"] == "windows_local"
+    assert normalized[1]["execution_target"] == "worker:node-1"
+    assert normalized[1]["required_capabilities"] == ["repo.patch", "repo.pr.open"]
+    assert normalized[1]["max_runtime_seconds"] == 1200
+    assert normalized[1]["artifact_contract"] == {"expect": "diff-summary"}
     assert TenantAdminManager._coerce_execution_actor_user_id("42") == 42
     assert TenantAdminManager._coerce_execution_actor_user_id("not-a-number") == 0
     assert TenantAdminManager._execution_retry_backoff_seconds(999) > 0
@@ -2579,6 +2628,25 @@ def test_execution_step_coercion_and_actor_id_helpers() -> None:
         TenantAdminManager._coerce_execution_steps(
             [{"prompt": "ship", "metadata": "bad"}]  # type: ignore[list-item]
         )
+    with pytest.raises(ValueError, match="execution_target"):
+        TenantAdminManager._coerce_execution_steps(
+            [{"prompt": "ship", "execution_target": "bad-target"}]
+        )
+    with pytest.raises(ValueError, match=r"steps\[0\]\.artifact_contract must be an object"):
+        TenantAdminManager._coerce_execution_steps(
+            [{"prompt": "ship", "artifact_contract": "bad"}]  # type: ignore[list-item]
+        )
+    with pytest.raises(ValueError, match="status must be one of"):
+        TenantAdminManager._normalize_worker_node_status("bad", default="active")
+    with pytest.raises(ValueError, match="health_status must be one of"):
+        TenantAdminManager._normalize_worker_health_status("bad", default="healthy")
+    with pytest.raises(ValueError, match="capabilities must be an array of strings"):
+        TenantAdminManager._normalize_worker_capabilities("bad")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="capabilities entries must match"):
+        TenantAdminManager._normalize_worker_capabilities(["bad capability"])
+    assert TenantAdminManager._normalize_worker_capabilities(
+        ["repo.patch", "repo.patch", " ", "repo.pr.open"]
+    ) == ["repo.patch", "repo.pr.open"]
 
 
 @pytest.mark.asyncio
@@ -3014,6 +3082,318 @@ async def test_fail_execution_step_terminal_and_error_paths() -> None:
             worker_id="worker-1",
             failure_category="timeout",
             failure_detail="timeout",
+        )
+
+
+@pytest.mark.asyncio
+async def test_dispatch_execution_step_to_worker_and_claim_paths() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+
+    conn.fetchrow.side_effect = [
+        _worker_job_row(status="queued"),
+        _worker_job_row(status="running"),
+    ]
+    conn.fetch.side_effect = [[_worker_job_row(status="queued", execution_target="any_worker")]]
+    conn.fetchval.side_effect = [1]
+
+    dispatch = await manager.dispatch_execution_step_to_worker(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        step=_execution_step_row(
+            status="running",
+            execution_target="any_worker",
+            required_capabilities=["repo.patch"],
+        ),
+        retry={
+            "retry_id": "33333333-3333-3333-3333-333333333333",
+            "attempt_number": 1,
+        },
+        dispatcher_id="plan-worker-1",
+    )
+    assert dispatch["status"] == "queued"
+
+    claimed = await manager.claim_worker_dispatch_job(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        required_capabilities=["repo.patch", "repo.pr.open"],
+    )
+    assert claimed is not None
+    assert claimed["status"] == "running"
+    assert conn.execute.await_count >= 3
+
+    with pytest.raises(ValueError, match="windows_local"):
+        await manager.dispatch_execution_step_to_worker(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            step=_execution_step_row(status="running", execution_target="windows_local"),
+            retry={"retry_id": "33333333-3333-3333-3333-333333333333"},
+            dispatcher_id="plan-worker-1",
+        )
+
+
+@pytest.mark.asyncio
+async def test_dispatch_and_claim_worker_job_error_paths() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="missing identifiers"):
+        await manager.dispatch_execution_step_to_worker(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            step={"execution_target": "any_worker"},
+            retry={"retry_id": "33333333-3333-3333-3333-333333333333"},
+            dispatcher_id="plan-worker-1",
+        )
+
+    with pytest.raises(ValueError, match="execution step metadata must be an object"):
+        await manager.dispatch_execution_step_to_worker(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            step={
+                **_execution_step_row(status="running", execution_target="any_worker"),
+                "metadata": "bad",  # type: ignore[dict-item]
+            },
+            retry={"retry_id": "33333333-3333-3333-3333-333333333333"},
+            dispatcher_id="plan-worker-1",
+        )
+
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    conn.fetchrow.side_effect = [
+        _worker_job_row(status="queued"),
+        _worker_job_row(status="queued"),
+        None,
+    ]
+
+    step_default_runtime = _execution_step_row(status="running", execution_target="any_worker")
+    step_default_runtime["max_runtime_seconds"] = None
+    step_default_runtime["metadata"] = None
+    dispatched = await manager.dispatch_execution_step_to_worker(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        step=step_default_runtime,
+        retry={"retry_id": "33333333-3333-3333-3333-333333333333"},
+        dispatcher_id="",
+    )
+    assert dispatched["status"] == "queued"
+
+    step_custom_payload = _execution_step_row(status="running", execution_target="worker:node-1")
+    step_custom_payload["metadata"] = {
+        "runner": "codex",
+        "payload": {"artifact_hint": "required"},
+    }
+    dispatched_payload = await manager.dispatch_execution_step_to_worker(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        step=step_custom_payload,
+        retry={"retry_id": "44444444-4444-4444-4444-444444444444"},
+        dispatcher_id="plan-worker-1",
+    )
+    assert dispatched_payload["status"] == "queued"
+
+    with pytest.raises(RuntimeError, match="Failed to enqueue worker job"):
+        await manager.dispatch_execution_step_to_worker(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            plan_id="11111111-1111-1111-1111-111111111111",
+            step=step_custom_payload,
+            retry={"retry_id": "55555555-5555-5555-5555-555555555555"},
+            dispatcher_id="plan-worker-1",
+        )
+
+    with pytest.raises(ValueError, match="Missing node_id"):
+        await manager.claim_worker_dispatch_job(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="",
+        )
+
+    conn.fetch.return_value = []
+    no_candidates = await manager.claim_worker_dispatch_job(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        required_capabilities=["repo.patch"],
+    )
+    assert no_candidates is None
+
+    candidate = _worker_job_row(status="queued", required_capabilities=["repo.patch"])
+    conn.fetch.return_value = [candidate]
+    skipped_subset = await manager.claim_worker_dispatch_job(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        required_capabilities=["repo.pr.open"],
+    )
+    assert skipped_subset is None
+
+    conn.fetchval.return_value = 0
+    skipped_allowlist = await manager.claim_worker_dispatch_job(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        required_capabilities=["repo.patch"],
+    )
+    assert skipped_allowlist is None
+
+    candidate["max_runtime_seconds"] = None
+    conn.fetch.return_value = [candidate]
+    conn.fetchval.return_value = 1
+    conn.fetchrow.side_effect = None
+    conn.fetchrow.return_value = None
+    no_claim = await manager.claim_worker_dispatch_job(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        required_capabilities=["repo.patch"],
+    )
+    assert no_claim is None
+
+
+@pytest.mark.asyncio
+async def test_submit_worker_job_result_success_failure_and_idempotent() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    manager.complete_execution_step = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "plan": _execution_plan_row(status="completed"),
+            "step": _execution_step_row(status="completed"),
+            "has_more": True,
+            "next_run_at": datetime.now(UTC),
+        }
+    )
+    manager.fail_execution_step = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "plan": _execution_plan_row(status="running"),
+            "step": _execution_step_row(status="failed"),
+            "retry_scheduled": True,
+            "next_run_at": datetime.now(UTC),
+            "failure_category": "transient",
+        }
+    )
+    manager.schedule_execution_continuation = AsyncMock(return_value="q-1")  # type: ignore[method-assign]
+
+    conn.fetchrow.side_effect = [
+        {
+            "job_id": "44444444-4444-4444-4444-444444444444",
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "plan_id": "11111111-1111-1111-1111-111111111111",
+            "step_id": "22222222-2222-2222-2222-222222222222",
+            "retry_id": "33333333-3333-3333-3333-333333333333",
+            "status": "running",
+            "claimed_by_node_id": "node-1",
+        },
+        _worker_job_row(status="succeeded", claimed_by_node_id="node-1"),
+        {
+            "job_id": "44444444-4444-4444-4444-444444444444",
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "plan_id": "11111111-1111-1111-1111-111111111111",
+            "step_id": "22222222-2222-2222-2222-222222222222",
+            "retry_id": "33333333-3333-3333-3333-333333333333",
+            "status": "running",
+            "claimed_by_node_id": "node-1",
+        },
+        _worker_job_row(status="failed", claimed_by_node_id="node-1"),
+        {
+            "job_id": "44444444-4444-4444-4444-444444444444",
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "plan_id": "11111111-1111-1111-1111-111111111111",
+            "step_id": "22222222-2222-2222-2222-222222222222",
+            "retry_id": "33333333-3333-3333-3333-333333333333",
+            "status": "succeeded",
+            "claimed_by_node_id": "node-1",
+        },
+    ]
+
+    success = await manager.submit_worker_job_result(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        job_id="44444444-4444-4444-4444-444444444444",
+        completion_status="succeeded",
+        output={"message": "ok"},
+    )
+    assert success["status"] == "succeeded"
+    manager.complete_execution_step.assert_awaited_once()
+
+    failure = await manager.submit_worker_job_result(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        job_id="44444444-4444-4444-4444-444444444444",
+        completion_status="failed",
+        error={"message": "dependency unavailable"},
+    )
+    assert failure["status"] == "failed"
+    manager.fail_execution_step.assert_awaited_once()
+    assert manager.schedule_execution_continuation.await_count == 2
+
+    idempotent = await manager.submit_worker_job_result(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        job_id="44444444-4444-4444-4444-444444444444",
+        completion_status="succeeded",
+    )
+    assert idempotent["idempotent"] is True
+
+
+@pytest.mark.asyncio
+async def test_submit_worker_job_result_error_paths() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="Missing node_id"):
+        await manager.submit_worker_job_result(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="",
+            job_id="44444444-4444-4444-4444-444444444444",
+            completion_status="succeeded",
+        )
+    with pytest.raises(ValueError, match="Missing job_id"):
+        await manager.submit_worker_job_result(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="node-1",
+            job_id="",
+            completion_status="succeeded",
+        )
+
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    running_lookup = {
+        "job_id": "44444444-4444-4444-4444-444444444444",
+        "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "plan_id": "11111111-1111-1111-1111-111111111111",
+        "step_id": "22222222-2222-2222-2222-222222222222",
+        "retry_id": "33333333-3333-3333-3333-333333333333",
+        "status": "running",
+        "claimed_by_node_id": "node-1",
+    }
+
+    conn.fetchrow.side_effect = [None]
+    with pytest.raises(ValueError, match="Worker job not found"):
+        await manager.submit_worker_job_result(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="node-1",
+            job_id="44444444-4444-4444-4444-444444444444",
+            completion_status="failed",
+        )
+
+    conn.fetchrow.side_effect = [{**running_lookup, "status": "queued"}]
+    with pytest.raises(ValueError, match="Worker job is not running"):
+        await manager.submit_worker_job_result(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="node-1",
+            job_id="44444444-4444-4444-4444-444444444444",
+            completion_status="failed",
+        )
+
+    conn.fetchrow.side_effect = [{**running_lookup, "claimed_by_node_id": "node-2"}]
+    with pytest.raises(ValueError, match="does not own this job lease"):
+        await manager.submit_worker_job_result(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="node-1",
+            job_id="44444444-4444-4444-4444-444444444444",
+            completion_status="failed",
+        )
+
+    conn.fetchrow.side_effect = [running_lookup, None]
+    with pytest.raises(RuntimeError, match="Failed to update worker job result"):
+        await manager.submit_worker_job_result(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="node-1",
+            job_id="44444444-4444-4444-4444-444444444444",
+            completion_status="failed",
         )
 
 

@@ -2697,13 +2697,42 @@ class SkillsServer:
                     self._policy_error_payload(decision),
                     status=decision.status,
                 )
+            claimed_job = await self._tenant_admin_manager.claim_worker_dispatch_job(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                required_capabilities=required_capabilities,
+            )
+            claimed_job_payload: dict[str, Any] | None = None
+            if isinstance(claimed_job, dict):
+                raw_payload = claimed_job.get("payload_json")
+                payload_json = raw_payload if isinstance(raw_payload, dict) else {}
+                raw_contract = claimed_job.get("artifact_contract")
+                artifact_contract = raw_contract if isinstance(raw_contract, dict) else {}
+                claimed_job_payload = {
+                    "job_id": str(claimed_job.get("job_id") or ""),
+                    "plan_id": str(claimed_job.get("plan_id") or ""),
+                    "step_id": str(claimed_job.get("step_id") or ""),
+                    "retry_id": str(claimed_job.get("retry_id") or ""),
+                    "execution_target": str(claimed_job.get("execution_target") or ""),
+                    "action": str(claimed_job.get("action") or "worker.noop"),
+                    "runner": str(payload_json.get("runner") or "noop"),
+                    "required_capabilities": list(claimed_job.get("required_capabilities") or []),
+                    "max_runtime_seconds": claimed_job.get("max_runtime_seconds"),
+                    "artifact_contract": artifact_contract,
+                    "payload": payload_json,
+                }
             await self._tenant_admin_manager.record_worker_job_event(
                 tenant_id=tenant_id,
                 node_id=node_id,
                 session_id=str(session_ctx.get("session_id") or ""),
                 event_type="worker.job.claim",
                 request_nonce=str(session_ctx.get("request_nonce") or ""),
-                payload={"required_capabilities": required_capabilities},
+                payload={
+                    "required_capabilities": required_capabilities,
+                    "claimed_job_id": (
+                        claimed_job_payload.get("job_id") if claimed_job_payload else None
+                    ),
+                },
             )
             poll_after_seconds = max(
                 5,
@@ -2728,8 +2757,8 @@ class SkillsServer:
                 "ok": True,
                 "tenant_id": tenant_id,
                 "node_id": node_id,
-                "job": None,
-                "reason": "no_jobs_available",
+                "job": claimed_job_payload,
+                "reason": "claimed" if claimed_job_payload else "no_jobs_available",
                 "poll_after_seconds": poll_after_seconds,
             }
         )
@@ -2791,7 +2820,21 @@ class SkillsServer:
                     self._policy_error_payload(decision),
                     status=decision.status,
                 )
+            raw_output = payload.get("output")
+            raw_error = payload.get("error")
+            if raw_output is not None and not isinstance(raw_output, dict):
+                raise ValueError("output must be an object when provided")
+            if raw_error is not None and not isinstance(raw_error, dict):
+                raise ValueError("error must be an object when provided")
             completion_status = str(payload.get("status") or "completed").strip().lower()
+            submit_outcome = await self._tenant_admin_manager.submit_worker_job_result(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                job_id=job_id,
+                completion_status=completion_status,
+                output=raw_output if isinstance(raw_output, dict) else None,
+                error=raw_error if isinstance(raw_error, dict) else None,
+            )
             await self._tenant_admin_manager.record_worker_job_event(
                 tenant_id=tenant_id,
                 node_id=node_id,
@@ -2801,11 +2844,25 @@ class SkillsServer:
                 request_nonce=str(session_ctx.get("request_nonce") or ""),
                 payload={
                     "status": completion_status,
-                    "output": payload.get("output"),
-                    "error": payload.get("error"),
+                    "output": raw_output,
+                    "error": raw_error,
+                    "idempotent": bool(submit_outcome.get("idempotent")),
                 },
             )
         except RuntimeError as exc:
+            message = str(exc)
+            if "replay" in message.lower():
+                return web.json_response(
+                    {
+                        "ok": True,
+                        "tenant_id": tenant_id,
+                        "node_id": node_id,
+                        "job_id": job_id,
+                        "accepted": True,
+                        "idempotent": True,
+                    },
+                    status=202,
+                )
             return web.json_response({"error": str(exc)}, status=409)
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
@@ -2825,6 +2882,8 @@ class SkillsServer:
                 "node_id": node_id,
                 "job_id": job_id,
                 "accepted": True,
+                "idempotent": bool(submit_outcome.get("idempotent")),
+                "status": str(submit_outcome.get("status") or completion_status),
             },
             status=202,
         )
