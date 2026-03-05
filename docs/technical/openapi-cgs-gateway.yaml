@@ -3,7 +3,7 @@ info:
   title: CGS AI Gateway API
   version: 1.0.0
   description: Public CGS `/service/ai/v1` contract mapped to internal Zetherion upstream APIs.
-  x-maintenance-note: "2026-03-05: internal trust-policy gating added for sensitive admin actions; CGS gateway endpoint contracts unchanged."
+  x-maintenance-note: "2026-03-05: added internal tenant-admin messaging control-plane routes with trust-policy/approval semantics."
 servers:
   - url: https://{host}
     variables:
@@ -828,6 +828,152 @@ paths:
       responses:
         '200':
           description: Email insight reindex accepted
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/providers/{provider}/config:
+    get:
+      summary: Get tenant messaging provider config
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Messaging provider config envelope
+    put:
+      summary: Configure tenant messaging provider
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMessagingProviderPutRequest'
+      responses:
+        '200':
+          description: Messaging provider config updated
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/chats/{chat_id}/policy:
+    get:
+      summary: Get tenant messaging chat policy
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: chat_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+            default: whatsapp
+      responses:
+        '200':
+          description: Messaging chat policy envelope
+    put:
+      summary: Configure tenant messaging chat policy
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: chat_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMessagingChatPolicyPutRequest'
+      responses:
+        '200':
+          description: Messaging chat policy updated
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/chats:
+    get:
+      summary: List tenant messaging chats
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+            default: whatsapp
+        - name: include_inactive
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        '200':
+          description: Messaging chat list envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages:
+    get:
+      summary: List tenant messaging messages for one chat
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: chat_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+            default: whatsapp
+        - name: direction
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [inbound, outbound]
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        '200':
+          description: Messaging message list envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages/{chat_id}/send:
+    post:
+      summary: Queue tenant outbound messaging send
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: chat_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMessagingSendRequest'
+      responses:
+        '202':
+          description: Messaging send queued
   /service/ai/v1/internal/admin/tenants/{tenant_id}/changes:
     post:
       summary: Submit a pending admin change for review
@@ -1327,6 +1473,68 @@ components:
         insight_type:
           type: string
           nullable: true
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminMessagingProviderPutRequest:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          default: true
+        bridge_mode:
+          type: string
+          default: local_sidecar
+        account_ref:
+          type: string
+          nullable: true
+        session_ref:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminMessagingChatPolicyPutRequest:
+      type: object
+      properties:
+        provider:
+          type: string
+          default: whatsapp
+        read_enabled:
+          type: boolean
+          default: false
+        send_enabled:
+          type: boolean
+          default: false
+        retention_days:
+          type: integer
+          minimum: 1
+          maximum: 3650
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminMessagingSendRequest:
+      type: object
+      required: [text]
+      properties:
+        provider:
+          type: string
+          default: whatsapp
+        text:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        explicitly_elevated:
+          type: boolean
+          default: false
         change_ticket_id:
           type: string
           nullable: true

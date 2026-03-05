@@ -13,6 +13,7 @@ For the full technical implementation scope CGS must deliver to go live, use:
 
 Maintenance note (2026-03-05):
 - Internal trust-policy enforcement was added for sensitive internal admin actions.
+- Internal tenant messaging admin routes were added under `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/*`.
 - Public CGS client-facing document intelligence endpoints in this kit are unchanged.
 
 ## Integration Outcome

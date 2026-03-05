@@ -81,6 +81,9 @@ class TestPublicAPIServerCreateApp:
         assert "/api/v1/analytics/recommendations/{recommendation_id}/feedback" in paths
         assert "/api/v1/crm/contacts" in paths
         assert "/api/v1/crm/interactions" in paths
+        assert "/api/v1/messaging/chats" in paths
+        assert "/api/v1/messaging/messages" in paths
+        assert "/api/v1/messaging/messages/{chat_id}/send" in paths
         assert "/api/v1/releases/markers" in paths
         assert "/api/v1/documents/uploads" in paths
         assert "/api/v1/documents/uploads/{upload_id}/complete" in paths
@@ -192,6 +195,10 @@ class TestRunServer:
         assert kwargs["port"] == 8443
         assert kwargs["youtube_storage"] is None
         assert kwargs["youtube_skills"] is None
+        if "tenant_admin_manager" in kwargs:
+            assert kwargs["tenant_admin_manager"] is None
+        if "trust_policy_evaluator" in kwargs:
+            assert kwargs["trust_policy_evaluator"] is None
         # Newer local API versions pass this through; CI's committed version may not.
         if "inference_broker" in kwargs:
             assert kwargs["inference_broker"] is None

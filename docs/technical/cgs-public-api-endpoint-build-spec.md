@@ -12,6 +12,7 @@ It is based on the code currently implemented in this repository (not only draft
 - Added gateway envelope field `error.retryable` for all failure responses.
 - Added CGS route-doc parity gate for lifecycle/reporting/admin/blog surfaces.
 - Added tenant email admin control-plane routes for OAuth app setup, mailbox linking, sync, critical message triage, calendar binding, and insight reindex.
+- Added tenant messaging admin control-plane routes for provider config, chat policy, message read, and policy-gated send.
 - Zetherion-only boundary recovery removed in-repo CGS website/UI assets; endpoint contracts stay CGS-first and unchanged.
 - Internal admin trust-policy enforcement was added for sensitive actions; endpoint shapes remain unchanged.
 
@@ -525,6 +526,11 @@ Tenant admin route set:
 - `PUT /email/mailboxes/{mailbox_id}/calendar-primary`
 - `GET /email/insights`
 - `POST /email/insights/reindex`
+- `GET|PUT /messaging/providers/{provider}/config`
+- `GET|PUT /messaging/chats/{chat_id}/policy`
+- `GET /messaging/chats`
+- `GET /messaging/messages`
+- `POST /messaging/messages/{chat_id}/send`
 - `POST|GET /changes`
 - `POST /changes/{change_id}/approve`
 - `POST /changes/{change_id}/reject`
@@ -591,6 +597,11 @@ Internal tenant-admin maps to Skills REST endpoints:
 - `/admin/tenants/{tenant_id}/email/critical`
 - `/admin/tenants/{tenant_id}/email/calendars`
 - `/admin/tenants/{tenant_id}/email/insights*`
+- `/admin/tenants/{tenant_id}/messaging/providers/{provider}/config`
+- `/admin/tenants/{tenant_id}/messaging/chats/{chat_id}/policy`
+- `/admin/tenants/{tenant_id}/messaging/chats`
+- `/admin/tenants/{tenant_id}/messaging/messages`
+- `/admin/tenants/{tenant_id}/messaging/messages/{chat_id}/send`
 
 Actor attribution to Skills tenant-admin endpoints is mandatory:
 - signed actor envelope includes `actor_sub`, `actor_roles`, `request_id`, `timestamp`, `nonce`

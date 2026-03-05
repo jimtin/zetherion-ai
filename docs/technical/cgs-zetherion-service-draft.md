@@ -8,6 +8,7 @@ Maintenance note (2026-03-04):
 - Internal document route typing/multipart parsing hardening was applied.
 - Public + gateway service contracts defined in this draft remain unchanged.
 - Added tenant email admin control-plane routes under `/service/ai/v1/internal/admin/tenants/{tenant_id}/email/*` with step-up + approval requirements for high-risk actions.
+- Added tenant messaging admin control-plane routes under `/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/*` with trust-policy gating and approval-required send semantics.
 - Zetherion-only boundary recovery removed in-repo CGS website/UI assets; integration contract remains CGS-only.
 - Internal trust-policy gating now applies to sensitive admin actions before upstream apply, without changing external route contracts.
 
@@ -176,11 +177,19 @@ Email admin routes (google-first):
 - `GET /email/insights`
 - `POST /email/insights/reindex`
 
+Messaging admin routes (local-bridge first):
+- `GET|PUT /messaging/providers/{provider}/config`
+- `GET|PUT /messaging/chats/{chat_id}/policy`
+- `GET /messaging/chats`
+- `GET /messaging/messages`
+- `POST /messaging/messages/{chat_id}/send`
+
 Security rules:
 - Operator auth + `cgs:zetherion-admin` required.
 - Mutating routes require step-up auth.
 - OAuth app read/write additionally require `cgs:zetherion-secrets-admin`.
 - OAuth app writes and mailbox disconnects require approved `change_ticket_id`.
+- Messaging send may return `AI_APPROVAL_REQUIRED` and requires approved `change_ticket_id` when policy is not explicitly elevated.
 
 ### 6.3 Company Reporting Endpoints
 

@@ -12,6 +12,10 @@ This API is distinct from the internal Skills API (`:8080`) and is not the publi
 client contract. External clients must integrate through CGS `/service/ai/v1`.
 
 Maintenance note (2026-03-05):
+- Added tenant messaging upstream routes:
+  - `GET /api/v1/messaging/chats`
+  - `GET /api/v1/messaging/messages`
+  - `POST /api/v1/messaging/messages/{chat_id}/send`
 - Added document archive/delete and restore upstream routes:
   - `DELETE /api/v1/documents/{document_id}`
   - `POST /api/v1/documents/{document_id}/restore`
@@ -329,6 +333,77 @@ Query params:
 - `session_id` (optional)
 - `interaction_type` (optional)
 - `limit` (default `50`, max `200`)
+
+---
+
+## Messaging API (API Key + Trust Policy)
+
+Tenant-scoped messaging routes for policy-governed read/send operations.
+
+### GET /api/v1/messaging/chats
+
+List tenant messaging chat policy snapshots and message counters.
+
+**Headers:** `X-API-Key`
+
+Query params:
+
+- `provider` (optional, default `whatsapp`)
+- `include_inactive` (optional, default `true`)
+- `limit` (default `200`, max `500`)
+
+### GET /api/v1/messaging/messages
+
+List stored encrypted/decrypted messaging records for one chat.
+
+**Headers:** `X-API-Key`
+
+Query params:
+
+- `chat_id` (required)
+- `provider` (optional, default `whatsapp`)
+- `direction` (optional, `inbound|outbound`)
+- `limit` (default `200`, max `500`)
+
+Policy behavior:
+
+- Evaluates `messaging.read`.
+- Non-allowlisted chats return `403` with `code=AI_MESSAGING_CHAT_NOT_ALLOWLISTED`.
+
+### POST /api/v1/messaging/messages/{chat_id}/send
+
+Queue an outbound message action for a policy-allowlisted chat.
+
+**Headers:** `X-API-Key`
+
+Request:
+
+```json
+{
+  "provider": "whatsapp",
+  "text": "Confirming the deployment is complete.",
+  "metadata": {
+    "source": "tenant-ui"
+  },
+  "explicitly_elevated": false
+}
+```
+
+Policy behavior:
+
+- Evaluates `messaging.send`.
+- Returns `409` `AI_APPROVAL_REQUIRED` when high-risk send requires approval.
+- Returns `403` when trust tier/allowlist rules deny the send.
+
+**Response 202:**
+
+```json
+{
+  "ok": true,
+  "queued_action": {},
+  "message": {}
+}
+```
 
 ---
 

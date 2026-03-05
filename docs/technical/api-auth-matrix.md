@@ -10,6 +10,10 @@ Authoritative exposure rule:
 
 - Added token-authenticated CGS blog publish adapter route:
   - `POST /service/ai/v1/internal/blog/publish`
+- Added tenant messaging upstream API routes:
+  - `GET /api/v1/messaging/chats`
+  - `GET /api/v1/messaging/messages`
+  - `POST /api/v1/messaging/messages/{chat_id}/send`
 - Internal lifecycle tenant mutations now enforce claims-to-tenant policy in addition to operator scope checks.
 - Auth requirements for public document routes remain API-key based, including:
   - `DELETE /api/v1/documents/{document_id}`
@@ -25,6 +29,7 @@ Authoritative exposure rule:
 | Sessions (`/sessions`) | API key | `X-API-Key` | tenant resolved from API key |
 | Chat + analytics session routes | session bearer | `Authorization: Bearer zt_sess_...` | tenant/session resolved from token claims |
 | CRM reads + release markers | API key | `X-API-Key` | tenant resolved from API key |
+| Messaging chats/messages/send | API key + trust policy | `X-API-Key` | tenant resolved from API key + trust-policy allowlist/tier checks |
 | Documents + RAG + model catalog | API key | `X-API-Key` | tenant resolved from API key |
 
 Notes:

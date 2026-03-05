@@ -11,6 +11,8 @@ Public exposure rule:
 
 ## Maintenance Note (2026-03-05)
 
+- Added upstream tenant messaging routes (`/api/v1/messaging/*`) for policy-gated message read/send.
+- Document intelligence contracts remain unchanged by messaging additions.
 - Added upstream document lifecycle APIs:
   - `DELETE /api/v1/documents/{document_id}` (archive schedule)
   - `POST /api/v1/documents/{document_id}/restore` (restore + reindex)

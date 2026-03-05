@@ -50,6 +50,11 @@ from zetherion_ai.api.routes.documents import (
     handle_restore_document,
 )
 from zetherion_ai.api.routes.health import handle_health
+from zetherion_ai.api.routes.messaging import (
+    handle_list_messaging_chats,
+    handle_list_messaging_messages,
+    handle_send_messaging_message,
+)
 from zetherion_ai.api.routes.sessions import (
     handle_create_session,
     handle_delete_session,
@@ -82,6 +87,8 @@ class PublicAPIServer:
         analytics_hourly_interval_seconds: int = 3600,
         analytics_daily_interval_seconds: int = 86400,
         document_service: DocumentService | None = None,
+        tenant_admin_manager: Any = None,
+        trust_policy_evaluator: Any = None,
     ) -> None:
         self._tenant_manager = tenant_manager
         self._jwt_secret = jwt_secret
@@ -96,6 +103,8 @@ class PublicAPIServer:
         self._analytics_hourly_interval_seconds = analytics_hourly_interval_seconds
         self._analytics_daily_interval_seconds = analytics_daily_interval_seconds
         self._document_service = document_service
+        self._tenant_admin_manager = tenant_admin_manager
+        self._trust_policy_evaluator = trust_policy_evaluator
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
         self._rate_limiter = RateLimiter()
@@ -150,6 +159,10 @@ class PublicAPIServer:
             app["replay_store"] = self._replay_store
         if self._document_service is not None:
             app["document_service"] = self._document_service
+        if self._tenant_admin_manager is not None:
+            app["tenant_admin_manager"] = self._tenant_admin_manager
+        if self._trust_policy_evaluator is not None:
+            app["trust_policy_evaluator"] = self._trust_policy_evaluator
 
         # YouTube skill state (accessed by route handlers)
         if self._youtube_storage is not None:
@@ -189,6 +202,12 @@ class PublicAPIServer:
         # CRM read routes (API-key auth)
         app.router.add_get("/api/v1/crm/contacts", handle_get_contacts)
         app.router.add_get("/api/v1/crm/interactions", handle_get_interactions)
+        app.router.add_get("/api/v1/messaging/chats", handle_list_messaging_chats)
+        app.router.add_get("/api/v1/messaging/messages", handle_list_messaging_messages)
+        app.router.add_post(
+            "/api/v1/messaging/messages/{chat_id}/send",
+            handle_send_messaging_message,
+        )
 
         # CI/deploy marker ingest (API-key auth)
         app.router.add_post("/api/v1/releases/markers", handle_release_marker)
@@ -289,6 +308,8 @@ async def run_server(
     analytics_hourly_interval_seconds: int = 3600,
     analytics_daily_interval_seconds: int = 86400,
     document_service: DocumentService | None = None,
+    tenant_admin_manager: Any = None,
+    trust_policy_evaluator: Any = None,
 ) -> None:
     """Run the public API server (main entry point for Docker container)."""
     server = PublicAPIServer(
@@ -304,6 +325,8 @@ async def run_server(
         analytics_hourly_interval_seconds=analytics_hourly_interval_seconds,
         analytics_daily_interval_seconds=analytics_daily_interval_seconds,
         document_service=document_service,
+        tenant_admin_manager=tenant_admin_manager,
+        trust_policy_evaluator=trust_policy_evaluator,
     )
     await server.start()
 
@@ -320,8 +343,12 @@ def main() -> None:
     """Main entry point for the public API service."""
     import os
 
-    from zetherion_ai.config import get_settings
+    from zetherion_ai.admin import TenantAdminManager
+    from zetherion_ai.config import get_settings, set_tenant_admin_manager
     from zetherion_ai.memory.qdrant import QdrantMemory
+    from zetherion_ai.security.encryption import FieldEncryptor
+    from zetherion_ai.security.keys import KeyManager
+    from zetherion_ai.security.trust_policy import TrustPolicyEvaluator
 
     settings = get_settings()
 
@@ -337,6 +364,35 @@ def main() -> None:
 
     async def init_and_run() -> None:
         await tenant_manager.initialize()
+        tenant_admin_manager: TenantAdminManager | None = None
+        trust_policy_evaluator = TrustPolicyEvaluator()
+
+        try:
+            passphrase_secret = getattr(settings, "encryption_passphrase", None)
+            passphrase = (
+                passphrase_secret.get_secret_value()
+                if hasattr(passphrase_secret, "get_secret_value")
+                else str(passphrase_secret or "").strip()
+            )
+            pool = getattr(tenant_manager, "_pool", None)
+            if passphrase and pool is not None:
+                key_manager = KeyManager(
+                    passphrase=passphrase,
+                    salt_path=getattr(settings, "encryption_salt_path", "config/.encryption_salt"),
+                )
+                encryptor = FieldEncryptor(
+                    key=key_manager.key,
+                    strict=bool(getattr(settings, "encryption_strict", True)),
+                )
+                tenant_admin_manager = TenantAdminManager(
+                    pool=pool,
+                    encryptor=encryptor,
+                )
+                await tenant_admin_manager.initialize()
+                set_tenant_admin_manager(tenant_admin_manager)
+                log.info("public_api_tenant_admin_manager_initialized")
+        except Exception as e:
+            log.warning("public_api_tenant_admin_manager_init_failed", error=str(e))
 
         api_broker: Any = None
         try:
@@ -415,12 +471,15 @@ def main() -> None:
                     getattr(settings, "analytics_daily_job_interval_seconds", 86400)
                 ),
                 document_service=document_service,
+                tenant_admin_manager=tenant_admin_manager,
+                trust_policy_evaluator=trust_policy_evaluator,
             )
         finally:
             if api_broker is not None:
                 await api_broker.close()
             if replay_store is not None:
                 await replay_store.close()
+            set_tenant_admin_manager(None)
 
     try:
         asyncio.run(init_and_run())
