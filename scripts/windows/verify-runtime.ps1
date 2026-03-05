@@ -113,6 +113,47 @@ function Wait-ForFallbackProbe {
     }
 }
 
+function Get-EnvValueFromFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Key
+    )
+
+    if (-not (Test-Path $Path)) {
+        return ""
+    }
+
+    $lines = Get-Content -Path $Path
+    for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+        $line = $lines[$i]
+        if ($line -match "^\s*#") {
+            continue
+        }
+        if ($line -notmatch "^\s*$([Regex]::Escape($Key))\s*=") {
+            continue
+        }
+
+        $separatorIndex = $line.IndexOf("=")
+        if ($separatorIndex -lt 0) {
+            continue
+        }
+
+        return $line.Substring($separatorIndex + 1).Trim()
+    }
+
+    return ""
+}
+
+function Test-Truthy {
+    param([string]$Value)
+
+    $normalized = [string]$Value
+    $normalized = $normalized.Trim().ToLowerInvariant()
+    return @("1", "true", "yes", "on") -contains $normalized
+}
+
 try {
     if (-not (Test-Path $DeployPath)) {
         throw "Deploy path not found: $DeployPath"
@@ -128,29 +169,27 @@ try {
 
         $optionalServices = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
         $envPath = Join-Path $DeployPath ".env"
-        $cloudflareToken = ""
-        if (Test-Path $envPath) {
-            $envLines = Get-Content -Path $envPath
-            for ($i = $envLines.Count - 1; $i -ge 0; $i--) {
-                $line = $envLines[$i]
-                if ($line -match "^\s*#") {
-                    continue
-                }
-                if ($line -notmatch "^\s*CLOUDFLARE_TUNNEL_TOKEN\s*=") {
-                    continue
-                }
-
-                $separatorIndex = $line.IndexOf("=")
-                if ($separatorIndex -lt 0) {
-                    continue
-                }
-                $cloudflareToken = $line.Substring($separatorIndex + 1).Trim()
-                break
-            }
-        }
+        $cloudflareToken = Get-EnvValueFromFile -Path $envPath -Key "CLOUDFLARE_TUNNEL_TOKEN"
 
         if (-not $cloudflareToken) {
             $optionalServices.Add("cloudflared") | Out-Null
+        }
+
+        $whatsappEnabled = Test-Truthy -Value (Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_ENABLED")
+        $whatsappSigningSecret = Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_SIGNING_SECRET"
+        $whatsappStateKey = Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_STATE_KEY"
+        $whatsappTenantId = Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_TENANT_ID"
+        $whatsappIngestUrl = Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_INGEST_URL"
+        $whatsappConfigured = (
+            $whatsappSigningSecret -and
+            $whatsappStateKey -and
+            $whatsappTenantId -and
+            $whatsappIngestUrl
+        )
+
+        if (-not $whatsappEnabled -or -not $whatsappConfigured) {
+            $optionalServices.Add("whatsapp-bridge") | Out-Null
+            $optionalServices.Add("zetherion-ai-whatsapp-bridge") | Out-Null
         }
 
         $monitoredServices = @(
