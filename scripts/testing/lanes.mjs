@@ -32,7 +32,7 @@ export const LANE_DEFINITIONS = {
     command: [
       "bash",
       "-lc",
-      "python3 scripts/check_pipeline_contract.py && python3 scripts/check-endpoint-doc-bundle.py",
+      "python3 scripts/check_pipeline_contract.py && python3 scripts/check-endpoint-doc-bundle.py && scripts/check-docs-nav.py && scripts/check-docs-links.py && scripts/check-route-doc-parity.py && scripts/check-cgs-route-doc-parity.py && scripts/check-env-doc-parity.py",
     ],
   },
   lint: {
@@ -63,7 +63,7 @@ export const LANE_DEFINITIONS = {
   "targeted-unit": {
     description: "Targeted unit suite for changed files",
     timeoutSeconds: 900,
-    command: ["python3", "-m", "pytest", "tests/unit", "-q", "--tb=short"],
+    command: ["python3", "-m", "pytest", "tests/unit", "-q", "--tb=short", "--no-cov"],
   },
   "unit-full": {
     description: "Full unit test lane with coverage gate",
