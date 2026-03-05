@@ -32,7 +32,7 @@ export const LANE_DEFINITIONS = {
     command: [
       "bash",
       "-lc",
-      "python3 scripts/check_pipeline_contract.py && python3 scripts/check-endpoint-doc-bundle.py && scripts/check-docs-nav.py && scripts/check-docs-links.py && scripts/check-route-doc-parity.py && scripts/check-cgs-route-doc-parity.py && scripts/check-env-doc-parity.py",
+      "python3 scripts/check_pipeline_contract.py && python3 scripts/check-endpoint-doc-bundle.py && scripts/check-docs-nav.py && scripts/check-docs-links.py && scripts/check-route-doc-parity.py && scripts/check-cgs-route-doc-parity.py && scripts/check-env-doc-parity.py && python3 scripts/check-announcement-dm-guard.py",
     ],
   },
   lint: {

@@ -359,3 +359,7 @@ Append-only bounded-lane execution log in UTC.
 | 2026-03-05T19:21:16.665Z | lint | `ruff check src/ tests/ updater_sidecar/` | passed | 0 |  | - |
 | 2026-03-05T19:21:50.205Z | targeted-unit | `/Users/jameshinton/Documents/Developer/PersonalBot/.venv/bin/python -m pytest tests/unit -q --tb=short` | failed | 29 | exit:1 | - |
 | 2026-03-05T19:22:31.180Z | targeted-unit | `/Users/jameshinton/Documents/Developer/PersonalBot/.venv/bin/python -m pytest tests/unit -q --tb=short --no-cov` | passed | 27 |  | - |
+| 2026-03-05T21:26:59.243Z | check | `/usr/local/bin/node /Users/jameshinton/Documents/Developer/PersonalBot/scripts/testing/run-with-heartbeat.mjs --heartbeat-seconds 30 -- bash -lc python3 scripts/check_pipeline_contract.py && python3 scripts/check-endpoint-doc-bundle.py && scripts/check-docs-nav.py && scripts/check-docs-links.py && scripts/check-route-doc-parity.py && scripts/check-cgs-route-doc-parity.py && scripts/check-env-doc-parity.py && python3 scripts/check-announcement-dm-guard.py` | passed | 0 |  | - |
+| 2026-03-05T21:27:04.453Z | lint | `ruff check src/ tests/ updater_sidecar/` | failed | 0 | exit:1 | - |
+| 2026-03-05T21:27:16.366Z | lint | `ruff check src/ tests/ updater_sidecar/` | passed | 0 |  | - |
+| 2026-03-05T21:27:17.043Z | targeted-unit | `/Users/jameshinton/Documents/Developer/PersonalBot/.venv/bin/python -m pytest tests/unit/test_check_announcement_dm_guard.py -q --tb=short --no-cov` | passed | 0 |  | - |

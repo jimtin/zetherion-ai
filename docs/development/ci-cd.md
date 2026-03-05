@@ -326,6 +326,12 @@ The pipeline runs the following jobs. Jobs without dependency arrows run in para
 
 **pre-commit** -- Runs all pre-commit hooks via the `pre-commit/action@v3` GitHub Action.
 
+**docs-contract** -- Runs docs navigation/link checks and route/env parity checks, then builds docs with `mkdocs build --strict`.
+
+**pipeline-contract** -- Validates CI pipeline-contract mappings plus endpoint docs bundle and announcement DM guardrails (`scripts/check-announcement-dm-guard.py`) to block direct `user.send(...)` regressions in announcement-producing paths.
+
+**zetherion-boundary-check** -- Enforces Zetherion-only repository boundary and fails when top-level `cgs/**` UI paths are introduced.
+
 **test** -- Matrix build across Python 3.12 and 3.13. Runs `pytest tests/ -m "not integration"` with coverage. Uploads coverage XML to Codecov (Python 3.12 only). Uploads HTML coverage report as a build artifact (retained 30 days).
 
 **docker-build** -- Builds the Docker image using Buildx with GHA caching. Runs Trivy vulnerability scanner (CRITICAL + HIGH severity). Generates an SPDX SBOM via Anchore. Validates `docker-compose.yml` syntax. Uploads Trivy SARIF to GitHub Security tab and SBOM as a build artifact (retained 90 days).
