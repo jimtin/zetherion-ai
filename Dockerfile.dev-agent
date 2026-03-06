@@ -2,7 +2,7 @@
 # Dev Agent Sidecar — Docker project monitor + cleanup daemon
 # ============================================================
 
-FROM docker:27-cli
+FROM docker:29-cli
 
 # hadolint ignore=DL3018
 RUN apk add --no-cache \
