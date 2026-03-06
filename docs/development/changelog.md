@@ -13,6 +13,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Segment 0 Current-State Isolation Inventory and Compatibility Baseline (2026-03-06)
+
+- Impacted capability IDs:
+  - `isolation.inventory.current-state-map`
+  - `trust.domains.canonical-vocabulary`
+  - `migration.compatibility.allowlist`
+  - `testing.bounded.pytest-venv-resolution`
+- Impacted workflow scenario IDs:
+  - `isolation.segment0.capture-current-storage-and-route-scope`
+  - `isolation.segment0.classify-trust-and-access-mechanisms`
+  - `isolation.segment0.validate-compatibility-manifest`
+  - `testing.local.targeted-unit.pytest-override-heartbeat`
+- Added `.ci/isolation_compatibility_manifest.json` to capture the current
+  trust-domain baseline across:
+  - relational storage families
+  - Qdrant collections
+  - route families
+  - prompt sources
+  - scheduler/queue/worker job flows
+  - legacy compatibility surfaces
+- Added [Isolation Inventory](../technical/isolation-inventory.md) technical
+  documentation describing the six target trust domains and the current-state
+  findings that later isolation segments will migrate.
+- Added unit coverage in `tests/unit/test_isolation_compatibility_manifest.py`
+  so the manifest remains complete, file-backed, and explicit about known
+  legacy compatibility modules.
+- Updated `scripts/testing/run-bounded.mjs` so pytest invocations wrapped by
+  `run-with-heartbeat` still rewrite to the repo-local `.venv/bin/python`,
+  preventing false `No module named pytest` failures during bounded targeted
+  runs.
+
 ### Changed - Segment C2 Repo Hygiene Before Relocation (2026-03-06)
 
 - Impacted capability IDs:

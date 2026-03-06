@@ -63,6 +63,7 @@ If you want to understand the internals:
 | [Architecture](technical/architecture.md) | System design and component interaction |
 | [Docker & Services](technical/docker.md) | Current compose topology and blue/green routing |
 | [Security](technical/security.md) | Encryption, access control, container hardening |
+| [Isolation Inventory](technical/isolation-inventory.md) | Current trust-domain baseline, legacy compatibility surfaces, and migration map |
 | [Configuration](technical/configuration.md) | All 70+ environment variables |
 | [Skills Framework](technical/skills-framework.md) | Skill lifecycle, permissions, registry |
 | [Gmail Architecture](technical/gmail-architecture.md) | Trust system, OAuth, reply pipeline |
