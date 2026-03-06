@@ -68,6 +68,7 @@ nav:
       - Architecture: technical/architecture.md
       - Docker & Services: technical/docker.md
       - Security: technical/security.md
+      - Isolation Inventory: technical/isolation-inventory.md
       - Configuration: technical/configuration.md
       - Skills Framework: technical/skills-framework.md
       - Gmail Architecture: technical/gmail-architecture.md

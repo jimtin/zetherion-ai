@@ -1,0 +1,640 @@
+{
+  "segment_id": "segment-0-current-state-isolation-inventory",
+  "generated_on": "2026-03-06",
+  "impacted_capability_ids": [
+    "isolation.inventory.current-state-map",
+    "trust.domains.canonical-vocabulary",
+    "migration.compatibility.allowlist"
+  ],
+  "impacted_workflow_scenario_ids": [
+    "isolation.segment0.capture-current-storage-and-route-scope",
+    "isolation.segment0.classify-trust-and-access-mechanisms",
+    "isolation.segment0.validate-compatibility-manifest"
+  ],
+  "target_trust_domains": [
+    {
+      "id": "owner_personal",
+      "description": "Owner-only profile, commitments, contacts, memory, and review state.",
+      "status": "partially-isolated"
+    },
+    {
+      "id": "owner_portfolio",
+      "description": "Owner-only derived business intelligence that must not depend on raw tenant records at reasoning time.",
+      "status": "not-yet-isolated"
+    },
+    {
+      "id": "tenant_raw",
+      "description": "Tenant-confidential operational data, documents, chats, settings, messaging, and execution state.",
+      "status": "partially-isolated"
+    },
+    {
+      "id": "tenant_derived",
+      "description": "Tenant-scoped derived analytics that can feed owner portfolio only after explicit transformation.",
+      "status": "not-yet-isolated"
+    },
+    {
+      "id": "control_plane",
+      "description": "Provisioning, policy, audit, queueing, rollout, and announcement orchestration.",
+      "status": "partially-isolated"
+    },
+    {
+      "id": "worker_artifact",
+      "description": "Approved job payloads, bounded execution logs, and worker-submitted artifacts only.",
+      "status": "partially-isolated"
+    }
+  ],
+  "storage_families": [
+    {
+      "id": "tenant-admin-relational",
+      "path": "src/zetherion_ai/admin/tenant_admin_manager.py",
+      "classification": "relational",
+      "current_domains": [
+        "tenant_raw",
+        "control_plane",
+        "worker_artifact"
+      ],
+      "tables": [
+        "tenant_discord_users",
+        "tenant_discord_bindings",
+        "tenant_settings_overrides",
+        "tenant_setting_versions",
+        "tenant_secrets",
+        "tenant_secret_versions",
+        "tenant_admin_audit_log",
+        "tenant_email_provider_configs",
+        "tenant_email_oauth_states",
+        "tenant_email_accounts",
+        "tenant_email_sync_jobs",
+        "tenant_email_message_cache",
+        "tenant_email_critical_items",
+        "tenant_email_insights",
+        "tenant_email_events",
+        "tenant_security_events",
+        "tenant_messaging_provider_configs",
+        "tenant_messaging_accounts",
+        "tenant_messaging_chat_policies",
+        "tenant_messaging_messages",
+        "tenant_messaging_action_queue",
+        "tenant_execution_plans",
+        "tenant_execution_steps",
+        "tenant_execution_step_retries",
+        "tenant_execution_artifacts",
+        "tenant_execution_transitions",
+        "tenant_worker_nodes",
+        "tenant_worker_capabilities",
+        "tenant_worker_messaging_grants",
+        "tenant_worker_sessions",
+        "tenant_worker_job_events",
+        "tenant_worker_jobs"
+      ],
+      "migration_note": "Needs domain-level schema split between tenant raw, control plane, and worker artifact paths."
+    },
+    {
+      "id": "tenant-api-relational",
+      "path": "src/zetherion_ai/api/tenant.py",
+      "classification": "relational",
+      "current_domains": [
+        "tenant_raw",
+        "tenant_derived",
+        "control_plane"
+      ],
+      "tables": [
+        "tenants",
+        "chat_sessions",
+        "chat_messages",
+        "tenant_audit_log",
+        "tenant_contacts",
+        "tenant_interactions",
+        "tenant_web_sessions",
+        "tenant_web_events",
+        "tenant_replay_chunks",
+        "tenant_documents",
+        "tenant_document_uploads",
+        "document_ingestion_jobs",
+        "document_archive_jobs",
+        "tenant_release_markers",
+        "tenant_release_nonces",
+        "tenant_funnel_daily",
+        "tenant_recommendations",
+        "tenant_recommendation_feedback"
+      ],
+      "migration_note": "Release markers and nonces should move under control_plane during later isolation segments."
+    },
+    {
+      "id": "personal-relational",
+      "path": "src/zetherion_ai/personal/storage.py",
+      "classification": "relational",
+      "current_domains": [
+        "owner_personal"
+      ],
+      "tables": [
+        "personal_profile",
+        "personal_contacts",
+        "personal_policies",
+        "personal_learnings",
+        "personality_signal_log",
+        "personality_profiles"
+      ],
+      "migration_note": "Already owner-personal in intent; still shares runtime and key domain with other stores."
+    },
+    {
+      "id": "legacy-discord-relational",
+      "path": "src/zetherion_ai/discord/user_manager.py",
+      "classification": "relational",
+      "current_domains": [
+        "owner_personal",
+        "control_plane"
+      ],
+      "tables": [
+        "users",
+        "audit_log",
+        "settings",
+        "personal_profile",
+        "personal_contacts",
+        "personal_policies",
+        "personal_learnings",
+        "gmail_accounts",
+        "gmail_sync_state",
+        "gmail_emails",
+        "gmail_drafts",
+        "gmail_type_trust",
+        "gmail_contact_trust",
+        "secrets",
+        "message_queue"
+      ],
+      "migration_note": "Legacy mixed single-user store kept on compatibility allowlist until unified trust and owner-personal cutover."
+    },
+    {
+      "id": "cgs-gateway-relational",
+      "path": "src/zetherion_ai/cgs_gateway/storage.py",
+      "classification": "relational",
+      "current_domains": [
+        "control_plane"
+      ],
+      "tables": [
+        "cgs_ai_tenants",
+        "cgs_ai_conversations",
+        "cgs_ai_idempotency",
+        "cgs_ai_request_log",
+        "cgs_ai_admin_changes",
+        "cgs_ai_blog_publish_receipts"
+      ],
+      "migration_note": "Tenant mapping metadata will gain isolation-stage status during Segment 4."
+    },
+    {
+      "id": "integrations-relational",
+      "path": "src/zetherion_ai/integrations/storage.py",
+      "classification": "relational",
+      "current_domains": [
+        "tenant_raw",
+        "tenant_derived",
+        "control_plane"
+      ],
+      "tables": [
+        "integration_accounts",
+        "integration_destinations",
+        "integration_sync_state",
+        "integration_email_messages",
+        "integration_object_links",
+        "routing_preferences",
+        "routing_decisions",
+        "integration_security_events",
+        "integration_ingestion_queue",
+        "integration_ingestion_dead_letter"
+      ],
+      "migration_note": "Mixed raw/derived/control storage; explicit split required in later segments."
+    },
+    {
+      "id": "announcements-relational",
+      "path": "src/zetherion_ai/announcements/storage.py",
+      "classification": "relational",
+      "current_domains": [
+        "control_plane",
+        "owner_personal",
+        "tenant_derived"
+      ],
+      "tables": [
+        "announcement_events",
+        "announcement_deliveries",
+        "announcement_user_preferences",
+        "announcement_digest_state",
+        "announcement_suppression_state"
+      ],
+      "migration_note": "Announcement events currently cross owner and tenant notification concerns via one service surface."
+    },
+    {
+      "id": "profile-relational",
+      "path": "src/zetherion_ai/profile/storage.py",
+      "classification": "relational",
+      "current_domains": [
+        "owner_personal",
+        "control_plane"
+      ],
+      "tables": [
+        "profile_stats",
+        "profile_updates",
+        "pending_confirmations",
+        "inference_tier_usage"
+      ],
+      "migration_note": "Needs explicit separation between descriptive profile state and control-plane confirmation/audit state."
+    },
+    {
+      "id": "gmail-relational",
+      "paths": [
+        "src/zetherion_ai/skills/gmail/accounts.py",
+        "src/zetherion_ai/skills/gmail/sync.py"
+      ],
+      "classification": "relational",
+      "current_domains": [
+        "owner_personal"
+      ],
+      "tables": [
+        "gmail_accounts",
+        "gmail_sync_state",
+        "gmail_emails"
+      ],
+      "migration_note": "Domain trust remains legacy; storage intent is owner-personal."
+    },
+    {
+      "id": "youtube-relational",
+      "path": "src/zetherion_ai/skills/youtube/storage.py",
+      "classification": "relational",
+      "current_domains": [
+        "owner_personal",
+        "tenant_derived"
+      ],
+      "tables": [
+        "youtube_channels",
+        "youtube_videos",
+        "youtube_comments",
+        "youtube_channel_stats",
+        "youtube_intelligence_reports",
+        "youtube_reply_drafts",
+        "youtube_tag_recommendations",
+        "youtube_strategy_documents",
+        "youtube_assumptions",
+        "youtube_channel_documents"
+      ],
+      "migration_note": "Intelligence outputs should be separated from raw channel/comment data."
+    },
+    {
+      "id": "cost-health-telemetry-relational",
+      "paths": [
+        "src/zetherion_ai/costs/storage.py",
+        "src/zetherion_ai/health/storage.py",
+        "src/zetherion_ai/telemetry/storage.py"
+      ],
+      "classification": "relational",
+      "current_domains": [
+        "control_plane",
+        "tenant_derived",
+        "owner_portfolio"
+      ],
+      "tables": [
+        "usage",
+        "models",
+        "daily_costs",
+        "health_snapshots",
+        "health_daily_reports",
+        "health_healing_actions",
+        "health_incidents",
+        "notification_incidents",
+        "update_history",
+        "telemetry_instances",
+        "telemetry_reports",
+        "fleet_aggregates"
+      ],
+      "migration_note": "Derived fleet and health intelligence need explicit owner-portfolio transformation rules."
+    }
+  ],
+  "vector_collections": [
+    {
+      "name": "conversations",
+      "path": "src/zetherion_ai/memory/qdrant.py",
+      "current_domains": [
+        "owner_personal",
+        "tenant_raw"
+      ],
+      "status": "shared-legacy",
+      "migration_note": "Must move behind scoped wrappers and domain-specific stores in Segments 2 and 3."
+    },
+    {
+      "name": "long_term_memory",
+      "path": "src/zetherion_ai/memory/qdrant.py",
+      "current_domains": [
+        "owner_personal",
+        "tenant_raw"
+      ],
+      "status": "shared-legacy",
+      "migration_note": "Generic helper remains compatibility allowlisted until scoped access lands."
+    },
+    {
+      "name": "user_profiles",
+      "paths": [
+        "src/zetherion_ai/profile/builder.py",
+        "src/zetherion_ai/skills/profile_skill.py"
+      ],
+      "current_domains": [
+        "owner_personal"
+      ],
+      "status": "single-domain-intent",
+      "migration_note": "Should move to qdrant-owner during data plane split."
+    },
+    {
+      "name": "tenant_documents",
+      "path": "src/zetherion_ai/documents/service.py",
+      "current_domains": [
+        "tenant_raw"
+      ],
+      "status": "tenant-domain-intent",
+      "migration_note": "Should move to qdrant-tenant with enforced scope filters."
+    },
+    {
+      "name": "docs_knowledge",
+      "path": "src/zetherion_ai/agent/docs_knowledge.py",
+      "current_domains": [
+        "control_plane",
+        "owner_personal"
+      ],
+      "status": "shared-legacy",
+      "migration_note": "Needs explicit domain classification before owner reasoning consumes it."
+    },
+    {
+      "name": "skill_calendar",
+      "path": "src/zetherion_ai/skills/calendar.py",
+      "current_domains": [
+        "owner_personal"
+      ],
+      "status": "single-domain-intent",
+      "migration_note": "Candidate for qdrant-owner."
+    },
+    {
+      "name": "skill_tasks",
+      "path": "src/zetherion_ai/skills/task_manager.py",
+      "current_domains": [
+        "owner_personal"
+      ],
+      "status": "single-domain-intent",
+      "migration_note": "Candidate for qdrant-owner."
+    },
+    {
+      "name": "skill_milestones",
+      "path": "src/zetherion_ai/skills/milestone.py",
+      "current_domains": [
+        "owner_personal"
+      ],
+      "status": "single-domain-intent",
+      "migration_note": "Candidate for qdrant-owner."
+    },
+    {
+      "name": "skill_dev_journal",
+      "path": "src/zetherion_ai/skills/dev_watcher.py",
+      "current_domains": [
+        "owner_personal",
+        "worker_artifact"
+      ],
+      "status": "mixed-intent",
+      "migration_note": "Needs explicit split between owner history and worker execution artifacts."
+    }
+  ],
+  "route_families": [
+    {
+      "id": "public-api-runtime",
+      "paths": [
+        "src/zetherion_ai/api/server.py",
+        "src/zetherion_ai/api/middleware.py",
+        "src/zetherion_ai/api/routes/chat.py",
+        "src/zetherion_ai/api/routes/documents.py",
+        "src/zetherion_ai/api/routes/messaging.py",
+        "src/zetherion_ai/api/routes/youtube.py"
+      ],
+      "current_domains": [
+        "tenant_raw",
+        "tenant_derived",
+        "control_plane"
+      ],
+      "migration_note": "Routes need explicit scope propagation once the scope kernel is introduced."
+    },
+    {
+      "id": "cgs-gateway",
+      "paths": [
+        "src/zetherion_ai/cgs_gateway/routes/runtime.py",
+        "src/zetherion_ai/cgs_gateway/routes/reporting.py",
+        "src/zetherion_ai/cgs_gateway/routes/internal.py",
+        "src/zetherion_ai/cgs_gateway/routes/internal_admin.py",
+        "src/zetherion_ai/cgs_gateway/routes/_utils.py"
+      ],
+      "current_domains": [
+        "control_plane"
+      ],
+      "migration_note": "CGS remains the external surface; provisioning metadata gains isolation-stage state later."
+    },
+    {
+      "id": "skills-internal-and-discord",
+      "paths": [
+        "src/zetherion_ai/skills/server.py",
+        "src/zetherion_ai/discord/bot.py"
+      ],
+      "current_domains": [
+        "control_plane",
+        "owner_personal",
+        "worker_artifact"
+      ],
+      "migration_note": "Still mixes operator control, owner actions, and worker orchestration in the same runtime surface."
+    }
+  ],
+  "prompt_sources": [
+    {
+      "id": "core-agent-prompts",
+      "paths": [
+        "src/zetherion_ai/agent/core.py",
+        "src/zetherion_ai/agent/prompts.py"
+      ],
+      "current_domains": [
+        "owner_personal",
+        "tenant_raw",
+        "tenant_derived",
+        "control_plane"
+      ],
+      "migration_note": "No canonical scope labels yet; Segment 1 adds fail-closed prompt composition."
+    },
+    {
+      "id": "routing-prompts",
+      "paths": [
+        "src/zetherion_ai/routing/classification_prompt.py",
+        "src/zetherion_ai/routing/personality_prompt.py",
+        "src/zetherion_ai/routing/email_router.py"
+      ],
+      "current_domains": [
+        "owner_personal",
+        "control_plane"
+      ],
+      "migration_note": "Personal routing and execution prompts need centralized scope labels."
+    },
+    {
+      "id": "domain-prompts",
+      "paths": [
+        "src/zetherion_ai/skills/gmail/replies.py",
+        "src/zetherion_ai/documents/service.py",
+        "src/zetherion_ai/agent/docs_knowledge.py"
+      ],
+      "current_domains": [
+        "owner_personal",
+        "tenant_raw",
+        "control_plane"
+      ],
+      "migration_note": "Domain prompt fragments currently rely on caller discipline for scope separation."
+    }
+  ],
+  "job_flows": [
+    {
+      "id": "scheduler-and-actions",
+      "paths": [
+        "src/zetherion_ai/scheduler/heartbeat.py",
+        "src/zetherion_ai/scheduler/actions.py"
+      ],
+      "current_domains": [
+        "control_plane",
+        "owner_personal"
+      ],
+      "migration_note": "Nightly execution still needs canonical review-state and trust feedback wiring."
+    },
+    {
+      "id": "queue-and-announcements",
+      "paths": [
+        "src/zetherion_ai/queue/storage.py",
+        "src/zetherion_ai/queue/manager.py",
+        "src/zetherion_ai/announcements/dispatcher.py",
+        "src/zetherion_ai/announcements/storage.py",
+        "src/zetherion_ai/announcements/discord_adapter.py"
+      ],
+      "current_domains": [
+        "control_plane",
+        "owner_personal",
+        "tenant_derived"
+      ],
+      "migration_note": "Announcement plane is centralized but not yet trust-domain-aware."
+    },
+    {
+      "id": "tenant-documents-and-execution",
+      "paths": [
+        "src/zetherion_ai/documents/service.py",
+        "src/zetherion_ai/api/tenant.py",
+        "src/zetherion_ai/admin/tenant_admin_manager.py",
+        "src/zetherion_ai/skills/server.py"
+      ],
+      "current_domains": [
+        "tenant_raw",
+        "tenant_derived",
+        "control_plane",
+        "worker_artifact"
+      ],
+      "migration_note": "Needs per-step scope labeling and artifact-only worker exposure."
+    },
+    {
+      "id": "dev-agent-worker-runtime",
+      "paths": [
+        "zetherion-dev-agent/src/zetherion_dev_agent/worker_runtime.py"
+      ],
+      "current_domains": [
+        "worker_artifact"
+      ],
+      "migration_note": "Worker runtime is bounded, but grant scope is still repo-oriented by default."
+    }
+  ],
+  "mechanism_inventory": [
+    {
+      "id": "tenant-auth-and-route-claims",
+      "classification": "access_control",
+      "paths": [
+        "src/zetherion_ai/api/middleware.py",
+        "src/zetherion_ai/cgs_gateway/routes/_utils.py",
+        "src/zetherion_ai/skills/server.py"
+      ],
+      "note": "AuthN/AuthZ and tenant-claim enforcement remain upstream gates and are not replaced by the unified trust engine."
+    },
+    {
+      "id": "behavioral-trust-systems",
+      "classification": "behavioral_trust",
+      "paths": [
+        "src/zetherion_ai/security/trust_policy.py",
+        "src/zetherion_ai/personal/actions.py",
+        "src/zetherion_ai/skills/gmail/trust.py",
+        "src/zetherion_ai/skills/github/models.py",
+        "src/zetherion_ai/skills/youtube/trust.py",
+        "src/zetherion_ai/routing/models.py",
+        "src/zetherion_ai/routing/policies.py"
+      ],
+      "note": "These are the primary autonomy systems targeted for centralization under the future TrustEngine."
+    },
+    {
+      "id": "worker-and-resource-grants",
+      "classification": "grant",
+      "paths": [
+        "src/zetherion_ai/admin/tenant_admin_manager.py",
+        "src/zetherion_ai/skills/server.py",
+        "zetherion-dev-agent/src/zetherion_dev_agent/worker_runtime.py"
+      ],
+      "note": "Worker capabilities and messaging grants exist, but remain domain-specific rather than generic delegated grants."
+    },
+    {
+      "id": "descriptive-relationship-state",
+      "classification": "descriptive_relationship_state",
+      "paths": [
+        "src/zetherion_ai/profile/employment.py",
+        "src/zetherion_ai/personal/storage.py",
+        "src/zetherion_ai/profile/storage.py"
+      ],
+      "note": "Relationship and profile descriptors must remain descriptive and not act as implicit enforcement sources."
+    },
+    {
+      "id": "derived-intelligence-surfaces",
+      "classification": "derived_intelligence",
+      "paths": [
+        "src/zetherion_ai/skills/tenant_intelligence.py",
+        "src/zetherion_ai/health/storage.py",
+        "src/zetherion_ai/telemetry/storage.py",
+        "src/zetherion_ai/announcements/storage.py"
+      ],
+      "note": "These surfaces produce or store derived outputs that should feed owner_portfolio only through explicit transformation."
+    }
+  ],
+  "compatibility_allowlist": [
+    {
+      "path": "src/zetherion_ai/memory/qdrant.py",
+      "reason": "Generic vector helper still serves shared legacy collections.",
+      "current_risk": "unscoped cross-domain query helper",
+      "sunset_segment": "Segment 3"
+    },
+    {
+      "path": "src/zetherion_ai/discord/user_manager.py",
+      "reason": "Legacy single-user relational store still backs owner-personal behavior and trust history.",
+      "current_risk": "mixed owner-personal and control-plane tables",
+      "sunset_segment": "Segment 10"
+    },
+    {
+      "path": "src/zetherion_ai/integrations/storage.py",
+      "reason": "Integration storage mixes raw, derived, and control-plane state.",
+      "current_risk": "unclear domain boundaries for derived outputs",
+      "sunset_segment": "Segment 5"
+    },
+    {
+      "path": "src/zetherion_ai/agent/core.py",
+      "reason": "Prompt assembly lacks canonical scope labels.",
+      "current_risk": "prompt-scope mixing by caller discipline",
+      "sunset_segment": "Segment 1"
+    },
+    {
+      "path": "src/zetherion_ai/agent/prompts.py",
+      "reason": "Shared prompt fragments have no scope metadata yet.",
+      "current_risk": "prompt-scope mixing by caller discipline",
+      "sunset_segment": "Segment 1"
+    },
+    {
+      "path": "src/zetherion_ai/routing/email_router.py",
+      "reason": "Personal routing logic combines decisioning, prompts, and execution context without canonical trust-domain types.",
+      "current_risk": "owner-personal and control-plane boundaries remain implicit",
+      "sunset_segment": "Segment 10"
+    }
+  ]
+}

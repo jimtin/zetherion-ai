@@ -227,7 +227,19 @@ function isPythonExecutable(command) {
   return /(^|\/)python([0-9]+(\.[0-9]+)*)?$/.test(value);
 }
 
-function prefersLocalVenvPytest(command, args) {
+function isHeartbeatWrapper(command, args) {
+  const value = String(command ?? "").trim();
+  if (!/(^|\/)(node|node[0-9]+)?$/.test(path.basename(value)) && value !== process.execPath) {
+    return false;
+  }
+  if (args.length === 0) {
+    return false;
+  }
+  const wrapperPath = String(args[0] ?? "").trim();
+  return wrapperPath.endsWith("scripts/testing/run-with-heartbeat.mjs");
+}
+
+function rewriteDirectPytestInvocation(command, args) {
   if (process.env.CI) {
     return { command, args, rewritten: false };
   }
@@ -253,6 +265,35 @@ function prefersLocalVenvPytest(command, args) {
   }
 
   return { command, args, rewritten: false };
+}
+
+function prefersLocalVenvPytest(command, args) {
+  const directRewrite = rewriteDirectPytestInvocation(command, args);
+  if (directRewrite.rewritten || !isHeartbeatWrapper(command, args)) {
+    return directRewrite;
+  }
+
+  const separatorIndex = args.indexOf("--");
+  if (separatorIndex === -1 || separatorIndex === args.length - 1) {
+    return directRewrite;
+  }
+
+  const wrappedCommand = String(args[separatorIndex + 1] ?? "");
+  const wrappedArgs = args.slice(separatorIndex + 2);
+  const wrappedRewrite = rewriteDirectPytestInvocation(wrappedCommand, wrappedArgs);
+  if (!wrappedRewrite.rewritten) {
+    return directRewrite;
+  }
+
+  return {
+    command,
+    args: [
+      ...args.slice(0, separatorIndex + 1),
+      wrappedRewrite.command,
+      ...wrappedRewrite.args,
+    ],
+    rewritten: true,
+  };
 }
 
 function captureDiagnostics({ lane, reason, diagnosticsRoot, pid }) {
