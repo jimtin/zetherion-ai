@@ -53,12 +53,28 @@ def _common_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--qdrant-service",
         default=os.getenv("BACKUP_QDRANT_SERVICE", "qdrant"),
-        help="Qdrant service name in docker compose (default: %(default)s).",
+        help="Legacy/default Qdrant service name in docker compose (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--qdrant-owner-service",
+        default=os.getenv("BACKUP_QDRANT_OWNER_SERVICE", ""),
+        help="Optional owner-domain Qdrant service name for domain-aware backups.",
+    )
+    parser.add_argument(
+        "--qdrant-tenant-service",
+        default=os.getenv("BACKUP_QDRANT_TENANT_SERVICE", ""),
+        help="Optional tenant-domain Qdrant service name for domain-aware backups.",
     )
     return parser
 
 
 def _build_manager(args: argparse.Namespace) -> BackupManager:
+    qdrant_services_by_domain: dict[str, str] = {}
+    if str(getattr(args, "qdrant_owner_service", "") or "").strip():
+        qdrant_services_by_domain["owner_personal"] = str(args.qdrant_owner_service).strip()
+    if str(getattr(args, "qdrant_tenant_service", "") or "").strip():
+        qdrant_services_by_domain["tenant_raw"] = str(args.qdrant_tenant_service).strip()
+
     return BackupManager(
         backup_dir=Path(args.backup_dir),
         state_dir=Path(args.state_dir),
@@ -67,6 +83,7 @@ def _build_manager(args: argparse.Namespace) -> BackupManager:
         postgres_user=args.postgres_user,
         postgres_db=args.postgres_db,
         qdrant_service=args.qdrant_service,
+        qdrant_services_by_domain=qdrant_services_by_domain,
         retention_count=args.retention_count,
     )
 

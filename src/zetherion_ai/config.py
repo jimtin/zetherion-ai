@@ -72,6 +72,26 @@ class Settings(BaseSettings):
         ge=1,
         description="Maximum asyncpg pool size per service pool",
     )
+    postgres_tenant_app_schema: str = Field(
+        default="tenant_app",
+        description="Logical PostgreSQL schema reserved for tenant application data",
+    )
+    postgres_owner_personal_schema: str = Field(
+        default="owner_personal",
+        description="Logical PostgreSQL schema reserved for owner-personal state",
+    )
+    postgres_owner_portfolio_schema: str = Field(
+        default="owner_portfolio",
+        description="Logical PostgreSQL schema reserved for owner portfolio derived data",
+    )
+    postgres_control_plane_schema: str = Field(
+        default="control_plane",
+        description="Logical PostgreSQL schema reserved for control-plane state",
+    )
+    postgres_cgs_gateway_schema: str = Field(
+        default="cgs_gateway",
+        description="Logical PostgreSQL schema reserved for CGS gateway state",
+    )
 
     @property
     def allowed_user_ids(self) -> list[int]:
@@ -111,6 +131,38 @@ class Settings(BaseSettings):
     qdrant_use_tls: bool = Field(default=False, description="Use TLS for Qdrant connection")
     qdrant_cert_path: str | None = Field(
         default=None, description="Path to Qdrant TLS certificate for verification"
+    )
+    qdrant_owner_host: str | None = Field(
+        default=None,
+        description="Optional owner-domain Qdrant host override",
+    )
+    qdrant_owner_port: int | None = Field(
+        default=None,
+        description="Optional owner-domain Qdrant port override",
+    )
+    qdrant_owner_use_tls: bool | None = Field(
+        default=None,
+        description="Optional owner-domain TLS override for Qdrant",
+    )
+    qdrant_owner_cert_path: str | None = Field(
+        default=None,
+        description="Optional owner-domain Qdrant TLS certificate path",
+    )
+    qdrant_tenant_host: str | None = Field(
+        default=None,
+        description="Optional tenant-domain Qdrant host override",
+    )
+    qdrant_tenant_port: int | None = Field(
+        default=None,
+        description="Optional tenant-domain Qdrant port override",
+    )
+    qdrant_tenant_use_tls: bool | None = Field(
+        default=None,
+        description="Optional tenant-domain TLS override for Qdrant",
+    )
+    qdrant_tenant_cert_path: str | None = Field(
+        default=None,
+        description="Optional tenant-domain Qdrant TLS certificate path",
     )
 
     # Application
@@ -265,8 +317,24 @@ class Settings(BaseSettings):
     encryption_passphrase: SecretStr = Field(
         description="Master passphrase for encryption key derivation (min 16 chars, required)"
     )
+    encryption_owner_passphrase: SecretStr | None = Field(
+        default=None,
+        description="Optional owner-personal passphrase override for encryption key derivation",
+    )
+    encryption_tenant_passphrase: SecretStr | None = Field(
+        default=None,
+        description="Optional tenant-data passphrase override for encryption key derivation",
+    )
     encryption_salt_path: str = Field(
         default="data/salt.bin", description="Path to store the encryption salt file"
+    )
+    encryption_owner_salt_path: str | None = Field(
+        default=None,
+        description="Optional owner-personal salt path override",
+    )
+    encryption_tenant_salt_path: str | None = Field(
+        default=None,
+        description="Optional tenant-data salt path override",
     )
     encryption_strict: bool = Field(
         default=False, description="Raise errors on decryption failure instead of passing through"
@@ -331,7 +399,7 @@ class Settings(BaseSettings):
     provider_issue_alerts_enabled: bool = Field(
         default=True,
         description=(
-            "Send proactive alerts when paid providers fail due to " "auth/billing/rate-limits"
+            "Send proactive alerts when paid providers fail due to auth/billing/rate-limits"
         ),
     )
     provider_issue_alert_cooldown_seconds: int = Field(
@@ -920,6 +988,20 @@ class Settings(BaseSettings):
             )
         if len(passphrase) < 16:
             raise ValueError("encryption_passphrase must be at least 16 characters")
+        owner_passphrase = (
+            self.encryption_owner_passphrase.get_secret_value()
+            if self.encryption_owner_passphrase is not None
+            else ""
+        )
+        if owner_passphrase and len(owner_passphrase) < 16:
+            raise ValueError("encryption_owner_passphrase must be at least 16 characters")
+        tenant_passphrase = (
+            self.encryption_tenant_passphrase.get_secret_value()
+            if self.encryption_tenant_passphrase is not None
+            else ""
+        )
+        if tenant_passphrase and len(tenant_passphrase) < 16:
+            raise ValueError("encryption_tenant_passphrase must be at least 16 characters")
         return self
 
     @property
@@ -942,6 +1024,30 @@ class Settings(BaseSettings):
         """Get the full Qdrant URL."""
         scheme = "https" if self.qdrant_use_tls else "http"
         return f"{scheme}://{self.qdrant_host}:{self.qdrant_port}"
+
+    @property
+    def qdrant_owner_url(self) -> str:
+        """Get the owner-domain Qdrant URL with fallback to legacy settings."""
+        use_tls = (
+            self.qdrant_use_tls if self.qdrant_owner_use_tls is None else self.qdrant_owner_use_tls
+        )
+        host = self.qdrant_owner_host or self.qdrant_host
+        port = self.qdrant_port if self.qdrant_owner_port is None else self.qdrant_owner_port
+        scheme = "https" if use_tls else "http"
+        return f"{scheme}://{host}:{port}"
+
+    @property
+    def qdrant_tenant_url(self) -> str:
+        """Get the tenant-domain Qdrant URL with fallback to legacy settings."""
+        use_tls = (
+            self.qdrant_use_tls
+            if self.qdrant_tenant_use_tls is None
+            else self.qdrant_tenant_use_tls
+        )
+        host = self.qdrant_tenant_host or self.qdrant_host
+        port = self.qdrant_port if self.qdrant_tenant_port is None else self.qdrant_tenant_port
+        scheme = "https" if use_tls else "http"
+        return f"{scheme}://{host}:{port}"
 
     # Backward-compatible accessors (deprecated): prefer object_storage_*.
     @property

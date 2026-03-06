@@ -177,3 +177,32 @@ def test_verify_fails_when_sidecar_checksum_mismatch(tmp_path: Path) -> None:
             archive_path=summary.archive_path,
             identity_path=identity,
         )
+
+
+def test_domain_aware_qdrant_backup_and_restore(tmp_path: Path) -> None:
+    runner = FakeRunner()
+    manager = _build_manager(tmp_path, runner=runner)
+    manager.qdrant_services_by_domain = {
+        "owner_personal": "qdrant-owner",
+        "tenant_raw": "qdrant-tenant",
+    }
+    manager.__post_init__()
+    identity = tmp_path / "age-identity.txt"
+    identity.write_text("AGE-SECRET-KEY-TEST", encoding="utf-8")
+
+    summary = manager.create_backup(age_recipient="age1examplepublickey")
+    restore_summary = manager.restore_backup(
+        archive_path=summary.archive_path,
+        identity_path=identity,
+    )
+
+    assert restore_summary.component_count == 4
+    command_texts = [" ".join(command) for command, _ in runner.calls]
+    assert any(
+        "exec -T qdrant-owner" in text and "tar -czf - storage" in text for text in command_texts
+    )
+    assert any(
+        "exec -T qdrant-tenant" in text and "tar -czf - storage" in text for text in command_texts
+    )
+    assert any("compose -f" in text and "stop qdrant-owner" in text for text in command_texts)
+    assert any("compose -f" in text and "stop qdrant-tenant" in text for text in command_texts)

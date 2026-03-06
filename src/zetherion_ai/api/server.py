@@ -346,9 +346,10 @@ def main() -> None:
     from zetherion_ai.admin import TenantAdminManager
     from zetherion_ai.config import get_settings, set_tenant_admin_manager
     from zetherion_ai.memory.qdrant import QdrantMemory
-    from zetherion_ai.security.encryption import FieldEncryptor
-    from zetherion_ai.security.keys import KeyManager
+    from zetherion_ai.security.domain_keys import build_runtime_encryptors
     from zetherion_ai.security.trust_policy import TrustPolicyEvaluator
+    from zetherion_ai.trust.data_plane import ensure_postgres_isolation_schemas
+    from zetherion_ai.trust.scope import TrustDomain
 
     settings = get_settings()
 
@@ -364,8 +365,12 @@ def main() -> None:
 
     async def init_and_run() -> None:
         await tenant_manager.initialize()
+        pool = getattr(tenant_manager, "_pool", None)
+        if pool is not None:
+            await ensure_postgres_isolation_schemas(pool, settings)
         tenant_admin_manager: TenantAdminManager | None = None
         trust_policy_evaluator = TrustPolicyEvaluator()
+        tenant_encryptor = None
 
         try:
             passphrase_secret = getattr(settings, "encryption_passphrase", None)
@@ -374,19 +379,12 @@ def main() -> None:
                 passphrase = str(passphrase_getter()).strip()
             else:
                 passphrase = str(passphrase_secret or "").strip()
-            pool = getattr(tenant_manager, "_pool", None)
             if passphrase and pool is not None:
-                key_manager = KeyManager(
-                    passphrase=passphrase,
-                    salt_path=getattr(settings, "encryption_salt_path", "config/.encryption_salt"),
-                )
-                encryptor = FieldEncryptor(
-                    key=key_manager.key,
-                    strict=bool(getattr(settings, "encryption_strict", True)),
-                )
+                encryptors = build_runtime_encryptors(settings)
+                tenant_encryptor = encryptors.tenant_data
                 tenant_admin_manager = TenantAdminManager(
                     pool=pool,
-                    encryptor=encryptor,
+                    encryptor=tenant_encryptor,
                 )
                 await tenant_admin_manager.initialize()
                 set_tenant_admin_manager(tenant_admin_manager)
@@ -405,12 +403,17 @@ def main() -> None:
         replay_store = None
         document_service = None
         try:
-            replay_store = create_replay_store_from_settings(settings)
+            replay_store = create_replay_store_from_settings(
+                settings, trust_domain=TrustDomain.TENANT_RAW
+            )
         except Exception as e:
             log.warning("replay_store_init_failed", error=str(e))
 
         try:
-            doc_memory = QdrantMemory()
+            doc_memory = QdrantMemory(
+                encryptor=tenant_encryptor,
+                trust_domain=TrustDomain.TENANT_RAW,
+            )
             await doc_memory.initialize()
             document_service = DocumentService(
                 tenant_manager=tenant_manager,

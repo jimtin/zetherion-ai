@@ -11,6 +11,8 @@ from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
 from zetherion_ai.memory.embeddings import get_embedding_dimension, get_embeddings_client
 from zetherion_ai.security.encryption import FieldEncryptor
+from zetherion_ai.trust.data_plane import QdrantStoragePlane, qdrant_storage_plane_for_domain
+from zetherion_ai.trust.scope import TrustDomain
 
 log = get_logger("zetherion_ai.memory.qdrant")
 
@@ -19,40 +21,86 @@ CONVERSATIONS_COLLECTION = "conversations"
 LONG_TERM_MEMORY_COLLECTION = "long_term_memory"
 
 
+def _qdrant_connection_settings(
+    settings: Any,
+    storage_plane: QdrantStoragePlane,
+) -> dict[str, Any]:
+    """Resolve effective Qdrant connection settings for one storage plane."""
+
+    if storage_plane == QdrantStoragePlane.OWNER:
+        host = getattr(settings, "qdrant_owner_host", None) or settings.qdrant_host
+        port = getattr(settings, "qdrant_owner_port", None)
+        use_tls_override = getattr(settings, "qdrant_owner_use_tls", None)
+        cert_path = getattr(settings, "qdrant_owner_cert_path", None) or getattr(
+            settings, "qdrant_cert_path", None
+        )
+        url = getattr(settings, "qdrant_owner_url", None)
+    else:
+        host = getattr(settings, "qdrant_tenant_host", None) or settings.qdrant_host
+        port = getattr(settings, "qdrant_tenant_port", None)
+        use_tls_override = getattr(settings, "qdrant_tenant_use_tls", None)
+        cert_path = getattr(settings, "qdrant_tenant_cert_path", None) or getattr(
+            settings, "qdrant_cert_path", None
+        )
+        url = getattr(settings, "qdrant_tenant_url", None)
+
+    effective_port = settings.qdrant_port if port is None else int(port)
+    use_tls = settings.qdrant_use_tls if use_tls_override is None else bool(use_tls_override)
+    scheme = "https" if use_tls else "http"
+    effective_url = str(url or f"{scheme}://{host}:{effective_port}")
+    return {
+        "host": host,
+        "port": effective_port,
+        "use_tls": use_tls,
+        "cert_path": cert_path,
+        "url": effective_url,
+    }
+
+
 class QdrantMemory:
     """Vector memory storage using Qdrant."""
 
-    def __init__(self, encryptor: FieldEncryptor | None = None) -> None:
+    def __init__(
+        self,
+        encryptor: FieldEncryptor | None = None,
+        *,
+        trust_domain: TrustDomain = TrustDomain.TENANT_RAW,
+    ) -> None:
         """Initialize the Qdrant memory client.
 
         Args:
             encryptor: Optional field encryptor for sensitive data.
                        If provided, content fields will be encrypted at rest.
+            trust_domain: Canonical trust domain that owns this memory surface.
         """
         settings = get_settings()
+        self._trust_domain = trust_domain
+        self._storage_plane = qdrant_storage_plane_for_domain(trust_domain)
+        connection = _qdrant_connection_settings(settings, self._storage_plane)
 
-        # Configure TLS if enabled
-        if settings.qdrant_use_tls:
+        if connection["use_tls"]:
             kwargs: dict[str, Any] = {
-                "url": settings.qdrant_url,
+                "url": connection["url"],
                 "https": True,
             }
-            if settings.qdrant_cert_path:
-                kwargs["verify"] = settings.qdrant_cert_path
+            if connection["cert_path"]:
+                kwargs["verify"] = connection["cert_path"]
             self._client = AsyncQdrantClient(**kwargs)
         else:
             self._client = AsyncQdrantClient(
-                host=settings.qdrant_host,
-                port=settings.qdrant_port,
+                host=connection["host"],
+                port=connection["port"],
             )
 
         self._embeddings = get_embeddings_client()
         self._encryptor = encryptor
         log.info(
             "qdrant_client_initialized",
-            url=settings.qdrant_url,
+            url=connection["url"],
             encryption_enabled=encryptor is not None,
-            tls_enabled=settings.qdrant_use_tls,
+            tls_enabled=connection["use_tls"],
+            trust_domain=trust_domain.value,
+            storage_plane=self._storage_plane.value,
         )
 
     async def initialize(self) -> None:

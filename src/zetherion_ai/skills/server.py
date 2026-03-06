@@ -4606,11 +4606,12 @@ def main() -> None:  # pragma: no cover — CLI entry-point
 
             from zetherion_ai.admin import TenantAdminManager
             from zetherion_ai.discord.user_manager import _SCHEMA_SQL
-            from zetherion_ai.security.encryption import FieldEncryptor
-            from zetherion_ai.security.keys import KeyManager
+            from zetherion_ai.security.domain_keys import build_runtime_encryptors
             from zetherion_ai.security.secret_resolver import SecretResolver
             from zetherion_ai.security.secrets import SecretsManager
             from zetherion_ai.settings_manager import SettingsManager
+            from zetherion_ai.trust.data_plane import ensure_postgres_isolation_schemas
+            from zetherion_ai.trust.scope import TrustDomain
 
             runtime_db_pool = await asyncpg.create_pool(
                 dsn=settings.postgres_dsn,
@@ -4623,17 +4624,15 @@ def main() -> None:  # pragma: no cover — CLI entry-point
                 log.info("skills_runtime_schema_ensured", note="concurrent creation resolved")
             else:
                 log.info("skills_runtime_schema_ensured")
+            await ensure_postgres_isolation_schemas(runtime_db_pool, settings)
             runtime_settings_manager = SettingsManager()
             await runtime_settings_manager.initialize(runtime_db_pool)
             set_settings_manager(runtime_settings_manager)
 
-            key_manager = KeyManager(
-                passphrase=settings.encryption_passphrase.get_secret_value(),
-                salt_path=settings.encryption_salt_path,
-            )
-            encryptor = FieldEncryptor(key=key_manager.key, strict=settings.encryption_strict)
+            encryptors = build_runtime_encryptors(settings)
+            tenant_encryptor = encryptors.tenant_data
 
-            runtime_secrets_manager = SecretsManager(encryptor=encryptor)
+            runtime_secrets_manager = SecretsManager(encryptor=tenant_encryptor)
             await runtime_secrets_manager.initialize(runtime_db_pool)
             set_secret_resolver(SecretResolver(runtime_secrets_manager, settings))
 
@@ -4644,7 +4643,10 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             try:
                 from zetherion_ai.memory.qdrant import QdrantMemory
 
-                tenant_vector_memory = QdrantMemory(encryptor=encryptor)
+                tenant_vector_memory = QdrantMemory(
+                    encryptor=tenant_encryptor,
+                    trust_domain=TrustDomain.TENANT_RAW,
+                )
                 await tenant_vector_memory.initialize()
             except Exception as exc:
                 tenant_vector_memory = None
@@ -4678,7 +4680,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
 
             tenant_admin_manager = TenantAdminManager(
                 pool=runtime_db_pool,
-                encryptor=encryptor,
+                encryptor=tenant_encryptor,
                 vector_memory=tenant_vector_memory,
             )
             await tenant_admin_manager.initialize()

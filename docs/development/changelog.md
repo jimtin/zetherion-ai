@@ -13,6 +13,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Segment 2 Data Plane Isolation Foundation (2026-03-06)
+
+- Impacted capability IDs:
+  - `isolation.data-plane.owner-tenant-qdrant-routing`
+  - `isolation.data-plane.object-storage-domain-prefixes`
+  - `isolation.data-plane.postgres-schema-bootstrap`
+  - `security.encryption.owner-tenant-domain-keys`
+- Impacted workflow scenario IDs:
+  - `isolation.segment2.owner-runtime-uses-owner-qdrant-config`
+  - `isolation.segment2.tenant-runtime-uses-tenant-qdrant-config`
+  - `isolation.segment2.object-storage-domain-prefix-and-legacy-fallback`
+  - `isolation.segment2.postgres-schema-bootstrap-additive`
+- Added owner-vs-tenant Qdrant configuration fallbacks, runtime routing, and
+  trust-domain logging so owner and tenant memory surfaces can be pointed at
+  separate vector planes without forcing an immediate data cutover.
+- Added trust-domain object-storage prefix enforcement with legacy read/delete
+  fallback so new tenant blob writes land under domain-scoped paths while
+  existing replay/document payloads remain readable during migration.
+- Added additive PostgreSQL schema bootstrap helpers and owner/tenant encryption
+  domain helpers, including wrapped tenant-key primitives for later per-tenant
+  key rollout work.
+
 ### Fixed - Windows Optional Service Deploy Guard (2026-03-06)
 
 - Impacted capability IDs:
