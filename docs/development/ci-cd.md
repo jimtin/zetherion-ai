@@ -19,8 +19,9 @@ Every code change passes through three automated quality tiers before reaching p
 +---------------------------------------------------------------+
 |  Tier 2: Local Push Gates                                      |
 |  Runs: on every git push (hook) and pre-merge validation       |
-|  Checks: canonical full production-parity pipeline via          |
-|          scripts/test-full.sh                                   |
+|  Checks: commit-state preflight + canonical full pipeline via  |
+|          scripts/run-local-gate-preflight.sh +                |
+|          scripts/test-full.sh                                  |
 |  Effect: blocks push/merge if checks fail                      |
 +---------------------------------------------------------------+
                              |
@@ -104,8 +105,9 @@ Bypassing hooks is discouraged. If you bypass locally, GitHub Actions CI will st
 
 Zetherion AI uses one canonical local validation path:
 
-1. `.git-hooks/pre-push` (automatic on `git push`) executes `scripts/test-full.sh`.
-2. `scripts/test-full.sh` can be run directly for manual full validation.
+1. `.git-hooks/pre-push` (automatic on `git push`) first runs `scripts/run-local-gate-preflight.sh` against the exact `<base, head>` push range.
+2. If preflight passes, it executes `scripts/test-full.sh`.
+3. `scripts/test-full.sh` can still be run directly for manual full validation once commit-state preflight is clean.
 
 ### Production-Parity Pipeline (`scripts/test-full.sh`)
 
@@ -123,7 +125,13 @@ Run it directly:
 bash scripts/test-full.sh
 ```
 
-When a PR is classified `e2e_required=true`, generate local receipt evidence for CI:
+Run the changed-file preflight directly when you need fast feedback before the full gate:
+
+```bash
+bash scripts/run-local-gate-preflight.sh --base-ref origin/main --head-ref HEAD
+```
+
+When a PR is classified `e2e_required=true`, generate local receipt evidence for CI after the full local gate passes:
 
 ```bash
 bash scripts/local-required-e2e-receipt.sh
@@ -436,7 +444,10 @@ git push
 | File | Purpose |
 |------|---------|
 | `.pre-commit-config.yaml` | Pre-commit hook definitions (7 hooks across 6 tool repositories) |
-| `.git-hooks/pre-push` | Lightweight pre-push hook (lint, type-check, unit tests) |
+| `.git-hooks/pre-push` | Commit-state preflight plus canonical full local gate orchestration |
+| `.ci/local_gate_manifest.json` | Source-controlled changed-file to local-gate requirement mappings |
+| `scripts/local_gate_plan.py` | Deterministic classifier that turns changed files into required local checks/tests |
+| `scripts/run-local-gate-preflight.sh` | Fast-fail pre-push runner for manifest-mapped docs, mypy, and regression suites |
 | `scripts/test-full.sh` | Full production-parity test pipeline (unit + integration + Docker E2E + Discord E2E) |
 | `scripts/ci_e2e_risk_classifier.py` | Changed-path risk classifier for required E2E enforcement |
 | `scripts/local-required-e2e-receipt.sh` | Local required-E2E runner + receipt writer (`.ci/e2e-receipt.json`) |
