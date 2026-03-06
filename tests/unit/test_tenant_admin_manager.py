@@ -2702,6 +2702,320 @@ def test_execution_step_coercion_and_actor_id_helpers() -> None:
     ) == ["repo.patch", "repo.pr.open"]
 
 
+def test_worker_rollout_and_coercion_helper_paths() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    tenant_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+
+    assert TenantAdminManager._coerce_worker_health_score("bad", default=88) == 88
+    assert TenantAdminManager._coerce_worker_health_score(999) == 100
+    assert TenantAdminManager._coerce_worker_health_score(-10) == 0
+
+    assert TenantAdminManager._coerce_setting_bool("true") is True
+    assert TenantAdminManager._coerce_setting_bool("0") is False
+    assert TenantAdminManager._coerce_setting_bool(None, default=True) is True
+
+    assert TenantAdminManager._coerce_setting_int("bad", default=7, minimum=1, maximum=10) == 7
+    assert TenantAdminManager._coerce_setting_int(99, default=7, minimum=1, maximum=10) == 10
+    assert TenantAdminManager._coerce_setting_int(-5, default=7, minimum=1, maximum=10) == 1
+
+    assert TenantAdminManager._coerce_setting_string_set([" node-1 ", "", "node-2"]) == {
+        "node-1",
+        "node-2",
+    }
+    assert TenantAdminManager._coerce_setting_string_set("node-1,node-2") == {"node-1", "node-2"}
+    assert TenantAdminManager._coerce_setting_string_set('["g-1","g-2"]') == {"g-1", "g-2"}
+
+    manager._settings_cache[(tenant_id, "security", "worker_rollout_stage")] = "invalid"
+    assert manager._worker_rollout_stage(tenant_id) == "general"
+
+    manager._settings_cache[(tenant_id, "security", "worker_canary_enabled")] = "true"
+    assert manager._worker_canary_global_enabled(tenant_id) is True
+
+    assert (
+        manager._worker_node_canary_enabled(
+            tenant_id=tenant_id,
+            node_id="node-1",
+            metadata={"canary_enabled": True},
+        )
+        is True
+    )
+    manager._settings_cache[(tenant_id, "security", "worker_canary_node_ids")] = "node-2,node-3"
+    assert (
+        manager._worker_node_canary_enabled(
+            tenant_id=tenant_id,
+            node_id="node-2",
+            metadata={},
+        )
+        is True
+    )
+    manager._settings_cache[(tenant_id, "security", "worker_canary_node_groups")] = '["blue"]'
+    assert (
+        manager.is_worker_node_canary_enabled(
+            tenant_id=tenant_id,
+            node_id="node-9",
+            metadata={"node_group": "blue"},
+        )
+        is True
+    )
+    assert (
+        manager.is_worker_node_canary_enabled(
+            tenant_id=tenant_id,
+            node_id="",
+            metadata={"node_group": "blue"},
+        )
+        is False
+    )
+
+    manager._settings_cache[(tenant_id, "security", "worker_claim_min_health_score")] = 200
+    manager._settings_cache[(tenant_id, "security", "worker_heartbeat_stale_seconds")] = 10
+    assert manager._worker_claim_min_health_score(tenant_id) == 100
+    assert manager._worker_heartbeat_stale_seconds(tenant_id) == 30
+
+    manager._settings_cache[(tenant_id, "security", "worker_auto_quarantine_enabled")] = "true"
+    manager._settings_cache[(tenant_id, "security", "worker_auto_quarantine_score_threshold")] = 45
+    manager._settings_cache[
+        (tenant_id, "security", "worker_auto_quarantine_consecutive_failures")
+    ] = 4
+    policy = manager._worker_auto_quarantine_policy(tenant_id)
+    assert policy["enabled"] is True
+    assert policy["score_threshold"] == 45
+    assert policy["failure_threshold"] == 4
+    assert (
+        manager._worker_quarantine_reason(
+            tenant_id=tenant_id,
+            health_score=40,
+            consecutive_failures=1,
+        )
+        == "health_score_threshold"
+    )
+    assert (
+        manager._worker_quarantine_reason(
+            tenant_id=tenant_id,
+            health_score=60,
+            consecutive_failures=4,
+        )
+        == "consecutive_failures_threshold"
+    )
+
+
+@pytest.mark.asyncio
+async def test_worker_dispatch_helper_eligibility_and_selection_paths() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    tenant_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    now = datetime.now(UTC)
+
+    assert (
+        await manager._worker_node_has_required_capabilities(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_id="node-1",
+            required_capabilities=[],
+        )
+        is True
+    )
+    conn.fetchval.return_value = 1
+    assert (
+        await manager._worker_node_has_required_capabilities(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_id="node-1",
+            required_capabilities=["repo.patch", "repo.pr.open"],
+        )
+        is False
+    )
+    conn.fetchval.return_value = 2
+    assert (
+        await manager._worker_node_has_required_capabilities(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_id="node-1",
+            required_capabilities=["repo.patch", "repo.pr.open"],
+        )
+        is True
+    )
+
+    eligible_row = {
+        "node_id": "node-1",
+        "status": "active",
+        "health_status": "healthy",
+        "health_score": 80,
+        "metadata": {"canary_enabled": True},
+        "last_heartbeat_at": now,
+    }
+    conn.fetchval.return_value = 1
+    assert (
+        await manager._worker_node_meets_dispatch_requirements(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_row=eligible_row,
+            required_capabilities=["repo.patch"],
+            require_canary=True,
+            min_health_score=70,
+            stale_seconds=120,
+            now=now,
+        )
+        is True
+    )
+    assert (
+        await manager._worker_node_meets_dispatch_requirements(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_row={**eligible_row, "status": "disabled"},
+            required_capabilities=[],
+            require_canary=False,
+            min_health_score=70,
+            stale_seconds=120,
+            now=now,
+        )
+        is False
+    )
+    assert (
+        await manager._worker_node_meets_dispatch_requirements(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_row={**eligible_row, "health_status": "unknown"},
+            required_capabilities=[],
+            require_canary=False,
+            min_health_score=70,
+            stale_seconds=120,
+            now=now,
+        )
+        is False
+    )
+    assert (
+        await manager._worker_node_meets_dispatch_requirements(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_row={**eligible_row, "health_score": 10},
+            required_capabilities=[],
+            require_canary=False,
+            min_health_score=70,
+            stale_seconds=120,
+            now=now,
+        )
+        is False
+    )
+    assert (
+        await manager._worker_node_meets_dispatch_requirements(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_row={**eligible_row, "last_heartbeat_at": now - timedelta(minutes=10)},
+            required_capabilities=[],
+            require_canary=False,
+            min_health_score=70,
+            stale_seconds=120,
+            now=now,
+        )
+        is False
+    )
+    assert (
+        await manager._worker_node_meets_dispatch_requirements(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_row={**eligible_row, "metadata": {}},
+            required_capabilities=[],
+            require_canary=True,
+            min_health_score=70,
+            stale_seconds=120,
+            now=now,
+        )
+        is False
+    )
+
+    manager._settings_cache[(tenant_id, "security", "worker_rollout_stage")] = "disabled"
+    assert (
+        await manager._is_worker_dispatch_target_eligible(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_id="node-1",
+            required_capabilities=["repo.patch"],
+        )
+        is False
+    )
+    manager._settings_cache[(tenant_id, "security", "worker_rollout_stage")] = "canary"
+    manager._settings_cache[(tenant_id, "security", "worker_canary_enabled")] = False
+    assert (
+        await manager._is_worker_dispatch_target_eligible(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_id="node-1",
+            required_capabilities=[],
+        )
+        is False
+    )
+    manager._settings_cache[(tenant_id, "security", "worker_rollout_stage")] = "general"
+    manager._worker_node_meets_dispatch_requirements = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    conn.fetchrow.return_value = dict(eligible_row)
+    assert (
+        await manager._is_worker_dispatch_target_eligible(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_id="node-1",
+            required_capabilities=[],
+        )
+        is True
+    )
+    conn.fetchrow.return_value = None
+    assert (
+        await manager._is_worker_dispatch_target_eligible(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_id="node-1",
+            required_capabilities=[],
+        )
+        is False
+    )
+
+    manager._settings_cache[(tenant_id, "security", "worker_rollout_stage")] = "disabled"
+    assert (
+        await manager._select_worker_dispatch_target_node(
+            conn=conn,
+            tenant_id=tenant_id,
+            required_capabilities=["repo.patch"],
+        )
+        is None
+    )
+    manager._settings_cache[(tenant_id, "security", "worker_rollout_stage")] = "canary"
+    manager._settings_cache[(tenant_id, "security", "worker_canary_enabled")] = False
+    assert (
+        await manager._select_worker_dispatch_target_node(
+            conn=conn,
+            tenant_id=tenant_id,
+            required_capabilities=[],
+        )
+        is None
+    )
+    manager._settings_cache[(tenant_id, "security", "worker_rollout_stage")] = "general"
+    manager._worker_node_meets_dispatch_requirements = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[False, True]
+    )
+    conn.fetch.return_value = [
+        {
+            "node_id": "node-0",
+            "status": "active",
+            "health_status": "healthy",
+            "health_score": 90,
+            "metadata": {},
+            "last_heartbeat_at": now,
+        },
+        {
+            "node_id": "node-1",
+            "status": "active",
+            "health_status": "healthy",
+            "health_score": 80,
+            "metadata": {},
+            "last_heartbeat_at": now,
+        },
+    ]
+    selected = await manager._select_worker_dispatch_target_node(
+        conn=conn,
+        tenant_id=tenant_id,
+        required_capabilities=["repo.patch"],
+    )
+    assert selected == "node-1"
+
+
 @pytest.mark.asyncio
 async def test_schedule_execution_continuation_success_and_failure_paths() -> None:
     manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
@@ -3324,6 +3638,53 @@ async def test_dispatch_and_claim_worker_job_error_paths() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dispatch_and_claim_rollout_guard_paths() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    tenant_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+
+    manager._select_worker_dispatch_target_node = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="No eligible worker node"):
+        await manager.dispatch_execution_step_to_worker(
+            tenant_id=tenant_id,
+            plan_id="11111111-1111-1111-1111-111111111111",
+            step=_execution_step_row(status="running", execution_target="any_worker"),
+            retry={"retry_id": "33333333-3333-3333-3333-333333333333"},
+            dispatcher_id="plan-worker-1",
+        )
+
+    manager._is_worker_dispatch_target_eligible = AsyncMock(return_value=False)  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="not eligible for dispatch"):
+        await manager.dispatch_execution_step_to_worker(
+            tenant_id=tenant_id,
+            plan_id="11111111-1111-1111-1111-111111111111",
+            step=_execution_step_row(status="running", execution_target="worker:node-1"),
+            retry={"retry_id": "44444444-4444-4444-4444-444444444444"},
+            dispatcher_id="plan-worker-1",
+        )
+
+    manager._settings_cache[(tenant_id, "security", "worker_rollout_stage")] = "disabled"
+    assert (
+        await manager.claim_worker_dispatch_job(
+            tenant_id=tenant_id,
+            node_id="node-1",
+            required_capabilities=["repo.patch"],
+        )
+        is None
+    )
+    manager._settings_cache[(tenant_id, "security", "worker_rollout_stage")] = "canary"
+    manager._settings_cache[(tenant_id, "security", "worker_canary_enabled")] = False
+    assert (
+        await manager.claim_worker_dispatch_job(
+            tenant_id=tenant_id,
+            node_id="node-1",
+            required_capabilities=["repo.patch"],
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
 async def test_claim_worker_job_enforces_messaging_grants_and_redaction() -> None:
     conn = _FakeConn()
     manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
@@ -3883,6 +4244,155 @@ async def test_submit_worker_job_result_duplicate_submission_is_idempotent_acros
     assert duplicate["accepted"] is True
     assert duplicate["idempotent"] is True
     assert duplicate["status"] == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_apply_worker_job_health_signal_updates_and_auto_quarantine() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    tenant_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    now = datetime.now(UTC)
+
+    conn.fetchrow.side_effect = [None]
+    assert (
+        await manager._apply_worker_job_health_signal(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_id="node-1",
+            succeeded=True,
+            actor_sub="worker:node-1",
+        )
+        is None
+    )
+
+    conn.fetchrow.side_effect = [
+        {
+            "node_id": "node-1",
+            "status": "active",
+            "health_status": "degraded",
+            "health_score": 70,
+            "consecutive_job_failures": 2,
+            "metadata": {},
+        },
+        {
+            "node_id": "node-1",
+            "tenant_id": tenant_id,
+            "node_name": "laptop",
+            "status": "active",
+            "health_status": "healthy",
+            "health_score": 75,
+            "consecutive_job_failures": 0,
+            "metadata": {},
+            "last_heartbeat_at": now,
+            "created_by": "seed",
+            "updated_by": "worker:node-1",
+            "created_at": now,
+            "updated_at": now,
+        },
+    ]
+    success_snapshot = await manager._apply_worker_job_health_signal(
+        conn=conn,
+        tenant_id=tenant_id,
+        node_id="node-1",
+        succeeded=True,
+        actor_sub="worker:node-1",
+    )
+    assert success_snapshot is not None
+    assert success_snapshot["status"] == "active"
+    assert success_snapshot["health_status"] == "healthy"
+    assert success_snapshot["auto_quarantined"] is False
+
+    manager._settings_cache[(tenant_id, "security", "worker_auto_quarantine_enabled")] = True
+    manager._settings_cache[(tenant_id, "security", "worker_auto_quarantine_score_threshold")] = 50
+    manager._settings_cache[
+        (tenant_id, "security", "worker_auto_quarantine_consecutive_failures")
+    ] = 3
+    conn.execute = AsyncMock(return_value="UPDATE 1")
+    conn.fetchrow.side_effect = [
+        {
+            "node_id": "node-1",
+            "status": "active",
+            "health_status": "healthy",
+            "health_score": 65,
+            "consecutive_job_failures": 2,
+            "metadata": {},
+        },
+        {
+            "node_id": "node-1",
+            "tenant_id": tenant_id,
+            "node_name": "laptop",
+            "status": "quarantined",
+            "health_status": "degraded",
+            "health_score": 50,
+            "consecutive_job_failures": 3,
+            "metadata": {"auto_quarantine": {"reason": "consecutive_failures_threshold"}},
+            "last_heartbeat_at": now,
+            "created_by": "seed",
+            "updated_by": "worker:node-1",
+            "created_at": now,
+            "updated_at": now,
+        },
+    ]
+    failure_snapshot = await manager._apply_worker_job_health_signal(
+        conn=conn,
+        tenant_id=tenant_id,
+        node_id="node-1",
+        succeeded=False,
+        actor_sub="worker:node-1",
+    )
+    assert failure_snapshot is not None
+    assert failure_snapshot["status"] == "quarantined"
+    assert failure_snapshot["auto_quarantined"] is True
+    conn.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_worker_node_respects_health_score_hint_and_quarantine() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    tenant_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    now = datetime.now(UTC)
+
+    manager._settings_cache[(tenant_id, "security", "worker_auto_quarantine_enabled")] = True
+    manager._settings_cache[(tenant_id, "security", "worker_auto_quarantine_score_threshold")] = 50
+    manager._settings_cache[
+        (tenant_id, "security", "worker_auto_quarantine_consecutive_failures")
+    ] = 3
+    conn.fetchrow.side_effect = [
+        {
+            "status": "registered",
+            "health_status": "healthy",
+            "health_score": 80,
+            "consecutive_job_failures": 0,
+            "metadata": {},
+        },
+        {
+            "node_id": "node-1",
+            "tenant_id": tenant_id,
+            "node_name": "laptop",
+            "status": "quarantined",
+            "health_status": "degraded",
+            "health_score": 40,
+            "consecutive_job_failures": 0,
+            "metadata": {"auto_quarantine": {"reason": "health_score_threshold"}},
+            "last_heartbeat_at": now,
+            "created_by": "seed",
+            "updated_by": "worker-heartbeat",
+            "created_at": now,
+            "updated_at": now,
+        },
+    ]
+
+    heartbeat = await manager.heartbeat_worker_node(
+        tenant_id=tenant_id,
+        node_id="node-1",
+        health_status="healthy",
+        metadata={"health_score": 40},
+        actor_sub="worker-heartbeat",
+    )
+    assert heartbeat["status"] == "quarantined"
+    assert heartbeat["health_status"] == "degraded"
+    assert heartbeat["health_score"] == 40
 
 
 @pytest.mark.asyncio
