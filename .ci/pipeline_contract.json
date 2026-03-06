@@ -20,10 +20,15 @@
       "local_stage": "ci-heavy-only",
       "note": "semgrep runs only in heavy CI mode (manual/nightly)."
     },
+    "secret-scan": {
+      "local_equivalent": true,
+      "local_stage": "static-analysis",
+      "note": "gitleaks diff scan runs in PR CI; full-history scan runs weekly/manual."
+    },
     "dependency-audit": {
       "local_equivalent": true,
       "local_stage": "unit+mypy",
-      "note": "pip-audit is required in scripts/pre-push-tests.sh"
+      "note": "pip-audit is required in scripts/pre-push-tests.sh and runs in heavy CI mode weekly/manual."
     },
     "license-check": {
       "local_equivalent": true,
@@ -53,12 +58,12 @@
     "unit-test": {
       "local_equivalent": true,
       "local_stage": "unit+mypy",
-      "note": "unit tests with coverage >=90% are required locally"
+      "note": "unit tests with coverage >=90% are required locally; PR CI runs 3.12 while 3.13 runs weekly/manual."
     },
     "integration-test": {
       "local_equivalent": true,
       "local_stage": "integration",
-      "note": "integration suites run in canonical local pipeline"
+      "note": "integration suites run in canonical local pipeline and heavy CI mode (weekly/manual)."
     }
   }
 }

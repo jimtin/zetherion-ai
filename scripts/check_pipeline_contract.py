@@ -11,6 +11,7 @@ REQUIRED_JOBS = {
     "type-check",
     "security",
     "semgrep",
+    "secret-scan",
     "dependency-audit",
     "license-check",
     "pre-commit",
