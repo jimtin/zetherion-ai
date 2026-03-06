@@ -12,6 +12,10 @@ This API is distinct from the internal Skills API (`:8080`) and is not the publi
 client contract. External clients must integrate through CGS `/service/ai/v1`.
 
 Maintenance note (2026-03-05):
+- Segment 2 data-plane isolation foundation added owner-vs-tenant Qdrant routing,
+  scoped object-storage prefixes, additive PostgreSQL isolation schemas, and
+  owner-vs-tenant encryption domains behind the upstream runtime.
+- No `/api/v1` route, method, auth, or payload contract changed in this segment.
 - Added tenant messaging upstream routes:
   - `GET /api/v1/messaging/chats`
   - `GET /api/v1/messaging/messages`
