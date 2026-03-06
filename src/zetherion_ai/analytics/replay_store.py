@@ -252,7 +252,7 @@ def create_replay_store_from_settings(
         local_path = str(
             _settings_value(settings, "object_storage_local_path", "replay_storage_local_path")
         )
-        store: ReplayStore | None = LocalReplayStore(root_path=local_path)
+        store: ReplayStore = LocalReplayStore(root_path=local_path)
         if trust_domain is not None:
             return ScopedReplayStore(store, trust_domain=trust_domain)
         return store
