@@ -16,6 +16,11 @@ from zetherion_ai.routing.personality import (
     SentenceLength,
     VocabularyLevel,
 )
+from zetherion_ai.trust.scope import (
+    DataScope,
+    assemble_prompt_fragments,
+    prompt_fragment,
+)
 
 
 def _enum_values(enum_cls: type[StrEnum]) -> str:
@@ -77,7 +82,7 @@ def build_personality_prompt(
     if owner_email:
         context_line = f"Owner email: {owner_email}\n"
 
-    return (
+    instructions = (
         "Analyse this message and extract personality and relationship signals "
         "into a single JSON object with ALL of these fields:\n"
         "\n"
@@ -132,12 +137,28 @@ def build_personality_prompt(
         "- Use ONLY the exact enum values listed above — do not invent alternatives\n"
         "- Return ONLY the JSON object, no other text\n"
         "\n"
-        f"{context_line}"
-        "\n"
+        f"{context_line}".rstrip()
+    )
+    message_block = (
         "MESSAGE:\n"
         f"Subject: {subject}\n"
         f"From: {from_email}\n"
         f"To: {to_emails}\n"
         "Body:\n"
         f"{body_text[:max_body_chars]}"
+    )
+    return assemble_prompt_fragments(
+        [
+            prompt_fragment(
+                instructions,
+                scope=DataScope.CONTROL_PLANE,
+                source="zetherion_ai.routing.personality_prompt.instructions",
+            ),
+            prompt_fragment(
+                message_block,
+                scope=DataScope.OWNER_PERSONAL,
+                source="zetherion_ai.routing.personality_prompt.message_block",
+            ),
+        ],
+        purpose="routing.email.personality_prompt",
     )

@@ -14,6 +14,11 @@ from zetherion_ai.routing.classification import (
     EmailSentiment,
     UrgencyTrend,
 )
+from zetherion_ai.trust.scope import (
+    DataScope,
+    assemble_prompt_fragments,
+    prompt_fragment,
+)
 
 
 def _enum_values(enum_cls: type[StrEnum]) -> str:
@@ -71,7 +76,7 @@ def build_classification_prompt(
     sentiments = _enum_values(EmailSentiment)
     trends = _enum_values(UrgencyTrend)
 
-    return (
+    instructions = (
         "Classify this email into a single JSON object with ALL of these fields:\n"
         "\n"
         "{\n"
@@ -111,12 +116,28 @@ def build_classification_prompt(
         "- Return ONLY the JSON object, no other text\n"
         "\n"
         f"User timezone: {user_timezone}\n"
-        f"Current datetime: {current_datetime}\n"
-        "\n"
+        f"Current datetime: {current_datetime}"
+    )
+    email_block = (
         "EMAIL:\n"
         f"Subject: {subject}\n"
         f"From: {from_email}\n"
         f"To: {to_emails}\n"
         "Body:\n"
         f"{body_text[:max_body_chars]}"
+    )
+    return assemble_prompt_fragments(
+        [
+            prompt_fragment(
+                instructions,
+                scope=DataScope.CONTROL_PLANE,
+                source="zetherion_ai.routing.classification_prompt.instructions",
+            ),
+            prompt_fragment(
+                email_block,
+                scope=DataScope.OWNER_PERSONAL,
+                source="zetherion_ai.routing.classification_prompt.email_block",
+            ),
+        ],
+        purpose="routing.email.classification_prompt",
     )

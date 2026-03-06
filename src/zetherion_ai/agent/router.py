@@ -14,6 +14,13 @@ from zetherion_ai.agent.prompts import SIMPLE_CHAT_PROMPT
 from zetherion_ai.agent.providers import Provider, TaskType
 from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
+from zetherion_ai.trust.scope import (
+    DataScope,
+    ScopedPrincipal,
+    TrustDomain,
+    assemble_prompt_fragments,
+    prompt_fragment,
+)
 
 log = get_logger("zetherion_ai.agent.router")
 
@@ -162,6 +169,52 @@ Respond with ONLY a JSON object:
 """
 
 
+def _owner_router_principal() -> ScopedPrincipal:
+    return ScopedPrincipal(
+        principal_id="owner_user",
+        principal_type="owner_user",
+        trust_domain=TrustDomain.OWNER_PERSONAL,
+    )
+
+
+def _build_router_prompt(message: str) -> str:
+    return assemble_prompt_fragments(
+        [
+            prompt_fragment(
+                ROUTER_PROMPT,
+                scope=DataScope.CONTROL_PLANE,
+                source="zetherion_ai.agent.router.ROUTER_PROMPT",
+            ),
+            prompt_fragment(
+                f"User message: {message}",
+                scope=DataScope.OWNER_PERSONAL,
+                source="zetherion_ai.agent.router.user_message",
+            ),
+        ],
+        purpose="agent.router.classification_prompt",
+        principal=_owner_router_principal(),
+    )
+
+
+def _build_simple_chat_prompt(message: str) -> str:
+    return assemble_prompt_fragments(
+        [
+            prompt_fragment(
+                SIMPLE_CHAT_PROMPT,
+                scope=DataScope.CONTROL_PLANE,
+                source="zetherion_ai.agent.prompts.SIMPLE_CHAT_PROMPT",
+            ),
+            prompt_fragment(
+                f"User: {message}",
+                scope=DataScope.OWNER_PERSONAL,
+                source="zetherion_ai.agent.router.simple_user_message",
+            ),
+        ],
+        purpose="agent.router.simple_chat_prompt",
+        principal=_owner_router_principal(),
+    )
+
+
 class GeminiRouterBackend:
     """Router backend using Gemini Flash."""
 
@@ -186,7 +239,7 @@ class GeminiRouterBackend:
             def _sync_classify() -> Any:
                 return self._client.models.generate_content(
                     model=self._model,
-                    contents=f"{ROUTER_PROMPT}\n\nUser message: {message}",
+                    contents=_build_router_prompt(message),
                     config={
                         "temperature": 0.1,  # Low temperature for consistent classification
                         "max_output_tokens": 150,
@@ -317,7 +370,7 @@ class GeminiRouterBackend:
             def _sync_generate() -> Any:
                 return self._client.models.generate_content(
                     model=self._model,
-                    contents=f"{SIMPLE_CHAT_PROMPT}\n\nUser: {message}",
+                    contents=_build_simple_chat_prompt(message),
                     config={
                         "temperature": 0.7,
                         "max_output_tokens": 500,
@@ -371,7 +424,7 @@ class GroqRouterBackend:
         """Classify a message via InferenceBroker classification task."""
         try:
             result = await self._inference.infer(
-                prompt=f"{ROUTER_PROMPT}\n\nUser message: {message}",
+                prompt=_build_router_prompt(message),
                 task_type=TaskType.CLASSIFICATION,
                 max_tokens=150,
                 temperature=0.1,
@@ -430,7 +483,7 @@ class GroqRouterBackend:
         """Generate a simple response via InferenceBroker simple_qa task."""
         try:
             result = await self._inference.infer(
-                prompt=f"{SIMPLE_CHAT_PROMPT}\n\nUser: {message}",
+                prompt=_build_simple_chat_prompt(message),
                 task_type=TaskType.SIMPLE_QA,
                 max_tokens=500,
                 temperature=0.7,
