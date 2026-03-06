@@ -90,7 +90,7 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
 
       - name: Upload risk classifier receipt
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
         if: always()
         with:
           name: e2e-risk-classifier
@@ -456,7 +456,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: Upload coverage report as artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
         if: matrix.upload_coverage
         with:
           name: coverage-report
@@ -484,7 +484,7 @@ jobs:
           bash scripts/ci-required-e2e-gate.sh
 
       - name: Upload E2E contract receipt
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
         if: always()
         with:
           name: e2e-contract-receipt
@@ -761,7 +761,7 @@ jobs:
             --job-results "risk-classifier=${{ needs.risk-classifier.result }},lint=${{ needs.lint.result }},type-check=${{ needs.type-check.result }},security=${{ needs.security.result }},semgrep=${{ needs.semgrep.result }},secret-scan=${{ needs.secret-scan.result }},dependency-audit=${{ needs.dependency-audit.result }},license-check=${{ needs.license-check.result }},pre-commit=${{ needs.pre-commit.result }},docs-contract=${{ needs.docs-contract.result }},pipeline-contract=${{ needs.pipeline-contract.result }},zetherion-boundary-check=${{ needs.zetherion-boundary-check.result }},unit-test=${{ needs.unit-test.result }},required-e2e-gate=${{ needs.required-e2e-gate.result }},integration-test=${{ needs.integration-test.result }},docker-build-test=${{ needs.docker-build-test.result }}"
 
       - name: Upload attribution artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
         if: always()
         with:
           name: ci-failure-attribution
