@@ -3115,6 +3115,13 @@ class SkillsServer:
             )
             status_value = str(session_ctx.get("status") or "").strip().lower()
             health_value = str(session_ctx.get("health_status") or "").strip().lower()
+            node_metadata_raw = session_ctx.get("node_metadata")
+            node_metadata = node_metadata_raw if isinstance(node_metadata_raw, dict) else {}
+            node_canary_enabled = self._tenant_admin_manager.is_worker_node_canary_enabled(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                metadata=node_metadata,
+            )
             node_registered = status_value in {"registered", "active"}
             node_healthy = (
                 status_value not in {"quarantined", "disabled"} and health_value == "healthy"
@@ -3133,6 +3140,7 @@ class SkillsServer:
                     "node_registered": node_registered,
                     "node_healthy": node_healthy,
                     "capability_allowlisted": capability_allowlisted,
+                    "node_canary_enabled": node_canary_enabled,
                 },
             )
             if not decision.allowed:
@@ -3282,6 +3290,13 @@ class SkillsServer:
             )
             status_value = str(session_ctx.get("status") or "").strip().lower()
             health_value = str(session_ctx.get("health_status") or "").strip().lower()
+            node_metadata_raw = session_ctx.get("node_metadata")
+            node_metadata = node_metadata_raw if isinstance(node_metadata_raw, dict) else {}
+            node_canary_enabled = self._tenant_admin_manager.is_worker_node_canary_enabled(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                metadata=node_metadata,
+            )
             node_registered = status_value in {"registered", "active"}
             node_healthy = (
                 status_value not in {"quarantined", "disabled"} and health_value == "healthy"
@@ -3300,6 +3315,7 @@ class SkillsServer:
                     "node_registered": node_registered,
                     "node_healthy": node_healthy,
                     "capability_allowlisted": capability_allowlisted,
+                    "node_canary_enabled": node_canary_enabled,
                 },
             )
             if not decision.allowed:

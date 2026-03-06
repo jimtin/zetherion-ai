@@ -3142,12 +3142,30 @@ async def test_fail_execution_step_terminal_and_error_paths() -> None:
 async def test_dispatch_execution_step_to_worker_and_claim_paths() -> None:
     conn = _FakeConn()
     manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    manager._select_worker_dispatch_target_node = AsyncMock(return_value="node-1")  # type: ignore[method-assign]
+    manager._worker_node_meets_dispatch_requirements = AsyncMock(return_value=True)  # type: ignore[method-assign]
 
+    queued = _worker_job_row(status="queued", execution_target="any_worker")
+    queued["target_node_id"] = "node-1"
+    claimed = _worker_job_row(
+        status="running",
+        execution_target="any_worker",
+        claimed_by_node_id="node-1",
+    )
+    claimed["target_node_id"] = "node-1"
     conn.fetchrow.side_effect = [
-        _worker_job_row(status="queued"),
-        _worker_job_row(status="running"),
+        queued,
+        {"node_id": "node-1"},
+        claimed,
     ]
-    conn.fetch.side_effect = [[_worker_job_row(status="queued", execution_target="any_worker")]]
+    conn.fetch.side_effect = [
+        [
+            {
+                **_worker_job_row(status="queued", execution_target="any_worker"),
+                "target_node_id": "node-1",
+            }
+        ]
+    ]
     conn.fetchval.side_effect = [1]
 
     dispatch = await manager.dispatch_execution_step_to_worker(
@@ -3166,13 +3184,13 @@ async def test_dispatch_execution_step_to_worker_and_claim_paths() -> None:
     )
     assert dispatch["status"] == "queued"
 
-    claimed = await manager.claim_worker_dispatch_job(
+    claimed_job = await manager.claim_worker_dispatch_job(
         tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
         node_id="node-1",
         required_capabilities=["repo.patch", "repo.pr.open"],
     )
-    assert claimed is not None
-    assert claimed["status"] == "running"
+    assert claimed_job is not None
+    assert claimed_job["status"] == "running"
     assert conn.execute.await_count >= 3
 
     with pytest.raises(ValueError, match="windows_local"):
@@ -3212,6 +3230,8 @@ async def test_dispatch_and_claim_worker_job_error_paths() -> None:
 
     conn = _FakeConn()
     manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    manager._select_worker_dispatch_target_node = AsyncMock(return_value="node-1")  # type: ignore[method-assign]
+    manager._is_worker_dispatch_target_eligible = AsyncMock(return_value=True)  # type: ignore[method-assign]
     conn.fetchrow.side_effect = [
         _worker_job_row(status="queued"),
         _worker_job_row(status="queued"),
@@ -3253,14 +3273,21 @@ async def test_dispatch_and_claim_worker_job_error_paths() -> None:
             dispatcher_id="plan-worker-1",
         )
 
+    claim_conn = _FakeConn()
+    claim_manager = TenantAdminManager(pool=_FakePool(claim_conn))  # type: ignore[arg-type]
+    claim_manager._worker_node_meets_dispatch_requirements = AsyncMock(  # type: ignore[method-assign]
+        return_value=True
+    )
+
     with pytest.raises(ValueError, match="Missing node_id"):
-        await manager.claim_worker_dispatch_job(
+        await claim_manager.claim_worker_dispatch_job(
             tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
             node_id="",
         )
 
-    conn.fetch.return_value = []
-    no_candidates = await manager.claim_worker_dispatch_job(
+    claim_conn.fetchrow.return_value = {"node_id": "node-1"}
+    claim_conn.fetch.return_value = []
+    no_candidates = await claim_manager.claim_worker_dispatch_job(
         tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
         node_id="node-1",
         required_capabilities=["repo.patch"],
@@ -3268,16 +3295,16 @@ async def test_dispatch_and_claim_worker_job_error_paths() -> None:
     assert no_candidates is None
 
     candidate = _worker_job_row(status="queued", required_capabilities=["repo.patch"])
-    conn.fetch.return_value = [candidate]
-    skipped_subset = await manager.claim_worker_dispatch_job(
+    claim_conn.fetch.return_value = [candidate]
+    skipped_subset = await claim_manager.claim_worker_dispatch_job(
         tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
         node_id="node-1",
         required_capabilities=["repo.pr.open"],
     )
     assert skipped_subset is None
 
-    conn.fetchval.return_value = 0
-    skipped_allowlist = await manager.claim_worker_dispatch_job(
+    claim_conn.fetchval.return_value = 0
+    skipped_allowlist = await claim_manager.claim_worker_dispatch_job(
         tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
         node_id="node-1",
         required_capabilities=["repo.patch"],
@@ -3285,11 +3312,10 @@ async def test_dispatch_and_claim_worker_job_error_paths() -> None:
     assert skipped_allowlist is None
 
     candidate["max_runtime_seconds"] = None
-    conn.fetch.return_value = [candidate]
-    conn.fetchval.return_value = 1
-    conn.fetchrow.side_effect = None
-    conn.fetchrow.return_value = None
-    no_claim = await manager.claim_worker_dispatch_job(
+    claim_conn.fetch.return_value = [candidate]
+    claim_conn.fetchval.return_value = 1
+    claim_conn.fetchrow.side_effect = [{"node_id": "node-1"}, None]
+    no_claim = await claim_manager.claim_worker_dispatch_job(
         tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
         node_id="node-1",
         required_capabilities=["repo.patch"],
@@ -3301,6 +3327,7 @@ async def test_dispatch_and_claim_worker_job_error_paths() -> None:
 async def test_claim_worker_job_enforces_messaging_grants_and_redaction() -> None:
     conn = _FakeConn()
     manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    manager._worker_node_meets_dispatch_requirements = AsyncMock(return_value=True)  # type: ignore[method-assign]
 
     messaging_candidate = _worker_job_row(
         status="queued",
@@ -3315,6 +3342,7 @@ async def test_claim_worker_job_enforces_messaging_grants_and_redaction() -> Non
     )
 
     denied_reasons: list[dict[str, Any]] = []
+    conn.fetchrow.side_effect = [{"node_id": "node-1"}]
     conn.fetch.return_value = [messaging_candidate]
     conn.fetchval.return_value = 1
     manager.get_active_worker_messaging_grant = AsyncMock(return_value=None)  # type: ignore[method-assign]
@@ -3329,12 +3357,15 @@ async def test_claim_worker_job_enforces_messaging_grants_and_redaction() -> Non
     assert denied_reasons[0]["reason"] == "grant_required"
 
     conn.fetch.return_value = [messaging_candidate]
-    conn.fetchrow.return_value = _worker_job_row(
-        status="running",
-        required_capabilities=[],
-        action="messaging.read",
-        payload_json=dict(messaging_candidate["payload_json"]),
-    )
+    conn.fetchrow.side_effect = [
+        {"node_id": "node-1"},
+        _worker_job_row(
+            status="running",
+            required_capabilities=[],
+            action="messaging.read",
+            payload_json=dict(messaging_candidate["payload_json"]),
+        ),
+    ]
     manager.get_active_worker_messaging_grant = AsyncMock(  # type: ignore[method-assign]
         return_value={
             "grant_id": "55555555-5555-5555-5555-555555555555",
@@ -3353,6 +3384,43 @@ async def test_claim_worker_job_enforces_messaging_grants_and_redaction() -> Non
     assert payload["text"] == "[REDACTED]"
     assert payload["nested"]["body"] == "[REDACTED]"
     assert payload["worker_messaging_access"]["redacted_payload"] is True
+
+
+@pytest.mark.asyncio
+async def test_claim_worker_dispatch_job_handles_lease_collision_between_nodes() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    manager._worker_node_meets_dispatch_requirements = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+    candidate = _worker_job_row(status="queued", execution_target="any_worker")
+    claimed_by_node_2 = _worker_job_row(
+        status="running",
+        execution_target="any_worker",
+        claimed_by_node_id="node-2",
+    )
+    conn.fetch.return_value = [candidate]
+    conn.fetchval.return_value = 1
+    conn.fetchrow.side_effect = [
+        {"node_id": "node-1"},
+        None,
+        {"node_id": "node-2"},
+        claimed_by_node_2,
+    ]
+
+    node_1_claim = await manager.claim_worker_dispatch_job(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        required_capabilities=["repo.patch"],
+    )
+    node_2_claim = await manager.claim_worker_dispatch_job(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-2",
+        required_capabilities=["repo.patch"],
+    )
+
+    assert node_1_claim is None
+    assert node_2_claim is not None
+    assert node_2_claim["claimed_by_node_id"] == "node-2"
 
 
 @pytest.mark.asyncio
@@ -3637,6 +3705,9 @@ async def test_worker_messaging_grant_error_and_idempotent_paths() -> None:
 async def test_submit_worker_job_result_success_failure_and_idempotent() -> None:
     conn = _FakeConn()
     manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    manager._apply_worker_job_health_signal = AsyncMock(  # type: ignore[method-assign]
+        return_value={"node_id": "node-1", "health_score": 95}
+    )
     manager.complete_execution_step = AsyncMock(  # type: ignore[method-assign]
         return_value={
             "plan": _execution_plan_row(status="completed"),
@@ -3784,6 +3855,34 @@ async def test_submit_worker_job_result_error_paths() -> None:
             job_id="44444444-4444-4444-4444-444444444444",
             completion_status="failed",
         )
+
+
+@pytest.mark.asyncio
+async def test_submit_worker_job_result_duplicate_submission_is_idempotent_across_nodes() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    conn.fetchrow.side_effect = [
+        {
+            "job_id": "44444444-4444-4444-4444-444444444444",
+            "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "plan_id": "11111111-1111-1111-1111-111111111111",
+            "step_id": "22222222-2222-2222-2222-222222222222",
+            "retry_id": "33333333-3333-3333-3333-333333333333",
+            "status": "succeeded",
+            "claimed_by_node_id": "node-1",
+        }
+    ]
+
+    duplicate = await manager.submit_worker_job_result(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-2",
+        job_id="44444444-4444-4444-4444-444444444444",
+        completion_status="failed",
+        error={"message": "late duplicate from peer node"},
+    )
+    assert duplicate["accepted"] is True
+    assert duplicate["idempotent"] is True
+    assert duplicate["status"] == "succeeded"
 
 
 @pytest.mark.asyncio

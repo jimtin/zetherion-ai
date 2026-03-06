@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock
@@ -201,20 +202,29 @@ async def test_worker_registry_mutations_and_queries_paths() -> None:
     )
     assert rotated["session_id"] == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 
-    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
-        return_value={
+    conn.fetchrow.side_effect = [
+        {
+            "status": "registered",
+            "health_status": "healthy",
+            "health_score": 85,
+            "consecutive_job_failures": 0,
+            "metadata": {},
+        },
+        {
             "tenant_id": "11111111-1111-1111-1111-111111111111",
             "node_id": "node-1",
             "status": "active",
             "health_status": "healthy",
+            "health_score": 87,
+            "consecutive_job_failures": 0,
             "metadata": {},
             "last_heartbeat_at": datetime.now(UTC),
             "created_by": "worker-bootstrap",
             "updated_by": "worker-heartbeat",
             "created_at": datetime.now(UTC),
             "updated_at": datetime.now(UTC),
-        }
-    )
+        },
+    ]
     heartbeat = await manager.heartbeat_worker_node(
         tenant_id="11111111-1111-1111-1111-111111111111",
         node_id="node-1",
@@ -592,13 +602,16 @@ async def test_worker_job_listing_and_detail_paths() -> None:
 
 @pytest.mark.asyncio
 async def test_set_worker_node_status_updates_and_audits() -> None:
-    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
     tenant_id = "11111111-1111-1111-1111-111111111111"
     before = {
         "tenant_id": tenant_id,
         "node_id": "node-1",
         "status": "active",
         "health_status": "healthy",
+        "health_score": 90,
+        "consecutive_job_failures": 0,
         "capabilities": ["repo.patch"],
     }
     after = {
@@ -606,10 +619,12 @@ async def test_set_worker_node_status_updates_and_audits() -> None:
         "node_id": "node-1",
         "status": "quarantined",
         "health_status": "degraded",
+        "health_score": 65,
+        "consecutive_job_failures": 0,
         "capabilities": ["repo.patch"],
     }
     manager.get_worker_node = AsyncMock(side_effect=[before, after])  # type: ignore[method-assign]
-    manager._fetchrow = AsyncMock(return_value={"node_id": "node-1"})  # type: ignore[method-assign]
+    conn.fetchrow = AsyncMock(return_value={"node_id": "node-1"})
     manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
 
     updated = await manager.set_worker_node_status(
@@ -622,10 +637,12 @@ async def test_set_worker_node_status_updates_and_audits() -> None:
     assert updated["status"] == "quarantined"
     assert updated["health_status"] == "degraded"
 
-    update_call = manager._fetchrow.await_args
+    update_call = conn.fetchrow.await_args
     assert update_call.args[3] == "quarantined"
     assert update_call.args[4] == "degraded"
-    assert update_call.args[5] == '{"reason": "manual-review"}'
+    metadata_payload = json.loads(update_call.args[7])
+    assert metadata_payload["reason"] == "manual-review"
+    assert "quarantine" in metadata_payload
     manager._write_audit.assert_awaited_once()
 
 
@@ -774,16 +791,20 @@ async def test_worker_status_update_validation_and_reload_paths() -> None:
                 "node_id": "node-1",
                 "status": "registered",
                 "health_status": "unknown",
+                "health_score": 100,
+                "consecutive_job_failures": 0,
             },
             {
                 "tenant_id": tenant_id,
                 "node_id": "node-1",
                 "status": "active",
                 "health_status": "healthy",
+                "health_score": 100,
+                "consecutive_job_failures": 0,
             },
         ]
     )
-    active_manager._fetchrow = AsyncMock(return_value={"node_id": "node-1"})  # type: ignore[method-assign]
+    active_conn.fetchrow = AsyncMock(return_value={"node_id": "node-1"})
     active_manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
     await active_manager.set_worker_node_status(
         tenant_id=tenant_id,
@@ -792,7 +813,7 @@ async def test_worker_status_update_validation_and_reload_paths() -> None:
         actor=_actor(),
         health_status=None,
     )
-    active_call = active_manager._fetchrow.await_args
+    active_call = active_conn.fetchrow.await_args
     assert active_call.args[4] == "healthy"
 
     explicit_conn = _FakeConn()
@@ -804,16 +825,20 @@ async def test_worker_status_update_validation_and_reload_paths() -> None:
                 "node_id": "node-1",
                 "status": "active",
                 "health_status": "healthy",
+                "health_score": 95,
+                "consecutive_job_failures": 0,
             },
             {
                 "tenant_id": tenant_id,
                 "node_id": "node-1",
                 "status": "active",
                 "health_status": "degraded",
+                "health_score": 95,
+                "consecutive_job_failures": 0,
             },
         ]
     )
-    explicit_manager._fetchrow = AsyncMock(return_value={"node_id": "node-1"})  # type: ignore[method-assign]
+    explicit_conn.fetchrow = AsyncMock(return_value={"node_id": "node-1"})
     explicit_manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
     await explicit_manager.set_worker_node_status(
         tenant_id=tenant_id,
@@ -822,19 +847,22 @@ async def test_worker_status_update_validation_and_reload_paths() -> None:
         actor=_actor(),
         health_status="degraded",
     )
-    explicit_call = explicit_manager._fetchrow.await_args
+    explicit_call = explicit_conn.fetchrow.await_args
     assert explicit_call.args[4] == "degraded"
 
-    update_fail_manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    update_fail_conn = _FakeConn()
+    update_fail_manager = TenantAdminManager(pool=_FakePool(update_fail_conn))  # type: ignore[arg-type]
     update_fail_manager.get_worker_node = AsyncMock(  # type: ignore[method-assign]
         return_value={
             "tenant_id": tenant_id,
             "node_id": "node-1",
             "status": "active",
             "health_status": "healthy",
+            "health_score": 95,
+            "consecutive_job_failures": 0,
         }
     )
-    update_fail_manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    update_fail_conn.fetchrow = AsyncMock(return_value=None)
     with pytest.raises(RuntimeError, match="Failed to update worker node status"):
         await update_fail_manager.set_worker_node_status(
             tenant_id=tenant_id,
@@ -843,7 +871,8 @@ async def test_worker_status_update_validation_and_reload_paths() -> None:
             actor=_actor(),
         )
 
-    reload_fail_manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    reload_fail_conn = _FakeConn()
+    reload_fail_manager = TenantAdminManager(pool=_FakePool(reload_fail_conn))  # type: ignore[arg-type]
     reload_fail_manager.get_worker_node = AsyncMock(  # type: ignore[method-assign]
         side_effect=[
             {
@@ -851,11 +880,13 @@ async def test_worker_status_update_validation_and_reload_paths() -> None:
                 "node_id": "node-1",
                 "status": "active",
                 "health_status": "healthy",
+                "health_score": 95,
+                "consecutive_job_failures": 0,
             },
             None,
         ]
     )
-    reload_fail_manager._fetchrow = AsyncMock(return_value={"node_id": "node-1"})  # type: ignore[method-assign]
+    reload_fail_conn.fetchrow = AsyncMock(return_value={"node_id": "node-1"})
     with pytest.raises(RuntimeError, match="Failed to reload worker node"):
         await reload_fail_manager.set_worker_node_status(
             tenant_id=tenant_id,

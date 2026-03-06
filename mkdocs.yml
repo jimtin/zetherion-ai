@@ -88,6 +88,7 @@ nav:
       - Setup & Contributing: development/setup.md
       - Testing: development/testing.md
       - CI/CD Pipeline: development/ci-cd.md
+      - Worker Compromise Runbook: development/worker-compromise-response.md
       - GitHub Secrets: development/github-secrets.md
       - Adding a Skill: development/adding-a-skill.md
       - Changelog: development/changelog.md

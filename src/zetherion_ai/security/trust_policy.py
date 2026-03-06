@@ -348,6 +348,7 @@ class TrustPolicyEvaluator:
             action=normalized_action,
             action_class=rule.action_class,
             requires_two_person=rule.requires_two_person,
+            context=ctx,
         )
         if rollout_denial is not None:
             return rollout_denial
@@ -418,15 +419,21 @@ class TrustPolicyEvaluator:
         action: str,
         action_class: TrustActionClass,
         requires_two_person: bool,
+        context: Mapping[str, Any],
     ) -> TrustPolicyDecision | None:
         stage_key: str | None = None
         canary_key: str | None = None
+        canary_context_flag: str | None = None
         if action.startswith("messaging."):
             stage_key = "messaging_rollout_stage"
             canary_key = "messaging_canary_enabled"
         elif action.startswith("automerge."):
             stage_key = "automerge_rollout_stage"
             canary_key = "automerge_canary_enabled"
+        elif action.startswith("worker."):
+            stage_key = "worker_rollout_stage"
+            canary_key = "worker_canary_enabled"
+            canary_context_flag = "node_canary_enabled"
 
         if stage_key is None or canary_key is None:
             return None
@@ -462,6 +469,20 @@ class TrustPolicyEvaluator:
                     code="AI_ROLLOUT_STAGE_BLOCKED",
                     message="Action is not enabled for tenant canary rollout",
                     details={"rollout_stage": stage, "required_setting": canary_key},
+                    requires_two_person=requires_two_person,
+                )
+            if canary_context_flag and not self._as_bool(context.get(canary_context_flag)):
+                return TrustPolicyDecision(
+                    action=action,
+                    action_class=action_class,
+                    outcome=TrustDecisionOutcome.DENY,
+                    status=403,
+                    code="AI_ROLLOUT_STAGE_BLOCKED",
+                    message="Action is not enabled for this node in canary rollout",
+                    details={
+                        "rollout_stage": stage,
+                        "required_context_flag": canary_context_flag,
+                    },
                     requires_two_person=requires_two_person,
                 )
         return None

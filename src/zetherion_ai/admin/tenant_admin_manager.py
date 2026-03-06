@@ -70,6 +70,13 @@ DEFAULT_EXECUTION_STALE_STEP_SECONDS = 300
 DEFAULT_EXECUTION_STEP_MAX_RUNTIME_SECONDS = 900
 VALID_EXECUTION_TARGETS = frozenset({"windows_local", "any_worker"})
 EXECUTION_RETRY_BACKOFF_SECONDS = (60, 300, 900, 1800)
+DEFAULT_WORKER_HEALTH_SCORE = 100
+DEFAULT_WORKER_CLAIM_MIN_HEALTH_SCORE = 35
+DEFAULT_WORKER_HEARTBEAT_STALE_SECONDS = 180
+DEFAULT_WORKER_AUTO_QUARANTINE_SCORE_THRESHOLD = 20
+DEFAULT_WORKER_AUTO_QUARANTINE_CONSECUTIVE_FAILURES = 3
+WORKER_MAX_HEALTH_SCORE = 100
+WORKER_MIN_HEALTH_SCORE = 0
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS tenant_discord_users (
@@ -671,6 +678,10 @@ CREATE TABLE IF NOT EXISTS tenant_worker_nodes (
                                  'offline'
                              )
                          ),
+    health_score          INT          NOT NULL DEFAULT 100
+                         CHECK (health_score >= 0 AND health_score <= 100),
+    consecutive_job_failures INT      NOT NULL DEFAULT 0
+                         CHECK (consecutive_job_failures >= 0),
     metadata              JSONB        NOT NULL DEFAULT '{}'::jsonb,
     last_heartbeat_at     TIMESTAMPTZ,
     created_by            TEXT,
@@ -681,6 +692,20 @@ CREATE TABLE IF NOT EXISTS tenant_worker_nodes (
 
 CREATE INDEX IF NOT EXISTS idx_tenant_worker_nodes_lookup
     ON tenant_worker_nodes (tenant_id, status, health_status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_worker_nodes_dispatch
+    ON tenant_worker_nodes (
+        tenant_id,
+        status,
+        health_status,
+        health_score DESC,
+        last_heartbeat_at DESC,
+        updated_at DESC
+    );
+
+ALTER TABLE tenant_worker_nodes
+    ADD COLUMN IF NOT EXISTS health_score INT NOT NULL DEFAULT 100;
+ALTER TABLE tenant_worker_nodes
+    ADD COLUMN IF NOT EXISTS consecutive_job_failures INT NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS tenant_worker_capabilities (
     tenant_id             UUID         NOT NULL,
@@ -6426,6 +6451,177 @@ class TenantAdminManager:
                 "failure_category": category,
             }
 
+    async def _worker_node_has_required_capabilities(
+        self,
+        *,
+        conn: asyncpg.Connection,
+        tenant_id: str,
+        node_id: str,
+        required_capabilities: list[str],
+    ) -> bool:
+        if not required_capabilities:
+            return True
+        capability_count = await conn.fetchval(
+            """
+            SELECT COUNT(*)::int
+            FROM tenant_worker_capabilities
+            WHERE tenant_id = $1::uuid
+              AND node_id = $2
+              AND allowlisted = TRUE
+              AND capability = ANY($3::text[])
+            """,
+            tenant_id,
+            node_id,
+            required_capabilities,
+        )
+        return int(capability_count or 0) >= len(required_capabilities)
+
+    async def _worker_node_meets_dispatch_requirements(
+        self,
+        *,
+        conn: asyncpg.Connection,
+        tenant_id: str,
+        node_row: dict[str, Any],
+        required_capabilities: list[str],
+        require_canary: bool,
+        min_health_score: int,
+        stale_seconds: int,
+        now: datetime,
+    ) -> bool:
+        status = str(node_row.get("status") or "").strip().lower()
+        health_status = str(node_row.get("health_status") or "").strip().lower()
+        if status not in {"registered", "active"}:
+            return False
+        if health_status not in {"healthy", "degraded"}:
+            return False
+
+        health_score = self._coerce_worker_health_score(
+            node_row.get("health_score"),
+            default=DEFAULT_WORKER_HEALTH_SCORE,
+        )
+        if health_score < min_health_score:
+            return False
+
+        last_heartbeat = node_row.get("last_heartbeat_at")
+        if not isinstance(last_heartbeat, datetime):
+            return False
+        if last_heartbeat.tzinfo is None:
+            last_heartbeat = last_heartbeat.replace(tzinfo=UTC)
+        if (now - last_heartbeat) > timedelta(seconds=stale_seconds):
+            return False
+
+        metadata_raw = node_row.get("metadata")
+        metadata = metadata_raw if isinstance(metadata_raw, dict) else {}
+        if require_canary and not self._worker_node_canary_enabled(
+            tenant_id=tenant_id,
+            node_id=str(node_row.get("node_id") or ""),
+            metadata=metadata,
+        ):
+            return False
+
+        return await self._worker_node_has_required_capabilities(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_id=str(node_row.get("node_id") or ""),
+            required_capabilities=required_capabilities,
+        )
+
+    async def _is_worker_dispatch_target_eligible(
+        self,
+        *,
+        conn: asyncpg.Connection,
+        tenant_id: str,
+        node_id: str,
+        required_capabilities: list[str],
+    ) -> bool:
+        rollout_stage = self._worker_rollout_stage(tenant_id)
+        if rollout_stage == "disabled":
+            return False
+        require_canary = rollout_stage == "canary"
+        if require_canary and not self._worker_canary_global_enabled(tenant_id):
+            return False
+
+        row = await conn.fetchrow(
+            """
+            SELECT node_id,
+                   status,
+                   health_status,
+                   health_score,
+                   consecutive_job_failures,
+                   metadata,
+                   last_heartbeat_at
+            FROM tenant_worker_nodes
+            WHERE tenant_id = $1::uuid
+              AND node_id = $2
+            """,
+            tenant_id,
+            node_id,
+        )
+        if row is None:
+            return False
+        return await self._worker_node_meets_dispatch_requirements(
+            conn=conn,
+            tenant_id=tenant_id,
+            node_row=dict(row),
+            required_capabilities=required_capabilities,
+            require_canary=require_canary,
+            min_health_score=self._worker_claim_min_health_score(tenant_id),
+            stale_seconds=self._worker_heartbeat_stale_seconds(tenant_id),
+            now=datetime.now(UTC),
+        )
+
+    async def _select_worker_dispatch_target_node(
+        self,
+        *,
+        conn: asyncpg.Connection,
+        tenant_id: str,
+        required_capabilities: list[str],
+    ) -> str | None:
+        rollout_stage = self._worker_rollout_stage(tenant_id)
+        if rollout_stage == "disabled":
+            return None
+        require_canary = rollout_stage == "canary"
+        if require_canary and not self._worker_canary_global_enabled(tenant_id):
+            return None
+
+        now = datetime.now(UTC)
+        min_health_score = self._worker_claim_min_health_score(tenant_id)
+        stale_seconds = self._worker_heartbeat_stale_seconds(tenant_id)
+        candidates = await conn.fetch(
+            """
+            SELECT node_id,
+                   status,
+                   health_status,
+                   health_score,
+                   consecutive_job_failures,
+                   metadata,
+                   last_heartbeat_at
+            FROM tenant_worker_nodes
+            WHERE tenant_id = $1::uuid
+              AND status IN ('registered', 'active')
+            ORDER BY health_score DESC, last_heartbeat_at DESC NULLS LAST, updated_at ASC
+            LIMIT 200
+            """,
+            tenant_id,
+        )
+        for candidate_row in candidates:
+            candidate = dict(candidate_row)
+            if not await self._worker_node_meets_dispatch_requirements(
+                conn=conn,
+                tenant_id=tenant_id,
+                node_row=candidate,
+                required_capabilities=required_capabilities,
+                require_canary=require_canary,
+                min_health_score=min_health_score,
+                stale_seconds=stale_seconds,
+                now=now,
+            ):
+                continue
+            node = str(candidate.get("node_id") or "").strip()
+            if node:
+                return node
+        return None
+
     async def dispatch_execution_step_to_worker(
         self,
         *,
@@ -6487,11 +6683,31 @@ class TenantAdminManager:
         if isinstance(custom_payload, dict):
             payload_json.update(custom_payload)
 
-        target_node_id = self._execution_target_node_id(execution_target)
         actor_sub = str(dispatcher_id or "execution-dispatcher").strip() or "execution-dispatcher"
         previous_step_status = str(from_status or "running").strip().lower() or "running"
 
         async with self._pool.acquire() as conn, conn.transaction():
+            target_node_id = self._execution_target_node_id(execution_target)
+            if execution_target == "any_worker":
+                target_node_id = await self._select_worker_dispatch_target_node(
+                    conn=conn,
+                    tenant_id=tenant_id,
+                    required_capabilities=required_capabilities,
+                )
+                if not target_node_id:
+                    raise RuntimeError("No eligible worker node is available for dispatch")
+            elif target_node_id is not None:
+                target_eligible = await self._is_worker_dispatch_target_eligible(
+                    conn=conn,
+                    tenant_id=tenant_id,
+                    node_id=target_node_id,
+                    required_capabilities=required_capabilities,
+                )
+                if not target_eligible:
+                    raise RuntimeError(
+                        f"Target worker node '{target_node_id}' is not eligible for dispatch"
+                    )
+
             # Expire stale queued/running jobs from prior retries for this step.
             await conn.execute(
                 """
@@ -6627,6 +6843,7 @@ class TenantAdminManager:
                     {
                         "job_id": job.get("job_id"),
                         "execution_target": execution_target,
+                        "target_node_id": target_node_id,
                         "required_capabilities": required_capabilities,
                     }
                 ),
@@ -6648,6 +6865,44 @@ class TenantAdminManager:
         target = f"worker:{node}"
 
         async with self._pool.acquire() as conn, conn.transaction():
+            rollout_stage = self._worker_rollout_stage(tenant_id)
+            if rollout_stage == "disabled":
+                return None
+            require_canary = rollout_stage == "canary"
+            if require_canary and not self._worker_canary_global_enabled(tenant_id):
+                return None
+
+            node_row = await conn.fetchrow(
+                """
+                SELECT node_id,
+                       status,
+                       health_status,
+                       health_score,
+                       consecutive_job_failures,
+                       metadata,
+                       last_heartbeat_at
+                FROM tenant_worker_nodes
+                WHERE tenant_id = $1::uuid
+                  AND node_id = $2
+                """,
+                tenant_id,
+                node,
+            )
+            if node_row is None:
+                return None
+            node_eligible = await self._worker_node_meets_dispatch_requirements(
+                conn=conn,
+                tenant_id=tenant_id,
+                node_row=dict(node_row),
+                required_capabilities=[],
+                require_canary=require_canary,
+                min_health_score=self._worker_claim_min_health_score(tenant_id),
+                stale_seconds=self._worker_heartbeat_stale_seconds(tenant_id),
+                now=datetime.now(UTC),
+            )
+            if not node_eligible:
+                return None
+
             candidates = await conn.fetch(
                 """
                 SELECT job_id::text AS job_id,
@@ -6683,12 +6938,14 @@ class TenantAdminManager:
                         )
                   )
                   AND execution_target IN ('any_worker', $2)
+                  AND (target_node_id IS NULL OR target_node_id = $3)
                 ORDER BY created_at ASC
                 LIMIT 25
                 FOR UPDATE SKIP LOCKED
                 """,
                 tenant_id,
                 target,
+                node,
             )
             if not candidates:
                 return None
@@ -6891,6 +7148,8 @@ class TenantAdminManager:
         output_payload = dict(output or {})
         error_payload = dict(error or {})
         outcome, succeeded = self._worker_result_outcome(completion_status)
+        worker_actor = f"worker:{node}"
+        node_health_snapshot: dict[str, Any] | None = None
 
         async with self._pool.acquire() as conn, conn.transaction():
             existing = await conn.fetchrow(
@@ -6998,14 +7257,21 @@ class TenantAdminManager:
                 str(job_row["plan_id"]),
                 str(job_row["step_id"]),
                 "completed" if succeeded else "failed",
-                f"worker:{node}",
+                worker_actor,
                 json.dumps({"job_id": str(job_row["job_id"]), "outcome": outcome}),
+            )
+
+            node_health_snapshot = await self._apply_worker_job_health_signal(
+                conn=conn,
+                tenant_id=tenant_id,
+                node_id=node,
+                succeeded=succeeded,
+                actor_sub=worker_actor,
             )
 
         step_id = str(job_row["step_id"])
         retry_id = str(job_row["retry_id"])
         plan_ref = str(job_row["plan_id"])
-        worker_actor = f"worker:{node}"
 
         if succeeded:
             completion = await self.complete_execution_step(
@@ -7035,6 +7301,7 @@ class TenantAdminManager:
                 "status": "succeeded",
                 "plan": completion.get("plan"),
                 "step": completion.get("step"),
+                "node_health": node_health_snapshot,
             }
 
         failure_category = self._worker_result_failure_category(
@@ -7068,7 +7335,143 @@ class TenantAdminManager:
             "job": job_row,
             "status": "failed",
             "failure": failure,
+            "node_health": node_health_snapshot,
         }
+
+    async def _apply_worker_job_health_signal(
+        self,
+        *,
+        conn: asyncpg.Connection,
+        tenant_id: str,
+        node_id: str,
+        succeeded: bool,
+        actor_sub: str,
+    ) -> dict[str, Any] | None:
+        row = await conn.fetchrow(
+            """
+            SELECT node_id,
+                   status,
+                   health_status,
+                   health_score,
+                   consecutive_job_failures,
+                   metadata
+            FROM tenant_worker_nodes
+            WHERE tenant_id = $1::uuid
+              AND node_id = $2
+            FOR UPDATE
+            """,
+            tenant_id,
+            node_id,
+        )
+        if row is None:
+            return None
+
+        current = dict(row)
+        current_status = str(current.get("status") or "active").strip().lower()
+        current_health = self._normalize_worker_health_status(
+            str(current.get("health_status") or "unknown"),
+            default="unknown",
+        )
+        current_score = self._coerce_worker_health_score(
+            current.get("health_score"),
+            default=DEFAULT_WORKER_HEALTH_SCORE,
+        )
+        current_failures = self._coerce_setting_int(
+            current.get("consecutive_job_failures"),
+            default=0,
+            minimum=0,
+            maximum=1_000_000,
+        )
+
+        delta = 5 if succeeded else -15
+        next_score = self._coerce_worker_health_score(current_score + delta, default=current_score)
+        next_failures = 0 if succeeded else current_failures + 1
+        next_status = current_status
+        next_health = current_health
+        if succeeded and next_health in {"degraded", "offline"} and next_score >= 60:
+            next_health = "healthy"
+        if not succeeded and next_health == "healthy":
+            next_health = "degraded"
+
+        metadata_raw = current.get("metadata")
+        metadata = dict(metadata_raw) if isinstance(metadata_raw, dict) else {}
+        metadata["last_job_signal"] = {
+            "status": "succeeded" if succeeded else "failed",
+            "at": datetime.now(UTC).isoformat(),
+            "health_score": next_score,
+            "consecutive_job_failures": next_failures,
+        }
+
+        quarantine_reason = self._worker_quarantine_reason(
+            tenant_id=tenant_id,
+            health_score=next_score,
+            consecutive_failures=next_failures,
+        )
+        auto_quarantined = False
+        if quarantine_reason is not None and next_status not in {"quarantined", "disabled"}:
+            auto_quarantined = True
+            next_status = "quarantined"
+            if next_health == "healthy":
+                next_health = "degraded"
+            metadata["auto_quarantine"] = {
+                "reason": quarantine_reason,
+                "trigger": "job_result",
+                "at": datetime.now(UTC).isoformat(),
+                "health_score": next_score,
+                "consecutive_job_failures": next_failures,
+            }
+            await conn.execute(
+                """
+                UPDATE tenant_worker_sessions
+                SET revoked_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND node_id = $2
+                  AND revoked_at IS NULL
+                """,
+                tenant_id,
+                node_id,
+            )
+
+        updated = await conn.fetchrow(
+            """
+            UPDATE tenant_worker_nodes
+            SET status = $3,
+                health_status = $4,
+                health_score = $5,
+                consecutive_job_failures = $6,
+                metadata = $7::jsonb,
+                updated_by = $8,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid
+              AND node_id = $2
+            RETURNING node_id,
+                      tenant_id::text AS tenant_id,
+                      node_name,
+                      status,
+                      health_status,
+                      health_score,
+                      consecutive_job_failures,
+                      metadata,
+                      last_heartbeat_at,
+                      created_by,
+                      updated_by,
+                      created_at,
+                      updated_at
+            """,
+            tenant_id,
+            node_id,
+            next_status,
+            next_health,
+            next_score,
+            next_failures,
+            json.dumps(metadata),
+            actor_sub,
+        )
+        if updated is None:
+            return None
+        snapshot = dict(updated)
+        snapshot["auto_quarantined"] = auto_quarantined
+        return snapshot
 
     async def record_execution_artifact(
         self,
@@ -7147,6 +7550,214 @@ class TenantAdminManager:
             allowed = ", ".join(sorted(VALID_WORKER_HEALTH_STATUSES))
             raise ValueError(f"health_status must be one of: {allowed}")
         return value
+
+    @staticmethod
+    def _coerce_worker_health_score(raw: Any, *, default: int = DEFAULT_WORKER_HEALTH_SCORE) -> int:
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            value = int(default)
+        return max(WORKER_MIN_HEALTH_SCORE, min(value, WORKER_MAX_HEALTH_SCORE))
+
+    @staticmethod
+    def _coerce_setting_bool(raw: Any, *, default: bool = False) -> bool:
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, int | float):
+            return bool(raw)
+        if isinstance(raw, str):
+            text = raw.strip().lower()
+            if text in {"1", "true", "yes", "on"}:
+                return True
+            if text in {"0", "false", "no", "off"}:
+                return False
+        return default
+
+    @staticmethod
+    def _coerce_setting_int(raw: Any, *, default: int, minimum: int, maximum: int) -> int:
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            value = int(default)
+        return max(minimum, min(value, maximum))
+
+    @staticmethod
+    def _coerce_setting_string_set(raw: Any) -> set[str]:
+        if isinstance(raw, list):
+            return {str(item).strip() for item in raw if str(item).strip()}
+        if isinstance(raw, str):
+            text = raw.strip()
+            if not text:
+                return set()
+            if text.startswith("[") and text.endswith("]"):
+                try:
+                    parsed = json.loads(text)
+                except Exception:
+                    parsed = None
+                if isinstance(parsed, list):
+                    return {str(item).strip() for item in parsed if str(item).strip()}
+            return {part.strip() for part in text.split(",") if part.strip()}
+        return set()
+
+    def _worker_rollout_stage(self, tenant_id: str) -> str:
+        raw = self.get_setting_cached(
+            tenant_id,
+            "security",
+            "worker_rollout_stage",
+            default="general",
+        )
+        value = str(raw or "general").strip().lower()
+        if value in {"disabled", "canary", "general"}:
+            return value
+        return "general"
+
+    def _worker_canary_global_enabled(self, tenant_id: str) -> bool:
+        return self._coerce_setting_bool(
+            self.get_setting_cached(
+                tenant_id,
+                "security",
+                "worker_canary_enabled",
+                default=False,
+            ),
+            default=False,
+        )
+
+    def _worker_node_canary_enabled(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        metadata: dict[str, Any] | None,
+    ) -> bool:
+        node = str(node_id or "").strip()
+        if not node:
+            return False
+
+        metadata_obj = metadata if isinstance(metadata, dict) else {}
+        if self._coerce_setting_bool(metadata_obj.get("canary_enabled"), default=False):
+            return True
+
+        node_ids = self._coerce_setting_string_set(
+            self.get_setting_cached(
+                tenant_id,
+                "security",
+                "worker_canary_node_ids",
+                default=[],
+            )
+        )
+        if node in node_ids:
+            return True
+
+        node_group = str(
+            metadata_obj.get("node_group")
+            or metadata_obj.get("group")
+            or metadata_obj.get("worker_group")
+            or ""
+        ).strip()
+        if not node_group:
+            return False
+        canary_groups = self._coerce_setting_string_set(
+            self.get_setting_cached(
+                tenant_id,
+                "security",
+                "worker_canary_node_groups",
+                default=[],
+            )
+        )
+        return node_group in canary_groups
+
+    def is_worker_node_canary_enabled(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> bool:
+        return self._worker_node_canary_enabled(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            metadata=metadata,
+        )
+
+    def _worker_claim_min_health_score(self, tenant_id: str) -> int:
+        return self._coerce_setting_int(
+            self.get_setting_cached(
+                tenant_id,
+                "security",
+                "worker_claim_min_health_score",
+                default=DEFAULT_WORKER_CLAIM_MIN_HEALTH_SCORE,
+            ),
+            default=DEFAULT_WORKER_CLAIM_MIN_HEALTH_SCORE,
+            minimum=WORKER_MIN_HEALTH_SCORE,
+            maximum=WORKER_MAX_HEALTH_SCORE,
+        )
+
+    def _worker_heartbeat_stale_seconds(self, tenant_id: str) -> int:
+        return self._coerce_setting_int(
+            self.get_setting_cached(
+                tenant_id,
+                "security",
+                "worker_heartbeat_stale_seconds",
+                default=DEFAULT_WORKER_HEARTBEAT_STALE_SECONDS,
+            ),
+            default=DEFAULT_WORKER_HEARTBEAT_STALE_SECONDS,
+            minimum=30,
+            maximum=86_400,
+        )
+
+    def _worker_auto_quarantine_policy(self, tenant_id: str) -> dict[str, Any]:
+        enabled = self._coerce_setting_bool(
+            self.get_setting_cached(
+                tenant_id,
+                "security",
+                "worker_auto_quarantine_enabled",
+                default=True,
+            ),
+            default=True,
+        )
+        score_threshold = self._coerce_setting_int(
+            self.get_setting_cached(
+                tenant_id,
+                "security",
+                "worker_auto_quarantine_score_threshold",
+                default=DEFAULT_WORKER_AUTO_QUARANTINE_SCORE_THRESHOLD,
+            ),
+            default=DEFAULT_WORKER_AUTO_QUARANTINE_SCORE_THRESHOLD,
+            minimum=WORKER_MIN_HEALTH_SCORE,
+            maximum=WORKER_MAX_HEALTH_SCORE,
+        )
+        failure_threshold = self._coerce_setting_int(
+            self.get_setting_cached(
+                tenant_id,
+                "security",
+                "worker_auto_quarantine_consecutive_failures",
+                default=DEFAULT_WORKER_AUTO_QUARANTINE_CONSECUTIVE_FAILURES,
+            ),
+            default=DEFAULT_WORKER_AUTO_QUARANTINE_CONSECUTIVE_FAILURES,
+            minimum=1,
+            maximum=1000,
+        )
+        return {
+            "enabled": enabled,
+            "score_threshold": score_threshold,
+            "failure_threshold": failure_threshold,
+        }
+
+    def _worker_quarantine_reason(
+        self,
+        *,
+        tenant_id: str,
+        health_score: int,
+        consecutive_failures: int,
+    ) -> str | None:
+        policy = self._worker_auto_quarantine_policy(tenant_id)
+        if not bool(policy["enabled"]):
+            return None
+        if int(health_score) <= int(policy["score_threshold"]):
+            return "health_score_threshold"
+        if int(consecutive_failures) >= int(policy["failure_threshold"]):
+            return "consecutive_failures_threshold"
+        return None
 
     @staticmethod
     def _normalize_worker_job_status(raw: str | None, *, default: str) -> str:
@@ -7330,6 +7941,8 @@ class TenantAdminManager:
                               node_name,
                               status,
                               health_status,
+                              health_score,
+                              consecutive_job_failures,
                               metadata,
                               last_heartbeat_at,
                               created_by,
@@ -7464,6 +8077,8 @@ class TenantAdminManager:
                    n.node_name,
                    n.status,
                    n.health_status,
+                   n.health_score,
+                   n.consecutive_job_failures,
                    n.metadata AS node_metadata,
                    n.last_heartbeat_at
             FROM tenant_worker_sessions s
@@ -7610,6 +8225,15 @@ class TenantAdminManager:
                             WHEN status IN ('quarantined', 'disabled') THEN health_status
                             ELSE 'healthy'
                         END,
+                        health_score = CASE
+                            WHEN status IN ('quarantined', 'disabled') THEN health_score
+                            ELSE GREATEST(COALESCE(health_score, 100), 80)
+                        END,
+                        consecutive_job_failures = CASE
+                            WHEN status IN ('quarantined', 'disabled')
+                                THEN COALESCE(consecutive_job_failures, 0)
+                            ELSE 0
+                        END,
                         last_heartbeat_at = now(),
                         metadata = metadata || $4::jsonb,
                         updated_by = $5,
@@ -7678,41 +8302,119 @@ class TenantAdminManager:
             raise ValueError("Missing node_id")
         health = self._normalize_worker_health_status(health_status, default="healthy")
         actor = str(actor_sub or "worker-heartbeat").strip() or "worker-heartbeat"
-        row = await self._fetchrow(
-            """
-            UPDATE tenant_worker_nodes
-            SET health_status = $3,
-                status = CASE
-                    WHEN status IN ('bootstrap_pending', 'registered') THEN 'active'
-                    ELSE status
-                END,
-                last_heartbeat_at = now(),
-                metadata = metadata || $4::jsonb,
-                updated_by = $5,
-                updated_at = now()
-            WHERE tenant_id = $1::uuid
-              AND node_id = $2
-            RETURNING node_id,
-                      tenant_id::text AS tenant_id,
-                      node_name,
-                      status,
-                      health_status,
-                      metadata,
-                      last_heartbeat_at,
-                      created_by,
-                      updated_by,
-                      created_at,
-                      updated_at
-            """,
-            tenant_id,
-            node,
-            health,
-            json.dumps(metadata or {}),
-            actor,
-        )
-        if row is None:
-            raise ValueError("Worker node not found")
-        return dict(row)
+        metadata_json = metadata if isinstance(metadata, dict) else {}
+        score_hint_raw = metadata_json.get("health_score")
+
+        async with self._pool.acquire() as conn, conn.transaction():
+            current = await conn.fetchrow(
+                """
+                SELECT status,
+                       health_status,
+                       health_score,
+                       consecutive_job_failures,
+                       metadata
+                FROM tenant_worker_nodes
+                WHERE tenant_id = $1::uuid
+                  AND node_id = $2
+                FOR UPDATE
+                """,
+                tenant_id,
+                node,
+            )
+            if current is None:
+                raise ValueError("Worker node not found")
+
+            current_status = str(current.get("status") or "registered").strip().lower()
+            next_status = (
+                "active"
+                if current_status in {"bootstrap_pending", "registered"}
+                else current_status
+            )
+            current_score = self._coerce_worker_health_score(
+                current.get("health_score"),
+                default=DEFAULT_WORKER_HEALTH_SCORE,
+            )
+            if score_hint_raw is not None:
+                next_score = self._coerce_worker_health_score(score_hint_raw, default=current_score)
+            else:
+                delta = 0
+                if health == "healthy":
+                    delta = 2
+                elif health == "degraded":
+                    delta = -10
+                elif health == "offline":
+                    delta = -20
+                else:
+                    delta = -5
+                next_score = self._coerce_worker_health_score(
+                    current_score + delta,
+                    default=current_score,
+                )
+
+            consecutive_failures = self._coerce_setting_int(
+                current.get("consecutive_job_failures"),
+                default=0,
+                minimum=0,
+                maximum=1_000_000,
+            )
+            next_health = health
+            current_metadata = current.get("metadata")
+            merged_metadata = dict(current_metadata) if isinstance(current_metadata, dict) else {}
+            merged_metadata.update(metadata_json)
+            quarantine_reason = self._worker_quarantine_reason(
+                tenant_id=tenant_id,
+                health_score=next_score,
+                consecutive_failures=consecutive_failures,
+            )
+            if quarantine_reason is not None and next_status not in {"quarantined", "disabled"}:
+                next_status = "quarantined"
+                if next_health == "healthy":
+                    next_health = "degraded"
+                merged_metadata["auto_quarantine"] = {
+                    "reason": quarantine_reason,
+                    "trigger": "heartbeat",
+                    "at": datetime.now(UTC).isoformat(),
+                    "health_score": next_score,
+                    "consecutive_job_failures": consecutive_failures,
+                }
+
+            row = await conn.fetchrow(
+                """
+                UPDATE tenant_worker_nodes
+                SET health_status = $3,
+                    status = $4,
+                    health_score = $5,
+                    last_heartbeat_at = now(),
+                    metadata = $6::jsonb,
+                    updated_by = $7,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND node_id = $2
+                RETURNING node_id,
+                          tenant_id::text AS tenant_id,
+                          node_name,
+                          status,
+                          health_status,
+                          health_score,
+                          consecutive_job_failures,
+                          metadata,
+                          last_heartbeat_at,
+                          created_by,
+                          updated_by,
+                          created_at,
+                          updated_at
+                """,
+                tenant_id,
+                node,
+                next_health,
+                next_status,
+                next_score,
+                json.dumps(merged_metadata),
+                actor,
+            )
+            if row is None:
+                raise ValueError("Worker node not found")
+            return dict(row)
 
     async def has_worker_capabilities(
         self,
@@ -7759,6 +8461,8 @@ class TenantAdminManager:
                    node_name,
                    status,
                    health_status,
+                   health_score,
+                   consecutive_job_failures,
                    metadata,
                    last_heartbeat_at,
                    created_by,
@@ -7815,6 +8519,8 @@ class TenantAdminManager:
                    node_name,
                    status,
                    health_status,
+                   health_score,
+                   consecutive_job_failures,
                    metadata,
                    last_heartbeat_at,
                    created_by,
@@ -8045,28 +8751,78 @@ class TenantAdminManager:
                 health_status,
                 default=str(before.get("health_status") or "unknown"),
             )
-
-        row = await self._fetchrow(
-            """
-            UPDATE tenant_worker_nodes
-            SET status = $3,
-                health_status = $4,
-                metadata = metadata || $5::jsonb,
-                updated_by = $6,
-                updated_at = now()
-            WHERE tenant_id = $1::uuid
-              AND node_id = $2
-            RETURNING node_id
-            """,
-            tenant_id,
-            node,
-            normalized_status,
-            normalized_health,
-            json.dumps(metadata or {}),
-            actor.actor_sub,
+        metadata_payload = dict(metadata or {})
+        next_health_score = self._coerce_worker_health_score(
+            before.get("health_score"),
+            default=DEFAULT_WORKER_HEALTH_SCORE,
         )
-        if row is None:
-            raise RuntimeError("Failed to update worker node status")
+        next_failures = self._coerce_setting_int(
+            before.get("consecutive_job_failures"),
+            default=0,
+            minimum=0,
+            maximum=1_000_000,
+        )
+        if normalized_status == "quarantined":
+            next_health_score = min(
+                next_health_score,
+                max(
+                    WORKER_MIN_HEALTH_SCORE,
+                    self._worker_claim_min_health_score(tenant_id) - 5,
+                ),
+            )
+            metadata_payload.setdefault(
+                "quarantine",
+                {
+                    "at": datetime.now(UTC).isoformat(),
+                    "actor_sub": actor.actor_sub,
+                },
+            )
+        elif normalized_status in {"registered", "active"}:
+            next_failures = 0
+            if normalized_health == "healthy":
+                next_health_score = max(
+                    next_health_score,
+                    self._worker_claim_min_health_score(tenant_id),
+                )
+
+        async with self._pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchrow(
+                """
+                UPDATE tenant_worker_nodes
+                SET status = $3,
+                    health_status = $4,
+                    health_score = $5,
+                    consecutive_job_failures = $6,
+                    metadata = metadata || $7::jsonb,
+                    updated_by = $8,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND node_id = $2
+                RETURNING node_id
+                """,
+                tenant_id,
+                node,
+                normalized_status,
+                normalized_health,
+                next_health_score,
+                next_failures,
+                json.dumps(metadata_payload),
+                actor.actor_sub,
+            )
+            if row is None:
+                raise RuntimeError("Failed to update worker node status")
+            if normalized_status == "quarantined":
+                await conn.execute(
+                    """
+                    UPDATE tenant_worker_sessions
+                    SET revoked_at = now()
+                    WHERE tenant_id = $1::uuid
+                      AND node_id = $2
+                      AND revoked_at IS NULL
+                    """,
+                    tenant_id,
+                    node,
+                )
 
         after = await self.get_worker_node(tenant_id=tenant_id, node_id=node)
         if after is None:
