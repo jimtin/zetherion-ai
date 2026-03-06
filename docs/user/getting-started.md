@@ -68,8 +68,9 @@ are up and running in under ten minutes.
 ### macOS / Linux
 
 ```bash
-git clone https://github.com/jimtin/zetherion-ai.git
-cd zetherion-ai
+mkdir -p ~/Developer
+git clone https://github.com/jimtin/zetherion-ai.git ~/Developer/PersonalBot
+cd ~/Developer/PersonalBot
 chmod +x start.sh
 ./start.sh
 ```
@@ -77,8 +78,8 @@ chmod +x start.sh
 ### Windows
 
 ```powershell
-git clone https://github.com/jimtin/zetherion-ai.git
-cd zetherion-ai
+git clone https://github.com/jimtin/zetherion-ai.git C:\ZetherionAI
+cd C:\ZetherionAI
 .\start.ps1
 ```
 
@@ -208,6 +209,11 @@ browser to verify the vector database is running and accessible.
 | View logs | `docker-compose logs -f zetherion-ai-bot` |
 | View all logs | `docker-compose logs -f` |
 | Update | `git pull && ./stop.sh && ./start.sh --force-rebuild` |
+
+### Canonical Local Path
+
+The supported macOS/Linux checkout path is `~/Developer/PersonalBot`. Avoid
+running the active workspace from `~/Documents` or iCloud-managed folders.
 
 ### Known Drift (Temporary)
 

@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment C2 Repo Hygiene Before Relocation (2026-03-06)
+
+- Impacted capability IDs:
+  - `repo.cleanup.zero-byte-tracked-files`
+  - `repo.checkout.canonical-local-path`
+  - `deploy.mac.remote-path`
+- Impacted workflow scenario IDs:
+  - `cleanup.c2.remove-zero-byte-tracked-files`
+  - `cleanup.c2.normalize-canonical-clone-docs`
+  - `cleanup.c2.update-remote-deploy-helper-path`
+- Removed tracked zero-byte files:
+  - `memory/phase7-github-management.md`
+  - `zetherion-dev-agent/src/zetherion_dev_agent/watchers/__init__.py`
+- Updated macOS/Linux setup docs and quick-start snippets to use the canonical
+  checkout path `~/Developer/PersonalBot`.
+- Updated Windows setup docs to use the stable checkout path `C:\ZetherionAI`.
+- Updated the Mac deployment helper default remote path to `~/Developer/PersonalBot`.
+
 ### Changed - Segment 17 CI/E2E Contract Enforcement (2026-03-06)
 
 - Added CI risk classifier job (`risk-classifier`) with fail-safe defaults:
