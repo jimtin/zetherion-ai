@@ -21,6 +21,37 @@ CONVERSATIONS_COLLECTION = "conversations"
 LONG_TERM_MEMORY_COLLECTION = "long_term_memory"
 
 
+def _string_override(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    candidate = value.strip()
+    return candidate or None
+
+
+def _port_override(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        candidate = value.strip()
+        if candidate.isdigit():
+            return int(candidate)
+    return None
+
+
+def _tls_override(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        candidate = value.strip().lower()
+        if candidate in {"1", "true", "yes", "on"}:
+            return True
+        if candidate in {"0", "false", "no", "off"}:
+            return False
+    return None
+
+
 def _qdrant_connection_settings(
     settings: Any,
     storage_plane: QdrantStoragePlane,
@@ -28,26 +59,34 @@ def _qdrant_connection_settings(
     """Resolve effective Qdrant connection settings for one storage plane."""
 
     if storage_plane == QdrantStoragePlane.OWNER:
-        host = getattr(settings, "qdrant_owner_host", None) or settings.qdrant_host
-        port = getattr(settings, "qdrant_owner_port", None)
-        use_tls_override = getattr(settings, "qdrant_owner_use_tls", None)
-        cert_path = getattr(settings, "qdrant_owner_cert_path", None) or getattr(
-            settings, "qdrant_cert_path", None
+        host = (
+            _string_override(getattr(settings, "qdrant_owner_host", None)) or settings.qdrant_host
         )
-        url = getattr(settings, "qdrant_owner_url", None)
+        port = _port_override(getattr(settings, "qdrant_owner_port", None))
+        use_tls_override = _tls_override(getattr(settings, "qdrant_owner_use_tls", None))
+        cert_path = _string_override(
+            getattr(settings, "qdrant_owner_cert_path", None)
+        ) or _string_override(getattr(settings, "qdrant_cert_path", None))
+        url = _string_override(getattr(settings, "qdrant_owner_url", None)) or _string_override(
+            getattr(settings, "qdrant_url", None)
+        )
     else:
-        host = getattr(settings, "qdrant_tenant_host", None) or settings.qdrant_host
-        port = getattr(settings, "qdrant_tenant_port", None)
-        use_tls_override = getattr(settings, "qdrant_tenant_use_tls", None)
-        cert_path = getattr(settings, "qdrant_tenant_cert_path", None) or getattr(
-            settings, "qdrant_cert_path", None
+        host = (
+            _string_override(getattr(settings, "qdrant_tenant_host", None)) or settings.qdrant_host
         )
-        url = getattr(settings, "qdrant_tenant_url", None)
+        port = _port_override(getattr(settings, "qdrant_tenant_port", None))
+        use_tls_override = _tls_override(getattr(settings, "qdrant_tenant_use_tls", None))
+        cert_path = _string_override(
+            getattr(settings, "qdrant_tenant_cert_path", None)
+        ) or _string_override(getattr(settings, "qdrant_cert_path", None))
+        url = _string_override(getattr(settings, "qdrant_tenant_url", None)) or _string_override(
+            getattr(settings, "qdrant_url", None)
+        )
 
-    effective_port = settings.qdrant_port if port is None else int(port)
-    use_tls = settings.qdrant_use_tls if use_tls_override is None else bool(use_tls_override)
+    effective_port = settings.qdrant_port if port is None else port
+    use_tls = settings.qdrant_use_tls if use_tls_override is None else use_tls_override
     scheme = "https" if use_tls else "http"
-    effective_url = str(url or f"{scheme}://{host}:{effective_port}")
+    effective_url = url or f"{scheme}://{host}:{effective_port}"
     return {
         "host": host,
         "port": effective_port,
