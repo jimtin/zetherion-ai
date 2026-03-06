@@ -4631,6 +4631,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
 
             encryptors = build_runtime_encryptors(settings)
             tenant_encryptor = encryptors.tenant_data
+            encryptor = tenant_encryptor
 
             runtime_secrets_manager = SecretsManager(encryptor=tenant_encryptor)
             await runtime_secrets_manager.initialize(runtime_db_pool)

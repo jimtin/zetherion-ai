@@ -5,8 +5,10 @@ SkillRegistry, registers all three built-in skills, and launches
 the async server via asyncio.run.
 """
 
+from contextlib import ExitStack
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 def _close_coro_in_asyncio_run(mock_asyncio_run: MagicMock) -> None:
@@ -265,3 +267,284 @@ class TestSkillsServerMain:
         assert kwargs["github_token"] == "ghp_token"
         assert kwargs["updater_secret"] == "file-secret"
         assert kwargs["check_every_n_beats"] == 3
+
+
+@patch("zetherion_ai.skills.server.run_server", new_callable=AsyncMock)
+@patch("zetherion_ai.skills.server.SkillRegistry")
+@patch("zetherion_ai.config.set_tenant_admin_manager")
+@patch("zetherion_ai.config.set_secret_resolver")
+@patch("zetherion_ai.config.set_settings_manager")
+@patch("zetherion_ai.config.get_settings")
+def test_work_router_startup_uses_runtime_tenant_encryptor(
+    mock_get_settings,
+    mock_set_settings_manager,
+    mock_set_secret_resolver,
+    mock_set_tenant_admin_manager,
+    mock_registry_cls,
+    mock_run_server,
+) -> None:
+    """Postgres/work-router startup should pass the runtime tenant encryptor downstream."""
+    from zetherion_ai.skills.server import main
+
+    mock_settings = _configure_mock_settings(mock_get_settings)
+    mock_settings.postgres_dsn = "postgresql://zetherion:password@postgres:5432/zetherion"
+    mock_settings.work_router_enabled = True
+    mock_settings.provider_outlook_enabled = False
+    mock_settings.email_security_gate_enabled = True
+    mock_settings.local_extraction_required = False
+    mock_settings.postgres_pool_min_size = 1
+    mock_settings.postgres_pool_max_size = 1
+    mock_settings.profile_confidence_threshold = 0.6
+    mock_settings.profile_confirmation_expiry_hours = 24
+    mock_settings.profile_max_pending_confirmations = 10
+    mock_settings.updater_secret = "test-secret"
+
+    mock_registry = MagicMock()
+    mock_registry.initialize_all = AsyncMock()
+    mock_registry_cls.return_value = mock_registry
+
+    runtime_conn = AsyncMock()
+    runtime_cm = AsyncMock()
+    runtime_cm.__aenter__.return_value = runtime_conn
+    runtime_cm.__aexit__.return_value = False
+    runtime_pool = MagicMock()
+    runtime_pool.acquire.return_value = runtime_cm
+    runtime_pool.close = AsyncMock()
+
+    integration_pool = MagicMock()
+    integration_pool.close = AsyncMock()
+
+    personal_pool = MagicMock()
+    personal_pool.close = AsyncMock()
+
+    tenant_encryptor = MagicMock(name="tenant_encryptor")
+    settings_manager = MagicMock()
+    settings_manager.initialize = AsyncMock()
+    secrets_manager = MagicMock()
+    secrets_manager.initialize = AsyncMock()
+    announcement_repository = MagicMock()
+    announcement_repository.initialize = AsyncMock()
+    tenant_admin_manager = MagicMock()
+    tenant_admin_manager.initialize = AsyncMock()
+    tenant_admin_manager.set_critical_scorer = MagicMock()
+    gmail_account_manager = MagicMock()
+    gmail_account_manager.ensure_schema = AsyncMock()
+    integration_storage = MagicMock()
+    integration_storage.ensure_schema = AsyncMock()
+    provider_registry = MagicMock()
+    security_pipeline = MagicMock()
+    security_pipeline.close = AsyncMock()
+    email_inference_broker = MagicMock()
+    email_inference_broker.close = AsyncMock()
+    tenant_inference_broker = MagicMock()
+    tenant_inference_broker.close = AsyncMock()
+    yt_storage = MagicMock()
+    yt_storage.initialize = AsyncMock()
+    tenant_manager = MagicMock()
+    tenant_manager.initialize = AsyncMock()
+    personal_storage = MagicMock()
+    personal_storage.ensure_schema = AsyncMock()
+    google_auth = MagicMock()
+    google_auth.generate_auth_url.return_value = ("https://example.test/auth", "state-token")
+
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch(
+                "asyncpg.create_pool",
+                new_callable=AsyncMock,
+                side_effect=[runtime_pool, integration_pool, personal_pool],
+            )
+        )
+        mock_build_runtime_encryptors = stack.enter_context(
+            patch(
+                "zetherion_ai.security.domain_keys.build_runtime_encryptors",
+                return_value=SimpleNamespace(tenant_data=tenant_encryptor),
+            )
+        )
+        stack.enter_context(
+            patch("zetherion_ai.settings_manager.SettingsManager", return_value=settings_manager)
+        )
+        stack.enter_context(
+            patch("zetherion_ai.security.secrets.SecretsManager", return_value=secrets_manager)
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.security.secret_resolver.SecretResolver",
+                return_value=MagicMock(),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.trust.data_plane.ensure_postgres_isolation_schemas",
+                new_callable=AsyncMock,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.skills.server.AnnouncementRepository",
+                return_value=announcement_repository,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.skills.server.AnnouncementPolicyEngine",
+                return_value=MagicMock(),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.memory.qdrant.QdrantMemory",
+                side_effect=RuntimeError("qdrant unavailable in unit test"),
+            )
+        )
+        stack.enter_context(
+            patch("zetherion_ai.admin.TenantAdminManager", return_value=tenant_admin_manager)
+        )
+        stack.enter_context(
+            patch("zetherion_ai.skills.youtube.storage.YouTubeStorage", return_value=yt_storage)
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.skills.youtube.intelligence.YouTubeIntelligenceSkill",
+                return_value=MagicMock(),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.skills.youtube.management.YouTubeManagementSkill",
+                return_value=MagicMock(),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.skills.youtube.strategy.YouTubeStrategySkill",
+                return_value=MagicMock(),
+            )
+        )
+        stack.enter_context(
+            patch("zetherion_ai.api.tenant.TenantManager", return_value=tenant_manager)
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.skills.client_provisioning.ClientProvisioningSkill",
+                return_value=MagicMock(),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.skills.tenant_intelligence.TenantIntelligenceSkill",
+                return_value=MagicMock(),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.skills.client_insights.ClientInsightsSkill",
+                return_value=MagicMock(),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.skills.client_app_watcher.ClientAppWatcherSkill",
+                return_value=MagicMock(),
+            )
+        )
+        stack.enter_context(
+            patch("zetherion_ai.personal.storage.PersonalStorage", return_value=personal_storage)
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.skills.personal_model.PersonalModelSkill",
+                return_value=MagicMock(),
+            )
+        )
+        mock_gmail_account_manager = stack.enter_context(
+            patch(
+                "zetherion_ai.skills.gmail.accounts.GmailAccountManager",
+                return_value=gmail_account_manager,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.integrations.storage.IntegrationStorage",
+                return_value=integration_storage,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.routing.registry.ProviderRegistry",
+                return_value=provider_registry,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.routing.registry.ProviderAdapters",
+                side_effect=lambda **kwargs: kwargs,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.routing.registry.ProviderCapabilities",
+                side_effect=lambda **kwargs: kwargs,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.security.content_pipeline.ContentSecurityPipeline",
+                return_value=security_pipeline,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.routing.task_calendar_router.TaskCalendarRouter",
+                return_value=MagicMock(),
+            )
+        )
+        stack.enter_context(
+            patch("zetherion_ai.routing.email_router.EmailRouter", return_value=MagicMock())
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.agent.inference.InferenceBroker",
+                side_effect=[MagicMock(), tenant_inference_broker, email_inference_broker],
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.integrations.providers.google.GoogleProviderAdapter",
+                return_value=MagicMock(),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.integrations.providers.outlook.OutlookProviderAdapter",
+                return_value=MagicMock(),
+            )
+        )
+        stack.enter_context(
+            patch("zetherion_ai.skills.server._resolve_google_oauth", return_value=google_auth)
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.skills.server._build_google_oauth_handler",
+                return_value=MagicMock(),
+            )
+        )
+        stack.enter_context(
+            patch(
+                "zetherion_ai.skills.server._build_google_oauth_authorize_handler",
+                return_value=MagicMock(),
+            )
+        )
+
+        main()
+
+    mock_build_runtime_encryptors.assert_called_once_with(mock_settings)
+    mock_gmail_account_manager.assert_called_once_with(integration_pool, tenant_encryptor)
+    tenant_manager.initialize.assert_awaited_once()
+    mock_run_server.assert_awaited_once()
+    runtime_pool.close.assert_awaited_once()
+    integration_pool.close.assert_awaited_once()
+    personal_pool.close.assert_awaited_once()
+    security_pipeline.close.assert_awaited_once()
+    tenant_inference_broker.close.assert_awaited_once()
+    email_inference_broker.close.assert_awaited_once()
