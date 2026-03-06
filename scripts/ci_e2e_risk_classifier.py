@@ -17,6 +17,7 @@ LOW_RISK_GLOBS = (
     "mkdocs.yml",
     "tests/unit/**",
     "scripts/ci_failure_attribution.py",
+    "scripts/ci_e2e_risk_classifier.py",
     "scripts/ci-required-e2e-gate.sh",
     "scripts/ci_required_e2e_gate.py",
     "scripts/local-required-e2e-receipt.sh",
