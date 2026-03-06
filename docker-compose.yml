@@ -264,6 +264,8 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: zetherion-ai-cloudflared
+    profiles:
+      - cloudflared
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -660,6 +662,8 @@ services:
       context: .
       dockerfile: Dockerfile.whatsapp-bridge
     container_name: zetherion-ai-whatsapp-bridge
+    profiles:
+      - whatsapp-bridge
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
