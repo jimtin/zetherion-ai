@@ -128,6 +128,11 @@ for requirement in payload.get("requirements", []):
 PY
 )
 
+if [[ ${#REQUIREMENT_IDS[@]} -eq 0 ]]; then
+    echo "[local-gate] Preflight completed successfully."
+    exit 0
+fi
+
 for requirement_id in "${REQUIREMENT_IDS[@]}"; do
     case "$requirement_id" in
         endpoint-doc-bundle)
