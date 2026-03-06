@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from zetherion_ai.memory.embeddings import get_embedding_dimension
 from zetherion_ai.skills.base import SkillRequest, SkillStatus
 from zetherion_ai.skills.permissions import Permission
 from zetherion_ai.skills.task_manager import (
@@ -1140,7 +1141,7 @@ class TestTaskManagerSkillQdrantStorage:
         assert result is True
         mock_memory.ensure_collection.assert_called_once_with(
             TASKS_COLLECTION,
-            vector_size=768,
+            vector_size=get_embedding_dimension(),
         )
 
     @pytest.mark.asyncio

@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 
 from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
+from zetherion_ai.memory.embeddings import get_embedding_dimension
 from zetherion_ai.skills.base import (
     HeartbeatAction,
     Skill,
@@ -171,7 +172,7 @@ class DevWatcherSkill(Skill):
         try:
             await self._memory.ensure_collection(
                 DEV_JOURNAL_COLLECTION,
-                vector_size=768,
+                vector_size=get_embedding_dimension(),
             )
             log.info("dev_watcher_initialized", collection=DEV_JOURNAL_COLLECTION)
             return True

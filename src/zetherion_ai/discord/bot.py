@@ -999,7 +999,7 @@ class ZetherionAIBot(discord.Client):
             return False
 
         await message.reply(
-            "I'm online and ready. Ask me anything and I'll jump in.",
+            "Yep, I'm online and ready. What do you want to tackle?",
             mention_author=True,
         )
         return True

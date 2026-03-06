@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from zetherion_ai.memory.embeddings import get_embedding_dimension
 from zetherion_ai.skills.base import SkillRequest, SkillStatus
 from zetherion_ai.skills.milestone import (
     DRAFT_THRESHOLD,
@@ -247,7 +248,7 @@ class TestMilestoneInitialization:
         assert result is True
         assert skill_with_memory.status == SkillStatus.READY
         skill_with_memory._memory.ensure_collection.assert_awaited_once_with(
-            MILESTONES_COLLECTION, vector_size=768
+            MILESTONES_COLLECTION, vector_size=get_embedding_dimension()
         )
 
     @pytest.mark.asyncio

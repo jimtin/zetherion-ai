@@ -4,6 +4,8 @@
 # Include source and dependencies
 !requirements.txt
 !src/
+!scripts/
+!scripts/migrate-qdrant-embeddings.py
 !updater_sidecar/
 !zetherion-dev-agent/
 !zetherion-whatsapp-bridge/

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from zetherion_ai.agent.prompts import SIMPLE_CHAT_PROMPT
 from zetherion_ai.agent.router import MessageIntent
 from zetherion_ai.agent.router_ollama import OllamaRouterBackend
 
@@ -744,6 +745,9 @@ class TestOllamaRouterBackendGenerateSimpleResponse:
             response = await backend.generate_simple_response("Hi")
 
         assert response == "Hello! How can I help you?"
+        backend._client.post.assert_awaited_once()
+        payload = backend._client.post.await_args.kwargs["json"]
+        assert payload["system"] == SIMPLE_CHAT_PROMPT
 
     @pytest.mark.asyncio
     async def test_generate_simple_response_error(self, mock_settings):

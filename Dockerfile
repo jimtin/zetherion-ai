@@ -20,6 +20,7 @@ RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.
 
 # Copy source code for import verification
 COPY src ./src
+COPY scripts/migrate-qdrant-embeddings.py ./scripts/migrate-qdrant-embeddings.py
 
 # Set Python path for import verification
 ENV PYTHONPATH=/app/src
@@ -42,6 +43,7 @@ COPY --from=builder --chown=65532:65532 /home/nonroot/.local /home/nonroot/.loca
 
 # Copy application source code with nonroot ownership
 COPY --from=builder --chown=65532:65532 /app/src /app/src
+COPY --from=builder --chown=65532:65532 /app/scripts /app/scripts
 
 # Set Python path for nonroot user
 # Chainguard uses Python 3.14, packages are in site-packages

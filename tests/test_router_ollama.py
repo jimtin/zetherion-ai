@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, Mock, patch
 import httpx
 import pytest
 
+from zetherion_ai.agent.prompts import SIMPLE_CHAT_PROMPT
+
 
 class TestOllamaRouterBackend:
     """Tests for OllamaRouterBackend intent classification."""
@@ -402,6 +404,8 @@ class TestOllamaRouterBackend:
 
         assert response == "Hello! How can I help you today?"
         mock_httpx_client.post.assert_called_once()
+        payload = mock_httpx_client.post.call_args.kwargs["json"]
+        assert payload["system"] == SIMPLE_CHAT_PROMPT
 
     @pytest.mark.asyncio
     async def test_generate_simple_response_error_fallback(

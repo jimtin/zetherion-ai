@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from zetherion_ai.memory.embeddings import get_embedding_dimension
 from zetherion_ai.skills.base import SkillRequest, SkillStatus
 from zetherion_ai.skills.calendar import (
     CALENDAR_COLLECTION,
@@ -513,7 +514,7 @@ class TestCalendarSkillExtended:
         assert result is True
         mock_memory.ensure_collection.assert_called_once_with(
             CALENDAR_COLLECTION,
-            vector_size=768,
+            vector_size=get_embedding_dimension(),
         )
 
     @pytest.mark.asyncio

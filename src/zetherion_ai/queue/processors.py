@@ -7,6 +7,7 @@ to fulfil the request.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any, Protocol
 
 from zetherion_ai.logging import get_logger
@@ -180,9 +181,20 @@ class QueueProcessors:
 
         if channel is not None and message_id and hasattr(channel, "fetch_message"):
             try:
-                message_obj = await channel.fetch_message(message_id)
+                message_obj = await channel.fetch_message(int(message_id))
             except Exception:
                 log.debug("message_fetch_failed", message_id=message_id)
+        if message_obj is None and channel is not None and message_id and hasattr(
+            channel, "get_partial_message"
+        ):
+            try:
+                maybe_partial = channel.get_partial_message(int(message_id))
+                if asyncio.iscoroutine(maybe_partial):
+                    maybe_partial = await maybe_partial
+                if hasattr(maybe_partial, "reply"):
+                    message_obj = maybe_partial
+            except Exception:
+                log.debug("message_partial_reference_failed", message_id=message_id)
 
         # Generate response through the agent
         generation_error: Exception | None = None

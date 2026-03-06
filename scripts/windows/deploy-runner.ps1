@@ -278,6 +278,24 @@ function Ensure-RequiredRuntimeEnv {
         $updatedKeys.Add("CGS_AUTH_AUDIENCE")
     }
 
+    $embeddingsBackend = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("EMBEDDINGS_BACKEND")
+    if (-not $embeddingsBackend) {
+        Set-OrAddEnvLine -Lines $lines -Key "EMBEDDINGS_BACKEND" -Value "openai"
+        $updatedKeys.Add("EMBEDDINGS_BACKEND")
+    }
+
+    $openaiEmbeddingModel = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("OPENAI_EMBEDDING_MODEL")
+    if (-not $openaiEmbeddingModel) {
+        Set-OrAddEnvLine -Lines $lines -Key "OPENAI_EMBEDDING_MODEL" -Value "text-embedding-3-large"
+        $updatedKeys.Add("OPENAI_EMBEDDING_MODEL")
+    }
+
+    $openaiEmbeddingDimensions = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("OPENAI_EMBEDDING_DIMENSIONS")
+    if (-not $openaiEmbeddingDimensions) {
+        Set-OrAddEnvLine -Lines $lines -Key "OPENAI_EMBEDDING_DIMENSIONS" -Value "3072"
+        $updatedKeys.Add("OPENAI_EMBEDDING_DIMENSIONS")
+    }
+
     if ($updatedKeys.Count -gt 0) {
         Set-Content -Path $rootEnvPath -Value $lines -Encoding utf8
     }

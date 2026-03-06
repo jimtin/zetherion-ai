@@ -34,7 +34,17 @@ from zetherion_ai.memory.qdrant import CONVERSATIONS_COLLECTION, LONG_TERM_MEMOR
 from zetherion_ai.security.encryption import FieldEncryptor
 from zetherion_ai.security.keys import KeyManager
 
-DEFAULT_COLLECTIONS = (CONVERSATIONS_COLLECTION, LONG_TERM_MEMORY_COLLECTION)
+DEFAULT_COLLECTIONS = (
+    CONVERSATIONS_COLLECTION,
+    LONG_TERM_MEMORY_COLLECTION,
+    "docs_knowledge",
+    "tenant_documents",
+    "user_profiles",
+    "skill_tasks",
+    "skill_calendar",
+    "skill_dev_journal",
+    "skill_milestones",
+)
 
 
 @dataclass

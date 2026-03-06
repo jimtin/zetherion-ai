@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from zetherion_ai.logging import get_logger
+from zetherion_ai.memory.embeddings import get_embedding_dimension
 from zetherion_ai.skills.base import (
     HeartbeatAction,
     Skill,
@@ -203,7 +204,7 @@ class TaskManagerSkill(Skill):
             # Create collection if it doesn't exist
             await self._memory.ensure_collection(
                 TASKS_COLLECTION,
-                vector_size=768,  # Gemini embedding size
+                vector_size=get_embedding_dimension(),
             )
             log.info("task_manager_initialized", collection=TASKS_COLLECTION)
             return True
