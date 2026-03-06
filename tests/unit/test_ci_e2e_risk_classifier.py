@@ -49,6 +49,7 @@ def test_low_risk_paths_can_skip_required_e2e() -> None:
             "docs/development/ci-cd.md",
             "tests/unit/test_ci_e2e_risk_classifier.py",
             ".ci/pipeline_contract.json",
+            "scripts/ci_e2e_risk_classifier.py",
             "scripts/ci_required_e2e_gate.py",
         ],
     )
