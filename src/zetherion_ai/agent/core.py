@@ -17,6 +17,13 @@ from zetherion_ai.logging import get_logger
 from zetherion_ai.memory.qdrant import LONG_TERM_MEMORY_COLLECTION, QdrantMemory
 from zetherion_ai.skills.base import SkillRequest, SkillResponse
 from zetherion_ai.skills.client import SkillsClient, SkillsClientError
+from zetherion_ai.trust.scope import (
+    DataScope,
+    ScopedPrincipal,
+    TrustDomain,
+    assemble_prompt_fragments,
+    prompt_fragment,
+)
 from zetherion_ai.utils import timed_operation
 
 log = get_logger("zetherion_ai.agent.core")
@@ -1093,7 +1100,18 @@ class Agent:
         )
 
         # Build system prompt with context
-        system_prompt = SYSTEM_PROMPT
+        prompt_principal = ScopedPrincipal(
+            principal_id=str(user_id),
+            principal_type="owner_user",
+            trust_domain=TrustDomain.OWNER_PERSONAL,
+        )
+        system_prompt_fragments = [
+            prompt_fragment(
+                SYSTEM_PROMPT,
+                scope=DataScope.CONTROL_PLANE,
+                source="zetherion_ai.agent.prompts.SYSTEM_PROMPT",
+            )
+        ]
         score_threshold = get_dynamic("tuning", "memory_score_threshold", MEMORY_SCORE_THRESHOLD)
         context_limit = get_dynamic("tuning", "context_history_limit", CONTEXT_HISTORY_LIMIT)
 
@@ -1102,7 +1120,19 @@ class Agent:
                 f"- {m['content']}" for m in relevant_memories if m["score"] > score_threshold
             )
             if memory_text:
-                system_prompt = f"{SYSTEM_PROMPT}\n\n## Relevant Memories\n{memory_text}"
+                system_prompt_fragments.append(
+                    prompt_fragment(
+                        f"## Relevant Memories\n{memory_text}",
+                        scope=DataScope.OWNER_PERSONAL,
+                        source="zetherion_ai.agent.core.relevant_memories",
+                    )
+                )
+
+        system_prompt = assemble_prompt_fragments(
+            system_prompt_fragments,
+            purpose="agent.owner.system_prompt",
+            principal=prompt_principal,
+        )
 
         # Format conversation history
         messages = [

@@ -25,6 +25,13 @@ from zetherion_ai.skills.base import (
     SkillResponse,
 )
 from zetherion_ai.skills.permissions import Permission, PermissionSet
+from zetherion_ai.trust.scope import (
+    DataScope,
+    ScopedResource,
+    TrustDomain,
+    assemble_prompt_fragments,
+    prompt_fragment,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -155,30 +162,54 @@ def build_system_prompt(tenant: dict[str, Any], signals: L1aSignals | None = Non
     base_prompt = custom_prompt or _DEFAULT_TENANT_PROMPT.format(
         tenant_name=tenant.get("name", "the company"),
     )
-
-    if signals is None or not signals.has_signals:
-        return base_prompt
-
-    # Append signal-aware instructions
-    addenda: list[str] = []
-    if signals.is_safety_concern:
-        addenda.append(
-            "IMPORTANT: The user may be expressing distress. "
-            "Respond with empathy and provide appropriate crisis resources. "
-            "Suggest contacting emergency services (999/112/911) if immediate danger."
+    resource = ScopedResource(
+        resource_id=str(tenant.get("tenant_id") or tenant.get("name") or "tenant_chat"),
+        resource_type="tenant_chat",
+        trust_domain=TrustDomain.TENANT_RAW,
+    )
+    fragments = [
+        prompt_fragment(
+            base_prompt,
+            scope=DataScope.TENANT_RAW,
+            source="zetherion_ai.skills.client_chat.base_prompt",
         )
-    if signals.is_urgent:
-        addenda.append(
-            "The user's message appears urgent. "
-            "Acknowledge the urgency and prioritise practical help."
-        )
-    if signals.needs_escalation:
-        addenda.append(
-            "The user wants to speak to a real person. "
-            "Acknowledge this and provide contact information if available."
-        )
+    ]
 
-    return base_prompt + "\n\n" + "\n".join(addenda)
+    if signals is not None and signals.has_signals:
+        if signals.is_safety_concern:
+            fragments.append(
+                prompt_fragment(
+                    "IMPORTANT: The user may be expressing distress. "
+                    "Respond with empathy and provide appropriate crisis resources. "
+                    "Suggest contacting emergency services (999/112/911) if immediate danger.",
+                    scope=DataScope.CONTROL_PLANE,
+                    source="zetherion_ai.skills.client_chat.safety_addendum",
+                )
+            )
+        if signals.is_urgent:
+            fragments.append(
+                prompt_fragment(
+                    "The user's message appears urgent. "
+                    "Acknowledge the urgency and prioritise practical help.",
+                    scope=DataScope.CONTROL_PLANE,
+                    source="zetherion_ai.skills.client_chat.urgency_addendum",
+                )
+            )
+        if signals.needs_escalation:
+            fragments.append(
+                prompt_fragment(
+                    "The user wants to speak to a real person. "
+                    "Acknowledge this and provide contact information if available.",
+                    scope=DataScope.CONTROL_PLANE,
+                    source="zetherion_ai.skills.client_chat.escalation_addendum",
+                )
+            )
+
+    return assemble_prompt_fragments(
+        fragments,
+        purpose="skills.client_chat.system_prompt",
+        resource=resource,
+    )
 
 
 # ---------------------------------------------------------------------------

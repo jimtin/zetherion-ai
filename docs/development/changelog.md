@@ -13,6 +13,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Segment 1 Scope Kernel and Prompt Isolation (2026-03-06)
+
+- Impacted capability IDs:
+  - `trust.scope.kernel`
+  - `trust.scope.prompt-isolation`
+  - `trust.scope.violation-logging`
+- Impacted workflow scenario IDs:
+  - `isolation.segment1.owner-agent-scope-labelling`
+  - `isolation.segment1.tenant-chat-scope-labelling`
+  - `isolation.segment1.scope-violation-rejection`
+  - `isolation.segment1.docs-and-email-prompt-labelling`
+- Added `src/zetherion_ai/trust/scope.py` with canonical trust-domain scope types,
+  scope-labelled prompt fragments, fail-closed composition rules, and structured
+  `prompt_scope_violation` logging.
+- Routed current owner and tenant prompt builders through the scope kernel for:
+  - owner agent core and router prompts
+  - tenant `client_chat` system prompts
+  - email classification and personality extraction prompts
+  - docs knowledge and tenant document QA prompts
+- Added unit coverage in `tests/unit/test_scope_kernel.py` for allowed and denied
+  scope combinations, including worker-artifact and owner-portfolio boundaries.
+
 ### Added - Segment 0 Current-State Isolation Inventory and Compatibility Baseline (2026-03-06)
 
 - Impacted capability IDs:

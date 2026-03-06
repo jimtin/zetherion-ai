@@ -25,6 +25,13 @@ from zetherion_ai.documents.processing import (
 )
 from zetherion_ai.logging import get_logger
 from zetherion_ai.memory.qdrant import QdrantMemory
+from zetherion_ai.trust.scope import (
+    DataScope,
+    ScopedResource,
+    TrustDomain,
+    assemble_prompt_fragments,
+    prompt_fragment,
+)
 
 log = get_logger("zetherion_ai.documents.service")
 
@@ -420,20 +427,48 @@ class DocumentService:
 
         forced_provider, forced_model = self._resolve_provider_model(provider=provider, model=model)
 
-        system_prompt = "\n".join(
+        resource = ScopedResource(
+            resource_id=tenant_id,
+            resource_type="tenant_document_query",
+            trust_domain=TrustDomain.TENANT_RAW,
+        )
+        system_prompt = assemble_prompt_fragments(
             [
-                "You answer questions using tenant documents only.",
-                "Use concise answers and cite source file names inline when possible.",
-                "If context is insufficient, say so clearly.",
-                "Do not fabricate facts.",
-            ]
+                prompt_fragment(
+                    "\n".join(
+                        [
+                            "You answer questions using tenant documents only.",
+                            "Use concise answers and cite source file names inline when possible.",
+                            "If context is insufficient, say so clearly.",
+                            "Do not fabricate facts.",
+                        ]
+                    ),
+                    scope=DataScope.CONTROL_PLANE,
+                    source="zetherion_ai.documents.service.system_prompt",
+                )
+            ],
+            purpose="documents.tenant_query.system_prompt",
+            resource=resource,
         )
 
-        prompt = (
-            f"Question: {query}\n\n"
-            "Context:\n"
-            + "\n".join(context_lines)
-            + "\n\nProvide an answer with short source citations."
+        prompt = assemble_prompt_fragments(
+            [
+                prompt_fragment(
+                    (
+                        "Question and tenant document context follow. Provide an answer "
+                        "with short source citations."
+                    ),
+                    scope=DataScope.CONTROL_PLANE,
+                    source="zetherion_ai.documents.service.prompt_instructions",
+                ),
+                prompt_fragment(
+                    f"Question: {query}\n\nContext:\n" + "\n".join(context_lines),
+                    scope=DataScope.TENANT_RAW,
+                    source="zetherion_ai.documents.service.prompt_context",
+                ),
+            ],
+            purpose="documents.tenant_query.prompt",
+            resource=resource,
         )
 
         result = await self._inference.infer(

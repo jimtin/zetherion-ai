@@ -16,6 +16,13 @@ from typing import TYPE_CHECKING, Any
 
 from zetherion_ai.agent.providers import TaskType
 from zetherion_ai.logging import get_logger
+from zetherion_ai.trust.scope import (
+    DataScope,
+    ScopedPrincipal,
+    TrustDomain,
+    assemble_prompt_fragments,
+    prompt_fragment,
+)
 
 if TYPE_CHECKING:
     from zetherion_ai.agent.inference import InferenceBroker
@@ -115,12 +122,35 @@ class DocsKnowledgeBase:
             context_blocks.append(f"[{idx}] Source: {source}\n{content}")
         context = "\n\n".join(context_blocks)
 
-        prompt = (
-            "You are answering a product setup/help question using ONLY provided docs context.\n"
-            "If the answer is not clearly present, respond exactly with: INSUFFICIENT_CONTEXT\n\n"
-            f"Question:\n{question}\n\n"
-            f"Docs context:\n{context}\n\n"
-            "Answer in concise practical steps."
+        prompt = assemble_prompt_fragments(
+            [
+                prompt_fragment(
+                    (
+                        "You are answering a product setup/help question using ONLY provided "
+                        "docs context.\n"
+                        "If the answer is not clearly present, respond exactly with: "
+                        "INSUFFICIENT_CONTEXT"
+                    ),
+                    scope=DataScope.CONTROL_PLANE,
+                    source="zetherion_ai.agent.docs_knowledge.instructions",
+                ),
+                prompt_fragment(
+                    f"Question:\n{question}",
+                    scope=DataScope.OWNER_PERSONAL,
+                    source="zetherion_ai.agent.docs_knowledge.question",
+                ),
+                prompt_fragment(
+                    f"Docs context:\n{context}\n\nAnswer in concise practical steps.",
+                    scope=DataScope.CONTROL_PLANE,
+                    source="zetherion_ai.agent.docs_knowledge.context",
+                ),
+            ],
+            purpose="agent.docs_knowledge.prompt",
+            principal=ScopedPrincipal(
+                principal_id=str(user_id),
+                principal_type="owner_user",
+                trust_domain=TrustDomain.OWNER_PERSONAL,
+            ),
         )
 
         result = await self._broker.infer(

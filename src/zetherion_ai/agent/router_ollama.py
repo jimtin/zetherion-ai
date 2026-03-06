@@ -8,12 +8,19 @@ import httpx
 
 from zetherion_ai.agent.prompts import SIMPLE_CHAT_PROMPT
 from zetherion_ai.agent.router import (
-    ROUTER_PROMPT,
     MessageIntent,
     RoutingDecision,
+    _build_router_prompt,
 )
 from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
+from zetherion_ai.trust.scope import (
+    DataScope,
+    ScopedPrincipal,
+    TrustDomain,
+    assemble_prompt_fragments,
+    prompt_fragment,
+)
 
 log = get_logger("zetherion_ai.agent.router_ollama")
 
@@ -145,7 +152,7 @@ class OllamaRouterBackend:
         Raises:
             Any exception on failure (caller handles fallback).
         """
-        prompt = f"{ROUTER_PROMPT}\n\nUser message: {message}"
+        prompt = _build_router_prompt(message)
 
         response = await self._client.post(
             f"{url}/api/generate",
@@ -301,12 +308,37 @@ class OllamaRouterBackend:
             Generated response.
         """
         try:
+            prompt_principal = ScopedPrincipal(
+                principal_id="owner_user",
+                principal_type="owner_user",
+                trust_domain=TrustDomain.OWNER_PERSONAL,
+            )
             response = await self._client.post(
                 f"{self._url}/api/generate",
                 json={
                     "model": self._model,
-                    "prompt": message,
-                    "system": SIMPLE_CHAT_PROMPT,
+                    "prompt": assemble_prompt_fragments(
+                        [
+                            prompt_fragment(
+                                message,
+                                scope=DataScope.OWNER_PERSONAL,
+                                source="zetherion_ai.agent.router_ollama.simple_user_message",
+                            )
+                        ],
+                        purpose="agent.router_ollama.simple_user_prompt",
+                        principal=prompt_principal,
+                    ),
+                    "system": assemble_prompt_fragments(
+                        [
+                            prompt_fragment(
+                                SIMPLE_CHAT_PROMPT,
+                                scope=DataScope.CONTROL_PLANE,
+                                source="zetherion_ai.agent.prompts.SIMPLE_CHAT_PROMPT",
+                            )
+                        ],
+                        purpose="agent.router_ollama.simple_system_prompt",
+                        principal=prompt_principal,
+                    ),
                     "stream": False,
                     "keep_alive": OLLAMA_KEEP_ALIVE,  # Keep model loaded
                     "options": {
