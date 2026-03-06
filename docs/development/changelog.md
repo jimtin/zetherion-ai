@@ -20,10 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - classifies changed-path policy and defaults ambiguous cases to `true`
   - uploads `e2e-risk-classifier` receipt artifact
 - Added required E2E gate job (`required-e2e-gate`) that always emits
-  `e2e-contract-receipt` and enforces:
-  - `tests/integration/test_e2e.py`
-  - `tests/integration/test_discord_e2e.py` (`discord_e2e and not optional_e2e`)
-  - deterministic failure on missing required credentials or skipped required suites
+  `e2e-contract-receipt` and validates local receipt evidence only:
+  - CI never runs full E2E suites directly
+  - when `e2e_required=true`, `.ci/e2e-receipt.json` must be present and match PR head SHA
+  - receipt contract requires `docker_e2e=passed` and `discord_required_e2e=passed`
+- Added local receipt runner `scripts/local-required-e2e-receipt.sh` to execute required
+  Docker/Discord E2E suites and write `.ci/e2e-receipt.json`.
 - Updated CI summary contract so merge cannot promote when required E2E gate fails.
 - Updated CI failure attribution taxonomy:
   - `required-e2e-gate` failures now surface

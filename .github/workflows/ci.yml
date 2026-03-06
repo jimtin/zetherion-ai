@@ -473,25 +473,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
-      - name: Set up Python 3.12
-        if: ${{ needs.risk-classifier.outputs.e2e_required == 'true' }}
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-
-      - name: Install dependencies for required E2E
-        if: ${{ needs.risk-classifier.outputs.e2e_required == 'true' }}
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e ".[dev]"
-
       - name: Enforce required E2E contract
         env:
           E2E_REQUIRED: ${{ needs.risk-classifier.outputs.e2e_required }}
           E2E_DECISION_REASON_CODE: ${{ needs.risk-classifier.outputs.decision_reason_code }}
           E2E_DECISION_REASON: ${{ needs.risk-classifier.outputs.decision_reason }}
+          E2E_EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          LOCAL_E2E_RECEIPT_PATH: .ci/e2e-receipt.json
         run: |
           bash scripts/ci-required-e2e-gate.sh
 
@@ -502,8 +490,7 @@ jobs:
           name: e2e-contract-receipt
           path: |
             e2e-contract-receipt.json
-            docker-e2e.log
-            discord-e2e.log
+            .ci/e2e-receipt.json
           retention-days: 30
 
   integration-test:
