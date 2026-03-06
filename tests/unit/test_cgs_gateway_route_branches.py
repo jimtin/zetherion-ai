@@ -9,6 +9,7 @@ import pytest
 from aiohttp import FormData, web
 from aiohttp.test_utils import TestClient, TestServer
 
+from zetherion_ai.cgs_gateway.errors import GatewayError
 from zetherion_ai.cgs_gateway.models import AuthPrincipal
 from zetherion_ai.cgs_gateway.routes._utils import fingerprint_payload
 from zetherion_ai.cgs_gateway.routes.internal import register_internal_routes
@@ -1315,6 +1316,29 @@ async def test_internal_admin_worker_route_matrix_success_paths() -> None:
             return 200, {"ok": True, "job": {"job_id": "job-1", "status": "running"}}
         if method == "GET" and subpath == "/workers/events":
             return 200, {"ok": True, "events": [{"event_id": 1}]}
+        if method == "GET" and subpath == "/workers/messaging/grants":
+            return 200, {"ok": True, "grants": []}
+        if method == "PUT" and subpath == "/workers/nodes/node-1/messaging/grants/whatsapp/chat-1":
+            return 200, {
+                "ok": True,
+                "grant": {
+                    "grant_id": "55555555-5555-5555-5555-555555555555",
+                    "node_id": "node-1",
+                    "provider": "whatsapp",
+                    "chat_id": "chat-1",
+                },
+            }
+        if (
+            method == "DELETE"
+            and subpath == "/workers/messaging/grants/55555555-5555-5555-5555-555555555555"
+        ):
+            return 200, {
+                "ok": True,
+                "grant": {
+                    "grant_id": "55555555-5555-5555-5555-555555555555",
+                    "idempotent": False,
+                },
+            }
         if method == "POST" and subpath == "/workers/nodes/node-1/quarantine":
             return 200, {"ok": True, "node": {"node_id": "node-1", "status": "quarantined"}}
         if method == "POST" and subpath == "/workers/nodes/node-1/unquarantine":
@@ -1389,6 +1413,36 @@ async def test_internal_admin_worker_route_matrix_success_paths() -> None:
         )
         assert events.status == 200
 
+        grants = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/messaging/grants",
+            params={"node_id": "node-1", "provider": "whatsapp", "chat_id": "chat-1"},
+        )
+        assert grants.status == 200
+
+        grant_upsert = await client.put(
+            (
+                "/service/ai/v1/internal/admin/tenants/tenant-a/workers/nodes/node-1/"
+                "messaging/grants/whatsapp/chat-1"
+            ),
+            json={
+                "allow_read": True,
+                "allow_send": False,
+                "ttl_seconds": 3600,
+                "redacted_payload": True,
+                "explicitly_elevated": True,
+            },
+        )
+        assert grant_upsert.status == 200
+
+        grant_revoke = await client.delete(
+            (
+                "/service/ai/v1/internal/admin/tenants/tenant-a/workers/messaging/grants/"
+                "55555555-5555-5555-5555-555555555555"
+            ),
+            json={"reason": "cleanup", "explicitly_elevated": True},
+        )
+        assert grant_revoke.status == 200
+
     forwarded_subpaths = [
         call.kwargs.get("subpath")
         for call in app["cgs_skills_client"].request_tenant_admin_json.await_args_list
@@ -1403,6 +1457,9 @@ async def test_internal_admin_worker_route_matrix_success_paths() -> None:
     assert "/workers/jobs/job-1/retry" in forwarded_subpaths
     assert "/workers/jobs/job-1/cancel" in forwarded_subpaths
     assert "/workers/events" in forwarded_subpaths
+    assert "/workers/messaging/grants" in forwarded_subpaths
+    assert "/workers/nodes/node-1/messaging/grants/whatsapp/chat-1" in forwarded_subpaths
+    assert "/workers/messaging/grants/55555555-5555-5555-5555-555555555555" in forwarded_subpaths
 
 
 @pytest.mark.asyncio
@@ -1496,6 +1553,84 @@ async def test_internal_admin_worker_capability_update_returns_approval_required
 
 
 @pytest.mark.asyncio
+async def test_internal_admin_worker_messaging_grant_returns_approval_required(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin"],
+        principal_claims={"step_up": True, "allowed_tenants": ["tenant-a"]},
+    )
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+    storage.create_admin_change = AsyncMock(
+        return_value={"change_id": "chg-worker-msg-grant", "status": "pending"}
+    )
+
+    allow = TrustPolicyDecision(
+        action="tenant_admin.read",
+        action_class=TrustActionClass.READ,
+        outcome=TrustDecisionOutcome.ALLOW,
+        status=200,
+        code="AI_OK",
+        message="Allowed",
+        details={},
+    )
+    approval_required = TrustPolicyDecision(
+        action="worker.messaging.grant",
+        action_class=TrustActionClass.CRITICAL,
+        outcome=TrustDecisionOutcome.APPROVAL_REQUIRED,
+        status=409,
+        code="AI_APPROVAL_REQUIRED",
+        message="This action requires approval before apply",
+        details={},
+        requires_two_person=True,
+    )
+
+    def _evaluate(**kwargs: object) -> TrustPolicyDecision:
+        action = str(kwargs.get("action", ""))
+        if action == "worker.messaging.grant":
+            return approval_required
+        return allow
+
+    monkeypatch.setattr(
+        "zetherion_ai.cgs_gateway.routes.internal_admin._TRUST_POLICY_EVALUATOR",
+        SimpleNamespace(evaluate=_evaluate),
+    )
+
+    app["cgs_skills_client"].request_tenant_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+    app["cgs_skills_client"].request_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.put(
+            (
+                "/service/ai/v1/internal/admin/tenants/tenant-a/workers/nodes/node-1/"
+                "messaging/grants/whatsapp/chat-1"
+            ),
+            json={
+                "allow_read": True,
+                "allow_send": False,
+                "ttl_seconds": 3600,
+                "redacted_payload": True,
+            },
+        )
+        assert response.status == 409
+        body = await response.json()
+        assert body["error"]["code"] == "AI_APPROVAL_REQUIRED"
+        assert body["error"]["details"]["change_ticket_id"] == "chg-worker-msg-grant"
+
+    forwarded_subpaths = [
+        call.kwargs.get("subpath")
+        for call in app["cgs_skills_client"].request_tenant_admin_json.await_args_list
+    ]
+    assert "/workers/nodes/node-1/messaging/grants/whatsapp/chat-1" not in forwarded_subpaths
+
+
+@pytest.mark.asyncio
 async def test_internal_admin_automerge_execute_success_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1557,6 +1692,117 @@ async def test_internal_admin_automerge_execute_success_paths(
     assert forwarded["subpath"] == "/automerge/execute"
     assert forwarded["json_body"]["repository"] == "openclaw/openclaw"
     storage.mark_admin_change_applied.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_automerge_execute_without_change_ticket_no_change_updates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin"],
+        principal_claims={"step_up": True, "allowed_tenants": ["tenant-a"]},
+    )
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+    storage.mark_admin_change_applied = AsyncMock(return_value=None)
+    storage.mark_admin_change_failed = AsyncMock(return_value=None)
+
+    allow = TrustPolicyDecision(
+        action="automerge.execute",
+        action_class=TrustActionClass.CRITICAL,
+        outcome=TrustDecisionOutcome.ALLOW,
+        status=200,
+        code="AI_OK",
+        message="Allowed",
+        details={},
+    )
+    monkeypatch.setattr(
+        "zetherion_ai.cgs_gateway.routes.internal_admin._TRUST_POLICY_EVALUATOR",
+        SimpleNamespace(evaluate=lambda **_: allow),
+    )
+
+    app["cgs_skills_client"].request_tenant_admin_json = AsyncMock(
+        return_value=(200, {"ok": True, "result": {"status": "merged"}})
+    )
+    app["cgs_skills_client"].request_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/automerge/execute",
+            json={
+                "repository": "openclaw/openclaw",
+                "branch_guard_passed": True,
+                "risk_guard_passed": True,
+            },
+        )
+        assert response.status == 200
+
+    storage.mark_admin_change_applied.assert_not_awaited()
+    storage.mark_admin_change_failed.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_automerge_execute_marks_change_failed_on_upstream_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin"],
+        principal_claims={"step_up": True, "allowed_tenants": ["tenant-a"]},
+    )
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+    storage.mark_admin_change_applied = AsyncMock(return_value=None)
+    storage.mark_admin_change_failed = AsyncMock(return_value=None)
+
+    allow = TrustPolicyDecision(
+        action="automerge.execute",
+        action_class=TrustActionClass.CRITICAL,
+        outcome=TrustDecisionOutcome.ALLOW,
+        status=200,
+        code="AI_OK",
+        message="Allowed",
+        details={},
+    )
+    monkeypatch.setattr(
+        "zetherion_ai.cgs_gateway.routes.internal_admin._TRUST_POLICY_EVALUATOR",
+        SimpleNamespace(evaluate=lambda **_: allow),
+    )
+
+    app["cgs_skills_client"].request_tenant_admin_json = AsyncMock(
+        side_effect=GatewayError(
+            code="AI_UPSTREAM_ERROR",
+            message="upstream failure",
+            status=502,
+        )
+    )
+    app["cgs_skills_client"].request_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/automerge/execute",
+            json={
+                "repository": "openclaw/openclaw",
+                "branch_guard_passed": True,
+                "risk_guard_passed": True,
+                "change_ticket_id": "chg-automerge-fail",
+            },
+        )
+        assert response.status == 502
+        payload = await response.json()
+        assert payload["error"]["code"] == "AI_UPSTREAM_ERROR"
+
+    storage.mark_admin_change_failed.assert_awaited_once()
+    storage.mark_admin_change_applied.assert_not_awaited()
 
 
 @pytest.mark.asyncio

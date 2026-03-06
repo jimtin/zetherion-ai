@@ -2612,6 +2612,8 @@ def _worker_job_row(
     execution_target: str = "any_worker",
     required_capabilities: list[str] | None = None,
     claimed_by_node_id: str | None = None,
+    action: str = "worker.noop",
+    payload_json: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
     return {
@@ -2625,8 +2627,8 @@ def _worker_job_row(
         "required_capabilities": required_capabilities or ["repo.patch"],
         "max_runtime_seconds": 600,
         "artifact_contract": {},
-        "action": "worker.noop",
-        "payload_json": {"runner": "noop", "prompt_text": "Do the task"},
+        "action": action,
+        "payload_json": payload_json or {"runner": "noop", "prompt_text": "Do the task"},
         "status": status,
         "claimed_by_node_id": claimed_by_node_id,
         "lease_token": None,
@@ -3293,6 +3295,342 @@ async def test_dispatch_and_claim_worker_job_error_paths() -> None:
         required_capabilities=["repo.patch"],
     )
     assert no_claim is None
+
+
+@pytest.mark.asyncio
+async def test_claim_worker_job_enforces_messaging_grants_and_redaction() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+
+    messaging_candidate = _worker_job_row(
+        status="queued",
+        required_capabilities=[],
+        action="messaging.read",
+        payload_json={
+            "provider": "whatsapp",
+            "chat_id": "chat-1",
+            "text": "secret message",
+            "nested": {"body": "also secret"},
+        },
+    )
+
+    denied_reasons: list[dict[str, Any]] = []
+    conn.fetch.return_value = [messaging_candidate]
+    conn.fetchval.return_value = 1
+    manager.get_active_worker_messaging_grant = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    denied = await manager.claim_worker_dispatch_job(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        required_capabilities=["repo.patch"],
+        denied_reasons=denied_reasons,
+    )
+    assert denied is None
+    assert denied_reasons
+    assert denied_reasons[0]["reason"] == "grant_required"
+
+    conn.fetch.return_value = [messaging_candidate]
+    conn.fetchrow.return_value = _worker_job_row(
+        status="running",
+        required_capabilities=[],
+        action="messaging.read",
+        payload_json=dict(messaging_candidate["payload_json"]),
+    )
+    manager.get_active_worker_messaging_grant = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "grant_id": "55555555-5555-5555-5555-555555555555",
+            "redacted_payload": True,
+        }
+    )
+    granted = await manager.claim_worker_dispatch_job(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        required_capabilities=["repo.patch"],
+        denied_reasons=[],
+    )
+    assert granted is not None
+    assert granted["status"] == "running"
+    payload = granted["payload_json"]
+    assert payload["text"] == "[REDACTED]"
+    assert payload["nested"]["body"] == "[REDACTED]"
+    assert payload["worker_messaging_access"]["redacted_payload"] is True
+
+
+@pytest.mark.asyncio
+async def test_worker_messaging_grant_lifecycle_methods() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    manager.get_worker_node = AsyncMock(  # type: ignore[method-assign]
+        return_value={"node_id": "node-1", "status": "active", "health_status": "healthy"}
+    )
+    manager.list_worker_messaging_grants = AsyncMock(return_value=[])  # type: ignore[method-assign]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            {
+                "grant_id": "55555555-5555-5555-5555-555555555555",
+                "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                "node_id": "node-1",
+                "provider": "whatsapp",
+                "chat_id": "chat-1",
+                "allow_read": True,
+                "allow_send": False,
+                "redacted_payload": True,
+                "metadata": {},
+                "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                "revoked_at": None,
+                "revoked_reason": None,
+                "created_by": "operator-1",
+                "revoked_by": None,
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
+            },
+            {
+                "grant_id": "55555555-5555-5555-5555-555555555555",
+                "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                "node_id": "node-1",
+                "provider": "whatsapp",
+                "chat_id": "chat-1",
+                "allow_read": True,
+                "allow_send": False,
+                "redacted_payload": True,
+                "metadata": {},
+                "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                "revoked_at": None,
+                "revoked_reason": None,
+                "created_by": "operator-1",
+                "revoked_by": None,
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
+            },
+            {
+                "grant_id": "55555555-5555-5555-5555-555555555555",
+                "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                "node_id": "node-1",
+                "provider": "whatsapp",
+                "chat_id": "chat-1",
+                "allow_read": True,
+                "allow_send": False,
+                "redacted_payload": True,
+                "metadata": {},
+                "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                "revoked_at": datetime.now(UTC),
+                "revoked_reason": "manual revoke",
+                "created_by": "operator-1",
+                "revoked_by": "operator-1",
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
+            },
+            {
+                "grant_id": "55555555-5555-5555-5555-555555555555",
+                "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                "node_id": "node-1",
+                "provider": "whatsapp",
+                "chat_id": "chat-1",
+                "allow_read": True,
+                "allow_send": False,
+                "redacted_payload": True,
+                "metadata": {},
+                "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                "revoked_at": datetime.now(UTC),
+                "revoked_reason": "manual revoke",
+                "created_by": "operator-1",
+                "revoked_by": "operator-1",
+                "created_at": datetime.now(UTC),
+                "updated_at": datetime.now(UTC),
+            },
+        ]
+    )
+    manager._fetch = AsyncMock(return_value=[{"grant_id": "a"}, {"grant_id": "b"}])  # type: ignore[method-assign]
+
+    created = await manager.put_worker_messaging_grant(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        provider="whatsapp",
+        chat_id="chat-1",
+        allow_read=True,
+        allow_send=False,
+        ttl_seconds=3600,
+        redacted_payload=True,
+        metadata={"scope": "test"},
+        actor=_actor(),
+    )
+    assert created["grant_id"] == "55555555-5555-5555-5555-555555555555"
+
+    revoked = await manager.revoke_worker_messaging_grant(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        grant_id="55555555-5555-5555-5555-555555555555",
+        actor=_actor(),
+        reason="manual revoke",
+    )
+    assert revoked["idempotent"] is False
+    assert revoked["revoked_reason"] == "manual revoke"
+
+    purged = await manager.purge_expired_worker_messaging_grants(limit=10)
+    assert purged == 2
+
+
+@pytest.mark.asyncio
+async def test_worker_messaging_grant_list_and_active_lookup_filters() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    manager._fetch = AsyncMock(return_value=[{"grant_id": "g-1"}])  # type: ignore[method-assign]
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            {"grant_id": "g-read", "allow_read": True},
+            None,
+        ]
+    )
+
+    listed = await manager.list_worker_messaging_grants(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        provider=" WhatsApp ",
+        chat_id=" chat-1 ",
+        include_expired=False,
+        include_revoked=False,
+        limit=5000,
+    )
+    assert listed == [{"grant_id": "g-1"}]
+    list_sql, *_list_args = manager._fetch.await_args.args
+    assert "revoked_at IS NULL" in list_sql
+    assert "expires_at > now()" in list_sql
+    assert _list_args[2] == "whatsapp"
+    assert _list_args[3] == "chat-1"
+    assert _list_args[-1] == 1000
+
+    manager._fetch.reset_mock()
+    manager._fetch.return_value = []
+    await manager.list_worker_messaging_grants(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        include_expired=True,
+        include_revoked=True,
+        limit=0,
+    )
+    list_sql_unfiltered, *unfiltered_args = manager._fetch.await_args.args
+    assert "revoked_at IS NULL" not in list_sql_unfiltered
+    assert "expires_at > now()" not in list_sql_unfiltered
+    assert unfiltered_args[-1] == 1
+
+    active_read = await manager.get_active_worker_messaging_grant(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        provider="whatsapp",
+        chat_id="chat-1",
+        permission=" read ",
+    )
+    assert active_read == {"grant_id": "g-read", "allow_read": True}
+    lookup_sql, *_lookup_args = manager._fetchrow.await_args_list[0].args
+    assert "AND allow_read = TRUE" in lookup_sql
+
+    active_send = await manager.get_active_worker_messaging_grant(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        provider="whatsapp",
+        chat_id="chat-1",
+        permission="send",
+    )
+    assert active_send is None
+    lookup_send_sql, *_lookup_send_args = manager._fetchrow.await_args_list[1].args
+    assert "AND allow_send = TRUE" in lookup_send_sql
+
+    with pytest.raises(ValueError, match="Missing node_id"):
+        await manager.get_active_worker_messaging_grant(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id=" ",
+            provider="whatsapp",
+            chat_id="chat-1",
+            permission="read",
+        )
+    with pytest.raises(ValueError, match="Missing chat_id"):
+        await manager.get_active_worker_messaging_grant(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="node-1",
+            provider="whatsapp",
+            chat_id=" ",
+            permission="send",
+        )
+
+
+@pytest.mark.asyncio
+async def test_worker_messaging_grant_error_and_idempotent_paths() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    manager.get_worker_node = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    manager.list_worker_messaging_grants = AsyncMock(return_value=[])  # type: ignore[method-assign]
+    manager._fetchrow = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError, match="Missing node_id"):
+        await manager.put_worker_messaging_grant(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="",
+            provider="whatsapp",
+            chat_id="chat-1",
+            allow_read=True,
+            allow_send=False,
+            ttl_seconds=60,
+        )
+    with pytest.raises(ValueError, match="Missing chat_id"):
+        await manager.put_worker_messaging_grant(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="node-1",
+            provider="whatsapp",
+            chat_id="",
+            allow_read=True,
+            allow_send=False,
+            ttl_seconds=60,
+        )
+    with pytest.raises(ValueError, match="Worker node not found"):
+        await manager.put_worker_messaging_grant(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="node-1",
+            provider="whatsapp",
+            chat_id="chat-1",
+            allow_read=True,
+            allow_send=False,
+            ttl_seconds=60,
+        )
+
+    manager.get_worker_node = AsyncMock(  # type: ignore[method-assign]
+        return_value={"node_id": "node-1", "status": "active", "health_status": "healthy"}
+    )
+    with pytest.raises(RuntimeError, match="Failed to upsert worker messaging grant"):
+        await manager.put_worker_messaging_grant(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="node-1",
+            provider="whatsapp",
+            chat_id="chat-1",
+            allow_read=True,
+            allow_send=False,
+            ttl_seconds=60,
+        )
+
+    with pytest.raises(ValueError, match="Worker messaging grant not found"):
+        await manager.revoke_worker_messaging_grant(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            grant_id="55555555-5555-5555-5555-555555555555",
+        )
+
+    manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
+        side_effect=[
+            {
+                "grant_id": "55555555-5555-5555-5555-555555555555",
+                "revoked_at": datetime.now(UTC),
+            },
+            {
+                "grant_id": "55555555-5555-5555-5555-555555555555",
+                "revoked_at": None,
+            },
+            None,
+        ]
+    )
+    already_revoked = await manager.revoke_worker_messaging_grant(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        grant_id="55555555-5555-5555-5555-555555555555",
+    )
+    assert already_revoked["idempotent"] is True
+
+    with pytest.raises(RuntimeError, match="Failed to revoke worker messaging grant"):
+        await manager.revoke_worker_messaging_grant(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            grant_id="55555555-5555-5555-5555-555555555555",
+        )
 
 
 @pytest.mark.asyncio

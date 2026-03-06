@@ -1227,6 +1227,98 @@ paths:
       responses:
         '200':
           description: Tenant worker event list envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/messaging/grants:
+    get:
+      summary: List worker messaging grants for one tenant
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: node_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+            default: whatsapp
+        - name: chat_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: include_expired
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: include_revoked
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+      responses:
+        '200':
+          description: Worker messaging grant list envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}:
+    put:
+      summary: Create or rotate one worker messaging grant for a node/chat
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: node_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            default: whatsapp
+        - name: chat_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWorkerMessagingGrantPutRequest'
+      responses:
+        '200':
+          description: Worker messaging grant upserted
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}:
+    delete:
+      summary: Revoke one worker messaging grant
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: grant_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWorkerMessagingGrantDeleteRequest'
+      responses:
+        '200':
+          description: Worker messaging grant revoked
   /service/ai/v1/internal/admin/tenants/{tenant_id}/security/events:
     get:
       summary: List tenant security events for policy/security observability
@@ -1923,6 +2015,45 @@ components:
           type: string
           maxLength: 500
           nullable: true
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminWorkerMessagingGrantPutRequest:
+      type: object
+      properties:
+        allow_read:
+          type: boolean
+          default: false
+        allow_send:
+          type: boolean
+          default: false
+        ttl_seconds:
+          type: integer
+          minimum: 60
+          maximum: 1209600
+          default: 3600
+        redacted_payload:
+          type: boolean
+          default: false
+        metadata:
+          type: object
+          additionalProperties: true
+        explicitly_elevated:
+          type: boolean
+          default: false
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminWorkerMessagingGrantDeleteRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+          nullable: true
+        explicitly_elevated:
+          type: boolean
+          default: false
         change_ticket_id:
           type: string
           nullable: true

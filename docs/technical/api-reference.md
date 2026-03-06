@@ -381,6 +381,20 @@ Cancel a worker job and mark the associated step/plan blocked/failed.
 
 List worker lifecycle/job events (optional filters: `node_id`, `job_id`, `limit`).
 
+### GET /admin/tenants/{tenant_id}/workers/messaging/grants
+
+List scoped worker messaging grants (filters: `node_id`, `provider`, `chat_id`,
+`include_expired`, `include_revoked`, `limit`).
+
+### PUT /admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}
+
+Create/update one TTL-limited worker messaging grant for a specific node/chat with
+permission scope (`allow_read`, `allow_send`) and optional `redacted_payload`.
+
+### DELETE /admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}
+
+Revoke one worker messaging grant immediately.
+
 ---
 
 ## User Management

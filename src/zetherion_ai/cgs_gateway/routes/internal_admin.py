@@ -34,6 +34,8 @@ from zetherion_ai.cgs_gateway.models import (
     TenantAdminSettingPutRequest,
     TenantAdminWorkerCapabilitiesPutRequest,
     TenantAdminWorkerJobActionPostRequest,
+    TenantAdminWorkerMessagingGrantDeleteRequest,
+    TenantAdminWorkerMessagingGrantPutRequest,
     TenantAdminWorkerNodeStatusPostRequest,
 )
 from zetherion_ai.cgs_gateway.routes._utils import (
@@ -199,6 +201,14 @@ def _derive_policy_action(method: str, subpath: str, payload: dict[str, Any] | N
         and method_upper == "PUT"
     ):
         return "worker.capability.update"
+    if (
+        normalized.startswith("/workers/nodes/")
+        and "/messaging/grants/" in normalized
+        and method_upper == "PUT"
+    ):
+        return "worker.messaging.grant"
+    if normalized.startswith("/workers/messaging/grants/") and method_upper == "DELETE":
+        return "worker.messaging.grant"
     if normalized.startswith("/workers/"):
         return "tenant_admin.read" if method_upper == "GET" else "tenant_admin.mutate"
 
@@ -261,6 +271,9 @@ def _derive_policy_context(
         body = payload or {}
         ctx["node_registered"] = bool(body.get("node_registered"))
         ctx["node_healthy"] = bool(body.get("node_healthy"))
+        ctx["explicitly_elevated"] = bool(body.get("explicitly_elevated"))
+    if normalized.startswith("/workers/") and "/messaging/grants" in normalized:
+        body = payload or {}
         ctx["explicitly_elevated"] = bool(body.get("explicitly_elevated"))
     return ctx
 
@@ -1672,6 +1685,81 @@ async def handle_admin_list_worker_events(request: web.Request) -> web.Response:
     return success_response(request_id(request), data)
 
 
+async def handle_admin_list_worker_messaging_grants(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=False)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    query: dict[str, str] = {}
+    for key in ("node_id", "provider", "chat_id", "include_expired", "include_revoked", "limit"):
+        value = request.query.get(key)
+        if isinstance(value, str) and value.strip():
+            query[key] = value.strip()
+    data = await _call_admin_upstream(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="GET",
+        subpath="/workers/messaging/grants",
+        query=query or None,
+    )
+    return success_response(request_id(request), data)
+
+
+async def handle_admin_put_worker_messaging_grant(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=True)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    node_id = request.match_info["node_id"]
+    provider = request.match_info["provider"]
+    chat_id = request.match_info["chat_id"]
+    raw = await json_object(request)
+    try:
+        body = TenantAdminWorkerMessagingGrantPutRequest.model_validate(raw)
+    except ValidationError as exc:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="Validation failed",
+            status=400,
+            details={"errors": exc.errors()},
+        ) from exc
+
+    payload = body.model_dump(mode="json", exclude_none=True)
+    return await _admin_mutation_response(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="PUT",
+        subpath=f"/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}",
+        payload=payload,
+        change_ticket_id=_change_ticket_from_request(request, body.change_ticket_id),
+    )
+
+
+async def handle_admin_revoke_worker_messaging_grant(request: web.Request) -> web.Response:
+    _ensure_internal_admin_access(request, mutating=True)
+    cgs_tenant_id = request.match_info["tenant_id"]
+    _ensure_operator_tenant_access(request, cgs_tenant_id)
+    grant_id = request.match_info["grant_id"]
+    raw = await json_object(request, required=False)
+    try:
+        body = TenantAdminWorkerMessagingGrantDeleteRequest.model_validate(raw)
+    except ValidationError as exc:
+        raise GatewayError(
+            code="AI_BAD_REQUEST",
+            message="Validation failed",
+            status=400,
+            details={"errors": exc.errors()},
+        ) from exc
+
+    payload = body.model_dump(mode="json", exclude_none=True)
+    return await _admin_mutation_response(
+        request,
+        cgs_tenant_id=cgs_tenant_id,
+        method="DELETE",
+        subpath=f"/workers/messaging/grants/{grant_id}",
+        payload=payload,
+        change_ticket_id=_change_ticket_from_request(request, body.change_ticket_id),
+    )
+
+
 async def handle_admin_list_security_events(request: web.Request) -> web.Response:
     _ensure_internal_admin_access(request, mutating=False)
     cgs_tenant_id = request.match_info["tenant_id"]
@@ -2136,6 +2224,18 @@ def register_internal_admin_routes(app: web.Application) -> None:
         handle_admin_cancel_worker_job,
     )
     app.router.add_get(prefix + "/workers/events", handle_admin_list_worker_events)
+    app.router.add_get(
+        prefix + "/workers/messaging/grants",
+        handle_admin_list_worker_messaging_grants,
+    )
+    app.router.add_put(
+        prefix + "/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}",
+        handle_admin_put_worker_messaging_grant,
+    )
+    app.router.add_delete(
+        prefix + "/workers/messaging/grants/{grant_id}",
+        handle_admin_revoke_worker_messaging_grant,
+    )
     app.router.add_get(prefix + "/security/events", handle_admin_list_security_events)
     app.router.add_get(prefix + "/security/dashboard", handle_admin_get_security_dashboard)
     app.router.add_post(

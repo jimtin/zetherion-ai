@@ -18,6 +18,8 @@ Authoritative exposure rule:
 - Internal trust-policy gating now enforces deny-by-default for sensitive namespaces and approval flow reuse for high-risk actions.
 - Worker operator control routes were added under `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*`
   for node lifecycle operations (quarantine/unquarantine), job retry/cancel, and worker event auditing.
+- Worker messaging grants were added under `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*`
+  to enforce deny-by-default worker WhatsApp access with TTL-scoped per-node/per-chat exceptions.
 
 ## Capability Outcome
 
