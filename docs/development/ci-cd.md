@@ -330,6 +330,13 @@ The pipeline runs the following jobs. Jobs without dependency arrows run in para
 
 **pipeline-contract** -- Validates CI pipeline-contract mappings plus endpoint docs bundle and announcement DM guardrails (`scripts/check-announcement-dm-guard.py`) to block direct `user.send(...)` regressions in announcement-producing paths.
 
+**risk-classifier** -- Computes server-side `e2e_required=true|false` from changed-path policy. Ambiguous classifications fail-safe to `e2e_required=true`.
+
+**required-e2e-gate** -- Always emits `e2e-contract-receipt` artifact. If `e2e_required=true`, it must run and pass:
+- `tests/integration/test_e2e.py`
+- `tests/integration/test_discord_e2e.py` with marker `discord_e2e and not optional_e2e`
+- missing credentials or skipped required suites fail this gate
+
 **zetherion-boundary-check** -- Enforces Zetherion-only repository boundary and fails when top-level `cgs/**` UI paths are introduced.
 
 **test** -- Matrix build across Python 3.12 and 3.13. Runs `pytest tests/ -m "not integration"` with coverage. Uploads coverage XML to Codecov (Python 3.12 only). Uploads HTML coverage report as a build artifact (retained 30 days).
@@ -426,7 +433,9 @@ git push
 | `.pre-commit-config.yaml` | Pre-commit hook definitions (7 hooks across 6 tool repositories) |
 | `.git-hooks/pre-push` | Lightweight pre-push hook (lint, type-check, unit tests) |
 | `scripts/test-full.sh` | Full production-parity test pipeline (unit + integration + Docker E2E + Discord E2E) |
-| `.github/workflows/ci.yml` | GitHub Actions CI/CD workflow (9 jobs) |
+| `scripts/ci_e2e_risk_classifier.py` | Changed-path risk classifier for required E2E enforcement |
+| `scripts/ci-required-e2e-gate.sh` | Required E2E gate runner + receipt writer (`e2e-contract-receipt`) |
+| `.github/workflows/ci.yml` | GitHub Actions CI/CD workflow (policy + quality + test jobs) |
 | `.gitleaks.toml` | Gitleaks secret scanning rules and allowlists |
 | `pyproject.toml` | Unified configuration for pytest, mypy, ruff, coverage, and bandit |
 

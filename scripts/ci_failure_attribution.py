@@ -34,6 +34,18 @@ def parse_job_results(raw: str) -> dict[str, str]:
 
 
 def classify_failure(job: str, result: str, contract: dict[str, Any]) -> JobFailure:
+    if job == "required-e2e-gate":
+        return JobFailure(
+            job=job,
+            result=result,
+            reason_code="AGENTS_POLICY_BREACH_REQUIRED_E2E",
+            explanation=(
+                "The required E2E gate failed. For substantial PRs this indicates the "
+                "server-side AGENTS policy contract was not satisfied "
+                "(required suites failed, skipped, or required credentials were missing)."
+            ),
+        )
+
     job_contract = contract.get("jobs", {}).get(job)
     if not job_contract:
         return JobFailure(

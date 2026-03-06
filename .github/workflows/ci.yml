@@ -60,6 +60,43 @@ jobs:
   # ============================================================================
   # Code Quality Jobs
   # ============================================================================
+  risk-classifier:
+    name: Risk Classifier
+    runs-on: ubuntu-latest
+    needs: [detect-changes]
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      e2e_required: ${{ steps.classify.outputs.e2e_required }}
+      decision_reason_code: ${{ steps.classify.outputs.decision_reason_code }}
+      decision_reason: ${{ steps.classify.outputs.decision_reason }}
+      changed_files_count: ${{ steps.classify.outputs.changed_files_count }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Classify required E2E risk
+        id: classify
+        run: |
+          python scripts/ci_e2e_risk_classifier.py \
+            --event-name "${{ github.event_name }}" \
+            --base-ref "${{ github.base_ref }}" \
+            --before-sha "${{ github.event.before }}" \
+            --head-sha "${{ github.sha }}" \
+            --output e2e-risk-classifier-receipt.json \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Upload risk classifier receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        if: always()
+        with:
+          name: e2e-risk-classifier
+          path: e2e-risk-classifier-receipt.json
+          retention-days: 30
+
   lint:
     name: Linting & Formatting
     runs-on: ubuntu-latest
@@ -426,6 +463,49 @@ jobs:
           path: htmlcov/
           retention-days: 30
 
+  required-e2e-gate:
+    name: Required E2E Gate
+    runs-on: ubuntu-latest
+    needs: [risk-classifier]
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Set up Python 3.12
+        if: ${{ needs.risk-classifier.outputs.e2e_required == 'true' }}
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies for required E2E
+        if: ${{ needs.risk-classifier.outputs.e2e_required == 'true' }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+
+      - name: Enforce required E2E contract
+        env:
+          E2E_REQUIRED: ${{ needs.risk-classifier.outputs.e2e_required }}
+          E2E_DECISION_REASON_CODE: ${{ needs.risk-classifier.outputs.decision_reason_code }}
+          E2E_DECISION_REASON: ${{ needs.risk-classifier.outputs.decision_reason }}
+        run: |
+          bash scripts/ci-required-e2e-gate.sh
+
+      - name: Upload E2E contract receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        if: always()
+        with:
+          name: e2e-contract-receipt
+          path: |
+            e2e-contract-receipt.json
+            docker-e2e.log
+            discord-e2e.log
+          retention-days: 30
+
   integration-test:
     name: Integration (${{ matrix.shard.name }})
     runs-on: ubuntu-latest
@@ -520,6 +600,7 @@ jobs:
     needs:
       [
         detect-changes,
+        risk-classifier,
         lint,
         type-check,
         security,
@@ -532,6 +613,7 @@ jobs:
         pipeline-contract,
         zetherion-boundary-check,
         unit-test,
+        required-e2e-gate,
         integration-test,
         docker-build-test,
       ]
@@ -588,8 +670,11 @@ jobs:
           if [[ "$DOCKER_BUILD_RESULT" == "skipped" ]]; then
             DOCKER_BUILD_RESULT="success"
           fi
+          RISK_CLASSIFIER_RESULT="${{ needs.risk-classifier.result }}"
+          REQUIRED_E2E_GATE_RESULT="${{ needs.required-e2e-gate.result }}"
 
           if [[ "${{ needs.lint.result }}" == "success" ]] && \
+             [[ "$RISK_CLASSIFIER_RESULT" == "success" ]] && \
              [[ "$TYPE_CHECK_RESULT" == "success" ]] && \
              [[ "$SECURITY_RESULT" == "success" ]] && \
              [[ "$SEMGREP_RESULT" == "success" ]] && \
@@ -601,6 +686,7 @@ jobs:
              [[ "${{ needs.pipeline-contract.result }}" == "success" ]] && \
              [[ "$BOUNDARY_RESULT" == "success" ]] && \
              [[ "$UNIT_RESULT" == "success" ]] && \
+             [[ "$REQUIRED_E2E_GATE_RESULT" == "success" ]] && \
              [[ "$INTEGRATION_RESULT" == "success" ]] && \
              [[ "$DOCKER_BUILD_RESULT" == "success" ]]; then
             echo "✅ All CI checks passed!"
@@ -608,6 +694,7 @@ jobs:
           else
             echo "❌ Some CI checks failed:"
             echo "  Lint: ${{ needs.lint.result }}"
+            echo "  Risk Classifier: ${RISK_CLASSIFIER_RESULT} (raw=${{ needs.risk-classifier.result }})"
             echo "  Type Check: ${TYPE_CHECK_RESULT} (raw=${{ needs.type-check.result }})"
             echo "  Security (Bandit): ${SECURITY_RESULT} (raw=${{ needs.security.result }})"
             echo "  SAST (Semgrep): ${SEMGREP_RESULT} (raw=${{ needs.semgrep.result }})"
@@ -619,6 +706,7 @@ jobs:
             echo "  Pipeline Contract: ${{ needs.pipeline-contract.result }}"
             echo "  Zetherion Boundary: ${BOUNDARY_RESULT} (raw=${{ needs.zetherion-boundary-check.result }})"
             echo "  Unit Tests: ${UNIT_RESULT} (raw=${{ needs.unit-test.result }})"
+            echo "  Required E2E Gate: ${REQUIRED_E2E_GATE_RESULT} (raw=${{ needs.required-e2e-gate.result }})"
             echo "  Integration Tests: ${INTEGRATION_RESULT} (raw=${{ needs.integration-test.result }})"
             echo "  Docker Build Test: ${DOCKER_BUILD_RESULT} (raw=${{ needs.docker-build-test.result }})"
             exit 1
@@ -632,6 +720,7 @@ jobs:
           echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Linting | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Risk Classifier | ${{ needs.risk-classifier.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Type Checking | ${{ needs.type-check.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Security (Bandit) | ${{ needs.security.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| SAST (Semgrep) | ${{ needs.semgrep.result }} |" >> $GITHUB_STEP_SUMMARY
@@ -643,6 +732,7 @@ jobs:
           echo "| Pipeline Contract | ${{ needs.pipeline-contract.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Zetherion Boundary | ${{ needs.zetherion-boundary-check.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Unit Tests | ${{ needs.unit-test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Required E2E Gate | ${{ needs.required-e2e-gate.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Integration Tests | ${{ needs.integration-test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Docker Build Test | ${{ needs.docker-build-test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -655,6 +745,7 @@ jobs:
       contents: read
     needs:
       [
+        risk-classifier,
         lint,
         type-check,
         security,
@@ -667,6 +758,7 @@ jobs:
         pipeline-contract,
         zetherion-boundary-check,
         unit-test,
+        required-e2e-gate,
         integration-test,
         docker-build-test,
       ]
@@ -679,7 +771,7 @@ jobs:
         run: |
           python scripts/ci_failure_attribution.py \
             --output ci-failure-attribution.json \
-            --job-results "lint=${{ needs.lint.result }},type-check=${{ needs.type-check.result }},security=${{ needs.security.result }},semgrep=${{ needs.semgrep.result }},secret-scan=${{ needs.secret-scan.result }},dependency-audit=${{ needs.dependency-audit.result }},license-check=${{ needs.license-check.result }},pre-commit=${{ needs.pre-commit.result }},docs-contract=${{ needs.docs-contract.result }},pipeline-contract=${{ needs.pipeline-contract.result }},zetherion-boundary-check=${{ needs.zetherion-boundary-check.result }},unit-test=${{ needs.unit-test.result }},integration-test=${{ needs.integration-test.result }},docker-build-test=${{ needs.docker-build-test.result }}"
+            --job-results "risk-classifier=${{ needs.risk-classifier.result }},lint=${{ needs.lint.result }},type-check=${{ needs.type-check.result }},security=${{ needs.security.result }},semgrep=${{ needs.semgrep.result }},secret-scan=${{ needs.secret-scan.result }},dependency-audit=${{ needs.dependency-audit.result }},license-check=${{ needs.license-check.result }},pre-commit=${{ needs.pre-commit.result }},docs-contract=${{ needs.docs-contract.result }},pipeline-contract=${{ needs.pipeline-contract.result }},zetherion-boundary-check=${{ needs.zetherion-boundary-check.result }},unit-test=${{ needs.unit-test.result }},required-e2e-gate=${{ needs.required-e2e-gate.result }},integration-test=${{ needs.integration-test.result }},docker-build-test=${{ needs.docker-build-test.result }}"
 
       - name: Upload attribution artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
