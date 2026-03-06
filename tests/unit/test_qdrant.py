@@ -122,6 +122,36 @@ class TestQdrantMemoryInitialize:
         # Should not create any collections
         mock_client.create_collection.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_initialize_raises_on_dimension_mismatch(self, mock_settings):
+        """Existing collection with mismatched vector size should fail fast."""
+        mock_client = AsyncMock()
+        mock_conv = MagicMock()
+        mock_conv.name = CONVERSATIONS_COLLECTION
+        mock_ltm = MagicMock()
+        mock_ltm.name = LONG_TERM_MEMORY_COLLECTION
+        mock_collections = MagicMock()
+        mock_collections.collections = [mock_conv, mock_ltm]
+        mock_client.get_collections = AsyncMock(return_value=mock_collections)
+
+        vectors = MagicMock()
+        vectors.size = 768
+        params = MagicMock()
+        params.vectors = vectors
+        config = MagicMock()
+        config.params = params
+        info = MagicMock()
+        info.config = config
+        mock_client.get_collection = AsyncMock(return_value=info)
+
+        with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
+                with patch("zetherion_ai.memory.qdrant.get_embeddings_client"):
+                    with patch("zetherion_ai.memory.qdrant.get_embedding_dimension", return_value=3072):
+                        memory = QdrantMemory()
+                        with pytest.raises(ValueError, match="vector size mismatch"):
+                            await memory.initialize()
+
 
 class TestQdrantMemoryStoreMessage:
     """Tests for store_message method."""

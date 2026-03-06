@@ -61,20 +61,88 @@ class QdrantMemory:
         await self._ensure_collection(LONG_TERM_MEMORY_COLLECTION)
         log.info("qdrant_collections_ready")
 
+    @staticmethod
+    def _extract_vector_size(vectors: Any) -> int | None:
+        """Extract vector size from Qdrant vector config in multiple shapes."""
+        if vectors is None:
+            return None
+
+        direct_size = getattr(vectors, "size", None)
+        if isinstance(direct_size, int):
+            return direct_size
+
+        if isinstance(vectors, dict):
+            raw_size = vectors.get("size")
+            if isinstance(raw_size, int):
+                return raw_size
+            for nested in vectors.values():
+                nested_size = QdrantMemory._extract_vector_size(nested)
+                if nested_size is not None:
+                    return nested_size
+
+        return None
+
+    async def _get_collection_vector_size(self, name: str) -> int | None:
+        """Return configured vector size for an existing collection if available."""
+        info = await self._client.get_collection(collection_name=name)
+        vectors = None
+        config = getattr(info, "config", None)
+        if config is not None:
+            params = getattr(config, "params", None)
+            if params is not None:
+                vectors = getattr(params, "vectors", None)
+
+        if vectors is None and isinstance(info, dict):
+            vectors = (
+                info.get("config", {})
+                .get("params", {})
+                .get("vectors")
+            )
+
+        return self._extract_vector_size(vectors)
+
+    async def _validate_collection_dimension(self, name: str, expected_size: int) -> None:
+        """Validate that existing collection dimension matches the configured embedding size."""
+        actual_size = await self._get_collection_vector_size(name)
+        if actual_size is None:
+            log.warning(
+                "collection_dimension_unknown",
+                name=name,
+                expected_size=expected_size,
+            )
+            return
+
+        if actual_size != expected_size:
+            message = (
+                f"Collection '{name}' vector size mismatch: expected {expected_size}, "
+                f"found {actual_size}. Run scripts/migrate-qdrant-embeddings.py to rebuild."
+            )
+            log.error(
+                "collection_dimension_mismatch",
+                name=name,
+                expected_size=expected_size,
+                actual_size=actual_size,
+            )
+            raise ValueError(message)
+
     async def _ensure_collection(self, name: str) -> None:
         """Ensure a collection exists, creating it if necessary."""
         collections = await self._client.get_collections()
         collection_names = [c.name for c in collections.collections]
+        expected_size = get_embedding_dimension()
 
         if name not in collection_names:
             await self._client.create_collection(
                 collection_name=name,
                 vectors_config=qdrant_models.VectorParams(
-                    size=get_embedding_dimension(),
+                    size=expected_size,
                     distance=qdrant_models.Distance.COSINE,
                 ),
             )
             log.info("collection_created", name=name)
+            return
+
+        await self._validate_collection_dimension(name, expected_size)
 
     async def store_message(
         self,
@@ -392,16 +460,20 @@ class QdrantMemory:
         """
         collections = await self._client.get_collections()
         collection_names = [c.name for c in collections.collections]
+        expected_size = vector_size or get_embedding_dimension()
 
         if name not in collection_names:
             await self._client.create_collection(
                 collection_name=name,
                 vectors_config=qdrant_models.VectorParams(
-                    size=vector_size or get_embedding_dimension(),
+                    size=expected_size,
                     distance=qdrant_models.Distance.COSINE,
                 ),
             )
             log.info("collection_created", name=name)
+            return
+
+        await self._validate_collection_dimension(name, expected_size)
 
     async def store_with_payload(
         self,

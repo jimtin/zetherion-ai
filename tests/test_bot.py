@@ -149,6 +149,27 @@ class TestZetherionAIBot:
         message.reply.assert_called_once_with("Test response", mention_author=True)
 
     @pytest.mark.asyncio
+    async def test_on_message_dm_presence_probe_quick_reply(self, bot):
+        """DM liveness probes should reply immediately without LLM routing."""
+        bot._connection.user = Mock(id=123)
+        bot._user_manager.is_allowed = AsyncMock(return_value=True)
+        bot._rate_limiter.check = Mock(return_value=(True, None))
+
+        message = Mock()
+        message.webhook_id = None
+        message.author = Mock(bot=False, id=456)
+        message.channel = Mock(spec=discord.DMChannel)
+        message.content = "Are you online?"
+        message.reply = AsyncMock()
+        message.mentions = []
+
+        await bot.on_message(message)
+
+        bot._agent.generate_response.assert_not_called()
+        message.reply.assert_called_once()
+        assert "online" in message.reply.call_args[0][0].lower()
+
+    @pytest.mark.asyncio
     async def test_on_message_responds_to_mention(self, bot):
         """Test bot responds when mentioned."""
         bot._connection.user = Mock(id=123)

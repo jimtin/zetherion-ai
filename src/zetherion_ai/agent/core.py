@@ -215,6 +215,12 @@ class Agent:
                         response = await self._handle_system_command(message)
                     case MessageIntent.SIMPLE_QUERY:
                         response = await self._handle_simple_query(message)
+                    case MessageIntent.SYSTEM_HEALTH:
+                        response = await self._handle_skill_intent(
+                            user_id,
+                            message,
+                            "health_analyzer",
+                        )
                     case MessageIntent.COMPLEX_TASK:
                         response = await self._handle_complex_task(
                             user_id,
@@ -304,21 +310,30 @@ class Agent:
 
         # Step 3: Store the exchange in memory (skip for lightweight intents)
         if routing.intent not in (MessageIntent.SIMPLE_QUERY, MessageIntent.SYSTEM_COMMAND):
-            async with timed_operation("memory_storage") as t:
-                await self._memory.store_message(
+            try:
+                async with timed_operation("memory_storage") as t:
+                    await self._memory.store_message(
+                        user_id=user_id,
+                        channel_id=channel_id,
+                        role="user",
+                        content=message,
+                        metadata={"intent": routing.intent.value},
+                    )
+                    await self._memory.store_message(
+                        user_id=user_id,
+                        channel_id=channel_id,
+                        role="assistant",
+                        content=response,
+                    )
+                log.debug("messages_stored", duration_ms=t["elapsed_ms"])
+            except Exception as exc:
+                log.warning(
+                    "memory_storage_failed",
+                    intent=routing.intent.value,
                     user_id=user_id,
                     channel_id=channel_id,
-                    role="user",
-                    content=message,
-                    metadata={"intent": routing.intent.value},
+                    error=str(exc),
                 )
-                await self._memory.store_message(
-                    user_id=user_id,
-                    channel_id=channel_id,
-                    role="assistant",
-                    content=response,
-                )
-            log.debug("messages_stored", duration_ms=t["elapsed_ms"])
 
         total_end = time.perf_counter()
         log.info(
@@ -441,6 +456,7 @@ class Agent:
             "calendar": self._parse_calendar_intent(message),
             "profile_manager": self._parse_profile_intent(message),
             "personal_model": self._parse_personal_model_intent(message),
+            "health_analyzer": self._parse_health_intent(message),
             "email": self._parse_email_router_intent(message),
             "gmail": self._parse_email_intent(message),
             "update_checker": self._parse_update_intent(message),
@@ -905,6 +921,15 @@ class Agent:
             return "email_status"
         return "email_route"
 
+    def _parse_health_intent(self, message: str) -> str:
+        """Parse specific health-analyzer intent from message."""
+        msg_lower = message.lower()
+        if any(w in msg_lower for w in ["report", "daily", "yesterday"]):
+            return "health_report"
+        if any(w in msg_lower for w in ["system status", "metrics", "diagnostic", "details"]):
+            return "system_status"
+        return "health_check"
+
     def _parse_update_intent(self, message: str) -> str:
         """Parse specific update-management intent from message."""
         msg_lower = message.lower()
@@ -1039,16 +1064,30 @@ class Agent:
             Generated response.
         """
         # Fetch context once for reuse across models
-        async with timed_operation("context_retrieval") as ctx_t:
-            recent_messages, relevant_memories = await self._build_context(
-                user_id,
-                channel_id,
-                message,
-                user_id_filter=user_id,
+        recent_messages: list[dict[str, Any]] = []
+        relevant_memories: list[dict[str, Any]] = []
+        context_duration_ms: float | None = None
+        try:
+            async with timed_operation("context_retrieval") as ctx_t:
+                recent_messages, relevant_memories = await self._build_context(
+                    user_id,
+                    channel_id,
+                    message,
+                    user_id_filter=user_id,
+                )
+            context_duration_ms = ctx_t["elapsed_ms"]
+        except Exception as exc:
+            log.warning(
+                "context_retrieval_failed",
+                user_id=user_id,
+                channel_id=channel_id,
+                error=str(exc),
+                fallback="empty_context",
             )
+
         log.info(
             "context_built",
-            duration_ms=ctx_t["elapsed_ms"],
+            duration_ms=context_duration_ms,
             memories_found=len(relevant_memories),
             messages_found=len(recent_messages),
         )
