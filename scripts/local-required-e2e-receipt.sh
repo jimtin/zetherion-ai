@@ -3,11 +3,19 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+cd "$REPO_DIR"
+
 RECEIPT_PATH="${LOCAL_E2E_RECEIPT_PATH:-.ci/e2e-receipt.json}"
 DOCKER_LOG_PATH="${DOCKER_LOG_PATH:-docker-e2e.log}"
 DISCORD_LOG_PATH="${DISCORD_LOG_PATH:-discord-e2e.log}"
 DISCORD_E2E_PROVIDER="${DISCORD_E2E_PROVIDER:-groq}"
 HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.test.yml}"
+PROJECT="${PROJECT:-zetherion-ai-test}"
+PRESERVE_TEST_VOLUMES="${PRESERVE_TEST_VOLUMES:-false}"
+DOCKER_STARTED_BY_SCRIPT=false
 
 SUITE_DOCKER_STATUS="not_run"
 SUITE_DOCKER_REASON="not_applicable"
@@ -17,6 +25,169 @@ RECEIPT_STATUS="failed"
 RECEIPT_REASON_CODE="uninitialized"
 RECEIPT_REASON="Local required E2E did not run."
 MISSING_ENV=""
+
+load_repo_env() {
+    if [[ -f "$REPO_DIR/.env" ]]; then
+        set -a
+        # shellcheck source=/dev/null
+        source "$REPO_DIR/.env"
+        set +a
+    fi
+}
+
+activate_repo_venv() {
+    local candidate
+    for candidate in "$REPO_DIR/.venv/bin/activate" "$REPO_DIR/venv/bin/activate"; do
+        if [[ -f "$candidate" ]]; then
+            # shellcheck source=/dev/null
+            source "$candidate"
+            return 0
+        fi
+    done
+    return 0
+}
+
+resolve_python_bin() {
+    local candidate
+    for candidate in \
+        "$REPO_DIR/.venv/bin/python" \
+        "$REPO_DIR/venv/bin/python" \
+        "$REPO_DIR/.venv/bin/python3" \
+        "$REPO_DIR/venv/bin/python3"; do
+        if [[ -x "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    if command -v python3 >/dev/null 2>&1; then
+        command -v python3
+        return 0
+    fi
+    if command -v python >/dev/null 2>&1; then
+        command -v python
+        return 0
+    fi
+    return 1
+}
+
+ensure_python_ca_bundle() {
+    if [[ -n "${SSL_CERT_FILE:-}" && -r "${SSL_CERT_FILE:-}" ]]; then
+        return 0
+    fi
+
+    local ca_bundle
+    ca_bundle="$($PYTHON_BIN - <<'PY'
+import os
+import ssl
+from pathlib import Path
+
+def _readable(path: str | None) -> bool:
+    return bool(path) and Path(path).is_file() and os.access(path, os.R_OK)
+
+verify = ssl.get_default_verify_paths()
+if _readable(verify.cafile):
+    print(verify.cafile)
+    raise SystemExit(0)
+
+try:
+    import certifi  # type: ignore
+except Exception:
+    raise SystemExit(1)
+
+certifi_path = certifi.where()
+if _readable(certifi_path):
+    print(certifi_path)
+    raise SystemExit(0)
+
+raise SystemExit(1)
+PY
+)" || true
+
+    if [[ -z "$ca_bundle" || ! -r "$ca_bundle" ]]; then
+        echo "ERROR: Could not determine a readable CA bundle for Python TLS verification."
+        echo "Install certifi in the repo virtualenv or configure SSL_CERT_FILE."
+        exit 1
+    fi
+
+    export SSL_CERT_FILE="$ca_bundle"
+}
+
+compose_down() {
+    if [[ "$PRESERVE_TEST_VOLUMES" == "true" ]]; then
+        docker compose -f "$COMPOSE_FILE" -p "$PROJECT" down >/dev/null 2>&1 || true
+    else
+        docker compose -f "$COMPOSE_FILE" -p "$PROJECT" down -v >/dev/null 2>&1 || true
+    fi
+}
+
+cleanup() {
+    if [[ "$DOCKER_STARTED_BY_SCRIPT" == "true" ]]; then
+        compose_down
+    fi
+}
+
+wait_for_docker_health() {
+    local i
+    for i in $(seq 1 90); do
+        local postgres
+        local qdrant
+        local ollama
+        local ollama_router
+        local skills
+        local api
+        local cgs_gateway
+        local bot
+
+        postgres="$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-postgres" 2>/dev/null || echo "missing")"
+        qdrant="$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-qdrant" 2>/dev/null || echo "missing")"
+        ollama="$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-ollama" 2>/dev/null || echo "missing")"
+        ollama_router="$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-ollama-router" 2>/dev/null || echo "missing")"
+        skills="$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-skills" 2>/dev/null || echo "missing")"
+        api="$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-api" 2>/dev/null || echo "missing")"
+        cgs_gateway="$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-cgs-gateway" 2>/dev/null || echo "missing")"
+        bot="$(docker inspect --format='{{.State.Status}}' "${PROJECT}-bot" 2>/dev/null || echo "missing")"
+
+        if [[ "$postgres" == "healthy" && "$qdrant" == "healthy" && "$ollama" == "healthy" \
+            && "$ollama_router" == "healthy" && "$skills" == "healthy" && "$api" == "healthy" \
+            && "$cgs_gateway" == "healthy" && "$bot" == "running" ]]; then
+            return 0
+        fi
+
+        sleep 3
+    done
+
+    return 1
+}
+
+start_external_docker_stack() {
+    if ! docker info >/dev/null 2>&1; then
+        echo "ERROR: Docker is not running." >&2
+        exit 1
+    fi
+
+    compose_down
+    docker compose -f "$COMPOSE_FILE" -p "$PROJECT" up -d --build >/dev/null
+    DOCKER_STARTED_BY_SCRIPT=true
+
+    if ! wait_for_docker_health; then
+        echo "ERROR: Docker test stack did not become healthy." >&2
+        docker compose -f "$COMPOSE_FILE" -p "$PROJECT" logs --tail=50 >&2 || true
+        exit 1
+    fi
+}
+
+load_repo_env
+activate_repo_venv
+
+PYTHON_BIN="$(resolve_python_bin || true)"
+if [[ -z "$PYTHON_BIN" ]]; then
+    echo "ERROR: Could not find Python executable for local required E2E." >&2
+    exit 1
+fi
+
+ensure_python_ca_bundle
+trap cleanup EXIT
 
 contains_skips() {
     local log_file="$1"
@@ -40,7 +211,7 @@ write_receipt() {
     SUITE_DISCORD_REASON="$SUITE_DISCORD_REASON" \
     DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" \
     MISSING_ENV="$MISSING_ENV" \
-    python - <<'PY'
+    "$PYTHON_BIN" - <<'PY'
 import datetime as dt
 import json
 import os
@@ -113,6 +284,8 @@ if [[ "${#missing_env[@]}" -gt 0 ]]; then
     exit 1
 fi
 
+start_external_docker_stack
+
 run_suite() {
     local suite_key="$1"
     local log_file="$2"
@@ -146,7 +319,8 @@ run_suite() {
 run_suite \
     "docker" \
     "$DOCKER_LOG_PATH" \
-    pytest tests/integration/test_e2e.py \
+    env DOCKER_MANAGED_EXTERNALLY=true SSL_CERT_FILE="$SSL_CERT_FILE" \
+    "$PYTHON_BIN" -m pytest tests/integration/test_e2e.py \
     -m "integration and not optional_e2e" \
     --timeout=120 \
     -v \
@@ -157,8 +331,8 @@ run_suite \
 run_suite \
     "discord" \
     "$DISCORD_LOG_PATH" \
-    env DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" \
-    pytest tests/integration/test_discord_e2e.py \
+    env DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true SSL_CERT_FILE="$SSL_CERT_FILE" \
+    "$PYTHON_BIN" -m pytest tests/integration/test_discord_e2e.py \
     -m "discord_e2e and not optional_e2e" \
     --timeout=180 \
     -v \

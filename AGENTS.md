@@ -39,6 +39,7 @@ This is the only supported full local gate. Do not substitute ad-hoc pytest comm
 19. CI enforces a risk-classifier contract (`risk-classifier`) that sets `e2e_required=true|false`; ambiguity must fail-safe to `true`.
 20. CI required-E2E gate (`required-e2e-gate`) must emit a machine-readable receipt artifact (`e2e-contract-receipt`) every run.
 21. When `e2e_required=true`, CI must validate a local required-E2E receipt (`.ci/e2e-receipt.json`) for the PR head SHA; CI must not execute full E2E suites directly.
+22. For isolated Discord E2E debugging, use `./scripts/run-required-discord-e2e.sh`; direct `pytest tests/integration/test_discord_e2e.py ...` invocation is not accepted as workflow evidence.
 
 ## API Documentation Contract (Mandatory)
 
