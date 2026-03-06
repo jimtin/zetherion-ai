@@ -6809,11 +6809,12 @@ class TenantAdminManager:
                 claimed_dict = dict(claimed)
                 if messaging_scope is not None and grant_record is not None:
                     permission = str(messaging_scope.get("permission") or "").strip().lower()
-                    payload_for_worker = (
-                        dict(claimed_dict.get("payload_json"))
-                        if isinstance(claimed_dict.get("payload_json"), dict)
-                        else {}
-                    )
+                    claimed_payload_json = claimed_dict.get("payload_json")
+                    payload_for_worker: dict[str, Any]
+                    if isinstance(claimed_payload_json, dict):
+                        payload_for_worker = dict(claimed_payload_json)
+                    else:
+                        payload_for_worker = {}
                     redacted_payload = bool(grant_record.get("redacted_payload"))
                     if permission == "read" and redacted_payload:
                         payload_for_worker = self._redact_worker_messaging_payload(
