@@ -50,6 +50,16 @@
       "local_stage": "static-analysis",
       "note": "contract validation runs locally via scripts/check_pipeline_contract.py"
     },
+    "risk-classifier": {
+      "local_equivalent": false,
+      "local_stage": "ci-policy",
+      "note": "risk classifier is CI policy logic that decides whether required E2E must run."
+    },
+    "required-e2e-gate": {
+      "local_equivalent": true,
+      "local_stage": "e2e",
+      "note": "required Docker E2E + required Discord E2E gate; canonical local full gate is scripts/test-full.sh."
+    },
     "zetherion-boundary-check": {
       "local_equivalent": true,
       "local_stage": "pre-push-boundary",

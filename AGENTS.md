@@ -34,6 +34,9 @@ This is the only supported full local gate. Do not substitute ad-hoc pytest comm
 14. Critical-path integration suites must run in canonical validation, including dev-watcher onboarding paths.
 15. Full end-to-end validation is mandatory for substantial delivery: Docker E2E (`test_e2e.py`) and required Discord E2E must both pass.
 16. This repository is Zetherion-only. Top-level `cgs/**` website/UI files are disallowed here.
+17. CI enforces a risk-classifier contract (`risk-classifier`) that sets `e2e_required=true|false`; ambiguity must fail-safe to `true`.
+18. CI required-E2E gate (`required-e2e-gate`) must emit a machine-readable receipt artifact (`e2e-contract-receipt`) every run.
+19. When `e2e_required=true`, CI must fail if Docker E2E or required Discord E2E is skipped, missing credentials, or fails.
 
 ## API Documentation Contract (Mandatory)
 

@@ -13,6 +13,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment 17 CI/E2E Contract Enforcement (2026-03-06)
+
+- Added CI risk classifier job (`risk-classifier`) with fail-safe defaults:
+  - emits `e2e_required=true|false`
+  - classifies changed-path policy and defaults ambiguous cases to `true`
+  - uploads `e2e-risk-classifier` receipt artifact
+- Added required E2E gate job (`required-e2e-gate`) that always emits
+  `e2e-contract-receipt` and enforces:
+  - `tests/integration/test_e2e.py`
+  - `tests/integration/test_discord_e2e.py` (`discord_e2e and not optional_e2e`)
+  - deterministic failure on missing required credentials or skipped required suites
+- Updated CI summary contract so merge cannot promote when required E2E gate fails.
+- Updated CI failure attribution taxonomy:
+  - `required-e2e-gate` failures now surface
+    `AGENTS_POLICY_BREACH_REQUIRED_E2E`.
+- Added risk/E2E gate mappings to `.ci/pipeline_contract.json`.
+- Added script-level unit coverage for:
+  - `scripts/ci_e2e_risk_classifier.py`
+  - `scripts/ci_failure_attribution.py` reason-code handling.
+
 ### Changed - Segment 16 Multi-Sub-Worker Scale Hardening (2026-03-06)
 
 - Added capability-aware worker dispatch targeting for `execution_target=any_worker`
