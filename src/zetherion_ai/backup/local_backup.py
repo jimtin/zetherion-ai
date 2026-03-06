@@ -159,6 +159,7 @@ class BackupManager:
     postgres_user: str = "zetherion"
     postgres_db: str = "zetherion"
     qdrant_service: str = "qdrant"
+    qdrant_services_by_domain: dict[str, str] = field(default_factory=dict)
     retention_count: int = 14
     runner: CommandRunner = field(default_factory=SubprocessCommandRunner)
     crypto: CryptoAdapter | None = None
@@ -170,6 +171,11 @@ class BackupManager:
         self.compose_file = self.compose_file.expanduser()
         if self.retention_count < 1:
             raise BackupError("Retention count must be >= 1.")
+        self.qdrant_services_by_domain = {
+            str(domain).strip(): str(service).strip()
+            for domain, service in self.qdrant_services_by_domain.items()
+            if str(domain).strip() and str(service).strip()
+        }
         if self.crypto is None:
             self.crypto = AgeCryptoAdapter(self.runner)
 
@@ -192,15 +198,14 @@ class BackupManager:
             postgres_dump_path = staging_dir / POSTGRES_DUMP_NAME
             postgres_dump_path.write_bytes(self._collect_postgres_dump())
 
-            qdrant_archive_path = staging_dir / QDRANT_ARCHIVE_NAME
-            qdrant_archive_path.write_bytes(self._collect_qdrant_archive())
+            qdrant_archive_paths = self._collect_qdrant_archives(staging_dir)
 
             state_archive_path = staging_dir / STATE_ARCHIVE_NAME
             self._archive_state(state_archive_path)
 
             components = [
                 postgres_dump_path,
-                qdrant_archive_path,
+                *qdrant_archive_paths,
                 state_archive_path,
             ]
             checksums = {path.name: _sha256_file(path) for path in components}
@@ -327,7 +332,7 @@ class BackupManager:
 
             self._restore_postgres(extract_dir / POSTGRES_DUMP_NAME)
             self._restore_state(extract_dir / STATE_ARCHIVE_NAME)
-            self._restore_qdrant(extract_dir / QDRANT_ARCHIVE_NAME)
+            self._restore_qdrant_archives(extract_dir, manifest)
             self._run_restore_smoke_checks()
 
             archive_sha256 = _sha256_file(archive_path)
@@ -358,12 +363,36 @@ class BackupManager:
         )
         return self.runner.run(command).stdout
 
-    def _collect_qdrant_archive(self) -> bytes:
+    def _effective_qdrant_services(self) -> dict[str, str]:
+        if self.qdrant_services_by_domain:
+            return dict(self.qdrant_services_by_domain)
+        return {"tenant_raw": self.qdrant_service}
+
+    def _qdrant_archive_name(self, domain: str, *, multi_domain: bool) -> str:
+        if not multi_domain and domain == "tenant_raw":
+            return QDRANT_ARCHIVE_NAME
+        safe_domain = domain.replace("-", "_").replace("/", "_")
+        return f"qdrant-{safe_domain}-storage.tar.gz"
+
+    def _collect_qdrant_archives(self, staging_dir: Path) -> list[Path]:
+        services = self._effective_qdrant_services()
+        multi_domain = len(services) > 1
+        archives: list[Path] = []
+        for domain, service_name in services.items():
+            archive_path = staging_dir / self._qdrant_archive_name(
+                domain, multi_domain=multi_domain
+            )
+            archive_path.write_bytes(self._collect_qdrant_archive(service_name))
+            archives.append(archive_path)
+        return archives
+
+    def _collect_qdrant_archive(self, service_name: str | None = None) -> bytes:
+        target_service = service_name or self.qdrant_service
         command = self._compose_command(
             [
                 "exec",
                 "-T",
-                self.qdrant_service,
+                target_service,
                 "sh",
                 "-lc",
                 "cd /qdrant && tar -czf - storage",
@@ -412,7 +441,8 @@ class BackupManager:
                     "user": self.postgres_user,
                 },
                 "qdrant": {
-                    "service": self.qdrant_service,
+                    "default_service": self.qdrant_service,
+                    "domains": self._effective_qdrant_services(),
                 },
             },
             "host_state": {
@@ -502,11 +532,41 @@ class BackupManager:
         )
         self.runner.run(command, input_bytes=dump_path.read_bytes())
 
-    def _restore_qdrant(self, qdrant_archive_path: Path) -> None:
+    def _qdrant_archives_from_manifest(
+        self, manifest: dict[str, Any], extract_dir: Path
+    ) -> list[tuple[str, str, Path]]:
+        services = manifest.get("services", {})
+        qdrant_meta = services.get("qdrant", {}) if isinstance(services, dict) else {}
+        if isinstance(qdrant_meta, dict):
+            domains = qdrant_meta.get("domains")
+            if isinstance(domains, dict) and domains:
+                multi_domain = len(domains) > 1
+                return [
+                    (
+                        str(domain),
+                        str(service_name),
+                        extract_dir
+                        / self._qdrant_archive_name(str(domain), multi_domain=multi_domain),
+                    )
+                    for domain, service_name in domains.items()
+                ]
+
+        return [("tenant_raw", self.qdrant_service, extract_dir / QDRANT_ARCHIVE_NAME)]
+
+    def _restore_qdrant_archives(self, extract_dir: Path, manifest: dict[str, Any]) -> None:
+        for _, service_name, archive_path in self._qdrant_archives_from_manifest(
+            manifest, extract_dir
+        ):
+            self._restore_qdrant(archive_path, service_name=service_name)
+
+    def _restore_qdrant(
+        self, qdrant_archive_path: Path, *, service_name: str | None = None
+    ) -> None:
         if not qdrant_archive_path.exists():
             raise BackupError(f"Qdrant archive not found in payload: {qdrant_archive_path}")
 
-        self.runner.run(self._compose_command(["stop", self.qdrant_service]))
+        target_service = service_name or self.qdrant_service
+        self.runner.run(self._compose_command(["stop", target_service]))
         try:
             restore_cmd = self._compose_command(
                 [
@@ -514,7 +574,7 @@ class BackupManager:
                     "--rm",
                     "--no-deps",
                     "-T",
-                    self.qdrant_service,
+                    target_service,
                     "sh",
                     "-lc",
                     "mkdir -p /qdrant/storage && rm -rf /qdrant/storage/* && tar -xzf - -C /qdrant",
@@ -522,7 +582,7 @@ class BackupManager:
             )
             self.runner.run(restore_cmd, input_bytes=qdrant_archive_path.read_bytes())
         finally:
-            self.runner.run(self._compose_command(["up", "-d", self.qdrant_service]))
+            self.runner.run(self._compose_command(["up", "-d", target_service]))
 
     def _restore_state(self, state_archive_path: Path) -> None:
         if not state_archive_path.exists():
@@ -554,17 +614,18 @@ class BackupManager:
         )
         self.runner.run(postgres_check)
 
-        qdrant_check = self._compose_command(
-            [
-                "exec",
-                "-T",
-                self.qdrant_service,
-                "sh",
-                "-lc",
-                "test -d /qdrant/storage",
-            ]
-        )
-        self.runner.run(qdrant_check)
+        for service_name in self._effective_qdrant_services().values():
+            qdrant_check = self._compose_command(
+                [
+                    "exec",
+                    "-T",
+                    service_name,
+                    "sh",
+                    "-lc",
+                    "test -d /qdrant/storage",
+                ]
+            )
+            self.runner.run(qdrant_check)
 
         if not self.state_dir.exists():
             raise BackupError(f"State directory restore smoke check failed: {self.state_dir}")

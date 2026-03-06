@@ -1,14 +1,13 @@
-"""Unit tests for main.py startup wiring.
-
-Verifies that the application entry point correctly initializes encryption,
-passes the encryptor to QdrantMemory, and fails when required config is missing.
-"""
+"""Unit tests for main.py startup wiring."""
 
 import os
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
+
+from zetherion_ai.trust.scope import TrustDomain
 
 
 class TestMainStartup:
@@ -19,8 +18,7 @@ class TestMainStartup:
     @patch("zetherion_ai.main.UserManager")
     @patch("zetherion_ai.main.ZetherionAIBot")
     @patch("zetherion_ai.main.QdrantMemory")
-    @patch("zetherion_ai.main.FieldEncryptor")
-    @patch("zetherion_ai.main.KeyManager")
+    @patch("zetherion_ai.main.build_runtime_encryptors")
     @patch("zetherion_ai.main.get_settings")
     @patch("zetherion_ai.main.setup_logging")
     @patch("zetherion_ai.main.get_logger")
@@ -29,15 +27,14 @@ class TestMainStartup:
         mock_get_logger,
         mock_setup_logging,
         mock_get_settings,
-        mock_key_manager_cls,
-        mock_field_encryptor_cls,
+        mock_build_runtime_encryptors,
         mock_qdrant_memory_cls,
         mock_bot_cls,
         mock_user_manager_cls,
         mock_settings_manager_cls,
         mock_set_settings_manager,
     ) -> None:
-        """KeyManager and FieldEncryptor should always be created."""
+        """Runtime encryption bundle should always be created."""
         from zetherion_ai.main import main
 
         settings = MagicMock()
@@ -46,17 +43,19 @@ class TestMainStartup:
         settings.encryption_strict = False
         settings.environment = "test"
         settings.qdrant_url = "http://localhost:6333"
+        settings.qdrant_owner_url = "http://localhost:6333"
         settings.discord_token.get_secret_value.return_value = "fake-token"
         settings.postgres_dsn = "postgresql://test:test@localhost:5432/test"
         mock_get_settings.return_value = settings
         mock_get_logger.return_value = MagicMock()
 
-        mock_km_instance = MagicMock()
-        mock_km_instance.key = b"\x00" * 32
-        mock_key_manager_cls.return_value = mock_km_instance
-
-        mock_encryptor_instance = MagicMock()
-        mock_field_encryptor_cls.return_value = mock_encryptor_instance
+        encryptors = SimpleNamespace(
+            owner_personal=MagicMock(name="owner_encryptor"),
+            tenant_data=MagicMock(name="tenant_encryptor"),
+            owner_personal_salt_path="data/owner-salt.bin",
+            tenant_data_salt_path="data/tenant-salt.bin",
+        )
+        mock_build_runtime_encryptors.return_value = encryptors
 
         mock_memory = AsyncMock()
         mock_qdrant_memory_cls.return_value = mock_memory
@@ -75,39 +74,30 @@ class TestMainStartup:
 
         await main()
 
-        mock_key_manager_cls.assert_called_once_with(
-            passphrase="test-passphrase-long-enough",
-            salt_path="data/salt.bin",
-        )
-        mock_field_encryptor_cls.assert_called_once_with(
-            key=mock_km_instance.key,
-            strict=False,
-        )
+        mock_build_runtime_encryptors.assert_called_once_with(settings)
 
     @patch("zetherion_ai.main.set_settings_manager")
     @patch("zetherion_ai.main.SettingsManager")
     @patch("zetherion_ai.main.UserManager")
     @patch("zetherion_ai.main.ZetherionAIBot")
     @patch("zetherion_ai.main.QdrantMemory")
-    @patch("zetherion_ai.main.FieldEncryptor")
-    @patch("zetherion_ai.main.KeyManager")
+    @patch("zetherion_ai.main.build_runtime_encryptors")
     @patch("zetherion_ai.main.get_settings")
     @patch("zetherion_ai.main.setup_logging")
     @patch("zetherion_ai.main.get_logger")
-    async def test_qdrant_memory_receives_encryptor(
+    async def test_qdrant_memory_receives_owner_encryptor(
         self,
         mock_get_logger,
         mock_setup_logging,
         mock_get_settings,
-        mock_key_manager_cls,
-        mock_field_encryptor_cls,
+        mock_build_runtime_encryptors,
         mock_qdrant_memory_cls,
         mock_bot_cls,
         mock_user_manager_cls,
         mock_settings_manager_cls,
         mock_set_settings_manager,
     ) -> None:
-        """QdrantMemory should be instantiated with the encryptor."""
+        """QdrantMemory should be instantiated with the owner-domain encryptor."""
         from zetherion_ai.main import main
 
         settings = MagicMock()
@@ -116,17 +106,20 @@ class TestMainStartup:
         settings.encryption_strict = False
         settings.environment = "test"
         settings.qdrant_url = "http://localhost:6333"
+        settings.qdrant_owner_url = "http://owner-qdrant:6333"
         settings.discord_token.get_secret_value.return_value = "fake-token"
         settings.postgres_dsn = "postgresql://test:test@localhost:5432/test"
         mock_get_settings.return_value = settings
         mock_get_logger.return_value = MagicMock()
 
-        mock_km_instance = MagicMock()
-        mock_km_instance.key = b"\x00" * 32
-        mock_key_manager_cls.return_value = mock_km_instance
-
-        mock_encryptor_instance = MagicMock()
-        mock_field_encryptor_cls.return_value = mock_encryptor_instance
+        owner_encryptor = MagicMock(name="owner_encryptor")
+        encryptors = SimpleNamespace(
+            owner_personal=owner_encryptor,
+            tenant_data=MagicMock(name="tenant_encryptor"),
+            owner_personal_salt_path="data/owner-salt.bin",
+            tenant_data_salt_path="data/tenant-salt.bin",
+        )
+        mock_build_runtime_encryptors.return_value = encryptors
 
         mock_memory = AsyncMock()
         mock_qdrant_memory_cls.return_value = mock_memory
@@ -146,7 +139,8 @@ class TestMainStartup:
         await main()
 
         mock_qdrant_memory_cls.assert_called_once_with(
-            encryptor=mock_encryptor_instance,
+            encryptor=owner_encryptor,
+            trust_domain=TrustDomain.OWNER_PERSONAL,
         )
         mock_memory.initialize.assert_awaited_once()
 
@@ -154,13 +148,6 @@ class TestMainStartup:
         """Missing ENCRYPTION_PASSPHRASE should raise Pydantic ValidationError."""
         from zetherion_ai.config import Settings
 
-        _env = {
-            "DISCORD_TOKEN": "test-token",
-            "GEMINI_API_KEY": "test-key",
-            # ENCRYPTION_PASSPHRASE deliberately omitted
-        }
-
-        # Temporarily remove the env var if it exists
         saved = os.environ.get("ENCRYPTION_PASSPHRASE")
         os.environ.pop("ENCRYPTION_PASSPHRASE", None)
         try:
@@ -179,8 +166,7 @@ class TestMainStartup:
     @patch("zetherion_ai.main.UserManager")
     @patch("zetherion_ai.main.ZetherionAIBot")
     @patch("zetherion_ai.main.QdrantMemory")
-    @patch("zetherion_ai.main.FieldEncryptor")
-    @patch("zetherion_ai.main.KeyManager")
+    @patch("zetherion_ai.main.build_runtime_encryptors")
     @patch("zetherion_ai.main.get_settings")
     @patch("zetherion_ai.main.setup_logging")
     @patch("zetherion_ai.main.get_logger")
@@ -189,15 +175,14 @@ class TestMainStartup:
         mock_get_logger,
         mock_setup_logging,
         mock_get_settings,
-        mock_key_manager_cls,
-        mock_field_encryptor_cls,
+        mock_build_runtime_encryptors,
         mock_qdrant_memory_cls,
         mock_bot_cls,
         mock_user_manager_cls,
         mock_settings_manager_cls,
         mock_set_settings_manager,
     ) -> None:
-        """ZetherionAIBot should receive the memory, user_manager, and settings_manager."""
+        """ZetherionAIBot should receive the memory, user manager, and settings manager."""
         from zetherion_ai.main import main
 
         settings = MagicMock()
@@ -206,17 +191,18 @@ class TestMainStartup:
         settings.encryption_strict = False
         settings.environment = "test"
         settings.qdrant_url = "http://localhost:6333"
+        settings.qdrant_owner_url = "http://localhost:6333"
         settings.discord_token.get_secret_value.return_value = "fake-token"
         settings.postgres_dsn = "postgresql://test:test@localhost:5432/test"
         mock_get_settings.return_value = settings
         mock_get_logger.return_value = MagicMock()
 
-        mock_km_instance = MagicMock()
-        mock_km_instance.key = b"\x00" * 32
-        mock_key_manager_cls.return_value = mock_km_instance
-
-        mock_encryptor_instance = MagicMock()
-        mock_field_encryptor_cls.return_value = mock_encryptor_instance
+        mock_build_runtime_encryptors.return_value = SimpleNamespace(
+            owner_personal=MagicMock(name="owner_encryptor"),
+            tenant_data=MagicMock(name="tenant_encryptor"),
+            owner_personal_salt_path="data/owner-salt.bin",
+            tenant_data_salt_path="data/tenant-salt.bin",
+        )
 
         mock_memory = AsyncMock()
         mock_qdrant_memory_cls.return_value = mock_memory
@@ -247,8 +233,7 @@ class TestMainStartup:
     @patch("zetherion_ai.main.UserManager")
     @patch("zetherion_ai.main.ZetherionAIBot")
     @patch("zetherion_ai.main.QdrantMemory")
-    @patch("zetherion_ai.main.FieldEncryptor")
-    @patch("zetherion_ai.main.KeyManager")
+    @patch("zetherion_ai.main.build_runtime_encryptors")
     @patch("zetherion_ai.main.get_settings")
     @patch("zetherion_ai.main.setup_logging")
     @patch("zetherion_ai.main.get_logger")
@@ -257,8 +242,7 @@ class TestMainStartup:
         mock_get_logger,
         mock_setup_logging,
         mock_get_settings,
-        mock_key_manager_cls,
-        mock_field_encryptor_cls,
+        mock_build_runtime_encryptors,
         mock_qdrant_memory_cls,
         mock_bot_cls,
         mock_user_manager_cls,
@@ -274,6 +258,7 @@ class TestMainStartup:
         settings.encryption_strict = False
         settings.environment = "test"
         settings.qdrant_url = "http://localhost:6333"
+        settings.qdrant_owner_url = "http://localhost:6333"
         settings.discord_token.get_secret_value.return_value = "fake-token"
         settings.postgres_dsn = "postgresql://test:test@localhost:5432/test"
         settings.owner_user_id = 123
@@ -285,12 +270,12 @@ class TestMainStartup:
         mock_get_settings.return_value = settings
         mock_get_logger.return_value = MagicMock()
 
-        mock_km_instance = MagicMock()
-        mock_km_instance.key = b"\x00" * 32
-        mock_key_manager_cls.return_value = mock_km_instance
-
-        mock_encryptor_instance = MagicMock()
-        mock_field_encryptor_cls.return_value = mock_encryptor_instance
+        mock_build_runtime_encryptors.return_value = SimpleNamespace(
+            owner_personal=MagicMock(name="owner_encryptor"),
+            tenant_data=MagicMock(name="tenant_encryptor"),
+            owner_personal_salt_path="data/owner-salt.bin",
+            tenant_data_salt_path="data/tenant-salt.bin",
+        )
 
         mock_memory = AsyncMock()
         mock_qdrant_memory_cls.return_value = mock_memory

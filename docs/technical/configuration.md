@@ -94,11 +94,28 @@ cp .env.example .env
 | `POSTGRES_DSN` | `postgresql://zetherion:password@postgres:5432/zetherion` | PostgreSQL DSN |
 | `POSTGRES_POOL_MIN_SIZE` | `1` | Minimum asyncpg pool size per service |
 | `POSTGRES_POOL_MAX_SIZE` | `5` | Maximum asyncpg pool size per service |
-| `QDRANT_HOST` | `qdrant` | Qdrant host |
-| `QDRANT_PORT` | `6333` | Qdrant port |
-| `QDRANT_USE_TLS` | `false` | Enable TLS for Qdrant |
-| `QDRANT_CERT_PATH` | unset | Qdrant TLS certificate path |
-| `ENCRYPTION_SALT_PATH` | `data/salt.bin` | Salt file path |
+| `QDRANT_HOST` | `qdrant` | Legacy/default Qdrant host fallback |
+| `QDRANT_PORT` | `6333` | Legacy/default Qdrant port fallback |
+| `QDRANT_USE_TLS` | `false` | Legacy/default TLS flag for Qdrant |
+| `QDRANT_CERT_PATH` | unset | Legacy/default Qdrant TLS certificate path |
+| `QDRANT_OWNER_HOST` | unset | Optional owner-domain Qdrant host override |
+| `QDRANT_OWNER_PORT` | unset | Optional owner-domain Qdrant port override |
+| `QDRANT_OWNER_USE_TLS` | unset | Optional owner-domain TLS override |
+| `QDRANT_OWNER_CERT_PATH` | unset | Optional owner-domain TLS certificate path |
+| `QDRANT_TENANT_HOST` | unset | Optional tenant-domain Qdrant host override |
+| `QDRANT_TENANT_PORT` | unset | Optional tenant-domain Qdrant port override |
+| `QDRANT_TENANT_USE_TLS` | unset | Optional tenant-domain TLS override |
+| `QDRANT_TENANT_CERT_PATH` | unset | Optional tenant-domain TLS certificate path |
+| `POSTGRES_TENANT_APP_SCHEMA` | `tenant_app` | Logical tenant application schema name |
+| `POSTGRES_OWNER_PERSONAL_SCHEMA` | `owner_personal` | Logical owner-personal schema name |
+| `POSTGRES_OWNER_PORTFOLIO_SCHEMA` | `owner_portfolio` | Logical owner-portfolio schema name |
+| `POSTGRES_CONTROL_PLANE_SCHEMA` | `control_plane` | Logical control-plane schema name |
+| `POSTGRES_CGS_GATEWAY_SCHEMA` | `cgs_gateway` | Logical CGS gateway schema name |
+| `ENCRYPTION_SALT_PATH` | `data/salt.bin` | Legacy/default salt file path |
+| `ENCRYPTION_OWNER_PASSPHRASE` | unset | Optional owner-personal passphrase override |
+| `ENCRYPTION_OWNER_SALT_PATH` | unset | Optional owner-personal salt path override |
+| `ENCRYPTION_TENANT_PASSPHRASE` | unset | Optional tenant-data passphrase override |
+| `ENCRYPTION_TENANT_SALT_PATH` | unset | Optional tenant-data salt path override |
 | `ENCRYPTION_STRICT` | `false` | Fail on decrypt errors |
 
 `ENCRYPTION_ENABLED` appears in `.env.example` as a compatibility flag, but

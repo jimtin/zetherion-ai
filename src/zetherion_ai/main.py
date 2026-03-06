@@ -17,11 +17,12 @@ from zetherion_ai.memory.qdrant import QdrantMemory
 from zetherion_ai.queue.manager import QueueManager
 from zetherion_ai.queue.processors import QueueProcessors
 from zetherion_ai.queue.storage import QueueStorage
-from zetherion_ai.security.encryption import FieldEncryptor
-from zetherion_ai.security.keys import KeyManager
+from zetherion_ai.security.domain_keys import build_runtime_encryptors
 from zetherion_ai.security.secret_resolver import SecretResolver
 from zetherion_ai.security.secrets import SecretsManager
 from zetherion_ai.settings_manager import SettingsManager
+from zetherion_ai.trust.data_plane import ensure_postgres_isolation_schemas
+from zetherion_ai.trust.scope import TrustDomain
 
 
 async def _bootstrap_dynamic_model_settings(
@@ -103,20 +104,22 @@ async def main() -> None:
         qdrant_url=settings.qdrant_url,
     )
 
-    # Initialize encryption (mandatory — config validation ensures passphrase exists)
-    key_manager = KeyManager(
-        passphrase=settings.encryption_passphrase.get_secret_value(),
-        salt_path=settings.encryption_salt_path,
-    )
-    encryptor = FieldEncryptor(
-        key=key_manager.key,
+    # Initialize encryption domains (mandatory — config validation ensures passphrase exists)
+    encryptors = build_runtime_encryptors(settings)
+    tenant_encryptor = encryptors.tenant_data
+    owner_encryptor = encryptors.owner_personal
+    log.info(
+        "encryption_initialized",
         strict=settings.encryption_strict,
+        owner_personal_salt_path=encryptors.owner_personal_salt_path,
+        tenant_data_salt_path=encryptors.tenant_data_salt_path,
     )
-    log.info("encryption_initialized", strict=settings.encryption_strict)
 
     # Initialize RBAC user manager
     user_manager = UserManager(dsn=settings.postgres_dsn, allow_all=settings.allow_all_users)
     await user_manager.initialize()
+    if user_manager._pool:
+        await ensure_postgres_isolation_schemas(user_manager._pool, settings)
     log.info("user_manager_initialized")
 
     # Initialize runtime settings manager (shares DB with user manager)
@@ -129,7 +132,7 @@ async def main() -> None:
         log.info("settings_manager_initialized")
 
     # Initialize encrypted secrets manager (shares DB + encryptor)
-    secrets_mgr = SecretsManager(encryptor=encryptor)
+    secrets_mgr = SecretsManager(encryptor=tenant_encryptor)
     if user_manager._pool:
         await secrets_mgr.initialize(user_manager._pool)
         set_secret_resolver(SecretResolver(secrets_mgr, settings))
@@ -137,15 +140,15 @@ async def main() -> None:
 
     tenant_admin_mgr: TenantAdminManager | None = None
     if user_manager._pool:
-        tenant_admin_mgr = TenantAdminManager(pool=user_manager._pool, encryptor=encryptor)
+        tenant_admin_mgr = TenantAdminManager(pool=user_manager._pool, encryptor=tenant_encryptor)
         await tenant_admin_mgr.initialize()
         set_tenant_admin_manager(tenant_admin_mgr)
         log.info("tenant_admin_manager_initialized")
 
     # Initialize memory system with encryption
-    memory = QdrantMemory(encryptor=encryptor)
+    memory = QdrantMemory(encryptor=owner_encryptor, trust_domain=TrustDomain.OWNER_PERSONAL)
     await memory.initialize()
-    log.info("memory_initialized", qdrant_url=settings.qdrant_url)
+    log.info("memory_initialized", qdrant_url=settings.qdrant_owner_url)
 
     # Initialize priority message queue (if enabled and DB is available)
     queue_mgr: QueueManager | None = None

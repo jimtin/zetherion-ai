@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from zetherion_ai.logging import get_logger
+from zetherion_ai.trust.data_plane import (
+    known_object_storage_prefixes,
+    object_storage_prefix_for_domain,
+)
+from zetherion_ai.trust.scope import TrustDomain
 
 if TYPE_CHECKING:
     from zetherion_ai.config import Settings
@@ -141,6 +146,70 @@ class S3ReplayStore:
         return None
 
 
+class ScopedReplayStore:
+    """Replay-store wrapper that enforces trust-domain key prefixes."""
+
+    def __init__(
+        self,
+        base_store: ReplayStore,
+        *,
+        trust_domain: TrustDomain,
+        legacy_read_fallback: bool = True,
+    ) -> None:
+        self._base_store = base_store
+        self._trust_domain = trust_domain
+        self._prefix = object_storage_prefix_for_domain(trust_domain)
+        self._known_prefixes = set(known_object_storage_prefixes())
+        self._legacy_read_fallback = legacy_read_fallback
+
+    def _normalized_candidates(self, object_key: str) -> tuple[str, list[str]]:
+        normalized = object_key.lstrip("/")
+        if not normalized:
+            raise ValueError("Object key must not be empty")
+
+        prefix = normalized.split("/", 1)[0]
+        if prefix in self._known_prefixes:
+            if prefix != self._prefix:
+                raise ValueError(
+                    f"Cross-domain object key blocked for {self._trust_domain.value}: {object_key}"
+                )
+            return normalized, [normalized]
+
+        scoped = f"{self._prefix}/{normalized}"
+        candidates = [scoped]
+        if self._legacy_read_fallback:
+            candidates.append(normalized)
+        return scoped, candidates
+
+    async def put_chunk(self, object_key: str, data: bytes) -> None:
+        scoped_key, _ = self._normalized_candidates(object_key)
+        await self._base_store.put_chunk(scoped_key, data)
+
+    async def get_chunk(self, object_key: str) -> bytes | None:
+        _, candidates = self._normalized_candidates(object_key)
+        for candidate in candidates:
+            payload = await self._base_store.get_chunk(candidate)
+            if payload is not None:
+                if candidate != candidates[0]:
+                    log.info(
+                        "object_storage_legacy_fallback_read",
+                        trust_domain=self._trust_domain.value,
+                        object_key=object_key,
+                    )
+                return payload
+        return None
+
+    async def delete_chunk(self, object_key: str) -> bool:
+        _, candidates = self._normalized_candidates(object_key)
+        deleted = False
+        for candidate in dict.fromkeys(candidates):
+            deleted = await self._base_store.delete_chunk(candidate) or deleted
+        return deleted
+
+    async def close(self) -> None:
+        await self._base_store.close()
+
+
 def _settings_value(settings: Settings, key: str, legacy_key: str) -> object:
     values = getattr(settings, "__dict__", {})
     if isinstance(values, dict):
@@ -169,7 +238,11 @@ def _bool_value(raw: object) -> bool:
     return bool(raw)
 
 
-def create_replay_store_from_settings(settings: Settings) -> ReplayStore | None:
+def create_replay_store_from_settings(
+    settings: Settings,
+    *,
+    trust_domain: TrustDomain | None = None,
+) -> ReplayStore | None:
     """Create replay storage backend from settings."""
     backend = str(_settings_value(settings, "object_storage_backend", "replay_storage_backend"))
     backend = backend.strip().lower()
@@ -179,7 +252,10 @@ def create_replay_store_from_settings(settings: Settings) -> ReplayStore | None:
         local_path = str(
             _settings_value(settings, "object_storage_local_path", "replay_storage_local_path")
         )
-        return LocalReplayStore(root_path=local_path)
+        store: ReplayStore | None = LocalReplayStore(root_path=local_path)
+        if trust_domain is not None:
+            return ScopedReplayStore(store, trust_domain=trust_domain)
+        return store
     if backend == "s3":
         secret = _secret_value(
             _settings_value(
@@ -191,7 +267,7 @@ def create_replay_store_from_settings(settings: Settings) -> ReplayStore | None:
         bucket = str(_settings_value(settings, "object_storage_bucket", "replay_storage_bucket"))
         if not bucket:
             raise ValueError("object_storage_bucket is required when object_storage_backend=s3")
-        return S3ReplayStore(
+        store = S3ReplayStore(
             bucket=bucket,
             region=str(_settings_value(settings, "object_storage_region", "replay_storage_region")),
             endpoint=(
@@ -215,5 +291,8 @@ def create_replay_store_from_settings(settings: Settings) -> ReplayStore | None:
                 )
             ),
         )
+        if trust_domain is not None:
+            return ScopedReplayStore(store, trust_domain=trust_domain)
+        return store
     log.warning("unknown_object_storage_backend", backend=backend)
     return None
