@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment 16 Multi-Sub-Worker Scale Hardening (2026-03-06)
+
+- Added capability-aware worker dispatch targeting for `execution_target=any_worker`
+  with explicit `target_node_id` assignment and eligibility checks before enqueue.
+- Added worker rollout/canary gating for claim/result trust-policy evaluation contexts
+  (`node_canary_enabled`) and rollout-stage enforcement for worker actions.
+- Added worker health-scoring controls in tenant-admin storage and runtime:
+  - `health_score`, `consecutive_job_failures` on worker nodes
+  - stale-heartbeat and minimum-score dispatch guards
+  - auto-quarantine thresholds with session revocation on trigger
+- Extended worker node status operations to maintain health score/failure counters
+  and revoke active sessions when quarantined.
+- Added contention/idempotency unit coverage for multi-node safety:
+  - lease-collision handling between worker nodes
+  - duplicate result submission idempotency across nodes
+- Added operator runbook for compromise response, key rotation, and canary re-enable:
+  - `docs/development/worker-compromise-response.md`
+
 ### Changed - Segment 15 Worker WhatsApp Boundary Controls (2026-03-06)
 
 - Added worker messaging grant persistence in tenant-admin storage:

@@ -235,6 +235,63 @@ def test_rollout_stage_canary_requires_canary_enablement() -> None:
     assert allowed.outcome == TrustDecisionOutcome.ALLOW
 
 
+def test_worker_rollout_stage_blocks_and_requires_canary_node_flag() -> None:
+    disabled = TrustPolicyEvaluator(
+        setting_resolver=_resolver_factory(
+            {
+                ("tenant-1", "security", "trust_tier"): "tier3",
+                ("tenant-1", "security", "worker_rollout_stage"): "disabled",
+            }
+        )
+    )
+    blocked = disabled.evaluate(
+        tenant_id="tenant-1",
+        action="worker.job.claim",
+        context={
+            "node_registered": True,
+            "node_healthy": True,
+            "capability_allowlisted": True,
+            "node_canary_enabled": True,
+        },
+    )
+    assert blocked.outcome == TrustDecisionOutcome.DENY
+    assert blocked.code == "AI_ROLLOUT_STAGE_BLOCKED"
+
+    canary = TrustPolicyEvaluator(
+        setting_resolver=_resolver_factory(
+            {
+                ("tenant-1", "security", "trust_tier"): "tier3",
+                ("tenant-1", "security", "worker_rollout_stage"): "canary",
+                ("tenant-1", "security", "worker_canary_enabled"): True,
+            }
+        )
+    )
+    denied_non_canary = canary.evaluate(
+        tenant_id="tenant-1",
+        action="worker.job.claim",
+        context={
+            "node_registered": True,
+            "node_healthy": True,
+            "capability_allowlisted": True,
+            "node_canary_enabled": False,
+        },
+    )
+    assert denied_non_canary.outcome == TrustDecisionOutcome.DENY
+    assert denied_non_canary.code == "AI_ROLLOUT_STAGE_BLOCKED"
+
+    allowed_canary = canary.evaluate(
+        tenant_id="tenant-1",
+        action="worker.job.claim",
+        context={
+            "node_registered": True,
+            "node_healthy": True,
+            "capability_allowlisted": True,
+            "node_canary_enabled": True,
+        },
+    )
+    assert allowed_canary.outcome == TrustDecisionOutcome.ALLOW
+
+
 def test_numeric_trust_tier_aliases_and_low_tier_denial() -> None:
     assert TrustTier.coerce("1", default=TrustTier.TIER3) == TrustTier.TIER1
 

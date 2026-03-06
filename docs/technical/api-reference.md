@@ -326,9 +326,15 @@ Complete worker registration and optionally rotate session credentials.
 
 Submit node heartbeat and health/capability metadata.
 
+- Updates worker `health_score` and may auto-quarantine unhealthy nodes based on
+  tenant security policy thresholds.
+
 ### POST /worker/v1/nodes/{node_id}/jobs/claim
 
 Claim next eligible worker job based on capability policy.
+
+- Claims are gated by rollout stage (`disabled|canary|general`), node canary
+  allowlisting in canary mode, heartbeat freshness, and minimum health score.
 
 ### POST /worker/v1/nodes/{node_id}/jobs/{job_id}/result
 
