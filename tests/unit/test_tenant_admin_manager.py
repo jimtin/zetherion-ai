@@ -73,6 +73,26 @@ def test_schema_adds_execution_target_column_before_dispatch_index() -> None:
     assert _SCHEMA_SQL.index(add_column_sql) < _SCHEMA_SQL.index(dispatch_index_sql)
 
 
+def test_schema_adds_worker_health_columns_before_dispatch_index() -> None:
+    add_worker_health_sql = (
+        "ALTER TABLE tenant_worker_nodes\n"
+        "    ADD COLUMN IF NOT EXISTS health_score INT NOT NULL DEFAULT 100;"
+    )
+    dispatch_index_sql = (
+        "CREATE INDEX IF NOT EXISTS idx_tenant_worker_nodes_dispatch\n"
+        "    ON tenant_worker_nodes (\n"
+        "        tenant_id,\n"
+        "        status,\n"
+        "        health_status,\n"
+        "        health_score DESC,\n"
+        "        last_heartbeat_at DESC,\n"
+        "        updated_at DESC\n"
+        "    );"
+    )
+
+    assert _SCHEMA_SQL.index(add_worker_health_sql) < _SCHEMA_SQL.index(dispatch_index_sql)
+
+
 @pytest.mark.asyncio
 async def test_initialize_refreshes_caches() -> None:
     conn = _FakeConn()
