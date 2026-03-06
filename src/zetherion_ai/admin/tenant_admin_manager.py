@@ -692,6 +692,12 @@ CREATE TABLE IF NOT EXISTS tenant_worker_nodes (
 
 CREATE INDEX IF NOT EXISTS idx_tenant_worker_nodes_lookup
     ON tenant_worker_nodes (tenant_id, status, health_status, updated_at DESC);
+
+ALTER TABLE tenant_worker_nodes
+    ADD COLUMN IF NOT EXISTS health_score INT NOT NULL DEFAULT 100;
+ALTER TABLE tenant_worker_nodes
+    ADD COLUMN IF NOT EXISTS consecutive_job_failures INT NOT NULL DEFAULT 0;
+
 CREATE INDEX IF NOT EXISTS idx_tenant_worker_nodes_dispatch
     ON tenant_worker_nodes (
         tenant_id,
@@ -701,11 +707,6 @@ CREATE INDEX IF NOT EXISTS idx_tenant_worker_nodes_dispatch
         last_heartbeat_at DESC,
         updated_at DESC
     );
-
-ALTER TABLE tenant_worker_nodes
-    ADD COLUMN IF NOT EXISTS health_score INT NOT NULL DEFAULT 100;
-ALTER TABLE tenant_worker_nodes
-    ADD COLUMN IF NOT EXISTS consecutive_job_failures INT NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS tenant_worker_capabilities (
     tenant_id             UUID         NOT NULL,
