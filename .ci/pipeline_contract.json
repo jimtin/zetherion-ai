@@ -8,12 +8,12 @@
     "type-check": {
       "local_equivalent": true,
       "local_stage": "unit+mypy",
-      "note": "mypy is required in scripts/pre-push-tests.sh"
+      "note": "mypy is required in scripts/pre-push-tests.sh; CI type-check is path-gated to code changes plus weekly/manual."
     },
     "security": {
       "local_equivalent": true,
       "local_stage": "static-analysis",
-      "note": "bandit is included in scripts/pre-push-tests.sh"
+      "note": "bandit is included in scripts/pre-push-tests.sh; CI bandit is path-gated to code changes plus weekly/manual."
     },
     "semgrep": {
       "local_equivalent": false,
@@ -58,7 +58,7 @@
     "unit-test": {
       "local_equivalent": true,
       "local_stage": "unit+mypy",
-      "note": "unit tests with coverage >=90% are required locally; PR CI runs 3.12 while 3.13 runs weekly/manual."
+      "note": "unit tests with coverage >=90% are required locally; CI unit tests are path-gated, with 3.12 on PR code changes and 3.13 weekly/manual."
     },
     "integration-test": {
       "local_equivalent": true,

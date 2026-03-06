@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Additional CI Cost Controls (2026-03-06)
+
+- Added path-gating for code-change lanes:
+  - `type-check` now runs only for code changes plus weekly/manual runs.
+  - `security` (Bandit) now runs only for code changes plus weekly/manual runs.
+  - `unit-test` now runs only for code changes plus weekly/manual runs.
+- Added dedicated `code` changed-path filter in CI to drive deterministic
+  gating for code-related jobs.
+- Updated CI summary pass logic to treat path-gated `type-check`, `security`,
+  and `unit-test` as policy-success when intentionally skipped.
+- Updated CodeQL workflow to execute analysis in weekly/manual mode only.
+- Updated pipeline contract notes to reflect local-first + path-gated policy
+  for type/security/unit lanes.
+
 ### Changed - CI Cost Reduction and Secret Scanning Policy (2026-03-06)
 
 - Switched CI schedule from daily to weekly (`Sunday 02:30 UTC`) to reduce recurring run volume.

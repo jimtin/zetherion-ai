@@ -23,6 +23,7 @@ jobs:
       pull-requests: read
     outputs:
       docs: ${{ steps.filter.outputs.docs }}
+      code: ${{ steps.filter.outputs.code }}
       integration: ${{ steps.filter.outputs.integration }}
       docker: ${{ steps.filter.outputs.docker }}
     steps:
@@ -37,6 +38,12 @@ jobs:
               - 'docs/**'
               - 'README.md'
               - 'mkdocs.yml'
+            code:
+              - 'src/**'
+              - 'tests/**'
+              - 'updater_sidecar/**'
+              - 'requirements*.txt'
+              - 'pyproject.toml'
             integration:
               - 'src/**'
               - 'updater_sidecar/**'
@@ -84,6 +91,7 @@ jobs:
     name: Type Checking
     runs-on: ubuntu-latest
     needs: [detect-changes]
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.code == 'true' }}
     permissions:
       contents: read
     steps:
@@ -113,6 +121,7 @@ jobs:
     name: Security Scanning
     runs-on: ubuntu-latest
     needs: [detect-changes]
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.code == 'true' }}
     permissions:
       contents: read
     steps:
@@ -364,6 +373,7 @@ jobs:
     name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     needs: [detect-changes]
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.code == 'true' }}
     permissions:
       contents: read
     strategy:
@@ -534,6 +544,14 @@ jobs:
           if [[ "$PRE_COMMIT_RESULT" == "skipped" ]]; then
             PRE_COMMIT_RESULT="success"
           fi
+          TYPE_CHECK_RESULT="${{ needs.type-check.result }}"
+          if [[ "$TYPE_CHECK_RESULT" == "skipped" ]]; then
+            TYPE_CHECK_RESULT="success"
+          fi
+          SECURITY_RESULT="${{ needs.security.result }}"
+          if [[ "$SECURITY_RESULT" == "skipped" ]]; then
+            SECURITY_RESULT="success"
+          fi
           SEMGREP_RESULT="${{ needs.semgrep.result }}"
           if [[ "$SEMGREP_RESULT" == "skipped" ]]; then
             SEMGREP_RESULT="success"
@@ -558,6 +576,10 @@ jobs:
           if [[ "$BOUNDARY_RESULT" == "skipped" ]]; then
             BOUNDARY_RESULT="success"
           fi
+          UNIT_RESULT="${{ needs.unit-test.result }}"
+          if [[ "$UNIT_RESULT" == "skipped" ]]; then
+            UNIT_RESULT="success"
+          fi
           INTEGRATION_RESULT="${{ needs.integration-test.result }}"
           if [[ "$INTEGRATION_RESULT" == "skipped" ]]; then
             INTEGRATION_RESULT="success"
@@ -568,8 +590,8 @@ jobs:
           fi
 
           if [[ "${{ needs.lint.result }}" == "success" ]] && \
-             [[ "${{ needs.type-check.result }}" == "success" ]] && \
-             [[ "${{ needs.security.result }}" == "success" ]] && \
+             [[ "$TYPE_CHECK_RESULT" == "success" ]] && \
+             [[ "$SECURITY_RESULT" == "success" ]] && \
              [[ "$SEMGREP_RESULT" == "success" ]] && \
              [[ "$SECRET_SCAN_RESULT" == "success" ]] && \
              [[ "$DEPENDENCY_AUDIT_RESULT" == "success" ]] && \
@@ -578,7 +600,7 @@ jobs:
              [[ "$DOCS_RESULT" == "success" ]] && \
              [[ "${{ needs.pipeline-contract.result }}" == "success" ]] && \
              [[ "$BOUNDARY_RESULT" == "success" ]] && \
-             [[ "${{ needs.unit-test.result }}" == "success" ]] && \
+             [[ "$UNIT_RESULT" == "success" ]] && \
              [[ "$INTEGRATION_RESULT" == "success" ]] && \
              [[ "$DOCKER_BUILD_RESULT" == "success" ]]; then
             echo "✅ All CI checks passed!"
@@ -586,8 +608,8 @@ jobs:
           else
             echo "❌ Some CI checks failed:"
             echo "  Lint: ${{ needs.lint.result }}"
-            echo "  Type Check: ${{ needs.type-check.result }}"
-            echo "  Security (Bandit): ${{ needs.security.result }}"
+            echo "  Type Check: ${TYPE_CHECK_RESULT} (raw=${{ needs.type-check.result }})"
+            echo "  Security (Bandit): ${SECURITY_RESULT} (raw=${{ needs.security.result }})"
             echo "  SAST (Semgrep): ${SEMGREP_RESULT} (raw=${{ needs.semgrep.result }})"
             echo "  Secret Scan (Gitleaks): ${SECRET_SCAN_RESULT} (raw=${{ needs.secret-scan.result }})"
             echo "  Dependency Audit: ${DEPENDENCY_AUDIT_RESULT} (raw=${{ needs.dependency-audit.result }})"
@@ -596,7 +618,7 @@ jobs:
             echo "  Docs Contracts: ${DOCS_RESULT} (raw=${{ needs.docs-contract.result }})"
             echo "  Pipeline Contract: ${{ needs.pipeline-contract.result }}"
             echo "  Zetherion Boundary: ${BOUNDARY_RESULT} (raw=${{ needs.zetherion-boundary-check.result }})"
-            echo "  Unit Tests: ${{ needs.unit-test.result }}"
+            echo "  Unit Tests: ${UNIT_RESULT} (raw=${{ needs.unit-test.result }})"
             echo "  Integration Tests: ${INTEGRATION_RESULT} (raw=${{ needs.integration-test.result }})"
             echo "  Docker Build Test: ${DOCKER_BUILD_RESULT} (raw=${{ needs.docker-build-test.result }})"
             exit 1
