@@ -599,8 +599,10 @@ class TestQueueProcessorsDispatch:
             QueueTaskType.DISCORD_MESSAGE,
             {"content": "hello", "user_id": 42, "channel_id": 1, "message_id": 2},
         )
-        assert result.success is False
-        assert "boom" in (result.error or "")
+        assert result.success is True
+        assert result.data.get("degraded") is True
+        assert "boom" in str(result.data.get("error"))
+        mock_channel.send.assert_called_once()
 
 
 # ===========================================================================

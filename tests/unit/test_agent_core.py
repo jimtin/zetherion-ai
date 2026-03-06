@@ -599,6 +599,29 @@ class TestParseUpdateIntent:
 
 
 # ===========================================================================
+# _parse_health_intent
+# ===========================================================================
+
+
+class TestParseHealthIntent:
+    """Tests for Agent._parse_health_intent."""
+
+    def test_health_report_keywords(self):
+        agent = _make_agent()
+        assert agent._parse_health_intent("show daily report") == "health_report"
+        assert agent._parse_health_intent("health report for yesterday") == "health_report"
+
+    def test_system_status_keywords(self):
+        agent = _make_agent()
+        assert agent._parse_health_intent("show system status") == "system_status"
+        assert agent._parse_health_intent("run diagnostics with metrics") == "system_status"
+
+    def test_default_health_check(self):
+        agent = _make_agent()
+        assert agent._parse_health_intent("are you online") == "health_check"
+
+
+# ===========================================================================
 # generate_response — skill intents
 # ===========================================================================
 
@@ -797,6 +820,30 @@ class TestGenerateResponseSkillIntents:
             123,
             "check for updates",
             "update_checker",
+        )
+
+    async def test_system_health_intent(self):
+        """SYSTEM_HEALTH routes to _handle_skill_intent(health_analyzer)."""
+        mock_memory = AsyncMock()
+        mock_router = AsyncMock()
+        mock_router.classify = AsyncMock(
+            return_value=_routing(MessageIntent.SYSTEM_HEALTH),
+        )
+
+        agent = _make_agent(mock_memory=mock_memory, mock_router=mock_router)
+        agent._handle_skill_intent = AsyncMock(return_value="All systems healthy.")
+
+        result = await agent.generate_response(
+            user_id=123,
+            channel_id=456,
+            message="are you online?",
+        )
+
+        assert result == "All systems healthy."
+        agent._handle_skill_intent.assert_awaited_once_with(
+            123,
+            "are you online?",
+            "health_analyzer",
         )
 
     async def test_docs_answer_short_circuits_email_skill(self):

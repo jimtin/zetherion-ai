@@ -134,6 +134,17 @@ class QueueProcessors:
     # Individual handlers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _fallback_generation_message(exc: Exception) -> str:
+        """User-visible fallback when response generation fails."""
+        error_text = str(exc).lower()
+        if "vector dimension error" in error_text or "expected dim" in error_text:
+            return (
+                "I'm online, but my memory index is being upgraded right now. "
+                "Please try again shortly."
+            )
+        return "I hit a temporary issue while processing that. Please try again."
+
     async def _handle_discord_message(self, payload: dict[str, Any]) -> ProcessorResult:
         """Process an interactive Discord message.
 
@@ -174,11 +185,22 @@ class QueueProcessors:
                 log.debug("message_fetch_failed", message_id=message_id)
 
         # Generate response through the agent
-        response = await self._agent.generate_response(
-            user_id=user_id,
-            channel_id=channel_id or 0,
-            message=content,
-        )
+        generation_error: Exception | None = None
+        try:
+            response = await self._agent.generate_response(
+                user_id=user_id,
+                channel_id=channel_id or 0,
+                message=content,
+            )
+        except Exception as exc:
+            generation_error = exc
+            log.exception(
+                "discord_generation_failed",
+                user_id=user_id,
+                channel_id=channel_id,
+                message_id=message_id,
+            )
+            response = self._fallback_generation_message(exc)
 
         # Reply to the original message or send to channel
         delivered = False
@@ -203,6 +225,14 @@ class QueueProcessors:
             user_id=user_id,
             response_length=len(response),
         )
+        if generation_error is not None:
+            return ProcessorResult(
+                success=True,
+                data={
+                    "degraded": True,
+                    "error": str(generation_error),
+                },
+            )
         return ProcessorResult(success=True)
 
     async def _handle_skill_request(self, payload: dict[str, Any]) -> ProcessorResult:
