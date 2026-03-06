@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [main, develop]
   schedule:
-    - cron: "30 2 * * *"
+    - cron: "30 2 * * 0"
   workflow_dispatch:  # Allow manual triggering
   workflow_call:  # Allow reuse by release.yml
 
@@ -23,6 +23,7 @@ jobs:
       pull-requests: read
     outputs:
       docs: ${{ steps.filter.outputs.docs }}
+      code: ${{ steps.filter.outputs.code }}
       integration: ${{ steps.filter.outputs.integration }}
       docker: ${{ steps.filter.outputs.docker }}
     steps:
@@ -37,6 +38,12 @@ jobs:
               - 'docs/**'
               - 'README.md'
               - 'mkdocs.yml'
+            code:
+              - 'src/**'
+              - 'tests/**'
+              - 'updater_sidecar/**'
+              - 'requirements*.txt'
+              - 'pyproject.toml'
             integration:
               - 'src/**'
               - 'updater_sidecar/**'
@@ -84,6 +91,7 @@ jobs:
     name: Type Checking
     runs-on: ubuntu-latest
     needs: [detect-changes]
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.code == 'true' }}
     permissions:
       contents: read
     steps:
@@ -113,6 +121,7 @@ jobs:
     name: Security Scanning
     runs-on: ubuntu-latest
     needs: [detect-changes]
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.code == 'true' }}
     permissions:
       contents: read
     steps:
@@ -161,10 +170,53 @@ jobs:
         with:
           sarif_file: semgrep.sarif
 
+  secret-scan:
+    name: Secret Scan (Gitleaks)
+    runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          VERSION=8.24.3
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Fetch PR base ref
+        if: ${{ github.event_name == 'pull_request' }}
+        run: git fetch origin "${{ github.base_ref }}" --depth=1
+
+      - name: Run diff secret scan (PR)
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          gitleaks git \
+            --redact \
+            --exit-code 1 \
+            --log-opts="origin/${{ github.base_ref }}..${{ github.sha }}"
+
+      - name: Run full history secret scan (weekly/manual)
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+        run: |
+          gitleaks git \
+            --redact \
+            --exit-code 1 \
+            --log-opts="--all"
+
   dependency-audit:
     name: Dependency Vulnerability Audit
     runs-on: ubuntu-latest
     needs: [detect-changes]
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: read
     steps:
@@ -321,16 +373,13 @@ jobs:
     name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     needs: [detect-changes]
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.code == 'true' }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - python-version: '3.12'
-            heavy_only: false
-          - python-version: '3.13'
-            heavy_only: true
+        include: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '[{"python-version":"3.12","upload_coverage":true},{"python-version":"3.13","upload_coverage":false}]' || '[{"python-version":"3.12","upload_coverage":true}]') }}
 
     steps:
       - name: Checkout code
@@ -362,7 +411,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238  # v4
-        if: matrix.python-version == '3.12'
+        if: matrix.upload_coverage
         with:
           file: ./coverage.xml
           flags: unittests
@@ -371,7 +420,7 @@ jobs:
 
       - name: Upload coverage report as artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
-        if: matrix.python-version == '3.12'
+        if: matrix.upload_coverage
         with:
           name: coverage-report
           path: htmlcov/
@@ -381,7 +430,7 @@ jobs:
     name: Integration (${{ matrix.shard.name }})
     runs-on: ubuntu-latest
     needs: [detect-changes]
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.integration == 'true' }}
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: read
     strategy:
@@ -475,6 +524,7 @@ jobs:
         type-check,
         security,
         semgrep,
+        secret-scan,
         dependency-audit,
         license-check,
         pre-commit,
@@ -494,9 +544,25 @@ jobs:
           if [[ "$PRE_COMMIT_RESULT" == "skipped" ]]; then
             PRE_COMMIT_RESULT="success"
           fi
+          TYPE_CHECK_RESULT="${{ needs.type-check.result }}"
+          if [[ "$TYPE_CHECK_RESULT" == "skipped" ]]; then
+            TYPE_CHECK_RESULT="success"
+          fi
+          SECURITY_RESULT="${{ needs.security.result }}"
+          if [[ "$SECURITY_RESULT" == "skipped" ]]; then
+            SECURITY_RESULT="success"
+          fi
           SEMGREP_RESULT="${{ needs.semgrep.result }}"
           if [[ "$SEMGREP_RESULT" == "skipped" ]]; then
             SEMGREP_RESULT="success"
+          fi
+          SECRET_SCAN_RESULT="${{ needs.secret-scan.result }}"
+          if [[ "$SECRET_SCAN_RESULT" == "skipped" ]]; then
+            SECRET_SCAN_RESULT="success"
+          fi
+          DEPENDENCY_AUDIT_RESULT="${{ needs.dependency-audit.result }}"
+          if [[ "$DEPENDENCY_AUDIT_RESULT" == "skipped" ]]; then
+            DEPENDENCY_AUDIT_RESULT="success"
           fi
           LICENSE_RESULT="${{ needs.license-check.result }}"
           if [[ "$LICENSE_RESULT" == "skipped" ]]; then
@@ -510,6 +576,10 @@ jobs:
           if [[ "$BOUNDARY_RESULT" == "skipped" ]]; then
             BOUNDARY_RESULT="success"
           fi
+          UNIT_RESULT="${{ needs.unit-test.result }}"
+          if [[ "$UNIT_RESULT" == "skipped" ]]; then
+            UNIT_RESULT="success"
+          fi
           INTEGRATION_RESULT="${{ needs.integration-test.result }}"
           if [[ "$INTEGRATION_RESULT" == "skipped" ]]; then
             INTEGRATION_RESULT="success"
@@ -520,16 +590,17 @@ jobs:
           fi
 
           if [[ "${{ needs.lint.result }}" == "success" ]] && \
-             [[ "${{ needs.type-check.result }}" == "success" ]] && \
-             [[ "${{ needs.security.result }}" == "success" ]] && \
+             [[ "$TYPE_CHECK_RESULT" == "success" ]] && \
+             [[ "$SECURITY_RESULT" == "success" ]] && \
              [[ "$SEMGREP_RESULT" == "success" ]] && \
-             [[ "${{ needs.dependency-audit.result }}" == "success" ]] && \
+             [[ "$SECRET_SCAN_RESULT" == "success" ]] && \
+             [[ "$DEPENDENCY_AUDIT_RESULT" == "success" ]] && \
              [[ "$LICENSE_RESULT" == "success" ]] && \
              [[ "$PRE_COMMIT_RESULT" == "success" ]] && \
              [[ "$DOCS_RESULT" == "success" ]] && \
              [[ "${{ needs.pipeline-contract.result }}" == "success" ]] && \
              [[ "$BOUNDARY_RESULT" == "success" ]] && \
-             [[ "${{ needs.unit-test.result }}" == "success" ]] && \
+             [[ "$UNIT_RESULT" == "success" ]] && \
              [[ "$INTEGRATION_RESULT" == "success" ]] && \
              [[ "$DOCKER_BUILD_RESULT" == "success" ]]; then
             echo "✅ All CI checks passed!"
@@ -537,16 +608,17 @@ jobs:
           else
             echo "❌ Some CI checks failed:"
             echo "  Lint: ${{ needs.lint.result }}"
-            echo "  Type Check: ${{ needs.type-check.result }}"
-            echo "  Security (Bandit): ${{ needs.security.result }}"
+            echo "  Type Check: ${TYPE_CHECK_RESULT} (raw=${{ needs.type-check.result }})"
+            echo "  Security (Bandit): ${SECURITY_RESULT} (raw=${{ needs.security.result }})"
             echo "  SAST (Semgrep): ${SEMGREP_RESULT} (raw=${{ needs.semgrep.result }})"
-            echo "  Dependency Audit: ${{ needs.dependency-audit.result }}"
+            echo "  Secret Scan (Gitleaks): ${SECRET_SCAN_RESULT} (raw=${{ needs.secret-scan.result }})"
+            echo "  Dependency Audit: ${DEPENDENCY_AUDIT_RESULT} (raw=${{ needs.dependency-audit.result }})"
             echo "  License Check: ${LICENSE_RESULT} (raw=${{ needs.license-check.result }})"
             echo "  Pre-commit: ${{ needs.pre-commit.result }}"
             echo "  Docs Contracts: ${DOCS_RESULT} (raw=${{ needs.docs-contract.result }})"
             echo "  Pipeline Contract: ${{ needs.pipeline-contract.result }}"
             echo "  Zetherion Boundary: ${BOUNDARY_RESULT} (raw=${{ needs.zetherion-boundary-check.result }})"
-            echo "  Unit Tests: ${{ needs.unit-test.result }}"
+            echo "  Unit Tests: ${UNIT_RESULT} (raw=${{ needs.unit-test.result }})"
             echo "  Integration Tests: ${INTEGRATION_RESULT} (raw=${{ needs.integration-test.result }})"
             echo "  Docker Build Test: ${DOCKER_BUILD_RESULT} (raw=${{ needs.docker-build-test.result }})"
             exit 1
@@ -563,6 +635,7 @@ jobs:
           echo "| Type Checking | ${{ needs.type-check.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Security (Bandit) | ${{ needs.security.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| SAST (Semgrep) | ${{ needs.semgrep.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Secret Scan (Gitleaks) | ${{ needs.secret-scan.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Dependency Audit | ${{ needs.dependency-audit.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| License Check | ${{ needs.license-check.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Pre-commit | ${{ needs.pre-commit.result }} |" >> $GITHUB_STEP_SUMMARY
@@ -586,6 +659,7 @@ jobs:
         type-check,
         security,
         semgrep,
+        secret-scan,
         dependency-audit,
         license-check,
         pre-commit,
@@ -605,7 +679,7 @@ jobs:
         run: |
           python scripts/ci_failure_attribution.py \
             --output ci-failure-attribution.json \
-            --job-results "lint=${{ needs.lint.result }},type-check=${{ needs.type-check.result }},security=${{ needs.security.result }},semgrep=${{ needs.semgrep.result }},dependency-audit=${{ needs.dependency-audit.result }},license-check=${{ needs.license-check.result }},pre-commit=${{ needs.pre-commit.result }},docs-contract=${{ needs.docs-contract.result }},pipeline-contract=${{ needs.pipeline-contract.result }},zetherion-boundary-check=${{ needs.zetherion-boundary-check.result }},unit-test=${{ needs.unit-test.result }},integration-test=${{ needs.integration-test.result }},docker-build-test=${{ needs.docker-build-test.result }}"
+            --job-results "lint=${{ needs.lint.result }},type-check=${{ needs.type-check.result }},security=${{ needs.security.result }},semgrep=${{ needs.semgrep.result }},secret-scan=${{ needs.secret-scan.result }},dependency-audit=${{ needs.dependency-audit.result }},license-check=${{ needs.license-check.result }},pre-commit=${{ needs.pre-commit.result }},docs-contract=${{ needs.docs-contract.result }},pipeline-contract=${{ needs.pipeline-contract.result }},zetherion-boundary-check=${{ needs.zetherion-boundary-check.result }},unit-test=${{ needs.unit-test.result }},integration-test=${{ needs.integration-test.result }},docker-build-test=${{ needs.docker-build-test.result }}"
 
       - name: Upload attribution artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4

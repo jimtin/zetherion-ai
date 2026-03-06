@@ -13,6 +13,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Additional CI Cost Controls (2026-03-06)
+
+- Added path-gating for code-change lanes:
+  - `type-check` now runs only for code changes plus weekly/manual runs.
+  - `security` (Bandit) now runs only for code changes plus weekly/manual runs.
+  - `unit-test` now runs only for code changes plus weekly/manual runs.
+- Added dedicated `code` changed-path filter in CI to drive deterministic
+  gating for code-related jobs.
+- Updated CI summary pass logic to treat path-gated `type-check`, `security`,
+  and `unit-test` as policy-success when intentionally skipped.
+- Updated CodeQL workflow to execute analysis in weekly/manual mode only.
+- Updated pipeline contract notes to reflect local-first + path-gated policy
+  for type/security/unit lanes.
+
+### Changed - CI Cost Reduction and Secret Scanning Policy (2026-03-06)
+
+- Switched CI schedule from daily to weekly (`Sunday 02:30 UTC`) to reduce recurring run volume.
+- Reduced default PR matrix cost:
+  - `unit-test` now runs Python `3.12` on PR/push by default.
+  - Python `3.13` unit shard runs in weekly/manual heavy mode.
+  - `integration-test` now runs in weekly/manual heavy mode.
+  - `dependency-audit` now runs in weekly/manual heavy mode.
+- Added explicit secrets scanning lane:
+  - `Secret Scan (Gitleaks)` diff-only scan on PRs (`base..head` range).
+  - Full-history gitleaks scan on weekly/manual runs.
+- Updated CI summary and failure attribution wiring to include `secret-scan`
+  and to treat intentionally skipped heavy-mode jobs as successful by policy.
+- Updated pipeline contract governance artifacts for the new `secret-scan`
+  job mapping and revised heavy-mode notes.
+
 ### Changed - Segment 14 Worker Operator Control Surface (2026-03-06)
 
 - Added worker operator control routes across Skills and CGS internal admin surfaces:
