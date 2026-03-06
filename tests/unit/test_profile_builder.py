@@ -384,7 +384,9 @@ class TestProfileBuilderWithMemory:
         memory.store_memory = AsyncMock(return_value="mem-id-123")
         memory.search_memories = AsyncMock(return_value=[])
         memory.filter_by_field = AsyncMock(return_value=[])
+        memory.filter_scoped_by_field = AsyncMock(return_value=[])
         memory.delete_by_id = AsyncMock(return_value=True)
+        memory.delete_scoped_by_id = AsyncMock(return_value=True)
         memory.ensure_collection = AsyncMock()
         memory.store_with_payload = AsyncMock()
         memory.get_by_id = AsyncMock(return_value=None)
@@ -618,13 +620,13 @@ class TestProfileBuilderWithMemory:
     async def test_delete_profile_entry_success(self, builder_with_memory, mock_memory):
         """Test that delete_profile_entry calls delete_by_id."""
         result = await builder_with_memory.delete_profile_entry("user123", "entry-id")
-        mock_memory.delete_by_id.assert_called_once_with("user_profiles", "entry-id")
+        mock_memory.delete_scoped_by_id.assert_called_once_with("user_profiles", "entry-id")
         assert result is True
 
     @pytest.mark.asyncio
     async def test_delete_profile_entry_by_key_not_found(self, builder_with_memory, mock_memory):
         """Test that delete_profile_entry_by_key returns False when entry not found."""
-        mock_memory.filter_by_field.return_value = []
+        mock_memory.filter_scoped_by_field.return_value = []
         result = await builder_with_memory.delete_profile_entry_by_key(
             user_id="user123",
             category="preferences",
@@ -635,7 +637,7 @@ class TestProfileBuilderWithMemory:
     @pytest.mark.asyncio
     async def test_delete_profile_entry_by_key_found(self, builder_with_memory, mock_memory):
         """Test that delete_profile_entry_by_key deletes matching entry."""
-        mock_memory.filter_by_field.return_value = [
+        mock_memory.filter_scoped_by_field.return_value = [
             {"id": "entry-42", "category": "preferences", "key": "timezone"},
         ]
         result = await builder_with_memory.delete_profile_entry_by_key(
@@ -643,7 +645,7 @@ class TestProfileBuilderWithMemory:
             category="preferences",
             key="timezone",
         )
-        mock_memory.delete_by_id.assert_called_once_with("user_profiles", "entry-42")
+        mock_memory.delete_scoped_by_id.assert_called_once_with("user_profiles", "entry-42")
         assert result is True
 
     @pytest.mark.asyncio
@@ -655,13 +657,17 @@ class TestProfileBuilderWithMemory:
     @pytest.mark.asyncio
     async def test_get_all_profile_entries_success(self, builder_with_memory, mock_memory):
         """Test that get_all_profile_entries returns entries from memory."""
-        mock_memory.filter_by_field.return_value = [
+        mock_memory.filter_scoped_by_field.return_value = [
             {"id": "e1", "category": "preferences", "key": "tz", "value": "UTC"},
             {"id": "e2", "category": "identity", "key": "name", "value": "John"},
         ]
         result = await builder_with_memory.get_all_profile_entries("user123")
         assert len(result) == 2
-        mock_memory.filter_by_field.assert_called_once_with("user_profiles", "user_id", "user123")
+        mock_memory.filter_scoped_by_field.assert_called_once_with(
+            "user_profiles",
+            "user_id",
+            "user123",
+        )
 
 
 class TestProfileBuilderConfidenceBranches:
@@ -674,7 +680,9 @@ class TestProfileBuilderConfidenceBranches:
         memory.store_memory = AsyncMock(return_value="mem-id-123")
         memory.search_memories = AsyncMock(return_value=[])
         memory.filter_by_field = AsyncMock(return_value=[])
+        memory.filter_scoped_by_field = AsyncMock(return_value=[])
         memory.delete_by_id = AsyncMock(return_value=True)
+        memory.delete_scoped_by_id = AsyncMock(return_value=True)
         return memory
 
     @pytest.fixture
@@ -770,7 +778,9 @@ class TestProfileBuilderCachePaths:
         memory.store_memory = AsyncMock(return_value="mem-id-123")
         memory.search_memories = AsyncMock(return_value=[])
         memory.filter_by_field = AsyncMock(return_value=[])
+        memory.filter_scoped_by_field = AsyncMock(return_value=[])
         memory.delete_by_id = AsyncMock(return_value=True)
+        memory.delete_scoped_by_id = AsyncMock(return_value=True)
         return memory
 
     @pytest.fixture
