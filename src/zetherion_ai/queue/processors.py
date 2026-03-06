@@ -184,8 +184,11 @@ class QueueProcessors:
                 message_obj = await channel.fetch_message(int(message_id))
             except Exception:
                 log.debug("message_fetch_failed", message_id=message_id)
-        if message_obj is None and channel is not None and message_id and hasattr(
-            channel, "get_partial_message"
+        if (
+            message_obj is None
+            and channel is not None
+            and message_id
+            and hasattr(channel, "get_partial_message")
         ):
             try:
                 maybe_partial = channel.get_partial_message(int(message_id))
