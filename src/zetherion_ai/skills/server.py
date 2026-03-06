@@ -13,6 +13,7 @@ import base64
 import contextlib
 import hashlib
 import hmac
+import inspect
 import json
 import math
 import os
@@ -443,16 +444,30 @@ class SkillsServer:
             if self._tenant_admin_manager is None:
                 continue
             try:
-                purged = await self._tenant_admin_manager.purge_expired_messaging_messages(
+                purged_messages = await self._tenant_admin_manager.purge_expired_messaging_messages(
                     limit=2000,
                 )
+                purged_grants = 0
+                purge_grants = getattr(
+                    self._tenant_admin_manager,
+                    "purge_expired_worker_messaging_grants",
+                    None,
+                )
+                if callable(purge_grants):
+                    grant_result = purge_grants(limit=2000)
+                    if inspect.isawaitable(grant_result):
+                        purged_grants = int(await grant_result)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 log.exception("tenant_messaging_ttl_cleanup_failed")
                 continue
-            if purged > 0:
-                log.info("tenant_messaging_ttl_cleanup", purged=purged)
+            if purged_messages > 0 or purged_grants > 0:
+                log.info(
+                    "tenant_messaging_ttl_cleanup",
+                    messaging_purged=purged_messages,
+                    worker_grants_purged=purged_grants,
+                )
 
     def _prune_admin_nonce_cache(self, now: datetime) -> None:
         expired = [nonce for nonce, expiry in self._admin_nonce_cache.items() if expiry <= now]
@@ -3125,11 +3140,45 @@ class SkillsServer:
                     self._policy_error_payload(decision),
                     status=decision.status,
                 )
+            denied_reasons: list[dict[str, Any]] = []
             claimed_job = await self._tenant_admin_manager.claim_worker_dispatch_job(
                 tenant_id=tenant_id,
                 node_id=node_id,
                 required_capabilities=required_capabilities,
+                denied_reasons=denied_reasons,
             )
+            if denied_reasons:
+                seen: set[tuple[str, str, str, str, str]] = set()
+                for denied in denied_reasons[:8]:
+                    permission = str(denied.get("permission") or "").strip().lower()
+                    provider = str(denied.get("provider") or "").strip().lower()
+                    chat_id = str(denied.get("chat_id") or "").strip()
+                    reason = str(denied.get("reason") or "grant_required").strip().lower()
+                    job_ref = str(denied.get("job_id") or "").strip()
+                    key = (job_ref, permission, provider, chat_id, reason)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    action_name = (
+                        "messaging.read"
+                        if permission == "read"
+                        else ("messaging.send" if permission == "send" else "messaging.read")
+                    )
+                    await self._record_security_event(
+                        tenant_id=tenant_id,
+                        event_type="worker_messaging_access_denied",
+                        severity="high",
+                        action=action_name,
+                        source="worker-bridge",
+                        payload={
+                            "node_id": node_id,
+                            "job_id": job_ref or None,
+                            "permission": permission,
+                            "provider": provider,
+                            "chat_id": chat_id or None,
+                            "reason": reason,
+                        },
+                    )
             claimed_job_payload: dict[str, Any] | None = None
             if isinstance(claimed_job, dict):
                 raw_payload = claimed_job.get("payload_json")
@@ -3157,6 +3206,7 @@ class SkillsServer:
                 request_nonce=str(session_ctx.get("request_nonce") or ""),
                 payload={
                     "required_capabilities": required_capabilities,
+                    "denied_jobs": denied_reasons[:8],
                     "claimed_job_id": (
                         claimed_job_payload.get("job_id") if claimed_job_payload else None
                     ),
@@ -3393,6 +3443,179 @@ class SkillsServer:
             )
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_list_worker_messaging_grants(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            self._admin_actor(request)
+            limit = self._parse_int(request.query.get("limit", 200), "limit")
+            grants = await self._tenant_admin_manager.list_worker_messaging_grants(
+                tenant_id=tenant_id,
+                node_id=request.query.get("node_id"),
+                provider=request.query.get("provider"),
+                chat_id=request.query.get("chat_id"),
+                include_expired=self._parse_bool(
+                    request.query.get("include_expired"),
+                    "include_expired",
+                    default=False,
+                ),
+                include_revoked=self._parse_bool(
+                    request.query.get("include_revoked"),
+                    "include_revoked",
+                    default=False,
+                ),
+                limit=limit,
+            )
+            return web.json_response(
+                {"ok": True, "grants": [_serialise_record(dict(grant)) for grant in grants]}
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_put_worker_messaging_grant(self, request: web.Request) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        node_id = request.match_info["node_id"]
+        provider = request.match_info["provider"]
+        chat_id = request.match_info["chat_id"]
+        try:
+            actor = self._admin_actor(request)
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                raise ValueError("JSON body must be an object")
+            metadata = payload.get("metadata")
+            if metadata is not None and not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object when provided")
+            explicitly_elevated = self._parse_bool(
+                payload.get("explicitly_elevated"),
+                "explicitly_elevated",
+                default=False,
+            )
+            decision = self._trust_policy_evaluator.evaluate(
+                tenant_id=tenant_id,
+                action="worker.messaging.grant",
+                context={
+                    "method": "PUT",
+                    "subpath": (f"/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}"),
+                    "explicitly_elevated": explicitly_elevated,
+                },
+            )
+            if not decision.allowed:
+                return web.json_response(
+                    self._policy_error_payload(decision),
+                    status=decision.status,
+                )
+            grant = await self._tenant_admin_manager.put_worker_messaging_grant(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                provider=provider,
+                chat_id=chat_id,
+                allow_read=self._parse_bool(payload.get("allow_read"), "allow_read", default=False),
+                allow_send=self._parse_bool(payload.get("allow_send"), "allow_send", default=False),
+                ttl_seconds=self._parse_int(payload.get("ttl_seconds", 3600), "ttl_seconds"),
+                redacted_payload=self._parse_bool(
+                    payload.get("redacted_payload"),
+                    "redacted_payload",
+                    default=False,
+                ),
+                metadata=metadata if isinstance(metadata, dict) else None,
+                actor=actor,
+            )
+            await self._record_security_event(
+                tenant_id=tenant_id,
+                event_type="worker_messaging_grant_upserted",
+                severity="medium",
+                action="worker.messaging.grant",
+                source="skills-admin",
+                payload={
+                    "grant_id": str(grant.get("grant_id") or ""),
+                    "node_id": node_id,
+                    "provider": str(grant.get("provider") or provider),
+                    "chat_id": str(grant.get("chat_id") or chat_id),
+                    "allow_read": bool(grant.get("allow_read")),
+                    "allow_send": bool(grant.get("allow_send")),
+                    "redacted_payload": bool(grant.get("redacted_payload")),
+                },
+            )
+            return web.json_response({"ok": True, "grant": _serialise_record(grant)})
+        except JSONDecodeError:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+        except ValueError as exc:
+            message = str(exc)
+            status = 404 if "not found" in message.lower() else 400
+            return web.json_response({"error": message}, status=status)
+
+    async def handle_tenant_revoke_worker_messaging_grant(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        grant_id = request.match_info["grant_id"]
+        try:
+            actor = self._admin_actor(request)
+            payload: dict[str, Any] = {}
+            raw = await request.text()
+            if raw.strip():
+                try:
+                    parsed = json.loads(raw)
+                except Exception as exc:
+                    raise ValueError("Invalid JSON body") from exc
+                if not isinstance(parsed, dict):
+                    raise ValueError("Invalid JSON body")
+                payload = parsed
+            explicitly_elevated = self._parse_bool(
+                payload.get("explicitly_elevated"),
+                "explicitly_elevated",
+                default=False,
+            )
+            decision = self._trust_policy_evaluator.evaluate(
+                tenant_id=tenant_id,
+                action="worker.messaging.grant",
+                context={
+                    "method": "DELETE",
+                    "subpath": f"/workers/messaging/grants/{grant_id}",
+                    "explicitly_elevated": explicitly_elevated,
+                },
+            )
+            if not decision.allowed:
+                return web.json_response(
+                    self._policy_error_payload(decision),
+                    status=decision.status,
+                )
+            reason = str(payload.get("reason") or "").strip() or None
+            revoked = await self._tenant_admin_manager.revoke_worker_messaging_grant(
+                tenant_id=tenant_id,
+                grant_id=grant_id,
+                actor=actor,
+                reason=reason,
+            )
+            await self._record_security_event(
+                tenant_id=tenant_id,
+                event_type="worker_messaging_grant_revoked",
+                severity="medium",
+                action="worker.messaging.grant",
+                source="skills-admin",
+                payload={
+                    "grant_id": str(revoked.get("grant_id") or grant_id),
+                    "node_id": str(revoked.get("node_id") or ""),
+                    "provider": str(revoked.get("provider") or ""),
+                    "chat_id": str(revoked.get("chat_id") or ""),
+                    "idempotent": bool(revoked.get("idempotent")),
+                },
+            )
+            return web.json_response({"ok": True, "grant": _serialise_record(revoked)})
+        except ValueError as exc:
+            message = str(exc)
+            status = 404 if "not found" in message.lower() else 400
+            return web.json_response({"error": message}, status=status)
 
     async def handle_tenant_list_worker_nodes(self, request: web.Request) -> web.Response:
         if self._tenant_admin_manager is None:
@@ -4094,6 +4317,18 @@ class SkillsServer:
         app.router.add_get(
             tenant_prefix + "/workers/events",
             self.handle_tenant_list_worker_events,
+        )
+        app.router.add_get(
+            tenant_prefix + "/workers/messaging/grants",
+            self.handle_tenant_list_worker_messaging_grants,
+        )
+        app.router.add_put(
+            tenant_prefix + "/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}",
+            self.handle_tenant_put_worker_messaging_grant,
+        )
+        app.router.add_delete(
+            tenant_prefix + "/workers/messaging/grants/{grant_id}",
+            self.handle_tenant_revoke_worker_messaging_grant,
         )
         app.router.add_post(
             tenant_prefix + "/messaging/ingest",

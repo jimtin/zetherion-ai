@@ -193,6 +193,14 @@ class TrustPolicyEvaluator:
             required_context_flags=("node_registered", "node_healthy"),
             elevation_key="worker_capability_update_explicitly_elevated",
         ),
+        "worker.messaging.grant": TrustPolicyRule(
+            action="worker.messaging.grant",
+            action_class=TrustActionClass.CRITICAL,
+            min_tier=TrustTier.TIER3,
+            requires_approval=True,
+            requires_two_person=True,
+            elevation_key="worker_messaging_grant_explicitly_elevated",
+        ),
         # Existing high-risk admin actions continue to route through the
         # established change-ticket approval flow.
         "secret.put": TrustPolicyRule(

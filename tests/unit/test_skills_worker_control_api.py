@@ -8,6 +8,7 @@ import hmac
 import json
 import time
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -195,6 +196,35 @@ def worker_manager() -> MagicMock:
     mgr.retry_worker_job = AsyncMock(return_value={"job": {}, "step": {}, "plan": {}})
     mgr.cancel_worker_job = AsyncMock(return_value={"job": {}, "idempotent": False})
     mgr.list_worker_job_events = AsyncMock(return_value=[])
+    mgr.list_worker_messaging_grants = AsyncMock(return_value=[])
+    mgr.put_worker_messaging_grant = AsyncMock(
+        return_value={
+            "grant_id": "55555555-5555-5555-5555-555555555555",
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+            "node_id": "node-1",
+            "provider": "whatsapp",
+            "chat_id": "chat-1",
+            "allow_read": True,
+            "allow_send": False,
+            "redacted_payload": True,
+            "expires_at": datetime.now(UTC) + timedelta(hours=1),
+            "revoked_at": None,
+            "metadata": {},
+        }
+    )
+    mgr.revoke_worker_messaging_grant = AsyncMock(
+        return_value={
+            "grant_id": "55555555-5555-5555-5555-555555555555",
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+            "node_id": "node-1",
+            "provider": "whatsapp",
+            "chat_id": "chat-1",
+            "idempotent": False,
+            "revoked_at": datetime.now(UTC),
+        }
+    )
+    mgr.purge_expired_worker_messaging_grants = AsyncMock(return_value=0)
+    mgr.record_security_event = AsyncMock(return_value={})
     mgr.list_discord_users = AsyncMock(return_value=[])
     return mgr
 
@@ -687,6 +717,98 @@ class TestSkillsWorkerControlAPI:
             assert payload["job"]["job_id"] == "job-123"
             assert payload["job"]["runner"] == "noop"
             assert payload["job"]["payload"]["prompt_text"] == "Run task"
+
+    async def test_worker_claim_logs_deduped_messaging_denials(
+        self,
+        mock_registry: SkillRegistry,
+        worker_manager: MagicMock,
+    ) -> None:
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        node_id = "node-1"
+        session_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        token = "token"
+        signing_secret = "signing-secret"
+        worker_manager.get_worker_session_auth = AsyncMock(
+            return_value={
+                "session_id": session_id,
+                "token_hash": _hash_token(token),
+                "signing_secret": signing_secret,
+                "status": "active",
+                "health_status": "healthy",
+                "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                "revoked_at": None,
+            }
+        )
+
+        async def _claim_with_denials(**kwargs: Any) -> None:
+            denied_reasons = kwargs["denied_reasons"]
+            denied_reasons.extend(
+                [
+                    {
+                        "job_id": "job-a",
+                        "permission": "read",
+                        "provider": "whatsapp",
+                        "chat_id": "chat-1",
+                        "reason": "grant_required",
+                    },
+                    {
+                        "job_id": "job-a",
+                        "permission": "read",
+                        "provider": "whatsapp",
+                        "chat_id": "chat-1",
+                        "reason": "grant_required",
+                    },
+                    {
+                        "job_id": "job-b",
+                        "permission": "send",
+                        "provider": "whatsapp",
+                        "chat_id": "chat-2",
+                        "reason": "grant_required",
+                    },
+                ]
+            )
+            return None
+
+        worker_manager.claim_worker_dispatch_job = AsyncMock(side_effect=_claim_with_denials)
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="skills-secret",
+            tenant_admin_manager=worker_manager,
+        )
+        app = server.create_app()
+
+        claim_body = {"tenant_id": tenant_id, "required_capabilities": ["repo.patch"]}
+        claim_raw = json.dumps(claim_body, separators=(",", ":"))
+        headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token=token,
+            signing_secret=signing_secret,
+            raw_body=claim_raw,
+            nonce="nonce-claim-denials",
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            response = await client.post(
+                f"/worker/v1/nodes/{node_id}/jobs/claim",
+                headers=headers,
+                data=claim_raw,
+            )
+            assert response.status == 200
+            payload = await response.json()
+            assert payload["reason"] == "no_jobs_available"
+            assert payload["job"] is None
+
+        assert worker_manager.record_security_event.await_count == 2
+        action_calls = worker_manager.record_security_event.await_args_list
+        actions = [call.kwargs["action"] for call in action_calls]
+        assert actions == ["messaging.read", "messaging.send"]
+        worker_manager.record_worker_job_event.assert_awaited_once()
+        denied_jobs = worker_manager.record_worker_job_event.await_args.kwargs["payload"][
+            "denied_jobs"
+        ]
+        assert len(denied_jobs) == 3
 
     async def test_worker_claim_returns_502_when_dispatch_claim_raises_unexpected(
         self,
@@ -1307,6 +1429,42 @@ class TestSkillsWorkerControlAPI:
             )
             assert events.status == 200
 
+            grants = await client.get(
+                (
+                    f"/admin/tenants/{tenant_id}/workers/messaging/grants"
+                    f"?node_id={node_id}&provider=whatsapp&chat_id=chat-1&limit=5"
+                ),
+                headers=_admin(),
+            )
+            assert grants.status == 200
+
+            upserted_grant = await client.put(
+                (
+                    f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}"
+                    "/messaging/grants/whatsapp/chat-1"
+                ),
+                headers=_admin(),
+                json={
+                    "allow_read": True,
+                    "allow_send": False,
+                    "ttl_seconds": 3600,
+                    "redacted_payload": True,
+                    "metadata": {"reason": "testing"},
+                    "explicitly_elevated": True,
+                },
+            )
+            assert upserted_grant.status == 200
+
+            revoked_grant = await client.delete(
+                (
+                    f"/admin/tenants/{tenant_id}/workers/messaging/grants/"
+                    "55555555-5555-5555-5555-555555555555"
+                ),
+                headers=_admin(),
+                json={"reason": "cleanup", "explicitly_elevated": True},
+            )
+            assert revoked_grant.status == 200
+
             quarantined = await client.post(
                 f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/quarantine",
                 headers=_admin(),
@@ -1340,6 +1498,9 @@ class TestSkillsWorkerControlAPI:
         worker_manager.list_worker_jobs.assert_awaited_once()
         worker_manager.get_worker_job.assert_awaited_once()
         worker_manager.list_worker_job_events.assert_awaited_once()
+        worker_manager.list_worker_messaging_grants.assert_awaited_once()
+        worker_manager.put_worker_messaging_grant.assert_awaited_once()
+        worker_manager.revoke_worker_messaging_grant.assert_awaited_once()
         assert worker_manager.set_worker_node_status.await_count == 2
         worker_manager.retry_worker_job.assert_awaited_once()
         worker_manager.cancel_worker_job.assert_awaited_once()
@@ -1951,6 +2112,32 @@ class TestSkillsWorkerControlAPI:
                     json={},
                 )
             ).status == 501
+            assert (
+                await client.get(
+                    f"/admin/tenants/{tenant_id}/workers/messaging/grants",
+                    headers=_admin(),
+                )
+            ).status == 501
+            assert (
+                await client.put(
+                    (
+                        f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/"
+                        "messaging/grants/whatsapp/chat-1"
+                    ),
+                    headers=_admin(),
+                    json={"allow_read": True, "ttl_seconds": 3600},
+                )
+            ).status == 501
+            assert (
+                await client.delete(
+                    (
+                        f"/admin/tenants/{tenant_id}/workers/messaging/grants/"
+                        "55555555-5555-5555-5555-555555555555"
+                    ),
+                    headers=_admin(),
+                    json={},
+                )
+            ).status == 501
 
     @pytest.mark.asyncio
     async def test_admin_worker_route_error_mapping_branches(
@@ -1969,6 +2156,12 @@ class TestSkillsWorkerControlAPI:
         )
         worker_manager.retry_worker_job = AsyncMock(side_effect=ValueError("worker job not found"))
         worker_manager.cancel_worker_job = AsyncMock(side_effect=ValueError("bad cancel payload"))
+        worker_manager.put_worker_messaging_grant = AsyncMock(
+            side_effect=ValueError("worker node not found")
+        )
+        worker_manager.revoke_worker_messaging_grant = AsyncMock(
+            side_effect=ValueError("worker messaging grant not found")
+        )
 
         server = SkillsServer(
             registry=mock_registry,
@@ -2064,3 +2257,59 @@ class TestSkillsWorkerControlAPI:
                 json={},
             )
             assert cancel_bad.status == 400
+
+            bad_grants_limit = await client.get(
+                f"/admin/tenants/{tenant_id}/workers/messaging/grants?limit=bad",
+                headers=_admin(),
+            )
+            assert bad_grants_limit.status == 400
+
+            grant_bad_metadata = await client.put(
+                (
+                    f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/"
+                    "messaging/grants/whatsapp/chat-1"
+                ),
+                headers=_admin(),
+                json={
+                    "allow_read": True,
+                    "allow_send": False,
+                    "ttl_seconds": 3600,
+                    "metadata": ["bad"],
+                },
+            )
+            assert grant_bad_metadata.status == 400
+
+            grant_not_found = await client.put(
+                (
+                    f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/"
+                    "messaging/grants/whatsapp/chat-1"
+                ),
+                headers=_admin(),
+                json={
+                    "allow_read": True,
+                    "allow_send": False,
+                    "ttl_seconds": 3600,
+                    "explicitly_elevated": True,
+                },
+            )
+            assert grant_not_found.status == 404
+
+            revoke_bad_json = await client.delete(
+                (
+                    f"/admin/tenants/{tenant_id}/workers/messaging/grants/"
+                    "55555555-5555-5555-5555-555555555555"
+                ),
+                headers={**_admin(), "Content-Type": "application/json"},
+                data="{invalid",
+            )
+            assert revoke_bad_json.status == 400
+
+            revoke_not_found = await client.delete(
+                (
+                    f"/admin/tenants/{tenant_id}/workers/messaging/grants/"
+                    "55555555-5555-5555-5555-555555555555"
+                ),
+                headers=_admin(),
+                json={"reason": "cleanup", "explicitly_elevated": True},
+            )
+            assert revoke_not_found.status == 404

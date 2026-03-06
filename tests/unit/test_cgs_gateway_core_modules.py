@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 import zetherion_ai.cgs_gateway.middleware as middleware_mod
 import zetherion_ai.cgs_gateway.server as server_mod
@@ -27,7 +27,12 @@ from zetherion_ai.cgs_gateway.middleware import (
     create_request_context_middleware,
     principal_is_operator,
 )
-from zetherion_ai.cgs_gateway.models import AuthPrincipal
+from zetherion_ai.cgs_gateway.models import (
+    AuthPrincipal,
+    BlogPublishModels,
+    BlogPublishRequest,
+    TenantAdminAutomergeExecuteRequest,
+)
 from zetherion_ai.cgs_gateway.server import (
     CGSGatewayServer,
     _split_csv,
@@ -86,6 +91,45 @@ def test_from_exception_maps_gateway_and_generic() -> None:
         "retryable": True,
         "details": {},
     }
+
+
+def test_automerge_execute_model_normalizes_and_validates_merge_method() -> None:
+    request = TenantAdminAutomergeExecuteRequest(
+        repository=" openclaw/openclaw ",
+        merge_method=" ReBaSe ",
+    )
+    assert request.repository == "openclaw/openclaw"
+    assert request.merge_method == "rebase"
+
+    with pytest.raises(ValidationError, match="merge_method must be one of"):
+        TenantAdminAutomergeExecuteRequest(
+            repository="openclaw/openclaw",
+            merge_method="fast-forward",
+        )
+
+
+def test_blog_publish_request_requires_blog_idempotency_prefix() -> None:
+    common = {
+        "source": "windows-promotions",
+        "sha": "abcdef1",
+        "repo": "openclaw/openclaw",
+        "release_tag": "v1.0.0",
+        "title": "Release",
+        "slug": "release",
+        "meta_description": "Release summary",
+        "excerpt": "Summary",
+        "primary_keyword": "release",
+        "content_markdown": "# Release",
+        "json_ld": {},
+        "models": BlogPublishModels(draft="gpt-4o-mini", refine="gpt-4o"),
+        "published_at": "2026-03-06T10:00:00Z",
+    }
+
+    request = BlogPublishRequest(idempotency_key=" blog-abc123 ", **common)
+    assert request.idempotency_key == "blog-abc123"
+
+    with pytest.raises(ValidationError, match="idempotency_key must start with blog-"):
+        BlogPublishRequest(idempotency_key="deploy-abc123", **common)
 
 
 def test_jwt_verifier_success(monkeypatch: pytest.MonkeyPatch) -> None:

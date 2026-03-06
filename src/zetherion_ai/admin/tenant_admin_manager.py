@@ -46,6 +46,10 @@ VALID_WORKER_HEALTH_STATUSES = frozenset({"unknown", "healthy", "degraded", "off
 VALID_WORKER_JOB_STATUSES = frozenset(
     {"queued", "running", "succeeded", "failed", "cancelled", "expired"}
 )
+VALID_WORKER_MESSAGING_PERMISSIONS = frozenset({"read", "send"})
+WORKER_MESSAGING_REDACT_KEYS = frozenset(
+    {"text", "body", "message", "messages", "content", "full_text", "raw_text"}
+)
 DEFAULT_MESSAGING_RETENTION_DAYS = 14
 VALID_EXECUTION_PLAN_STATUSES = frozenset(
     {"queued", "running", "paused", "completed", "failed", "cancelled"}
@@ -692,6 +696,41 @@ CREATE TABLE IF NOT EXISTS tenant_worker_capabilities (
 
 CREATE INDEX IF NOT EXISTS idx_tenant_worker_capabilities_lookup
     ON tenant_worker_capabilities (tenant_id, node_id, allowlisted, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_worker_messaging_grants (
+    grant_id               UUID         PRIMARY KEY,
+    tenant_id              UUID         NOT NULL,
+    node_id                TEXT         NOT NULL
+                          REFERENCES tenant_worker_nodes(node_id) ON DELETE CASCADE,
+    provider               VARCHAR(40)  NOT NULL,
+    chat_id                TEXT         NOT NULL,
+    allow_read             BOOLEAN      NOT NULL DEFAULT FALSE,
+    allow_send             BOOLEAN      NOT NULL DEFAULT FALSE,
+    redacted_payload       BOOLEAN      NOT NULL DEFAULT FALSE,
+    metadata               JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    expires_at             TIMESTAMPTZ  NOT NULL,
+    revoked_at             TIMESTAMPTZ,
+    revoked_reason         TEXT,
+    created_by             TEXT,
+    revoked_by             TEXT,
+    created_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    CHECK (allow_read OR allow_send)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_worker_messaging_grants_lookup
+    ON tenant_worker_messaging_grants (tenant_id, node_id, provider, chat_id, expires_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_worker_messaging_grants_active
+    ON tenant_worker_messaging_grants (
+        tenant_id,
+        node_id,
+        provider,
+        chat_id,
+        allow_read,
+        allow_send,
+        revoked_at,
+        expires_at DESC
+    );
 
 CREATE TABLE IF NOT EXISTS tenant_worker_sessions (
     session_id            UUID         PRIMARY KEY,
@@ -6600,6 +6639,7 @@ class TenantAdminManager:
         tenant_id: str,
         node_id: str,
         required_capabilities: list[str] | None = None,
+        denied_reasons: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any] | None:
         node = str(node_id or "").strip()
         if not node:
@@ -6677,6 +6717,45 @@ class TenantAdminManager:
                     if int(capability_count or 0) < len(job_required):
                         continue
 
+                candidate_action = str(candidate.get("action") or "").strip().lower()
+                raw_payload = candidate.get("payload_json")
+                candidate_payload = raw_payload if isinstance(raw_payload, dict) else {}
+                messaging_scope = self._resolve_worker_messaging_scope_for_job(
+                    action=candidate_action,
+                    payload_json=candidate_payload,
+                )
+                grant_record: dict[str, Any] | None = None
+                if messaging_scope is not None:
+                    permission = str(messaging_scope.get("permission") or "").strip().lower()
+                    provider = str(messaging_scope.get("provider") or "").strip().lower()
+                    chat_id = str(messaging_scope.get("chat_id") or "").strip()
+                    denial: dict[str, Any] = {
+                        "job_id": str(candidate.get("job_id") or ""),
+                        "action": candidate_action,
+                        "provider": provider,
+                        "chat_id": chat_id,
+                        "permission": permission,
+                    }
+                    if permission not in VALID_WORKER_MESSAGING_PERMISSIONS:
+                        if denied_reasons is not None:
+                            denied_reasons.append({**denial, "reason": "invalid_permission"})
+                        continue
+                    if not chat_id:
+                        if denied_reasons is not None:
+                            denied_reasons.append({**denial, "reason": "missing_chat_id"})
+                        continue
+                    grant_record = await self.get_active_worker_messaging_grant(
+                        tenant_id=tenant_id,
+                        node_id=node,
+                        provider=provider,
+                        chat_id=chat_id,
+                        permission=permission,
+                    )
+                    if grant_record is None:
+                        if denied_reasons is not None:
+                            denied_reasons.append({**denial, "reason": "grant_required"})
+                        continue
+
                 max_runtime_seconds = self._coerce_execution_runtime_seconds(
                     candidate.get("max_runtime_seconds")
                 )
@@ -6727,6 +6806,27 @@ class TenantAdminManager:
                 )
                 if claimed is None:
                     continue
+                claimed_dict = dict(claimed)
+                if messaging_scope is not None and grant_record is not None:
+                    permission = str(messaging_scope.get("permission") or "").strip().lower()
+                    payload_for_worker = (
+                        dict(claimed_dict.get("payload_json"))
+                        if isinstance(claimed_dict.get("payload_json"), dict)
+                        else {}
+                    )
+                    redacted_payload = bool(grant_record.get("redacted_payload"))
+                    if permission == "read" and redacted_payload:
+                        payload_for_worker = self._redact_worker_messaging_payload(
+                            payload_for_worker
+                        )
+                    payload_for_worker["worker_messaging_access"] = {
+                        "grant_id": str(grant_record.get("grant_id") or ""),
+                        "provider": str(messaging_scope.get("provider") or ""),
+                        "chat_id": str(messaging_scope.get("chat_id") or ""),
+                        "permission": permission,
+                        "redacted_payload": redacted_payload,
+                    }
+                    claimed_dict["payload_json"] = payload_for_worker
 
                 previous_status = str(candidate.get("status") or "queued").strip().lower()
                 await conn.execute(
@@ -6767,7 +6867,7 @@ class TenantAdminManager:
                         }
                     ),
                 )
-                return dict(claimed)
+                return claimed_dict
             return None
 
     async def submit_worker_job_result(
@@ -7076,6 +7176,84 @@ class TenantAdminManager:
             seen.add(capability)
             normalized.append(capability)
         return normalized
+
+    @staticmethod
+    def _normalize_worker_messaging_ttl_seconds(raw: Any, *, default: int = 3600) -> int:
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            value = default
+        return max(60, min(value, 60 * 60 * 24 * 14))
+
+    @staticmethod
+    def _normalize_worker_messaging_permission(raw: Any) -> str:
+        value = str(raw or "").strip().lower()
+        if value not in VALID_WORKER_MESSAGING_PERMISSIONS:
+            allowed = ", ".join(sorted(VALID_WORKER_MESSAGING_PERMISSIONS))
+            raise ValueError(f"permission must be one of: {allowed}")
+        return value
+
+    @staticmethod
+    def _normalize_worker_messaging_scope(
+        *,
+        allow_read: bool,
+        allow_send: bool,
+    ) -> tuple[bool, bool]:
+        read_allowed = bool(allow_read)
+        send_allowed = bool(allow_send)
+        if not read_allowed and not send_allowed:
+            raise ValueError("At least one of allow_read or allow_send must be true")
+        return read_allowed, send_allowed
+
+    @classmethod
+    def _resolve_worker_messaging_scope_for_job(
+        cls,
+        *,
+        action: str,
+        payload_json: Any,
+    ) -> dict[str, Any] | None:
+        action_norm = str(action or "").strip().lower()
+        permission: str | None = None
+        if action_norm.startswith("messaging.read"):
+            permission = "read"
+        elif action_norm.startswith("messaging.send"):
+            permission = "send"
+        if permission is None:
+            return None
+
+        payload = payload_json if isinstance(payload_json, dict) else {}
+        provider_raw = str(payload.get("provider") or "whatsapp").strip().lower() or "whatsapp"
+        try:
+            provider = cls._normalize_messaging_provider(provider_raw)
+        except Exception:
+            provider = provider_raw
+        chat_id = str(
+            payload.get("chat_id")
+            or payload.get("target_chat_id")
+            or payload.get("conversation_id")
+            or payload.get("thread_id")
+            or ""
+        ).strip()
+        return {
+            "permission": permission,
+            "provider": provider,
+            "chat_id": chat_id,
+        }
+
+    @classmethod
+    def _redact_worker_messaging_payload(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            out: dict[str, Any] = {}
+            for key, item in value.items():
+                key_norm = str(key).strip().lower()
+                if key_norm in WORKER_MESSAGING_REDACT_KEYS:
+                    out[str(key)] = "[REDACTED]"
+                else:
+                    out[str(key)] = cls._redact_worker_messaging_payload(item)
+            return out
+        if isinstance(value, list):
+            return [cls._redact_worker_messaging_payload(item) for item in value]
+        return value
 
     async def bootstrap_worker_node_session(
         self,
@@ -8575,6 +8753,359 @@ class TenantAdminManager:
                 after=after,
             )
         return after
+
+    async def list_worker_messaging_grants(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str | None = None,
+        provider: str | None = None,
+        chat_id: str | None = None,
+        include_expired: bool = False,
+        include_revoked: bool = False,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        where = ["tenant_id = $1::uuid"]
+        args: list[Any] = [tenant_id]
+        idx = 2
+
+        node = str(node_id or "").strip()
+        if node:
+            where.append(f"node_id = ${idx}")
+            args.append(node)
+            idx += 1
+
+        if provider is not None and str(provider).strip():
+            provider_norm = self._normalize_messaging_provider(provider)
+            where.append(f"provider = ${idx}")
+            args.append(provider_norm)
+            idx += 1
+
+        chat = str(chat_id or "").strip()
+        if chat:
+            where.append(f"chat_id = ${idx}")
+            args.append(chat)
+            idx += 1
+
+        if not include_revoked:
+            where.append("revoked_at IS NULL")
+        if not include_expired:
+            where.append("expires_at > now()")
+
+        args.append(max(1, min(int(limit), 1000)))
+        rows = await self._fetch(
+            f"""
+            SELECT grant_id::text AS grant_id,
+                   tenant_id::text AS tenant_id,
+                   node_id,
+                   provider,
+                   chat_id,
+                   allow_read,
+                   allow_send,
+                   redacted_payload,
+                   metadata,
+                   expires_at,
+                   revoked_at,
+                   revoked_reason,
+                   created_by,
+                   revoked_by,
+                   created_at,
+                   updated_at
+            FROM tenant_worker_messaging_grants
+            WHERE {" AND ".join(where)}
+            ORDER BY updated_at DESC, created_at DESC
+            LIMIT ${idx}
+            """,  # nosec B608
+            *args,
+        )
+        return [dict(row) for row in rows]
+
+    async def get_active_worker_messaging_grant(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        provider: str,
+        chat_id: str,
+        permission: str,
+    ) -> dict[str, Any] | None:
+        node = str(node_id or "").strip()
+        if not node:
+            raise ValueError("Missing node_id")
+        chat = str(chat_id or "").strip()
+        if not chat:
+            raise ValueError("Missing chat_id")
+        provider_norm = self._normalize_messaging_provider(provider)
+        permission_norm = self._normalize_worker_messaging_permission(permission)
+        allow_column = "allow_read" if permission_norm == "read" else "allow_send"
+        row = await self._fetchrow(
+            f"""
+            SELECT grant_id::text AS grant_id,
+                   tenant_id::text AS tenant_id,
+                   node_id,
+                   provider,
+                   chat_id,
+                   allow_read,
+                   allow_send,
+                   redacted_payload,
+                   metadata,
+                   expires_at,
+                   revoked_at,
+                   revoked_reason,
+                   created_by,
+                   revoked_by,
+                   created_at,
+                   updated_at
+            FROM tenant_worker_messaging_grants
+            WHERE tenant_id = $1::uuid
+              AND node_id = $2
+              AND provider = $3
+              AND chat_id = $4
+              AND revoked_at IS NULL
+              AND expires_at > now()
+              AND {allow_column} = TRUE
+            ORDER BY expires_at DESC, created_at DESC
+            LIMIT 1
+            """,  # nosec B608
+            tenant_id,
+            node,
+            provider_norm,
+            chat,
+        )
+        return dict(row) if row is not None else None
+
+    async def put_worker_messaging_grant(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        provider: str,
+        chat_id: str,
+        allow_read: bool,
+        allow_send: bool,
+        ttl_seconds: int,
+        redacted_payload: bool = False,
+        metadata: dict[str, Any] | None = None,
+        actor: AdminActorContext | None = None,
+    ) -> dict[str, Any]:
+        node = str(node_id or "").strip()
+        if not node:
+            raise ValueError("Missing node_id")
+        chat = str(chat_id or "").strip()
+        if not chat:
+            raise ValueError("Missing chat_id")
+        provider_norm = self._normalize_messaging_provider(provider)
+        read_allowed, send_allowed = self._normalize_worker_messaging_scope(
+            allow_read=allow_read,
+            allow_send=allow_send,
+        )
+        ttl = self._normalize_worker_messaging_ttl_seconds(ttl_seconds)
+        expires_at = datetime.now(UTC) + timedelta(seconds=ttl)
+        metadata_json = metadata if isinstance(metadata, dict) else {}
+
+        node_record = await self.get_worker_node(tenant_id=tenant_id, node_id=node)
+        if node_record is None:
+            raise ValueError("Worker node not found")
+
+        before_rows = await self.list_worker_messaging_grants(
+            tenant_id=tenant_id,
+            node_id=node,
+            provider=provider_norm,
+            chat_id=chat,
+            include_expired=True,
+            include_revoked=True,
+            limit=50,
+        )
+        actor_sub = actor.actor_sub if actor is not None else "worker-messaging-grant"
+        row = await self._fetchrow(
+            """
+            WITH revoke_existing AS (
+                UPDATE tenant_worker_messaging_grants
+                SET revoked_at = now(),
+                    revoked_reason = COALESCE(revoked_reason, 'superseded'),
+                    revoked_by = $8,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND node_id = $2
+                  AND provider = $3
+                  AND chat_id = $4
+                  AND revoked_at IS NULL
+                  AND expires_at > now()
+            )
+            INSERT INTO tenant_worker_messaging_grants (
+                grant_id,
+                tenant_id,
+                node_id,
+                provider,
+                chat_id,
+                allow_read,
+                allow_send,
+                redacted_payload,
+                metadata,
+                expires_at,
+                created_by,
+                updated_at
+            ) VALUES (
+                $5::uuid,
+                $1::uuid,
+                $2,
+                $3,
+                $4,
+                $6,
+                $7,
+                $9,
+                $10::jsonb,
+                $11::timestamptz,
+                $8,
+                now()
+            )
+            RETURNING grant_id::text AS grant_id,
+                      tenant_id::text AS tenant_id,
+                      node_id,
+                      provider,
+                      chat_id,
+                      allow_read,
+                      allow_send,
+                      redacted_payload,
+                      metadata,
+                      expires_at,
+                      revoked_at,
+                      revoked_reason,
+                      created_by,
+                      revoked_by,
+                      created_at,
+                      updated_at
+            """,
+            tenant_id,
+            node,
+            provider_norm,
+            chat,
+            str(uuid4()),
+            read_allowed,
+            send_allowed,
+            actor_sub,
+            bool(redacted_payload),
+            json.dumps(metadata_json),
+            expires_at,
+        )
+        if row is None:
+            raise RuntimeError("Failed to upsert worker messaging grant")
+        grant = dict(row)
+        if actor is not None:
+            await self._write_audit(
+                tenant_id=tenant_id,
+                action="tenant_worker_messaging_grant_upsert",
+                actor=actor,
+                before={"grants": before_rows},
+                after=grant,
+            )
+        return grant
+
+    async def revoke_worker_messaging_grant(
+        self,
+        *,
+        tenant_id: str,
+        grant_id: str,
+        actor: AdminActorContext | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        parsed_grant_id = str(UUID(str(grant_id or "").strip()))
+        before = await self._fetchrow(
+            """
+            SELECT grant_id::text AS grant_id,
+                   tenant_id::text AS tenant_id,
+                   node_id,
+                   provider,
+                   chat_id,
+                   allow_read,
+                   allow_send,
+                   redacted_payload,
+                   metadata,
+                   expires_at,
+                   revoked_at,
+                   revoked_reason,
+                   created_by,
+                   revoked_by,
+                   created_at,
+                   updated_at
+            FROM tenant_worker_messaging_grants
+            WHERE tenant_id = $1::uuid
+              AND grant_id = $2::uuid
+            """,
+            tenant_id,
+            parsed_grant_id,
+        )
+        if before is None:
+            raise ValueError("Worker messaging grant not found")
+        before_dict = dict(before)
+        already_revoked = before_dict.get("revoked_at") is not None
+        if already_revoked:
+            return {**before_dict, "idempotent": True}
+
+        actor_sub = actor.actor_sub if actor is not None else "worker-messaging-grant-revoke"
+        row = await self._fetchrow(
+            """
+            UPDATE tenant_worker_messaging_grants
+            SET revoked_at = now(),
+                revoked_reason = $3,
+                revoked_by = $4,
+                updated_at = now()
+            WHERE tenant_id = $1::uuid
+              AND grant_id = $2::uuid
+            RETURNING grant_id::text AS grant_id,
+                      tenant_id::text AS tenant_id,
+                      node_id,
+                      provider,
+                      chat_id,
+                      allow_read,
+                      allow_send,
+                      redacted_payload,
+                      metadata,
+                      expires_at,
+                      revoked_at,
+                      revoked_reason,
+                      created_by,
+                      revoked_by,
+                      created_at,
+                      updated_at
+            """,
+            tenant_id,
+            parsed_grant_id,
+            str(reason or "revoked").strip() or "revoked",
+            actor_sub,
+        )
+        if row is None:
+            raise RuntimeError("Failed to revoke worker messaging grant")
+        updated = dict(row)
+        if actor is not None:
+            await self._write_audit(
+                tenant_id=tenant_id,
+                action="tenant_worker_messaging_grant_revoke",
+                actor=actor,
+                before=before_dict,
+                after=updated,
+            )
+        return {**updated, "idempotent": False}
+
+    async def purge_expired_worker_messaging_grants(self, *, limit: int = 2000) -> int:
+        bounded = max(1, min(int(limit), 20000))
+        rows = await self._fetch(
+            """
+            WITH doomed AS (
+                SELECT grant_id
+                FROM tenant_worker_messaging_grants
+                WHERE expires_at <= now()
+                ORDER BY expires_at ASC
+                LIMIT $1
+            )
+            DELETE FROM tenant_worker_messaging_grants g
+            USING doomed
+            WHERE g.grant_id = doomed.grant_id
+            RETURNING g.grant_id::text AS grant_id
+            """,
+            bounded,
+        )
+        return len(rows)
 
     async def record_worker_job_event(
         self,

@@ -13,6 +13,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment 15 Worker WhatsApp Boundary Controls (2026-03-06)
+
+- Added worker messaging grant persistence in tenant-admin storage:
+  - `tenant_worker_messaging_grants` table with per-node/per-provider/per-chat scope
+  - permission flags (`allow_read`, `allow_send`)
+  - optional `redacted_payload` mode
+  - TTL expiry and revoke metadata (`expires_at`, `revoked_at`, `revoked_by`)
+- Added tenant-admin grant APIs on Skills:
+  - `GET /admin/tenants/{tenant_id}/workers/messaging/grants`
+  - `PUT /admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}`
+  - `DELETE /admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}`
+- Added CGS internal admin wrappers for worker messaging grant list/upsert/revoke under:
+  - `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/...`
+- Added trust-policy action `worker.messaging.grant` with two-person approval semantics.
+- Worker dispatch claim now enforces deny-by-default for `messaging.read*`/`messaging.send*`
+  jobs unless an active scoped grant exists; denied attempts are logged as tenant
+  security events (`worker_messaging_access_denied`).
+- Worker grant TTL cleanup now runs in the existing messaging cleanup loop to purge
+  expired grants automatically.
+
 ### Changed - Additional CI Cost Controls (2026-03-06)
 
 - Added path-gating for code-change lanes:

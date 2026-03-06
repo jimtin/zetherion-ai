@@ -277,6 +277,26 @@ class TenantAdminWorkerJobActionPostRequest(BaseModel):
     change_ticket_id: str | None = None
 
 
+class TenantAdminWorkerMessagingGrantPutRequest(BaseModel):
+    """Create/update scoped worker messaging grant for one node+chat."""
+
+    allow_read: bool = False
+    allow_send: bool = False
+    ttl_seconds: int = Field(default=3600, ge=60, le=1_209_600)
+    redacted_payload: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    explicitly_elevated: bool = False
+    change_ticket_id: str | None = None
+
+
+class TenantAdminWorkerMessagingGrantDeleteRequest(BaseModel):
+    """Revoke one worker messaging grant."""
+
+    reason: str | None = Field(default=None, max_length=500)
+    explicitly_elevated: bool = False
+    change_ticket_id: str | None = None
+
+
 class TenantAdminAutomergeExecuteRequest(BaseModel):
     """Execute guarded autonomous PR orchestration for one tenant."""
 

@@ -185,6 +185,9 @@ class TestSkillsServerHelpers:
     async def test_messaging_ttl_cleanup_loop_handles_purge_and_cancel(self, mock_registry):
         server = SkillsServer(registry=mock_registry, tenant_admin_manager=AsyncMock())
         server._tenant_admin_manager.purge_expired_messaging_messages.return_value = 5
+        server._tenant_admin_manager.purge_expired_worker_messaging_grants = AsyncMock(
+            return_value=2
+        )
         with (
             patch(
                 "zetherion_ai.skills.server.asyncio.sleep",
@@ -194,6 +197,9 @@ class TestSkillsServerHelpers:
         ):
             await server._messaging_ttl_cleanup_loop()
         server._tenant_admin_manager.purge_expired_messaging_messages.assert_awaited_once_with(
+            limit=2000
+        )
+        server._tenant_admin_manager.purge_expired_worker_messaging_grants.assert_awaited_once_with(
             limit=2000
         )
 

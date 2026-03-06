@@ -18,6 +18,10 @@ Maintenance note (2026-03-05):
 - Internal autonomous merge execution route was added under `/service/ai/v1/internal/admin/tenants/{tenant_id}/automerge/execute`.
 - Worker operator control routes were added under `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*`
   for node inventory, quarantine/unquarantine, job inspection, retry/cancel, and lifecycle events.
+- Worker messaging grant routes were added for scoped WhatsApp boundary control:
+  - `GET /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/messaging/grants`
+  - `PUT /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}`
+  - `DELETE /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}`
 - Public CGS client-facing document intelligence endpoints in this kit are unchanged.
 
 ## Integration Outcome

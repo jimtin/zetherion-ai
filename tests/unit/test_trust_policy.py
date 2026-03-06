@@ -376,3 +376,28 @@ def test_worker_capability_update_requires_two_person_approval() -> None:
         },
     )
     assert allowed.outcome == TrustDecisionOutcome.ALLOW
+
+
+def test_worker_messaging_grant_requires_two_person_approval() -> None:
+    evaluator = TrustPolicyEvaluator(
+        setting_resolver=_resolver_factory(
+            {
+                ("tenant-1", "security", "trust_tier"): "tier3",
+            }
+        )
+    )
+    approval = evaluator.evaluate(
+        tenant_id="tenant-1",
+        action="worker.messaging.grant",
+        context={},
+    )
+    assert approval.outcome == TrustDecisionOutcome.APPROVAL_REQUIRED
+    assert approval.code == "AI_APPROVAL_REQUIRED"
+    assert approval.requires_two_person is True
+
+    allowed = evaluator.evaluate(
+        tenant_id="tenant-1",
+        action="worker.messaging.grant",
+        context={"explicitly_elevated": True},
+    )
+    assert allowed.outcome == TrustDecisionOutcome.ALLOW

@@ -68,6 +68,9 @@ This guide maps CGS `/service/ai/v1` routes to expected frontend flows.
 | Worker job retry | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/jobs/{job_id}/retry` | `POST` | Resets step to pending and requeues continuation |
 | Worker job cancel | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/jobs/{job_id}/cancel` | `POST` | Cancels running/queued job and blocks step |
 | Worker event feed | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/events` | `GET` | Supports `node_id`, `job_id`, `limit` |
+| Worker messaging grant list | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/messaging/grants` | `GET` | Supports `node_id`, `provider`, `chat_id`, `include_expired`, `include_revoked`, `limit` |
+| Worker messaging grant upsert | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}` | `PUT` | TTL-limited per-chat read/send grant; may require approval (`AI_APPROVAL_REQUIRED`) |
+| Worker messaging grant revoke | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}` | `DELETE` | Immediate revoke; may require approval (`AI_APPROVAL_REQUIRED`) |
 | Security event feed | `/service/ai/v1/internal/admin/tenants/{tenant_id}/security/events` | `GET` | Supports `event_type`, `severity`, `action`, `limit` |
 | Security dashboard | `/service/ai/v1/internal/admin/tenants/{tenant_id}/security/dashboard` | `GET` | Supports `window_hours`, `recent_limit` |
 | Autonomous merge execute | `/service/ai/v1/internal/admin/tenants/{tenant_id}/automerge/execute` | `POST` | Requires trust-policy branch/risk guards + required checks |

@@ -198,6 +198,16 @@ async def test_internal_admin_validation_error_matrix() -> None:
             "/service/ai/v1/internal/admin/tenants/tenant-a/workers/jobs/job-1/cancel",
             {"reason": {"invalid": True}},
         ),
+        (
+            "put",
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/nodes/node-1/messaging/grants/whatsapp/chat-1",
+            {"ttl_seconds": 0},
+        ),
+        (
+            "delete",
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/messaging/grants/55555555-5555-5555-5555-555555555555",
+            {"reason": {"invalid": True}},
+        ),
         ("post", "/service/ai/v1/internal/admin/tenants/tenant-a/changes", {"action": ""}),
         (
             "post",
