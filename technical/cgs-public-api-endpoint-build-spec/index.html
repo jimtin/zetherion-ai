@@ -846,6 +846,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../isolation-inventory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Isolation Inventory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../configuration/" class="md-nav__link">
         
   
@@ -1419,6 +1447,34 @@
     
   
     CI/CD Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/worker-compromise-response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Worker Compromise Runbook
   
 
     
@@ -2843,6 +2899,19 @@ Used by frontend provider/model selector UI.</p>
 - <code>GET|DELETE /messaging/messages</code>
 - <code>GET /messaging/messages/export</code>
 - <code>POST /messaging/messages/{chat_id}/send</code>
+- <code>GET /workers/nodes</code>
+- <code>GET /workers/nodes/{node_id}</code>
+- <code>POST /workers/nodes/{node_id}/quarantine</code>
+- <code>POST /workers/nodes/{node_id}/unquarantine</code>
+- <code>PUT /workers/nodes/{node_id}/capabilities</code>
+- <code>GET /workers/jobs</code>
+- <code>GET /workers/jobs/{job_id}</code>
+- <code>POST /workers/jobs/{job_id}/retry</code>
+- <code>POST /workers/jobs/{job_id}/cancel</code>
+- <code>GET /workers/events</code>
+- <code>GET /workers/messaging/grants</code>
+- <code>PUT /workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}</code>
+- <code>DELETE /workers/messaging/grants/{grant_id}</code>
 - <code>GET /security/events</code>
 - <code>GET /security/dashboard</code>
 - <code>POST /automerge/execute</code>

@@ -855,6 +855,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../isolation-inventory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Isolation Inventory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../configuration/" class="md-nav__link">
         
   
@@ -1561,6 +1589,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../development/worker-compromise-response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Worker Compromise Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../development/github-secrets/" class="md-nav__link">
         
   
@@ -1881,6 +1937,9 @@
 - <code>/api/v1</code> errors are upstream/internal and surfaced through CGS mappings.</p>
 <h2 id="maintenance-note-2026-03-05">Maintenance Note (2026-03-05)<a class="headerlink" href="#maintenance-note-2026-03-05" title="Permanent link">&para;</a></h2>
 <ul>
+<li>Segment 2 data-plane isolation foundation added internal owner-vs-tenant
+  storage and encryption routing; error envelopes and status mappings for
+  <code>/api/v1</code> and <code>/service/ai/v1</code> are unchanged by this segment.</li>
 <li>CGS failure envelope now includes <code>error.retryable</code> on all structured failures.</li>
 <li>Added blog publish adapter duplicate-as-success behavior:</li>
 <li><code>409</code> with <code>error=null</code> and <code>data.status=duplicate</code>.</li>

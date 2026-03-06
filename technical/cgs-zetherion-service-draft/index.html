@@ -846,6 +846,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../isolation-inventory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Isolation Inventory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../configuration/" class="md-nav__link">
         
   
@@ -1419,6 +1447,34 @@
     
   
     CI/CD Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/worker-compromise-response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Worker Compromise Runbook
   
 
     
@@ -2573,6 +2629,19 @@ Owners: <code>Catalyst Group Solutions (CGS) Platform</code>, <code>Zetherion Ba
 - <code>GET|DELETE /messaging/messages</code>
 - <code>GET /messaging/messages/export</code>
 - <code>POST /messaging/messages/{chat_id}/send</code>
+- <code>GET /workers/nodes</code>
+- <code>GET /workers/nodes/{node_id}</code>
+- <code>POST /workers/nodes/{node_id}/quarantine</code>
+- <code>POST /workers/nodes/{node_id}/unquarantine</code>
+- <code>PUT /workers/nodes/{node_id}/capabilities</code>
+- <code>GET /workers/jobs</code>
+- <code>GET /workers/jobs/{job_id}</code>
+- <code>POST /workers/jobs/{job_id}/retry</code>
+- <code>POST /workers/jobs/{job_id}/cancel</code>
+- <code>GET /workers/events</code>
+- <code>GET /workers/messaging/grants</code>
+- <code>PUT /workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}</code>
+- <code>DELETE /workers/messaging/grants/{grant_id}</code>
 - <code>GET /security/events</code>
 - <code>GET /security/dashboard</code>
 - <code>POST /automerge/execute</code></p>
@@ -2582,6 +2651,7 @@ Owners: <code>Catalyst Group Solutions (CGS) Platform</code>, <code>Zetherion Ba
 - OAuth app read/write additionally require <code>cgs:zetherion-secrets-admin</code>.
 - OAuth app writes and mailbox disconnects require approved <code>change_ticket_id</code>.
 - Messaging send may return <code>AI_APPROVAL_REQUIRED</code> and requires approved <code>change_ticket_id</code> when policy is not explicitly elevated.
+- Worker messaging grant upsert/revoke may return <code>AI_APPROVAL_REQUIRED</code> and require approved <code>change_ticket_id</code> unless explicitly elevated.
 - Automerge execute requires trust-policy allow (<code>automerge.execute</code>) including policy enabled + branch/risk guard flags.</p>
 <h3 id="63-company-reporting-endpoints">6.3 Company Reporting Endpoints<a class="headerlink" href="#63-company-reporting-endpoints" title="Permanent link">&para;</a></h3>
 <table>

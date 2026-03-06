@@ -855,6 +855,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../isolation-inventory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Isolation Inventory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../configuration/" class="md-nav__link">
         
   
@@ -1581,6 +1609,39 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#get-admintenantstenant_idworkersmessaginggrants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /admin/tenants/{tenant_id}/workers/messaging/grants
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#put-admintenantstenant_idworkersnodesnode_idmessaginggrantsproviderchat_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PUT /admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete-admintenantstenant_idworkersmessaginggrantsgrant_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DELETE /admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2184,6 +2245,34 @@
     
   
     CI/CD Pipeline
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../development/worker-compromise-response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Worker Compromise Runbook
   
 
     
@@ -2930,6 +3019,39 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#get-admintenantstenant_idworkersmessaginggrants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /admin/tenants/{tenant_id}/workers/messaging/grants
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#put-admintenantstenant_idworkersnodesnode_idmessaginggrantsproviderchat_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PUT /admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete-admintenantstenant_idworkersmessaginggrantsgrant_id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DELETE /admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3382,8 +3504,16 @@ authenticated with worker session credentials (not <code>X-API-Secret</code>).</
 <p>Complete worker registration and optionally rotate session credentials.</p>
 <h3 id="post-workerv1nodesnode_idheartbeat">POST /worker/v1/nodes/{node_id}/heartbeat<a class="headerlink" href="#post-workerv1nodesnode_idheartbeat" title="Permanent link">&para;</a></h3>
 <p>Submit node heartbeat and health/capability metadata.</p>
+<ul>
+<li>Updates worker <code>health_score</code> and may auto-quarantine unhealthy nodes based on
+  tenant security policy thresholds.</li>
+</ul>
 <h3 id="post-workerv1nodesnode_idjobsclaim">POST /worker/v1/nodes/{node_id}/jobs/claim<a class="headerlink" href="#post-workerv1nodesnode_idjobsclaim" title="Permanent link">&para;</a></h3>
 <p>Claim next eligible worker job based on capability policy.</p>
+<ul>
+<li>Claims are gated by rollout stage (<code>disabled|canary|general</code>), node canary
+  allowlisting in canary mode, heartbeat freshness, and minimum health score.</li>
+</ul>
 <h3 id="post-workerv1nodesnode_idjobsjob_idresult">POST /worker/v1/nodes/{node_id}/jobs/{job_id}/result<a class="headerlink" href="#post-workerv1nodesnode_idjobsjob_idresult" title="Permanent link">&para;</a></h3>
 <p>Submit terminal status and artifacts for a claimed worker job.</p>
 <hr />
@@ -3410,6 +3540,14 @@ using <code>X-API-Secret</code> plus signed admin actor headers.</p>
 <p>Cancel a worker job and mark the associated step/plan blocked/failed.</p>
 <h3 id="get-admintenantstenant_idworkersevents">GET /admin/tenants/{tenant_id}/workers/events<a class="headerlink" href="#get-admintenantstenant_idworkersevents" title="Permanent link">&para;</a></h3>
 <p>List worker lifecycle/job events (optional filters: <code>node_id</code>, <code>job_id</code>, <code>limit</code>).</p>
+<h3 id="get-admintenantstenant_idworkersmessaginggrants">GET /admin/tenants/{tenant_id}/workers/messaging/grants<a class="headerlink" href="#get-admintenantstenant_idworkersmessaginggrants" title="Permanent link">&para;</a></h3>
+<p>List scoped worker messaging grants (filters: <code>node_id</code>, <code>provider</code>, <code>chat_id</code>,
+<code>include_expired</code>, <code>include_revoked</code>, <code>limit</code>).</p>
+<h3 id="put-admintenantstenant_idworkersnodesnode_idmessaginggrantsproviderchat_id">PUT /admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}<a class="headerlink" href="#put-admintenantstenant_idworkersnodesnode_idmessaginggrantsproviderchat_id" title="Permanent link">&para;</a></h3>
+<p>Create/update one TTL-limited worker messaging grant for a specific node/chat with
+permission scope (<code>allow_read</code>, <code>allow_send</code>) and optional <code>redacted_payload</code>.</p>
+<h3 id="delete-admintenantstenant_idworkersmessaginggrantsgrant_id">DELETE /admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}<a class="headerlink" href="#delete-admintenantstenant_idworkersmessaginggrantsgrant_id" title="Permanent link">&para;</a></h3>
+<p>Revoke one worker messaging grant immediately.</p>
 <hr />
 <h2 id="user-management">User Management<a class="headerlink" href="#user-management" title="Permanent link">&para;</a></h2>
 <h3 id="get-users">GET /users<a class="headerlink" href="#get-users" title="Permanent link">&para;</a></h3>

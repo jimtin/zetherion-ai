@@ -855,6 +855,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../isolation-inventory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Isolation Inventory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../configuration/" class="md-nav__link">
         
   
@@ -2177,6 +2205,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../development/worker-compromise-response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Worker Compromise Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../development/github-secrets/" class="md-nav__link">
         
   
@@ -3115,6 +3171,10 @@ plus optional tenant-scoped YouTube endpoints.</p>
 <p>This API is distinct from the internal Skills API (<code>:8080</code>) and is not the public
 client contract. External clients must integrate through CGS <code>/service/ai/v1</code>.</p>
 <p>Maintenance note (2026-03-05):
+- Segment 2 data-plane isolation foundation added owner-vs-tenant Qdrant routing,
+  scoped object-storage prefixes, additive PostgreSQL isolation schemas, and
+  owner-vs-tenant encryption domains behind the upstream runtime.
+- No <code>/api/v1</code> route, method, auth, or payload contract changed in this segment.
 - Added tenant messaging upstream routes:
   - <code>GET /api/v1/messaging/chats</code>
   - <code>GET /api/v1/messaging/messages</code>

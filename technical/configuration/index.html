@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://jimtin.github.io/zetherion-ai/technical/configuration/">
       
       
-        <link rel="prev" href="../security/">
+        <link rel="prev" href="../isolation-inventory/">
       
       
         <link rel="next" href="../skills-framework/">
@@ -835,6 +835,34 @@
     
   
     Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../isolation-inventory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Isolation Inventory
   
 
     
@@ -1715,6 +1743,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../development/worker-compromise-response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Worker Compromise Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../development/github-secrets/" class="md-nav__link">
         
   
@@ -2485,27 +2541,112 @@
 <tr>
 <td><code>QDRANT_HOST</code></td>
 <td><code>qdrant</code></td>
-<td>Qdrant host</td>
+<td>Legacy/default Qdrant host fallback</td>
 </tr>
 <tr>
 <td><code>QDRANT_PORT</code></td>
 <td><code>6333</code></td>
-<td>Qdrant port</td>
+<td>Legacy/default Qdrant port fallback</td>
 </tr>
 <tr>
 <td><code>QDRANT_USE_TLS</code></td>
 <td><code>false</code></td>
-<td>Enable TLS for Qdrant</td>
+<td>Legacy/default TLS flag for Qdrant</td>
 </tr>
 <tr>
 <td><code>QDRANT_CERT_PATH</code></td>
 <td>unset</td>
-<td>Qdrant TLS certificate path</td>
+<td>Legacy/default Qdrant TLS certificate path</td>
+</tr>
+<tr>
+<td><code>QDRANT_OWNER_HOST</code></td>
+<td>unset</td>
+<td>Optional owner-domain Qdrant host override</td>
+</tr>
+<tr>
+<td><code>QDRANT_OWNER_PORT</code></td>
+<td>unset</td>
+<td>Optional owner-domain Qdrant port override</td>
+</tr>
+<tr>
+<td><code>QDRANT_OWNER_USE_TLS</code></td>
+<td>unset</td>
+<td>Optional owner-domain TLS override</td>
+</tr>
+<tr>
+<td><code>QDRANT_OWNER_CERT_PATH</code></td>
+<td>unset</td>
+<td>Optional owner-domain TLS certificate path</td>
+</tr>
+<tr>
+<td><code>QDRANT_TENANT_HOST</code></td>
+<td>unset</td>
+<td>Optional tenant-domain Qdrant host override</td>
+</tr>
+<tr>
+<td><code>QDRANT_TENANT_PORT</code></td>
+<td>unset</td>
+<td>Optional tenant-domain Qdrant port override</td>
+</tr>
+<tr>
+<td><code>QDRANT_TENANT_USE_TLS</code></td>
+<td>unset</td>
+<td>Optional tenant-domain TLS override</td>
+</tr>
+<tr>
+<td><code>QDRANT_TENANT_CERT_PATH</code></td>
+<td>unset</td>
+<td>Optional tenant-domain TLS certificate path</td>
+</tr>
+<tr>
+<td><code>POSTGRES_TENANT_APP_SCHEMA</code></td>
+<td><code>tenant_app</code></td>
+<td>Logical tenant application schema name</td>
+</tr>
+<tr>
+<td><code>POSTGRES_OWNER_PERSONAL_SCHEMA</code></td>
+<td><code>owner_personal</code></td>
+<td>Logical owner-personal schema name</td>
+</tr>
+<tr>
+<td><code>POSTGRES_OWNER_PORTFOLIO_SCHEMA</code></td>
+<td><code>owner_portfolio</code></td>
+<td>Logical owner-portfolio schema name</td>
+</tr>
+<tr>
+<td><code>POSTGRES_CONTROL_PLANE_SCHEMA</code></td>
+<td><code>control_plane</code></td>
+<td>Logical control-plane schema name</td>
+</tr>
+<tr>
+<td><code>POSTGRES_CGS_GATEWAY_SCHEMA</code></td>
+<td><code>cgs_gateway</code></td>
+<td>Logical CGS gateway schema name</td>
 </tr>
 <tr>
 <td><code>ENCRYPTION_SALT_PATH</code></td>
 <td><code>data/salt.bin</code></td>
-<td>Salt file path</td>
+<td>Legacy/default salt file path</td>
+</tr>
+<tr>
+<td><code>ENCRYPTION_OWNER_PASSPHRASE</code></td>
+<td>unset</td>
+<td>Optional owner-personal passphrase override</td>
+</tr>
+<tr>
+<td><code>ENCRYPTION_OWNER_SALT_PATH</code></td>
+<td>unset</td>
+<td>Optional owner-personal salt path override</td>
+</tr>
+<tr>
+<td><code>ENCRYPTION_TENANT_PASSPHRASE</code></td>
+<td>unset</td>
+<td>Optional tenant-data passphrase override</td>
+</tr>
+<tr>
+<td><code>ENCRYPTION_TENANT_SALT_PATH</code></td>
+<td>unset</td>
+<td>Optional tenant-data salt path override</td>
 </tr>
 <tr>
 <td><code>ENCRYPTION_STRICT</code></td>

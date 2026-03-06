@@ -855,6 +855,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../isolation-inventory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Isolation Inventory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../configuration/" class="md-nav__link">
         
   
@@ -1716,6 +1744,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../development/worker-compromise-response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Worker Compromise Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../development/github-secrets/" class="md-nav__link">
         
   
@@ -2199,6 +2255,10 @@ All integration is through CGS <code>/service/ai/v1</code>.</p>
 - Internal autonomous merge execution route was added under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/automerge/execute</code>.
 - Worker operator control routes were added under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*</code>
   for node inventory, quarantine/unquarantine, job inspection, retry/cancel, and lifecycle events.
+- Worker messaging grant routes were added for scoped WhatsApp boundary control:
+  - <code>GET /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/messaging/grants</code>
+  - <code>PUT /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}</code>
+  - <code>DELETE /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}</code>
 - Public CGS client-facing document intelligence endpoints in this kit are unchanged.</p>
 <h2 id="integration-outcome">Integration Outcome<a class="headerlink" href="#integration-outcome" title="Permanent link">&para;</a></h2>
 <p>After implementing this kit, client applications can:

@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://jimtin.github.io/zetherion-ai/technical/architecture/">
+        <link rel="canonical" href="https://jimtin.github.io/zetherion-ai/technical/isolation-inventory/">
       
       
-        <link rel="prev" href="../../user/troubleshooting/">
+        <link rel="prev" href="../security/">
       
       
-        <link rel="next" href="../docker/">
+        <link rel="next" href="../configuration/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Architecture - Zetherion AI</title>
+        <title>Isolation Inventory - Zetherion AI</title>
       
     
     
@@ -78,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#system-architecture" class="md-skip">
+        <a href="#isolation-inventory" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Architecture
+              Isolation Inventory
             
           </span>
         </div>
@@ -264,7 +264,7 @@
     
     
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="./" class="md-tabs__link">
+        <a href="../architecture/" class="md-tabs__link">
           
   
   
@@ -768,37 +768,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Architecture
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
         
   
   
@@ -814,203 +787,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Overview
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#high-level-topology" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        High-Level Topology
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#service-inventory" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Service Inventory
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#api-surfaces" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        API Surfaces
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="API Surfaces">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#internal-skills-api-8080" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Internal Skills API (:8080)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#public-api-8443" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Public API (:8443)
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#runtime-flows" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Runtime Flows
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Runtime Flows">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#1-discord-bot-flow" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1. Discord Bot Flow
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#2-skillsheartbeat-flow" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        2. Skills/Heartbeat Flow
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#3-public-api-chat-flow" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. Public API Chat Flow
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#data-architecture" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Data Architecture
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#inference-and-routing" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Inference and Routing
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#update-and-rollback-architecture" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Update and Rollback Architecture
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#known-script-drift" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Known Script Drift
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#related-docs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Related Docs
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1076,10 +852,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../isolation-inventory/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Isolation Inventory
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1095,6 +898,109 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#canonical-artifact" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Canonical Artifact
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#inventory-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inventory Coverage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#current-state-findings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current-State Findings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Current-State Findings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#domains-that-already-have-a-clear-intent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Domains that already have a clear intent
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#domains-that-are-not-isolated-yet" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Domains that are not isolated yet
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#highest-priority-legacy-compatibility-surfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Highest-priority legacy compatibility surfaces
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migration-rules-set-by-this-baseline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migration Rules Set by This Baseline
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1956,10 +1862,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#canonical-artifact" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview
+        Canonical Artifact
       
     </span>
   </a>
@@ -1967,10 +1873,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#high-level-topology" class="md-nav__link">
+  <a href="#inventory-coverage" class="md-nav__link">
     <span class="md-ellipsis">
       
-        High-Level Topology
+        Inventory Coverage
       
     </span>
   </a>
@@ -1978,33 +1884,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#service-inventory" class="md-nav__link">
+  <a href="#current-state-findings" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Service Inventory
+        Current-State Findings
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#api-surfaces" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        API Surfaces
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="API Surfaces">
+    <nav class="md-nav" aria-label="Current-State Findings">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#internal-skills-api-8080" class="md-nav__link">
+  <a href="#domains-that-already-have-a-clear-intent" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Internal Skills API (:8080)
+        Domains that already have a clear intent
       
     </span>
   </a>
@@ -2012,10 +1907,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#public-api-8443" class="md-nav__link">
+  <a href="#domains-that-are-not-isolated-yet" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Public API (:8443)
+        Domains that are not isolated yet
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#highest-priority-legacy-compatibility-surfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Highest-priority legacy compatibility surfaces
       
     </span>
   </a>
@@ -2028,104 +1934,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#runtime-flows" class="md-nav__link">
+  <a href="#migration-rules-set-by-this-baseline" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Runtime Flows
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Runtime Flows">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#1-discord-bot-flow" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1. Discord Bot Flow
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#2-skillsheartbeat-flow" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        2. Skills/Heartbeat Flow
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#3-public-api-chat-flow" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. Public API Chat Flow
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#data-architecture" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Data Architecture
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#inference-and-routing" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Inference and Routing
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#update-and-rollback-architecture" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Update and Rollback Architecture
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#known-script-drift" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Known Script Drift
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#related-docs" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Related Docs
+        Migration Rules Set by This Baseline
       
     </span>
   </a>
@@ -2152,240 +1964,94 @@
   
 
 
-<h1 id="system-architecture">System Architecture<a class="headerlink" href="#system-architecture" title="Permanent link">&para;</a></h1>
-<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>Zetherion AI is a source-agnostic assistant with two API surfaces:</p>
+<h1 id="isolation-inventory">Isolation Inventory<a class="headerlink" href="#isolation-inventory" title="Permanent link">&para;</a></h1>
+<p>Segment 0 establishes a source-controlled inventory of the current storage,
+vector, route, prompt, and job-flow surfaces that will be migrated into the
+target trust domains:</p>
 <ul>
-<li><strong>Internal Skills API</strong> (<code>:8080</code>) for bot/service orchestration</li>
-<li><strong>Public API</strong> (<code>:8443</code>) for tenant-scoped external integrations</li>
+<li><code>owner_personal</code></li>
+<li><code>owner_portfolio</code></li>
+<li><code>tenant_raw</code></li>
+<li><code>tenant_derived</code></li>
+<li><code>control_plane</code></li>
+<li><code>worker_artifact</code></li>
 </ul>
-<p>The current Docker compose topology supports blue/green switching for both
-skills and public API services, with Traefik as the internal switch and an
-updater sidecar handling rollout/rollback orchestration.</p>
-<p>The project enforces <code>&gt;=90%</code> coverage in test configuration and currently
-contains 5,000+ tests.</p>
-<hr />
-<h2 id="high-level-topology">High-Level Topology<a class="headerlink" href="#high-level-topology" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Discord Gateway / External App Clients
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>            |
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>            v
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>+-------------------------------+
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>| zetherion-ai-bot              |
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>| - Security pipeline           |
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>| - Router + inference broker   |
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>| - Skills client               |
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>+---------------+---------------+
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                |
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>                v
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>      +---------------------+
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>      | zetherion-ai-traefik|
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>      +---+-------------+---+
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>          |             |
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>          v             v
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>+----------------+  +----------------+
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>| skills-blue    |  | skills-green   |
-<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>| :8080 internal |  | :8080 internal |
-<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>+----------------+  +----------------+
-<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>
-<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>Public API path (tenant integrations):
-<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>
-<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>External Client -&gt; Cloudflared (optional) -&gt; Traefik -&gt; api-blue/api-green
-<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>
-<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>Data plane:
-<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>- PostgreSQL (RBAC, settings, integrations, tenant/session data)
-<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>- Qdrant (vector memory)
-<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>- Ollama (generation/embeddings)
-<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>- Ollama Router (classification)
-<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>
-<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>Update plane:
-<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>- updater sidecar performs blue/green rollout and rollback
-</code></pre></div>
-<hr />
-<h2 id="service-inventory">Service Inventory<a class="headerlink" href="#service-inventory" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Service</th>
-<th>Role</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>zetherion-ai-bot</code></td>
-<td>Discord runtime and main orchestration path</td>
-</tr>
-<tr>
-<td><code>zetherion-ai-skills-blue/green</code></td>
-<td>Internal skills control plane</td>
-</tr>
-<tr>
-<td><code>zetherion-ai-api-blue/green</code></td>
-<td>Public <code>/api/v1</code> service</td>
-</tr>
-<tr>
-<td><code>zetherion-ai-traefik</code></td>
-<td>Internal routing/switch layer</td>
-</tr>
-<tr>
-<td><code>zetherion-ai-updater</code></td>
-<td>Rollout/rollback sidecar</td>
-</tr>
-<tr>
-<td><code>zetherion-ai-cloudflared</code></td>
-<td>Optional secure tunnel for public API exposure</td>
-</tr>
-<tr>
-<td><code>postgres</code></td>
-<td>Relational persistence</td>
-</tr>
-<tr>
-<td><code>qdrant</code></td>
-<td>Vector memory persistence</td>
-</tr>
-<tr>
-<td><code>ollama</code></td>
-<td>Local generation + embeddings</td>
-</tr>
-<tr>
-<td><code>ollama-router</code></td>
-<td>Local routing model</td>
-</tr>
-</tbody>
-</table>
-<hr />
-<h2 id="api-surfaces">API Surfaces<a class="headerlink" href="#api-surfaces" title="Permanent link">&para;</a></h2>
-<h3 id="internal-skills-api-8080">Internal Skills API (<code>:8080</code>)<a class="headerlink" href="#internal-skills-api-8080" title="Permanent link">&para;</a></h3>
-<p>Primary uses:</p>
+<p>This segment does not change runtime behavior. It documents the current state,
+identifies the legacy compatibility surfaces that still mix domains, and gives
+later segments a deterministic baseline for migration.</p>
+<h2 id="canonical-artifact">Canonical Artifact<a class="headerlink" href="#canonical-artifact" title="Permanent link">&para;</a></h2>
+<p>The machine-readable source of truth for this segment is:</p>
 <ul>
-<li>skill execution (<code>/handle</code>)</li>
-<li>heartbeat actions (<code>/heartbeat</code>)</li>
-<li>runtime RBAC/settings/secrets operations</li>
-<li>OAuth authorization/callback handling</li>
+<li><code>.ci/isolation_compatibility_manifest.json</code></li>
 </ul>
-<p>Auth model:</p>
+<p>Tests validate that the manifest stays structurally complete, that the current
+trust-domain vocabulary remains stable, and that the explicitly allowed legacy
+modules are tracked until their planned cutover segments land.</p>
+<h2 id="inventory-coverage">Inventory Coverage<a class="headerlink" href="#inventory-coverage" title="Permanent link">&para;</a></h2>
+<p>The manifest captures the current state of:</p>
 <ul>
-<li><code>X-API-Secret</code> required for most routes</li>
-<li>health and OAuth callback routes are exempt by design</li>
+<li>relational storage families</li>
+<li>Qdrant collections and their current domain intent</li>
+<li>public, internal, CGS, and Discord route families</li>
+<li>prompt source files that currently assemble model context</li>
+<li>scheduler, queue, announcement, document, and worker job flows</li>
+<li>the existing mix of access control, behavioral trust, grants,
+  descriptive relationship state, and derived intelligence</li>
 </ul>
-<p>See <a href="../api-reference/">Skills API Reference</a>.</p>
-<h3 id="public-api-8443">Public API (<code>:8443</code>)<a class="headerlink" href="#public-api-8443" title="Permanent link">&para;</a></h3>
-<p>Primary uses:</p>
+<h2 id="current-state-findings">Current-State Findings<a class="headerlink" href="#current-state-findings" title="Permanent link">&para;</a></h2>
+<h3 id="domains-that-already-have-a-clear-intent">Domains that already have a clear intent<a class="headerlink" href="#domains-that-already-have-a-clear-intent" title="Permanent link">&para;</a></h3>
 <ul>
-<li>tenant session lifecycle (<code>/api/v1/sessions</code>)</li>
-<li>session-token chat (<code>/api/v1/chat</code>, <code>/chat/stream</code>, <code>/chat/history</code>)</li>
-<li>optional tenant-scoped YouTube endpoints (<code>/api/v1/youtube/...</code>)</li>
+<li><code>owner_personal</code></li>
+<li><code>src/zetherion_ai/personal/storage.py</code></li>
+<li>Gmail account/email state</li>
+<li>calendar, tasks, milestones, and dev journal vector collections</li>
+<li><code>tenant_raw</code></li>
+<li>tenant chat, document, messaging, and execution data in
+    <code>src/zetherion_ai/api/tenant.py</code> and
+    <code>src/zetherion_ai/admin/tenant_admin_manager.py</code></li>
+<li><code>control_plane</code></li>
+<li>CGS tenant mappings, audits, request logs, queueing, rollout, and
+    announcement dispatch</li>
 </ul>
-<p>Auth model:</p>
+<h3 id="domains-that-are-not-isolated-yet">Domains that are not isolated yet<a class="headerlink" href="#domains-that-are-not-isolated-yet" title="Permanent link">&para;</a></h3>
 <ul>
-<li><code>X-API-Key</code> for tenant control-plane routes</li>
-<li>Bearer session token for chat routes</li>
-<li>per-tenant in-memory rate limiting</li>
+<li><code>owner_portfolio</code></li>
+<li>derived health/telemetry/intelligence outputs exist, but they are not yet
+    split into a dedicated owner-only derived domain</li>
+<li><code>tenant_derived</code></li>
+<li>recommendation, analytics, and intelligence outputs exist, but they still
+    share storage and access paths with raw tenant data</li>
+<li><code>worker_artifact</code></li>
+<li>worker jobs, sessions, artifacts, and bounded logs exist, but the
+    surrounding prompt and storage surfaces still rely on repo-oriented grants
+    and shared runtime paths</li>
 </ul>
-<p>See <a href="../public-api-reference/">Public API Reference</a>.</p>
-<hr />
-<h2 id="runtime-flows">Runtime Flows<a class="headerlink" href="#runtime-flows" title="Permanent link">&para;</a></h2>
-<h3 id="1-discord-bot-flow">1. Discord Bot Flow<a class="headerlink" href="#1-discord-bot-flow" title="Permanent link">&para;</a></h3>
-<ol>
-<li>Message arrives from Discord gateway.</li>
-<li>Bot security checks run (allowlist/RBAC, rate limits, content security).</li>
-<li>Router classifies intent and complexity.</li>
-<li>Bot either:</li>
-<li>handles direct inference path, or</li>
-<li>dispatches to Skills API (<code>/handle</code>), depending on intent.</li>
-<li>Memory/profile context is merged as needed.</li>
-<li>Response is returned to Discord.</li>
-</ol>
-<h3 id="2-skillsheartbeat-flow">2. Skills/Heartbeat Flow<a class="headerlink" href="#2-skillsheartbeat-flow" title="Permanent link">&para;</a></h3>
-<ol>
-<li>Scheduler triggers heartbeat cycle.</li>
-<li>Skills service aggregates <code>on_heartbeat</code> actions.</li>
-<li>Actions are prioritized and returned to bot.</li>
-<li>Bot executes actions with quiet-hours/rate-limit safeguards.</li>
-</ol>
-<h3 id="3-public-api-chat-flow">3. Public API Chat Flow<a class="headerlink" href="#3-public-api-chat-flow" title="Permanent link">&para;</a></h3>
-<ol>
-<li>External app creates session with tenant API key.</li>
-<li>API returns prefixed JWT session token.</li>
-<li>Client calls chat endpoints with bearer token.</li>
-<li>API validates tenant + session, applies tenant rate limits.</li>
-<li>Chat skill/inference path generates response.</li>
-<li>Messages are persisted to tenant session history.</li>
-</ol>
-<hr />
-<h2 id="data-architecture">Data Architecture<a class="headerlink" href="#data-architecture" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>Data</th>
-<th>Store</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Tenant/session/chat records</td>
-<td>PostgreSQL</td>
-</tr>
-<tr>
-<td>RBAC users + audit log</td>
-<td>PostgreSQL</td>
-</tr>
-<tr>
-<td>Runtime settings + encrypted secrets metadata</td>
-<td>PostgreSQL</td>
-</tr>
-<tr>
-<td>Integrations/work router state</td>
-<td>PostgreSQL</td>
-</tr>
-<tr>
-<td>Personal/profile/contact/policy records</td>
-<td>PostgreSQL</td>
-</tr>
-<tr>
-<td>Vectorized memory and docs-knowledge embeddings</td>
-<td>Qdrant</td>
-</tr>
-<tr>
-<td>Cost tracking operational DB</td>
-<td>SQLite (<code>data/costs.db</code>)</td>
-</tr>
-</tbody>
-</table>
-<hr />
-<h2 id="inference-and-routing">Inference and Routing<a class="headerlink" href="#inference-and-routing" title="Permanent link">&para;</a></h2>
+<h3 id="highest-priority-legacy-compatibility-surfaces">Highest-priority legacy compatibility surfaces<a class="headerlink" href="#highest-priority-legacy-compatibility-surfaces" title="Permanent link">&para;</a></h3>
 <ul>
-<li>Router backend is configurable: <code>gemini</code>, <code>ollama</code>, or <code>groq</code>.</li>
-<li>Inference broker supports provider-aware task routing across local and cloud models.</li>
-<li>Dedicated Ollama router model avoids generation model swap latency.</li>
-<li>Work router/email routing path supports provider-agnostic ingestion and policy gates.</li>
+<li><code>src/zetherion_ai/memory/qdrant.py</code></li>
+<li>shared generic vector helper with no mandatory trust-domain wrapper yet</li>
+<li><code>src/zetherion_ai/discord/user_manager.py</code></li>
+<li>legacy single-user store that mixes owner-personal and control-plane data</li>
+<li><code>src/zetherion_ai/integrations/storage.py</code></li>
+<li>mixed raw/derived/control storage for integration workflows</li>
+<li><code>src/zetherion_ai/agent/core.py</code></li>
+<li><code>src/zetherion_ai/agent/prompts.py</code></li>
+<li><code>src/zetherion_ai/routing/email_router.py</code></li>
+<li>prompt and routing surfaces that still depend on implicit caller discipline
+    instead of fail-closed scope labels</li>
 </ul>
-<hr />
-<h2 id="update-and-rollback-architecture">Update and Rollback Architecture<a class="headerlink" href="#update-and-rollback-architecture" title="Permanent link">&para;</a></h2>
-<p>Updater sidecar coordinates zero-downtime style swaps for API/skills services:</p>
-<ol>
-<li>Build inactive color</li>
-<li>Health-check inactive services</li>
-<li>Flip Traefik routing to inactive color</li>
-<li>Restart bot with graceful reconnect path</li>
-<li>Stop old color</li>
-</ol>
-<p>On failure, sidecar rolls back and can pause future rollouts until unpaused.
-State is persisted in <code>UPDATER_STATE_PATH</code>.</p>
-<p>See <a href="../docker/">Docker &amp; Services</a> and <a href="../../user/auto-update/">Auto-Update</a>.</p>
-<hr />
-<h2 id="known-script-drift">Known Script Drift<a class="headerlink" href="#known-script-drift" title="Permanent link">&para;</a></h2>
-<p><code>start.sh</code> and <code>status.sh</code> still contain a few legacy checks using old
-single-service names (for example <code>zetherion-ai-skills</code>).</p>
-<p>When script output disagrees with live topology, use <code>docker compose ps</code> as
-canonical runtime state.</p>
-<hr />
-<h2 id="related-docs">Related Docs<a class="headerlink" href="#related-docs" title="Permanent link">&para;</a></h2>
+<h2 id="migration-rules-set-by-this-baseline">Migration Rules Set by This Baseline<a class="headerlink" href="#migration-rules-set-by-this-baseline" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="../docker/">Docker &amp; Services</a></li>
-<li><a href="../security/">Security</a></li>
-<li><a href="../api-reference/">Skills API Reference</a></li>
-<li><a href="../public-api-reference/">Public API Reference</a></li>
-<li><a href="../ai-agent-integration/">AI Agent Integration</a></li>
+<li>New isolation work must extend the manifest instead of silently bypassing it.</li>
+<li>Legacy compatibility surfaces must stay on the explicit allowlist until the
+  segment named in the manifest removes them.</li>
+<li>Future scope-kernel work must use the six trust domains defined here; new
+  domain names require an explicit manifest and documentation update.</li>
+<li>Route or storage changes that alter trust boundaries should update this
+  inventory before or with the behavior change.</li>
+<li>Prompt isolation now starts in <code>src/zetherion_ai/trust/scope.py</code>; current
+  integrations cover owner agent prompts, tenant chat prompts, email routing
+  prompts, docs knowledge prompts, and tenant document QA prompts.</li>
 </ul>
 
 

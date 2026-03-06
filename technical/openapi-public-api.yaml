@@ -3,7 +3,7 @@ info:
   title: Zetherion Upstream API
   version: 1.0.0
   description: Internal `/api/v1` upstream contract consumed by the CGS gateway. External clients should use CGS `/service/ai/v1`.
-  x-maintenance-note: "2026-03-05: added tenant messaging read/send routes plus document archive/delete + restore lifecycle updates."
+  x-maintenance-note: "2026-03-06: added internal data-plane isolation foundations (owner/tenant Qdrant routing, scoped object-storage prefixes, additive PostgreSQL isolation schemas, and owner-vs-tenant encryption domains) without changing the upstream /api/v1 route contract. 2026-03-05: added tenant messaging read/send routes plus document archive/delete + restore lifecycle updates."
 servers:
   - url: https://{host}
     variables:

@@ -855,6 +855,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../isolation-inventory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Isolation Inventory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../configuration/" class="md-nav__link">
         
   
@@ -1649,6 +1677,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../development/worker-compromise-response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Worker Compromise Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../development/github-secrets/" class="md-nav__link">
         
   
@@ -2345,6 +2401,24 @@
 <td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/events</code></td>
 <td><code>GET</code></td>
 <td>Supports <code>node_id</code>, <code>job_id</code>, <code>limit</code></td>
+</tr>
+<tr>
+<td>Worker messaging grant list</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/messaging/grants</code></td>
+<td><code>GET</code></td>
+<td>Supports <code>node_id</code>, <code>provider</code>, <code>chat_id</code>, <code>include_expired</code>, <code>include_revoked</code>, <code>limit</code></td>
+</tr>
+<tr>
+<td>Worker messaging grant upsert</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}</code></td>
+<td><code>PUT</code></td>
+<td>TTL-limited per-chat read/send grant; may require approval (<code>AI_APPROVAL_REQUIRED</code>)</td>
+</tr>
+<tr>
+<td>Worker messaging grant revoke</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}</code></td>
+<td><code>DELETE</code></td>
+<td>Immediate revoke; may require approval (<code>AI_APPROVAL_REQUIRED</code>)</td>
 </tr>
 <tr>
 <td>Security event feed</td>
