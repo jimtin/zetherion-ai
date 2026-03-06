@@ -871,7 +871,7 @@ class ProfileBuilder:
             True if deleted successfully.
         """
         if self._memory:
-            return await self._memory.delete_by_id(USER_PROFILES_COLLECTION, entry_id)
+            return await self._memory.delete_scoped_by_id(USER_PROFILES_COLLECTION, entry_id)
         return False
 
     async def delete_profile_entry_by_key(
@@ -894,7 +894,7 @@ class ProfileBuilder:
             return False
 
         # Find the entry first
-        entries = await self._memory.filter_by_field(
+        entries = await self._memory.filter_scoped_by_field(
             USER_PROFILES_COLLECTION,
             "user_id",
             user_id,
@@ -902,7 +902,7 @@ class ProfileBuilder:
 
         for entry in entries:
             if entry.get("category") == category and entry.get("key") == key:
-                return await self._memory.delete_by_id(
+                return await self._memory.delete_scoped_by_id(
                     USER_PROFILES_COLLECTION,
                     entry["id"],
                 )
@@ -923,7 +923,7 @@ class ProfileBuilder:
         if not self._memory:
             return []
 
-        return await self._memory.filter_by_field(
+        return await self._memory.filter_scoped_by_field(
             USER_PROFILES_COLLECTION,
             "user_id",
             user_id,

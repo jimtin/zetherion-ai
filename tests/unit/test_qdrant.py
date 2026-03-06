@@ -6,9 +6,13 @@ import pytest
 
 from zetherion_ai.memory.qdrant import (
     CONVERSATIONS_COLLECTION,
+    DOCS_KNOWLEDGE_COLLECTION,
     LONG_TERM_MEMORY_COLLECTION,
+    SKILL_TASKS_COLLECTION,
+    TENANT_DOCUMENTS_COLLECTION,
     QdrantMemory,
 )
+from zetherion_ai.trust.scope import TrustDomain
 
 
 @pytest.fixture
@@ -1301,3 +1305,111 @@ class TestDeleteByField:
                     result = await memory.delete_by_field("docs_knowledge", "source_path", "a.md")
 
         assert result is False
+
+
+class TestScopedCollectionAccess:
+    """Tests for scoped collection policy enforcement."""
+
+    @pytest.mark.asyncio
+    async def test_ensure_scoped_collection_rejects_wrong_domain(
+        self, mock_settings, mock_embeddings
+    ):
+        mock_client = AsyncMock()
+
+        with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
+                with patch(
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
+                ):
+                    memory = QdrantMemory(trust_domain=TrustDomain.TENANT_RAW)
+                    with pytest.raises(ValueError, match="trust_domain=tenant_raw"):
+                        await memory.ensure_scoped_collection(SKILL_TASKS_COLLECTION)
+
+    @pytest.mark.asyncio
+    async def test_search_scoped_collection_requires_tenant_filter(
+        self, mock_settings, mock_embeddings
+    ):
+        mock_client = AsyncMock()
+
+        with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
+                with patch(
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
+                ):
+                    memory = QdrantMemory(trust_domain=TrustDomain.TENANT_RAW)
+                    with pytest.raises(ValueError, match="missing required keys: tenant_id"):
+                        await memory.search_scoped_collection(
+                            TENANT_DOCUMENTS_COLLECTION,
+                            query="invoice",
+                        )
+
+    @pytest.mark.asyncio
+    async def test_store_scoped_payload_rejects_missing_required_payload_keys(
+        self, mock_settings, mock_embeddings
+    ):
+        mock_client = AsyncMock()
+
+        with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
+                with patch(
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
+                ):
+                    memory = QdrantMemory(trust_domain=TrustDomain.TENANT_RAW)
+                    with pytest.raises(
+                        ValueError, match="missing required keys: document_id, content"
+                    ):
+                        await memory.store_scoped_payload(
+                            collection_name=TENANT_DOCUMENTS_COLLECTION,
+                            point_id="p-1",
+                            payload={"tenant_id": "tenant-1"},
+                            text="ignored",
+                        )
+
+    @pytest.mark.asyncio
+    async def test_search_scoped_collection_applies_allowed_filters(
+        self, mock_settings, mock_embeddings
+    ):
+        mock_client = AsyncMock()
+        hit = MagicMock()
+        hit.id = "p-doc"
+        hit.score = 0.88
+        hit.payload = {"tenant_id": "tenant-1", "document_id": "doc-1", "content": "hello"}
+        mock_response = MagicMock()
+        mock_response.points = [hit]
+        mock_client.query_points = AsyncMock(return_value=mock_response)
+
+        with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
+                with patch(
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
+                ):
+                    memory = QdrantMemory(trust_domain=TrustDomain.TENANT_RAW)
+                    results = await memory.search_scoped_collection(
+                        TENANT_DOCUMENTS_COLLECTION,
+                        query="hello",
+                        filters={"tenant_id": "tenant-1", "document_id": "doc-1"},
+                        limit=3,
+                    )
+
+        assert len(results) == 1
+        call_args = mock_client.query_points.call_args
+        assert call_args.kwargs["limit"] == 3
+
+    @pytest.mark.asyncio
+    async def test_delete_scoped_by_field_rejects_unapproved_field(
+        self, mock_settings, mock_embeddings
+    ):
+        mock_client = AsyncMock()
+
+        with patch("zetherion_ai.memory.qdrant.get_settings", return_value=mock_settings):
+            with patch("zetherion_ai.memory.qdrant.AsyncQdrantClient", return_value=mock_client):
+                with patch(
+                    "zetherion_ai.memory.qdrant.get_embeddings_client", return_value=mock_embeddings
+                ):
+                    memory = QdrantMemory(trust_domain=TrustDomain.OWNER_PERSONAL)
+                    with pytest.raises(ValueError, match="does not allow: channel_id"):
+                        await memory.delete_scoped_by_field(
+                            DOCS_KNOWLEDGE_COLLECTION,
+                            "channel_id",
+                            "123",
+                        )

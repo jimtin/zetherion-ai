@@ -765,7 +765,7 @@ class TestGenerateResponseSkillIntents:
                 {"id": "m2", "type": "general", "content": "my favorite color is teal-abc123"},
             ]
 
-        mock_memory.filter_by_field = AsyncMock(side_effect=_filter_by_field)
+        mock_memory.filter_scoped_by_field = AsyncMock(side_effect=_filter_by_field)
         agent = _make_agent(mock_memory=mock_memory)
 
         mock_client = AsyncMock()

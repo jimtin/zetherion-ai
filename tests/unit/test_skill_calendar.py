@@ -508,11 +508,11 @@ class TestCalendarSkillExtended:
     async def test_initialize_with_memory(self) -> None:
         """Skill should initialize with memory and create collection."""
         mock_memory = AsyncMock()
-        mock_memory.ensure_collection = AsyncMock()
+        mock_memory.ensure_scoped_collection = AsyncMock()
         skill = CalendarSkill(memory=mock_memory)
         result = await skill.initialize()
         assert result is True
-        mock_memory.ensure_collection.assert_called_once_with(
+        mock_memory.ensure_scoped_collection.assert_called_once_with(
             CALENDAR_COLLECTION,
             vector_size=get_embedding_dimension(),
         )
@@ -521,7 +521,9 @@ class TestCalendarSkillExtended:
     async def test_initialize_with_memory_failure(self) -> None:
         """Skill should return False when memory initialization fails."""
         mock_memory = AsyncMock()
-        mock_memory.ensure_collection = AsyncMock(side_effect=RuntimeError("Connection failed"))
+        mock_memory.ensure_scoped_collection = AsyncMock(
+            side_effect=RuntimeError("Connection failed")
+        )
         skill = CalendarSkill(memory=mock_memory)
         result = await skill.initialize()
         assert result is False
@@ -835,9 +837,9 @@ class TestCalendarSkillExtended:
     async def test_store_event_with_memory(self) -> None:
         """Skill should store events in memory when available."""
         mock_memory = AsyncMock()
-        mock_memory.ensure_collection = AsyncMock()
-        mock_memory.store_with_payload = AsyncMock()
-        mock_memory.filter_by_field = AsyncMock(return_value=[])
+        mock_memory.ensure_scoped_collection = AsyncMock()
+        mock_memory.store_scoped_payload = AsyncMock()
+        mock_memory.filter_scoped_by_field = AsyncMock(return_value=[])
         skill = CalendarSkill(memory=mock_memory)
         await skill.initialize()
 
@@ -854,7 +856,7 @@ class TestCalendarSkillExtended:
         )
         response = await skill.handle(request)
         assert response.success is True
-        mock_memory.store_with_payload.assert_called_once()
+        mock_memory.store_scoped_payload.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_get_user_events_with_memory(self) -> None:
@@ -869,8 +871,8 @@ class TestCalendarSkillExtended:
             "updated_at": datetime.now().isoformat(),
         }
         mock_memory = AsyncMock()
-        mock_memory.ensure_collection = AsyncMock()
-        mock_memory.filter_by_field = AsyncMock(return_value=[event_data])
+        mock_memory.ensure_scoped_collection = AsyncMock()
+        mock_memory.filter_scoped_by_field = AsyncMock(return_value=[event_data])
         skill = CalendarSkill(memory=mock_memory)
         await skill.initialize()
 
@@ -881,7 +883,7 @@ class TestCalendarSkillExtended:
         )
         response = await skill.handle(request)
         assert response.success is True
-        mock_memory.filter_by_field.assert_called_once()
+        mock_memory.filter_scoped_by_field.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_handle_schedule_with_end_time(self) -> None:

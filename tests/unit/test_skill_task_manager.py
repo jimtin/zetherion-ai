@@ -983,8 +983,8 @@ class TestTaskManagerSkillQdrantStorage:
         )
         await skill._store_task(task)
 
-        mock_memory.store_with_payload.assert_called_once()
-        call_kwargs = mock_memory.store_with_payload.call_args
+        mock_memory.store_scoped_payload.assert_called_once()
+        call_kwargs = mock_memory.store_scoped_payload.call_args
         assert call_kwargs.kwargs["collection_name"] == TASKS_COLLECTION
         assert call_kwargs.kwargs["point_id"] == str(task.id)
         assert "Test task" in call_kwargs.kwargs["text"]
@@ -1008,7 +1008,7 @@ class TestTaskManagerSkillQdrantStorage:
         """_get_task should fall back to Qdrant when not in cache."""
         mock_memory = AsyncMock()
         task_id = uuid4()
-        mock_memory.get_by_id = AsyncMock(
+        mock_memory.get_scoped_by_id = AsyncMock(
             return_value={
                 "id": str(task_id),
                 "user_id": "user123",
@@ -1025,7 +1025,7 @@ class TestTaskManagerSkillQdrantStorage:
         result = await skill._get_task("user123", task_id)
         assert result is not None
         assert result.title == "From Qdrant"
-        mock_memory.get_by_id.assert_called_once_with(
+        mock_memory.get_scoped_by_id.assert_called_once_with(
             collection_name=TASKS_COLLECTION,
             point_id=str(task_id),
         )
@@ -1036,7 +1036,7 @@ class TestTaskManagerSkillQdrantStorage:
     async def test_get_task_not_found_anywhere(self) -> None:
         """_get_task should return None when task is not in cache or Qdrant."""
         mock_memory = AsyncMock()
-        mock_memory.get_by_id = AsyncMock(return_value=None)
+        mock_memory.get_scoped_by_id = AsyncMock(return_value=None)
         skill = TaskManagerSkill(memory=mock_memory)
         await skill.safe_initialize()
 
@@ -1048,7 +1048,7 @@ class TestTaskManagerSkillQdrantStorage:
         """_get_user_tasks should query Qdrant when memory is available."""
         mock_memory = AsyncMock()
         task_id = uuid4()
-        mock_memory.filter_by_field = AsyncMock(
+        mock_memory.filter_scoped_by_field = AsyncMock(
             return_value=[
                 {
                     "id": str(task_id),
@@ -1067,7 +1067,7 @@ class TestTaskManagerSkillQdrantStorage:
         tasks = await skill._get_user_tasks("user123")
         assert len(tasks) == 1
         assert tasks[0].title == "Qdrant task"
-        mock_memory.filter_by_field.assert_called_once_with(
+        mock_memory.filter_scoped_by_field.assert_called_once_with(
             collection_name=TASKS_COLLECTION,
             field="user_id",
             value="user123",
@@ -1112,7 +1112,7 @@ class TestTaskManagerSkillQdrantStorage:
         await skill._delete_task("user123", tid)
 
         assert tid not in skill._tasks_cache.get("user123", {})
-        mock_memory.delete_by_id.assert_called_once_with(
+        mock_memory.delete_scoped_by_id.assert_called_once_with(
             collection_name=TASKS_COLLECTION,
             point_id=str(tid),
         )
@@ -1139,7 +1139,7 @@ class TestTaskManagerSkillQdrantStorage:
 
         result = await skill.initialize()
         assert result is True
-        mock_memory.ensure_collection.assert_called_once_with(
+        mock_memory.ensure_scoped_collection.assert_called_once_with(
             TASKS_COLLECTION,
             vector_size=get_embedding_dimension(),
         )
@@ -1148,7 +1148,9 @@ class TestTaskManagerSkillQdrantStorage:
     async def test_initialize_with_memory_failure(self) -> None:
         """initialize should return False when Qdrant fails."""
         mock_memory = AsyncMock()
-        mock_memory.ensure_collection = AsyncMock(side_effect=Exception("Connection refused"))
+        mock_memory.ensure_scoped_collection = AsyncMock(
+            side_effect=Exception("Connection refused")
+        )
         skill = TaskManagerSkill(memory=mock_memory)
 
         result = await skill.initialize()

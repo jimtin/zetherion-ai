@@ -202,7 +202,7 @@ class TaskManagerSkill(Skill):
 
         try:
             # Create collection if it doesn't exist
-            await self._memory.ensure_collection(
+            await self._memory.ensure_scoped_collection(
                 TASKS_COLLECTION,
                 vector_size=get_embedding_dimension(),
             )
@@ -586,7 +586,7 @@ class TaskManagerSkill(Skill):
             if task.tags:
                 search_text += " " + " ".join(task.tags)
 
-            await self._memory.store_with_payload(
+            await self._memory.store_scoped_payload(
                 collection_name=TASKS_COLLECTION,
                 text=search_text,
                 payload=task.to_dict(),
@@ -601,7 +601,7 @@ class TaskManagerSkill(Skill):
 
         # Query Qdrant if available
         if self._memory:
-            result = await self._memory.get_by_id(
+            result = await self._memory.get_scoped_by_id(
                 collection_name=TASKS_COLLECTION,
                 point_id=str(task_id),
             )
@@ -619,7 +619,7 @@ class TaskManagerSkill(Skill):
         """Get all tasks for a user."""
         # If we have Qdrant, query it
         if self._memory:
-            results = await self._memory.filter_by_field(
+            results = await self._memory.filter_scoped_by_field(
                 collection_name=TASKS_COLLECTION,
                 field="user_id",
                 value=user_id,
@@ -644,7 +644,7 @@ class TaskManagerSkill(Skill):
 
         # Remove from Qdrant if available
         if self._memory:
-            await self._memory.delete_by_id(
+            await self._memory.delete_scoped_by_id(
                 collection_name=TASKS_COLLECTION,
                 point_id=str(task_id),
             )

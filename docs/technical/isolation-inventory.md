@@ -69,7 +69,7 @@ The manifest captures the current state of:
 ### Highest-priority legacy compatibility surfaces
 
 - `src/zetherion_ai/memory/qdrant.py`
-  - shared generic vector helper with no mandatory trust-domain wrapper yet
+  - legacy generic helper retained internally, but production callers now route through scoped wrappers and a repo guard blocks new direct use
 - `src/zetherion_ai/discord/user_manager.py`
   - legacy single-user store that mixes owner-personal and control-plane data
 - `src/zetherion_ai/integrations/storage.py`

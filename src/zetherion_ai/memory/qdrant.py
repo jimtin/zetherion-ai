@@ -1,5 +1,6 @@
 """Qdrant vector database client for memory storage."""
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -19,6 +20,73 @@ log = get_logger("zetherion_ai.memory.qdrant")
 # Collection names
 CONVERSATIONS_COLLECTION = "conversations"
 LONG_TERM_MEMORY_COLLECTION = "long_term_memory"
+USER_PROFILES_COLLECTION = "user_profiles"
+DOCS_KNOWLEDGE_COLLECTION = "docs_knowledge"
+TENANT_DOCUMENTS_COLLECTION = "tenant_documents"
+SKILL_CALENDAR_COLLECTION = "skill_calendar"
+SKILL_TASKS_COLLECTION = "skill_tasks"
+SKILL_MILESTONES_COLLECTION = "skill_milestones"
+SKILL_DEV_JOURNAL_COLLECTION = "skill_dev_journal"
+
+
+@dataclass(frozen=True)
+class ScopedCollectionPolicy:
+    """Declarative access rules for one Qdrant collection."""
+
+    allowed_domains: tuple[TrustDomain, ...]
+    required_payload_keys: tuple[str, ...] = ()
+    required_filter_keys: tuple[str, ...] = ()
+    allowed_filter_fields: tuple[str, ...] = ()
+
+
+_SCOPED_COLLECTION_POLICIES: dict[str, ScopedCollectionPolicy] = {
+    CONVERSATIONS_COLLECTION: ScopedCollectionPolicy(
+        allowed_domains=(TrustDomain.OWNER_PERSONAL, TrustDomain.TENANT_RAW),
+        required_payload_keys=("user_id", "channel_id", "role", "content"),
+        allowed_filter_fields=("user_id", "channel_id", "role"),
+    ),
+    LONG_TERM_MEMORY_COLLECTION: ScopedCollectionPolicy(
+        allowed_domains=(TrustDomain.OWNER_PERSONAL, TrustDomain.TENANT_RAW),
+        required_payload_keys=("content", "type"),
+        allowed_filter_fields=("user_id", "type"),
+    ),
+    USER_PROFILES_COLLECTION: ScopedCollectionPolicy(
+        allowed_domains=(TrustDomain.OWNER_PERSONAL, TrustDomain.TENANT_RAW),
+        required_payload_keys=("user_id", "category", "key", "value"),
+        allowed_filter_fields=("user_id", "category", "key"),
+    ),
+    DOCS_KNOWLEDGE_COLLECTION: ScopedCollectionPolicy(
+        allowed_domains=(TrustDomain.OWNER_PERSONAL, TrustDomain.CONTROL_PLANE),
+        required_payload_keys=("content", "source_path", "source_hash", "chunk_index"),
+        allowed_filter_fields=("source_path", "source_hash"),
+    ),
+    TENANT_DOCUMENTS_COLLECTION: ScopedCollectionPolicy(
+        allowed_domains=(TrustDomain.TENANT_RAW,),
+        required_payload_keys=("tenant_id", "document_id", "content"),
+        required_filter_keys=("tenant_id",),
+        allowed_filter_fields=("tenant_id", "document_id", "file_name"),
+    ),
+    SKILL_CALENDAR_COLLECTION: ScopedCollectionPolicy(
+        allowed_domains=(TrustDomain.OWNER_PERSONAL,),
+        required_payload_keys=("user_id", "title"),
+        allowed_filter_fields=("user_id",),
+    ),
+    SKILL_TASKS_COLLECTION: ScopedCollectionPolicy(
+        allowed_domains=(TrustDomain.OWNER_PERSONAL,),
+        required_payload_keys=("user_id", "title", "status"),
+        allowed_filter_fields=("user_id", "status", "project"),
+    ),
+    SKILL_MILESTONES_COLLECTION: ScopedCollectionPolicy(
+        allowed_domains=(TrustDomain.OWNER_PERSONAL,),
+        required_payload_keys=("user_id", "_type"),
+        allowed_filter_fields=("user_id", "_type", "platform", "status"),
+    ),
+    SKILL_DEV_JOURNAL_COLLECTION: ScopedCollectionPolicy(
+        allowed_domains=(TrustDomain.OWNER_PERSONAL, TrustDomain.WORKER_ARTIFACT),
+        required_payload_keys=("user_id", "entry_type", "title"),
+        allowed_filter_fields=("user_id", "fingerprint", "entry_type", "status", "project"),
+    ),
+}
 
 
 def _string_override(value: Any) -> str | None:
@@ -141,6 +209,90 @@ class QdrantMemory:
             trust_domain=trust_domain.value,
             storage_plane=self._storage_plane.value,
         )
+
+    def _policy_for_collection(self, collection_name: str) -> ScopedCollectionPolicy:
+        policy = _SCOPED_COLLECTION_POLICIES.get(collection_name)
+        if policy is None:
+            raise ValueError(
+                f"Scoped Qdrant access requires a registered collection policy: {collection_name}"
+            )
+        return policy
+
+    def _validate_collection_domain(
+        self,
+        collection_name: str,
+        *,
+        operation: str,
+    ) -> ScopedCollectionPolicy:
+        policy = self._policy_for_collection(collection_name)
+        if self._trust_domain not in policy.allowed_domains:
+            allowed = ", ".join(domain.value for domain in policy.allowed_domains)
+            raise ValueError(
+                "Scoped Qdrant access blocked for "
+                f"{operation} on {collection_name}: trust_domain={self._trust_domain.value} "
+                f"allowed_domains={allowed}"
+            )
+        return policy
+
+    @staticmethod
+    def _present_keys(values: dict[str, Any]) -> set[str]:
+        present: set[str] = set()
+        for key, value in values.items():
+            if value is None:
+                continue
+            if isinstance(value, str) and not value.strip():
+                continue
+            present.add(key)
+        return present
+
+    def _validate_payload_keys(
+        self,
+        collection_name: str,
+        policy: ScopedCollectionPolicy,
+        payload: dict[str, Any],
+    ) -> None:
+        if not policy.required_payload_keys:
+            return
+        present = self._present_keys(payload)
+        missing = [key for key in policy.required_payload_keys if key not in present]
+        if missing:
+            raise ValueError(
+                f"Scoped Qdrant payload for {collection_name} is missing required keys: "
+                f"{', '.join(missing)}"
+            )
+
+    def _validate_filter_dict(
+        self,
+        collection_name: str,
+        policy: ScopedCollectionPolicy,
+        filters: dict[str, Any],
+    ) -> None:
+        present = self._present_keys(filters)
+        if policy.required_filter_keys:
+            missing = [key for key in policy.required_filter_keys if key not in present]
+            if missing:
+                raise ValueError(
+                    f"Scoped Qdrant filters for {collection_name} are missing required keys: "
+                    f"{', '.join(missing)}"
+                )
+        if policy.allowed_filter_fields:
+            disallowed = [key for key in present if key not in policy.allowed_filter_fields]
+            if disallowed:
+                raise ValueError(
+                    f"Scoped Qdrant filters for {collection_name} include disallowed keys: "
+                    f"{', '.join(sorted(disallowed))}"
+                )
+
+    def _validate_filter_field(
+        self,
+        collection_name: str,
+        policy: ScopedCollectionPolicy,
+        field: str,
+    ) -> None:
+        if policy.allowed_filter_fields and field not in policy.allowed_filter_fields:
+            raise ValueError(
+                f"Scoped Qdrant field access for {collection_name} does not allow: {field}"
+            )
 
     async def initialize(self) -> None:
         """Initialize collections if they don't exist."""
@@ -557,6 +709,117 @@ class QdrantMemory:
             return
 
         await self._validate_collection_dimension(name, expected_size)
+
+    async def ensure_scoped_collection(
+        self,
+        collection_name: str,
+        vector_size: int | None = None,
+    ) -> None:
+        """Ensure a registered collection exists for this trust domain."""
+
+        self._validate_collection_domain(collection_name, operation="ensure_collection")
+        await self.ensure_collection(collection_name, vector_size=vector_size)
+
+    async def store_scoped_payload(
+        self,
+        *,
+        collection_name: str,
+        point_id: str,
+        payload: dict[str, Any],
+        content_for_embedding: str | None = None,
+        text: str | None = None,
+    ) -> str:
+        """Store a point after validating the collection policy."""
+
+        policy = self._validate_collection_domain(collection_name, operation="store")
+        self._validate_payload_keys(collection_name, policy, payload)
+        return await self.store_with_payload(
+            collection_name=collection_name,
+            point_id=point_id,
+            payload=payload,
+            content_for_embedding=content_for_embedding,
+            text=text,
+        )
+
+    async def search_scoped_collection(
+        self,
+        collection_name: str,
+        query: str,
+        *,
+        filters: dict[str, Any] | None = None,
+        limit: int = 10,
+        score_threshold: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """Search a registered collection with required scope filters enforced."""
+
+        policy = self._validate_collection_domain(collection_name, operation="search")
+        safe_filters = dict(filters or {})
+        self._validate_filter_dict(collection_name, policy, safe_filters)
+        return await self.search_collection(
+            collection_name=collection_name,
+            query=query,
+            filters=safe_filters or None,
+            limit=limit,
+            score_threshold=score_threshold,
+        )
+
+    async def delete_scoped_by_filters(
+        self,
+        collection_name: str,
+        *,
+        filters: dict[str, Any],
+    ) -> None:
+        """Delete points from a registered collection with validated filters."""
+
+        policy = self._validate_collection_domain(collection_name, operation="delete_by_filters")
+        safe_filters = dict(filters)
+        self._validate_filter_dict(collection_name, policy, safe_filters)
+        await self.delete_by_filters(collection_name, filters=safe_filters)
+
+    async def get_scoped_by_id(
+        self,
+        collection_name: str,
+        point_id: str,
+    ) -> dict[str, Any] | None:
+        """Retrieve one point from a registered collection."""
+
+        self._validate_collection_domain(collection_name, operation="get_by_id")
+        return await self.get_by_id(collection_name, point_id)
+
+    async def filter_scoped_by_field(
+        self,
+        collection_name: str,
+        field: str,
+        value: Any,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Filter a registered collection on an approved field."""
+
+        policy = self._validate_collection_domain(collection_name, operation="filter_by_field")
+        self._validate_filter_field(collection_name, policy, field)
+        return await self.filter_by_field(collection_name, field, value, limit=limit)
+
+    async def delete_scoped_by_field(
+        self,
+        collection_name: str,
+        field: str,
+        value: Any,
+    ) -> bool:
+        """Delete points from a registered collection on an approved field."""
+
+        policy = self._validate_collection_domain(collection_name, operation="delete_by_field")
+        self._validate_filter_field(collection_name, policy, field)
+        return await self.delete_by_field(collection_name, field, value)
+
+    async def delete_scoped_by_id(
+        self,
+        collection_name: str,
+        point_id: str,
+    ) -> bool:
+        """Delete one point from a registered collection."""
+
+        self._validate_collection_domain(collection_name, operation="delete_by_id")
+        return await self.delete_by_id(collection_name, point_id)
 
     async def store_with_payload(
         self,

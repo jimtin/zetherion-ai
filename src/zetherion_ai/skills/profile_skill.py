@@ -580,7 +580,7 @@ class ProfileSkill(Skill):
         merged: list[dict[str, Any]] = []
         seen_ids: set[str] = set()
         for candidate in candidates:
-            rows = await self._memory.filter_by_field(
+            rows = await self._memory.filter_scoped_by_field(
                 collection_name=collection_name,
                 field="user_id",
                 value=candidate,

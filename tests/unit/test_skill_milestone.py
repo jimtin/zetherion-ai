@@ -40,9 +40,9 @@ def skill():
 def skill_with_memory():
     """Create a MilestoneSkill instance with mock memory."""
     memory = AsyncMock()
-    memory.ensure_collection = AsyncMock(return_value=True)
-    memory.store_with_payload = AsyncMock()
-    memory.filter_by_field = AsyncMock(return_value=[])
+    memory.ensure_scoped_collection = AsyncMock(return_value=True)
+    memory.store_scoped_payload = AsyncMock()
+    memory.filter_scoped_by_field = AsyncMock(return_value=[])
     return MilestoneSkill(memory=memory)
 
 
@@ -247,14 +247,14 @@ class TestMilestoneInitialization:
         result = await skill_with_memory.safe_initialize()
         assert result is True
         assert skill_with_memory.status == SkillStatus.READY
-        skill_with_memory._memory.ensure_collection.assert_awaited_once_with(
+        skill_with_memory._memory.ensure_scoped_collection.assert_awaited_once_with(
             MILESTONES_COLLECTION, vector_size=get_embedding_dimension()
         )
 
     @pytest.mark.asyncio
     async def test_initialize_memory_failure(self):
         memory = AsyncMock()
-        memory.ensure_collection = AsyncMock(side_effect=RuntimeError("connection failed"))
+        memory.ensure_scoped_collection = AsyncMock(side_effect=RuntimeError("connection failed"))
         skill = MilestoneSkill(memory=memory)
         result = await skill.safe_initialize()
         # initialize() catches the exception and returns False
@@ -760,8 +760,8 @@ class TestMilestoneStorage:
         await skill_with_memory.safe_initialize()
         await skill_with_memory._store_milestone(sample_milestone)
 
-        skill_with_memory._memory.store_with_payload.assert_awaited_once()
-        call_kwargs = skill_with_memory._memory.store_with_payload.call_args
+        skill_with_memory._memory.store_scoped_payload.assert_awaited_once()
+        call_kwargs = skill_with_memory._memory.store_scoped_payload.call_args
         assert call_kwargs.kwargs["collection_name"] == MILESTONES_COLLECTION
         assert call_kwargs.kwargs["payload"]["_type"] == "milestone"
 
@@ -770,8 +770,8 @@ class TestMilestoneStorage:
         await skill_with_memory.safe_initialize()
         await skill_with_memory._store_draft(sample_draft)
 
-        skill_with_memory._memory.store_with_payload.assert_awaited_once()
-        call_kwargs = skill_with_memory._memory.store_with_payload.call_args
+        skill_with_memory._memory.store_scoped_payload.assert_awaited_once()
+        call_kwargs = skill_with_memory._memory.store_scoped_payload.call_args
         assert call_kwargs.kwargs["collection_name"] == MILESTONES_COLLECTION
         assert call_kwargs.kwargs["payload"]["_type"] == "draft"
 

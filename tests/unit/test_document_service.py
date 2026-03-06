@@ -40,7 +40,7 @@ async def test_initialize_is_idempotent(
     service, _, memory, _, _ = document_service
     await service.initialize()
     await service.initialize()
-    memory.ensure_collection.assert_awaited_once_with(DOCUMENT_COLLECTION)
+    memory.ensure_scoped_collection.assert_awaited_once_with(DOCUMENT_COLLECTION)
 
 
 @pytest.mark.asyncio
@@ -183,11 +183,11 @@ async def test_index_document_success_updates_payload_and_vectors(
         row = await service.index_document(tenant_id="tenant-1", document_id="doc-1")
 
     assert row["status"] == "indexed"
-    memory.delete_by_filters.assert_awaited_once_with(
+    memory.delete_scoped_by_filters.assert_awaited_once_with(
         DOCUMENT_COLLECTION,
         filters={"tenant_id": "tenant-1", "document_id": "doc-1"},
     )
-    assert memory.store_with_payload.await_count == 2
+    assert memory.store_scoped_payload.await_count == 2
     tenant_manager.update_document_index_payload.assert_awaited_once_with(
         "tenant-1",
         document_id="doc-1",
@@ -332,7 +332,7 @@ async def test_query_validations_and_empty_results(
     with pytest.raises(ValueError, match="cannot be empty"):
         await service.query(tenant_id="tenant-1", query="   ")
 
-    memory.search_collection.return_value = []
+    memory.search_scoped_collection.return_value = []
     result = await service.query(tenant_id="tenant-1", query="What is in docs?")
     assert result.provider == "none"
     assert result.model == "none"
@@ -344,7 +344,7 @@ async def test_query_calls_inference_and_deduplicates_citations(
     document_service: tuple[DocumentService, AsyncMock, AsyncMock, AsyncMock, AsyncMock],
 ) -> None:
     service, _, memory, inference, _ = document_service
-    memory.search_collection.return_value = [
+    memory.search_scoped_collection.return_value = [
         {
             "document_id": "doc-1",
             "file_name": "a.pdf",
@@ -381,7 +381,7 @@ async def test_query_calls_inference_and_deduplicates_citations(
 
     assert result.answer == "Answer from context"
     assert result.citations == [{"document_id": "doc-1", "file_name": "a.pdf"}]
-    search_call = memory.search_collection.call_args.kwargs
+    search_call = memory.search_scoped_collection.call_args.kwargs
     assert search_call["limit"] == 20
     infer_call = inference.infer.call_args.kwargs
     assert infer_call["forced_provider"] == Provider.GROQ
@@ -393,7 +393,7 @@ async def test_query_excludes_archived_matches_before_inference(
     document_service: tuple[DocumentService, AsyncMock, AsyncMock, AsyncMock, AsyncMock],
 ) -> None:
     service, tenant_manager, memory, inference, _ = document_service
-    memory.search_collection.return_value = [
+    memory.search_scoped_collection.return_value = [
         {
             "document_id": "doc-archived",
             "file_name": "archived.pdf",
@@ -437,7 +437,7 @@ async def test_query_returns_no_context_when_only_archived_matches_found(
     document_service: tuple[DocumentService, AsyncMock, AsyncMock, AsyncMock, AsyncMock],
 ) -> None:
     service, tenant_manager, memory, inference, _ = document_service
-    memory.search_collection.return_value = [
+    memory.search_scoped_collection.return_value = [
         {
             "document_id": "doc-archived",
             "file_name": "archived.pdf",
@@ -459,7 +459,7 @@ async def test_query_normalizes_claude_provider_name_to_anthropic(
     document_service: tuple[DocumentService, AsyncMock, AsyncMock, AsyncMock, AsyncMock],
 ) -> None:
     service, _, memory, inference, _ = document_service
-    memory.search_collection.return_value = [
+    memory.search_scoped_collection.return_value = [
         {
             "document_id": "doc-1",
             "file_name": "a.pdf",
@@ -610,7 +610,7 @@ async def test_archive_and_purge_maintenance_tick_happy_path(
         purge_after=ANY,
     )
     blob_store.delete_chunk.assert_awaited_once_with("documents/tenant-1/doc-2/report.pdf")
-    assert memory.delete_by_filters.await_count == 2
+    assert memory.delete_scoped_by_filters.await_count == 2
 
 
 @pytest.mark.asyncio
@@ -626,7 +626,7 @@ async def test_process_archive_jobs_marks_retry_on_failure(
             "retry_count": 2,
         }
     ]
-    memory.delete_by_filters.side_effect = RuntimeError("qdrant unavailable")
+    memory.delete_scoped_by_filters.side_effect = RuntimeError("qdrant unavailable")
 
     summary = await service.process_archive_jobs(limit=5)
 
