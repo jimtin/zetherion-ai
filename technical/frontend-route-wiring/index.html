@@ -2287,6 +2287,66 @@
 <td>May require approval (<code>AI_APPROVAL_REQUIRED</code>)</td>
 </tr>
 <tr>
+<td>Worker node list</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes</code></td>
+<td><code>GET</code></td>
+<td>Supports <code>include_inactive</code>, <code>limit</code></td>
+</tr>
+<tr>
+<td>Worker node detail</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}</code></td>
+<td><code>GET</code></td>
+<td>Returns node status, health, capabilities</td>
+</tr>
+<tr>
+<td>Worker node quarantine</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/quarantine</code></td>
+<td><code>POST</code></td>
+<td>Mutating route requires step-up auth</td>
+</tr>
+<tr>
+<td>Worker node unquarantine</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/unquarantine</code></td>
+<td><code>POST</code></td>
+<td>Mutating route requires step-up auth</td>
+</tr>
+<tr>
+<td>Worker capability update</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/capabilities</code></td>
+<td><code>PUT</code></td>
+<td>Capability elevation may require approval (<code>AI_APPROVAL_REQUIRED</code>)</td>
+</tr>
+<tr>
+<td>Worker job list</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/jobs</code></td>
+<td><code>GET</code></td>
+<td>Supports <code>status</code>, <code>node_id</code>, <code>plan_id</code>, <code>limit</code></td>
+</tr>
+<tr>
+<td>Worker job detail</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/jobs/{job_id}</code></td>
+<td><code>GET</code></td>
+<td>Returns job payload, lease, result/error fields</td>
+</tr>
+<tr>
+<td>Worker job retry</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/jobs/{job_id}/retry</code></td>
+<td><code>POST</code></td>
+<td>Resets step to pending and requeues continuation</td>
+</tr>
+<tr>
+<td>Worker job cancel</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/jobs/{job_id}/cancel</code></td>
+<td><code>POST</code></td>
+<td>Cancels running/queued job and blocks step</td>
+</tr>
+<tr>
+<td>Worker event feed</td>
+<td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/events</code></td>
+<td><code>GET</code></td>
+<td>Supports <code>node_id</code>, <code>job_id</code>, <code>limit</code></td>
+</tr>
+<tr>
 <td>Security event feed</td>
 <td><code>/service/ai/v1/internal/admin/tenants/{tenant_id}/security/events</code></td>
 <td><code>GET</code></td>

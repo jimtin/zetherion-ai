@@ -1083,6 +1083,150 @@ paths:
       responses:
         '200':
           description: Worker capability update accepted
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/quarantine:
+    post:
+      summary: Quarantine one tenant worker node
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: node_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWorkerNodeStatusPostRequest'
+      responses:
+        '200':
+          description: Worker node quarantined
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/unquarantine:
+    post:
+      summary: Remove quarantine from one tenant worker node
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: node_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWorkerNodeStatusPostRequest'
+      responses:
+        '200':
+          description: Worker node unquarantined
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/jobs:
+    get:
+      summary: List tenant worker jobs
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: node_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: plan_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+      responses:
+        '200':
+          description: Tenant worker job list envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/jobs/{job_id}:
+    get:
+      summary: Get one tenant worker job
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tenant worker job envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/jobs/{job_id}/retry:
+    post:
+      summary: Retry one tenant worker job
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWorkerJobActionPostRequest'
+      responses:
+        '200':
+          description: Worker job retry accepted
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/jobs/{job_id}/cancel:
+    post:
+      summary: Cancel one tenant worker job
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWorkerJobActionPostRequest'
+      responses:
+        '200':
+          description: Worker job cancellation accepted
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/events:
+    get:
+      summary: List tenant worker lifecycle/job events
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: node_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: job_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+      responses:
+        '200':
+          description: Tenant worker event list envelope
   /service/ai/v1/internal/admin/tenants/{tenant_id}/security/events:
     get:
       summary: List tenant security events for policy/security observability
@@ -1755,6 +1899,30 @@ components:
         explicitly_elevated:
           type: boolean
           default: false
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminWorkerNodeStatusPostRequest:
+      type: object
+      properties:
+        health_status:
+          type: string
+          minLength: 1
+          maxLength: 20
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminWorkerJobActionPostRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+          nullable: true
         change_ticket_id:
           type: string
           nullable: true

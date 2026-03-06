@@ -2120,6 +2120,8 @@
 <li>Tenant security event and dashboard routes were added under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/security/*</code> for policy bypass visibility.</li>
 <li>Autonomous merge execution route was added under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/automerge/execute</code> with trust-policy guards.</li>
 <li>Internal trust-policy gating now enforces deny-by-default for sensitive namespaces and approval flow reuse for high-risk actions.</li>
+<li>Worker operator control routes were added under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*</code>
+  for node lifecycle operations (quarantine/unquarantine), job retry/cancel, and worker event auditing.</li>
 </ul>
 <h2 id="capability-outcome">Capability Outcome<a class="headerlink" href="#capability-outcome" title="Permanent link">&para;</a></h2>
 <p>After implementing this kit, operators can:

@@ -1576,6 +1576,39 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#changed-additional-ci-cost-controls-2026-03-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Additional CI Cost Controls (2026-03-06)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-ci-cost-reduction-and-secret-scanning-policy-2026-03-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - CI Cost Reduction and Secret Scanning Policy (2026-03-06)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-segment-14-worker-operator-control-surface-2026-03-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Segment 14 Worker Operator Control Surface (2026-03-06)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#changed-segment-13-announcement-dm-guardrails-2026-03-06" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2532,6 +2565,39 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#changed-additional-ci-cost-controls-2026-03-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Additional CI Cost Controls (2026-03-06)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-ci-cost-reduction-and-secret-scanning-policy-2026-03-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - CI Cost Reduction and Secret Scanning Policy (2026-03-06)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-segment-14-worker-operator-control-surface-2026-03-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Segment 14 Worker Operator Control Surface (2026-03-06)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#changed-segment-13-announcement-dm-guardrails-2026-03-06" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3347,6 +3413,59 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 </blockquote>
 <hr />
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="changed-additional-ci-cost-controls-2026-03-06">Changed - Additional CI Cost Controls (2026-03-06)<a class="headerlink" href="#changed-additional-ci-cost-controls-2026-03-06" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added path-gating for code-change lanes:</li>
+<li><code>type-check</code> now runs only for code changes plus weekly/manual runs.</li>
+<li><code>security</code> (Bandit) now runs only for code changes plus weekly/manual runs.</li>
+<li><code>unit-test</code> now runs only for code changes plus weekly/manual runs.</li>
+<li>Added dedicated <code>code</code> changed-path filter in CI to drive deterministic
+  gating for code-related jobs.</li>
+<li>Updated CI summary pass logic to treat path-gated <code>type-check</code>, <code>security</code>,
+  and <code>unit-test</code> as policy-success when intentionally skipped.</li>
+<li>Updated CodeQL workflow to execute analysis in weekly/manual mode only.</li>
+<li>Updated pipeline contract notes to reflect local-first + path-gated policy
+  for type/security/unit lanes.</li>
+</ul>
+<h3 id="changed-ci-cost-reduction-and-secret-scanning-policy-2026-03-06">Changed - CI Cost Reduction and Secret Scanning Policy (2026-03-06)<a class="headerlink" href="#changed-ci-cost-reduction-and-secret-scanning-policy-2026-03-06" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Switched CI schedule from daily to weekly (<code>Sunday 02:30 UTC</code>) to reduce recurring run volume.</li>
+<li>Reduced default PR matrix cost:</li>
+<li><code>unit-test</code> now runs Python <code>3.12</code> on PR/push by default.</li>
+<li>Python <code>3.13</code> unit shard runs in weekly/manual heavy mode.</li>
+<li><code>integration-test</code> now runs in weekly/manual heavy mode.</li>
+<li><code>dependency-audit</code> now runs in weekly/manual heavy mode.</li>
+<li>Added explicit secrets scanning lane:</li>
+<li><code>Secret Scan (Gitleaks)</code> diff-only scan on PRs (<code>base..head</code> range).</li>
+<li>Full-history gitleaks scan on weekly/manual runs.</li>
+<li>Updated CI summary and failure attribution wiring to include <code>secret-scan</code>
+  and to treat intentionally skipped heavy-mode jobs as successful by policy.</li>
+<li>Updated pipeline contract governance artifacts for the new <code>secret-scan</code>
+  job mapping and revised heavy-mode notes.</li>
+</ul>
+<h3 id="changed-segment-14-worker-operator-control-surface-2026-03-06">Changed - Segment 14 Worker Operator Control Surface (2026-03-06)<a class="headerlink" href="#changed-segment-14-worker-operator-control-surface-2026-03-06" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added worker operator control routes across Skills and CGS internal admin surfaces:</li>
+<li>node quarantine/unquarantine</li>
+<li>node capability updates</li>
+<li>worker job list/get</li>
+<li>worker job retry/cancel</li>
+<li>worker lifecycle/event listing</li>
+<li>Added Discord worker operator command handling for status, pending approvals,
+  quarantine/unquarantine, and retry/cancel flows with tenant-aware admin checks.</li>
+<li>Expanded unit coverage for worker operator paths in:</li>
+<li>Skills client/server routing and payload handling</li>
+<li>CGS internal admin route branches and validation models</li>
+<li>tenant admin manager helper behavior</li>
+<li>Discord command routing and failure messaging</li>
+<li>Updated CGS route docs/OpenAPI and frontend route-wiring mappings for new
+  worker operator endpoints.</li>
+<li>Fixed CI pipeline-contract doc bundle drift by updating required CGS
+  onboarding/spec docs when CGS route files change.</li>
+<li>Updated bounded test lane defaults so pytest-heavy lanes run under heartbeat
+  wrappers (<code>targeted-unit</code>, <code>unit-full</code>, <code>api-integration-coverage</code>,
+  <code>e2e-mocked</code>) to prevent false stall failures.</li>
+</ul>
 <h3 id="changed-segment-13-announcement-dm-guardrails-2026-03-06">Changed - Segment 13 Announcement DM Guardrails (2026-03-06)<a class="headerlink" href="#changed-segment-13-announcement-dm-guardrails-2026-03-06" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added <code>scripts/check-announcement-dm-guard.py</code> guardrail to block direct <code>user.send(...)</code>

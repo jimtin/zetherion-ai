@@ -2242,6 +2242,8 @@ Owners: <code>Catalyst Group Solutions (CGS) Platform</code>, <code>Zetherion Ba
 - Added tenant email admin control-plane routes under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/email/*</code> with step-up + approval requirements for high-risk actions.
 - Added tenant messaging admin control-plane routes under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/*</code> with trust-policy gating and approval-required send semantics.
 - Added tenant security observability + data-subject controls under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/security/*</code> and messaging export/delete routes.
+- Added worker operator control routes under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*</code>
+  for node quarantine/unquarantine, capability updates, job retry/cancel, and lifecycle events.
 - Zetherion-only boundary recovery removed in-repo CGS website/UI assets; integration contract remains CGS-only.
 - Internal trust-policy gating now applies to sensitive admin actions before upstream apply, without changing external route contracts.</p>
 <h2 id="1-purpose">1. Purpose<a class="headerlink" href="#1-purpose" title="Permanent link">&para;</a></h2>
