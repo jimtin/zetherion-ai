@@ -170,7 +170,7 @@ class DevWatcherSkill(Skill):
             log.warning("dev_watcher_no_memory", msg="No memory provided, using in-memory only")
             return True
         try:
-            await self._memory.ensure_collection(
+            await self._memory.ensure_scoped_collection(
                 DEV_JOURNAL_COLLECTION,
                 vector_size=get_embedding_dimension(),
             )
@@ -834,7 +834,7 @@ class DevWatcherSkill(Skill):
                 return True
 
         if self._memory:
-            matches = await self._memory.filter_by_field(
+            matches = await self._memory.filter_scoped_by_field(
                 collection_name=DEV_JOURNAL_COLLECTION,
                 field="fingerprint",
                 value=entry.fingerprint,
@@ -855,7 +855,7 @@ class DevWatcherSkill(Skill):
 
         if self._memory:
             search_text = f"{entry.entry_type} {entry.project} {entry.title} {entry.content}"
-            await self._memory.store_with_payload(
+            await self._memory.store_scoped_payload(
                 collection_name=DEV_JOURNAL_COLLECTION,
                 text=search_text,
                 payload=entry.to_dict(),
@@ -890,7 +890,7 @@ class DevWatcherSkill(Skill):
 
     async def _get_user_entries(self, user_id: str) -> list[DevEntry]:
         if self._memory:
-            results = await self._memory.filter_by_field(
+            results = await self._memory.filter_scoped_by_field(
                 collection_name=DEV_JOURNAL_COLLECTION,
                 field="user_id",
                 value=user_id,
@@ -925,7 +925,7 @@ class DevWatcherSkill(Skill):
             if entry.fingerprint:
                 self._fingerprint_cache.get(user_id, set()).discard(entry.fingerprint)
             if self._memory:
-                deleted = await self._memory.delete_by_id(
+                deleted = await self._memory.delete_scoped_by_id(
                     collection_name=DEV_JOURNAL_COLLECTION,
                     point_id=str(entry.id),
                 )

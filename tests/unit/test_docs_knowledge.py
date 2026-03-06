@@ -13,10 +13,10 @@ from zetherion_ai.agent.docs_knowledge import DOCS_COLLECTION, DocsKnowledgeBase
 
 def _make_service(tmp_path: Path) -> tuple[DocsKnowledgeBase, AsyncMock, AsyncMock]:
     memory = AsyncMock()
-    memory.ensure_collection = AsyncMock()
-    memory.delete_by_field = AsyncMock(return_value=True)
-    memory.store_with_payload = AsyncMock()
-    memory.search_collection = AsyncMock(return_value=[])
+    memory.ensure_scoped_collection = AsyncMock()
+    memory.delete_scoped_by_field = AsyncMock(return_value=True)
+    memory.store_scoped_payload = AsyncMock()
+    memory.search_scoped_collection = AsyncMock(return_value=[])
 
     broker = AsyncMock()
     broker.infer = AsyncMock()
@@ -57,8 +57,8 @@ class TestSync:
 
         await service.sync(force=True)
 
-        memory.ensure_collection.assert_awaited_once_with(DOCS_COLLECTION)
-        assert memory.store_with_payload.await_count >= 1
+        memory.ensure_scoped_collection.assert_awaited_once_with(DOCS_COLLECTION)
+        assert memory.store_scoped_payload.await_count >= 1
         state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
         assert "user/gmail.md" in state
 
@@ -69,13 +69,13 @@ class TestSync:
         target.write_text("Initial content", encoding="utf-8")
 
         await service.sync(force=True)
-        first_store_count = memory.store_with_payload.await_count
+        first_store_count = memory.store_scoped_payload.await_count
 
         target.write_text("Updated content for docs", encoding="utf-8")
         await service.sync(force=True)
 
-        assert memory.delete_by_field.await_count >= 2
-        assert memory.store_with_payload.await_count > first_store_count
+        assert memory.delete_scoped_by_field.await_count >= 2
+        assert memory.store_scoped_payload.await_count > first_store_count
 
 
 class TestMaybeAnswer:
@@ -83,7 +83,7 @@ class TestMaybeAnswer:
     async def test_returns_answer_with_sources(self, tmp_path: Path) -> None:
         service, memory, broker = _make_service(tmp_path)
         (tmp_path / "docs" / "setup.md").write_text("Gmail setup instructions", encoding="utf-8")
-        memory.search_collection = AsyncMock(
+        memory.search_scoped_collection = AsyncMock(
             return_value=[
                 {
                     "id": "1",
@@ -111,7 +111,7 @@ class TestMaybeAnswer:
     async def test_records_gap_when_no_matches(self, tmp_path: Path) -> None:
         service, memory, _ = _make_service(tmp_path)
         (tmp_path / "docs" / "setup.md").write_text("Some content", encoding="utf-8")
-        memory.search_collection = AsyncMock(return_value=[])
+        memory.search_scoped_collection = AsyncMock(return_value=[])
 
         answer = await service.maybe_answer(
             question="How do I rotate SMTP keys?",
@@ -130,7 +130,7 @@ class TestMaybeAnswer:
     async def test_records_gap_when_context_insufficient(self, tmp_path: Path) -> None:
         service, memory, broker = _make_service(tmp_path)
         (tmp_path / "docs" / "setup.md").write_text("Only limited content", encoding="utf-8")
-        memory.search_collection = AsyncMock(
+        memory.search_scoped_collection = AsyncMock(
             return_value=[
                 {
                     "id": "1",

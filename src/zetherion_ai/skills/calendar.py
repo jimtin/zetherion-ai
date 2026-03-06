@@ -223,7 +223,7 @@ class CalendarSkill(Skill):
             return True
 
         try:
-            await self._memory.ensure_collection(
+            await self._memory.ensure_scoped_collection(
                 CALENDAR_COLLECTION,
                 vector_size=get_embedding_dimension(),
             )
@@ -514,7 +514,7 @@ class CalendarSkill(Skill):
             if event.participants:
                 search_text += " " + " ".join(event.participants)
 
-            await self._memory.store_with_payload(
+            await self._memory.store_scoped_payload(
                 collection_name=CALENDAR_COLLECTION,
                 text=search_text,
                 payload=event.to_dict(),
@@ -524,7 +524,7 @@ class CalendarSkill(Skill):
     async def _get_user_events(self, user_id: str) -> list[CalendarEvent]:
         """Get all events for a user."""
         if self._memory:
-            results = await self._memory.filter_by_field(
+            results = await self._memory.filter_scoped_by_field(
                 collection_name=CALENDAR_COLLECTION,
                 field="user_id",
                 value=user_id,

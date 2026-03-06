@@ -99,7 +99,7 @@ class DocsKnowledgeBase:
         """Answer from docs when possible; otherwise record a gap and return ``None``."""
         await self.sync()
 
-        hits = await self._memory.search_collection(
+        hits = await self._memory.search_scoped_collection(
             collection_name=DOCS_COLLECTION,
             query=question,
             limit=self._max_hits * 2,
@@ -189,7 +189,7 @@ class DocsKnowledgeBase:
                 self._last_sync_monotonic = time.monotonic()
                 return
 
-            await self._memory.ensure_collection(DOCS_COLLECTION)
+            await self._memory.ensure_scoped_collection(DOCS_COLLECTION)
 
             files = self._iter_doc_files()
             current_hashes: dict[str, str] = {}
@@ -205,13 +205,15 @@ class DocsKnowledgeBase:
                 if self._doc_hashes.get(rel_path) == digest:
                     continue
 
-                await self._memory.delete_by_field(DOCS_COLLECTION, "source_path", rel_path)
+                await self._memory.delete_scoped_by_field(DOCS_COLLECTION, "source_path", rel_path)
                 await self._index_document(rel_path=rel_path, content=content, source_hash=digest)
                 changed_count += 1
 
             removed_paths = set(self._doc_hashes) - set(current_hashes)
             for rel_path in removed_paths:
-                if await self._memory.delete_by_field(DOCS_COLLECTION, "source_path", rel_path):
+                if await self._memory.delete_scoped_by_field(
+                    DOCS_COLLECTION, "source_path", rel_path
+                ):
                     removed_count += 1
 
             self._doc_hashes = current_hashes
@@ -251,7 +253,7 @@ class DocsKnowledgeBase:
         for idx, chunk in enumerate(chunks):
             point_key = f"{rel_path}:{source_hash}:{idx}"
             point_id = hashlib.sha1(point_key.encode(), usedforsecurity=False)
-            await self._memory.store_with_payload(
+            await self._memory.store_scoped_payload(
                 collection_name=DOCS_COLLECTION,
                 point_id=point_id.hexdigest(),
                 payload={

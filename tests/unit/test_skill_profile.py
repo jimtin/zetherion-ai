@@ -95,7 +95,7 @@ class TestProfileSkill:
     async def test_handle_summary_with_entries(self) -> None:
         """Skill should summarize profile entries."""
         mock_memory = AsyncMock()
-        mock_memory.filter_by_field = AsyncMock(
+        mock_memory.filter_scoped_by_field = AsyncMock(
             return_value=[
                 {
                     "id": "1",
@@ -170,7 +170,7 @@ class TestProfileSkill:
             return []
 
         mock_memory = AsyncMock()
-        mock_memory.filter_by_field = AsyncMock(side_effect=_filter_by_field)
+        mock_memory.filter_scoped_by_field = AsyncMock(side_effect=_filter_by_field)
 
         skill = ProfileSkill(memory=mock_memory)
         await skill.safe_initialize()
@@ -191,7 +191,7 @@ class TestProfileSkill:
     async def test_handle_view_all(self) -> None:
         """Skill should view all profile entries."""
         mock_memory = AsyncMock()
-        mock_memory.filter_by_field = AsyncMock(
+        mock_memory.filter_scoped_by_field = AsyncMock(
             return_value=[
                 {
                     "category": "identity",
@@ -221,7 +221,7 @@ class TestProfileSkill:
     async def test_handle_view_by_category(self) -> None:
         """Skill should filter by category."""
         mock_memory = AsyncMock()
-        mock_memory.filter_by_field = AsyncMock(
+        mock_memory.filter_scoped_by_field = AsyncMock(
             return_value=[
                 {"category": "identity", "key": "name", "value": "John", "confidence": 0.9},
                 {"category": "preferences", "key": "timezone", "value": "UTC", "confidence": 0.8},
@@ -318,7 +318,7 @@ class TestProfileSkill:
     async def test_handle_export(self) -> None:
         """Skill should export all profile data."""
         mock_memory = AsyncMock()
-        mock_memory.filter_by_field = AsyncMock(
+        mock_memory.filter_scoped_by_field = AsyncMock(
             return_value=[
                 {
                     "id": "1",
@@ -349,7 +349,7 @@ class TestProfileSkill:
     async def test_handle_confidence_report(self) -> None:
         """Skill should generate confidence report."""
         mock_memory = AsyncMock()
-        mock_memory.filter_by_field = AsyncMock(
+        mock_memory.filter_scoped_by_field = AsyncMock(
             return_value=[
                 {"category": "identity", "key": "name", "value": "John", "confidence": 0.95},
                 {"category": "preferences", "key": "style", "value": "casual", "confidence": 0.6},
@@ -387,7 +387,7 @@ class TestProfileSkill:
     async def test_heartbeat_low_confidence(self) -> None:
         """Skill should flag low confidence entries for confirmation."""
         mock_memory = AsyncMock()
-        mock_memory.filter_by_field = AsyncMock(
+        mock_memory.filter_scoped_by_field = AsyncMock(
             return_value=[
                 {"category": "preferences", "key": "style", "value": "formal", "confidence": 0.3},
             ]
@@ -406,7 +406,7 @@ class TestProfileSkill:
         """Skill should detect stale entries."""
         old_date = (datetime.now() - timedelta(days=60)).isoformat()
         mock_memory = AsyncMock()
-        mock_memory.filter_by_field = AsyncMock(
+        mock_memory.filter_scoped_by_field = AsyncMock(
             return_value=[
                 {
                     "category": "preferences",

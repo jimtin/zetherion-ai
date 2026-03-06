@@ -586,7 +586,7 @@ class Agent:
 
         for candidate in candidates:
             try:
-                records = await self._memory.filter_by_field(
+                records = await self._memory.filter_scoped_by_field(
                     collection_name=LONG_TERM_MEMORY_COLLECTION,
                     field="user_id",
                     value=candidate,

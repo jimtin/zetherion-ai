@@ -83,7 +83,7 @@ class DocumentService:
         """Ensure required vector collections exist."""
         if self._initialized:
             return
-        await self._memory.ensure_collection(DOCUMENT_COLLECTION)
+        await self._memory.ensure_scoped_collection(DOCUMENT_COLLECTION)
         self._initialized = True
         log.info("document_service_ready")
 
@@ -302,7 +302,7 @@ class DocumentService:
             if not chunks:
                 chunks = [f"Document content for {file_name}"]
 
-            await self._memory.delete_by_filters(
+            await self._memory.delete_scoped_by_filters(
                 DOCUMENT_COLLECTION,
                 filters={
                     "tenant_id": tenant_id,
@@ -312,7 +312,7 @@ class DocumentService:
 
             for idx, chunk in enumerate(chunks):
                 point_id = str(uuid4())
-                await self._memory.store_with_payload(
+                await self._memory.store_scoped_payload(
                     collection_name=DOCUMENT_COLLECTION,
                     point_id=point_id,
                     payload={
@@ -380,7 +380,7 @@ class DocumentService:
         if self._inference is None:
             raise RuntimeError("Inference broker is not configured")
 
-        matches = await self._memory.search_collection(
+        matches = await self._memory.search_scoped_collection(
             DOCUMENT_COLLECTION,
             query=query,
             filters={"tenant_id": tenant_id},
@@ -534,7 +534,7 @@ class DocumentService:
             document_id = str(job.get("document_id") or "")
             job_id = str(job.get("job_id") or "")
             try:
-                await self._memory.delete_by_filters(
+                await self._memory.delete_scoped_by_filters(
                     DOCUMENT_COLLECTION,
                     filters={"tenant_id": tenant_id, "document_id": document_id},
                 )
@@ -607,7 +607,7 @@ class DocumentService:
                         raise RuntimeError("Document object storage is not configured")
                     await self._blob_store.delete_chunk(object_key)
 
-                await self._memory.delete_by_filters(
+                await self._memory.delete_scoped_by_filters(
                     DOCUMENT_COLLECTION,
                     filters={"tenant_id": tenant_id, "document_id": document_id},
                 )

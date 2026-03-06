@@ -171,7 +171,7 @@ class MilestoneSkill(Skill):
             log.warning("milestone_no_memory", msg="No memory provided, using in-memory only")
             return True
         try:
-            await self._memory.ensure_collection(
+            await self._memory.ensure_scoped_collection(
                 MILESTONES_COLLECTION,
                 vector_size=get_embedding_dimension(),
             )
@@ -412,7 +412,7 @@ class MilestoneSkill(Skill):
             search_text = (
                 f"milestone {milestone.category} {milestone.title} {milestone.description}"
             )
-            await self._memory.store_with_payload(
+            await self._memory.store_scoped_payload(
                 collection_name=MILESTONES_COLLECTION,
                 text=search_text,
                 payload={**milestone.to_dict(), "_type": "milestone"},
@@ -423,7 +423,7 @@ class MilestoneSkill(Skill):
         self._drafts_cache.setdefault(draft.user_id, {})[draft.id] = draft
         if self._memory:
             search_text = f"draft {draft.platform} {draft.content[:200]}"
-            await self._memory.store_with_payload(
+            await self._memory.store_scoped_payload(
                 collection_name=MILESTONES_COLLECTION,
                 text=search_text,
                 payload={**draft.to_dict(), "_type": "draft"},
@@ -432,7 +432,7 @@ class MilestoneSkill(Skill):
 
     async def _get_user_milestones(self, user_id: str) -> list[Milestone]:
         if self._memory:
-            results = await self._memory.filter_by_field(
+            results = await self._memory.filter_scoped_by_field(
                 collection_name=MILESTONES_COLLECTION,
                 field="_type",
                 value="milestone",
@@ -444,7 +444,7 @@ class MilestoneSkill(Skill):
 
     async def _get_user_drafts(self, user_id: str) -> list[PromoDraft]:
         if self._memory:
-            results = await self._memory.filter_by_field(
+            results = await self._memory.filter_scoped_by_field(
                 collection_name=MILESTONES_COLLECTION,
                 field="_type",
                 value="draft",

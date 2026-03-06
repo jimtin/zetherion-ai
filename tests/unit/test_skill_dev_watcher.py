@@ -390,7 +390,7 @@ class TestDevWatcherInitialization:
         result = await skill.safe_initialize()
         assert result is True
         assert skill.status == SkillStatus.READY
-        mock_memory.ensure_collection.assert_called_once_with(
+        mock_memory.ensure_scoped_collection.assert_called_once_with(
             DEV_JOURNAL_COLLECTION,
             vector_size=get_embedding_dimension(),
         )
@@ -398,7 +398,7 @@ class TestDevWatcherInitialization:
     @pytest.mark.asyncio
     async def test_init_memory_failure(self) -> None:
         mock_memory = AsyncMock()
-        mock_memory.ensure_collection.side_effect = RuntimeError("Connection refused")
+        mock_memory.ensure_scoped_collection.side_effect = RuntimeError("Connection refused")
         skill = DevWatcherSkill(memory=mock_memory)
         result = await skill.safe_initialize()
         assert result is False
@@ -1364,15 +1364,15 @@ class TestDevWatcherStorage:
     @pytest.mark.asyncio
     async def test_store_with_mock_memory(self) -> None:
         mock_memory = AsyncMock()
-        mock_memory.filter_by_field = AsyncMock(return_value=[])
+        mock_memory.filter_scoped_by_field = AsyncMock(return_value=[])
         skill = DevWatcherSkill(memory=mock_memory)
         await skill.safe_initialize()
 
         req = _make_commit_request()
         await skill.handle(req)
 
-        mock_memory.store_with_payload.assert_called_once()
-        call_kwargs = mock_memory.store_with_payload.call_args
+        mock_memory.store_scoped_payload.assert_called_once()
+        call_kwargs = mock_memory.store_scoped_payload.call_args
         assert call_kwargs.kwargs["collection_name"] == DEV_JOURNAL_COLLECTION
         assert "commit" in call_kwargs.kwargs["text"]
         assert call_kwargs.kwargs["payload"]["entry_type"] == "commit"
@@ -1381,7 +1381,7 @@ class TestDevWatcherStorage:
     async def test_get_user_entries_from_memory(self) -> None:
         now = datetime.now()
         mock_memory = AsyncMock()
-        mock_memory.filter_by_field = AsyncMock(
+        mock_memory.filter_scoped_by_field = AsyncMock(
             return_value=[
                 {
                     "id": str(uuid4()),
@@ -1401,7 +1401,7 @@ class TestDevWatcherStorage:
         entries = await skill._get_user_entries("user123")
         assert len(entries) == 1
         assert entries[0].title == "feat: from memory"
-        mock_memory.filter_by_field.assert_called_once_with(
+        mock_memory.filter_scoped_by_field.assert_called_once_with(
             collection_name=DEV_JOURNAL_COLLECTION,
             field="user_id",
             value="user123",

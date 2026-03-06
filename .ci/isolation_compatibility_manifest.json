@@ -316,7 +316,7 @@
         "tenant_raw"
       ],
       "status": "shared-legacy",
-      "migration_note": "Must move behind scoped wrappers and domain-specific stores in Segments 2 and 3."
+      "migration_note": "Legacy collection retained inside qdrant module; production callers must use scoped accessors."
     },
     {
       "name": "long_term_memory",
@@ -326,7 +326,7 @@
         "tenant_raw"
       ],
       "status": "shared-legacy",
-      "migration_note": "Generic helper remains compatibility allowlisted until scoped access lands."
+      "migration_note": "Legacy collection retained for compatibility, but production callers now use scoped field filters and repo guard enforcement."
     },
     {
       "name": "user_profiles",
@@ -347,7 +347,7 @@
         "tenant_raw"
       ],
       "status": "tenant-domain-intent",
-      "migration_note": "Should move to qdrant-tenant with enforced scope filters."
+      "migration_note": "Tenant document access is enforced through scoped Qdrant accessors with mandatory tenant_id filters."
     },
     {
       "name": "docs_knowledge",
@@ -357,7 +357,7 @@
         "owner_personal"
       ],
       "status": "shared-legacy",
-      "migration_note": "Needs explicit domain classification before owner reasoning consumes it."
+      "migration_note": "Docs knowledge now uses scoped Qdrant accessors; owner/control-plane classification remains explicit."
     },
     {
       "name": "skill_calendar",
@@ -602,8 +602,8 @@
   "compatibility_allowlist": [
     {
       "path": "src/zetherion_ai/memory/qdrant.py",
-      "reason": "Generic vector helper still serves shared legacy collections.",
-      "current_risk": "unscoped cross-domain query helper",
+      "reason": "Generic vector helpers remain only as compatibility shims inside the qdrant module.",
+      "current_risk": "legacy helper surface retained internally; production callers are blocked by scoped wrappers and repo guard",
       "sunset_segment": "Segment 3"
     },
     {
