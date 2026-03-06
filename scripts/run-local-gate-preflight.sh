@@ -112,7 +112,12 @@ if matched_rules:
         print(f"  - {rule['id']}: {', '.join(rule['matched_files'])}")
 PY
 
-mapfile -t REQUIREMENT_IDS < <("$PYTHON_BIN" - <<'PY' "$PLAN_FILE"
+REQUIREMENT_IDS=()
+while IFS= read -r requirement_id; do
+    if [[ -n "$requirement_id" ]]; then
+        REQUIREMENT_IDS+=("$requirement_id")
+    fi
+done < <("$PYTHON_BIN" - <<'PY' "$PLAN_FILE"
 import json
 import sys
 from pathlib import Path
@@ -123,7 +128,7 @@ for requirement in payload.get("requirements", []):
 PY
 )
 
-for requirement_id in "${REQUIREMENT_IDS[@]:-}"; do
+for requirement_id in "${REQUIREMENT_IDS[@]}"; do
     case "$requirement_id" in
         endpoint-doc-bundle)
             echo "[local-gate] Running endpoint docs bundle check..."
@@ -134,7 +139,12 @@ for requirement_id in "${REQUIREMENT_IDS[@]:-}"; do
             "$PYTHON_BIN" -m mypy src/zetherion_ai --config-file=pyproject.toml
             ;;
         qdrant-regression-suite|replay-store-regression-suite)
-            mapfile -t PYTEST_TARGETS < <("$PYTHON_BIN" - <<'PY' "$PLAN_FILE" "$requirement_id"
+            PYTEST_TARGETS=()
+            while IFS= read -r pytest_target; do
+                if [[ -n "$pytest_target" ]]; then
+                    PYTEST_TARGETS+=("$pytest_target")
+                fi
+            done < <("$PYTHON_BIN" - <<'PY' "$PLAN_FILE" "$requirement_id"
 import json
 import sys
 from pathlib import Path
