@@ -93,6 +93,7 @@ echo ""
 echo "--- Tests ---"
 run_check "pytest (unit)" "pytest tests/ -m 'not integration' -q --tb=no" "false" "pytest"
 run_check "pipeline contract" "python scripts/check_pipeline_contract.py" "false" "python"
+run_check "optional service guards" "python scripts/check-optional-service-guards.py" "false" "python"
 
 # Docker (optional)
 if [[ "$DOCKER" == "true" ]]; then

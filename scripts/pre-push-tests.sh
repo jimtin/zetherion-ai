@@ -505,6 +505,7 @@ else
     echo "  [skip] bandit disabled (RUN_BANDIT_CHECK=false)"
 fi
 start_static_check "pipeline contract" "$PYTHON_BIN scripts/check_pipeline_contract.py"
+start_static_check "optional service guards" "$PYTHON_BIN scripts/check-optional-service-guards.py"
 start_static_check "endpoint docs bundle" "$PYTHON_BIN scripts/check-endpoint-doc-bundle.py"
 start_static_check "cgs route-doc parity" "$PYTHON_BIN scripts/check-cgs-route-doc-parity.py"
 

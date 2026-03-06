@@ -13,6 +13,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - Windows Optional Service Deploy Guard (2026-03-06)
+
+- Impacted capability IDs:
+  - `deploy.windows.optional-service-profiles`
+  - `deploy.windows.remove-orphaned-optional-services`
+  - `testing.static.optional-service-guard`
+- Impacted workflow scenario IDs:
+  - `deploy.windows.skip-unconfigured-cloudflared`
+  - `deploy.windows.skip-unconfigured-whatsapp-bridge`
+  - `testing.local.optional-service-profile-guard`
+- Added compose profiles for `cloudflared` and `zetherion-ai-whatsapp-bridge`
+  so unconfigured optional services are no longer started during routine Windows
+  deployments.
+- Updated `scripts/windows/deploy-runner.ps1` to compute active optional service
+  profiles from `.env` and run `docker compose up -d --build --remove-orphans`
+  with only the enabled profiles.
+- Added `scripts/check-optional-service-guards.py` and unit coverage so the
+  static `check` lane and CI pipeline fail if those optional service guards are
+  removed.
+- Aligned `scripts/verify-windows-host.ps1` with runtime verification by only
+  expecting the WhatsApp bridge when it is both enabled and fully configured.
+
 ### Added - Segment 1 Scope Kernel and Prompt Isolation (2026-03-06)
 
 - Impacted capability IDs:

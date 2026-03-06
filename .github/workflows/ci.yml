@@ -374,6 +374,7 @@ jobs:
           python scripts/check_pipeline_contract.py
           python scripts/check-endpoint-doc-bundle.py
           python scripts/check-announcement-dm-guard.py
+          python scripts/check-optional-service-guards.py
 
   zetherion-boundary-check:
     name: Zetherion Boundary Check

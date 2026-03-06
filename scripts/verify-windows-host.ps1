@@ -196,11 +196,12 @@ if ($cloudflareToken) {
     $expectedContainers += "zetherion-ai-cloudflared"
 }
 
+$whatsappEnabled = Test-Truthy -Value (Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_ENABLED")
 $whatsappSigningSecret = Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_SIGNING_SECRET"
 $whatsappStateKey = Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_STATE_KEY"
 $whatsappTenantId = Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_TENANT_ID"
 $whatsappIngestUrl = Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_INGEST_URL"
-if ($whatsappSigningSecret -and $whatsappStateKey -and $whatsappTenantId -and $whatsappIngestUrl) {
+if ($whatsappEnabled -and $whatsappSigningSecret -and $whatsappStateKey -and $whatsappTenantId -and $whatsappIngestUrl) {
     $expectedContainers += "zetherion-ai-whatsapp-bridge"
 }
 
@@ -313,7 +314,7 @@ catch {
 try {
     $dockerConfig = Get-Content "$env:USERPROFILE\.docker\config.json" | ConvertFrom-Json
     if ($dockerConfig.credsStore -eq "desktop") {
-        Add-Check -Name "docker_credstore" -Status "warn" -Message "credsStore=desktop (will fail for SSH-based operations — disable before remote deploys)"
+        Add-Check -Name "docker_credstore" -Status "warn" -Message "credsStore=desktop (will fail for SSH-based operations - disable before remote deploys)"
     }
     elseif ([string]::IsNullOrEmpty($dockerConfig.credsStore)) {
         Add-Check -Name "docker_credstore" -Status "pass" -Message "credsStore disabled (SSH-compatible)"

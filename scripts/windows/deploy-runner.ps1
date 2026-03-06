@@ -236,6 +236,41 @@ function New-RandomUrlSafeSecret {
     return $value.Replace("+", "-").Replace("/", "_")
 }
 
+function Get-OptionalComposeProfiles {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepositoryPath
+    )
+
+    $rootEnvPath = Join-Path $RepositoryPath ".env"
+    if (-not (Test-Path $rootEnvPath)) {
+        throw "Required env file not found: $rootEnvPath"
+    }
+
+    $profiles = New-Object 'System.Collections.Generic.List[string]'
+
+    $cloudflareToken = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("CLOUDFLARE_TUNNEL_TOKEN")
+    if ($cloudflareToken) {
+        $profiles.Add("cloudflared")
+    }
+
+    $whatsappEnabledRaw = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("WHATSAPP_BRIDGE_ENABLED")
+    $whatsappEnabled = $false
+    if ($whatsappEnabledRaw) {
+        $whatsappEnabled = @("1", "true", "yes", "on") -contains $whatsappEnabledRaw.Trim().ToLowerInvariant()
+    }
+    $whatsappSigningSecret = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("WHATSAPP_BRIDGE_SIGNING_SECRET")
+    $whatsappStateKey = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("WHATSAPP_BRIDGE_STATE_KEY")
+    $whatsappTenantId = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("WHATSAPP_BRIDGE_TENANT_ID")
+    $whatsappIngestUrl = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("WHATSAPP_BRIDGE_INGEST_URL")
+
+    if ($whatsappEnabled -and $whatsappSigningSecret -and $whatsappStateKey -and $whatsappTenantId -and $whatsappIngestUrl) {
+        $profiles.Add("whatsapp-bridge")
+    }
+
+    return [string[]]$profiles.ToArray()
+}
+
 function Ensure-RequiredRuntimeEnv {
     param(
         [Parameter(Mandatory = $true)]
@@ -354,6 +389,12 @@ try {
         if ($bootstrappedKeys.Count -gt 0) {
             Write-Output "Bootstrapped runtime env keys: $($bootstrappedKeys -join ', ')"
         }
+        $composeProfiles = @(Get-OptionalComposeProfiles -RepositoryPath $DeployPath)
+        if ($composeProfiles.Count -gt 0) {
+            Write-Output "Active optional compose profiles: $($composeProfiles -join ', ')"
+        } else {
+            Write-Output "Active optional compose profiles: none"
+        }
 
         $deployedSha = (& git rev-parse HEAD).Trim()
         if ($LASTEXITCODE -ne 0) {
@@ -363,7 +404,18 @@ try {
             throw "Resolved deployed SHA '$deployedSha' did not match target '$TargetSha'."
         }
 
-        docker compose up -d --build
+        $composeArgs = New-Object 'System.Collections.Generic.List[string]'
+        $composeArgs.Add("compose")
+        foreach ($profile in $composeProfiles) {
+            $composeArgs.Add("--profile")
+            $composeArgs.Add($profile)
+        }
+        $composeArgs.Add("up")
+        $composeArgs.Add("-d")
+        $composeArgs.Add("--build")
+        $composeArgs.Add("--remove-orphans")
+
+        & docker @composeArgs
         $composeExitCode = $LASTEXITCODE
         if ($composeExitCode -ne 0) {
             throw "docker compose up -d --build failed with exit code $composeExitCode"
