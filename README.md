@@ -45,8 +45,9 @@ Every piece of memory is encrypted with AES-256-GCM before it touches a database
 ## Quick Start
 
 ```bash
-git clone https://github.com/jimtin/zetherion-ai.git
-cd zetherion-ai
+mkdir -p ~/Developer
+git clone https://github.com/jimtin/zetherion-ai.git ~/Developer/PersonalBot
+cd ~/Developer/PersonalBot
 ./start.sh      # Mac/Linux  |  .\start.ps1  # Windows
 ```
 

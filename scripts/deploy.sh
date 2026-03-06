@@ -7,7 +7,7 @@ set -e
 # Configuration - UPDATE THESE
 REMOTE_HOST="macbook-air.local"  # or IP address
 REMOTE_USER="jameshinton"        # your username on MacBook Air
-REMOTE_PATH="~/Documents/Developer/PersonalBot"
+REMOTE_PATH="~/Developer/PersonalBot"
 
 # Colors
 GREEN='\033[0;32m'

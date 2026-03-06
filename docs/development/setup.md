@@ -32,8 +32,9 @@ All cloud LLM providers are optional. Ollama provides fully local inference out 
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/jimtin/zetherion-ai.git
-cd zetherion-ai
+mkdir -p ~/Developer
+git clone https://github.com/jimtin/zetherion-ai.git ~/Developer/PersonalBot
+cd ~/Developer/PersonalBot
 
 # 2. Create a virtual environment
 python3.12 -m venv venv
@@ -65,8 +66,8 @@ Windows deployment uses a fully automated PowerShell script that handles Docker 
 
 ```powershell
 # 1. Clone the repository
-git clone https://github.com/jimtin/zetherion-ai.git
-cd zetherion-ai
+git clone https://github.com/jimtin/zetherion-ai.git C:\ZetherionAI
+cd C:\ZetherionAI
 
 # 2. Run automated deployment
 .\start.ps1
@@ -633,8 +634,9 @@ If you are an external contributor:
 # 1. Fork the repository on GitHub
 
 # 2. Clone your fork
-git clone https://github.com/YOUR_USERNAME/zetherion-ai.git
-cd zetherion-ai
+mkdir -p ~/Developer
+git clone https://github.com/YOUR_USERNAME/zetherion-ai.git ~/Developer/PersonalBot
+cd ~/Developer/PersonalBot
 
 # 3. Add upstream remote
 git remote add upstream https://github.com/jimtin/zetherion-ai.git

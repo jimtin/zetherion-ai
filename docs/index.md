@@ -26,8 +26,9 @@ Zetherion AI is a privacy-first personal AI assistant featuring encrypted memory
 ## Quick Start
 
 ```bash
-git clone https://github.com/jimtin/zetherion-ai.git
-cd zetherion-ai
+mkdir -p ~/Developer
+git clone https://github.com/jimtin/zetherion-ai.git ~/Developer/PersonalBot
+cd ~/Developer/PersonalBot
 ./start.sh
 ```
 
