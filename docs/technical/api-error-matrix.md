@@ -8,6 +8,9 @@ Exposure rule:
 
 ## Maintenance Note (2026-03-05)
 
+- Segment 2 data-plane isolation foundation added internal owner-vs-tenant
+  storage and encryption routing; error envelopes and status mappings for
+  `/api/v1` and `/service/ai/v1` are unchanged by this segment.
 - CGS failure envelope now includes `error.retryable` on all structured failures.
 - Added blog publish adapter duplicate-as-success behavior:
   - `409` with `error=null` and `data.status=duplicate`.

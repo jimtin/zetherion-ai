@@ -8,6 +8,9 @@ Authoritative exposure rule:
 
 ## Maintenance Note (2026-03-05)
 
+- Segment 2 data-plane isolation foundation added owner-vs-tenant encryption and
+  storage-plane routing behind the runtime, without changing public upstream or
+  CGS auth headers, scopes, or credential flow.
 - Added token-authenticated CGS blog publish adapter route:
   - `POST /service/ai/v1/internal/blog/publish`
 - Added tenant messaging upstream API routes:

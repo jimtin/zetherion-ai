@@ -11,6 +11,11 @@ Public exposure rule:
 
 ## Maintenance Note (2026-03-05)
 
+- Segment 2 data-plane isolation foundation added scoped object-storage prefixes,
+  additive PostgreSQL isolation schemas, and owner-vs-tenant Qdrant/encryption
+  routing beneath document intelligence storage surfaces.
+- Document intelligence routes and external CGS-facing contracts remain unchanged
+  in this segment.
 - Added upstream tenant messaging routes (`/api/v1/messaging/*`) for policy-gated message read/send.
 - Document intelligence contracts remain unchanged by messaging additions.
 - Added upstream document lifecycle APIs:

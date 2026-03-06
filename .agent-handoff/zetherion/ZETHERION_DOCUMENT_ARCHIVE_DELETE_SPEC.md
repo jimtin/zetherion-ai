@@ -31,6 +31,10 @@ It does not cover external gateway/public API mapping.
 
 ## Implementation Status Update (2026-03-05)
 
+- Segment 2 data-plane isolation foundation added owner-vs-tenant storage-plane
+  routing, object-storage domain prefixes, additive PostgreSQL isolation schema
+  bootstrap, and encryption-domain helpers beneath the upstream runtime.
+- No document archive/delete/restore route contract changed in this segment.
 - Upstream tenant messaging endpoints were added (`/api/v1/messaging/*`) with trust-policy gating;
   document archive/delete contracts in this spec remain unchanged.
 - Archive jobs are now processed by `DocumentService` maintenance methods:
