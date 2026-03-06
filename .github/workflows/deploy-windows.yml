@@ -200,9 +200,44 @@ jobs:
             exit $exitCode
           }
 
+      - name: Align Qdrant collection dimensions
+        id: qdrant_migration
+        if: ${{ steps.deploy.outcome == 'success' }}
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $migrationResultPath = Join-Path $PWD "qdrant-migration.json"
+          & ./scripts/windows/migrate-qdrant-embeddings.ps1 `
+            -DeployPath "$env:WINDOWS_DEPLOY_PATH" `
+            -OutputPath "$migrationResultPath"
+          $exitCode = $LASTEXITCODE
+
+          $qdrantAligned = $false
+          if (Test-Path $migrationResultPath) {
+            $migration = Get-Content $migrationResultPath -Raw | ConvertFrom-Json
+            $migrationStatus = [string]$migration.status
+            $qdrantAligned = $migrationStatus -in @('aligned', 'migrated')
+            "migration_status=$migrationStatus" >> $env:GITHUB_OUTPUT
+            "qdrant_dimensions_aligned=$qdrantAligned" >> $env:GITHUB_OUTPUT
+          } else {
+            "migration_status=missing_output" >> $env:GITHUB_OUTPUT
+            "qdrant_dimensions_aligned=false" >> $env:GITHUB_OUTPUT
+          }
+
+          if ($exitCode -ne 0) {
+            exit $exitCode
+          }
+
+          if (-not $qdrantAligned) {
+            throw "Qdrant migration did not report aligned or migrated status."
+          }
+
       - name: Verify runtime health and behavior
         id: verify
-        if: ${{ steps.deploy.outcome == 'success' }}
+        if: ${{ steps.deploy.outcome == 'success' && steps.qdrant_migration.outcome == 'success' }}
         shell: pwsh
         continue-on-error: true
         run: |
@@ -237,7 +272,7 @@ jobs:
 
       - name: Roll back to last known good SHA
         id: rollback
-        if: ${{ steps.deploy.outcome == 'failure' || steps.verify.outcome == 'failure' }}
+        if: ${{ steps.deploy.outcome == 'failure' || steps.qdrant_migration.outcome == 'failure' || steps.verify.outcome == 'failure' }}
         shell: pwsh
         continue-on-error: true
         run: |
@@ -265,12 +300,18 @@ jobs:
           } else {
             $verify = [pscustomobject]@{
               checks = [pscustomobject]@{
+                qdrant_dimensions_aligned = $false
                 containers_healthy = $false
                 bot_startup_markers = $false
                 postgres_model_keys = $false
                 fallback_probe = $false
               }
             }
+          }
+
+          $qdrantAligned = "${{ steps.qdrant_migration.outputs.qdrant_dimensions_aligned }}" -eq "True"
+          if ("${{ steps.qdrant_migration.outputs.qdrant_dimensions_aligned }}" -eq "true") {
+            $qdrantAligned = $true
           }
 
           $resilienceChecks = [pscustomobject]@{
@@ -281,7 +322,11 @@ jobs:
           }
 
           $status = "success"
-          if ("${{ steps.deploy.outcome }}" -eq "failure" -or "${{ steps.verify.outcome }}" -eq "failure") {
+          if (
+            "${{ steps.deploy.outcome }}" -eq "failure" -or
+            "${{ steps.qdrant_migration.outcome }}" -eq "failure" -or
+            "${{ steps.verify.outcome }}" -eq "failure"
+          ) {
             if ("${{ steps.rollback.outcome }}" -eq "success") {
               $status = "rolled_back"
             } else {
@@ -296,6 +341,7 @@ jobs:
             deployed_at = [DateTime]::UtcNow.ToString("o")
             workflow_run_id = "${{ steps.target.outputs.source_workflow_run_id }}"
             checks = [ordered]@{
+              qdrant_dimensions_aligned = [bool]$qdrantAligned
               containers_healthy = [bool]$verify.checks.containers_healthy
               bot_startup_markers = [bool]$verify.checks.bot_startup_markers
               postgres_model_keys = [bool]$verify.checks.postgres_model_keys
@@ -400,6 +446,7 @@ jobs:
             deploy-result.json
             deploy-container-diagnostics.json
             deploy-container-logs.txt
+            qdrant-migration.json
             verify-result.json
             rollback-result.json
             promotions-run-result.json
@@ -467,6 +514,7 @@ jobs:
           }
 
           $checks = $receipt.checks
+          if (-not $checks.qdrant_dimensions_aligned) { throw "Receipt check failed: qdrant_dimensions_aligned" }
           if (-not $checks.containers_healthy) { throw "Receipt check failed: containers_healthy" }
           if (-not $checks.bot_startup_markers) { throw "Receipt check failed: bot_startup_markers" }
           if (-not $checks.postgres_model_keys) { throw "Receipt check failed: postgres_model_keys" }

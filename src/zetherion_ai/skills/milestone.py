@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from zetherion_ai.logging import get_logger
+from zetherion_ai.memory.embeddings import get_embedding_dimension
 from zetherion_ai.skills.base import (
     HeartbeatAction,
     Skill,
@@ -172,7 +173,7 @@ class MilestoneSkill(Skill):
         try:
             await self._memory.ensure_collection(
                 MILESTONES_COLLECTION,
-                vector_size=768,
+                vector_size=get_embedding_dimension(),
             )
             log.info("milestone_initialized", collection=MILESTONES_COLLECTION)
             return True

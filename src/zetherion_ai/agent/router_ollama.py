@@ -6,7 +6,7 @@ import time
 
 import httpx
 
-from zetherion_ai.agent.prompts import SYSTEM_PROMPT
+from zetherion_ai.agent.prompts import SIMPLE_CHAT_PROMPT
 from zetherion_ai.agent.router import (
     ROUTER_PROMPT,
     MessageIntent,
@@ -306,7 +306,7 @@ class OllamaRouterBackend:
                 json={
                     "model": self._model,
                     "prompt": message,
-                    "system": SYSTEM_PROMPT,
+                    "system": SIMPLE_CHAT_PROMPT,
                     "stream": False,
                     "keep_alive": OLLAMA_KEEP_ALIVE,  # Keep model loaded
                     "options": {

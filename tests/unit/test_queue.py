@@ -592,6 +592,9 @@ class TestQueueProcessorsDispatch:
 
         mock_channel = AsyncMock()
         mock_channel.fetch_message = AsyncMock(side_effect=Exception("not found"))
+        mock_channel.get_partial_message = MagicMock(
+            side_effect=AttributeError("Partial messages unsupported")
+        )
         bot.get_channel.return_value = mock_channel
 
         procs = QueueProcessors(bot=bot, agent=agent)
@@ -863,10 +866,48 @@ class TestQueueProcessorsDiscordMessageEdgeCases:
     """Additional edge cases for Discord message processing."""
 
     @pytest.mark.asyncio
-    async def test_discord_message_fetch_fails_sends_to_channel(self) -> None:
-        """When message fetch fails, response is sent to channel instead."""
+    async def test_discord_message_fetch_fails_uses_partial_message_reply(self) -> None:
+        """When message fetch fails, processor falls back to a partial reply reference."""
         mock_channel = AsyncMock()
         mock_channel.fetch_message = AsyncMock(side_effect=Exception("Not found"))
+        mock_channel.send = AsyncMock()
+        partial_message = AsyncMock()
+        partial_message.reply = AsyncMock()
+        mock_channel.get_partial_message = MagicMock(return_value=partial_message)
+
+        bot = MagicMock()
+        bot.get_channel.return_value = mock_channel
+        bot.fetch_channel = AsyncMock(return_value=mock_channel)
+
+        agent = AsyncMock()
+        agent.generate_response = AsyncMock(return_value="Response text")
+
+        procs = QueueProcessors(bot=bot, agent=agent)
+        result = await procs.process(
+            QueueTaskType.DISCORD_MESSAGE,
+            {
+                "content": "hello",
+                "user_id": 42,
+                "channel_id": 100,
+                "message_id": 200,
+            },
+        )
+
+        assert result.success is True
+        mock_channel.get_partial_message.assert_called_once_with(200)
+        partial_message.reply.assert_awaited_once_with("Response text", mention_author=True)
+        mock_channel.send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_discord_message_fetch_fails_sends_to_channel_without_partial_message(
+        self,
+    ) -> None:
+        """When no partial message is available, processor falls back to channel.send."""
+        mock_channel = AsyncMock()
+        mock_channel.fetch_message = AsyncMock(side_effect=Exception("Not found"))
+        mock_channel.get_partial_message = MagicMock(
+            side_effect=AttributeError("Partial messages unsupported")
+        )
         mock_channel.send = AsyncMock()
 
         bot = MagicMock()
@@ -888,7 +929,6 @@ class TestQueueProcessorsDiscordMessageEdgeCases:
         )
 
         assert result.success is True
-        # Should send to channel since fetch failed
         mock_channel.send.assert_called_once()
 
     @pytest.mark.asyncio
@@ -943,10 +983,13 @@ class TestQueueProcessorsDiscordMessageEdgeCases:
 
     @pytest.mark.asyncio
     async def test_discord_message_fetches_channel_when_cache_miss(self) -> None:
-        """When cache miss occurs, processor fetches channel and delivers response."""
+        """When cache miss occurs, processor fetches channel and keeps reply correlation."""
         mock_channel = AsyncMock()
         mock_channel.fetch_message = AsyncMock(side_effect=Exception("Not found"))
         mock_channel.send = AsyncMock()
+        partial_message = AsyncMock()
+        partial_message.reply = AsyncMock()
+        mock_channel.get_partial_message = MagicMock(return_value=partial_message)
 
         bot = MagicMock()
         bot.get_channel.return_value = None
@@ -968,7 +1011,12 @@ class TestQueueProcessorsDiscordMessageEdgeCases:
 
         assert result.success is True
         bot.fetch_channel.assert_awaited_once_with(100)
-        mock_channel.send.assert_called_once()
+        mock_channel.get_partial_message.assert_called_once_with(200)
+        partial_message.reply.assert_awaited_once_with(
+            "Response via fetched channel",
+            mention_author=True,
+        )
+        mock_channel.send.assert_not_called()
 
 
 class TestQueueProcessorsBulkIngestion:

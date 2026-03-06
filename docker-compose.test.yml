@@ -38,6 +38,7 @@ services:
       - OLLAMA_ROUTER_PORT=11434
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - DISCORD_TOKEN=${DISCORD_TOKEN_TEST}
+      - ALLOW_BOT_MESSAGES=true
       - ALLOW_ALL_USERS=true
       - ALLOWED_USER_IDS=1468994603633086485
       - OWNER_USER_ID=1468994603633086485

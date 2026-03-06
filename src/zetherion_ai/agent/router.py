@@ -10,7 +10,7 @@ from typing import Any, Protocol
 from google import genai  # type: ignore[attr-defined]
 
 from zetherion_ai.agent.inference import InferenceBroker
-from zetherion_ai.agent.prompts import SYSTEM_PROMPT
+from zetherion_ai.agent.prompts import SIMPLE_CHAT_PROMPT
 from zetherion_ai.agent.providers import Provider, TaskType
 from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
@@ -317,7 +317,7 @@ class GeminiRouterBackend:
             def _sync_generate() -> Any:
                 return self._client.models.generate_content(
                     model=self._model,
-                    contents=f"{SYSTEM_PROMPT}\n\nUser: {message}",
+                    contents=f"{SIMPLE_CHAT_PROMPT}\n\nUser: {message}",
                     config={
                         "temperature": 0.7,
                         "max_output_tokens": 500,
@@ -430,7 +430,7 @@ class GroqRouterBackend:
         """Generate a simple response via InferenceBroker simple_qa task."""
         try:
             result = await self._inference.infer(
-                prompt=f"{SYSTEM_PROMPT}\n\nUser: {message}",
+                prompt=f"{SIMPLE_CHAT_PROMPT}\n\nUser: {message}",
                 task_type=TaskType.SIMPLE_QA,
                 max_tokens=500,
                 temperature=0.7,
