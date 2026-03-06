@@ -17,6 +17,12 @@ while IFS= read -r line; do
     updates+=("$line")
 done
 
+if ! git diff --quiet --ignore-submodules -- || ! git diff --cached --quiet --ignore-submodules --; then
+    echo "[pre-push] Refusing to validate a dirty worktree or index."
+    echo "[pre-push] Commit or stash changes so local gates run against the exact pushed SHA."
+    exit 1
+fi
+
 # Skip full validation when push only deletes remote refs.
 # Pre-push lines are:
 #   <local-ref> <local-oid> <remote-ref> <remote-oid>
@@ -24,6 +30,9 @@ done
 if [ "${#updates[@]}" -gt 0 ]; then
     empty_tree_oid="$(git hash-object -t tree /dev/null)"
     delete_only=true
+    push_head_oid=""
+    push_base_oid=""
+
     for update in "${updates[@]}"; do
         # shellcheck disable=SC2086
         set -- $update
@@ -36,6 +45,13 @@ if [ "${#updates[@]}" -gt 0 ]; then
             if [ -z "$base_oid" ] || [ "$base_oid" = "0000000000000000000000000000000000000000" ]; then
                 base_oid="$empty_tree_oid"
             fi
+            if [ -n "$push_head_oid" ] && [ "$push_head_oid" != "$local_oid" ]; then
+                echo "[pre-push] Refusing to validate multiple distinct commits in one push."
+                echo "[pre-push] Push one checked-out commit at a time so local validation matches the remote update."
+                exit 1
+            fi
+            push_head_oid="$local_oid"
+            push_base_oid="$base_oid"
             if ! scripts/check-zetherion-boundary.sh "$base_oid" "$local_oid"; then
                 echo "[pre-push] Boundary enforcement failed for $local_ref."
                 exit 1
@@ -45,6 +61,18 @@ if [ "${#updates[@]}" -gt 0 ]; then
     if [ "$delete_only" = true ]; then
         echo "[pre-push] Delete-only push to ${remote_name:-<unknown>} (${remote_url:-<unknown>}); skipping full test gate."
         exit 0
+    fi
+
+    current_head="$(git rev-parse HEAD)"
+    if [ -n "$push_head_oid" ] && [ "$current_head" != "$push_head_oid" ]; then
+        echo "[pre-push] Refusing to validate commit $push_head_oid while checked-out HEAD is $current_head."
+        echo "[pre-push] Checkout the branch being pushed so local gates validate the exact remote SHA."
+        exit 1
+    fi
+
+    if ! scripts/run-local-gate-preflight.sh --base-ref "$push_base_oid" --head-ref "$push_head_oid"; then
+        echo "[pre-push] Local gate preflight failed."
+        exit 1
     fi
 fi
 

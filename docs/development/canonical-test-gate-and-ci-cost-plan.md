@@ -69,7 +69,19 @@ These scripts are retained for compatibility only and delegate to canonical full
 
 ## Git Hook Enforcement
 
-`.git-hooks/pre-push` executes `./scripts/test-full.sh` directly. This blocks pushes when full validation fails.
+`.git-hooks/pre-push` now enforces a commit-state preflight before the expensive full gate:
+
+1. refuse dirty worktree/index state
+2. refuse pushes for a non-checked-out commit SHA
+3. run `scripts/run-local-gate-preflight.sh` against the exact `<base, head>` push range
+4. then execute `./scripts/test-full.sh`
+
+The preflight is driven by the source-controlled manifest at `.ci/local_gate_manifest.json`. It currently requires local fast-fail coverage for:
+
+- endpoint docs bundle changes on API/CGS route files
+- strict `mypy src/zetherion_ai --config-file=pyproject.toml` for runtime Python changes
+- targeted Qdrant/data-plane regression tests
+- targeted replay-store regression tests
 
 ## CI Cost Strategy
 
@@ -100,6 +112,8 @@ Contract source:
 ## Operating Rule
 
 When CI fails, inspect attribution first. If attribution says a failure should have been caught locally, treat that as a process breach and enforce canonical local gate usage before the next push.
+
+Protected shared-infra paths must stay mapped in `.ci/local_gate_manifest.json`; local validation fails fast when a protected path changes without an explicit local gate mapping.
 
 ## CI/CD Proof of Completion
 

@@ -1,0 +1,83 @@
+{
+  "protected_globs": [
+    "src/zetherion_ai/api/server.py",
+    "src/zetherion_ai/api/routes/**",
+    "src/zetherion_ai/cgs_gateway/server.py",
+    "src/zetherion_ai/cgs_gateway/routes/**",
+    "src/zetherion_ai/memory/qdrant.py",
+    "src/zetherion_ai/config.py",
+    "src/zetherion_ai/analytics/replay_store.py"
+  ],
+  "requirements": {
+    "endpoint-doc-bundle": {
+      "kind": "check",
+      "description": "Run the endpoint documentation bundle check against the exact commit being pushed."
+    },
+    "mypy-src": {
+      "kind": "check",
+      "description": "Run strict mypy over src/zetherion_ai against the exact commit being pushed."
+    },
+    "qdrant-regression-suite": {
+      "kind": "pytest",
+      "description": "Run the targeted Qdrant and data-plane regression suite.",
+      "pytest_targets": [
+        "tests/unit/test_qdrant.py",
+        "tests/unit/test_data_plane_isolation.py",
+        "tests/test_qdrant.py"
+      ]
+    },
+    "replay-store-regression-suite": {
+      "kind": "pytest",
+      "description": "Run the targeted replay-store regression suite.",
+      "pytest_targets": [
+        "tests/unit/test_analytics_replay_store.py"
+      ]
+    }
+  },
+  "rules": [
+    {
+      "id": "python-typecheck",
+      "patterns": [
+        "src/zetherion_ai/**",
+        "updater_sidecar/**"
+      ],
+      "requirements": [
+        "mypy-src"
+      ]
+    },
+    {
+      "id": "route-doc-bundle",
+      "covers_protected": true,
+      "patterns": [
+        "src/zetherion_ai/api/server.py",
+        "src/zetherion_ai/api/routes/**",
+        "src/zetherion_ai/cgs_gateway/server.py",
+        "src/zetherion_ai/cgs_gateway/routes/**"
+      ],
+      "requirements": [
+        "endpoint-doc-bundle"
+      ]
+    },
+    {
+      "id": "qdrant-regression",
+      "covers_protected": true,
+      "patterns": [
+        "src/zetherion_ai/memory/qdrant.py",
+        "src/zetherion_ai/config.py"
+      ],
+      "requirements": [
+        "qdrant-regression-suite"
+      ]
+    },
+    {
+      "id": "replay-store-regression",
+      "covers_protected": true,
+      "patterns": [
+        "src/zetherion_ai/analytics/replay_store.py"
+      ],
+      "requirements": [
+        "replay-store-regression-suite"
+      ]
+    }
+  ]
+}

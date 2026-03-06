@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  cat <<'EOF'
+  cat <<'USAGE'
 Usage:
   scripts/require-local-gate-update.sh --sha <sha>
 
@@ -13,7 +13,7 @@ Behavior:
     local gate script updates plus AGENTS/docs alignment in the same fix.
   - If attribution includes PIPELINE_CONTRACT_GAP, requires
     .ci/pipeline_contract.json update plus AGENTS/docs alignment.
-EOF
+USAGE
 }
 
 SHA=""
@@ -58,11 +58,9 @@ for tool in gh jq git; do
   fi
 done
 
-ALL_RUNS_JSON="$(gh run list \
-  --limit 30 \
-  --json databaseId,workflowName,headSha,status,conclusion,createdAt,url)"
+ALL_RUNS_JSON="$(gh run list --limit 30 --json databaseId,workflowName,headSha,status,conclusion,createdAt,url)"
 
-RUNS_JSON="$(
+RUNS_JSON="$({
   jq -c '
     map(select(
       .workflowName == "CI/CD Pipeline"
@@ -70,9 +68,9 @@ RUNS_JSON="$(
       or .workflowName == "ci.yml"
     ))
   ' <<<"$ALL_RUNS_JSON"
-)"
+})"
 
-FAILED_RUN_ID="$(
+FAILED_RUN_ID="$({
   jq -r --arg sha "$TARGET_SHA" --arg sha_short "$SHA" '
     map(select(
       (.headSha == $sha or (.headSha | startswith($sha_short)))
@@ -83,7 +81,7 @@ FAILED_RUN_ID="$(
     | reverse
     | .[0].databaseId // empty
   ' <<<"$RUNS_JSON"
-)"
+})"
 
 if [[ -z "$FAILED_RUN_ID" ]]; then
   echo "No failed CI/CD Pipeline run found for $TARGET_SHA. No local gate update required."
@@ -107,23 +105,23 @@ if [[ -z "$ATTR_PATH" ]]; then
   exit 1
 fi
 
-NEEDS_LOCAL_GATE_UPDATE="$(
+NEEDS_LOCAL_GATE_UPDATE="$({
   jq -r '
     [.failures[].reason_code] | any(. == "SHOULD_HAVE_BEEN_CAUGHT_LOCALLY")
   ' "$ATTR_PATH"
-)"
-NEEDS_CONTRACT_UPDATE="$(
+})"
+NEEDS_CONTRACT_UPDATE="$({
   jq -r '
     [.failures[].reason_code] | any(. == "PIPELINE_CONTRACT_GAP")
   ' "$ATTR_PATH"
-)"
+})"
 
 if [[ "$NEEDS_LOCAL_GATE_UPDATE" != "true" && "$NEEDS_CONTRACT_UPDATE" != "true" ]]; then
   echo "Attribution does not require local gate updates for $TARGET_SHA."
   exit 0
 fi
 
-CHANGED_FILES="$(
+CHANGED_FILES="$({
   {
     git diff --name-only
     git diff --cached --name-only
@@ -131,7 +129,7 @@ CHANGED_FILES="$(
       git show --name-only --pretty=format: HEAD
     fi
   } | sed '/^$/d' | sort -u
-)"
+})"
 
 has_changed() {
   local target="$1"
@@ -141,8 +139,13 @@ has_changed() {
 missing=()
 
 if [[ "$NEEDS_LOCAL_GATE_UPDATE" == "true" ]]; then
-  if ! has_changed "scripts/test-full.sh" && ! has_changed "scripts/pre-push-tests.sh"; then
-    missing+=("expected local gate script change (scripts/test-full.sh or scripts/pre-push-tests.sh)")
+  if ! has_changed "scripts/test-full.sh" \
+    && ! has_changed "scripts/pre-push-tests.sh" \
+    && ! has_changed ".git-hooks/pre-push" \
+    && ! has_changed "scripts/run-local-gate-preflight.sh" \
+    && ! has_changed "scripts/local_gate_plan.py" \
+    && ! has_changed ".ci/local_gate_manifest.json"; then
+    missing+=("expected local gate automation change (scripts/test-full.sh, scripts/pre-push-tests.sh, .git-hooks/pre-push, scripts/run-local-gate-preflight.sh, scripts/local_gate_plan.py, or .ci/local_gate_manifest.json)")
   fi
 fi
 
