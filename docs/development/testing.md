@@ -144,6 +144,14 @@ tests/
 | Integration tests | `tests/integration/` (`@pytest.mark.integration`) | Medium | Local services and HTTP flows |
 | Discord E2E | `tests/integration/test_discord_e2e.py` (`@pytest.mark.discord_e2e`) | Slow | Real Discord API |
 
+For isolated Discord E2E debugging, use the blessed wrapper:
+
+```bash
+./scripts/run-required-discord-e2e.sh -- -k test_bot_responds_to_message
+```
+
+Do not treat direct ad hoc `pytest tests/integration/test_discord_e2e.py ...` invocations as canonical evidence.
+
 ## Running Tests
 
 ### Quick Commands
