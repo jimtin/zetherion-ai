@@ -467,7 +467,20 @@ Returns (201) with `api_key` and mapping details.
 
 ### `PATCH /internal/tenants/{tenant_id}`
 
-Updates tenant profile/config via Skills intent `client_configure` and mapping metadata.
+Updates tenant profile/config via Skills intent `client_configure` and now also drives staged migration for existing clients.
+
+Supported migration fields:
+
+- `desired_isolation_stage`
+- `expected_key_version`
+- `owner_portfolio_ready`
+- `run_tenant_vector_backfill`
+- `derive_owner_portfolio`
+- `cutover_verified`
+- `document_backfill_limit`
+- `release_marker`
+
+Migration responses include `isolation_stage`, `reconciliation_issues`, `migration_receipt_id`, `migration_status`, runtime policy, bounded vector-backfill summary, and optional owner-portfolio snapshot/release-marker references.
 
 ### `POST /internal/tenants/{tenant_id}/deactivate`
 

@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `CGSTenantProvisioningOrchestrator` so repeated internal tenant create requests reuse existing mappings instead of creating duplicate upstream tenants.
 - Added first-class `isolation_stage` persistence plus provisioning/reconciliation metadata on `cgs_ai_tenants` to support staged upgrades of existing clients.
 - Added reconciliation candidate helpers and route/test coverage for idempotent create responses that now report `isolation_stage` and `provisioning_status`.
+- Added staged tenant migration receipts plus owner-portfolio tenant snapshots so existing CGS clients can reconcile into `shadow`, `dual_write`, `cutover_ready`, or rollback states without remapping credentials.
+- Extended `PATCH /service/ai/v1/internal/tenants/{tenant_id}` to trigger bounded tenant document reindex backfill, release-marker capture, and owner-safe health snapshots during migration.
 
 ### Added - Segment 2 Data Plane Isolation Foundation (2026-03-06)
 

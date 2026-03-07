@@ -591,3 +591,99 @@ async def test_storage_blog_publish_receipt_create_find_and_duplicate_race(
         request_id="req-1",
     )
     assert duplicate["receipt_id"] == "blog_1"
+
+
+@pytest.mark.asyncio
+async def test_storage_migration_receipt_and_owner_portfolio_snapshot_methods() -> None:
+    storage = CGSGatewayStorage(
+        dsn="postgres://test",
+        encryptor=_DummyEncryptor(),
+        owner_portfolio_schema="owner_portfolio",
+    )
+    storage._fetchrow = AsyncMock(
+        side_effect=[
+            {
+                "receipt_id": "mig_123",
+                "cgs_tenant_id": "tenant-a",
+                "previous_stage": "shadow",
+                "desired_stage": "cutover_ready",
+                "applied_stage": "cutover_ready",
+                "status": "applied",
+                "runtime_policy": {"primary_read_plane": "tenant"},
+                "vector_backfill": {"status": "completed", "reindexed": 2},
+                "owner_portfolio_snapshot": {"snapshot_id": "ops_1"},
+                "release_marker": {"marker_id": "m1"},
+                "metadata": {"issues": []},
+                "requested_by": "operator-1",
+                "request_id": "req-1",
+                "created_at": "2026-03-07T00:00:00Z",
+            },
+            {
+                "snapshot_id": "ops_1",
+                "cgs_tenant_id": "tenant-a",
+                "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+                "tenant_name": "Tenant A",
+                "isolation_stage": "cutover_ready",
+                "source": "cgs_internal_reconcile",
+                "summary": {"avg_sentiment": 0.8},
+                "release_marker": {"marker_id": "m1"},
+                "snapshot_metadata": {"request_id": "req-1"},
+                "created_at": "2026-03-07T00:00:00Z",
+                "updated_at": "2026-03-07T00:00:00Z",
+            },
+        ]
+    )
+    storage._fetch = AsyncMock(
+        return_value=[
+            {
+                "receipt_id": "mig_123",
+                "cgs_tenant_id": "tenant-a",
+                "previous_stage": "shadow",
+                "desired_stage": "cutover_ready",
+                "applied_stage": "cutover_ready",
+                "status": "applied",
+                "runtime_policy": {"primary_read_plane": "tenant"},
+                "vector_backfill": {"status": "completed", "reindexed": 2},
+                "owner_portfolio_snapshot": {"snapshot_id": "ops_1"},
+                "release_marker": {"marker_id": "m1"},
+                "metadata": {"issues": []},
+                "requested_by": "operator-1",
+                "request_id": "req-1",
+                "created_at": "2026-03-07T00:00:00Z",
+            }
+        ]
+    )
+
+    receipt = await storage.create_tenant_migration_receipt(
+        receipt_id="mig_123",
+        cgs_tenant_id="tenant-a",
+        previous_stage="shadow",
+        desired_stage="cutover_ready",
+        applied_stage="cutover_ready",
+        status="applied",
+        runtime_policy={"primary_read_plane": "tenant"},
+        vector_backfill={"status": "completed", "reindexed": 2},
+        owner_portfolio_snapshot={"snapshot_id": "ops_1"},
+        release_marker={"marker_id": "m1"},
+        metadata={"issues": []},
+        requested_by="operator-1",
+        request_id="req-1",
+    )
+    assert receipt["receipt_id"] == "mig_123"
+
+    snapshot = await storage.upsert_owner_portfolio_snapshot(
+        cgs_tenant_id="tenant-a",
+        zetherion_tenant_id="11111111-1111-1111-1111-111111111111",
+        tenant_name="Tenant A",
+        isolation_stage="cutover_ready",
+        source="cgs_internal_reconcile",
+        summary={"avg_sentiment": 0.8},
+        release_marker={"marker_id": "m1"},
+        snapshot_metadata={"request_id": "req-1"},
+    )
+    assert snapshot["snapshot_id"] == "ops_1"
+    snapshot_query = storage._fetchrow.await_args_list[1].args[0]
+    assert '"owner_portfolio".cgs_owner_portfolio_tenant_snapshots' in snapshot_query
+
+    receipts = await storage.list_tenant_migration_receipts(cgs_tenant_id="tenant-a")
+    assert receipts[0]["status"] == "applied"

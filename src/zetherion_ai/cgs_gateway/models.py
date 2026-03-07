@@ -45,11 +45,19 @@ class CreateTenantRequest(BaseModel):
 
 
 class ConfigureTenantRequest(BaseModel):
-    """Update tenant profile/configuration."""
+    """Update tenant profile/configuration and staged migration state."""
 
     name: str | None = None
     domain: str | None = None
     config: dict[str, Any] | None = None
+    desired_isolation_stage: str | None = None
+    expected_key_version: int | None = Field(default=None, ge=1)
+    owner_portfolio_ready: bool | None = None
+    run_tenant_vector_backfill: bool = False
+    derive_owner_portfolio: bool = False
+    cutover_verified: bool = False
+    document_backfill_limit: int = Field(default=200, ge=1, le=500)
+    release_marker: ReleaseMarkerRequest | None = None
 
 
 class RecommendationFeedbackRequest(BaseModel):

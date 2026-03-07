@@ -160,3 +160,74 @@ async def test_reporting_contacts_success(app_with_internal_and_reporting: web.A
         assert body["error"] is None
         assert body["data"]["count"] == 1
         assert body["data"]["contacts"][0]["contact_id"] == "c1"
+
+
+@pytest.mark.asyncio
+async def test_internal_patch_tenant_can_run_migration(
+    app_with_internal_and_reporting: web.Application,
+) -> None:
+    app = app_with_internal_and_reporting
+    app["cgs_storage"].get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+            "name": "Tenant A",
+            "domain": "tenant-a.example",
+            "zetherion_api_key": "sk_live_existing",
+            "key_version": 2,
+            "is_active": True,
+            "isolation_stage": "shadow",
+            "metadata": {"config": {"tone": "formal"}},
+        }
+    )
+    app["cgs_storage"].update_tenant_profile = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+            "name": "Tenant A",
+            "domain": "tenant-a.example",
+            "key_version": 2,
+            "is_active": True,
+            "isolation_stage": "cutover_ready",
+            "metadata": {},
+        }
+    )
+    app["cgs_storage"].upsert_owner_portfolio_snapshot = AsyncMock(
+        return_value={"snapshot_id": "ops_123", "summary": {"avg_sentiment": 0.9}}
+    )
+    app["cgs_storage"].create_tenant_migration_receipt = AsyncMock(
+        return_value={
+            "receipt_id": "mig_123",
+            "status": "applied",
+            "runtime_policy": {"primary_read_plane": "tenant"},
+        }
+    )
+    app["cgs_public_client"].list_documents = AsyncMock(
+        return_value=(200, {"documents": [{"document_id": "doc-1", "status": "indexed"}]}, {})
+    )
+    app["cgs_public_client"].reindex_document = AsyncMock(
+        return_value=(200, {"document_id": "doc-1", "status": "indexed"}, {})
+    )
+    app["cgs_public_client"].create_release_marker = AsyncMock(
+        return_value=(201, {"marker_id": "m1"}, {})
+    )
+    app["cgs_skills_client"].handle_intent = AsyncMock(
+        return_value=(200, {"success": True, "data": {"health": {"avg_sentiment": 0.9}}})
+    )
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.patch(
+            "/service/ai/v1/internal/tenants/tenant-a",
+            json={
+                "desired_isolation_stage": "cutover_ready",
+                "run_tenant_vector_backfill": True,
+                "derive_owner_portfolio": True,
+                "release_marker": {"source": "deploy"},
+            },
+        )
+        assert resp.status == 200
+        body = await resp.json()
+        assert body["data"]["isolation_stage"] == "cutover_ready"
+        assert body["data"]["migration_receipt_id"] == "mig_123"
+        assert body["data"]["owner_portfolio_snapshot_id"] == "ops_123"
+        assert body["data"]["tenant_vector_backfill"]["reindexed"] == 1

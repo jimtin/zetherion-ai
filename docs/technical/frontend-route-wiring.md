@@ -102,7 +102,7 @@ This guide maps CGS `/service/ai/v1` routes to expected frontend flows.
 |---|---|---|---|
 | Tenant registry | `/service/ai/v1/internal/tenants` | `GET` | Supports `include_inactive=true` |
 | Tenant create | `/service/ai/v1/internal/tenants` | `POST` | Operator-only lifecycle onboarding; idempotent on `cgs_tenant_id` and returns `isolation_stage` + `provisioning_status` |
-| Tenant profile edit | `/service/ai/v1/internal/tenants/{tenant_id}` | `PATCH` | Enforces operator tenant-claim policy |
+| Tenant profile edit | `/service/ai/v1/internal/tenants/{tenant_id}` | `PATCH` | Enforces operator tenant-claim policy; also drives staged migration receipts, bounded document backfill, and owner-safe portfolio snapshots |
 | Tenant deactivate | `/service/ai/v1/internal/tenants/{tenant_id}/deactivate` | `POST` | Operator tenant authorization required |
 | Tenant key rotate | `/service/ai/v1/internal/tenants/{tenant_id}/keys/rotate` | `POST` | Operator tenant authorization required |
 | Release marker | `/service/ai/v1/internal/tenants/{tenant_id}/release-markers` | `POST` | Publishes deployment markers via mapped tenant key |

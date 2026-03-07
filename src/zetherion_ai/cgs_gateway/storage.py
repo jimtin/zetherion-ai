@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from collections.abc import Mapping
 from typing import Any, cast
@@ -37,7 +38,24 @@ def _payload_fingerprint(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-_SCHEMA_SQL = """\
+MIGRATION_RECEIPT_STATUSES = (
+    "applied",
+    "blocked",
+    "rolled_back",
+)
+_SCHEMA_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _validate_schema_identifier(value: str) -> str:
+    candidate = str(value).strip()
+    if not _SCHEMA_IDENTIFIER_RE.fullmatch(candidate):
+        raise ValueError(f"Invalid schema identifier: {value!r}")
+    return candidate
+
+
+def _schema_sql(owner_portfolio_schema: str) -> str:
+    schema = _validate_schema_identifier(owner_portfolio_schema)
+    return f"""\
 CREATE TABLE IF NOT EXISTS cgs_ai_tenants (
     id                      SERIAL PRIMARY KEY,
     cgs_tenant_id           VARCHAR(128) NOT NULL UNIQUE,
@@ -47,7 +65,7 @@ CREATE TABLE IF NOT EXISTS cgs_ai_tenants (
     zetherion_api_key_enc   TEXT NOT NULL,
     key_version             INT NOT NULL DEFAULT 1,
     is_active               BOOLEAN NOT NULL DEFAULT TRUE,
-    metadata                JSONB DEFAULT '{}'::jsonb,
+    metadata                JSONB DEFAULT '{{}}'::jsonb,
     isolation_stage         TEXT NOT NULL DEFAULT 'legacy'
                             CHECK (
                                 isolation_stage IN (
@@ -83,7 +101,7 @@ CREATE TABLE IF NOT EXISTS cgs_ai_conversations (
     external_user_id            TEXT,
     zetherion_session_id        UUID NOT NULL,
     zetherion_session_token_enc TEXT NOT NULL,
-    metadata                    JSONB DEFAULT '{}'::jsonb,
+    metadata                    JSONB DEFAULT '{{}}'::jsonb,
     is_closed                   BOOLEAN NOT NULL DEFAULT FALSE,
     closed_at                   TIMESTAMPTZ,
     created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -119,7 +137,7 @@ CREATE TABLE IF NOT EXISTS cgs_ai_request_log (
     upstream_status     INT,
     duration_ms         INT,
     error_code          VARCHAR(80),
-    details             JSONB DEFAULT '{}'::jsonb,
+    details             JSONB DEFAULT '{{}}'::jsonb,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -131,7 +149,7 @@ CREATE TABLE IF NOT EXISTS cgs_ai_admin_changes (
     cgs_tenant_id        VARCHAR(128) NOT NULL REFERENCES cgs_ai_tenants(cgs_tenant_id),
     action               TEXT NOT NULL,
     target               TEXT,
-    payload              JSONB NOT NULL DEFAULT '{}'::jsonb,
+    payload              JSONB NOT NULL DEFAULT '{{}}'::jsonb,
     payload_fingerprint  VARCHAR(64),
     status               VARCHAR(20) NOT NULL DEFAULT 'pending'
                          CHECK (status IN ('pending', 'approved', 'rejected', 'applied', 'failed')),
@@ -141,7 +159,7 @@ CREATE TABLE IF NOT EXISTS cgs_ai_admin_changes (
     applied_at           TIMESTAMPTZ,
     request_id           VARCHAR(64),
     reason               TEXT,
-    result               JSONB NOT NULL DEFAULT '{}'::jsonb,
+    result               JSONB NOT NULL DEFAULT '{{}}'::jsonb,
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -170,8 +188,8 @@ CREATE TABLE IF NOT EXISTS cgs_ai_blog_publish_receipts (
     excerpt               TEXT,
     primary_keyword       TEXT NOT NULL,
     content_markdown      TEXT NOT NULL,
-    json_ld               JSONB NOT NULL DEFAULT '{}'::jsonb,
-    models                JSONB NOT NULL DEFAULT '{}'::jsonb,
+    json_ld               JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+    models                JSONB NOT NULL DEFAULT '{{}}'::jsonb,
     published_at          TIMESTAMPTZ NOT NULL,
     request_id            VARCHAR(64),
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -179,6 +197,45 @@ CREATE TABLE IF NOT EXISTS cgs_ai_blog_publish_receipts (
 
 CREATE INDEX IF NOT EXISTS idx_cgs_ai_blog_publish_created
     ON cgs_ai_blog_publish_receipts (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS cgs_ai_tenant_migration_receipts (
+    receipt_id                VARCHAR(64) PRIMARY KEY,
+    cgs_tenant_id             VARCHAR(128) NOT NULL REFERENCES cgs_ai_tenants(cgs_tenant_id),
+    previous_stage            TEXT NOT NULL,
+    desired_stage             TEXT NOT NULL,
+    applied_stage             TEXT NOT NULL,
+    status                    VARCHAR(20) NOT NULL
+                              CHECK (status IN ('applied', 'blocked', 'rolled_back')),
+    runtime_policy            JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+    vector_backfill           JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+    owner_portfolio_snapshot  JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+    release_marker            JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+    metadata                  JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+    requested_by              TEXT NOT NULL,
+    request_id                VARCHAR(64),
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cgs_ai_tenant_migration_receipts_tenant
+    ON cgs_ai_tenant_migration_receipts (cgs_tenant_id, created_at DESC);
+
+CREATE SCHEMA IF NOT EXISTS "{schema}";
+CREATE TABLE IF NOT EXISTS "{schema}".cgs_owner_portfolio_tenant_snapshots (
+    snapshot_id            VARCHAR(64) PRIMARY KEY,
+    cgs_tenant_id          VARCHAR(128) NOT NULL UNIQUE REFERENCES cgs_ai_tenants(cgs_tenant_id),
+    zetherion_tenant_id    UUID NOT NULL,
+    tenant_name            TEXT NOT NULL,
+    isolation_stage        TEXT NOT NULL,
+    source                 TEXT NOT NULL,
+    summary                JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+    release_marker         JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+    snapshot_metadata      JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cgs_owner_portfolio_snapshots_tenant
+    ON "{schema}".cgs_owner_portfolio_tenant_snapshots (zetherion_tenant_id, updated_at DESC);
 """
 
 
@@ -192,11 +249,13 @@ class CGSGatewayStorage:
         encryptor: FieldEncryptor | None = None,
         min_size: int = 1,
         max_size: int = 10,
+        owner_portfolio_schema: str = "owner_portfolio",
     ) -> None:
         self._dsn = dsn
         self._encryptor = encryptor
         self._min_size = min_size
         self._max_size = max_size
+        self._owner_portfolio_schema = _validate_schema_identifier(owner_portfolio_schema)
         self._pool: asyncpg.Pool | None = None
 
     async def initialize(self) -> None:
@@ -454,6 +513,146 @@ class CGSGatewayStorage:
         result = dict(row)
         result["zetherion_api_key"] = self._decrypt(str(result.pop("zetherion_api_key_enc")))
         return result
+
+    async def create_tenant_migration_receipt(
+        self,
+        *,
+        receipt_id: str,
+        cgs_tenant_id: str,
+        previous_stage: str,
+        desired_stage: str,
+        applied_stage: str,
+        status: str,
+        runtime_policy: dict[str, Any],
+        vector_backfill: dict[str, Any] | None,
+        owner_portfolio_snapshot: dict[str, Any] | None,
+        release_marker: dict[str, Any] | None,
+        metadata: dict[str, Any] | None,
+        requested_by: str,
+        request_id: str | None,
+    ) -> dict[str, Any]:
+        normalized_status = str(status).strip().lower()
+        if normalized_status not in MIGRATION_RECEIPT_STATUSES:
+            raise ValueError(f"Unsupported migration receipt status: {status!r}")
+        row = await self._fetchrow(
+            """
+            INSERT INTO cgs_ai_tenant_migration_receipts (
+                receipt_id,
+                cgs_tenant_id,
+                previous_stage,
+                desired_stage,
+                applied_stage,
+                status,
+                runtime_policy,
+                vector_backfill,
+                owner_portfolio_snapshot,
+                release_marker,
+                metadata,
+                requested_by,
+                request_id
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6,
+                $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb, $11::jsonb, $12, $13
+            )
+            RETURNING receipt_id, cgs_tenant_id, previous_stage, desired_stage, applied_stage,
+                      status, runtime_policy, vector_backfill, owner_portfolio_snapshot,
+                      release_marker, metadata, requested_by, request_id, created_at
+            """,
+            receipt_id,
+            cgs_tenant_id,
+            _normalize_isolation_stage(previous_stage),
+            _normalize_isolation_stage(desired_stage),
+            _normalize_isolation_stage(applied_stage),
+            normalized_status,
+            json.dumps(runtime_policy or {}),
+            json.dumps(vector_backfill or {}),
+            json.dumps(owner_portfolio_snapshot or {}),
+            json.dumps(release_marker or {}),
+            json.dumps(metadata or {}),
+            requested_by,
+            request_id,
+        )
+        if row is None:
+            raise RuntimeError("Create tenant migration receipt returned no row")
+        return dict(cast(Mapping[str, Any], row))
+
+    async def list_tenant_migration_receipts(
+        self,
+        *,
+        cgs_tenant_id: str,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        rows = await self._fetch(
+            """
+            SELECT receipt_id, cgs_tenant_id, previous_stage, desired_stage, applied_stage,
+                   status, runtime_policy, vector_backfill, owner_portfolio_snapshot,
+                   release_marker, metadata, requested_by, request_id, created_at
+            FROM cgs_ai_tenant_migration_receipts
+            WHERE cgs_tenant_id = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+            """,
+            cgs_tenant_id,
+            limit,
+        )
+        return [dict(r) for r in rows]
+
+    async def upsert_owner_portfolio_snapshot(
+        self,
+        *,
+        cgs_tenant_id: str,
+        zetherion_tenant_id: str,
+        tenant_name: str,
+        isolation_stage: str,
+        source: str,
+        summary: dict[str, Any],
+        release_marker: dict[str, Any] | None,
+        snapshot_metadata: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        schema = self._owner_portfolio_schema
+        snapshot_id = f"ops_{uuid.uuid4().hex[:24]}"
+        row = await self._fetchrow(
+            f"""
+            INSERT INTO "{schema}".cgs_owner_portfolio_tenant_snapshots (
+                snapshot_id,
+                cgs_tenant_id,
+                zetherion_tenant_id,
+                tenant_name,
+                isolation_stage,
+                source,
+                summary,
+                release_marker,
+                snapshot_metadata
+            ) VALUES (
+                $1, $2, $3::uuid, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb
+            )
+            ON CONFLICT (cgs_tenant_id)
+            DO UPDATE SET
+                zetherion_tenant_id = EXCLUDED.zetherion_tenant_id,
+                tenant_name = EXCLUDED.tenant_name,
+                isolation_stage = EXCLUDED.isolation_stage,
+                source = EXCLUDED.source,
+                summary = EXCLUDED.summary,
+                release_marker = EXCLUDED.release_marker,
+                snapshot_metadata = EXCLUDED.snapshot_metadata,
+                updated_at = now()
+            RETURNING snapshot_id, cgs_tenant_id, zetherion_tenant_id, tenant_name,
+                      isolation_stage, source, summary, release_marker, snapshot_metadata,
+                      created_at, updated_at
+            """,  # nosec B608
+            snapshot_id,
+            cgs_tenant_id,
+            zetherion_tenant_id,
+            tenant_name,
+            _normalize_isolation_stage(isolation_stage),
+            source,
+            json.dumps(summary or {}),
+            json.dumps(release_marker or {}),
+            json.dumps(snapshot_metadata or {}),
+        )
+        if row is None:
+            raise RuntimeError("Upsert owner portfolio snapshot returned no row")
+        return dict(cast(Mapping[str, Any], row))
 
     async def create_conversation(
         self,
@@ -985,7 +1184,7 @@ class CGSGatewayStorage:
         treat it as safe because another process completed the DDL first.
         """
         try:
-            await self._execute(_SCHEMA_SQL)
+            await self._execute(_schema_sql(self._owner_portfolio_schema))
             log.info("cgs_gateway_schema_ensured")
         except asyncpg.UniqueViolationError:
             log.info("cgs_gateway_schema_ensured", note="concurrent_creation_resolved")

@@ -24,6 +24,7 @@ Maintenance note (2026-03-05):
   - `DELETE /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}`
 - Public CGS client-facing document intelligence endpoints in this kit are unchanged.
 - Internal CGS tenant create is now idempotent on `cgs_tenant_id`; retries reconcile the existing mapping and return `isolation_stage` plus `provisioning_status` for rollout visibility.
+- Internal tenant patch now drives staged migration for existing clients: bounded tenant-document reindex backfill, optional release-marker capture, migration receipts, and owner-safe tenant health snapshots.
 
 ## Integration Outcome
 

@@ -91,6 +91,7 @@ The manifest captures the current state of:
   domain names require an explicit manifest and documentation update.
 - Route or storage changes that alter trust boundaries should update this
   inventory before or with the behavior change.
+- CGS tenant migration now writes `cgs_ai_tenant_migration_receipts` in the control-plane domain and owner-safe tenant health snapshots into the `owner_portfolio` schema; later segments must preserve that split during cutover.
 - Prompt isolation now starts in `src/zetherion_ai/trust/scope.py`; current
   integrations cover owner agent prompts, tenant chat prompts, email routing
   prompts, docs knowledge prompts, and tenant document QA prompts.
