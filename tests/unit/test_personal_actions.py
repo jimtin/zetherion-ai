@@ -671,3 +671,24 @@ class TestActionControllerIntegration:
 
         assert email_decision.should_execute is True
         assert tasks_decision.should_execute is False
+
+
+class TestActionControllerShadowHook:
+    """Tests for personal-action shadow recording."""
+
+    @pytest.mark.asyncio
+    async def test_decide_records_shadow_decision(self, monkeypatch):
+        storage = _make_storage()
+        storage.get_policy.return_value = None
+        controller = ActionController(storage)
+        recorded: list[dict[str, object]] = []
+
+        monkeypatch.setattr(
+            "zetherion_ai.personal.actions._record_personal_action_shadow_decision",
+            lambda **kwargs: recorded.append(kwargs),
+        )
+
+        decision = await controller.decide(12345, "email", "auto_reply")
+
+        assert decision.mode == PolicyMode.ASK.value
+        assert recorded == [{"user_id": 12345, "decision": decision}]

@@ -106,7 +106,13 @@ class TrustModel:
 
     def should_auto_approve(self, category: str) -> bool:
         """Return True if *category* is auto-approved at the current level."""
-        return category in self.auto_categories
+        auto_approved = category in self.auto_categories
+        _record_youtube_trust_shadow_decision(
+            category=category,
+            auto_approved=auto_approved,
+            level=self._level,
+        )
+        return auto_approved
 
     # ------------------------------------------------------------------
     # State changes
@@ -190,3 +196,39 @@ class TrustModel:
             level=int(channel.get("trust_level", 0)),  # type: ignore[call-overload]
             stats=channel.get("trust_stats") or {"total": 0, "approved": 0, "rejected": 0},  # type: ignore[arg-type]
         )
+
+
+def _record_youtube_trust_shadow_decision(
+    *, category: str, auto_approved: bool, level: int
+) -> None:
+    """Record a non-blocking shadow decision for YouTube trust evaluation."""
+
+    try:
+        from zetherion_ai.trust import TrustPrincipal, TrustResource, record_shadow_decision
+        from zetherion_ai.trust.adapters import build_youtube_trust_signature
+
+        principal = TrustPrincipal(
+            principal_id="youtube-skill",
+            principal_type="system",
+        )
+        resource = TrustResource(
+            resource_id=category,
+            resource_type="youtube_reply_category",
+        )
+        record_shadow_decision(
+            adapter_name="youtube_trust",
+            action="youtube.reply.approve",
+            principal=principal,
+            resource=resource,
+            context={
+                "category": category,
+                "auto_approved": auto_approved,
+                "level": level,
+            },
+            legacy_signature=build_youtube_trust_signature(
+                category=category,
+                auto_approved=auto_approved,
+            ),
+        )
+    except Exception:
+        return None

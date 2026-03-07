@@ -345,3 +345,18 @@ class TestAutonomyConfig:
         """Test all ActionTypes have default autonomy."""
         for action in ActionType:
             assert action in DEFAULT_AUTONOMY, f"Missing default for {action}"
+
+
+def test_get_level_records_shadow_decision(monkeypatch):
+    recorded: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        "zetherion_ai.skills.github.models._record_github_autonomy_shadow_decision",
+        lambda **kwargs: recorded.append(kwargs),
+    )
+
+    config = AutonomyConfig()
+    level = config.get_level(ActionType.DELETE_REPO)
+
+    assert level == AutonomyLevel.ALWAYS_ASK
+    assert recorded == [{"action": ActionType.DELETE_REPO, "level": AutonomyLevel.ALWAYS_ASK}]

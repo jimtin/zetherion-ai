@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Segment 6 Unified Trust Engine Shadow Mode (2026-03-07)
+
+- Impacted capability IDs:
+  - `trust.engine.shadow-mode`
+  - `trust.engine.adapter-parity-logging`
+  - `trust.engine.cross-surface-normalization`
+- Impacted workflow scenario IDs:
+  - `isolation.segment6.shadow-evaluate-tenant-trust-policy`
+  - `isolation.segment6.shadow-evaluate-personal-actions`
+  - `isolation.segment6.shadow-evaluate-gmail-github-youtube-trust`
+- Added `src/zetherion_ai/trust/engine.py` and `src/zetherion_ai/trust/adapters.py` to normalize legacy autonomy decisions into one canonical trust decision model without changing live enforcement.
+- Wired non-blocking shadow recording into tenant trust policy, personal actions, Gmail trust, GitHub autonomy, and YouTube trust so each decision path now emits comparable `trust_shadow_decision` telemetry.
+- Added focused unit coverage for the new engine/adapters plus hook-level contract tests to keep shadow-mode wiring from regressing silently.
+
 ### Added - Segment 4 CGS Provisioning and Reconciliation Orchestrator (2026-03-07)
 
 - Impacted capability IDs:
