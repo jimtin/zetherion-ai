@@ -193,11 +193,14 @@ The active `main` branch ruleset currently requires these check contexts:
 
 The `required-e2e-gate` job validates local exact-SHA receipt evidence when the risk classifier marks a PR `e2e_required=true`; GitHub does not execute the full E2E suites directly on PRs. The PR fast path is now limited to `detect-changes`, `risk-classifier`, `lint`, `secret-scan`, `pipeline-contract`, `zetherion-boundary-check`, `required-e2e-gate`, `CI Summary`, and `CI Failure Attribution`.
 
+Weekly or manual GitHub runs remain the independent heavy-verification cadence for `type-check`, `security`, `semgrep`, `dependency-audit`, `license-check`, `pre-commit`, `docs-contract`, `unit-test`, `integration-test`, `docker-build-test`, and CodeQL.
+
 ### Additional Main-Branch Automation
 
 | Workflow | Trigger | Contract |
 |---|---|---|
-| `docs.yml` (`Deploy Documentation`) | every push to `main` | Rebuild + republish full docs suite on each `main` merge |
+| `docs.yml` (`Deploy Documentation`) | push to `main` when docs-site sources change, or manual dispatch | Build strict MkDocs output and republish GitHub Pages without rerunning docs-contract checks |
+| `codeql.yml` (`CodeQL`) | weekly schedule or manual dispatch | Independent GitHub-native code scanning, kept off the PR fast path |
 | Windows local promotions worker (`scripts/windows/promotions-runner.ps1` + `scripts/windows/promotions-watch.ps1`) | successful Windows deployment receipt for `main` SHA | Validate deployment receipt, build merge intelligence, generate/publish CGS blog, and auto-increment GitHub release |
 
 Windows promotion gates:
