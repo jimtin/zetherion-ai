@@ -120,11 +120,14 @@ async def test_record_personal_action_decision_handles_storage_failure() -> None
         reason="Waiting for approval",
     )
 
-    assert await record_personal_action_decision(
-        trust_storage,
-        user_id=12345,
-        decision=decision,
-    ) is None
+    assert (
+        await record_personal_action_decision(
+            trust_storage,
+            user_id=12345,
+            decision=decision,
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
