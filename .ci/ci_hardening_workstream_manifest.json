@@ -2,7 +2,7 @@
   "workstream": "segmented-ci-hardening-and-spend-reduction",
   "contract_version": 1,
   "recorded_at": "2026-03-08",
-  "status": "segment-3-pr-fast-path-landed",
+  "status": "segment-4-heavy-verification-offload-candidate",
   "segment_contract": {
     "branch_prefix": "codex/seg-ci-",
     "one_segment_per_pr": true,
@@ -29,7 +29,10 @@
     "notes": [
       "GitHub validates exact-SHA local E2E receipt evidence instead of executing the full E2E suites directly on PRs.",
       "PR fast path is limited to detect-changes, risk-classifier, lint, secret-scan, pipeline-contract, zetherion-boundary-check, required-e2e-gate, CI Summary, and CI Failure Attribution.",
-      "Heavy local-equivalent jobs are deferred off PRs to push or scheduled/manual verification runs."
+      "Heavy local-equivalent jobs are deferred off PRs to push or scheduled/manual verification runs.",
+      "Scheduled/manual GitHub runs remain the independent heavy-verification cadence on main.",
+      "CodeQL now runs only on weekly/manual triggers so it does not register skipped PR runs.",
+      "Documentation deployment now runs on main only when docs-site sources change or via manual dispatch."
     ]
   },
   "capabilities": [

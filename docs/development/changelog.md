@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment CI-04 Heavy Verification Offload and Workflow Noise Removal (2026-03-08)
+
+- Impacted capability IDs:
+  - `ci.weekly.independent_verification`
+  - `ci.pr.fast_path`
+- Impacted workflow scenario IDs:
+  - `weekly.full_independent_verification`
+  - `pr.docs_only_fast_path`
+- Removed `push` and `pull_request` triggers from `.github/workflows/codeql.yml` so CodeQL runs only on its weekly cadence or by manual dispatch, eliminating skipped PR check noise.
+- Narrowed `.github/workflows/docs.yml` so docs deployment runs on `main` only when docs-site sources change, and removed duplicate docs-contract validation from that publish workflow.
+- Extended `scripts/check_pipeline_contract.py` and its regression coverage so weekly-heavy verification cadence, PR-run cancellation, and workflow-trigger spend controls are now enforced in-repo.
+
 ### Changed - Segment CI-03 PR CI Fast Path and Ruleset Alignment (2026-03-08)
 
 - Impacted capability IDs:
