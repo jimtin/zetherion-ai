@@ -350,6 +350,7 @@ def main() -> None:
     from zetherion_ai.security.trust_policy import TrustPolicyEvaluator
     from zetherion_ai.trust.data_plane import ensure_postgres_isolation_schemas
     from zetherion_ai.trust.scope import TrustDomain
+    from zetherion_ai.trust.storage import ensure_trust_storage_schema
 
     settings = get_settings()
 
@@ -368,6 +369,10 @@ def main() -> None:
         pool = getattr(tenant_manager, "_pool", None)
         if pool is not None:
             await ensure_postgres_isolation_schemas(pool, settings)
+            await ensure_trust_storage_schema(
+                pool,
+                schema=settings.postgres_control_plane_schema,
+            )
         tenant_admin_manager: TenantAdminManager | None = None
         trust_policy_evaluator = TrustPolicyEvaluator()
         tenant_encryptor = None

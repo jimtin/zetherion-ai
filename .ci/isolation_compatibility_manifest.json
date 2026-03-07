@@ -305,6 +305,22 @@
         "fleet_aggregates"
       ],
       "migration_note": "Derived fleet and health intelligence need explicit owner-portfolio transformation rules."
+    },
+    {
+      "id": "control-plane-trust-canonical",
+      "path": "src/zetherion_ai/trust/storage.py",
+      "classification": "relational",
+      "current_domains": [
+        "control_plane"
+      ],
+      "tables": [
+        "trust_policies",
+        "trust_grants",
+        "trust_scorecards",
+        "trust_feedback_events",
+        "trust_decision_audit"
+      ],
+      "notes": "Canonical control-plane trust persistence added in Segment 7 for legacy backfill and future cutover."
     }
   ],
   "vector_collections": [

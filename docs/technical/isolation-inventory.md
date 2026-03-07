@@ -54,6 +54,7 @@ The manifest captures the current state of:
     announcement dispatch
   - CGS tenant mappings now carry first-class `isolation_stage` and
     provisioning reconciliation metadata for staged client upgrades
+  - Canonical trust persistence now lives in `src/zetherion_ai/trust/storage.py` under the control-plane schema, covering trust policies, grants, scorecards, feedback, and decision audit rows for staged backfill
 
 ### Domains that are not isolated yet
 

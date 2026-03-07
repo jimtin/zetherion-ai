@@ -242,8 +242,9 @@ class TestMain:
         mock_run.assert_called_once()
 
     def test_main_runs_server_with_expected_args(self) -> None:
-        settings = SimpleNamespace(postgres_dsn=None)
+        settings = SimpleNamespace(postgres_dsn=None, postgres_control_plane_schema="control_plane")
         tenant_manager = AsyncMock()
+        tenant_manager._pool = None
         broker = AsyncMock()
 
         with (
@@ -272,8 +273,12 @@ class TestMain:
         assert kwargs["inference_broker"] is broker
 
     def test_main_continues_when_youtube_init_fails(self) -> None:
-        settings = SimpleNamespace(postgres_dsn="postgres://test")
+        settings = SimpleNamespace(
+            postgres_dsn="postgres://test",
+            postgres_control_plane_schema="control_plane",
+        )
         tenant_manager = AsyncMock()
+        tenant_manager._pool = MagicMock(name="tenant_pool")
 
         with (
             patch.dict("os.environ", {"API_JWT_SECRET": "secret"}, clear=True),
@@ -287,11 +292,27 @@ class TestMain:
                 "zetherion_ai.skills.youtube.storage.YouTubeStorage",
                 side_effect=RuntimeError("init failed"),
             ),
+            patch(
+                "zetherion_ai.trust.data_plane.ensure_postgres_isolation_schemas",
+                new_callable=AsyncMock,
+            ) as mock_ensure_postgres_isolation_schemas,
+            patch(
+                "zetherion_ai.trust.storage.ensure_trust_storage_schema",
+                new_callable=AsyncMock,
+            ) as mock_ensure_trust_storage_schema,
             patch("zetherion_ai.api.server.run_server", new_callable=AsyncMock) as mock_run_server,
         ):
             main()
 
         tenant_manager.initialize.assert_awaited_once()
+        mock_ensure_postgres_isolation_schemas.assert_awaited_once_with(
+            tenant_manager._pool,
+            settings,
+        )
+        mock_ensure_trust_storage_schema.assert_awaited_once_with(
+            tenant_manager._pool,
+            schema="control_plane",
+        )
         mock_run_server.assert_awaited_once()
         args = mock_run_server.call_args.args
         kwargs = mock_run_server.call_args.kwargs
