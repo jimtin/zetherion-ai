@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -15,6 +16,7 @@ from zetherion_ai.admin.tenant_admin_manager import (
     admin_actor_from_payload,
 )
 from zetherion_ai.security.encryption import FieldEncryptor
+from zetherion_ai.trust.storage import TrustGrantRecord
 
 
 class _AsyncContext:
@@ -2648,7 +2650,7 @@ def _worker_job_row(
         "max_runtime_seconds": 600,
         "artifact_contract": {},
         "action": action,
-        "payload_json": payload_json or {"runner": "noop", "prompt_text": "Do the task"},
+        "payload_json": payload_json or {"runner": "noop", "worker_artifacts": []},
         "status": status,
         "claimed_by_node_id": claimed_by_node_id,
         "lease_token": None,
@@ -3517,6 +3519,15 @@ async def test_dispatch_execution_step_to_worker_and_claim_paths() -> None:
         dispatcher_id="plan-worker-1",
     )
     assert dispatch["status"] == "queued"
+    insert_call = conn.fetchrow.await_args_list[0]
+    _, *insert_args = insert_call.args
+    payload_json = json.loads(insert_args[11])
+    assert "prompt_text" not in payload_json
+    worker_artifacts = payload_json["worker_artifacts"]
+    assert len(worker_artifacts) == 1
+    assert worker_artifacts[0]["artifact_type"] == "instruction"
+    assert worker_artifacts[0]["content"]["text"] == "Do the next task"
+    assert worker_artifacts[0]["resource_scope"].startswith("worker_artifact:")
 
     claimed_job = await manager.claim_worker_dispatch_job(
         tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
@@ -3704,11 +3715,267 @@ async def test_dispatch_and_claim_rollout_guard_paths() -> None:
     )
 
 
+def test_worker_delegation_helper_methods() -> None:
+    assert TenantAdminManager._normalize_worker_delegation_ttl_seconds("bad") == 3600
+    assert TenantAdminManager._normalize_worker_delegation_permission("repo.patch") == "repo.patch"
+    assert TenantAdminManager._normalize_worker_delegation_permissions(
+        ["repo.patch", "repo.patch", "repo.commit"]
+    ) == ["repo.patch", "repo.commit"]
+    assert (
+        TenantAdminManager._normalize_worker_delegation_scope("repo:/workspace/repo")
+        == "repo:/workspace/repo"
+    )
+    assert (
+        TenantAdminManager._normalize_worker_artifact_scope(
+            "worker_artifact:tenant-a:plan-1:step-1:retry-1"
+        )
+        == "worker_artifact:tenant-a:plan-1:step-1:retry-1"
+    )
+    with pytest.raises(ValueError, match="permission must be one of"):
+        TenantAdminManager._normalize_worker_delegation_permission("bogus")
+    with pytest.raises(ValueError, match="permissions must be one of"):
+        TenantAdminManager._normalize_worker_delegation_permissions(["bogus"])
+    with pytest.raises(ValueError, match="worker delegation scope must start"):
+        TenantAdminManager._normalize_worker_delegation_scope("worker_artifact:tenant:plan")
+    with pytest.raises(ValueError, match="worker artifact scope must start"):
+        TenantAdminManager._normalize_worker_artifact_scope("repo:/workspace/repo")
+
+    artifacts = TenantAdminManager._build_worker_artifacts(
+        artifact_scope="worker_artifact:tenant-a:plan-1:step-1:retry-1",
+        title="Step 1",
+        prompt_text="Do the thing",
+        metadata={
+            "worker_artifacts": [
+                {
+                    "artifact_id": "context-1",
+                    "content": "approved excerpt",
+                    "resource_scope": "bad-scope",
+                    "approved": False,
+                },
+                "skip-me",
+            ]
+        },
+    )
+    assert len(artifacts) == 2
+    assert artifacts[0]["artifact_type"] == "instruction"
+    assert artifacts[1]["artifact_id"] == "context-1"
+    assert artifacts[1]["resource_scope"] == "worker_artifact:tenant-a:plan-1:step-1:retry-1"
+    assert artifacts[1]["content"]["text"] == "approved excerpt"
+    sanitized = TenantAdminManager._sanitize_worker_control_payload(
+        {
+            "prompt_text": "secret",
+            "message": "also secret",
+            "worker_artifacts": ["skip"],
+            "repo_root": "/workspace/repo",
+            "command": ["git", "status"],
+        }
+    )
+    assert sanitized == {"repo_root": "/workspace/repo", "command": ["git", "status"]}
+    assert (
+        TenantAdminManager._worker_artifact_scope(
+            tenant_id="tenant-a",
+            plan_id="plan-1",
+            step_id="step-1",
+            retry_id="retry-1",
+        )
+        == "worker_artifact:tenant-a:plan-1:step-1:retry-1"
+    )
+    assert TenantAdminManager._resolve_worker_delegation_scope_for_job(
+        action="repo.patch",
+        payload_json={"repo_root": "/workspace/repo"},
+    ) == {
+        "permission": "repo.patch",
+        "resource_scope": "repo:/workspace/repo",
+        "resource_id": "/workspace/repo",
+    }
+    assert TenantAdminManager._resolve_worker_delegation_scope_for_job(
+        action="codex.session.control",
+        payload_json={"session_id": "sess-1"},
+    ) == {
+        "permission": "codex.session.control",
+        "resource_scope": "codex.session:sess-1",
+        "resource_id": "sess-1",
+    }
+    assert (
+        TenantAdminManager._resolve_worker_delegation_scope_for_job(
+            action="worker.noop",
+            payload_json={},
+        )
+        is None
+    )
+    assert TenantAdminManager._worker_delegation_scope_matches("repo:*", "repo:/workspace/repo")
+    assert not TenantAdminManager._worker_delegation_scope_matches(
+        "repo:/workspace/other", "repo:/workspace/repo"
+    )
+
+
+@pytest.mark.asyncio
+async def test_worker_delegation_grant_list_and_lookup_methods() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    wildcard = TrustGrantRecord(
+        grant_id="11111111-1111-1111-1111-111111111111",
+        tenant_id="tenant-a",
+        grantee_id="node-1",
+        grantee_type="worker_node",
+        resource_scope="repo:*",
+        permissions=["*"],
+        source_system="worker_delegation_grant",
+        source_record_id="tenant-a:node-1:repo:*",
+        metadata={},
+        issued_at=datetime.now(UTC),
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    scoped = TrustGrantRecord(
+        grant_id="22222222-2222-2222-2222-222222222222",
+        tenant_id="tenant-a",
+        grantee_id="node-1",
+        grantee_type="worker_node",
+        resource_scope="repo:/workspace/repo",
+        permissions=["repo.patch"],
+        source_system="worker_delegation_grant",
+        source_record_id="tenant-a:node-1:repo:/workspace/repo",
+        metadata={"ticket": "CHG-2"},
+        issued_at=datetime.now(UTC),
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    trust_storage = MagicMock()
+    trust_storage.list_active_grants = AsyncMock(return_value=[wildcard, scoped])
+    manager._get_trust_storage = AsyncMock(return_value=trust_storage)  # type: ignore[method-assign]
+
+    listed = await manager.list_worker_delegation_grants(
+        tenant_id="tenant-a",
+        node_id="node-1",
+        resource_scope_prefix="repo:*",
+    )
+    assert [grant["grant_id"] for grant in listed] == [
+        "11111111-1111-1111-1111-111111111111",
+        "22222222-2222-2222-2222-222222222222",
+    ]
+
+    found = await manager.get_active_worker_delegation_grant(
+        tenant_id="tenant-a",
+        node_id="node-1",
+        resource_scope="repo:/workspace/repo",
+        permission="repo.patch",
+    )
+    assert found is not None
+    assert found["grant_id"] == "11111111-1111-1111-1111-111111111111"
+
+    trust_storage.list_active_grants = AsyncMock(return_value=[scoped])
+    missing = await manager.get_active_worker_delegation_grant(
+        tenant_id="tenant-a",
+        node_id="node-1",
+        resource_scope="repo:/workspace/repo",
+        permission="repo.commit",
+    )
+    assert missing is None
+
+    with pytest.raises(ValueError, match="Missing node_id"):
+        await manager.list_worker_delegation_grants(tenant_id="tenant-a", node_id="")
+    with pytest.raises(ValueError, match="Missing node_id"):
+        await manager.get_active_worker_delegation_grant(
+            tenant_id="tenant-a",
+            node_id="",
+            resource_scope="repo:/workspace/repo",
+            permission="repo.patch",
+        )
+
+
+@pytest.mark.asyncio
+async def test_put_worker_delegation_grant_validation_errors() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    manager.get_worker_node = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    with pytest.raises(ValueError, match="Missing node_id"):
+        await manager.put_worker_delegation_grant(
+            tenant_id="tenant-a",
+            node_id="",
+            resource_scope="repo:/workspace/repo",
+            permissions=["repo.patch"],
+            ttl_seconds=3600,
+        )
+
+    with pytest.raises(ValueError, match="Worker node not found"):
+        await manager.put_worker_delegation_grant(
+            tenant_id="tenant-a",
+            node_id="node-1",
+            resource_scope="repo:/workspace/repo",
+            permissions=["repo.patch"],
+            ttl_seconds=3600,
+        )
+
+
+@pytest.mark.asyncio
+async def test_claim_worker_job_enforces_delegation_grants_for_repo_actions() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    manager._worker_node_meets_dispatch_requirements = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+    candidate = _worker_job_row(
+        status="queued",
+        required_capabilities=[],
+        action="repo.patch",
+        payload_json={
+            "runner": "codex",
+            "repo_root": "/workspace/repo",
+            "command": ["git", "status"],
+            "worker_artifacts": [],
+        },
+    )
+
+    denied_reasons: list[dict[str, Any]] = []
+    conn.fetchrow.side_effect = [{"node_id": "node-1"}]
+    conn.fetch.return_value = [candidate]
+    conn.fetchval.return_value = 1
+    manager.get_active_worker_delegation_grant = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    denied = await manager.claim_worker_dispatch_job(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        required_capabilities=["repo.patch"],
+        denied_reasons=denied_reasons,
+    )
+    assert denied is None
+    assert denied_reasons
+    assert denied_reasons[0]["kind"] == "delegation_grant"
+    assert denied_reasons[0]["reason"] == "grant_required"
+    assert denied_reasons[0]["resource_scope"] == "repo:/workspace/repo"
+
+    conn.fetch.return_value = [candidate]
+    conn.fetchrow.side_effect = [
+        {"node_id": "node-1"},
+        _worker_job_row(
+            status="running",
+            required_capabilities=[],
+            action="repo.patch",
+            payload_json=dict(candidate["payload_json"]),
+        ),
+    ]
+    manager.get_active_worker_delegation_grant = AsyncMock(  # type: ignore[method-assign]
+        return_value={
+            "grant_id": "99999999-9999-9999-9999-999999999999",
+            "resource_scope": "repo:/workspace/repo",
+            "permissions": ["repo.patch"],
+        }
+    )
+    claimed = await manager.claim_worker_dispatch_job(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        required_capabilities=["repo.patch"],
+        denied_reasons=[],
+    )
+    assert claimed is not None
+    access = claimed["payload_json"]["worker_delegation_access"]
+    assert access["grant_id"] == "99999999-9999-9999-9999-999999999999"
+    assert access["resource_scope"] == "repo:/workspace/repo"
+    assert access["permission"] == "repo.patch"
+
+
 @pytest.mark.asyncio
 async def test_claim_worker_job_enforces_messaging_grants_and_redaction() -> None:
     conn = _FakeConn()
     manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
     manager._worker_node_meets_dispatch_requirements = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    manager.get_active_worker_delegation_grant = AsyncMock(return_value={})  # type: ignore[method-assign]
 
     messaging_candidate = _worker_job_row(
         status="queued",
@@ -3802,6 +4069,77 @@ async def test_claim_worker_dispatch_job_handles_lease_collision_between_nodes()
     assert node_1_claim is None
     assert node_2_claim is not None
     assert node_2_claim["claimed_by_node_id"] == "node-2"
+
+
+@pytest.mark.asyncio
+async def test_worker_delegation_grant_lifecycle_methods() -> None:
+    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    manager.get_worker_node = AsyncMock(  # type: ignore[method-assign]
+        return_value={"node_id": "node-1", "status": "active", "health_status": "healthy"}
+    )
+    manager.list_worker_delegation_grants = AsyncMock(return_value=[])  # type: ignore[method-assign]
+    manager._write_audit = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    trust_storage = MagicMock()
+    trust_storage.upsert_grant = AsyncMock(
+        return_value=TrustGrantRecord(
+            grant_id="77777777-7777-7777-7777-777777777777",
+            tenant_id="tenant-a",
+            grantee_id="node-1",
+            grantee_type="worker_node",
+            resource_scope="repo:/workspace/repo",
+            permissions=["repo.patch", "repo.commit"],
+            granted_by_id="operator-1",
+            granted_by_type="admin_actor",
+            source_system="worker_delegation_grant",
+            source_record_id="tenant-a:node-1:repo:/workspace/repo",
+            metadata={"ticket": "CHG-1"},
+            issued_at=datetime.now(UTC),
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+    )
+    trust_storage.revoke_grant = AsyncMock(
+        return_value=TrustGrantRecord(
+            grant_id="77777777-7777-7777-7777-777777777777",
+            tenant_id="tenant-a",
+            grantee_id="node-1",
+            grantee_type="worker_node",
+            resource_scope="repo:/workspace/repo",
+            permissions=["repo.patch", "repo.commit"],
+            granted_by_id="operator-1",
+            granted_by_type="admin_actor",
+            source_system="worker_delegation_grant",
+            source_record_id="tenant-a:node-1:repo:/workspace/repo",
+            metadata={"ticket": "CHG-1"},
+            issued_at=datetime.now(UTC),
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+            revoked_at=datetime.now(UTC),
+            revoke_reason="expired",
+        )
+    )
+    manager._get_trust_storage = AsyncMock(return_value=trust_storage)  # type: ignore[method-assign]
+
+    created = await manager.put_worker_delegation_grant(
+        tenant_id="tenant-a",
+        node_id="node-1",
+        resource_scope="repo:/workspace/repo",
+        permissions=["repo.patch", "repo.commit"],
+        ttl_seconds=3600,
+        metadata={"ticket": "CHG-1"},
+        actor=_actor(change_ticket_id="CHG-1"),
+    )
+    assert created["grant_id"] == "77777777-7777-7777-7777-777777777777"
+    assert created["resource_scope"] == "repo:/workspace/repo"
+    assert created["permissions"] == ["repo.patch", "repo.commit"]
+
+    revoked = await manager.revoke_worker_delegation_grant(
+        tenant_id="tenant-a",
+        grant_id="77777777-7777-7777-7777-777777777777",
+        actor=_actor(change_ticket_id="CHG-1"),
+        reason="expired",
+    )
+    assert revoked["grant_id"] == "77777777-7777-7777-7777-777777777777"
+    assert revoked["revoke_reason"] == "expired"
+    assert manager._write_audit.await_count == 2
 
 
 @pytest.mark.asyncio

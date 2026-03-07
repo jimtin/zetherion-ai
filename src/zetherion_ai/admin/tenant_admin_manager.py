@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
     from zetherion_ai.memory.qdrant import QdrantMemory
     from zetherion_ai.security.encryption import FieldEncryptor
+    from zetherion_ai.trust.storage import TrustGrantRecord, TrustStorage
 
 log = get_logger("zetherion_ai.admin.tenant_admin_manager")
 
@@ -47,9 +48,23 @@ VALID_WORKER_JOB_STATUSES = frozenset(
     {"queued", "running", "succeeded", "failed", "cancelled", "expired"}
 )
 VALID_WORKER_MESSAGING_PERMISSIONS = frozenset({"read", "send"})
+VALID_WORKER_DELEGATION_PERMISSIONS = frozenset(
+    {
+        "repo.patch",
+        "repo.commit",
+        "repo.pr.open",
+        "codex.session.control",
+        "desktop.app.read",
+        "desktop.app.draft",
+        "desktop.app.execute",
+        "*",
+    }
+)
+VALID_WORKER_DELEGATION_SCOPE_PREFIXES = ("repo:", "codex.session:", "desktop.app:")
 WORKER_MESSAGING_REDACT_KEYS = frozenset(
     {"text", "body", "message", "messages", "content", "full_text", "raw_text"}
 )
+WORKER_ARTIFACT_TEXT_KEYS = frozenset({"prompt_text", "prompt", "instruction", "message", "text"})
 DEFAULT_MESSAGING_RETENTION_DAYS = 14
 VALID_EXECUTION_PLAN_STATUSES = frozenset(
     {"queued", "running", "paused", "completed", "failed", "cancelled"}
@@ -873,6 +888,7 @@ class TenantAdminManager:
         setting_key_allowlist: dict[str, frozenset[str]] | None = None,
         critical_scorer: Callable[[str, str], Awaitable[dict[str, Any] | None]] | None = None,
         vector_memory: QdrantMemory | None = None,
+        trust_storage: TrustStorage | None = None,
     ) -> None:
         self._pool = pool
         self._encryptor = encryptor
@@ -881,6 +897,7 @@ class TenantAdminManager:
         self._secrets_cache: dict[tuple[str, str], str] = {}
         self._critical_scorer = critical_scorer
         self._vector_memory = vector_memory
+        self._trust_storage = trust_storage
         self._oauth_state_ttl = timedelta(minutes=15)
 
     def set_critical_scorer(
@@ -6667,6 +6684,12 @@ class TenantAdminManager:
             raise ValueError("execution step metadata must be an object")
         action = str(metadata.get("action") or "worker.noop").strip().lower() or "worker.noop"
         runner = str(metadata.get("runner") or "noop").strip().lower() or "noop"
+        artifact_scope = self._worker_artifact_scope(
+            tenant_id=tenant_id,
+            plan_id=plan_id,
+            step_id=step_id,
+            retry_id=retry_id,
+        )
         payload_json: dict[str, Any] = {
             "tenant_id": tenant_id,
             "plan_id": plan_id,
@@ -6674,7 +6697,6 @@ class TenantAdminManager:
             "retry_id": retry_id,
             "step_index": step.get("step_index"),
             "title": step.get("title"),
-            "prompt_text": step.get("prompt_text"),
             "runner": runner,
             "max_runtime_seconds": max_runtime_seconds,
             "artifact_contract": artifact_contract,
@@ -6682,7 +6704,14 @@ class TenantAdminManager:
         }
         custom_payload = metadata.get("payload")
         if isinstance(custom_payload, dict):
-            payload_json.update(custom_payload)
+            payload_json.update(self._sanitize_worker_control_payload(custom_payload))
+        payload_json["worker_artifact_scope"] = artifact_scope
+        payload_json["worker_artifacts"] = self._build_worker_artifacts(
+            artifact_scope=artifact_scope,
+            title=step.get("title"),
+            prompt_text=step.get("prompt_text"),
+            metadata=metadata,
+        )
 
         actor_sub = str(dispatcher_id or "execution-dispatcher").strip() or "execution-dispatcher"
         previous_step_status = str(from_status or "running").strip().lower() or "running"
@@ -6978,6 +7007,44 @@ class TenantAdminManager:
                 candidate_action = str(candidate.get("action") or "").strip().lower()
                 raw_payload = candidate.get("payload_json")
                 candidate_payload = raw_payload if isinstance(raw_payload, dict) else {}
+                delegation_scope = self._resolve_worker_delegation_scope_for_job(
+                    action=candidate_action,
+                    payload_json=candidate_payload,
+                )
+                delegation_grant: dict[str, Any] | None = None
+                if delegation_scope is not None:
+                    permission = str(delegation_scope.get("permission") or "").strip().lower()
+                    resource_scope = str(delegation_scope.get("resource_scope") or "").strip()
+                    delegation_denial: dict[str, Any] = {
+                        "kind": "delegation_grant",
+                        "job_id": str(candidate.get("job_id") or ""),
+                        "action": candidate_action,
+                        "permission": permission,
+                        "resource_scope": resource_scope,
+                    }
+                    if permission not in VALID_WORKER_DELEGATION_PERMISSIONS:
+                        if denied_reasons is not None:
+                            denied_reasons.append(
+                                {**delegation_denial, "reason": "invalid_permission"}
+                            )
+                        continue
+                    if not resource_scope:
+                        if denied_reasons is not None:
+                            denied_reasons.append(
+                                {**delegation_denial, "reason": "missing_resource_scope"}
+                            )
+                        continue
+                    delegation_grant = await self.get_active_worker_delegation_grant(
+                        tenant_id=tenant_id,
+                        node_id=node,
+                        resource_scope=resource_scope,
+                        permission=permission,
+                    )
+                    if delegation_grant is None:
+                        if denied_reasons is not None:
+                            denied_reasons.append({**delegation_denial, "reason": "grant_required"})
+                        continue
+
                 messaging_scope = self._resolve_worker_messaging_scope_for_job(
                     action=candidate_action,
                     payload_json=candidate_payload,
@@ -6987,7 +7054,7 @@ class TenantAdminManager:
                     permission = str(messaging_scope.get("permission") or "").strip().lower()
                     provider = str(messaging_scope.get("provider") or "").strip().lower()
                     chat_id = str(messaging_scope.get("chat_id") or "").strip()
-                    denial: dict[str, Any] = {
+                    messaging_denial: dict[str, Any] = {
                         "job_id": str(candidate.get("job_id") or ""),
                         "action": candidate_action,
                         "provider": provider,
@@ -6996,11 +7063,13 @@ class TenantAdminManager:
                     }
                     if permission not in VALID_WORKER_MESSAGING_PERMISSIONS:
                         if denied_reasons is not None:
-                            denied_reasons.append({**denial, "reason": "invalid_permission"})
+                            denied_reasons.append(
+                                {**messaging_denial, "reason": "invalid_permission"}
+                            )
                         continue
                     if not chat_id:
                         if denied_reasons is not None:
-                            denied_reasons.append({**denial, "reason": "missing_chat_id"})
+                            denied_reasons.append({**messaging_denial, "reason": "missing_chat_id"})
                         continue
                     grant_record = await self.get_active_worker_messaging_grant(
                         tenant_id=tenant_id,
@@ -7011,7 +7080,7 @@ class TenantAdminManager:
                     )
                     if grant_record is None:
                         if denied_reasons is not None:
-                            denied_reasons.append({**denial, "reason": "grant_required"})
+                            denied_reasons.append({**messaging_denial, "reason": "grant_required"})
                         continue
 
                 max_runtime_seconds = self._coerce_execution_runtime_seconds(
@@ -7065,27 +7134,38 @@ class TenantAdminManager:
                 if claimed is None:
                     continue
                 claimed_dict = dict(claimed)
+                if delegation_scope is not None and delegation_grant is not None:
+                    claimed_payload_json = claimed_dict.get("payload_json")
+                    payload_for_worker = (
+                        dict(claimed_payload_json) if isinstance(claimed_payload_json, dict) else {}
+                    )
+                    payload_for_worker["worker_delegation_access"] = {
+                        "grant_id": str(delegation_grant.get("grant_id") or ""),
+                        "resource_scope": str(delegation_scope.get("resource_scope") or ""),
+                        "permission": str(delegation_scope.get("permission") or ""),
+                    }
+                    claimed_dict["payload_json"] = payload_for_worker
                 if messaging_scope is not None and grant_record is not None:
                     permission = str(messaging_scope.get("permission") or "").strip().lower()
                     claimed_payload_json = claimed_dict.get("payload_json")
-                    payload_for_worker: dict[str, Any]
+                    messaging_payload_for_worker: dict[str, Any]
                     if isinstance(claimed_payload_json, dict):
-                        payload_for_worker = dict(claimed_payload_json)
+                        messaging_payload_for_worker = dict(claimed_payload_json)
                     else:
-                        payload_for_worker = {}
+                        messaging_payload_for_worker = {}
                     redacted_payload = bool(grant_record.get("redacted_payload"))
                     if permission == "read" and redacted_payload:
-                        payload_for_worker = self._redact_worker_messaging_payload(
-                            payload_for_worker
+                        messaging_payload_for_worker = self._redact_worker_messaging_payload(
+                            messaging_payload_for_worker
                         )
-                    payload_for_worker["worker_messaging_access"] = {
+                    messaging_payload_for_worker["worker_messaging_access"] = {
                         "grant_id": str(grant_record.get("grant_id") or ""),
                         "provider": str(messaging_scope.get("provider") or ""),
                         "chat_id": str(messaging_scope.get("chat_id") or ""),
                         "permission": permission,
                         "redacted_payload": redacted_payload,
                     }
-                    claimed_dict["payload_json"] = payload_for_worker
+                    claimed_dict["payload_json"] = messaging_payload_for_worker
 
                 previous_status = str(candidate.get("status") or "queued").strip().lower()
                 await conn.execute(
@@ -7817,6 +7897,199 @@ class TenantAdminManager:
         if not read_allowed and not send_allowed:
             raise ValueError("At least one of allow_read or allow_send must be true")
         return read_allowed, send_allowed
+
+    async def _get_trust_storage(self) -> TrustStorage:
+        if self._trust_storage is None:
+            from zetherion_ai.config import get_settings
+            from zetherion_ai.trust.storage import TrustStorage
+
+            storage = TrustStorage(schema=get_settings().postgres_control_plane_schema)
+            await storage.initialize(self._pool)
+            self._trust_storage = storage
+        return self._trust_storage
+
+    @staticmethod
+    def _normalize_worker_delegation_ttl_seconds(raw: Any, *, default: int = 3600) -> int:
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            value = default
+        return max(60, min(value, 60 * 60 * 24 * 14))
+
+    @staticmethod
+    def _normalize_worker_delegation_permission(raw: Any) -> str:
+        value = str(raw or "").strip().lower()
+        if value not in VALID_WORKER_DELEGATION_PERMISSIONS:
+            allowed = ", ".join(sorted(VALID_WORKER_DELEGATION_PERMISSIONS))
+            raise ValueError(f"permission must be one of: {allowed}")
+        return value
+
+    @classmethod
+    def _normalize_worker_delegation_permissions(cls, raw: Any) -> list[str]:
+        permissions = cls._normalize_worker_capabilities(raw)
+        if not permissions:
+            raise ValueError("permissions must be a non-empty array of strings")
+        invalid = [item for item in permissions if item not in VALID_WORKER_DELEGATION_PERMISSIONS]
+        if invalid:
+            allowed = ", ".join(sorted(VALID_WORKER_DELEGATION_PERMISSIONS))
+            raise ValueError(f"permissions must be one of: {allowed}")
+        return permissions
+
+    @classmethod
+    def _normalize_worker_delegation_scope(cls, raw: Any) -> str:
+        from zetherion_ai.trust.storage import normalize_resource_scope
+
+        scope = normalize_resource_scope(str(raw or "").strip())
+        if not any(scope.startswith(prefix) for prefix in VALID_WORKER_DELEGATION_SCOPE_PREFIXES):
+            allowed = ", ".join(VALID_WORKER_DELEGATION_SCOPE_PREFIXES)
+            raise ValueError(f"worker delegation scope must start with one of: {allowed}")
+        return scope
+
+    @staticmethod
+    def _worker_artifact_scope(*, tenant_id: str, plan_id: str, step_id: str, retry_id: str) -> str:
+        return f"worker_artifact:{tenant_id}:{plan_id}:{step_id}:{retry_id}"
+
+    @classmethod
+    def _build_worker_artifacts(
+        cls,
+        *,
+        artifact_scope: str,
+        title: Any,
+        prompt_text: Any,
+        metadata: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        prompt = str(prompt_text or "").strip()
+        artifacts: list[dict[str, Any]] = []
+        if prompt:
+            artifacts.append(
+                {
+                    "artifact_id": "step-instruction",
+                    "artifact_type": "instruction",
+                    "resource_scope": artifact_scope,
+                    "approved": True,
+                    "title": str(title or "").strip() or None,
+                    "content": {"text": prompt},
+                    "metadata": {"source": "execution_step"},
+                }
+            )
+        extra_artifacts = metadata.get("worker_artifacts")
+        if isinstance(extra_artifacts, list):
+            for idx, raw_artifact in enumerate(extra_artifacts, start=1):
+                if not isinstance(raw_artifact, dict):
+                    continue
+                resource_scope = str(raw_artifact.get("resource_scope") or artifact_scope).strip()
+                try:
+                    resource_scope = cls._normalize_worker_artifact_scope(resource_scope)
+                except ValueError:
+                    resource_scope = artifact_scope
+                artifact_type = (
+                    str(raw_artifact.get("artifact_type") or raw_artifact.get("kind") or "context")
+                    .strip()
+                    .lower()
+                    or "context"
+                )
+                artifact_id = (
+                    str(raw_artifact.get("artifact_id") or "").strip() or f"artifact-{idx}"
+                )
+                content = raw_artifact.get("content")
+                if not isinstance(content, dict):
+                    content = {"text": str(content or "").strip()} if content is not None else {}
+                metadata_json = raw_artifact.get("metadata")
+                if not isinstance(metadata_json, dict):
+                    metadata_json = {}
+                artifacts.append(
+                    {
+                        "artifact_id": artifact_id,
+                        "artifact_type": artifact_type,
+                        "resource_scope": resource_scope,
+                        "approved": bool(raw_artifact.get("approved", True)),
+                        "title": str(raw_artifact.get("title") or "").strip() or None,
+                        "content": content,
+                        "metadata": metadata_json,
+                    }
+                )
+        return artifacts
+
+    @staticmethod
+    def _sanitize_worker_control_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        sanitized: dict[str, Any] = {}
+        for key, value in payload.items():
+            key_text = str(key)
+            key_norm = key_text.strip().lower()
+            if key_norm in WORKER_ARTIFACT_TEXT_KEYS or key_norm == "worker_artifacts":
+                continue
+            sanitized[key_text] = value
+        return sanitized
+
+    @classmethod
+    def _normalize_worker_artifact_scope(cls, raw: Any) -> str:
+        from zetherion_ai.trust.storage import normalize_resource_scope
+
+        scope = normalize_resource_scope(str(raw or "").strip())
+        if not scope.startswith("worker_artifact:"):
+            raise ValueError("worker artifact scope must start with worker_artifact:")
+        return scope
+
+    @classmethod
+    def _resolve_worker_delegation_scope_for_job(
+        cls,
+        *,
+        action: str,
+        payload_json: Any,
+    ) -> dict[str, Any] | None:
+        action_norm = str(action or "").strip().lower()
+        payload = payload_json if isinstance(payload_json, dict) else {}
+        if action_norm in {"repo.patch", "repo.commit", "repo.pr.open"}:
+            repo_root = str(
+                payload.get("repo_root")
+                or payload.get("workspace_root")
+                or payload.get("workdir")
+                or ""
+            ).strip()
+            return {
+                "permission": action_norm,
+                "resource_scope": f"repo:{repo_root}" if repo_root else "",
+                "resource_id": repo_root,
+            }
+        if action_norm == "codex.session.control":
+            session_id = str(
+                payload.get("session_id") or payload.get("codex_session_id") or ""
+            ).strip()
+            return {
+                "permission": action_norm,
+                "resource_scope": f"codex.session:{session_id}" if session_id else "",
+                "resource_id": session_id,
+            }
+        return None
+
+    @staticmethod
+    def _worker_delegation_scope_matches(grant_scope: str, resource_scope: str) -> bool:
+        if grant_scope == resource_scope:
+            return True
+        if grant_scope.endswith("*"):
+            return resource_scope.startswith(grant_scope[:-1])
+        return False
+
+    @staticmethod
+    def _trust_grant_record_to_dict(grant: TrustGrantRecord) -> dict[str, Any]:
+        return {
+            "grant_id": grant.grant_id,
+            "tenant_id": grant.tenant_id,
+            "grantee_id": grant.grantee_id,
+            "grantee_type": grant.grantee_type,
+            "resource_scope": grant.resource_scope,
+            "permissions": list(grant.permissions),
+            "granted_by_id": grant.granted_by_id,
+            "granted_by_type": grant.granted_by_type,
+            "source_system": grant.source_system,
+            "source_record_id": grant.source_record_id,
+            "metadata": dict(grant.metadata),
+            "issued_at": grant.issued_at,
+            "expires_at": grant.expires_at,
+            "revoked_at": grant.revoked_at,
+            "revoke_reason": grant.revoke_reason,
+            "active": grant.active,
+        }
 
     @classmethod
     def _resolve_worker_messaging_scope_for_job(
@@ -9864,6 +10137,138 @@ class TenantAdminManager:
             bounded,
         )
         return len(rows)
+
+    async def list_worker_delegation_grants(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        resource_scope_prefix: str | None = None,
+    ) -> list[dict[str, Any]]:
+        node = str(node_id or "").strip()
+        if not node:
+            raise ValueError("Missing node_id")
+        storage = await self._get_trust_storage()
+        prefix = (
+            self._normalize_worker_delegation_scope(resource_scope_prefix)
+            if resource_scope_prefix is not None
+            else None
+        )
+        grants = await storage.list_active_grants(
+            grantee_id=node,
+            grantee_type="worker_node",
+            tenant_id=tenant_id,
+            resource_scope_prefix=prefix,
+        )
+        return [self._trust_grant_record_to_dict(grant) for grant in grants]
+
+    async def get_active_worker_delegation_grant(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        resource_scope: str,
+        permission: str,
+    ) -> dict[str, Any] | None:
+        node = str(node_id or "").strip()
+        if not node:
+            raise ValueError("Missing node_id")
+        normalized_scope = self._normalize_worker_delegation_scope(resource_scope)
+        normalized_permission = self._normalize_worker_delegation_permission(permission)
+        storage = await self._get_trust_storage()
+        prefix = normalized_scope.split(":", 1)[0] + ":"
+        grants = await storage.list_active_grants(
+            grantee_id=node,
+            grantee_type="worker_node",
+            tenant_id=tenant_id,
+            resource_scope_prefix=prefix,
+        )
+        for grant in grants:
+            permissions = {str(item).strip().lower() for item in grant.permissions}
+            if normalized_permission not in permissions and "*" not in permissions:
+                continue
+            if not self._worker_delegation_scope_matches(grant.resource_scope, normalized_scope):
+                continue
+            return self._trust_grant_record_to_dict(grant)
+        return None
+
+    async def put_worker_delegation_grant(
+        self,
+        *,
+        tenant_id: str,
+        node_id: str,
+        resource_scope: str,
+        permissions: list[str],
+        ttl_seconds: int,
+        metadata: dict[str, Any] | None = None,
+        actor: AdminActorContext | None = None,
+    ) -> dict[str, Any]:
+        from zetherion_ai.trust.storage import TrustGrantInput
+
+        node = str(node_id or "").strip()
+        if not node:
+            raise ValueError("Missing node_id")
+        normalized_scope = self._normalize_worker_delegation_scope(resource_scope)
+        normalized_permissions = self._normalize_worker_delegation_permissions(permissions)
+        ttl = self._normalize_worker_delegation_ttl_seconds(ttl_seconds)
+        node_record = await self.get_worker_node(tenant_id=tenant_id, node_id=node)
+        if node_record is None:
+            raise ValueError("Worker node not found")
+        before = await self.list_worker_delegation_grants(
+            tenant_id=tenant_id,
+            node_id=node,
+            resource_scope_prefix=normalized_scope,
+        )
+        storage = await self._get_trust_storage()
+        grant = await storage.upsert_grant(
+            TrustGrantInput(
+                tenant_id=tenant_id,
+                grantee_id=node,
+                grantee_type="worker_node",
+                resource_scope=normalized_scope,
+                permissions=normalized_permissions,
+                granted_by_id=actor.actor_sub if actor is not None else "worker-delegation-grant",
+                granted_by_type="admin_actor" if actor is not None else "system",
+                expires_at=datetime.now(UTC) + timedelta(seconds=ttl),
+                source_system="worker_delegation_grant",
+                source_record_id=f"{tenant_id}:{node}:{normalized_scope}",
+                metadata=dict(metadata or {}),
+            )
+        )
+        payload = self._trust_grant_record_to_dict(grant)
+        if actor is not None:
+            await self._write_audit(
+                tenant_id=tenant_id,
+                action="tenant_worker_delegation_grant_upsert",
+                actor=actor,
+                before={"grants": before},
+                after=payload,
+            )
+        return payload
+
+    async def revoke_worker_delegation_grant(
+        self,
+        *,
+        tenant_id: str,
+        grant_id: str,
+        actor: AdminActorContext | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        storage = await self._get_trust_storage()
+        revoked = await storage.revoke_grant(
+            grant_id,
+            revoke_reason=str(reason or "revoked").strip() or "revoked",
+        )
+        payload = self._trust_grant_record_to_dict(revoked)
+        if actor is not None:
+            await self._write_audit(
+                tenant_id=tenant_id,
+                action="tenant_worker_delegation_grant_revoke",
+                actor=actor,
+                before={"grant_id": grant_id},
+                after=payload,
+            )
+        return payload
 
     async def record_worker_job_event(
         self,

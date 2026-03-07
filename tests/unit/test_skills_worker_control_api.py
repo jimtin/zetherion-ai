@@ -684,7 +684,12 @@ class TestSkillsWorkerControlAPI:
                 "required_capabilities": ["repo.patch"],
                 "max_runtime_seconds": 600,
                 "artifact_contract": {"expect": "summary"},
-                "payload_json": {"runner": "noop", "prompt_text": "Run task"},
+                "payload_json": {
+                    "runner": "noop",
+                    "worker_artifacts": [
+                        {"artifact_type": "instruction", "content": {"text": "Run task"}}
+                    ],
+                },
             }
         )
         server = SkillsServer(
@@ -716,7 +721,90 @@ class TestSkillsWorkerControlAPI:
             payload = await response.json()
             assert payload["job"]["job_id"] == "job-123"
             assert payload["job"]["runner"] == "noop"
-            assert payload["job"]["payload"]["prompt_text"] == "Run task"
+            assert payload["job"]["payload"]["worker_artifacts"][0]["content"]["text"] == "Run task"
+
+    async def test_worker_claim_logs_deduped_delegation_denials(
+        self,
+        mock_registry: SkillRegistry,
+        worker_manager: MagicMock,
+    ) -> None:
+        tenant_id = "11111111-1111-1111-1111-111111111111"
+        node_id = "node-1"
+        session_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        token = "token"
+        signing_secret = "signing-secret"
+        worker_manager.get_worker_session_auth = AsyncMock(
+            return_value={
+                "session_id": session_id,
+                "token_hash": _hash_token(token),
+                "signing_secret": signing_secret,
+                "status": "active",
+                "health_status": "healthy",
+                "expires_at": datetime.now(UTC) + timedelta(hours=1),
+                "revoked_at": None,
+            }
+        )
+
+        async def _claim_with_denials(**kwargs: Any) -> None:
+            denied_reasons = kwargs["denied_reasons"]
+            denied_reasons.extend(
+                [
+                    {
+                        "kind": "delegation_grant",
+                        "job_id": "job-a",
+                        "action": "repo.patch",
+                        "permission": "repo.patch",
+                        "resource_scope": "repo:/workspace/repo",
+                        "reason": "grant_required",
+                    },
+                    {
+                        "kind": "delegation_grant",
+                        "job_id": "job-a",
+                        "action": "repo.patch",
+                        "permission": "repo.patch",
+                        "resource_scope": "repo:/workspace/repo",
+                        "reason": "grant_required",
+                    },
+                ]
+            )
+            return None
+
+        worker_manager.claim_worker_dispatch_job = AsyncMock(side_effect=_claim_with_denials)
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="skills-secret",
+            tenant_admin_manager=worker_manager,
+        )
+        app = server.create_app()
+
+        claim_body = {"tenant_id": tenant_id, "required_capabilities": ["repo.patch"]}
+        claim_raw = json.dumps(claim_body, separators=(",", ":"))
+        headers = _worker_headers(
+            tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+            token=token,
+            signing_secret=signing_secret,
+            raw_body=claim_raw,
+            nonce="nonce-claim-delegation-denials",
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            response = await client.post(
+                f"/worker/v1/nodes/{node_id}/jobs/claim",
+                headers=headers,
+                data=claim_raw,
+            )
+            assert response.status == 200
+            payload = await response.json()
+            assert payload["reason"] == "no_jobs_available"
+            assert payload["job"] is None
+
+        worker_manager.record_security_event.assert_awaited_once()
+        call = worker_manager.record_security_event.await_args
+        assert call.kwargs["event_type"] == "worker_delegation_access_denied"
+        assert call.kwargs["action"] == "repo.patch"
+        assert call.kwargs["payload"]["resource_scope"] == "repo:/workspace/repo"
 
     async def test_worker_claim_logs_deduped_messaging_denials(
         self,

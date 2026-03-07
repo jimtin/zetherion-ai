@@ -275,6 +275,11 @@ async def test_worker_guardrail_violation_returns_structured_error(tmp_path: Pat
                 "payload": {
                     "repo_root": str(tmp_path / "outside"),
                     "command": ["git", "status"],
+                    "worker_delegation_access": {
+                        "grant_id": "grant-1",
+                        "resource_scope": f"repo:{tmp_path / 'outside'}",
+                        "permission": "repo.patch",
+                    },
                 },
             }
         ],
@@ -309,6 +314,58 @@ async def test_worker_guardrail_violation_returns_structured_error(tmp_path: Pat
     assert len(bridge.result_payloads) == 1
     assert bridge.result_payloads[0]["status"] == "failed"
     assert bridge.result_payloads[0]["error"]["code"] == "WORKER_GUARDRAIL_REPO_NOT_ALLOWED"
+
+
+@pytest.mark.asyncio
+async def test_worker_delegation_guardrail_requires_matching_scope(tmp_path: Path) -> None:
+    tenant_id = "11111111-1111-1111-1111-111111111111"
+    node_id = "worker-laptop-1"
+    allowed_repo = tmp_path / "allowed-repo"
+    allowed_repo.mkdir(parents=True, exist_ok=True)
+
+    bridge = _FakeWorkerBridge(
+        tenant_id=tenant_id,
+        node_id=node_id,
+        bootstrap_secret="bootstrap-secret",
+        jobs=[
+            {
+                "job_id": "job-command-2",
+                "action": "repo.patch",
+                "runner": "codex",
+                "required_capabilities": ["repo.patch"],
+                "payload": {
+                    "repo_root": str(allowed_repo),
+                    "command": ["git", "status"],
+                },
+            }
+        ],
+    )
+
+    server = TestServer(bridge.create_app())
+    await server.start_server()
+    try:
+        config = _base_config(
+            tmp_path=tmp_path,
+            base_url=str(server.make_url("")).rstrip("/"),
+            tenant_id=tenant_id,
+            node_id=node_id,
+        )
+        config.worker_runner = "codex"
+        config.worker_allowed_actions = ["repo.patch"]
+        config.worker_allowed_repo_roots = [str(allowed_repo)]
+
+        runtime = WorkerRuntime(config)
+        try:
+            outcome = await runtime.run_once()
+        finally:
+            await runtime.close()
+    finally:
+        await server.close()
+
+    assert outcome.claimed_job is True
+    assert outcome.job_id == "job-command-2"
+    assert outcome.status == "failed"
+    assert bridge.result_payloads[0]["error"]["code"] == "WORKER_GUARDRAIL_DELEGATION_REQUIRED"
 
 
 @pytest.mark.asyncio

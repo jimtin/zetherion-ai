@@ -26,6 +26,7 @@ _ALLOWED_RESOURCE_SCOPE_PREFIXES = (
     "codex.session:",
     "desktop.app:",
     "messaging.chat:",
+    "worker_artifact:",
 )
 
 
