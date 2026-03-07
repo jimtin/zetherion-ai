@@ -558,6 +558,9 @@ Tenant admin route set:
 - `POST /workers/jobs/{job_id}/retry`
 - `POST /workers/jobs/{job_id}/cancel`
 - `GET /workers/events`
+- `GET /workers/delegation/grants`
+- `PUT /workers/nodes/{node_id}/delegation/grants`
+- `DELETE /workers/delegation/grants/{grant_id}`
 - `GET /workers/messaging/grants`
 - `PUT /workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}`
 - `DELETE /workers/messaging/grants/{grant_id}`

@@ -201,6 +201,14 @@ class TrustPolicyEvaluator:
             requires_two_person=True,
             elevation_key="worker_messaging_grant_explicitly_elevated",
         ),
+        "worker.delegation.grant": TrustPolicyRule(
+            action="worker.delegation.grant",
+            action_class=TrustActionClass.CRITICAL,
+            min_tier=TrustTier.TIER3,
+            requires_approval=True,
+            requires_two_person=True,
+            elevation_key="worker_delegation_grant_explicitly_elevated",
+        ),
         # Existing high-risk admin actions continue to route through the
         # established change-ticket approval flow.
         "secret.put": TrustPolicyRule(

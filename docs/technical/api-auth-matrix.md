@@ -18,6 +18,7 @@ Authoritative exposure rule:
   - `GET /api/v1/messaging/messages`
   - `POST /api/v1/messaging/messages/{chat_id}/send`
 - Internal lifecycle tenant mutations now enforce claims-to-tenant policy in addition to operator scope checks.
+- Internal tenant-admin worker delegation grant routes now share the same operator scope + step-up auth model as worker capability and worker messaging grant mutations.
 - Auth requirements for public document routes remain API-key based, including:
   - `DELETE /api/v1/documents/{document_id}`
   - `POST /api/v1/documents/{document_id}/restore`

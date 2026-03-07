@@ -200,6 +200,16 @@ async def test_internal_admin_validation_error_matrix() -> None:
         ),
         (
             "put",
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/nodes/node-1/delegation/grants",
+            {"resource_scope": "", "permissions": ["repo.patch"]},
+        ),
+        (
+            "delete",
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/delegation/grants/66666666-6666-6666-6666-666666666666",
+            {"reason": {"invalid": True}},
+        ),
+        (
+            "put",
             "/service/ai/v1/internal/admin/tenants/tenant-a/workers/nodes/node-1/messaging/grants/whatsapp/chat-1",
             {"ttl_seconds": 0},
         ),

@@ -224,6 +224,32 @@ def worker_manager() -> MagicMock:
             "revoked_at": datetime.now(UTC),
         }
     )
+    mgr.list_worker_delegation_grants = AsyncMock(return_value=[])
+    mgr.put_worker_delegation_grant = AsyncMock(
+        return_value={
+            "grant_id": "66666666-6666-6666-6666-666666666666",
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+            "node_id": "node-1",
+            "grantee_id": "node-1",
+            "grantee_type": "worker_node",
+            "resource_scope": "repo:/workspace/repo",
+            "permissions": ["repo.patch", "repo.commit"],
+            "expires_at": datetime.now(UTC) + timedelta(hours=1),
+            "revoked_at": None,
+            "metadata": {},
+        }
+    )
+    mgr.revoke_worker_delegation_grant = AsyncMock(
+        return_value={
+            "grant_id": "66666666-6666-6666-6666-666666666666",
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+            "node_id": "node-1",
+            "resource_scope": "repo:/workspace/repo",
+            "permissions": ["repo.patch", "repo.commit"],
+            "idempotent": False,
+            "revoked_at": datetime.now(UTC),
+        }
+    )
     mgr.purge_expired_worker_messaging_grants = AsyncMock(return_value=0)
     mgr.record_security_event = AsyncMock(return_value={})
     mgr.list_discord_users = AsyncMock(return_value=[])
@@ -1518,6 +1544,38 @@ class TestSkillsWorkerControlAPI:
             )
             assert events.status == 200
 
+            delegation_grants = await client.get(
+                (
+                    f"/admin/tenants/{tenant_id}/workers/delegation/grants"
+                    f"?node_id={node_id}&resource_scope_prefix=repo:*&limit=5"
+                ),
+                headers=_admin(),
+            )
+            assert delegation_grants.status == 200
+
+            delegation_upsert = await client.put(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/delegation/grants",
+                headers=_admin(),
+                json={
+                    "resource_scope": "repo:/workspace/repo",
+                    "permissions": ["repo.patch", "repo.commit"],
+                    "ttl_seconds": 3600,
+                    "metadata": {"reason": "testing"},
+                    "explicitly_elevated": True,
+                },
+            )
+            assert delegation_upsert.status == 200
+
+            delegation_revoke = await client.delete(
+                (
+                    f"/admin/tenants/{tenant_id}/workers/delegation/grants/"
+                    "66666666-6666-6666-6666-666666666666"
+                ),
+                headers=_admin(),
+                json={"reason": "cleanup", "explicitly_elevated": True},
+            )
+            assert delegation_revoke.status == 200
+
             grants = await client.get(
                 (
                     f"/admin/tenants/{tenant_id}/workers/messaging/grants"
@@ -1588,6 +1646,11 @@ class TestSkillsWorkerControlAPI:
         worker_manager.list_worker_jobs.assert_awaited_once()
         worker_manager.get_worker_job.assert_awaited_once()
         worker_manager.list_worker_job_events.assert_awaited_once()
+        worker_manager.list_worker_delegation_grants.assert_awaited_once()
+        worker_manager.put_worker_delegation_grant.assert_awaited_once()
+        delegation_kwargs = worker_manager.put_worker_delegation_grant.await_args.kwargs
+        assert delegation_kwargs["permissions"] == ["repo.patch", "repo.commit"]
+        worker_manager.revoke_worker_delegation_grant.assert_awaited_once()
         worker_manager.list_worker_messaging_grants.assert_awaited_once()
         worker_manager.put_worker_messaging_grant.assert_awaited_once()
         grant_kwargs = worker_manager.put_worker_messaging_grant.await_args.kwargs
@@ -2248,6 +2311,12 @@ class TestSkillsWorkerControlAPI:
         )
         worker_manager.retry_worker_job = AsyncMock(side_effect=ValueError("worker job not found"))
         worker_manager.cancel_worker_job = AsyncMock(side_effect=ValueError("bad cancel payload"))
+        worker_manager.put_worker_delegation_grant = AsyncMock(
+            side_effect=ValueError("worker node not found")
+        )
+        worker_manager.revoke_worker_delegation_grant = AsyncMock(
+            side_effect=ValueError("worker delegation grant not found")
+        )
         worker_manager.put_worker_messaging_grant = AsyncMock(
             side_effect=ValueError("worker node not found")
         )
@@ -2349,6 +2418,56 @@ class TestSkillsWorkerControlAPI:
                 json={},
             )
             assert cancel_bad.status == 400
+
+            bad_delegation_grants_limit = await client.get(
+                f"/admin/tenants/{tenant_id}/workers/delegation/grants?node_id={node_id}&limit=bad",
+                headers=_admin(),
+            )
+            assert bad_delegation_grants_limit.status == 400
+
+            delegation_grant_bad_metadata = await client.put(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/delegation/grants",
+                headers=_admin(),
+                json={
+                    "resource_scope": "repo:/workspace/repo",
+                    "permissions": ["repo.patch"],
+                    "ttl_seconds": 3600,
+                    "metadata": ["bad"],
+                },
+            )
+            assert delegation_grant_bad_metadata.status == 400
+
+            delegation_grant_not_found = await client.put(
+                f"/admin/tenants/{tenant_id}/workers/nodes/{node_id}/delegation/grants",
+                headers=_admin(),
+                json={
+                    "resource_scope": "repo:/workspace/repo",
+                    "permissions": ["repo.patch"],
+                    "ttl_seconds": 3600,
+                    "explicitly_elevated": True,
+                },
+            )
+            assert delegation_grant_not_found.status == 404
+
+            delegation_revoke_bad_json = await client.delete(
+                (
+                    f"/admin/tenants/{tenant_id}/workers/delegation/grants/"
+                    "66666666-6666-6666-6666-666666666666"
+                ),
+                headers={**_admin(), "Content-Type": "application/json"},
+                data="{invalid",
+            )
+            assert delegation_revoke_bad_json.status == 400
+
+            delegation_revoke_not_found = await client.delete(
+                (
+                    f"/admin/tenants/{tenant_id}/workers/delegation/grants/"
+                    "66666666-6666-6666-6666-666666666666"
+                ),
+                headers=_admin(),
+                json={"reason": "cleanup", "explicitly_elevated": True},
+            )
+            assert delegation_revoke_not_found.status == 404
 
             bad_grants_limit = await client.get(
                 f"/admin/tenants/{tenant_id}/workers/messaging/grants?limit=bad",
