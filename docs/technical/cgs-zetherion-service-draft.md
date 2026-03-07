@@ -530,6 +530,7 @@ CGS behavior:
 
 Internal update endpoint:
 - Maps to `client_configure`.
+- Also performs staged tenant migration for existing clients, including bounded document reindex backfill, release-marker capture, migration receipt persistence, and owner-safe tenant health snapshots.
 
 ## 7.20 `POST /service/ai/v1/internal/tenants/{tenant_id}/deactivate`
 

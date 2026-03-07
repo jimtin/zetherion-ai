@@ -166,28 +166,31 @@ async def handle_internal_update_tenant(request: web.Request) -> web.Response:
             details={"errors": exc.errors()},
         ) from exc
 
-    mapping = await resolve_active_mapping(request.app["cgs_storage"], cgs_tenant_id)
-
-    status, skill_response = await request.app["cgs_skills_client"].handle_intent(
-        intent="client_configure",
-        user_id=str(principal(request).sub),
-        message="",
-        request_id=rid,
-        context={
-            "tenant_id": str(mapping["zetherion_tenant_id"]),
-            "name": payload.name,
-            "domain": payload.domain,
-            "config": payload.config,
-        },
+    await resolve_active_mapping(request.app["cgs_storage"], cgs_tenant_id)
+    orchestrator = CGSTenantProvisioningOrchestrator(
+        storage=request.app["cgs_storage"],
+        skills_client=request.app["cgs_skills_client"],
+        public_client=request.app.get("cgs_public_client"),
     )
-    if status >= 400:
-        raise map_upstream_error(status=status, payload=skill_response, source="skills")
-
-    updated = await request.app["cgs_storage"].update_tenant_profile(
+    updated = await orchestrator.reconcile_tenant(
         cgs_tenant_id=cgs_tenant_id,
+        user_id=str(principal(request).sub),
+        request_id=rid,
+        desired_isolation_stage=payload.desired_isolation_stage,
+        expected_key_version=payload.expected_key_version,
+        owner_portfolio_ready=payload.owner_portfolio_ready,
         name=payload.name,
         domain=payload.domain,
-        metadata={"config": payload.config} if payload.config is not None else None,
+        config=payload.config,
+        run_tenant_vector_backfill=payload.run_tenant_vector_backfill,
+        derive_owner_portfolio=payload.derive_owner_portfolio,
+        cutover_verified=payload.cutover_verified,
+        release_marker=(
+            payload.release_marker.model_dump(mode="json")
+            if payload.release_marker is not None
+            else None
+        ),
+        document_backfill_limit=payload.document_backfill_limit,
     )
     if updated is None:
         raise GatewayError(
@@ -196,12 +199,25 @@ async def handle_internal_update_tenant(request: web.Request) -> web.Response:
             status=404,
         )
 
+    owner_portfolio_snapshot = updated.get("owner_portfolio_snapshot")
+    snapshot_id = None
+    if isinstance(owner_portfolio_snapshot, dict):
+        snapshot_id = owner_portfolio_snapshot.get("snapshot_id")
+
     return success_response(
         rid,
         {
             "cgs_tenant_id": cgs_tenant_id,
             "zetherion_tenant_id": str(updated["zetherion_tenant_id"]),
             "updated": True,
+            "isolation_stage": updated.get("isolation_stage"),
+            "reconciliation_issues": updated.get("reconciliation_issues", []),
+            "migration_receipt_id": updated.get("migration_receipt_id"),
+            "migration_status": updated.get("migration_status"),
+            "migration_runtime_policy": updated.get("migration_runtime_policy"),
+            "tenant_vector_backfill": updated.get("tenant_vector_backfill"),
+            "owner_portfolio_snapshot_id": snapshot_id,
+            "release_marker": updated.get("release_marker"),
         },
     )
 

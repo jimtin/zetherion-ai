@@ -146,8 +146,18 @@ class PublicAPIClient:
         self,
         *,
         headers: dict[str, str],
+        limit: int | None = None,
+        include_archived: bool = False,
     ) -> tuple[int, Any, dict[str, str]]:
-        return await self.request_json("GET", "/api/v1/documents", headers=headers)
+        params: dict[str, Any] = {"include_archived": "true" if include_archived else "false"}
+        if limit is not None:
+            params["limit"] = int(limit)
+        return await self.request_json(
+            "GET",
+            "/api/v1/documents",
+            headers=headers,
+            params=params,
+        )
 
     async def get_document(
         self,

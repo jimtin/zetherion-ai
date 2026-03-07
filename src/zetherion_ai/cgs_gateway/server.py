@@ -209,6 +209,7 @@ async def run_server(
     zetherion_public_api_base_url: str,
     zetherion_skills_api_base_url: str,
     zetherion_skills_api_secret: str,
+    postgres_owner_portfolio_schema: str = "owner_portfolio",
     blog_publish_token: str | None = None,
     rag_allowed_providers: set[str] | None = None,
     rag_allowed_models: set[str] | None = None,
@@ -218,7 +219,11 @@ async def run_server(
     key_manager = KeyManager(encryption_passphrase, encryption_salt_path)
     encryptor = FieldEncryptor(key=key_manager.key)
 
-    storage = CGSGatewayStorage(dsn=postgres_dsn, encryptor=encryptor)
+    storage = CGSGatewayStorage(
+        dsn=postgres_dsn,
+        encryptor=encryptor,
+        owner_portfolio_schema=postgres_owner_portfolio_schema,
+    )
     public_client = PublicAPIClient(base_url=zetherion_public_api_base_url)
     skills_client = SkillsClient(
         base_url=zetherion_skills_api_base_url,
@@ -347,6 +352,11 @@ def main() -> None:
                 zetherion_public_api_base_url=z_public,
                 zetherion_skills_api_base_url=z_skills,
                 zetherion_skills_api_secret=z_skills_secret,
+                postgres_owner_portfolio_schema=getattr(
+                    settings,
+                    "postgres_owner_portfolio_schema",
+                    "owner_portfolio",
+                ),
                 blog_publish_token=blog_publish_token,
                 rag_allowed_providers=rag_allowed_providers,
                 rag_allowed_models=rag_allowed_models,

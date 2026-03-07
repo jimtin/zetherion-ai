@@ -327,7 +327,7 @@ paths:
               $ref: '#/components/schemas/ConfigureTenantRequest'
       responses:
         '200':
-          description: Tenant mapping updated
+          description: Tenant mapping updated or migrated
   /service/ai/v1/internal/tenants/{tenant_id}/deactivate:
     post:
       summary: Deactivate internal tenant mapping
@@ -1640,6 +1640,34 @@ components:
           type: object
           nullable: true
           additionalProperties: true
+        desired_isolation_stage:
+          type: string
+          nullable: true
+        expected_key_version:
+          type: integer
+          nullable: true
+          minimum: 1
+        owner_portfolio_ready:
+          type: boolean
+          nullable: true
+        run_tenant_vector_backfill:
+          type: boolean
+          default: false
+        derive_owner_portfolio:
+          type: boolean
+          default: false
+        cutover_verified:
+          type: boolean
+          default: false
+        document_backfill_limit:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 200
+        release_marker:
+          allOf:
+            - $ref: '#/components/schemas/ReleaseMarkerRequest'
+          nullable: true
     ReleaseMarkerRequest:
       type: object
       properties:
