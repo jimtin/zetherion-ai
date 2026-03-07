@@ -1465,7 +1465,7 @@ async def test_internal_admin_worker_route_matrix_success_paths() -> None:
         for call in app["cgs_skills_client"].request_tenant_admin_json.await_args_list
         if call.kwargs.get("subpath") == "/workers/nodes/node-1/messaging/grants/whatsapp/chat-1"
     )
-    assert grant_call.kwargs["payload"]["allow_draft"] is True
+    assert grant_call.kwargs["json_body"]["allow_draft"] is True
     assert "/workers/messaging/grants/55555555-5555-5555-5555-555555555555" in forwarded_subpaths
 
 
