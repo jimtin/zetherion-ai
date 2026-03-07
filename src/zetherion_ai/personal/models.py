@@ -498,3 +498,211 @@ class PersonalityProfile(BaseModel):
             last_observed=row.get("last_observed", datetime.now()),
             updated_at=row.get("updated_at", datetime.now()),
         )
+
+
+# ---------------------------------------------------------------------------
+# Owner operational / review state
+# ---------------------------------------------------------------------------
+
+
+class PersonalOperationalItemType(StrEnum):
+    """Canonical owner-personal operational state item types."""
+
+    COMMITMENT = "commitment"
+    PROJECT = "project"
+    DEADLINE = "deadline"
+    ROUTINE = "routine"
+    WAITING_FOR = "waiting_for"
+    BLOCKER = "blocker"
+    ACTIVE_PLAN = "active_plan"
+
+
+class PersonalOperationalItemStatus(StrEnum):
+    """Lifecycle states for owner-personal operational items."""
+
+    ACTIVE = "active"
+    IN_PROGRESS = "in_progress"
+    BLOCKED = "blocked"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    ARCHIVED = "archived"
+
+
+class PersonalReviewItemType(StrEnum):
+    """Canonical owner review-queue item types."""
+
+    DRAFT = "draft"
+    ASK = "ask"
+    REVIEW = "review"
+    APPROVAL_REQUIRED = "approval_required"
+    BLOCKED = "blocked"
+    FAILED = "failed"
+    OVERNIGHT_SUMMARY = "overnight_summary"
+
+
+class PersonalReviewItemStatus(StrEnum):
+    """Lifecycle states for owner review-queue items."""
+
+    PENDING = "pending"
+    RESOLVED = "resolved"
+    DISMISSED = "dismissed"
+
+
+class PersonalOperationalItem(BaseModel):
+    """Owner-personal operational item persisted in the owner schema."""
+
+    id: int | None = Field(default=None, description="DB primary key (auto-generated)")
+    user_id: int = Field(description="Owner's Discord user ID")
+    item_type: PersonalOperationalItemType = Field(description="Operational item category")
+    title: str = Field(min_length=1, description="Short operational summary")
+    detail: str | None = Field(default=None, description="Optional detailed context")
+    status: PersonalOperationalItemStatus = Field(
+        default=PersonalOperationalItemStatus.ACTIVE,
+        description="Current operational state",
+    )
+    due_at: datetime | None = Field(default=None, description="Optional due timestamp")
+    tags: list[str] = Field(default_factory=list, description="Optional owner-defined tags")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Structured metadata")
+    source: str = Field(default="manual", description="Source system or producer")
+    external_ref: str | None = Field(
+        default=None,
+        description="Optional idempotent external reference",
+    )
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+    completed_at: datetime | None = Field(default=None, description="Completion timestamp")
+
+    def to_db_row(self) -> dict[str, Any]:
+        """Convert to a flat dict suitable for PostgreSQL insertion."""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "item_type": self.item_type.value,
+            "title": self.title,
+            "detail": self.detail,
+            "status": self.status.value,
+            "due_at": self.due_at,
+            "tags": self.tags,
+            "metadata": self.metadata,
+            "source": self.source,
+            "external_ref": self.external_ref,
+            "completed_at": self.completed_at,
+        }
+
+    @classmethod
+    def from_db_row(cls, row: dict[str, Any]) -> PersonalOperationalItem:
+        """Create from a PostgreSQL row dict."""
+        import json as _json
+
+        try:
+            item_type = PersonalOperationalItemType(row.get("item_type", "commitment"))
+        except ValueError:
+            item_type = PersonalOperationalItemType.COMMITMENT
+
+        try:
+            status = PersonalOperationalItemStatus(row.get("status", "active"))
+        except ValueError:
+            status = PersonalOperationalItemStatus.ACTIVE
+
+        tags = row.get("tags") or []
+        if isinstance(tags, str):
+            tags = _json.loads(tags)
+
+        metadata = row.get("metadata") or {}
+        if isinstance(metadata, str):
+            metadata = _json.loads(metadata)
+
+        return cls(
+            id=row.get("id"),
+            user_id=row["user_id"],
+            item_type=item_type,
+            title=row["title"],
+            detail=row.get("detail"),
+            status=status,
+            due_at=row.get("due_at"),
+            tags=tags,
+            metadata=metadata,
+            source=row.get("source", "manual"),
+            external_ref=row.get("external_ref"),
+            created_at=row.get("created_at", datetime.now()),
+            updated_at=row.get("updated_at", datetime.now()),
+            completed_at=row.get("completed_at"),
+        )
+
+
+class PersonalReviewItem(BaseModel):
+    """Owner review-queue item persisted in the owner schema."""
+
+    id: int | None = Field(default=None, description="DB primary key (auto-generated)")
+    user_id: int = Field(description="Owner's Discord user ID")
+    item_type: PersonalReviewItemType = Field(description="Review queue item category")
+    title: str = Field(min_length=1, description="Short review summary")
+    detail: str | None = Field(default=None, description="Optional detailed review context")
+    status: PersonalReviewItemStatus = Field(
+        default=PersonalReviewItemStatus.PENDING,
+        description="Current review queue state",
+    )
+    source: str = Field(default="system", description="Source system or producer")
+    related_resource: str | None = Field(
+        default=None,
+        description="Optional related resource identifier",
+    )
+    priority: int = Field(default=50, ge=0, le=100, description="Priority for review ordering")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Structured metadata")
+    due_at: datetime | None = Field(default=None, description="Optional due timestamp")
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+    resolved_at: datetime | None = Field(default=None, description="Resolution timestamp")
+
+    def to_db_row(self) -> dict[str, Any]:
+        """Convert to a flat dict suitable for PostgreSQL insertion."""
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "item_type": self.item_type.value,
+            "title": self.title,
+            "detail": self.detail,
+            "status": self.status.value,
+            "source": self.source,
+            "related_resource": self.related_resource,
+            "priority": self.priority,
+            "metadata": self.metadata,
+            "due_at": self.due_at,
+            "resolved_at": self.resolved_at,
+        }
+
+    @classmethod
+    def from_db_row(cls, row: dict[str, Any]) -> PersonalReviewItem:
+        """Create from a PostgreSQL row dict."""
+        import json as _json
+
+        try:
+            item_type = PersonalReviewItemType(row.get("item_type", "review"))
+        except ValueError:
+            item_type = PersonalReviewItemType.REVIEW
+
+        try:
+            status = PersonalReviewItemStatus(row.get("status", "pending"))
+        except ValueError:
+            status = PersonalReviewItemStatus.PENDING
+
+        metadata = row.get("metadata") or {}
+        if isinstance(metadata, str):
+            metadata = _json.loads(metadata)
+
+        return cls(
+            id=row.get("id"),
+            user_id=row["user_id"],
+            item_type=item_type,
+            title=row["title"],
+            detail=row.get("detail"),
+            status=status,
+            source=row.get("source", "system"),
+            related_resource=row.get("related_resource"),
+            priority=row.get("priority", 50),
+            metadata=metadata,
+            due_at=row.get("due_at"),
+            created_at=row.get("created_at", datetime.now()),
+            updated_at=row.get("updated_at", datetime.now()),
+            resolved_at=row.get("resolved_at"),
+        )

@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from zetherion_ai.logging import get_logger
+from zetherion_ai.personal.operational_storage import OwnerPersonalIntelligenceStorage
 from zetherion_ai.personal.storage import PersonalStorage
 
 log = get_logger("zetherion_ai.personal.context")
@@ -19,6 +20,8 @@ log = get_logger("zetherion_ai.personal.context")
 MAX_CONTACTS = 5
 MAX_POLICIES = 10
 MAX_LEARNINGS = 10
+MAX_OPERATIONAL_ITEMS = 6
+MAX_REVIEW_ITEMS = 6
 
 
 @dataclass
@@ -30,6 +33,8 @@ class DecisionContext:
     schedule_constraints: list[dict[str, Any]] = field(default_factory=list)
     active_policies: list[dict[str, Any]] = field(default_factory=list)
     recent_learnings: list[dict[str, Any]] = field(default_factory=list)
+    operational_state: list[dict[str, Any]] = field(default_factory=list)
+    review_state: list[dict[str, Any]] = field(default_factory=list)
     owner_personality: dict[str, Any] = field(default_factory=dict)
     contact_personalities: list[dict[str, Any]] = field(default_factory=list)
 
@@ -72,6 +77,29 @@ class DecisionContext:
             learning_strs = [lr.get("content", "") for lr in self.recent_learnings[:3]]
             parts.append(f"Recent learnings: {'; '.join(learning_strs)}")
 
+        if self.operational_state:
+            operational_strs = []
+            for item in self.operational_state[:3]:
+                item_type = str(item.get("item_type", "item")).replace("_", " ")
+                title = str(item.get("title", "")).strip()
+                status = str(item.get("status", "active")).replace("_", " ")
+                due_at = item.get("due_at")
+                due_suffix = ""
+                if hasattr(due_at, "strftime"):
+                    due_suffix = f" due {due_at.strftime('%Y-%m-%d')}"
+                elif isinstance(due_at, str) and due_at.strip():
+                    due_suffix = f" due {due_at[:10]}"
+                operational_strs.append(f"{item_type}: {title} [{status}{due_suffix}]")
+            parts.append(f"Operational state: {'; '.join(operational_strs)}")
+
+        if self.review_state:
+            review_strs = []
+            for item in self.review_state[:3]:
+                item_type = str(item.get("item_type", "review")).replace("_", " ")
+                title = str(item.get("title", "")).strip()
+                review_strs.append(f"{item_type}: {title}")
+            parts.append(f"Pending review queue: {'; '.join(review_strs)}")
+
         if self.owner_personality:
             ws = self.owner_personality.get("writing_style", {})
             comm = self.owner_personality.get("communication", {})
@@ -101,6 +129,8 @@ class DecisionContext:
             and not self.schedule_constraints
             and not self.active_policies
             and not self.recent_learnings
+            and not self.operational_state
+            and not self.review_state
             and not self.owner_personality
             and not self.contact_personalities
         )
@@ -109,8 +139,14 @@ class DecisionContext:
 class DecisionContextBuilder:
     """Builds decision context from the personal model storage."""
 
-    def __init__(self, storage: PersonalStorage) -> None:
+    def __init__(
+        self,
+        storage: PersonalStorage,
+        *,
+        operational_storage: OwnerPersonalIntelligenceStorage | None = None,
+    ) -> None:
         self._storage = storage
+        self._operational_storage = operational_storage
 
     async def build(
         self,
@@ -160,6 +196,21 @@ class DecisionContextBuilder:
         learnings = await self._storage.list_learnings(user_id, limit=MAX_LEARNINGS)
         ctx.recent_learnings = [lr.to_db_row() for lr in learnings]
 
+        if self._operational_storage is not None:
+            operational_items = await self._operational_storage.list_operational_items(
+                user_id,
+                active_only=True,
+                limit=MAX_OPERATIONAL_ITEMS,
+            )
+            ctx.operational_state = [item.to_db_row() for item in operational_items]
+
+            review_items = await self._operational_storage.list_review_items(
+                user_id,
+                pending_only=True,
+                limit=MAX_REVIEW_ITEMS,
+            )
+            ctx.review_state = [item.to_db_row() for item in review_items]
+
         # Owner personality profile
         owner_profiles = await self._storage.list_personality_profiles(
             user_id,
@@ -183,6 +234,8 @@ class DecisionContextBuilder:
             contacts=len(ctx.relevant_contacts),
             policies=len(ctx.active_policies),
             learnings=len(ctx.recent_learnings),
+            operational_items=len(ctx.operational_state),
+            review_items=len(ctx.review_state),
         )
 
         return ctx

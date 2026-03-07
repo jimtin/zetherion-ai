@@ -21,13 +21,19 @@ from zetherion_ai.personal.models import (
     PersonalContact,
     PersonalityProfile,
     PersonalLearning,
+    PersonalOperationalItem,
+    PersonalOperationalItemStatus,
+    PersonalOperationalItemType,
     PersonalPolicy,
     PersonalProfile,
+    PersonalReviewItem,
+    PersonalReviewItemType,
     PolicyDomain,
     PolicyMode,
     Relationship,
     WorkingHours,
 )
+from zetherion_ai.personal.operational_storage import OwnerPersonalIntelligenceStorage
 from zetherion_ai.personal.storage import PersonalStorage
 
 
@@ -41,6 +47,14 @@ def _make_storage() -> AsyncMock:
     storage.list_learnings = AsyncMock(return_value=[])
     storage.list_personality_profiles = AsyncMock(return_value=[])
     storage.get_personality_profile = AsyncMock(return_value=None)
+    return storage
+
+
+def _make_operational_storage() -> AsyncMock:
+    """Create a mock owner-personal operational storage with default methods."""
+    storage = AsyncMock(spec=OwnerPersonalIntelligenceStorage)
+    storage.list_operational_items = AsyncMock(return_value=[])
+    storage.list_review_items = AsyncMock(return_value=[])
     return storage
 
 
@@ -702,3 +716,76 @@ class TestDecisionContextPersonality:
         assert "c1@example.com" in fragment
         assert "c2@example.com" in fragment
         assert "c3@example.com" not in fragment
+
+
+class TestDecisionContextOperationalState:
+    """Tests for owner-personal operational and review context fields."""
+
+    def test_is_empty_false_with_operational_state(self) -> None:
+        ctx = DecisionContext(operational_state=[{"title": "Ship Segment 8"}])
+        assert ctx.is_empty is False
+
+    def test_is_empty_false_with_review_state(self) -> None:
+        ctx = DecisionContext(review_state=[{"title": "Review overnight summary"}])
+        assert ctx.is_empty is False
+
+    def test_prompt_fragment_renders_operational_and_review_state(self) -> None:
+        ctx = DecisionContext(
+            operational_state=[
+                {
+                    "item_type": "active_plan",
+                    "title": "Overnight PR worker rollout",
+                    "status": "in_progress",
+                    "due_at": "2026-03-08T09:00:00+00:00",
+                }
+            ],
+            review_state=[
+                {
+                    "item_type": "approval_required",
+                    "title": "Approve worker capability expansion",
+                }
+            ],
+        )
+
+        fragment = ctx.to_prompt_fragment()
+        assert "Operational state:" in fragment
+        assert "active plan: Overnight PR worker rollout [in progress due 2026-03-08]" in fragment
+        assert "Pending review queue:" in fragment
+        assert "approval required: Approve worker capability expansion" in fragment
+
+    @pytest.mark.asyncio
+    async def test_build_includes_operational_and_review_state_when_storage_provided(self) -> None:
+        storage = _make_storage()
+        operational_storage = _make_operational_storage()
+        operational_storage.list_operational_items.return_value = [
+            PersonalOperationalItem(
+                user_id=123,
+                item_type=PersonalOperationalItemType.COMMITMENT,
+                title="Ship Segment 8",
+                status=PersonalOperationalItemStatus.IN_PROGRESS,
+                metadata={"plan_id": "plan-8"},
+            )
+        ]
+        operational_storage.list_review_items.return_value = [
+            PersonalReviewItem(
+                user_id=123,
+                item_type=PersonalReviewItemType.OVERNIGHT_SUMMARY,
+                title="Overnight run completed",
+            )
+        ]
+
+        builder = DecisionContextBuilder(storage, operational_storage=operational_storage)
+        ctx = await builder.build(123)
+
+        assert ctx.operational_state[0]["title"] == "Ship Segment 8"
+        assert ctx.review_state[0]["title"] == "Overnight run completed"
+        operational_storage.list_operational_items.assert_awaited_once_with(
+            123,
+            active_only=True,
+            limit=6,
+        )
+        operational_storage.list_review_items.assert_awaited_once_with(
+            123,
+            pending_only=True,
+            limit=6,
+        )

@@ -138,6 +138,19 @@
       "migration_note": "Already owner-personal in intent; still shares runtime and key domain with other stores."
     },
     {
+      "id": "owner-personal-operational-relational",
+      "path": "src/zetherion_ai/personal/operational_storage.py",
+      "classification": "relational",
+      "current_domains": [
+        "owner_personal"
+      ],
+      "tables": [
+        "personal_operational_items",
+        "personal_review_items"
+      ],
+      "migration_note": "Owner-personal operational commitments and review queue now live in the owner schema; later cutover can migrate legacy personal profile tables separately."
+    },
+    {
       "id": "legacy-discord-relational",
       "path": "src/zetherion_ai/discord/user_manager.py",
       "classification": "relational",
