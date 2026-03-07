@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `src/zetherion_ai/trust/engine.py`, `src/zetherion_ai/trust/storage.py`, and `src/zetherion_ai/trust/runtime.py` so production code records canonical trust decisions through `record_decision` / `record_decision_audit`, while keeping compatibility aliases in place for legacy shadow-mode imports and tests.
 - Updated trust decision call sites in personal actions, tenant trust-policy evaluation, Gmail, GitHub, and YouTube so live autonomy surfaces now call the canonical decision recorder instead of the legacy shadow-only entrypoint.
 - Repaired `scripts/check-cicd-success.sh` so post-merge verification on `main` recognizes the current `CI Gate / CI Summary` and `CI Gate / Required E2E Gate` check-run topology before validating the Windows deployment receipt.
+- Updated `scripts/run-local-gate-preflight.sh` so exact-SHA bounded lanes write receipts to `artifacts/testing/local-gate-preflight-log.md` instead of mutating the tracked append-only execution ledger during pre-push validation.
 
 ### Added - Segment 10 Personal Action Migration (2026-03-07)
 

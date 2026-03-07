@@ -49,7 +49,8 @@ Defaults:
 
 1. stall threshold: 45 seconds without process output
 2. stalled/timeout lanes are terminated and diagnostics are captured
-3. lane executions are appended to `docs/migration/test-execution-log.md`
+3. lane executions are appended to `docs/migration/test-execution-log.md` by default
+4. exact-SHA local-gate preflight lanes write to `artifacts/testing/local-gate-preflight-log.md` so validation receipts do not dirty the commit being validated
 
 Lane order:
 
@@ -76,7 +77,7 @@ These scripts are retained for compatibility only and delegate to canonical full
 3. run `scripts/run-local-gate-preflight.sh` against the exact `<base, head>` push range
 4. then execute `./scripts/test-full.sh`
 
-The preflight is driven by the source-controlled manifest at `.ci/local_gate_manifest.json`. It currently requires local fast-fail coverage for:
+The preflight is driven by the source-controlled manifest at `.ci/local_gate_manifest.json`. Its bounded lane receipts are written to `artifacts/testing/local-gate-preflight-log.md` so exact-SHA validation does not mutate tracked files. It currently requires local fast-fail coverage for:
 
 - endpoint docs bundle changes on API/CGS route files
 - strict `mypy src/zetherion_ai --config-file=pyproject.toml` for runtime Python changes
