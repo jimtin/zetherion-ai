@@ -30,16 +30,17 @@ This is the only supported full local gate. Do not substitute ad-hoc pytest comm
 10. Background jobs (`mypy`, `pip-audit`) must never run indefinitely; canonical timeouts/heartbeat logging are mandatory.
 11. Canonical validation must run against repo-local virtualenv tooling (`.venv`/`venv`), not an unrelated active shell virtualenv.
 12. Pre-push validation must refuse dirty worktree/index state so checks run against the exact commit SHA being pushed.
-13. Protected shared-infra paths must be covered by the source-controlled local gate manifest (`.ci/local_gate_manifest.json`); unmapped protected changes fail local validation before push.
+13. Protected shared-infra and shared-runtime coverage-sensitive paths must be covered by the source-controlled local gate manifest (`.ci/local_gate_manifest.json`); unmapped protected changes fail local validation before push.
 14. Canonical static analysis must run both `scripts/check_pipeline_contract.py` and `scripts/check-endpoint-doc-bundle.py` so route/doc-contract mismatches fail locally before push.
 15. Unit-test coverage must remain `>=90%` in canonical runs; coverage regressions block push/release.
-16. Critical-path integration suites must run in canonical validation, including dev-watcher onboarding paths.
-17. Full end-to-end validation is mandatory for substantial delivery: Docker E2E (`test_e2e.py`) and required Discord E2E must both pass.
-18. This repository is Zetherion-only. Top-level `cgs/**` website/UI files are disallowed here.
-19. CI enforces a risk-classifier contract (`risk-classifier`) that sets `e2e_required=true|false`; ambiguity must fail-safe to `true`.
-20. CI required-E2E gate (`required-e2e-gate`) must emit a machine-readable receipt artifact (`e2e-contract-receipt`) every run.
-21. When `e2e_required=true`, CI must validate a local required-E2E receipt (`.ci/e2e-receipt.json`) for the PR head SHA; CI must not execute full E2E suites directly.
-22. For isolated Discord E2E debugging, use `./scripts/run-required-discord-e2e.sh`; direct `pytest tests/integration/test_discord_e2e.py ...` invocation is not accepted as workflow evidence.
+16. Shared model/context/storage/startup changes mapped in `.ci/local_gate_manifest.json` must run the bounded `unit-full` lane before push.
+17. Critical-path integration suites must run in canonical validation, including dev-watcher onboarding paths.
+18. Full end-to-end validation is mandatory for substantial delivery: Docker E2E (`test_e2e.py`) and required Discord E2E must both pass.
+19. This repository is Zetherion-only. Top-level `cgs/**` website/UI files are disallowed here.
+20. CI enforces a risk-classifier contract (`risk-classifier`) that sets `e2e_required=true|false`; ambiguity must fail-safe to `true`.
+21. CI required-E2E gate (`required-e2e-gate`) must emit a machine-readable receipt artifact (`e2e-contract-receipt`) every run.
+22. When `e2e_required=true`, CI must validate a local required-E2E receipt (`.ci/e2e-receipt.json`) for the PR head SHA; CI must not execute full E2E suites directly.
+23. For isolated Discord E2E debugging, use `./scripts/run-required-discord-e2e.sh`; direct `pytest tests/integration/test_discord_e2e.py ...` invocation is not accepted as workflow evidence.
 
 ## API Documentation Contract (Mandatory)
 

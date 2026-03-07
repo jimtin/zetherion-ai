@@ -35,6 +35,32 @@ def test_api_route_change_requires_docs_bundle_and_mypy() -> None:
     assert plan["unmapped_protected_paths"] == []
 
 
+def test_shared_operational_storage_change_requires_unit_full() -> None:
+    module = _load_module()
+    manifest = module.load_manifest()
+
+    plan = module.build_plan(
+        changed_paths=["src/zetherion_ai/personal/operational_storage.py"],
+        manifest=manifest,
+    )
+
+    assert _requirement_ids(plan) == {"bandit-src", "mypy-src", "unit-full"}
+    assert plan["unmapped_protected_paths"] == []
+
+
+def test_startup_bootstrap_change_requires_unit_full() -> None:
+    module = _load_module()
+    manifest = module.load_manifest()
+
+    plan = module.build_plan(
+        changed_paths=["src/zetherion_ai/main.py"],
+        manifest=manifest,
+    )
+
+    assert _requirement_ids(plan) == {"bandit-src", "mypy-src", "unit-full"}
+    assert plan["unmapped_protected_paths"] == []
+
+
 def test_qdrant_change_requires_targeted_regression_suite() -> None:
     module = _load_module()
     manifest = module.load_manifest()
