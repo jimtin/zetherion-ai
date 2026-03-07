@@ -13,6 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Segment 14 Legacy Cutover and Safety Cleanup (2026-03-07)
+
+- Impacted capability IDs:
+  - `trust.engine.canonical-decision-entrypoint`
+  - `trust.storage.canonical-decision-audit`
+  - `trust.compat.shadow-alias-bridge`
+  - `ci.deploy-receipt.main-check-run-fallback`
+- Impacted workflow scenario IDs:
+  - `isolation.segment14.cutover-canonical-decision-recording`
+  - `isolation.segment14.preserve-legacy-shadow-compatibility`
+  - `isolation.segment14.verify-main-ci-gate-receipt`
+- Updated `src/zetherion_ai/trust/engine.py`, `src/zetherion_ai/trust/storage.py`, and `src/zetherion_ai/trust/runtime.py` so production code records canonical trust decisions through `record_decision` / `record_decision_audit`, while keeping compatibility aliases in place for legacy shadow-mode imports and tests.
+- Updated trust decision call sites in personal actions, tenant trust-policy evaluation, Gmail, GitHub, and YouTube so live autonomy surfaces now call the canonical decision recorder instead of the legacy shadow-only entrypoint.
+- Repaired `scripts/check-cicd-success.sh` so post-merge verification on `main` recognizes the current `CI Gate / CI Summary` and `CI Gate / Required E2E Gate` check-run topology before validating the Windows deployment receipt.
+
 ### Added - Segment 10 Personal Action Migration (2026-03-07)
 
 - Impacted capability IDs:

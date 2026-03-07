@@ -87,8 +87,8 @@ async def test_record_personal_action_decision_persists_audit() -> None:
 
     await record_personal_action_decision(trust_storage, user_id=12345, decision=decision)
 
-    trust_storage.record_shadow_decision.assert_awaited_once()
-    recorded_decision = trust_storage.record_shadow_decision.await_args.args[0]
+    trust_storage.record_decision.assert_awaited_once()
+    recorded_decision = trust_storage.record_decision.await_args.args[0]
     assert recorded_decision.action == "create_task"
     assert recorded_decision.mode == TrustMode.AUTO
 
@@ -110,7 +110,7 @@ async def test_record_personal_action_decision_returns_none_without_storage() ->
 @pytest.mark.asyncio
 async def test_record_personal_action_decision_handles_storage_failure() -> None:
     trust_storage = AsyncMock()
-    trust_storage.record_shadow_decision.side_effect = RuntimeError("boom")
+    trust_storage.record_decision.side_effect = RuntimeError("boom")
     decision = ActionDecision(
         domain="general",
         action="nudge",
@@ -317,7 +317,7 @@ async def test_record_routing_trust_decision_returns_none_without_storage() -> N
 @pytest.mark.asyncio
 async def test_record_routing_trust_decision_handles_storage_failure() -> None:
     trust_storage = AsyncMock()
-    trust_storage.record_shadow_decision.side_effect = RuntimeError("boom")
+    trust_storage.record_decision.side_effect = RuntimeError("boom")
     decision = RouteDecision(
         mode=RouteMode.REVIEW,
         route_tag=RouteTag.IGNORE,

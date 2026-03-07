@@ -12,8 +12,11 @@ from zetherion_ai.trust.engine import (
     TrustRiskClass,
     TrustShadowResult,
     get_shadow_trust_engine,
+    get_trust_engine,
+    record_decision,
     record_shadow_decision,
     set_shadow_trust_engine,
+    set_trust_engine,
 )
 from zetherion_ai.trust.scope import (
     DataScope,
@@ -79,9 +82,12 @@ __all__ = [
     "ensure_trust_storage_schema",
     "evaluate_prompt_scope",
     "get_shadow_trust_engine",
+    "get_trust_engine",
     "normalize_grant_permissions",
     "normalize_resource_scope",
     "prompt_fragment",
+    "record_decision",
     "record_shadow_decision",
     "set_shadow_trust_engine",
+    "set_trust_engine",
 ]

@@ -144,7 +144,7 @@ class TrustManager:
         """
         effective_trust = await self.get_effective_trust(user_id, contact_email, reply_type)
         auto_send = effective_trust >= auto_threshold and confidence >= auto_threshold
-        _record_gmail_trust_shadow_decision(
+        _record_gmail_trust_decision(
             user_id=user_id,
             contact_email=contact_email,
             reply_type=reply_type,
@@ -409,7 +409,7 @@ def _outcome_delta(outcome: str) -> float:
     return deltas[outcome]
 
 
-def _record_gmail_trust_shadow_decision(
+def _record_gmail_trust_decision(
     *,
     user_id: int,
     contact_email: str,
@@ -421,7 +421,7 @@ def _record_gmail_trust_shadow_decision(
     """Record a non-blocking shadow decision for Gmail trust evaluation."""
 
     try:
-        from zetherion_ai.trust import TrustPrincipal, TrustResource, record_shadow_decision
+        from zetherion_ai.trust import TrustPrincipal, TrustResource, record_decision
         from zetherion_ai.trust.adapters import build_gmail_trust_signature
 
         principal = TrustPrincipal(
@@ -433,7 +433,7 @@ def _record_gmail_trust_shadow_decision(
             resource_type="gmail_contact",
             metadata={"reply_type": reply_type.value},
         )
-        record_shadow_decision(
+        record_decision(
             adapter_name="gmail_trust",
             action="gmail.reply.send",
             principal=principal,
@@ -451,3 +451,24 @@ def _record_gmail_trust_shadow_decision(
         )
     except Exception:
         return None
+
+
+def _record_gmail_trust_shadow_decision(
+    *,
+    user_id: int,
+    contact_email: str,
+    reply_type: ReplyType,
+    confidence: float,
+    auto_threshold: float,
+    auto_send: bool,
+) -> None:
+    """Compatibility wrapper for legacy shadow-mode callers."""
+
+    return _record_gmail_trust_decision(
+        user_id=user_id,
+        contact_email=contact_email,
+        reply_type=reply_type,
+        confidence=confidence,
+        auto_threshold=auto_threshold,
+        auto_send=auto_send,
+    )

@@ -261,7 +261,7 @@ class TrustPolicyEvaluator:
         normalized_action = str(action).strip().lower()
 
         def _finalize(decision: TrustPolicyDecision) -> TrustPolicyDecision:
-            _record_shadow_policy_decision(
+            _record_trust_policy_decision(
                 tenant_id=tenant_id,
                 action=normalized_action,
                 decision=decision,
@@ -542,7 +542,7 @@ class TrustPolicyEvaluator:
         return set()
 
 
-def _record_shadow_policy_decision(
+def _record_trust_policy_decision(
     *,
     tenant_id: str | None,
     action: str,
@@ -551,7 +551,7 @@ def _record_shadow_policy_decision(
     """Record a non-blocking shadow decision for trust-policy evaluation."""
 
     try:
-        from zetherion_ai.trust import TrustPrincipal, TrustResource, record_shadow_decision
+        from zetherion_ai.trust import TrustPrincipal, TrustResource, record_decision
         from zetherion_ai.trust.adapters import build_trust_policy_signature
 
         principal = TrustPrincipal(
@@ -565,7 +565,7 @@ def _record_shadow_policy_decision(
             tenant_id=tenant_id,
             metadata={"action_class": decision.action_class.value},
         )
-        record_shadow_decision(
+        record_decision(
             adapter_name="trust_policy",
             action=action,
             principal=principal,
@@ -575,3 +575,14 @@ def _record_shadow_policy_decision(
         )
     except Exception:
         return None
+
+
+def _record_shadow_policy_decision(
+    *,
+    tenant_id: str | None,
+    action: str,
+    decision: TrustPolicyDecision,
+) -> None:
+    """Compatibility wrapper for legacy shadow-mode callers."""
+
+    return _record_trust_policy_decision(tenant_id=tenant_id, action=action, decision=decision)

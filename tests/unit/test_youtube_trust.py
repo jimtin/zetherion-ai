@@ -9,7 +9,7 @@ def test_should_auto_approve_records_shadow_decision(monkeypatch) -> None:
     model = TrustModel(level=TrustLevel.GUIDED.value)
 
     monkeypatch.setattr(
-        "zetherion_ai.skills.youtube.trust._record_youtube_trust_shadow_decision",
+        "zetherion_ai.skills.youtube.trust._record_youtube_trust_decision",
         lambda **kwargs: recorded.append(kwargs),
     )
 

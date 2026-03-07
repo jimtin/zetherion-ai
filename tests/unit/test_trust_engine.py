@@ -65,8 +65,8 @@ def test_shadow_engine_logs_diff_for_mismatched_signature(monkeypatch) -> None:
         "mode": {"legacy": "review", "shadow": "auto"},
         "risk_class": {"legacy": "high", "shadow": "moderate"},
     }
-    assert captured_info[0]["event"] == "trust_shadow_decision"
-    assert captured_warning[0]["event"] == "trust_shadow_diff"
+    assert captured_info[0]["event"] == "trust_decision"
+    assert captured_warning[0]["event"] == "trust_decision_diff"
 
 
 def test_shadow_engine_returns_none_for_unknown_adapter(monkeypatch) -> None:
@@ -89,7 +89,7 @@ def test_shadow_engine_returns_none_for_unknown_adapter(monkeypatch) -> None:
     )
 
     assert result is None
-    assert captured_warning[0]["event"] == "trust_shadow_error"
+    assert captured_warning[0]["event"] == "trust_decision_error"
     assert captured_warning[0]["error"] == "adapter_not_registered"
 
 

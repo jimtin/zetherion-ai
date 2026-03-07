@@ -464,7 +464,7 @@ def test_evaluate_records_shadow_policy_decision(monkeypatch) -> None:
     recorded: list[dict[str, object]] = []
 
     monkeypatch.setattr(
-        "zetherion_ai.security.trust_policy._record_shadow_policy_decision",
+        "zetherion_ai.security.trust_policy._record_trust_policy_decision",
         lambda **kwargs: recorded.append(kwargs),
     )
 

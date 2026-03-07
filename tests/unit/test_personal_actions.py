@@ -684,7 +684,7 @@ class TestActionControllerShadowHook:
         recorded: list[dict[str, object]] = []
 
         monkeypatch.setattr(
-            "zetherion_ai.personal.actions._record_personal_action_shadow_decision",
+            "zetherion_ai.personal.actions._record_personal_action_trust_decision",
             lambda **kwargs: recorded.append(kwargs),
         )
 
