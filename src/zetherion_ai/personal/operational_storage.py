@@ -153,6 +153,7 @@ class OwnerPersonalIntelligenceStorage:
         tags_json = json.dumps(data["tags"])
         title_value = self._encrypt_text(data["title"])
         detail_value = self._encrypt_text(data["detail"])
+        args: tuple[Any, ...]
 
         if item.id is None:
             sql = f"""
@@ -263,6 +264,7 @@ class OwnerPersonalIntelligenceStorage:
         metadata_json = json.dumps(data["metadata"])
         title_value = self._encrypt_text(data["title"])
         detail_value = self._encrypt_text(data["detail"])
+        args: tuple[Any, ...]
 
         if item.id is None:
             sql = f"""

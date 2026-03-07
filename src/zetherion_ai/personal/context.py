@@ -8,6 +8,7 @@ active policies, and recent learnings.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from zetherion_ai.logging import get_logger
@@ -85,7 +86,7 @@ class DecisionContext:
                 status = str(item.get("status", "active")).replace("_", " ")
                 due_at = item.get("due_at")
                 due_suffix = ""
-                if hasattr(due_at, "strftime"):
+                if isinstance(due_at, datetime):
                     due_suffix = f" due {due_at.strftime('%Y-%m-%d')}"
                 elif isinstance(due_at, str) and due_at.strip():
                     due_suffix = f" due {due_at[:10]}"
