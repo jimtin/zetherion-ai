@@ -133,6 +133,9 @@ if [[ ${#REQUIREMENT_IDS[@]} -eq 0 ]]; then
     exit 0
 fi
 
+LOCAL_GATE_LANE_LOG_FILE="${LOCAL_GATE_LANE_LOG_FILE:-artifacts/testing/local-gate-preflight-log.md}"
+echo "[local-gate] Writing bounded lane receipts to $LOCAL_GATE_LANE_LOG_FILE"
+
 for requirement_id in "${REQUIREMENT_IDS[@]}"; do
     case "$requirement_id" in
         endpoint-doc-bundle)
@@ -149,7 +152,7 @@ for requirement_id in "${REQUIREMENT_IDS[@]}"; do
             ;;
         unit-full)
             echo "[local-gate] Running bounded unit-full lane..."
-            node scripts/testing/run-bounded.mjs --lane unit-full
+            node scripts/testing/run-bounded.mjs --lane unit-full --log-file "$LOCAL_GATE_LANE_LOG_FILE"
             ;;
         qdrant-regression-suite|replay-store-regression-suite)
             PYTEST_TARGETS=()
@@ -173,7 +176,7 @@ PY
 )
             if [[ ${#PYTEST_TARGETS[@]} -gt 0 ]]; then
                 echo "[local-gate] Running targeted regression suite for $requirement_id..."
-                node scripts/testing/run-bounded.mjs --lane targeted-unit -- \
+                node scripts/testing/run-bounded.mjs --lane targeted-unit --log-file "$LOCAL_GATE_LANE_LOG_FILE" -- \
                     "$PYTHON_BIN" -m pytest "${PYTEST_TARGETS[@]}" -q --tb=short --no-cov
             fi
             ;;
