@@ -289,6 +289,7 @@ class TenantAdminWorkerMessagingGrantPutRequest(BaseModel):
     """Create/update scoped worker messaging grant for one node+chat."""
 
     allow_read: bool = False
+    allow_draft: bool = False
     allow_send: bool = False
     ttl_seconds: int = Field(default=3600, ge=60, le=1_209_600)
     redacted_payload: bool = False

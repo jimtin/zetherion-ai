@@ -192,6 +192,8 @@ class TrustBackfillService:
         permissions: list[str] = []
         if bool(grant_record.get("allow_read")):
             permissions.append("read")
+        if bool(grant_record.get("allow_draft")):
+            permissions.append("draft")
         if bool(grant_record.get("allow_send")):
             permissions.append("send")
         return await self._storage.upsert_grant(

@@ -2064,6 +2064,9 @@ components:
         allow_read:
           type: boolean
           default: false
+        allow_draft:
+          type: boolean
+          default: false
         allow_send:
           type: boolean
           default: false

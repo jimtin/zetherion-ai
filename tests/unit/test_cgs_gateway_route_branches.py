@@ -1426,6 +1426,7 @@ async def test_internal_admin_worker_route_matrix_success_paths() -> None:
             ),
             json={
                 "allow_read": True,
+                "allow_draft": True,
                 "allow_send": False,
                 "ttl_seconds": 3600,
                 "redacted_payload": True,
@@ -1459,6 +1460,12 @@ async def test_internal_admin_worker_route_matrix_success_paths() -> None:
     assert "/workers/events" in forwarded_subpaths
     assert "/workers/messaging/grants" in forwarded_subpaths
     assert "/workers/nodes/node-1/messaging/grants/whatsapp/chat-1" in forwarded_subpaths
+    grant_call = next(
+        call
+        for call in app["cgs_skills_client"].request_tenant_admin_json.await_args_list
+        if call.kwargs.get("subpath") == "/workers/nodes/node-1/messaging/grants/whatsapp/chat-1"
+    )
+    assert grant_call.kwargs["payload"]["allow_draft"] is True
     assert "/workers/messaging/grants/55555555-5555-5555-5555-555555555555" in forwarded_subpaths
 
 
@@ -1613,6 +1620,7 @@ async def test_internal_admin_worker_messaging_grant_returns_approval_required(
             ),
             json={
                 "allow_read": True,
+                "allow_draft": True,
                 "allow_send": False,
                 "ttl_seconds": 3600,
                 "redacted_payload": True,

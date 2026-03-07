@@ -111,7 +111,7 @@ async def test_backfill_worker_messaging_grant_maps_permissions_and_scope() -> N
             grantee_id="node-1",
             grantee_type="worker_node",
             resource_scope="messaging.chat:whatsapp:chat-1",
-            permissions=["read", "send"],
+            permissions=["read", "draft"],
             issued_at=datetime.now(UTC),
             expires_at=datetime.now(UTC) + timedelta(hours=1),
         )
@@ -126,17 +126,18 @@ async def test_backfill_worker_messaging_grant_maps_permissions_and_scope() -> N
             "provider": "whatsapp",
             "chat_id": "chat-1",
             "allow_read": True,
-            "allow_send": True,
+            "allow_draft": True,
+            "allow_send": False,
             "redacted_payload": True,
             "expires_at": datetime.now(UTC) + timedelta(hours=1),
             "created_by": "owner-1",
         }
     )
 
-    assert record.permissions == ["read", "send"]
+    assert record.permissions == ["read", "draft"]
     grant_input = storage.upsert_grant.await_args.args[0]
     assert grant_input.resource_scope == "messaging.chat:whatsapp:chat-1"
-    assert grant_input.permissions == ["read", "send"]
+    assert grant_input.permissions == ["read", "draft"]
     assert grant_input.metadata["redacted_payload"] is True
 
 

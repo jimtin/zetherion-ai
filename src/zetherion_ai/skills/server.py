@@ -3558,6 +3558,11 @@ class SkillsServer:
                 provider=provider,
                 chat_id=chat_id,
                 allow_read=self._parse_bool(payload.get("allow_read"), "allow_read", default=False),
+                allow_draft=self._parse_bool(
+                    payload.get("allow_draft"),
+                    "allow_draft",
+                    default=False,
+                ),
                 allow_send=self._parse_bool(payload.get("allow_send"), "allow_send", default=False),
                 ttl_seconds=self._parse_int(payload.get("ttl_seconds", 3600), "ttl_seconds"),
                 redacted_payload=self._parse_bool(
@@ -3580,6 +3585,7 @@ class SkillsServer:
                     "provider": str(grant.get("provider") or provider),
                     "chat_id": str(grant.get("chat_id") or chat_id),
                     "allow_read": bool(grant.get("allow_read")),
+                    "allow_draft": bool(grant.get("allow_draft")),
                     "allow_send": bool(grant.get("allow_send")),
                     "redacted_payload": bool(grant.get("redacted_payload")),
                 },
@@ -4591,7 +4597,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
         registry.register(ClientAppWatcherSkill(tenant_manager=_tenant_manager))
         # Personal model requires direct PostgreSQL access.
         try:
-            import asyncpg  # type: ignore[import-not-found,import-untyped]
+            import asyncpg  # type: ignore[import-untyped]
 
             from zetherion_ai.personal.storage import PersonalStorage
             from zetherion_ai.skills.personal_model import PersonalModelSkill
@@ -4633,7 +4639,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
         if _tenant_manager is not None:
             await _tenant_manager.initialize()
         if settings.postgres_dsn:
-            import asyncpg  # type: ignore[import-not-found,import-untyped]
+            import asyncpg
 
             from zetherion_ai.admin import TenantAdminManager
             from zetherion_ai.discord.user_manager import _SCHEMA_SQL
@@ -4730,7 +4736,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             await tenant_admin_manager.initialize()
             set_tenant_admin_manager(tenant_admin_manager)
         if settings.work_router_enabled and settings.postgres_dsn:
-            import asyncpg  # type: ignore[import-not-found,import-untyped]
+            import asyncpg
 
             from zetherion_ai.agent.inference import InferenceBroker
             from zetherion_ai.integrations.providers.google import GoogleProviderAdapter
