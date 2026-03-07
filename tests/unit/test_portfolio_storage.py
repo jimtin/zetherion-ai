@@ -129,6 +129,61 @@ async def test_upsert_tenant_derived_dataset_uses_scoped_table() -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_and_list_tenant_derived_dataset_use_scoped_table() -> None:
+    storage = PortfolioStorage(dsn="postgresql://example", owner_portfolio_schema="owner_portfolio")
+    storage._pool = object()
+    storage._fetchrow = AsyncMock(
+        return_value={
+            "dataset_id": "tds_1",
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+            "tenant_name": "Bob's Plumbing",
+            "derivation_kind": "tenant_health_summary",
+            "trust_domain": "tenant_derived",
+            "source": "test",
+            "summary": {"tenant_name": "Bob's Plumbing"},
+            "provenance": {"input_trust_domain": "tenant_raw"},
+            "created_at": "created",
+            "updated_at": "updated",
+        }
+    )
+    storage._fetch = AsyncMock(
+        return_value=[
+            {
+                "dataset_id": "tds_1",
+                "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+                "tenant_name": "Bob's Plumbing",
+                "derivation_kind": "tenant_health_summary",
+                "trust_domain": "tenant_derived",
+                "source": "test",
+                "summary": {"tenant_name": "Bob's Plumbing"},
+                "provenance": {"input_trust_domain": "tenant_raw"},
+                "created_at": "created",
+                "updated_at": "updated",
+            }
+        ]
+    )
+
+    fetched = await storage.get_tenant_derived_dataset(
+        zetherion_tenant_id="11111111-1111-1111-1111-111111111111",
+        derivation_kind="tenant_health_summary",
+    )
+    listed = await storage.list_tenant_derived_datasets(derivation_kind="tenant_health_summary")
+    listed_unfiltered = await storage.list_tenant_derived_datasets()
+
+    get_query = storage._fetchrow.await_args.args[0]
+    list_query = storage._fetch.await_args_list[0].args[0]
+    list_unfiltered_query = storage._fetch.await_args_list[1].args[0]
+    assert 'FROM "owner_portfolio".tenant_derived_datasets' in get_query
+    assert 'FROM "owner_portfolio".tenant_derived_datasets' in list_query
+    assert "WHERE derivation_kind = $1" in list_query
+    assert "WHERE derivation_kind = $1" not in list_unfiltered_query
+    assert fetched is not None
+    assert fetched["dataset_id"] == "tds_1"
+    assert listed[0]["tenant_name"] == "Bob's Plumbing"
+    assert listed_unfiltered[0]["tenant_name"] == "Bob's Plumbing"
+
+
+@pytest.mark.asyncio
 async def test_upsert_tenant_derived_dataset_requires_row() -> None:
     storage = PortfolioStorage(dsn="postgresql://example")
     storage._pool = object()
@@ -208,6 +263,7 @@ async def test_upsert_owner_portfolio_snapshot_and_list() -> None:
     assert "WHERE derivation_kind = $1" in list_query
     assert "WHERE derivation_kind = $1" not in list_unfiltered_query
     assert snapshot["snapshot_id"] == "ops_1"
+    assert fetched is not None
     assert fetched["source_dataset_id"] == "tds_1"
     assert listed[0]["tenant_name"] == "Bob's Plumbing"
     assert listed_unfiltered[0]["tenant_name"] == "Bob's Plumbing"

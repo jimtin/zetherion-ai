@@ -226,7 +226,19 @@ async def test_reconcile_tenant_runs_backfill_snapshot_and_receipt() -> None:
     skills_client.handle_intent = AsyncMock(
         return_value=(
             200,
-            {"success": True, "data": {"health": {"avg_sentiment": 0.9}}},
+            {
+                "success": True,
+                "data": {
+                    "health": {"avg_sentiment": 0.9},
+                    "provenance": {
+                        "input_trust_domain": "tenant_derived",
+                        "output_trust_domain": "owner_portfolio",
+                        "source_dataset_id": "tds_123",
+                    },
+                    "snapshot_id": "ops_upstream_123",
+                    "source_dataset_id": "tds_123",
+                },
+            },
         )
     )
     public_client = MagicMock()
@@ -275,6 +287,17 @@ async def test_reconcile_tenant_runs_backfill_snapshot_and_receipt() -> None:
     assert public_client.reindex_document.await_count == 2
     public_client.create_release_marker.assert_awaited_once()
     storage.upsert_owner_portfolio_snapshot.assert_awaited_once()
+    assert skills_client.handle_intent.await_args.kwargs["context"]["refresh_portfolio"] is True
+    assert storage.upsert_owner_portfolio_snapshot.await_args.kwargs["snapshot_metadata"] == {
+        "request_id": "req-1",
+        "provenance": {
+            "input_trust_domain": "tenant_derived",
+            "output_trust_domain": "owner_portfolio",
+            "source_dataset_id": "tds_123",
+        },
+        "derived_dataset_id": "tds_123",
+        "owner_portfolio_snapshot_id": "ops_upstream_123",
+    }
     storage.create_tenant_migration_receipt.assert_awaited_once()
 
 
