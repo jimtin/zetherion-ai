@@ -13,10 +13,6 @@ from zetherion_ai.cgs_gateway.storage import (
     TENANT_ISOLATION_STAGES,
     CGSGatewayStorage,
 )
-from zetherion_ai.portfolio.derivation import (
-    build_owner_portfolio_snapshot,
-    build_tenant_health_derived_dataset,
-)
 from zetherion_ai.portfolio.storage import PortfolioStorage
 
 PROVISIONING_BASELINE_VERSION = 1
@@ -544,69 +540,37 @@ class CGSTenantProvisioningOrchestrator:
             user_id=user_id,
             message="",
             request_id=request_id,
-            context={"tenant_id": str(mapping["zetherion_tenant_id"]), "source": "cgs-migration"},
+            context={
+                "tenant_id": str(mapping["zetherion_tenant_id"]),
+                "source": "cgs-migration",
+                "refresh_portfolio": True,
+            },
         )
         if status >= 400:
             raise map_upstream_error(status=status, payload=skill_response, source="skills")
 
         skill_data = _extract_skill_data(skill_response)
-        raw_summary = skill_data.get("health") if isinstance(skill_data.get("health"), dict) else {}
-        if not isinstance(raw_summary, dict):
-            raw_summary = {}
+        mirrored_summary = (
+            skill_data.get("health") if isinstance(skill_data.get("health"), dict) else {}
+        )
+        if not isinstance(mirrored_summary, dict):
+            mirrored_summary = {}
 
-        derived_dataset_id = ""
-        owner_snapshot_id = ""
-        mirrored_summary = raw_summary
-        mirrored_provenance: dict[str, Any] = {"request_id": request_id}
-
-        if self._portfolio_storage is not None:
-            derived_payload = build_tenant_health_derived_dataset(
-                zetherion_tenant_id=str(mapping["zetherion_tenant_id"]),
-                tenant_name=str(mapping.get("name", "")),
-                raw_summary=raw_summary,
-                source="cgs_internal_reconcile",
-                provenance={
-                    "request_id": request_id,
-                    "cgs_tenant_id": str(mapping["cgs_tenant_id"]),
-                    "isolation_stage": isolation_stage,
-                },
-            )
-            derived_dataset = await self._portfolio_storage.upsert_tenant_derived_dataset(
-                zetherion_tenant_id=str(mapping["zetherion_tenant_id"]),
-                tenant_name=str(mapping.get("name", "")),
-                derivation_kind=str(derived_payload["derivation_kind"]),
-                source="cgs_internal_reconcile",
-                summary=derived_payload["summary"],
-                provenance=derived_payload["provenance"],
-            )
-            derived_dataset_id = str(derived_dataset.get("dataset_id") or "")
-            owner_payload = build_owner_portfolio_snapshot(
-                source_dataset_id=derived_dataset_id,
-                derived_summary=(derived_dataset.get("summary") or {}),
-                source="cgs_internal_reconcile",
-                provenance={
-                    "request_id": request_id,
-                    "cgs_tenant_id": str(mapping["cgs_tenant_id"]),
-                    "isolation_stage": isolation_stage,
-                },
-            )
-            owner_snapshot = await self._portfolio_storage.upsert_owner_portfolio_snapshot(
-                zetherion_tenant_id=str(mapping["zetherion_tenant_id"]),
-                tenant_name=str(mapping.get("name", "")),
-                derivation_kind=str(owner_payload["derivation_kind"]),
-                source_dataset_id=derived_dataset_id,
-                source="cgs_internal_reconcile",
-                summary=owner_payload["summary"],
-                provenance=owner_payload["provenance"],
-            )
-            owner_snapshot_id = str(owner_snapshot.get("snapshot_id") or "")
-            mirrored_summary = owner_snapshot.get("summary") or raw_summary
-            mirrored_provenance = {
-                "request_id": request_id,
-                "derived_dataset_id": derived_dataset_id,
-                "owner_portfolio_snapshot_id": owner_snapshot_id,
-                "provenance": owner_snapshot.get("provenance") or {},
-            }
+        provenance = skill_data.get("provenance")
+        if not isinstance(provenance, dict):
+            provenance = {}
+        source_dataset_id = str(
+            skill_data.get("source_dataset_id") or provenance.get("source_dataset_id") or ""
+        )
+        owner_snapshot_id = str(skill_data.get("snapshot_id") or "")
+        mirrored_provenance: dict[str, Any] = {
+            "request_id": request_id,
+            "provenance": provenance,
+        }
+        if source_dataset_id:
+            mirrored_provenance["derived_dataset_id"] = source_dataset_id
+        if owner_snapshot_id:
+            mirrored_provenance["owner_portfolio_snapshot_id"] = owner_snapshot_id
 
         snapshot = await self._storage.upsert_owner_portfolio_snapshot(
             cgs_tenant_id=str(mapping["cgs_tenant_id"]),

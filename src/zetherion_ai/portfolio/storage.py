@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Mapping
 from typing import Any, cast
 
-import asyncpg  # type: ignore[import-not-found,import-untyped]
+import asyncpg  # type: ignore[import-untyped]
 
 from zetherion_ai.logging import get_logger
 
@@ -181,6 +181,49 @@ class PortfolioStorage:
         if row is None:
             raise RuntimeError("Upsert tenant derived dataset returned no row")
         return dict(row)
+
+    async def get_tenant_derived_dataset(
+        self,
+        *,
+        zetherion_tenant_id: str,
+        derivation_kind: str,
+    ) -> dict[str, Any] | None:
+        schema = self._owner_portfolio_schema
+        row = await self._fetchrow(
+            f"""
+            SELECT dataset_id, zetherion_tenant_id, tenant_name, derivation_kind,
+                   trust_domain, source, summary, provenance, created_at, updated_at
+            FROM \"{schema}\".tenant_derived_datasets
+            WHERE zetherion_tenant_id = $1::uuid
+              AND derivation_kind = $2
+            """,  # nosec B608
+            zetherion_tenant_id,
+            derivation_kind,
+        )
+        return dict(row) if row is not None else None
+
+    async def list_tenant_derived_datasets(
+        self,
+        *,
+        derivation_kind: str | None = None,
+    ) -> list[dict[str, Any]]:
+        schema = self._owner_portfolio_schema
+        params: list[Any] = []
+        where = ""
+        if derivation_kind is not None:
+            params.append(derivation_kind)
+            where = "WHERE derivation_kind = $1"
+        rows = await self._fetch(
+            f"""
+            SELECT dataset_id, zetherion_tenant_id, tenant_name, derivation_kind,
+                   trust_domain, source, summary, provenance, created_at, updated_at
+            FROM \"{schema}\".tenant_derived_datasets
+            {where}
+            ORDER BY tenant_name ASC, updated_at DESC
+            """,  # nosec B608
+            *params,
+        )
+        return [dict(row) for row in rows]
 
     async def upsert_owner_portfolio_snapshot(
         self,
