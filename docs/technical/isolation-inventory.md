@@ -43,6 +43,7 @@ The manifest captures the current state of:
 
 - `owner_personal`
   - `src/zetherion_ai/personal/storage.py`
+  - `src/zetherion_ai/personal/operational_storage.py` now owns owner-personal commitments, blockers, active plans, and review-queue state in the owner schema
   - Gmail account/email state
   - calendar, tasks, milestones, and dev journal vector collections
 - `tenant_raw`

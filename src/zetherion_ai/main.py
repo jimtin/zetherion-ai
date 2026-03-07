@@ -14,6 +14,7 @@ from zetherion_ai.discord.bot import ZetherionAIBot
 from zetherion_ai.discord.user_manager import UserManager
 from zetherion_ai.logging import get_logger, setup_logging
 from zetherion_ai.memory.qdrant import QdrantMemory
+from zetherion_ai.personal.operational_storage import ensure_owner_personal_intelligence_schema
 from zetherion_ai.queue.manager import QueueManager
 from zetherion_ai.queue.processors import QueueProcessors
 from zetherion_ai.queue.storage import QueueStorage
@@ -121,6 +122,10 @@ async def main() -> None:
     await user_manager.initialize()
     if user_manager._pool:
         await ensure_postgres_isolation_schemas(user_manager._pool, settings)
+        await ensure_owner_personal_intelligence_schema(
+            user_manager._pool,
+            schema=settings.postgres_owner_personal_schema,
+        )
         await ensure_trust_storage_schema(
             user_manager._pool,
             schema=settings.postgres_control_plane_schema,

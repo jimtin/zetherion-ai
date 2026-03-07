@@ -4606,6 +4606,9 @@ def main() -> None:  # pragma: no cover — CLI entry-point
 
             from zetherion_ai.admin import TenantAdminManager
             from zetherion_ai.discord.user_manager import _SCHEMA_SQL
+            from zetherion_ai.personal.operational_storage import (
+                ensure_owner_personal_intelligence_schema,
+            )
             from zetherion_ai.security.domain_keys import build_runtime_encryptors
             from zetherion_ai.security.secret_resolver import SecretResolver
             from zetherion_ai.security.secrets import SecretsManager
@@ -4626,6 +4629,10 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             else:
                 log.info("skills_runtime_schema_ensured")
             await ensure_postgres_isolation_schemas(runtime_db_pool, settings)
+            await ensure_owner_personal_intelligence_schema(
+                runtime_db_pool,
+                schema=settings.postgres_owner_personal_schema,
+            )
             await ensure_trust_storage_schema(
                 runtime_db_pool,
                 schema=settings.postgres_control_plane_schema,

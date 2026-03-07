@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Segment 8 Personal Intelligence Foundation (2026-03-07)
+
+- Impacted capability IDs:
+  - `personal.owner-operational-state.persistence`
+  - `personal.owner-review-state.persistence`
+  - `personal.context.operational-review-state`
+  - `startup.owner-personal-intelligence-schema-bootstrap`
+- Impacted workflow scenario IDs:
+  - `isolation.segment8.persist-owner-commitments-blockers-plans`
+  - `isolation.segment8.persist-owner-review-queue`
+  - `isolation.segment8.include-owner-operational-context`
+  - `isolation.segment8.bootstrap-owner-personal-intelligence-schema`
+- Added `src/zetherion_ai/personal/operational_storage.py` with owner-personal relational persistence for commitments, projects, deadlines, routines, waiting-fors, blockers, active plans, and canonical review items.
+- Extended `src/zetherion_ai/personal/models.py` and `src/zetherion_ai/personal/context.py` so owner operational state and pending review items can be carried into personal decision context safely from the `owner_personal` trust domain.
+- Bootstrapped the owner-personal intelligence schema during app and skills startup and recorded the new owner-personal relational storage family in the isolation compatibility baseline.
+- Added focused unit coverage for owner-personal operational/review storage, prompt-fragment rendering, and startup bootstrap wiring.
+
+
 ### Added - Segment 7 Canonical Trust Persistence and Grants (2026-03-07)
 
 - Impacted capability IDs:
