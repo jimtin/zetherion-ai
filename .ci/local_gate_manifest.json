@@ -6,7 +6,12 @@
     "src/zetherion_ai/cgs_gateway/routes/**",
     "src/zetherion_ai/memory/qdrant.py",
     "src/zetherion_ai/config.py",
-    "src/zetherion_ai/analytics/replay_store.py"
+    "src/zetherion_ai/analytics/replay_store.py",
+    "src/zetherion_ai/**/models.py",
+    "src/zetherion_ai/**/context.py",
+    "src/zetherion_ai/**/*storage*.py",
+    "src/zetherion_ai/main.py",
+    "src/zetherion_ai/skills/server.py"
   ],
   "requirements": {
     "endpoint-doc-bundle": {
@@ -20,6 +25,10 @@
     "bandit-src": {
       "kind": "check",
       "description": "Run Bandit over src/ against the exact commit being pushed."
+    },
+    "unit-full": {
+      "kind": "lane",
+      "description": "Run the bounded unit-full lane to enforce repo-wide coverage for shared runtime, model, context, and storage changes."
     },
     "qdrant-regression-suite": {
       "kind": "pytest",
@@ -61,6 +70,20 @@
       ],
       "requirements": [
         "endpoint-doc-bundle"
+      ]
+    },
+    {
+      "id": "shared-runtime-coverage",
+      "covers_protected": true,
+      "patterns": [
+        "src/zetherion_ai/**/models.py",
+        "src/zetherion_ai/**/context.py",
+        "src/zetherion_ai/**/*storage*.py",
+        "src/zetherion_ai/main.py",
+        "src/zetherion_ai/skills/server.py"
+      ],
+      "requirements": [
+        "unit-full"
       ]
     },
     {

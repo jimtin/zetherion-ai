@@ -147,6 +147,10 @@ for requirement_id in "${REQUIREMENT_IDS[@]}"; do
             echo "[local-gate] Running Bandit security scan for src/..."
             "$PYTHON_BIN" -m bandit -r src/ -c pyproject.toml
             ;;
+        unit-full)
+            echo "[local-gate] Running bounded unit-full lane..."
+            node scripts/testing/run-bounded.mjs --lane unit-full
+            ;;
         qdrant-regression-suite|replay-store-regression-suite)
             PYTEST_TARGETS=()
             while IFS= read -r pytest_target; do

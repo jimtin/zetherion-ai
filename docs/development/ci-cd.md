@@ -131,6 +131,16 @@ Run the changed-file preflight directly when you need fast feedback before the f
 bash scripts/run-local-gate-preflight.sh --base-ref origin/main --head-ref HEAD
 ```
 
+The preflight is driven by the source-controlled manifest at `.ci/local_gate_manifest.json`. It currently requires local fast-fail coverage for:
+
+- endpoint docs bundle changes on API/CGS route files
+- strict `mypy src/zetherion_ai --config-file=pyproject.toml` for runtime Python changes
+- bounded `unit-full` for shared model/context/storage/startup paths that can move the repo-wide coverage floor
+- targeted Qdrant/data-plane regression tests
+- targeted replay-store regression tests
+
+Protected shared-infra and shared-runtime coverage-sensitive paths must stay mapped in `.ci/local_gate_manifest.json`; local validation fails fast when a protected path changes without an explicit local gate mapping.
+
 When a PR is classified `e2e_required=true`, generate local receipt evidence for CI after the full local gate passes:
 
 ```bash
