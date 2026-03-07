@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from zetherion_ai.logging import get_logger
+from zetherion_ai.personal.models import PersonalReviewItemType
 
 log = get_logger("zetherion_ai.queue.plan_executor")
 
@@ -19,15 +20,22 @@ class PlanContinuationExecutor:
         *,
         tenant_admin_manager: Any,
         agent: Any = None,
+        review_inbox: Any = None,
         worker_id_prefix: str = "plan-worker",
         lease_seconds: int = 90,
         stale_step_seconds: int = 300,
     ) -> None:
         self._tenant_admin_manager = tenant_admin_manager
         self._agent = agent
+        self._review_inbox = review_inbox
         self._worker_id_prefix = worker_id_prefix
         self._lease_seconds = max(15, min(int(lease_seconds), 3600))
         self._stale_step_seconds = max(30, min(int(stale_step_seconds), 7200))
+
+    def attach_review_inbox(self, review_inbox: Any) -> None:
+        """Attach a canonical owner review inbox after executor construction."""
+
+        self._review_inbox = review_inbox
 
     async def execute(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Process one queue payload for `plan_continuation`."""
@@ -39,6 +47,7 @@ class PlanContinuationExecutor:
         worker_id = f"{self._worker_id_prefix}-{uuid4().hex[:10]}"
         lease_token = uuid4().hex
         plan_claimed = False
+        plan: dict[str, Any] | None = None
         claimed_step: dict[str, Any] | None = None
         claimed_retry: dict[str, Any] | None = None
 
@@ -69,6 +78,11 @@ class PlanContinuationExecutor:
                 reconciled = await self._tenant_admin_manager.reconcile_execution_plan_status(
                     tenant_id=tenant_id,
                     plan_id=plan_id,
+                )
+                await self._maybe_enqueue_reconciled_review_item(
+                    tenant_id=tenant_id,
+                    plan_id=plan_id,
+                    plan=reconciled or plan,
                 )
                 return {
                     "accepted": True,
@@ -181,6 +195,17 @@ class PlanContinuationExecutor:
                     reason="step_completed",
                     requested_by=worker_id,
                 )
+            if (
+                not completion.get("has_more")
+                and str(completion["plan"].get("status") or "") == "completed"
+            ):
+                await self._maybe_enqueue_plan_completion_summary(
+                    tenant_id=tenant_id,
+                    plan_id=plan_id,
+                    plan=plan,
+                    completion=completion,
+                    response_text=response_text,
+                )
             return {
                 "accepted": True,
                 "tenant_id": tenant_id,
@@ -231,6 +256,15 @@ class PlanContinuationExecutor:
                         reason="step_retry_scheduled",
                         requested_by=worker_id,
                     )
+                else:
+                    await self._maybe_enqueue_execution_failure(
+                        tenant_id=tenant_id,
+                        plan_id=plan_id,
+                        plan=plan,
+                        step=claimed_step,
+                        failure=failure,
+                        failure_detail=str(exc),
+                    )
             return {
                 "accepted": True,
                 "tenant_id": tenant_id,
@@ -245,6 +279,145 @@ class PlanContinuationExecutor:
                     plan_id=plan_id,
                     worker_id=worker_id,
                 )
+
+    async def _maybe_enqueue_plan_completion_summary(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+        plan: dict[str, Any],
+        completion: dict[str, Any],
+        response_text: str,
+    ) -> None:
+        if self._review_inbox is None:
+            return
+        user_id = self._owner_user_id(plan)
+        if user_id is None:
+            return
+        try:
+            step = completion.get("step") if isinstance(completion.get("step"), dict) else {}
+            completed_plan = (
+                completion.get("plan") if isinstance(completion.get("plan"), dict) else plan
+            )
+            await self._review_inbox.enqueue_overnight_summary(
+                user_id=user_id,
+                tenant_id=tenant_id,
+                plan_id=plan_id,
+                plan_title=str(completed_plan.get("title") or plan.get("title") or plan_id),
+                goal=str(completed_plan.get("goal") or plan.get("goal") or "").strip() or None,
+                summary=response_text,
+                step_id=str(step.get("step_id") or "").strip() or None,
+                step_index=self._optional_int(step.get("step_index")),
+                total_steps=self._optional_int(completed_plan.get("total_steps")),
+                status=str(completed_plan.get("status") or "completed"),
+            )
+        except Exception:
+            log.exception(
+                "plan_completion_review_enqueue_failed",
+                tenant_id=tenant_id,
+                plan_id=plan_id,
+            )
+
+    async def _maybe_enqueue_execution_failure(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+        plan: dict[str, Any] | None,
+        step: dict[str, Any] | None,
+        failure: dict[str, Any],
+        failure_detail: str,
+    ) -> None:
+        if self._review_inbox is None or plan is None or step is None:
+            return
+        user_id = self._owner_user_id(plan)
+        if user_id is None:
+            return
+        try:
+            await self._review_inbox.enqueue_execution_failure(
+                user_id=user_id,
+                tenant_id=tenant_id,
+                plan_id=plan_id,
+                plan_title=str(plan.get("title") or plan_id),
+                step_id=str(step.get("step_id") or "").strip() or None,
+                step_title=str(step.get("title") or step.get("step_id") or "blocked step"),
+                failure_category=str(failure.get("failure_category") or "transient"),
+                failure_detail=failure_detail,
+            )
+        except Exception:
+            log.exception(
+                "plan_failure_review_enqueue_failed",
+                tenant_id=tenant_id,
+                plan_id=plan_id,
+            )
+
+    async def _maybe_enqueue_reconciled_review_item(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+        plan: dict[str, Any],
+    ) -> None:
+        if self._review_inbox is None:
+            return
+        user_id = self._owner_user_id(plan)
+        if user_id is None:
+            return
+
+        status = str(plan.get("status") or "").strip().lower()
+        try:
+            if status == "completed":
+                await self._review_inbox.enqueue_overnight_summary(
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    plan_id=plan_id,
+                    plan_title=str(plan.get("title") or plan_id),
+                    goal=str(plan.get("goal") or "").strip() or None,
+                    summary="All queued execution steps completed.",
+                    total_steps=self._optional_int(plan.get("total_steps")),
+                    status=status,
+                )
+            elif status == "failed":
+                await self._review_inbox.enqueue_execution_failure(
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    plan_id=plan_id,
+                    plan_title=str(plan.get("title") or plan_id),
+                    step_id=None,
+                    step_title=str(plan.get("title") or plan_id),
+                    failure_category=str(plan.get("last_error_category") or "failed"),
+                    failure_detail=str(plan.get("last_error_detail") or "Execution plan failed."),
+                    item_type=self._failed_review_item_type(status),
+                )
+        except Exception:
+            log.exception(
+                "plan_reconcile_review_enqueue_failed",
+                tenant_id=tenant_id,
+                plan_id=plan_id,
+                status=status,
+            )
+
+    @staticmethod
+    def _owner_user_id(plan: dict[str, Any] | None) -> int | None:
+        if not isinstance(plan, dict):
+            return None
+        created_by = str(plan.get("created_by") or "").strip()
+        if created_by.isdigit():
+            return int(created_by)
+        return None
+
+    @staticmethod
+    def _optional_int(value: Any) -> int | None:
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _failed_review_item_type(status: str) -> PersonalReviewItemType:
+        return (
+            PersonalReviewItemType.FAILED if status == "failed" else PersonalReviewItemType.BLOCKED
+        )
 
     async def _prompt_agent(
         self,

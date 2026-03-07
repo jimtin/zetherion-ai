@@ -497,3 +497,223 @@ async def test_upsert_scorecard_persists_level_and_ceiling(mock_pool) -> None:
     args = conn.fetchrow.await_args.args
     assert args[5] == "tenant:tenant-a:youtube:channel:channel-1"
     assert args[16] == '{"trust_level":2}'
+
+
+@pytest.mark.asyncio
+async def test_get_scorecard_returns_latest_matching_record(mock_pool) -> None:
+    pool, conn = mock_pool
+    now = datetime.now(UTC)
+    conn.fetchrow.return_value = {
+        "scorecard_id": "13131313-1313-1313-1313-131313131313",
+        "tenant_id": None,
+        "subject_id": "owner-1",
+        "subject_type": "owner",
+        "resource_scope": "owner_personal:calendar:write",
+        "action": "calendar.write",
+        "score": 0.6,
+        "approvals": 3,
+        "rejections": 1,
+        "edits": 1,
+        "total_interactions": 5,
+        "level": "draft",
+        "ceiling": 0.9,
+        "source_system": "review_inbox",
+        "source_record_id": "owner:owner:owner-1:owner_personal:calendar:write:calendar.write",
+        "metadata_json": {"domain": "calendar"},
+        "updated_at": now,
+    }
+
+    storage = TrustStorage(schema="control_plane")
+    storage._pool = pool  # type: ignore[attr-defined]
+    scorecard = await storage.get_scorecard(
+        subject_id="owner-1",
+        subject_type="owner",
+        resource_scope="owner_personal:calendar:write",
+        action="calendar.write",
+    )
+
+    assert scorecard is not None
+    assert scorecard.level == "draft"
+    sql, *params = conn.fetchrow.await_args.args
+    assert 'FROM "control_plane".trust_scorecards' in sql
+    assert params == ["owner-1", "owner", "owner_personal:calendar:write", "calendar.write"]
+
+
+@pytest.mark.asyncio
+async def test_record_feedback_outcome_updates_existing_scorecard(mock_pool) -> None:
+    pool, conn = mock_pool
+    now = datetime.now(UTC)
+    conn.fetchrow.side_effect = [
+        {
+            "scorecard_id": "14141414-1414-1414-1414-141414141414",
+            "tenant_id": None,
+            "subject_id": "owner-1",
+            "subject_type": "owner",
+            "resource_scope": "owner_personal:calendar:write",
+            "action": "calendar.write",
+            "score": 0.6,
+            "approvals": 3,
+            "rejections": 1,
+            "edits": 1,
+            "total_interactions": 5,
+            "level": "draft",
+            "ceiling": 0.9,
+            "source_system": "review_inbox",
+            "source_record_id": "existing-scorecard",
+            "metadata_json": {"domain": "calendar"},
+            "updated_at": now,
+        },
+        {
+            "scorecard_id": "14141414-1414-1414-1414-141414141414",
+            "tenant_id": None,
+            "subject_id": "owner-1",
+            "subject_type": "owner",
+            "resource_scope": "owner_personal:calendar:write",
+            "action": "calendar.write",
+            "score": 0.65,
+            "approvals": 4,
+            "rejections": 1,
+            "edits": 1,
+            "total_interactions": 6,
+            "level": "draft",
+            "ceiling": 0.9,
+            "source_system": "review_inbox",
+            "source_record_id": "existing-scorecard",
+            "metadata_json": {"domain": "calendar", "review_item_id": 11},
+            "updated_at": now,
+        },
+        {
+            "event_id": "15151515-1515-1515-1515-151515151515",
+            "tenant_id": None,
+            "subject_id": "owner-1",
+            "subject_type": "owner",
+            "resource_scope": "owner_personal:calendar:write",
+            "action": "calendar.write",
+            "outcome": "approved",
+            "delta": 0.05,
+            "source_system": "review_inbox",
+            "metadata_json": {"review_item_id": 11, "score_after": 0.65},
+            "created_at": now,
+        },
+    ]
+
+    storage = TrustStorage(schema="control_plane")
+    storage._pool = pool  # type: ignore[attr-defined]
+    event, scorecard = await storage.record_feedback_outcome(
+        subject_id="owner-1",
+        subject_type="owner",
+        resource_scope="owner_personal:calendar:write",
+        action="calendar.write",
+        outcome="approved",
+        metadata={"review_item_id": 11},
+    )
+
+    assert event.outcome == "approved"
+    assert scorecard.score == 0.65
+    update_call = conn.fetchrow.await_args_list[1]
+    update_sql, *update_args = update_call.args
+    assert 'UPDATE "control_plane".trust_scorecards' in update_sql
+    assert update_args[1:7] == [0.65, 4, 1, 1, 6, "draft"]
+
+
+@pytest.mark.asyncio
+async def test_get_scorecard_applies_tenant_filter(mock_pool) -> None:
+    pool, conn = mock_pool
+    now = datetime.now(UTC)
+    conn.fetchrow.return_value = {
+        "scorecard_id": "16161616-1616-1616-1616-161616161616",
+        "tenant_id": "tenant-a",
+        "subject_id": "worker-1",
+        "subject_type": "worker_node",
+        "resource_scope": "repo:allowed",
+        "action": "repo.patch",
+        "score": 0.55,
+        "approvals": 1,
+        "rejections": 0,
+        "edits": 0,
+        "total_interactions": 1,
+        "level": "ask",
+        "ceiling": None,
+        "source_system": "worker_policy",
+        "source_record_id": "worker-scorecard",
+        "metadata_json": {},
+        "updated_at": now,
+    }
+
+    storage = TrustStorage(schema="control_plane")
+    storage._pool = pool  # type: ignore[attr-defined]
+    scorecard = await storage.get_scorecard(
+        subject_id="worker-1",
+        subject_type="worker_node",
+        resource_scope="repo:allowed",
+        action="repo.patch",
+        tenant_id="tenant-a",
+    )
+
+    assert scorecard is not None
+    sql, *params = conn.fetchrow.await_args.args
+    assert "tenant_id = $5" in sql
+    assert params == ["worker-1", "worker_node", "repo:allowed", "repo.patch", "tenant-a"]
+
+
+@pytest.mark.asyncio
+async def test_record_feedback_outcome_creates_new_scorecard(mock_pool) -> None:
+    pool, conn = mock_pool
+    now = datetime.now(UTC)
+    conn.fetchrow.side_effect = [
+        None,
+        {
+            "scorecard_id": "17171717-1717-1717-1717-171717171717",
+            "tenant_id": "tenant-a",
+            "subject_id": "worker-1",
+            "subject_type": "worker_node",
+            "resource_scope": "repo:allowed",
+            "action": "repo.patch",
+            "score": 0.05,
+            "approvals": 1,
+            "rejections": 0,
+            "edits": 0,
+            "total_interactions": 1,
+            "level": "review",
+            "ceiling": 0.5,
+            "source_system": "review_inbox",
+            "source_record_id": "tenant-a:worker_node:worker-1:repo:allowed:repo.patch",
+            "metadata_json": {"review_item_id": 99},
+            "updated_at": now,
+        },
+        {
+            "event_id": "18181818-1818-1818-1818-181818181818",
+            "tenant_id": "tenant-a",
+            "subject_id": "worker-1",
+            "subject_type": "worker_node",
+            "resource_scope": "repo:allowed",
+            "action": "repo.patch",
+            "outcome": "approved",
+            "delta": 0.05,
+            "source_system": "review_inbox",
+            "metadata_json": {"review_item_id": 99, "score_after": 0.05},
+            "created_at": now,
+        },
+    ]
+
+    storage = TrustStorage(schema="control_plane")
+    storage._pool = pool  # type: ignore[attr-defined]
+    event, scorecard = await storage.record_feedback_outcome(
+        subject_id="worker-1",
+        subject_type="worker_node",
+        resource_scope="repo:allowed",
+        action="repo.patch",
+        outcome="approved",
+        tenant_id="tenant-a",
+        metadata={"review_item_id": 99},
+        ceiling=0.5,
+    )
+
+    assert event.delta == 0.05
+    assert scorecard.total_interactions == 1
+    insert_call = conn.fetchrow.await_args_list[1]
+    insert_sql, *insert_args = insert_call.args
+    assert 'INSERT INTO "control_plane".trust_scorecards' in insert_sql
+    assert insert_args[2] == "worker-1"
+    assert insert_args[5] == "repo.patch"
+    assert insert_args[12] == 0.5
