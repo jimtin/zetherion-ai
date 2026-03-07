@@ -15,7 +15,7 @@ from zetherion_ai.logging import get_logger
 from zetherion_ai.settings_manager import VALID_NAMESPACES
 
 if TYPE_CHECKING:
-    import asyncpg  # type: ignore[import-not-found,import-untyped]
+    import asyncpg  # type: ignore[import-untyped]
 
     from zetherion_ai.memory.qdrant import QdrantMemory
     from zetherion_ai.security.encryption import FieldEncryptor
@@ -34,6 +34,7 @@ VALID_EMAIL_SYNC_STATUSES = frozenset({"queued", "running", "succeeded", "failed
 VALID_CRITICAL_SEVERITIES = frozenset({"critical", "high", "normal"})
 VALID_CRITICAL_STATUSES = frozenset({"open", "resolved", "dismissed"})
 VALID_MESSAGING_PROVIDERS = frozenset({"whatsapp"})
+VALID_WORKER_MESSAGING_PROVIDERS = frozenset({"whatsapp", "email"})
 VALID_MESSAGING_DIRECTIONS = frozenset({"inbound", "outbound", "system"})
 VALID_MESSAGING_ACTION_TYPES = frozenset({"send"})
 VALID_MESSAGING_QUEUE_STATUSES = frozenset(
@@ -47,7 +48,11 @@ VALID_WORKER_HEALTH_STATUSES = frozenset({"unknown", "healthy", "degraded", "off
 VALID_WORKER_JOB_STATUSES = frozenset(
     {"queued", "running", "succeeded", "failed", "cancelled", "expired"}
 )
-VALID_WORKER_MESSAGING_PERMISSIONS = frozenset({"read", "send"})
+VALID_WORKER_MESSAGING_PERMISSIONS = frozenset({"read", "draft", "send"})
+WORKER_MESSAGING_PROVIDER_PERMISSIONS: dict[str, frozenset[str]] = {
+    "whatsapp": frozenset({"read", "draft"}),
+    "email": frozenset({"draft"}),
+}
 VALID_WORKER_DELEGATION_PERMISSIONS = frozenset(
     {
         "repo.patch",
@@ -746,6 +751,7 @@ CREATE TABLE IF NOT EXISTS tenant_worker_messaging_grants (
     provider               VARCHAR(40)  NOT NULL,
     chat_id                TEXT         NOT NULL,
     allow_read             BOOLEAN      NOT NULL DEFAULT FALSE,
+    allow_draft            BOOLEAN      NOT NULL DEFAULT FALSE,
     allow_send             BOOLEAN      NOT NULL DEFAULT FALSE,
     redacted_payload       BOOLEAN      NOT NULL DEFAULT FALSE,
     metadata               JSONB        NOT NULL DEFAULT '{}'::jsonb,
@@ -756,8 +762,19 @@ CREATE TABLE IF NOT EXISTS tenant_worker_messaging_grants (
     revoked_by             TEXT,
     created_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    CHECK (allow_read OR allow_send)
+    CONSTRAINT tenant_worker_messaging_grants_permissions_check
+        CHECK (allow_read OR allow_draft OR allow_send)
 );
+
+ALTER TABLE tenant_worker_messaging_grants
+    ADD COLUMN IF NOT EXISTS allow_draft BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE tenant_worker_messaging_grants
+    DROP CONSTRAINT IF EXISTS tenant_worker_messaging_grants_check;
+ALTER TABLE tenant_worker_messaging_grants
+    DROP CONSTRAINT IF EXISTS tenant_worker_messaging_grants_permissions_check;
+ALTER TABLE tenant_worker_messaging_grants
+    ADD CONSTRAINT tenant_worker_messaging_grants_permissions_check
+    CHECK (allow_read OR allow_draft OR allow_send);
 
 CREATE INDEX IF NOT EXISTS idx_tenant_worker_messaging_grants_lookup
     ON tenant_worker_messaging_grants (tenant_id, node_id, provider, chat_id, expires_at DESC);
@@ -768,6 +785,7 @@ CREATE INDEX IF NOT EXISTS idx_tenant_worker_messaging_grants_active
         provider,
         chat_id,
         allow_read,
+        allow_draft,
         allow_send,
         revoked_at,
         expires_at DESC
@@ -3807,6 +3825,13 @@ class TenantAdminManager:
         return normalized
 
     @staticmethod
+    def _normalize_worker_messaging_provider(provider: str) -> str:
+        normalized = provider.strip().lower()
+        if normalized not in VALID_WORKER_MESSAGING_PROVIDERS:
+            raise ValueError(f"Unsupported worker messaging provider '{provider}'")
+        return normalized
+
+    @staticmethod
     def _coerce_retention_days(raw: Any, *, default: int = DEFAULT_MESSAGING_RETENTION_DAYS) -> int:
         try:
             days = int(raw)
@@ -3842,7 +3867,7 @@ class TenantAdminManager:
         tenant_id: str,
         provider: str = "whatsapp",
     ) -> dict[str, Any] | None:
-        provider_norm = self._normalize_messaging_provider(provider)
+        provider_norm = self._normalize_worker_messaging_provider(provider)
         row = await self._fetchrow(
             """
             SELECT tenant_id::text AS tenant_id,
@@ -3880,7 +3905,7 @@ class TenantAdminManager:
         session_ref: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        provider_norm = self._normalize_messaging_provider(provider)
+        provider_norm = self._normalize_worker_messaging_provider(provider)
         mode = str(bridge_mode or "local_sidecar").strip().lower()
         if mode not in {"local_sidecar", "cloud_bridge"}:
             raise ValueError("bridge_mode must be one of: local_sidecar, cloud_bridge")
@@ -3951,7 +3976,7 @@ class TenantAdminManager:
         chat_id: str,
         provider: str = "whatsapp",
     ) -> dict[str, Any] | None:
-        provider_norm = self._normalize_messaging_provider(provider)
+        provider_norm = self._normalize_worker_messaging_provider(provider)
         chat = str(chat_id or "").strip()
         if not chat:
             raise ValueError("Missing chat_id")
@@ -7067,6 +7092,23 @@ class TenantAdminManager:
                                 {**messaging_denial, "reason": "invalid_permission"}
                             )
                         continue
+                    try:
+                        provider = self._normalize_worker_messaging_provider(provider)
+                    except ValueError:
+                        if denied_reasons is not None:
+                            denied_reasons.append(
+                                {**messaging_denial, "reason": "invalid_provider"}
+                            )
+                        continue
+                    if not self._worker_messaging_permission_allowed(
+                        provider=provider,
+                        permission=permission,
+                    ):
+                        if denied_reasons is not None:
+                            denied_reasons.append(
+                                {**messaging_denial, "reason": "unsupported_permission"}
+                            )
+                        continue
                     if not chat_id:
                         if denied_reasons is not None:
                             denied_reasons.append({**messaging_denial, "reason": "missing_chat_id"})
@@ -7886,17 +7928,51 @@ class TenantAdminManager:
             raise ValueError(f"permission must be one of: {allowed}")
         return value
 
-    @staticmethod
+    @classmethod
+    def _worker_messaging_permissions_for_provider(cls, provider: str) -> frozenset[str]:
+        provider_norm = cls._normalize_worker_messaging_provider(provider)
+        return WORKER_MESSAGING_PROVIDER_PERMISSIONS.get(provider_norm, frozenset())
+
+    @classmethod
+    def _worker_messaging_permission_allowed(cls, *, provider: str, permission: str) -> bool:
+        provider_norm = cls._normalize_worker_messaging_provider(provider)
+        permission_norm = cls._normalize_worker_messaging_permission(permission)
+        return permission_norm in cls._worker_messaging_permissions_for_provider(provider_norm)
+
+    @classmethod
     def _normalize_worker_messaging_scope(
+        cls,
         *,
-        allow_read: bool,
-        allow_send: bool,
-    ) -> tuple[bool, bool]:
+        provider: str,
+        allow_read: bool = False,
+        allow_draft: bool = False,
+        allow_send: bool = False,
+    ) -> tuple[bool, bool, bool]:
+        provider_norm = cls._normalize_worker_messaging_provider(provider)
         read_allowed = bool(allow_read)
+        draft_allowed = bool(allow_draft)
         send_allowed = bool(allow_send)
-        if not read_allowed and not send_allowed:
-            raise ValueError("At least one of allow_read or allow_send must be true")
-        return read_allowed, send_allowed
+        if not read_allowed and not draft_allowed and not send_allowed:
+            raise ValueError("At least one of allow_read, allow_draft, or allow_send must be true")
+
+        requested = {
+            "read": read_allowed,
+            "draft": draft_allowed,
+            "send": send_allowed,
+        }
+        allowed = cls._worker_messaging_permissions_for_provider(provider_norm)
+        disallowed = [
+            permission
+            for permission, enabled in requested.items()
+            if enabled and permission not in allowed
+        ]
+        if disallowed:
+            allowed_display = ", ".join(sorted(allowed)) or "none"
+            raise ValueError(
+                f"Provider '{provider_norm}' does not support worker messaging permissions: "
+                f"{', '.join(disallowed)} (allowed: {allowed_display})"
+            )
+        return read_allowed, draft_allowed, send_allowed
 
     async def _get_trust_storage(self) -> TrustStorage:
         if self._trust_storage is None:
@@ -8100,17 +8176,26 @@ class TenantAdminManager:
     ) -> dict[str, Any] | None:
         action_norm = str(action or "").strip().lower()
         permission: str | None = None
+        provider_hint: str | None = None
         if action_norm.startswith("messaging.read"):
             permission = "read"
+        elif action_norm.startswith("messaging.draft"):
+            permission = "draft"
         elif action_norm.startswith("messaging.send"):
             permission = "send"
+        elif action_norm.startswith("email.draft"):
+            permission = "draft"
+            provider_hint = "email"
         if permission is None:
             return None
 
         payload = payload_json if isinstance(payload_json, dict) else {}
-        provider_raw = str(payload.get("provider") or "whatsapp").strip().lower() or "whatsapp"
+        provider_raw = (
+            str(provider_hint or payload.get("provider") or "whatsapp").strip().lower()
+            or "whatsapp"
+        )
         try:
-            provider = cls._normalize_messaging_provider(provider_raw)
+            provider = cls._normalize_worker_messaging_provider(provider_raw)
         except Exception:
             provider = provider_raw
         chat_id = str(
@@ -8118,6 +8203,7 @@ class TenantAdminManager:
             or payload.get("target_chat_id")
             or payload.get("conversation_id")
             or payload.get("thread_id")
+            or payload.get("account_id")
             or ""
         ).strip()
         return {
@@ -9807,7 +9893,7 @@ class TenantAdminManager:
             idx += 1
 
         if provider is not None and str(provider).strip():
-            provider_norm = self._normalize_messaging_provider(provider)
+            provider_norm = self._normalize_worker_messaging_provider(provider)
             where.append(f"provider = ${idx}")
             args.append(provider_norm)
             idx += 1
@@ -9832,6 +9918,7 @@ class TenantAdminManager:
                    provider,
                    chat_id,
                    allow_read,
+                   allow_draft,
                    allow_send,
                    redacted_payload,
                    metadata,
@@ -9866,9 +9953,19 @@ class TenantAdminManager:
         chat = str(chat_id or "").strip()
         if not chat:
             raise ValueError("Missing chat_id")
-        provider_norm = self._normalize_messaging_provider(provider)
+        provider_norm = self._normalize_worker_messaging_provider(provider)
         permission_norm = self._normalize_worker_messaging_permission(permission)
-        allow_column = "allow_read" if permission_norm == "read" else "allow_send"
+        if not self._worker_messaging_permission_allowed(
+            provider=provider_norm,
+            permission=permission_norm,
+        ):
+            return None
+        if permission_norm == "read":
+            allow_column = "allow_read"
+        elif permission_norm == "draft":
+            allow_column = "allow_draft"
+        else:
+            allow_column = "allow_send"
         row = await self._fetchrow(
             f"""
             SELECT grant_id::text AS grant_id,
@@ -9877,6 +9974,7 @@ class TenantAdminManager:
                    provider,
                    chat_id,
                    allow_read,
+                   allow_draft,
                    allow_send,
                    redacted_payload,
                    metadata,
@@ -9912,8 +10010,9 @@ class TenantAdminManager:
         node_id: str,
         provider: str,
         chat_id: str,
-        allow_read: bool,
-        allow_send: bool,
+        allow_read: bool = False,
+        allow_draft: bool = False,
+        allow_send: bool = False,
         ttl_seconds: int,
         redacted_payload: bool = False,
         metadata: dict[str, Any] | None = None,
@@ -9925,9 +10024,11 @@ class TenantAdminManager:
         chat = str(chat_id or "").strip()
         if not chat:
             raise ValueError("Missing chat_id")
-        provider_norm = self._normalize_messaging_provider(provider)
-        read_allowed, send_allowed = self._normalize_worker_messaging_scope(
+        provider_norm = self._normalize_worker_messaging_provider(provider)
+        read_allowed, draft_allowed, send_allowed = self._normalize_worker_messaging_scope(
+            provider=provider_norm,
             allow_read=allow_read,
+            allow_draft=allow_draft,
             allow_send=allow_send,
         )
         ttl = self._normalize_worker_messaging_ttl_seconds(ttl_seconds)
@@ -9954,7 +10055,7 @@ class TenantAdminManager:
                 UPDATE tenant_worker_messaging_grants
                 SET revoked_at = now(),
                     revoked_reason = COALESCE(revoked_reason, 'superseded'),
-                    revoked_by = $8,
+                    revoked_by = $9,
                     updated_at = now()
                 WHERE tenant_id = $1::uuid
                   AND node_id = $2
@@ -9970,6 +10071,7 @@ class TenantAdminManager:
                 provider,
                 chat_id,
                 allow_read,
+                allow_draft,
                 allow_send,
                 redacted_payload,
                 metadata,
@@ -9984,10 +10086,11 @@ class TenantAdminManager:
                 $4,
                 $6,
                 $7,
-                $9,
-                $10::jsonb,
-                $11::timestamptz,
                 $8,
+                $10,
+                $11::jsonb,
+                $12::timestamptz,
+                $9,
                 now()
             )
             RETURNING grant_id::text AS grant_id,
@@ -9996,6 +10099,7 @@ class TenantAdminManager:
                       provider,
                       chat_id,
                       allow_read,
+                      allow_draft,
                       allow_send,
                       redacted_payload,
                       metadata,
@@ -10013,6 +10117,7 @@ class TenantAdminManager:
             chat,
             str(uuid4()),
             read_allowed,
+            draft_allowed,
             send_allowed,
             actor_sub,
             bool(redacted_payload),
@@ -10049,6 +10154,7 @@ class TenantAdminManager:
                    provider,
                    chat_id,
                    allow_read,
+                   allow_draft,
                    allow_send,
                    redacted_payload,
                    metadata,
@@ -10089,6 +10195,7 @@ class TenantAdminManager:
                       provider,
                       chat_id,
                       allow_read,
+                      allow_draft,
                       allow_send,
                       redacted_payload,
                       metadata,

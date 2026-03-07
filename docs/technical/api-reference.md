@@ -395,7 +395,7 @@ List scoped worker messaging grants (filters: `node_id`, `provider`, `chat_id`,
 ### PUT /admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}
 
 Create/update one TTL-limited worker messaging grant for a specific node/chat with
-permission scope (`allow_read`, `allow_send`) and optional `redacted_payload`.
+permission scope (`allow_read`, `allow_draft`, `allow_send`) subject to provider-specific restrictions; current supported worker-sensitive combinations are `whatsapp:{read,draft}` and `email:{draft}`. Optional `redacted_payload` remains available.
 
 ### DELETE /admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}
 

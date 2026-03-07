@@ -4262,7 +4262,7 @@ async def test_worker_messaging_grant_list_and_active_lookup_filters() -> None:
     manager._fetchrow = AsyncMock(  # type: ignore[method-assign]
         side_effect=[
             {"grant_id": "g-read", "allow_read": True},
-            None,
+            {"grant_id": "g-draft", "allow_draft": True},
         ]
     )
 
@@ -4307,6 +4307,17 @@ async def test_worker_messaging_grant_list_and_active_lookup_filters() -> None:
     lookup_sql, *_lookup_args = manager._fetchrow.await_args_list[0].args
     assert "AND allow_read = TRUE" in lookup_sql
 
+    active_draft = await manager.get_active_worker_messaging_grant(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        provider="whatsapp",
+        chat_id="chat-1",
+        permission="draft",
+    )
+    assert active_draft == {"grant_id": "g-draft", "allow_draft": True}
+    lookup_draft_sql, *_lookup_draft_args = manager._fetchrow.await_args_list[1].args
+    assert "AND allow_draft = TRUE" in lookup_draft_sql
+
     active_send = await manager.get_active_worker_messaging_grant(
         tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
         node_id="node-1",
@@ -4315,8 +4326,7 @@ async def test_worker_messaging_grant_list_and_active_lookup_filters() -> None:
         permission="send",
     )
     assert active_send is None
-    lookup_send_sql, *_lookup_send_args = manager._fetchrow.await_args_list[1].args
-    assert "AND allow_send = TRUE" in lookup_send_sql
+    assert manager._fetchrow.await_count == 2
 
     with pytest.raises(ValueError, match="Missing node_id"):
         await manager.get_active_worker_messaging_grant(
@@ -4371,6 +4381,28 @@ async def test_worker_messaging_grant_error_and_idempotent_paths() -> None:
             chat_id="chat-1",
             allow_read=True,
             allow_send=False,
+            ttl_seconds=60,
+        )
+
+    manager.get_worker_node = AsyncMock(  # type: ignore[method-assign]
+        return_value={"node_id": "node-1", "status": "active", "health_status": "healthy"}
+    )
+    with pytest.raises(ValueError, match="does not support worker messaging permissions: send"):
+        await manager.put_worker_messaging_grant(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="node-1",
+            provider="whatsapp",
+            chat_id="chat-1",
+            allow_send=True,
+            ttl_seconds=60,
+        )
+    with pytest.raises(ValueError, match="does not support worker messaging permissions: read"):
+        await manager.put_worker_messaging_grant(
+            tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            node_id="node-1",
+            provider="email",
+            chat_id="thread-1",
+            allow_read=True,
             ttl_seconds=60,
         )
 

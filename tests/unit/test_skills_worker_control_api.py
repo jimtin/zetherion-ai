@@ -205,6 +205,7 @@ def worker_manager() -> MagicMock:
             "provider": "whatsapp",
             "chat_id": "chat-1",
             "allow_read": True,
+            "allow_draft": False,
             "allow_send": False,
             "redacted_payload": True,
             "expires_at": datetime.now(UTC) + timedelta(hours=1),
@@ -1534,6 +1535,7 @@ class TestSkillsWorkerControlAPI:
                 headers=_admin(),
                 json={
                     "allow_read": True,
+                    "allow_draft": True,
                     "allow_send": False,
                     "ttl_seconds": 3600,
                     "redacted_payload": True,
@@ -1588,6 +1590,8 @@ class TestSkillsWorkerControlAPI:
         worker_manager.list_worker_job_events.assert_awaited_once()
         worker_manager.list_worker_messaging_grants.assert_awaited_once()
         worker_manager.put_worker_messaging_grant.assert_awaited_once()
+        grant_kwargs = worker_manager.put_worker_messaging_grant.await_args.kwargs
+        assert grant_kwargs["allow_draft"] is True
         worker_manager.revoke_worker_messaging_grant.assert_awaited_once()
         assert worker_manager.set_worker_node_status.await_count == 2
         worker_manager.retry_worker_job.assert_awaited_once()
