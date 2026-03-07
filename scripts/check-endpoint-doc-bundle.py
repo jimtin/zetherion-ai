@@ -42,6 +42,21 @@ DOC_RULES: dict[str, dict[str, object]] = {
     },
 }
 
+CONDITIONAL_ROUTE_MARKERS: dict[str, tuple[str, ...]] = {
+    "src/zetherion_ai/api/server.py": (
+        "app.router.add_",
+        '"/api/v1/',
+        "'/api/v1/",
+        "register_youtube_routes",
+    ),
+    "src/zetherion_ai/cgs_gateway/server.py": (
+        "app.router.add_",
+        '"/service/ai/',
+        "'/service/ai/",
+        "register_",
+    ),
+}
+
 
 def _run_git(*args: str) -> str:
     proc = subprocess.run(
@@ -91,11 +106,17 @@ def _resolve_base_ref() -> str | None:
     return None
 
 
+def _diff_ranges(base_ref: str | None) -> tuple[str, ...]:
+    if base_ref is None:
+        return ()
+    return (f"{base_ref}...HEAD", f"{base_ref}..HEAD")
+
+
 def _changed_files(base_ref: str | None) -> set[str]:
     if base_ref is None:
         return set()
 
-    for diff_range in (f"{base_ref}...HEAD", f"{base_ref}..HEAD"):
+    for diff_range in _diff_ranges(base_ref):
         proc = subprocess.run(
             ["git", "diff", "--name-only", diff_range],
             cwd=REPO_ROOT,
@@ -109,8 +130,54 @@ def _changed_files(base_ref: str | None) -> set[str]:
     raise RuntimeError(f"Unable to diff against base ref: {base_ref}")
 
 
+def _changed_content_lines(base_ref: str | None, path: str) -> tuple[str, ...]:
+    if base_ref is None:
+        return ()
+
+    for diff_range in _diff_ranges(base_ref):
+        proc = subprocess.run(
+            ["git", "diff", "--unified=0", diff_range, "--", path],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode == 0:
+            return tuple(
+                line
+                for line in proc.stdout.splitlines()
+                if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+            )
+
+    raise RuntimeError(f"Unable to diff content for {path} against base ref: {base_ref}")
+
+
 def _rule_matches_path(path: str, prefixes: tuple[str, ...]) -> bool:
     return path.startswith(prefixes)
+
+
+def _path_requires_doc_bundle(path: str, *, base_ref: str | None) -> bool:
+    markers = CONDITIONAL_ROUTE_MARKERS.get(path)
+    if not markers:
+        return True
+
+    changed_lines = _changed_content_lines(base_ref, path)
+    return any(marker in line for line in changed_lines for marker in markers)
+
+
+def _matched_rule_changes(
+    rule_name: str,
+    rule: dict[str, object],
+    changed: set[str],
+    base_ref: str | None,
+) -> list[str]:
+    del rule_name  # reserved for future rule-specific heuristics
+    prefixes = tuple(rule["prefixes"])  # type: ignore[arg-type]
+    return [
+        path
+        for path in sorted(changed)
+        if _rule_matches_path(path, prefixes) and _path_requires_doc_bundle(path, base_ref=base_ref)
+    ]
 
 
 def main() -> int:
@@ -123,9 +190,8 @@ def main() -> int:
 
     matched_rules: list[tuple[str, list[str], set[str]]] = []
     for rule_name, rule in DOC_RULES.items():
-        prefixes = tuple(rule["prefixes"])  # type: ignore[arg-type]
         required_docs = set(rule["required_docs"])  # type: ignore[arg-type]
-        matched = sorted(path for path in changed if _rule_matches_path(path, prefixes))
+        matched = _matched_rule_changes(rule_name, rule, changed, base_ref)
         if matched:
             matched_rules.append((rule_name, matched, required_docs))
 
