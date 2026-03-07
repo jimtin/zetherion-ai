@@ -23,6 +23,7 @@ Maintenance note (2026-03-05):
   - `PUT /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}`
   - `DELETE /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}`
 - Public CGS client-facing document intelligence endpoints in this kit are unchanged.
+- Internal CGS tenant create is now idempotent on `cgs_tenant_id`; retries reconcile the existing mapping and return `isolation_stage` plus `provisioning_status` for rollout visibility.
 
 ## Integration Outcome
 

@@ -20,6 +20,7 @@ Authoritative exposure rule:
   for node lifecycle operations (quarantine/unquarantine), job retry/cancel, and worker event auditing.
 - Worker messaging grants were added under `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*`
   to enforce deny-by-default worker WhatsApp access with TTL-scoped per-node/per-chat exceptions.
+- Internal tenant provisioning retries are now idempotent on `cgs_tenant_id`, and the lifecycle response exposes `isolation_stage` plus `provisioning_status` so rollout state can be tracked during onboarding.
 
 ## Capability Outcome
 

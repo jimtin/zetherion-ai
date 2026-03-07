@@ -450,7 +450,7 @@ Returns mapped CGS tenant list.
 
 ### `POST /internal/tenants`
 
-Creates tenant in Zetherion via Skills API intent `client_create`, then upserts mapping.
+Creates tenant in Zetherion via Skills API intent `client_create` when the CGS tenant is new; retries reconcile the existing mapping instead of creating a duplicate upstream tenant. Response now reports `isolation_stage` and `provisioning_status`.
 
 Request body:
 
