@@ -1632,6 +1632,28 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#added-segment-6-unified-trust-engine-shadow-mode-2026-03-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 6 Unified Trust Engine Shadow Mode (2026-03-07)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-segment-4-cgs-provisioning-and-reconciliation-orchestrator-2026-03-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 4 CGS Provisioning and Reconciliation Orchestrator (2026-03-07)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added-segment-2-data-plane-isolation-foundation-2026-03-06" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2709,6 +2731,28 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#added-segment-6-unified-trust-engine-shadow-mode-2026-03-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 6 Unified Trust Engine Shadow Mode (2026-03-07)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-segment-4-cgs-provisioning-and-reconciliation-orchestrator-2026-03-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 4 CGS Provisioning and Reconciliation Orchestrator (2026-03-07)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added-segment-2-data-plane-isolation-foundation-2026-03-06" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3645,6 +3689,36 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 </blockquote>
 <hr />
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="added-segment-6-unified-trust-engine-shadow-mode-2026-03-07">Added - Segment 6 Unified Trust Engine Shadow Mode (2026-03-07)<a class="headerlink" href="#added-segment-6-unified-trust-engine-shadow-mode-2026-03-07" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>trust.engine.shadow-mode</code></li>
+<li><code>trust.engine.adapter-parity-logging</code></li>
+<li><code>trust.engine.cross-surface-normalization</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>isolation.segment6.shadow-evaluate-tenant-trust-policy</code></li>
+<li><code>isolation.segment6.shadow-evaluate-personal-actions</code></li>
+<li><code>isolation.segment6.shadow-evaluate-gmail-github-youtube-trust</code></li>
+<li>Added <code>src/zetherion_ai/trust/engine.py</code> and <code>src/zetherion_ai/trust/adapters.py</code> to normalize legacy autonomy decisions into one canonical trust decision model without changing live enforcement.</li>
+<li>Wired non-blocking shadow recording into tenant trust policy, personal actions, Gmail trust, GitHub autonomy, and YouTube trust so each decision path now emits comparable <code>trust_shadow_decision</code> telemetry.</li>
+<li>Added focused unit coverage for the new engine/adapters plus hook-level contract tests to keep shadow-mode wiring from regressing silently.</li>
+</ul>
+<h3 id="added-segment-4-cgs-provisioning-and-reconciliation-orchestrator-2026-03-07">Added - Segment 4 CGS Provisioning and Reconciliation Orchestrator (2026-03-07)<a class="headerlink" href="#added-segment-4-cgs-provisioning-and-reconciliation-orchestrator-2026-03-07" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>isolation.cgs.idempotent-provisioning</code></li>
+<li><code>isolation.cgs.mapping-isolation-stage</code></li>
+<li><code>isolation.cgs.reconciliation-candidates</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>isolation.segment4.cgs-create-tenant-idempotent-retry</code></li>
+<li><code>isolation.segment4.cgs-existing-tenant-reconcile-without-duplicate-upstream-create</code></li>
+<li><code>isolation.segment4.cgs-track-isolation-stage-and-provisioning-baseline</code></li>
+<li>Added <code>CGSTenantProvisioningOrchestrator</code> so repeated internal tenant create requests reuse existing mappings instead of creating duplicate upstream tenants.</li>
+<li>Added first-class <code>isolation_stage</code> persistence plus provisioning/reconciliation metadata on <code>cgs_ai_tenants</code> to support staged upgrades of existing clients.</li>
+<li>Added reconciliation candidate helpers and route/test coverage for idempotent create responses that now report <code>isolation_stage</code> and <code>provisioning_status</code>.</li>
+<li>Added staged tenant migration receipts plus owner-portfolio tenant snapshots so existing CGS clients can reconcile into <code>shadow</code>, <code>dual_write</code>, <code>cutover_ready</code>, or rollback states without remapping credentials.</li>
+<li>Extended <code>PATCH /service/ai/v1/internal/tenants/{tenant_id}</code> to trigger bounded tenant document reindex backfill, release-marker capture, and owner-safe health snapshots during migration.</li>
+</ul>
 <h3 id="added-segment-2-data-plane-isolation-foundation-2026-03-06">Added - Segment 2 Data Plane Isolation Foundation (2026-03-06)<a class="headerlink" href="#added-segment-2-data-plane-isolation-foundation-2026-03-06" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Impacted capability IDs:</li>

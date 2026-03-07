@@ -1890,7 +1890,20 @@
 <li><code>scripts/run-discord-e2e-tests.sh</code></li>
 </ul>
 <h2 id="git-hook-enforcement">Git Hook Enforcement<a class="headerlink" href="#git-hook-enforcement" title="Permanent link">&para;</a></h2>
-<p><code>.git-hooks/pre-push</code> executes <code>./scripts/test-full.sh</code> directly. This blocks pushes when full validation fails.</p>
+<p><code>.git-hooks/pre-push</code> now enforces a commit-state preflight before the expensive full gate:</p>
+<ol>
+<li>refuse dirty worktree/index state</li>
+<li>refuse pushes for a non-checked-out commit SHA</li>
+<li>run <code>scripts/run-local-gate-preflight.sh</code> against the exact <code>&lt;base, head&gt;</code> push range</li>
+<li>then execute <code>./scripts/test-full.sh</code></li>
+</ol>
+<p>The preflight is driven by the source-controlled manifest at <code>.ci/local_gate_manifest.json</code>. It currently requires local fast-fail coverage for:</p>
+<ul>
+<li>endpoint docs bundle changes on API/CGS route files</li>
+<li>strict <code>mypy src/zetherion_ai --config-file=pyproject.toml</code> for runtime Python changes</li>
+<li>targeted Qdrant/data-plane regression tests</li>
+<li>targeted replay-store regression tests</li>
+</ul>
 <h2 id="ci-cost-strategy">CI Cost Strategy<a class="headerlink" href="#ci-cost-strategy" title="Permanent link">&para;</a></h2>
 <p>The CI workflow applies maximum reduction defaults:</p>
 <ol>
@@ -1917,6 +1930,7 @@
 </ul>
 <h2 id="operating-rule">Operating Rule<a class="headerlink" href="#operating-rule" title="Permanent link">&para;</a></h2>
 <p>When CI fails, inspect attribution first. If attribution says a failure should have been caught locally, treat that as a process breach and enforce canonical local gate usage before the next push.</p>
+<p>Protected shared-infra paths must stay mapped in <code>.ci/local_gate_manifest.json</code>; local validation fails fast when a protected path changes without an explicit local gate mapping.</p>
 <h2 id="cicd-proof-of-completion">CI/CD Proof of Completion<a class="headerlink" href="#cicd-proof-of-completion" title="Permanent link">&para;</a></h2>
 <p>After pushing, completion must be proven by CI/CD results for the exact commit SHA:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>./scripts/check-cicd-success.sh<span class="w"> </span>--sha<span class="w"> </span>&lt;commit_sha&gt;<span class="w"> </span>--ref<span class="w"> </span>&lt;ref&gt;
