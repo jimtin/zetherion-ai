@@ -90,8 +90,8 @@ LINT_DIRS="src/ updater_sidecar/"
 # License allowlist (must match CI — see .github/workflows/ci.yml)
 LICENSE_ALLOWLIST="MIT License;MIT;BSD License;BSD-2-Clause;BSD-3-Clause;Apache Software License;Apache License 2.0;Apache-2.0;ISC License;ISC;Python Software Foundation License;PSF-2.0;Mozilla Public License 2.0 (MPL 2.0);MPL-2.0;Artistic License;Public Domain;The Unlicense;Unlicense;CC0-1.0;0BSD;Zlib;UNKNOWN"
 
-COMPOSE_FILE="docker-compose.test.yml"
-PROJECT="zetherion-ai-test"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.test.yml}"
+PROJECT="${PROJECT:-zetherion-ai-test}"
 DOCKER_STARTED_BY_US=false
 DOCKER_LOG="$(mktemp)"
 DOCKER_PID=""
@@ -111,6 +111,9 @@ OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-3072}"
 MYPY_TIMEOUT_SECONDS="${MYPY_TIMEOUT_SECONDS:-1200}"
 PIPAUDIT_TIMEOUT_SECONDS="${PIPAUDIT_TIMEOUT_SECONDS:-300}"
 STATIC_TIMEOUT_SECONDS="${STATIC_TIMEOUT_SECONDS:-600}"
+
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/e2e_run_manager.sh"
 
 ts() { date "+%H:%M:%S"; }
 
@@ -278,7 +281,10 @@ cleanup() {
             kill "$pid" 2>/dev/null || true
         fi
     done
-    if [ "$DOCKER_STARTED_BY_US" = true ]; then
+    if [ -n "${E2E_RUN_MANIFEST_PATH:-}" ]; then
+        echo "[$(ts)] Cleaning isolated E2E run..."
+        cleanup_e2e_run "pre_push_exit"
+    elif [ "$DOCKER_STARTED_BY_US" = true ]; then
         echo "[$(ts)] Tearing down Docker test environment..."
         compose_down
     fi
@@ -303,20 +309,6 @@ start_docker_background() {
         return 1
     fi
 
-    # docker-compose.test.yml uses fixed container_name values. Remove any stale
-    # leftovers explicitly so compose up never fails with "name is already in use".
-    local stale_containers=(
-        "${PROJECT}-bot"
-        "${PROJECT}-api"
-        "${PROJECT}-cgs-gateway"
-        "${PROJECT}-skills"
-        "${PROJECT}-postgres"
-        "${PROJECT}-qdrant"
-        "${PROJECT}-ollama"
-        "${PROJECT}-ollama-router"
-    )
-    docker rm -f "${stale_containers[@]}" >/dev/null 2>&1 || true
-
     echo "[$(ts)] [docker] Tearing down any stale test environment..."
     compose_down
 
@@ -326,14 +318,14 @@ start_docker_background() {
     # Wait for ALL services to be healthy
     echo "[$(ts)] [docker] Waiting for services to become healthy..."
     for i in $(seq 1 90); do
-        postgres=$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-postgres" 2>/dev/null || echo "missing")
-        qdrant=$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-qdrant" 2>/dev/null || echo "missing")
-        ollama=$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-ollama" 2>/dev/null || echo "missing")
-        ollama_router=$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-ollama-router" 2>/dev/null || echo "missing")
-        skills=$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-skills" 2>/dev/null || echo "missing")
-        api=$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-api" 2>/dev/null || echo "missing")
-        cgs_gateway=$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-cgs-gateway" 2>/dev/null || echo "missing")
-        bot=$(docker inspect --format='{{.State.Status}}' "${PROJECT}-bot" 2>/dev/null || echo "missing")
+        postgres=$(inspect_service_field "postgres" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
+        qdrant=$(inspect_service_field "qdrant" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
+        ollama=$(inspect_service_field "ollama" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
+        ollama_router=$(inspect_service_field "ollama-router" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
+        skills=$(inspect_service_field "zetherion-ai-skills" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
+        api=$(inspect_service_field "zetherion-ai-api" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
+        cgs_gateway=$(inspect_service_field "zetherion-ai-cgs-gateway" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
+        bot=$(inspect_service_field "zetherion-ai-bot" '{{.State.Status}}')
 
         if [ "$postgres" = "healthy" ] && [ "$qdrant" = "healthy" ] && [ "$ollama" = "healthy" ] && [ "$ollama_router" = "healthy" ] && [ "$skills" = "healthy" ] && [ "$api" = "healthy" ] && [ "$cgs_gateway" = "healthy" ] && [ "$bot" = "running" ]; then
             echo "[$(ts)] [docker] All services ready."
@@ -377,17 +369,17 @@ start_docker_background() {
     echo "[$(ts)] [docker] Checking Ollama models (profile=$OLLAMA_PULL_PROFILE)..."
 
     if [ "$OLLAMA_PULL_PROFILE" = "full" ]; then
-        if ! docker exec "${PROJECT}-ollama-router" ollama list 2>/dev/null | grep -q "llama3.2:3b"; then
+        if ! exec_service "ollama-router" ollama list 2>/dev/null | grep -q "llama3.2:3b"; then
             echo "[$(ts)] [docker]   Pulling llama3.2:3b → ollama-router..."
-            docker exec "${PROJECT}-ollama-router" ollama pull llama3.2:3b 2>&1 | tail -1
+            exec_service "ollama-router" ollama pull llama3.2:3b 2>&1 | tail -1
         else
             echo "[$(ts)] [docker]   llama3.2:3b already cached in ollama-router"
         fi
     fi
 
-    if ! docker exec "${PROJECT}-ollama" ollama list 2>/dev/null | grep -q "llama3.1:8b"; then
+    if ! exec_service "ollama" ollama list 2>/dev/null | grep -q "llama3.1:8b"; then
         echo "[$(ts)] [docker]   Pulling llama3.1:8b → ollama..."
-        docker exec "${PROJECT}-ollama" ollama pull llama3.1:8b 2>&1 | tail -1
+        exec_service "ollama" ollama pull llama3.1:8b 2>&1 | tail -1
     else
         echo "[$(ts)] [docker]   llama3.1:8b already cached in ollama"
     fi
@@ -397,10 +389,10 @@ start_docker_background() {
     # Pre-warm models with a throwaway inference (loads weights into memory)
     echo "[$(ts)] [docker] Pre-warming models..."
     if [ "$OLLAMA_PULL_PROFILE" = "full" ]; then
-        docker exec "${PROJECT}-ollama-router" curl -sf http://localhost:11434/api/generate \
+        exec_service "ollama-router" curl -sf http://localhost:11434/api/generate \
             -d '{"model":"llama3.2:3b","prompt":"hi","stream":false}' >/dev/null 2>&1 &
     fi
-    docker exec "${PROJECT}-ollama" curl -sf http://localhost:11434/api/generate \
+    exec_service "ollama" curl -sf http://localhost:11434/api/generate \
         -d '{"model":"llama3.1:8b","prompt":"hi","stream":false}' >/dev/null 2>&1 &
     wait
     echo "[$(ts)] [docker] Models pre-warmed."
@@ -470,6 +462,9 @@ if [ "${SKIP_LOCAL_SOCKET_PREFLIGHT:-false}" != "true" ]; then
         exit 1
     fi
 fi
+
+start_e2e_run
+echo "[$(ts)] Isolated E2E run: run_id=${E2E_RUN_ID} project=${PROJECT} stack_root=${E2E_STACK_ROOT}"
 
 # ═══════════════════════════════════════════════════════════════════
 # Phase A: Start Docker in background, run fast tests in foreground

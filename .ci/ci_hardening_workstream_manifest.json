@@ -2,7 +2,7 @@
   "workstream": "segmented-ci-hardening-and-spend-reduction",
   "contract_version": 1,
   "recorded_at": "2026-03-08",
-  "status": "segment-4-heavy-verification-offload-candidate",
+  "status": "segment-5-e2e-run-isolation-in-progress",
   "segment_contract": {
     "branch_prefix": "codex/seg-ci-",
     "one_segment_per_pr": true,
@@ -43,7 +43,9 @@
     "ci.weekly.independent_verification",
     "deploy.windows.core_aux_health",
     "ci.failure_attribution",
-    "ci.cost.observability"
+    "ci.cost.observability",
+    "ci.e2e.run_isolation",
+    "ci.e2e.discord_isolation"
   ],
   "workflow_scenarios": [
     "pr.docs_only_fast_path",
@@ -53,7 +55,12 @@
     "pr.receipt_sha_mismatch_rejected",
     "deploy.aux_misconfig_degraded",
     "deploy.core_failure_rollback",
-    "weekly.full_independent_verification"
+    "weekly.full_independent_verification",
+    "e2e.concurrent_docker_runs_isolated",
+    "e2e.stale_stack_janitor_cleanup",
+    "e2e.concurrent_discord_runs_isolated",
+    "e2e.target_lease_unavailable",
+    "e2e.windows_discord_canary"
   ],
   "segments": [
     {
@@ -115,7 +122,41 @@
       ]
     },
     {
-      "id": "seg-ci-05-windows-core-vs-aux",
+      "id": "seg-ci-05-containerized-e2e-run-isolation",
+      "title": "Containerized E2E Run Isolation",
+      "capability_ids": [
+        "ci.e2e.run_isolation",
+        "ci.local_preflight"
+      ],
+      "workflow_scenario_ids": [
+        "e2e.concurrent_docker_runs_isolated",
+        "e2e.stale_stack_janitor_cleanup"
+      ]
+    },
+    {
+      "id": "seg-ci-06-discord-e2e-isolation",
+      "title": "Discord E2E Channel Isolation, Target Lease, and Synthetic Cleanup",
+      "capability_ids": [
+        "ci.e2e.discord_isolation"
+      ],
+      "workflow_scenario_ids": [
+        "e2e.concurrent_discord_runs_isolated",
+        "e2e.target_lease_unavailable"
+      ]
+    },
+    {
+      "id": "seg-ci-07-windows-discord-canary",
+      "title": "Windows Full-Parity Production Discord Canary",
+      "capability_ids": [
+        "ci.e2e.discord_isolation",
+        "ci.weekly.independent_verification"
+      ],
+      "workflow_scenario_ids": [
+        "e2e.windows_discord_canary"
+      ]
+    },
+    {
+      "id": "seg-ci-08-windows-core-vs-aux",
       "title": "Windows Deploy Core vs Auxiliary Split",
       "capability_ids": [
         "deploy.windows.core_aux_health"
@@ -126,7 +167,7 @@
       ]
     },
     {
-      "id": "seg-ci-06-cost-observability",
+      "id": "seg-ci-09-cost-observability",
       "title": "Cost Observability and Cache Hygiene",
       "capability_ids": [
         "ci.cost.observability"
@@ -136,7 +177,7 @@
       ]
     },
     {
-      "id": "seg-ci-07-closeout-enforcement",
+      "id": "seg-ci-10-closeout-enforcement",
       "title": "Closeout and Policy Enforcement",
       "capability_ids": [
         "ci.contract.alignment",

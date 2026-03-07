@@ -15,6 +15,8 @@ from typing import Any
 import pytest
 import pytest_asyncio
 
+from tests.integration.e2e_runtime import get_runtime
+
 # Use module-scoped event loop so module-scoped async fixtures (mock_bot)
 # share the same loop across all tests in this module.
 # Docker startup/model warmup can exceed the default global 30s timeout.
@@ -39,14 +41,17 @@ def _load_env() -> None:
 SKIP_INTEGRATION = os.getenv("SKIP_INTEGRATION_TESTS", "false").lower() == "true"
 
 
+RUNTIME = get_runtime()
+
+
 class DockerEnvironment:
     """Manages Docker Compose environment for testing."""
 
     def __init__(self) -> None:
         """Initialize the Docker environment manager."""
-        # Use test-specific compose file with different ports to avoid conflicts
-        self.compose_file = "docker-compose.test.yml"
-        self.project_name = "zetherion-ai-test"
+        self.runtime = get_runtime()
+        self.compose_file = self.runtime.compose_file
+        self.project_name = self.runtime.project_name
         self.ollama_model_pulled = False
 
     def start(self) -> None:
@@ -91,57 +96,32 @@ class DockerEnvironment:
             capture_output=True,
         )
 
+    def _service_status(self, service: str) -> str:
+        return self.runtime.service_health(service)
+
+    def _service_container(self, service: str) -> str | None:
+        return self.runtime.service_container_id(service)
+
     def wait_for_healthy(self, timeout: int = 180) -> bool:
-        """Wait for all services to be healthy.
-
-        Args:
-            timeout: Maximum time to wait in seconds.
-
-        Returns:
-            True if all services are healthy, False otherwise.
-        """
+        """Wait for all services to be healthy."""
         print("⏳ Waiting for services to be healthy...")
         start_time = time.time()
+        expected = {
+            "postgres": "healthy",
+            "qdrant": "healthy",
+            "ollama-router": "healthy",
+            "ollama": "healthy",
+            "zetherion-ai-skills": "healthy",
+            "zetherion-ai-bot": "running",
+        }
 
         while time.time() - start_time < timeout:
-            try:
-                services_ok = True
-
-                # Check each service with a health check
-                for _name, container, check_field, expected in [
-                    ("PostgreSQL", "zetherion-ai-test-postgres", "Health.Status", "healthy"),
-                    ("Qdrant", "zetherion-ai-test-qdrant", "Health.Status", "healthy"),
-                    (
-                        "Ollama Router",
-                        "zetherion-ai-test-ollama-router",
-                        "Health.Status",
-                        "healthy",
-                    ),
-                    ("Ollama Generation", "zetherion-ai-test-ollama", "Health.Status", "healthy"),
-                    ("Skills", "zetherion-ai-test-skills", "Health.Status", "healthy"),
-                    ("Zetherion AI", "zetherion-ai-test-bot", "Status", "running"),
-                ]:
-                    result = subprocess.run(
-                        [
-                            "docker",
-                            "inspect",
-                            f"--format={{{{.State.{check_field}}}}}",
-                            container,
-                        ],
-                        capture_output=True,
-                        text=True,
-                        timeout=5,
-                    )
-                    if result.returncode != 0 or expected not in result.stdout:
-                        services_ok = False
-                        break
-
-                if services_ok:
-                    print("✅ All services healthy")
-                    return True
-
-            except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
-                pass
+            services_ok = all(
+                self._service_status(service) == state for service, state in expected.items()
+            )
+            if services_ok:
+                print("✅ All services healthy")
+                return True
 
             print("⏳ Services not ready yet, waiting...")
             time.sleep(5)
@@ -149,15 +129,7 @@ class DockerEnvironment:
         return False
 
     def get_logs(self, service: str, tail: int = 50) -> str:
-        """Get logs from a specific service.
-
-        Args:
-            service: Service name.
-            tail: Number of lines to tail.
-
-        Returns:
-            Service logs.
-        """
+        """Get logs from a specific service."""
         result = subprocess.run(
             [
                 "docker",
@@ -176,95 +148,64 @@ class DockerEnvironment:
         )
         return result.stdout
 
+    def _exec(self, service: str, *command: str, timeout: int) -> subprocess.CompletedProcess[str]:
+        container_id = self._service_container(service)
+        if not container_id:
+            raise RuntimeError(f"missing container for service {service}")
+        return subprocess.run(
+            ["docker", "exec", container_id, *command],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+
     def pull_ollama_models(
         self,
         router_model: str = "llama3.2:3b",
         generation_model: str = "llama3.1:8b",
         embedding_model: str | None = None,
     ) -> bool:
-        """Pull Ollama models for both containers if not already pulled.
-
-        Args:
-            router_model: Model for router container (small, fast).
-            generation_model: Model for generation container (larger, capable).
-            embedding_model: Optional embedding model for generation container.
-                Leave unset to skip embedding model pulls.
-
-        Returns:
-            True if all models are available, False otherwise.
-        """
+        """Pull Ollama models for both containers if not already pulled."""
         if self.ollama_model_pulled:
             return True
 
         success = True
 
-        # Pull router model to router container
         print(f"📥 Pulling router model '{router_model}' to ollama-router container...")
         try:
-            result = subprocess.run(
-                [
-                    "docker",
-                    "exec",
-                    "zetherion-ai-test-ollama-router",
-                    "ollama",
-                    "pull",
-                    router_model,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=300,  # 5 minute timeout for small model
-            )
+            result = self._exec("ollama-router", "ollama", "pull", router_model, timeout=300)
             if result.returncode == 0:
                 print(f"✅ Router model '{router_model}' pulled successfully")
             else:
                 print(f"❌ Failed to pull router model: {result.stderr}")
                 success = False
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
-            print(f"❌ Error pulling router model: {e}")
+        except (RuntimeError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+            print(f"❌ Error pulling router model: {exc}")
             success = False
 
-        # Pull generation model to generation container
         print(f"📥 Pulling generation model '{generation_model}' (this may take a few minutes)...")
         try:
-            result = subprocess.run(
-                ["docker", "exec", "zetherion-ai-test-ollama", "ollama", "pull", generation_model],
-                capture_output=True,
-                text=True,
-                timeout=600,  # 10 minute timeout for larger model
-            )
+            result = self._exec("ollama", "ollama", "pull", generation_model, timeout=600)
             if result.returncode == 0:
                 print(f"✅ Generation model '{generation_model}' pulled successfully")
             else:
                 print(f"❌ Failed to pull generation model: {result.stderr}")
                 success = False
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
-            print(f"❌ Error pulling generation model: {e}")
+        except (RuntimeError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+            print(f"❌ Error pulling generation model: {exc}")
             success = False
 
         if embedding_model:
-            # Pull embedding model to generation container (optional path)
             print(f"📥 Pulling embedding model '{embedding_model}'...")
             try:
-                result = subprocess.run(
-                    [
-                        "docker",
-                        "exec",
-                        "zetherion-ai-test-ollama",
-                        "ollama",
-                        "pull",
-                        embedding_model,
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=300,  # 5 minute timeout for embedding model
-                )
+                result = self._exec("ollama", "ollama", "pull", embedding_model, timeout=300)
                 if result.returncode == 0:
                     print(f"✅ Embedding model '{embedding_model}' pulled successfully")
                 else:
                     print(f"❌ Failed to pull embedding model: {result.stderr}")
                     success = False
-            except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
-                print(f"❌ Error pulling embedding model: {e}")
+            except (RuntimeError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+                print(f"❌ Error pulling embedding model: {exc}")
                 success = False
 
         if success:
@@ -272,15 +213,7 @@ class DockerEnvironment:
         return success
 
     def pull_ollama_model(self, model: str = "llama3.1:8b") -> bool:
-        """Pull Ollama model (backward compatibility wrapper).
-
-        Args:
-            model: Ollama model name to pull.
-
-        Returns:
-            True if model is available, False otherwise.
-        """
-        # For backward compatibility, pull to generation container
+        """Pull Ollama model (backward compatibility wrapper)."""
         return self.pull_ollama_models(generation_model=model)
 
 
@@ -300,17 +233,15 @@ class MockDiscordBot:
         # Set router backend environment variable
         os.environ["ROUTER_BACKEND"] = router_backend
 
-        # Set Qdrant to use host-accessible URL (tests run on host, not in Docker)
-        os.environ["QDRANT_HOST"] = "localhost"
-        os.environ["QDRANT_PORT"] = "16333"
+        runtime = get_runtime()
 
-        # Set Ollama host-accessible URLs (tests run on host, not in Docker)
-        # Router container exposed on port 31434
+        # Set container-exposed service URLs from the isolated runtime.
+        os.environ["QDRANT_HOST"] = "localhost"
+        os.environ["QDRANT_PORT"] = str(runtime.qdrant_port)
         os.environ["OLLAMA_ROUTER_HOST"] = "localhost"
-        os.environ["OLLAMA_ROUTER_PORT"] = "31434"
-        # Generation container exposed on port 21434
+        os.environ["OLLAMA_ROUTER_PORT"] = str(runtime.ollama_router_port)
         os.environ["OLLAMA_HOST"] = "localhost"
-        os.environ["OLLAMA_PORT"] = "21434"
+        os.environ["OLLAMA_PORT"] = str(runtime.ollama_port)
         # Canonical E2E uses cloud embeddings (OpenAI), not local Ollama embeddings.
         os.environ["EMBEDDINGS_BACKEND"] = "openai"
         os.environ["OPENAI_EMBEDDING_MODEL"] = "text-embedding-3-large"
@@ -611,7 +542,9 @@ async def test_docker_services_running(docker_env: DockerEnvironment) -> None:
             "docker",
             "ps",
             "--filter",
-            "name=zetherion-ai-test-qdrant",
+            f"label=com.docker.compose.project={docker_env.project_name}",
+            "--filter",
+            "label=com.docker.compose.service=qdrant",
             "--filter",
             "status=running",
             "--format",
@@ -620,7 +553,7 @@ async def test_docker_services_running(docker_env: DockerEnvironment) -> None:
         capture_output=True,
         text=True,
     )
-    assert "zetherion-ai-test-qdrant" in result.stdout
+    assert result.stdout.strip()
     print("✅ Qdrant container is running")
 
     # Check Zetherion AI (uses container_name from docker-compose.yml)
@@ -629,7 +562,9 @@ async def test_docker_services_running(docker_env: DockerEnvironment) -> None:
             "docker",
             "ps",
             "--filter",
-            "name=zetherion-ai-test-bot",
+            f"label=com.docker.compose.project={docker_env.project_name}",
+            "--filter",
+            "label=com.docker.compose.service=zetherion-ai-bot",
             "--filter",
             "status=running",
             "--format",
@@ -638,7 +573,7 @@ async def test_docker_services_running(docker_env: DockerEnvironment) -> None:
         capture_output=True,
         text=True,
     )
-    assert "zetherion-ai-test-bot" in result.stdout
+    assert result.stdout.strip()
     print("✅ Zetherion AI container is running")
 
 
@@ -647,7 +582,7 @@ async def test_qdrant_collections_exist(docker_env: DockerEnvironment) -> None:
     """Test that Qdrant collections are created."""
     # Use curl from host machine since Qdrant container doesn't have curl
     result = subprocess.run(
-        ["curl", "-s", "http://localhost:16333/collections"],
+        ["curl", "-s", RUNTIME.qdrant_url + "/collections"],
         capture_output=True,
         text=True,
     )
@@ -707,7 +642,9 @@ async def test_skills_service_health(docker_env: DockerEnvironment) -> None:
             "docker",
             "ps",
             "--filter",
-            "name=zetherion-ai-test-skills",
+            f"label=com.docker.compose.project={docker_env.project_name}",
+            "--filter",
+            "label=com.docker.compose.service=zetherion-ai-skills",
             "--filter",
             "status=running",
             "--format",
@@ -716,12 +653,12 @@ async def test_skills_service_health(docker_env: DockerEnvironment) -> None:
         capture_output=True,
         text=True,
     )
-    assert "zetherion-ai-test-skills" in result.stdout
+    assert result.stdout.strip()
     print("✅ Skills service container is running")
 
     # Check skills service health endpoint
     result = subprocess.run(
-        ["curl", "-s", "http://localhost:18080/health"],
+        ["curl", "-s", RUNTIME.skills_url + "/health"],
         capture_output=True,
         text=True,
     )

@@ -121,8 +121,29 @@ compose_down() {
     fi
 }
 
+refresh_receipt_cleanup_status() {
+    if [[ -z "${RECEIPT_PATH:-}" || ! -f "$RECEIPT_PATH" ]]; then
+        return 0
+    fi
+    RECEIPT_PATH="$RECEIPT_PATH" \
+    E2E_DOCKER_CLEANUP_STATUS="$E2E_DOCKER_CLEANUP_STATUS" \
+    "$PYTHON_BIN" - <<'PY'
+import json
+import os
+from pathlib import Path
+
+path = Path(os.environ['RECEIPT_PATH'])
+payload = json.loads(path.read_text(encoding='utf-8'))
+payload['docker_cleanup_status'] = os.environ.get('E2E_DOCKER_CLEANUP_STATUS', 'unknown')
+path.write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
+PY
+}
+
 cleanup() {
-    if [[ "$DOCKER_STARTED_BY_SCRIPT" == "true" ]]; then
+    if [[ -n "${E2E_RUN_MANIFEST_PATH:-}" ]]; then
+        cleanup_e2e_run "local_required_e2e_exit"
+        refresh_receipt_cleanup_status
+    elif [[ "$DOCKER_STARTED_BY_SCRIPT" == "true" ]]; then
         compose_down
     fi
 }
@@ -139,14 +160,14 @@ wait_for_docker_health() {
         local cgs_gateway
         local bot
 
-        postgres="$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-postgres" 2>/dev/null || echo "missing")"
-        qdrant="$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-qdrant" 2>/dev/null || echo "missing")"
-        ollama="$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-ollama" 2>/dev/null || echo "missing")"
-        ollama_router="$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-ollama-router" 2>/dev/null || echo "missing")"
-        skills="$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-skills" 2>/dev/null || echo "missing")"
-        api="$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-api" 2>/dev/null || echo "missing")"
-        cgs_gateway="$(docker inspect --format='{{.State.Health.Status}}' "${PROJECT}-cgs-gateway" 2>/dev/null || echo "missing")"
-        bot="$(docker inspect --format='{{.State.Status}}' "${PROJECT}-bot" 2>/dev/null || echo "missing")"
+        postgres="$(inspect_service_field "postgres" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')"
+        qdrant="$(inspect_service_field "qdrant" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')"
+        ollama="$(inspect_service_field "ollama" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')"
+        ollama_router="$(inspect_service_field "ollama-router" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')"
+        skills="$(inspect_service_field "zetherion-ai-skills" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')"
+        api="$(inspect_service_field "zetherion-ai-api" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')"
+        cgs_gateway="$(inspect_service_field "zetherion-ai-cgs-gateway" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')"
+        bot="$(inspect_service_field "zetherion-ai-bot" '{{.State.Status}}')"
 
         if [[ "$postgres" == "healthy" && "$qdrant" == "healthy" && "$ollama" == "healthy" \
             && "$ollama_router" == "healthy" && "$skills" == "healthy" && "$api" == "healthy" \
@@ -185,6 +206,9 @@ if [[ -z "$PYTHON_BIN" ]]; then
     echo "ERROR: Could not find Python executable for local required E2E." >&2
     exit 1
 fi
+
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/e2e_run_manager.sh"
 
 ensure_python_ca_bundle
 trap cleanup EXIT
@@ -228,6 +252,10 @@ payload = {
     "reason_code": os.environ.get("RECEIPT_REASON_CODE", ""),
     "reason": os.environ.get("RECEIPT_REASON", ""),
     "provider": os.environ.get("DISCORD_E2E_PROVIDER", "groq"),
+    "e2e_run_id": os.environ.get("E2E_RUN_ID", ""),
+    "compose_project": os.environ.get("PROJECT", ""),
+    "docker_cleanup_status": os.environ.get("E2E_DOCKER_CLEANUP_STATUS", "pending"),
+    "stack_root": os.environ.get("E2E_STACK_ROOT", ""),
     "missing_env": missing_env,
     "suites": {
         "docker_e2e": {
@@ -283,6 +311,9 @@ if [[ "${#missing_env[@]}" -gt 0 ]]; then
     echo "ERROR: missing required env: $MISSING_ENV"
     exit 1
 fi
+
+start_e2e_run
+echo "Isolated E2E run: run_id=${E2E_RUN_ID} project=${PROJECT} stack_root=${E2E_STACK_ROOT}"
 
 start_external_docker_stack
 

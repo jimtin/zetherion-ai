@@ -38,3 +38,4 @@ Supporting source of truth for the rollout contract lives in `.ci/ci_hardening_w
 - Segment 1 will widen local preflight coverage for shared-runtime and coverage-sensitive paths.
 - Segment 2 will add deterministic regression coverage for receipt, shell, and CI-support code.
 - Segment 3 slims PR CI to the fast-path contract; the required ruleset contexts remain unchanged because they already matched the target required-check set.
+- Segment 5 now inserts isolated Docker-backed E2E stack orchestration before any further deploy hardening so concurrent local runs do not collide on project names, ports, bind mounts, or residual containers.
