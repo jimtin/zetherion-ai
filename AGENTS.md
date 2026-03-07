@@ -39,14 +39,14 @@ This is the only supported full local gate. Do not substitute ad-hoc pytest comm
 19. This repository is Zetherion-only. Top-level `cgs/**` website/UI files are disallowed here.
 20. CI enforces a risk-classifier contract (`risk-classifier`) that sets `e2e_required=true|false`; ambiguity must fail-safe to `true`.
 21. CI required-E2E gate (`required-e2e-gate`) must emit a machine-readable receipt artifact (`e2e-contract-receipt`) every run.
-22. When `e2e_required=true`, CI must validate a local required-E2E receipt (`.ci/e2e-receipt.json`) for the PR head SHA; CI must not execute full E2E suites directly.
+22. When `e2e_required=true`, CI must validate a local required-E2E receipt (`.ci/e2e-receipt.json`) for the PR head receipt contract; committed receipts use `head_sha=local` because tracked receipts cannot self-hash the final commit without recursion, and the tested commit is recorded separately.
 23. For isolated Discord E2E debugging, use `./scripts/run-required-discord-e2e.sh`; direct `pytest tests/integration/test_discord_e2e.py ...` invocation is not accepted as workflow evidence.
 
 ## Current CI Proof Contract
 
 1. `./scripts/test-full.sh` remains the only supported heavy local gate for substantial delivery.
 2. When `e2e_required=true`, run `bash scripts/local-required-e2e-receipt.sh` after the full gate passes and commit `.ci/e2e-receipt.json`.
-3. GitHub currently validates exact-SHA receipt evidence for required E2E instead of executing the full E2E suites directly on PRs.
+3. GitHub currently validates the committed local receipt contract for required E2E instead of executing the full E2E suites directly on PRs.
 4. Current required branch checks are:
    - `CI Summary`
    - `Linting & Formatting`

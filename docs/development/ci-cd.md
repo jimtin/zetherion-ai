@@ -40,7 +40,7 @@ Every code change passes through three automated quality tiers before reaching p
 
 - **Fast feedback locally** -- pre-commit catches formatting and hygiene issues in seconds.
 - **Confidence before push** -- local gates produce the authoritative heavy-lane evidence, including the required local receipt path for substantial E2E work.
-- **Cost-aware GitHub validation** -- PRs run only the fast-path invariant checks plus exact-SHA receipt validation; heavier local-equivalent jobs are deferred to push or scheduled/manual runs.
+- **Cost-aware GitHub validation** -- PRs run only the fast-path invariant checks plus committed local-receipt validation; heavier local-equivalent jobs are deferred to push or scheduled/manual runs.
 
 ## Pre-Commit Hooks
 
@@ -195,7 +195,7 @@ The active `main` branch ruleset currently requires these check contexts:
 - `Secret Scan (Gitleaks)`
 - `Zetherion Boundary Check`
 
-The `required-e2e-gate` job validates local exact-SHA receipt evidence when the risk classifier marks a PR `e2e_required=true`; GitHub does not execute the full E2E suites directly on PRs. The PR fast path is now limited to `detect-changes`, `risk-classifier`, `lint`, `secret-scan`, `pipeline-contract`, `zetherion-boundary-check`, `required-e2e-gate`, `CI Summary`, and `CI Failure Attribution`.
+The `required-e2e-gate` job validates the committed local receipt contract when the risk classifier marks a PR `e2e_required=true`; GitHub does not execute the full E2E suites directly on PRs. Committed receipts use `head_sha=local` because tracked receipt files cannot self-hash the final commit without recursion. The PR fast path is now limited to `detect-changes`, `risk-classifier`, `lint`, `secret-scan`, `pipeline-contract`, `zetherion-boundary-check`, `required-e2e-gate`, `CI Summary`, and `CI Failure Attribution`.
 
 Weekly or manual GitHub runs remain the independent heavy-verification cadence for `type-check`, `security`, `semgrep`, `dependency-audit`, `license-check`, `pre-commit`, `docs-contract`, `unit-test`, `integration-test`, `docker-build-test`, and CodeQL.
 
@@ -378,7 +378,7 @@ The pipeline runs the following jobs. Jobs without dependency arrows run in para
 
 **risk-classifier** -- Computes server-side `e2e_required=true|false` from changed-path policy. Ambiguous classifications fail-safe to `e2e_required=true`.
 
-**required-e2e-gate** -- Always emits `e2e-contract-receipt` artifact. If `e2e_required=true`, CI validates committed local receipt evidence (`.ci/e2e-receipt.json`) for the PR head SHA. CI does not run full E2E suites directly.
+**required-e2e-gate** -- Always emits `e2e-contract-receipt` artifact. If `e2e_required=true`, CI validates the committed local receipt contract (`.ci/e2e-receipt.json`). Committed receipts use `head_sha=local`, and the tested commit is recorded separately to avoid hash recursion. CI does not run full E2E suites directly.
 
 **zetherion-boundary-check** -- Enforces Zetherion-only repository boundary and fails when top-level `cgs/**` UI paths are introduced.
 

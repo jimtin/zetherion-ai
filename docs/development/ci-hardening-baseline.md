@@ -8,7 +8,7 @@ As of 2026-03-08, the current merge contract is:
 
 1. Run `./scripts/test-full.sh` for substantial local validation.
 2. When the CI risk classifier requires E2E evidence, run `bash scripts/local-required-e2e-receipt.sh` after the full local gate passes and commit the resulting `.ci/e2e-receipt.json`.
-3. GitHub validates exact-SHA receipt evidence for required E2E instead of executing the full E2E suites directly on PRs.
+3. GitHub validates the committed local receipt contract for required E2E instead of executing the full E2E suites directly on PRs; committed receipts use `head_sha=local` to avoid hash recursion.
 4. GitHub PRs now run the slim fast path: `detect-changes`, `risk-classifier`, `lint`, `secret-scan`, `pipeline-contract`, `zetherion-boundary-check`, `required-e2e-gate`, `CI Summary`, and `CI Failure Attribution`. Heavy local-equivalent jobs are deferred off PRs to push or scheduled/manual runs.
 
 Current required branch checks from the active `main` ruleset (`Main branch protection`, GitHub ruleset `12504326`):
