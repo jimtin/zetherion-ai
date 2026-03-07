@@ -260,6 +260,14 @@ class TrustPolicyEvaluator:
         ctx = context or {}
         normalized_action = str(action).strip().lower()
 
+        def _finalize(decision: TrustPolicyDecision) -> TrustPolicyDecision:
+            _record_shadow_policy_decision(
+                tenant_id=tenant_id,
+                action=normalized_action,
+                decision=decision,
+            )
+            return decision
+
         default_tier_raw = self._setting_resolver(
             tenant_id,
             "security",
@@ -274,73 +282,82 @@ class TrustPolicyEvaluator:
 
         rule = self._DEFAULT_RULES.get(normalized_action)
         if rule is None:
-            # Deny-by-default only for explicitly sensitive namespaces.
             if normalized_action.startswith(("messaging.", "automerge.", "worker.")):
-                return TrustPolicyDecision(
-                    action=normalized_action,
-                    action_class=TrustActionClass.SENSITIVE,
-                    outcome=TrustDecisionOutcome.DENY,
-                    status=403,
-                    code="AI_TRUST_POLICY_DENIED",
-                    message="Action is blocked by deny-by-default trust policy",
-                    details={"action": normalized_action},
+                return _finalize(
+                    TrustPolicyDecision(
+                        action=normalized_action,
+                        action_class=TrustActionClass.SENSITIVE,
+                        outcome=TrustDecisionOutcome.DENY,
+                        status=403,
+                        code="AI_TRUST_POLICY_DENIED",
+                        message="Action is blocked by deny-by-default trust policy",
+                        details={"action": normalized_action},
+                    )
                 )
             action_class = (
                 TrustActionClass.READ
                 if str(ctx.get("method", "")).upper() == "GET"
                 else TrustActionClass.MUTATE
             )
-            return TrustPolicyDecision(
-                action=normalized_action,
-                action_class=action_class,
-                outcome=TrustDecisionOutcome.ALLOW,
-                status=200,
-                code="AI_OK",
-                message="Allowed",
-                details={"resolved_tier": current_tier.value},
+            return _finalize(
+                TrustPolicyDecision(
+                    action=normalized_action,
+                    action_class=action_class,
+                    outcome=TrustDecisionOutcome.ALLOW,
+                    status=200,
+                    code="AI_OK",
+                    message="Allowed",
+                    details={"resolved_tier": current_tier.value},
+                )
             )
 
         if rule.kill_switch_key and self._as_bool(
             self._setting_resolver(tenant_id, "security", rule.kill_switch_key, False)
         ):
-            return TrustPolicyDecision(
-                action=normalized_action,
-                action_class=rule.action_class,
-                outcome=TrustDecisionOutcome.DENY,
-                status=423,
-                code="AI_KILL_SWITCH_ACTIVE",
-                message="Action is disabled by kill switch",
-                details={"kill_switch": rule.kill_switch_key},
-                requires_two_person=rule.requires_two_person,
+            return _finalize(
+                TrustPolicyDecision(
+                    action=normalized_action,
+                    action_class=rule.action_class,
+                    outcome=TrustDecisionOutcome.DENY,
+                    status=423,
+                    code="AI_KILL_SWITCH_ACTIVE",
+                    message="Action is disabled by kill switch",
+                    details={"kill_switch": rule.kill_switch_key},
+                    requires_two_person=rule.requires_two_person,
+                )
             )
 
         if rule.policy_enabled_key and not self._as_bool(
             self._setting_resolver(tenant_id, "security", rule.policy_enabled_key, False)
         ):
-            return TrustPolicyDecision(
-                action=normalized_action,
-                action_class=rule.action_class,
-                outcome=TrustDecisionOutcome.DENY,
-                status=403,
-                code="AI_TRUST_POLICY_DENIED",
-                message="Action policy is not enabled",
-                details={"required_setting": rule.policy_enabled_key},
-                requires_two_person=rule.requires_two_person,
+            return _finalize(
+                TrustPolicyDecision(
+                    action=normalized_action,
+                    action_class=rule.action_class,
+                    outcome=TrustDecisionOutcome.DENY,
+                    status=403,
+                    code="AI_TRUST_POLICY_DENIED",
+                    message="Action policy is not enabled",
+                    details={"required_setting": rule.policy_enabled_key},
+                    requires_two_person=rule.requires_two_person,
+                )
             )
 
         if current_tier.level < rule.min_tier.level:
-            return TrustPolicyDecision(
-                action=normalized_action,
-                action_class=rule.action_class,
-                outcome=TrustDecisionOutcome.DENY,
-                status=403,
-                code="AI_TRUST_TIER_TOO_LOW",
-                message="Action requires a higher trust tier",
-                details={
-                    "required_tier": rule.min_tier.value,
-                    "resolved_tier": current_tier.value,
-                },
-                requires_two_person=rule.requires_two_person,
+            return _finalize(
+                TrustPolicyDecision(
+                    action=normalized_action,
+                    action_class=rule.action_class,
+                    outcome=TrustDecisionOutcome.DENY,
+                    status=403,
+                    code="AI_TRUST_TIER_TOO_LOW",
+                    message="Action requires a higher trust tier",
+                    details={
+                        "required_tier": rule.min_tier.value,
+                        "resolved_tier": current_tier.value,
+                    },
+                    requires_two_person=rule.requires_two_person,
+                )
             )
 
         rollout_denial = self._evaluate_rollout_stage(
@@ -351,7 +368,7 @@ class TrustPolicyEvaluator:
             context=ctx,
         )
         if rollout_denial is not None:
-            return rollout_denial
+            return _finalize(rollout_denial)
 
         if rule.allowlist_key:
             chat_id = str(ctx.get("chat_id") or "").strip()
@@ -359,28 +376,32 @@ class TrustPolicyEvaluator:
                 self._setting_resolver(tenant_id, "security", rule.allowlist_key, [])
             )
             if not chat_id or chat_id not in allowlisted:
-                return TrustPolicyDecision(
-                    action=normalized_action,
-                    action_class=rule.action_class,
-                    outcome=TrustDecisionOutcome.DENY,
-                    status=403,
-                    code="AI_MESSAGING_CHAT_NOT_ALLOWLISTED",
-                    message="Chat is not allowlisted for this action",
-                    details={"chat_id": chat_id, "allowlist_key": rule.allowlist_key},
-                    requires_two_person=rule.requires_two_person,
+                return _finalize(
+                    TrustPolicyDecision(
+                        action=normalized_action,
+                        action_class=rule.action_class,
+                        outcome=TrustDecisionOutcome.DENY,
+                        status=403,
+                        code="AI_MESSAGING_CHAT_NOT_ALLOWLISTED",
+                        message="Chat is not allowlisted for this action",
+                        details={"chat_id": chat_id, "allowlist_key": rule.allowlist_key},
+                        requires_two_person=rule.requires_two_person,
+                    )
                 )
 
         for flag in rule.required_context_flags:
             if not self._as_bool(ctx.get(flag)):
-                return TrustPolicyDecision(
-                    action=normalized_action,
-                    action_class=rule.action_class,
-                    outcome=TrustDecisionOutcome.DENY,
-                    status=409,
-                    code="AI_TRUST_POLICY_GUARD_FAILED",
-                    message="Required guardrail check failed",
-                    details={"failed_guard": flag},
-                    requires_two_person=rule.requires_two_person,
+                return _finalize(
+                    TrustPolicyDecision(
+                        action=normalized_action,
+                        action_class=rule.action_class,
+                        outcome=TrustDecisionOutcome.DENY,
+                        status=409,
+                        code="AI_TRUST_POLICY_GUARD_FAILED",
+                        message="Required guardrail check failed",
+                        details={"failed_guard": flag},
+                        requires_two_person=rule.requires_two_person,
+                    )
                 )
 
         if rule.requires_approval:
@@ -390,26 +411,30 @@ class TrustPolicyEvaluator:
                     self._setting_resolver(tenant_id, "security", rule.elevation_key, False)
                 )
             if not is_elevated:
-                return TrustPolicyDecision(
-                    action=normalized_action,
-                    action_class=rule.action_class,
-                    outcome=TrustDecisionOutcome.APPROVAL_REQUIRED,
-                    status=409,
-                    code="AI_APPROVAL_REQUIRED",
-                    message="This action requires approval before apply",
-                    details={"action": normalized_action},
-                    requires_two_person=rule.requires_two_person,
+                return _finalize(
+                    TrustPolicyDecision(
+                        action=normalized_action,
+                        action_class=rule.action_class,
+                        outcome=TrustDecisionOutcome.APPROVAL_REQUIRED,
+                        status=409,
+                        code="AI_APPROVAL_REQUIRED",
+                        message="This action requires approval before apply",
+                        details={"action": normalized_action},
+                        requires_two_person=rule.requires_two_person,
+                    )
                 )
 
-        return TrustPolicyDecision(
-            action=normalized_action,
-            action_class=rule.action_class,
-            outcome=TrustDecisionOutcome.ALLOW,
-            status=200,
-            code="AI_OK",
-            message="Allowed",
-            details={"resolved_tier": current_tier.value},
-            requires_two_person=rule.requires_two_person,
+        return _finalize(
+            TrustPolicyDecision(
+                action=normalized_action,
+                action_class=rule.action_class,
+                outcome=TrustDecisionOutcome.ALLOW,
+                status=200,
+                code="AI_OK",
+                message="Allowed",
+                details={"resolved_tier": current_tier.value},
+                requires_two_person=rule.requires_two_person,
+            )
         )
 
     def _evaluate_rollout_stage(
@@ -515,3 +540,38 @@ class TrustPolicyEvaluator:
                     return {str(item).strip() for item in parsed if str(item).strip()}
             return {piece.strip() for piece in text.split(",") if piece.strip()}
         return set()
+
+
+def _record_shadow_policy_decision(
+    *,
+    tenant_id: str | None,
+    action: str,
+    decision: TrustPolicyDecision,
+) -> None:
+    """Record a non-blocking shadow decision for trust-policy evaluation."""
+
+    try:
+        from zetherion_ai.trust import TrustPrincipal, TrustResource, record_shadow_decision
+        from zetherion_ai.trust.adapters import build_trust_policy_signature
+
+        principal = TrustPrincipal(
+            principal_id=tenant_id or "global",
+            principal_type="tenant" if tenant_id else "global",
+            tenant_id=tenant_id,
+        )
+        resource = TrustResource(
+            resource_id=action,
+            resource_type="trust_action",
+            tenant_id=tenant_id,
+            metadata={"action_class": decision.action_class.value},
+        )
+        record_shadow_decision(
+            adapter_name="trust_policy",
+            action=action,
+            principal=principal,
+            resource=resource,
+            context={"legacy_decision": decision},
+            legacy_signature=build_trust_policy_signature(decision),
+        )
+    except Exception:
+        return None

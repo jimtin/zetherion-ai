@@ -1,5 +1,19 @@
-"""Trust-domain primitives."""
+"""Trust-domain primitives and shadow trust-engine helpers."""
 
+from zetherion_ai.trust.engine import (
+    TrustDecision,
+    TrustDecisionSignature,
+    TrustEngine,
+    TrustMode,
+    TrustOutcome,
+    TrustPrincipal,
+    TrustResource,
+    TrustRiskClass,
+    TrustShadowResult,
+    get_shadow_trust_engine,
+    record_shadow_decision,
+    set_shadow_trust_engine,
+)
 from zetherion_ai.trust.scope import (
     DataScope,
     PromptFragment,
@@ -22,8 +36,20 @@ __all__ = [
     "ScopeLabel",
     "ScopedPrincipal",
     "ScopedResource",
+    "TrustDecision",
+    "TrustDecisionSignature",
     "TrustDomain",
+    "TrustEngine",
+    "TrustMode",
+    "TrustOutcome",
+    "TrustPrincipal",
+    "TrustResource",
+    "TrustRiskClass",
+    "TrustShadowResult",
     "assemble_prompt_fragments",
     "evaluate_prompt_scope",
+    "get_shadow_trust_engine",
     "prompt_fragment",
+    "record_shadow_decision",
+    "set_shadow_trust_engine",
 ]

@@ -82,70 +82,84 @@ class ActionController:
         """
         policy = await self._storage.get_policy(user_id, domain, action)
 
+        def _finalize(decision: ActionDecision) -> ActionDecision:
+            _record_personal_action_shadow_decision(user_id=user_id, decision=decision)
+            return decision
+
         if policy is None:
-            # No policy → default to 'ask'
-            return ActionDecision(
-                domain=domain,
-                action=action,
-                mode=PolicyMode.ASK.value,
-                trust_score=0.0,
-                should_execute=False,
-                reason="No policy configured, defaulting to ask",
+            return _finalize(
+                ActionDecision(
+                    domain=domain,
+                    action=action,
+                    mode=PolicyMode.ASK.value,
+                    trust_score=0.0,
+                    should_execute=False,
+                    reason="No policy configured, defaulting to ask",
+                )
             )
 
         mode = policy.mode.value
         trust = policy.trust_score
 
         if mode == PolicyMode.NEVER.value:
-            return ActionDecision(
-                domain=domain,
-                action=action,
-                mode=mode,
-                trust_score=trust,
-                should_execute=False,
-                reason="Blocked by policy (mode=never)",
+            return _finalize(
+                ActionDecision(
+                    domain=domain,
+                    action=action,
+                    mode=mode,
+                    trust_score=trust,
+                    should_execute=False,
+                    reason="Blocked by policy (mode=never)",
+                )
             )
 
         if mode == PolicyMode.AUTO.value:
-            return ActionDecision(
-                domain=domain,
-                action=action,
-                mode=mode,
-                trust_score=trust,
-                should_execute=True,
-                reason="Auto-execute (mode=auto)",
-            )
-
-        if mode == PolicyMode.DRAFT.value:
-            # Draft mode: auto-execute only if trust is high enough
-            if trust >= AUTO_TRUST_THRESHOLD:
-                return ActionDecision(
+            return _finalize(
+                ActionDecision(
                     domain=domain,
                     action=action,
                     mode=mode,
                     trust_score=trust,
                     should_execute=True,
-                    reason=(
-                        f"Auto-execute (draft mode, trust={trust:.2f} >= {AUTO_TRUST_THRESHOLD})"
-                    ),
+                    reason="Auto-execute (mode=auto)",
                 )
-            return ActionDecision(
+            )
+
+        if mode == PolicyMode.DRAFT.value:
+            if trust >= AUTO_TRUST_THRESHOLD:
+                return _finalize(
+                    ActionDecision(
+                        domain=domain,
+                        action=action,
+                        mode=mode,
+                        trust_score=trust,
+                        should_execute=True,
+                        reason=(
+                            "Auto-execute (draft mode, trust="
+                            f"{trust:.2f} >= {AUTO_TRUST_THRESHOLD})"
+                        ),
+                    )
+                )
+            return _finalize(
+                ActionDecision(
+                    domain=domain,
+                    action=action,
+                    mode=mode,
+                    trust_score=trust,
+                    should_execute=False,
+                    reason=f"Draft for review (trust={trust:.2f} < {AUTO_TRUST_THRESHOLD})",
+                )
+            )
+
+        return _finalize(
+            ActionDecision(
                 domain=domain,
                 action=action,
                 mode=mode,
                 trust_score=trust,
                 should_execute=False,
-                reason=f"Draft for review (trust={trust:.2f} < {AUTO_TRUST_THRESHOLD})",
+                reason="Waiting for user approval (mode=ask)",
             )
-
-        # mode == 'ask'
-        return ActionDecision(
-            domain=domain,
-            action=action,
-            mode=mode,
-            trust_score=trust,
-            should_execute=False,
-            reason="Waiting for user approval (mode=ask)",
         )
 
     async def record_outcome(
@@ -211,3 +225,32 @@ class ActionController:
             Number of policies affected.
         """
         return await self._storage.reset_domain_trust(user_id, domain)
+
+
+def _record_personal_action_shadow_decision(*, user_id: int, decision: ActionDecision) -> None:
+    """Record a non-blocking shadow decision for personal-action evaluation."""
+
+    try:
+        from zetherion_ai.trust import TrustPrincipal, TrustResource, record_shadow_decision
+        from zetherion_ai.trust.adapters import build_personal_action_signature
+
+        principal = TrustPrincipal(
+            principal_id=str(user_id),
+            principal_type="owner",
+            metadata={"domain": decision.domain},
+        )
+        resource = TrustResource(
+            resource_id=f"{decision.domain}:{decision.action}",
+            resource_type="personal_action",
+            metadata={"domain": decision.domain},
+        )
+        record_shadow_decision(
+            adapter_name="personal_action",
+            action=decision.action,
+            principal=principal,
+            resource=resource,
+            context={"legacy_decision": decision},
+            legacy_signature=build_personal_action_signature(decision),
+        )
+    except Exception:
+        return None

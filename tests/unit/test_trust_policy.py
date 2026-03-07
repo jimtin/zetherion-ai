@@ -458,3 +458,36 @@ def test_worker_messaging_grant_requires_two_person_approval() -> None:
         context={"explicitly_elevated": True},
     )
     assert allowed.outcome == TrustDecisionOutcome.ALLOW
+
+
+def test_evaluate_records_shadow_policy_decision(monkeypatch) -> None:
+    recorded: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        "zetherion_ai.security.trust_policy._record_shadow_policy_decision",
+        lambda **kwargs: recorded.append(kwargs),
+    )
+
+    evaluator = TrustPolicyEvaluator(
+        setting_resolver=_resolver_factory(
+            {
+                ("tenant-1", "security", "trust_tier"): "tier3",
+                ("tenant-1", "security", "messaging_allowlisted_chats"): ["chat-1"],
+            }
+        )
+    )
+
+    decision = evaluator.evaluate(
+        tenant_id="tenant-1",
+        action="messaging.read",
+        context={"chat_id": "chat-1"},
+    )
+
+    assert decision.outcome == TrustDecisionOutcome.ALLOW
+    assert recorded == [
+        {
+            "tenant_id": "tenant-1",
+            "action": "messaging.read",
+            "decision": decision,
+        }
+    ]

@@ -143,7 +143,16 @@ class TrustManager:
             True if the reply should be auto-sent.
         """
         effective_trust = await self.get_effective_trust(user_id, contact_email, reply_type)
-        return effective_trust >= auto_threshold and confidence >= auto_threshold
+        auto_send = effective_trust >= auto_threshold and confidence >= auto_threshold
+        _record_gmail_trust_shadow_decision(
+            user_id=user_id,
+            contact_email=contact_email,
+            reply_type=reply_type,
+            confidence=confidence,
+            auto_threshold=auto_threshold,
+            auto_send=auto_send,
+        )
+        return auto_send
 
     async def record_feedback(
         self,
@@ -398,3 +407,47 @@ def _outcome_delta(outcome: str) -> float:
     if outcome not in deltas:
         raise ValueError(f"Unknown outcome: {outcome!r}")
     return deltas[outcome]
+
+
+def _record_gmail_trust_shadow_decision(
+    *,
+    user_id: int,
+    contact_email: str,
+    reply_type: ReplyType,
+    confidence: float,
+    auto_threshold: float,
+    auto_send: bool,
+) -> None:
+    """Record a non-blocking shadow decision for Gmail trust evaluation."""
+
+    try:
+        from zetherion_ai.trust import TrustPrincipal, TrustResource, record_shadow_decision
+        from zetherion_ai.trust.adapters import build_gmail_trust_signature
+
+        principal = TrustPrincipal(
+            principal_id=str(user_id),
+            principal_type="owner",
+        )
+        resource = TrustResource(
+            resource_id=contact_email,
+            resource_type="gmail_contact",
+            metadata={"reply_type": reply_type.value},
+        )
+        record_shadow_decision(
+            adapter_name="gmail_trust",
+            action="gmail.reply.send",
+            principal=principal,
+            resource=resource,
+            context={
+                "reply_type": reply_type,
+                "confidence": confidence,
+                "auto_threshold": auto_threshold,
+                "auto_send": auto_send,
+            },
+            legacy_signature=build_gmail_trust_signature(
+                reply_type=reply_type,
+                auto_send=auto_send,
+            ),
+        )
+    except Exception:
+        return None

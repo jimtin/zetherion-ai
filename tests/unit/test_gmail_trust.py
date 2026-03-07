@@ -690,3 +690,41 @@ class TestModuleConstants:
 
     def test_global_cap(self):
         assert GLOBAL_CAP == 0.95
+
+
+class TestShadowHook:
+    """Tests for Gmail trust shadow recording."""
+
+    async def test_should_auto_send_records_shadow_decision(
+        self, trust_manager, mock_pool, monkeypatch
+    ):
+        _, conn = mock_pool
+        conn.fetchrow.side_effect = [
+            {"score": 0.9, "approvals": 9, "rejections": 0, "edits": 0, "total_interactions": 9},
+            {"score": 0.9, "approvals": 9, "rejections": 0, "edits": 0, "total_interactions": 9},
+        ]
+        recorded: list[dict[str, object]] = []
+
+        monkeypatch.setattr(
+            "zetherion_ai.skills.gmail.trust._record_gmail_trust_shadow_decision",
+            lambda **kwargs: recorded.append(kwargs),
+        )
+
+        result = await trust_manager.should_auto_send(
+            1,
+            "a@b.com",
+            ReplyType.ACKNOWLEDGMENT,
+            confidence=0.9,
+        )
+
+        assert result is True
+        assert recorded == [
+            {
+                "user_id": 1,
+                "contact_email": "a@b.com",
+                "reply_type": ReplyType.ACKNOWLEDGMENT,
+                "confidence": 0.9,
+                "auto_threshold": 0.85,
+                "auto_send": True,
+            }
+        ]

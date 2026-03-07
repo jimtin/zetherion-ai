@@ -680,7 +680,9 @@ class AutonomyConfig:
 
     def get_level(self, action: ActionType) -> AutonomyLevel:
         """Get the autonomy level for an action."""
-        return self.settings.get(action, AutonomyLevel.ASK)
+        level = self.settings.get(action, AutonomyLevel.ASK)
+        _record_github_autonomy_shadow_decision(action=action, level=level)
+        return level
 
     def set_level(self, action: ActionType, level: AutonomyLevel) -> bool:
         """Set the autonomy level for an action.
@@ -717,3 +719,30 @@ class AutonomyConfig:
             except ValueError:
                 continue
         return cls(settings=settings if settings else dict(DEFAULT_AUTONOMY))
+
+
+def _record_github_autonomy_shadow_decision(*, action: ActionType, level: AutonomyLevel) -> None:
+    """Record a non-blocking shadow decision for GitHub autonomy checks."""
+
+    try:
+        from zetherion_ai.trust import TrustPrincipal, TrustResource, record_shadow_decision
+        from zetherion_ai.trust.adapters import build_github_autonomy_signature
+
+        principal = TrustPrincipal(
+            principal_id="github-skill",
+            principal_type="system",
+        )
+        resource = TrustResource(
+            resource_id=action.value,
+            resource_type="github_action",
+        )
+        record_shadow_decision(
+            adapter_name="github_autonomy",
+            action=action.value,
+            principal=principal,
+            resource=resource,
+            context={"action_type": action, "level": level},
+            legacy_signature=build_github_autonomy_signature(action_type=action, level=level),
+        )
+    except Exception:
+        return None
