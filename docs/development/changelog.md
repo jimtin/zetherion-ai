@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment CI-03 PR CI Fast Path and Ruleset Alignment (2026-03-08)
+
+- Impacted capability IDs:
+  - `ci.pr.fast_path`
+  - `ci.receipt.validation`
+- Impacted workflow scenario IDs:
+  - `pr.docs_only_fast_path`
+  - `pr.receipt_sha_mismatch_rejected`
+- Slimmed pull-request CI to the fast-path contract: `detect-changes`, `risk-classifier`, `lint`, `secret-scan`, `pipeline-contract`, `zetherion-boundary-check`, `required-e2e-gate`, `CI Summary`, and `CI Failure Attribution`.
+- Deferred heavy local-equivalent jobs (`type-check`, `security`, `docs-contract`, `unit-test`, and `docker-build-test`) off PRs to push or scheduled/manual verification without changing the required branch-check contexts.
+- Updated the workflow summary and pipeline contract metadata so PR evaluation matches the slim contract while push and scheduled/manual runs keep the broader job graph.
+
 ### Changed - Segment CI-02 Script and Receipt Regression Packs (2026-03-08)
 
 - Impacted capability IDs:

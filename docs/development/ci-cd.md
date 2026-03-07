@@ -27,11 +27,11 @@ Every code change passes through three automated quality tiers before reaching p
                              |
                              v
 +---------------------------------------------------------------+
-|  Tier 3: GitHub Actions CI/CD (~1-5 min fast path on PRs)     |
+|  Tier 3: GitHub Actions CI/CD (~1-3 min fast path on PRs)     |
 |  Runs: on push/PR to main or develop, plus schedule/manual    |
-|  Checks: always-on invariant jobs, path-gated local-equivalent|
-|          jobs, and exact-SHA receipt validation for required  |
-|          E2E evidence                                         |
+|  Checks: PR fast-path invariants, diff secret scan, boundary  |
+|          checks, and exact-SHA receipt validation for         |
+|          required E2E evidence                                |
 |  Effect: blocks PR merge using the active required-check set  |
 +---------------------------------------------------------------+
 ```
@@ -40,7 +40,7 @@ Every code change passes through three automated quality tiers before reaching p
 
 - **Fast feedback locally** -- pre-commit catches formatting and hygiene issues in seconds.
 - **Confidence before push** -- local gates produce the authoritative heavy-lane evidence, including the required local receipt path for substantial E2E work.
-- **Cost-aware GitHub validation** -- GitHub verifies invariants, path-gated regressions, and exact-SHA receipts without rerunning the full local heavy suite on every PR.
+- **Cost-aware GitHub validation** -- PRs run only the fast-path invariant checks plus exact-SHA receipt validation; heavier local-equivalent jobs are deferred to push or scheduled/manual runs.
 
 ## Pre-Commit Hooks
 
@@ -191,7 +191,7 @@ The active `main` branch ruleset currently requires these check contexts:
 - `Secret Scan (Gitleaks)`
 - `Zetherion Boundary Check`
 
-The `required-e2e-gate` job validates local exact-SHA receipt evidence when the risk classifier marks a PR `e2e_required=true`; GitHub does not execute the full E2E suites directly on PRs. Additional local-equivalent jobs remain path-gated until the fast-path rollout changes the workflow contract.
+The `required-e2e-gate` job validates local exact-SHA receipt evidence when the risk classifier marks a PR `e2e_required=true`; GitHub does not execute the full E2E suites directly on PRs. The PR fast path is now limited to `detect-changes`, `risk-classifier`, `lint`, `secret-scan`, `pipeline-contract`, `zetherion-boundary-check`, `required-e2e-gate`, `CI Summary`, and `CI Failure Attribution`.
 
 ### Additional Main-Branch Automation
 
@@ -353,9 +353,9 @@ The pipeline runs the following jobs. Jobs without dependency arrows run in para
 
 **lint** -- Installs `ruff==0.8.4` and runs `ruff check` + `ruff format --check` against `src/` and `tests/`.
 
-**type-check** -- Installs full project dependencies, then runs `mypy src/zetherion_ai --config-file=pyproject.toml` in strict mode.
+**type-check** -- Installs full project dependencies, then runs `mypy src/zetherion_ai --config-file=pyproject.toml` in strict mode. This job is deferred off PRs and runs on push code changes plus scheduled/manual heavy verification.
 
-**security** -- Runs `bandit -r src/ -c pyproject.toml` to detect common Python security issues.
+**security** -- Runs `bandit -r src/ -c pyproject.toml` to detect common Python security issues. This job is deferred off PRs and runs on push code changes plus scheduled/manual heavy verification.
 
 **semgrep** -- Runs Semgrep with `--config auto` for static application security testing. Uploads SARIF results to the GitHub Security tab.
 
@@ -365,7 +365,7 @@ The pipeline runs the following jobs. Jobs without dependency arrows run in para
 
 **pre-commit** -- Runs all pre-commit hooks via the `pre-commit/action@v3` GitHub Action.
 
-**docs-contract** -- Runs docs navigation/link checks and route/env parity checks, then builds docs with `mkdocs build --strict`.
+**docs-contract** -- Runs docs navigation/link checks and route/env parity checks, then builds docs with `mkdocs build --strict`. This job is deferred off PRs and runs on push docs changes plus scheduled/manual verification.
 
 **pipeline-contract** -- Validates CI pipeline-contract mappings plus endpoint docs bundle and announcement DM guardrails (`scripts/check-announcement-dm-guard.py`) to block direct `user.send(...)` regressions in announcement-producing paths.
 
@@ -375,11 +375,11 @@ The pipeline runs the following jobs. Jobs without dependency arrows run in para
 
 **zetherion-boundary-check** -- Enforces Zetherion-only repository boundary and fails when top-level `cgs/**` UI paths are introduced.
 
-**test** -- Matrix build across Python 3.12 and 3.13. Runs `pytest tests/ -m "not integration"` with coverage. Uploads coverage XML to Codecov (Python 3.12 only). Uploads HTML coverage report as a build artifact (retained 30 days).
+**test** -- Matrix build across Python 3.12 and 3.13. Runs `pytest tests/ -m "not integration"` with coverage. Uploads coverage XML to Codecov (Python 3.12 only). Uploads HTML coverage report as a build artifact (retained 30 days). This job is deferred off PRs and runs on push code changes plus scheduled/manual heavy verification.
 
-**docker-build** -- Builds the Docker image using Buildx with GHA caching. Runs Trivy vulnerability scanner (CRITICAL + HIGH severity). Generates an SPDX SBOM via Anchore. Validates `docker-compose.yml` syntax. Uploads Trivy SARIF to GitHub Security tab and SBOM as a build artifact (retained 90 days).
+**docker-build** -- Validates `docker-compose.yml` syntax and builds the Skills image. This job is deferred off PRs and runs on push Docker changes plus scheduled/manual verification.
 
-**summary** -- Waits for all other jobs. Checks every job result. Posts a markdown results table to the PR summary. Exits with failure if any required job failed.
+**summary** -- Waits for all other jobs. On pull requests it evaluates only the fast-path contract jobs. On push/scheduled/manual runs it evaluates the full active job graph. Posts a markdown results table to the workflow summary and fails when the required contract for that event fails.
 
 ### Integration Test Control
 

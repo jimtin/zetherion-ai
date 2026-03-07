@@ -9,7 +9,7 @@ As of 2026-03-08, the current merge contract is:
 1. Run `./scripts/test-full.sh` for substantial local validation.
 2. When the CI risk classifier requires E2E evidence, run `bash scripts/local-required-e2e-receipt.sh` after the full local gate passes and commit the resulting `.ci/e2e-receipt.json`.
 3. GitHub validates exact-SHA receipt evidence for required E2E instead of executing the full E2E suites directly on PRs.
-4. GitHub still runs a mix of always-on invariant jobs and path-gated local-equivalent jobs until the PR fast-path rollout lands.
+4. GitHub PRs now run the slim fast path: `detect-changes`, `risk-classifier`, `lint`, `secret-scan`, `pipeline-contract`, `zetherion-boundary-check`, `required-e2e-gate`, `CI Summary`, and `CI Failure Attribution`. Heavy local-equivalent jobs are deferred off PRs to push or scheduled/manual runs.
 
 Current required branch checks from the active `main` ruleset (`Main branch protection`, GitHub ruleset `12504326`):
 
@@ -37,4 +37,4 @@ Supporting source of truth for the rollout contract lives in `.ci/ci_hardening_w
 - Segment 0 is documentation and manifest alignment only. It does not change workflow behavior.
 - Segment 1 will widen local preflight coverage for shared-runtime and coverage-sensitive paths.
 - Segment 2 will add deterministic regression coverage for receipt, shell, and CI-support code.
-- Segment 3 will slim PR CI and align the GitHub ruleset to the new fast-path contract.
+- Segment 3 slims PR CI to the fast-path contract; the required ruleset contexts remain unchanged because they already matched the target required-check set.

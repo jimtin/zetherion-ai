@@ -1,5 +1,10 @@
 {
   "jobs": {
+    "detect-changes": {
+      "local_equivalent": false,
+      "local_stage": "ci-policy",
+      "note": "Changed-path detection is CI workflow orchestration; local preflight uses the source-controlled manifest instead of this GitHub job."
+    },
     "lint": {
       "local_equivalent": true,
       "local_stage": "static-analysis",
@@ -8,12 +13,12 @@
     "type-check": {
       "local_equivalent": true,
       "local_stage": "unit+mypy",
-      "note": "mypy is required in scripts/pre-push-tests.sh; CI type-check is path-gated to code changes plus weekly/manual."
+      "note": "mypy is required in scripts/pre-push-tests.sh; CI type-check runs on push code changes plus weekly/manual heavy verification, not on PRs."
     },
     "security": {
       "local_equivalent": true,
       "local_stage": "static-analysis",
-      "note": "bandit is included in scripts/pre-push-tests.sh; CI bandit is path-gated to code changes plus weekly/manual."
+      "note": "bandit is included in scripts/pre-push-tests.sh; CI bandit runs on push code changes plus weekly/manual heavy verification, not on PRs."
     },
     "semgrep": {
       "local_equivalent": false,
@@ -43,7 +48,7 @@
     "docs-contract": {
       "local_equivalent": false,
       "local_stage": "ci-path-gated",
-      "note": "docs-contract is CI-only/path-gated for cost control."
+      "note": "docs-contract runs on push docs changes plus weekly/manual verification; PRs rely on local docs bundle checks instead of a GitHub docs job."
     },
     "pipeline-contract": {
       "local_equivalent": true,
@@ -68,12 +73,17 @@
     "unit-test": {
       "local_equivalent": true,
       "local_stage": "unit+mypy",
-      "note": "unit tests with coverage >=90% are required locally; CI unit tests are path-gated, with 3.12 on PR code changes and 3.13 weekly/manual."
+      "note": "unit tests with coverage >=90% are required locally; CI unit tests run on push code changes plus weekly/manual heavy verification, not on PRs."
     },
     "integration-test": {
       "local_equivalent": true,
       "local_stage": "integration",
       "note": "integration suites run in canonical local pipeline and heavy CI mode (weekly/manual)."
+    },
+    "docker-build-test": {
+      "local_equivalent": true,
+      "local_stage": "integration",
+      "note": "Docker build validation is covered by the canonical local pipeline when it rebuilds the containerized test harness before required E2E."
     }
   }
 }

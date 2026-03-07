@@ -128,7 +128,7 @@ jobs:
     name: Type Checking
     runs-on: ubuntu-latest
     needs: [detect-changes]
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.code == 'true' }}
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && needs.detect-changes.outputs.code == 'true') }}
     permissions:
       contents: read
     steps:
@@ -158,7 +158,7 @@ jobs:
     name: Security Scanning
     runs-on: ubuntu-latest
     needs: [detect-changes]
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.code == 'true' }}
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && needs.detect-changes.outputs.code == 'true') }}
     permissions:
       contents: read
     steps:
@@ -328,7 +328,7 @@ jobs:
     name: Documentation Contracts
     runs-on: ubuntu-latest
     needs: [detect-changes]
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.docs == 'true' }}
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && needs.detect-changes.outputs.docs == 'true') }}
     permissions:
       contents: read
     steps:
@@ -411,7 +411,7 @@ jobs:
     name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     needs: [detect-changes]
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.code == 'true' }}
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && needs.detect-changes.outputs.code == 'true') }}
     permissions:
       contents: read
     strategy:
@@ -556,7 +556,7 @@ jobs:
     name: Docker Build Test
     runs-on: ubuntu-latest
     needs: [detect-changes]
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.docker == 'true' }}
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && needs.detect-changes.outputs.docker == 'true') }}
     permissions:
       contents: read
     steps:
@@ -609,59 +609,60 @@ jobs:
     steps:
       - name: Check all jobs
         run: |
-          # Allow optional jobs to be skipped by policy.
-          PRE_COMMIT_RESULT="${{ needs.pre-commit.result }}"
-          if [[ "$PRE_COMMIT_RESULT" == "skipped" ]]; then
-            PRE_COMMIT_RESULT="success"
-          fi
-          TYPE_CHECK_RESULT="${{ needs.type-check.result }}"
-          if [[ "$TYPE_CHECK_RESULT" == "skipped" ]]; then
-            TYPE_CHECK_RESULT="success"
-          fi
-          SECURITY_RESULT="${{ needs.security.result }}"
-          if [[ "$SECURITY_RESULT" == "skipped" ]]; then
-            SECURITY_RESULT="success"
-          fi
-          SEMGREP_RESULT="${{ needs.semgrep.result }}"
-          if [[ "$SEMGREP_RESULT" == "skipped" ]]; then
-            SEMGREP_RESULT="success"
-          fi
-          SECRET_SCAN_RESULT="${{ needs.secret-scan.result }}"
-          if [[ "$SECRET_SCAN_RESULT" == "skipped" ]]; then
-            SECRET_SCAN_RESULT="success"
-          fi
-          DEPENDENCY_AUDIT_RESULT="${{ needs.dependency-audit.result }}"
-          if [[ "$DEPENDENCY_AUDIT_RESULT" == "skipped" ]]; then
-            DEPENDENCY_AUDIT_RESULT="success"
-          fi
-          LICENSE_RESULT="${{ needs.license-check.result }}"
-          if [[ "$LICENSE_RESULT" == "skipped" ]]; then
-            LICENSE_RESULT="success"
-          fi
-          DOCS_RESULT="${{ needs.docs-contract.result }}"
-          if [[ "$DOCS_RESULT" == "skipped" ]]; then
-            DOCS_RESULT="success"
-          fi
-          BOUNDARY_RESULT="${{ needs.zetherion-boundary-check.result }}"
-          if [[ "$BOUNDARY_RESULT" == "skipped" ]]; then
-            BOUNDARY_RESULT="success"
-          fi
-          UNIT_RESULT="${{ needs.unit-test.result }}"
-          if [[ "$UNIT_RESULT" == "skipped" ]]; then
-            UNIT_RESULT="success"
-          fi
-          INTEGRATION_RESULT="${{ needs.integration-test.result }}"
-          if [[ "$INTEGRATION_RESULT" == "skipped" ]]; then
-            INTEGRATION_RESULT="success"
-          fi
-          DOCKER_BUILD_RESULT="${{ needs.docker-build-test.result }}"
-          if [[ "$DOCKER_BUILD_RESULT" == "skipped" ]]; then
-            DOCKER_BUILD_RESULT="success"
-          fi
+          normalize_optional_result() {
+            local result="$1"
+            if [[ "$result" == "skipped" ]]; then
+              printf 'success\n'
+            else
+              printf '%s\n' "$result"
+            fi
+          }
+
+          EVENT_NAME="${{ github.event_name }}"
+          DETECT_CHANGES_RESULT="${{ needs.detect-changes.result }}"
           RISK_CLASSIFIER_RESULT="${{ needs.risk-classifier.result }}"
+          LINT_RESULT="${{ needs.lint.result }}"
+          SECRET_SCAN_RESULT="$(normalize_optional_result "${{ needs.secret-scan.result }}")"
+          PIPELINE_CONTRACT_RESULT="${{ needs.pipeline-contract.result }}"
+          BOUNDARY_RESULT="$(normalize_optional_result "${{ needs.zetherion-boundary-check.result }}")"
           REQUIRED_E2E_GATE_RESULT="${{ needs.required-e2e-gate.result }}"
 
-          if [[ "${{ needs.lint.result }}" == "success" ]] && \
+          TYPE_CHECK_RESULT="$(normalize_optional_result "${{ needs.type-check.result }}")"
+          SECURITY_RESULT="$(normalize_optional_result "${{ needs.security.result }}")"
+          SEMGREP_RESULT="$(normalize_optional_result "${{ needs.semgrep.result }}")"
+          DEPENDENCY_AUDIT_RESULT="$(normalize_optional_result "${{ needs.dependency-audit.result }}")"
+          LICENSE_RESULT="$(normalize_optional_result "${{ needs.license-check.result }}")"
+          PRE_COMMIT_RESULT="$(normalize_optional_result "${{ needs.pre-commit.result }}")"
+          DOCS_RESULT="$(normalize_optional_result "${{ needs.docs-contract.result }}")"
+          UNIT_RESULT="$(normalize_optional_result "${{ needs.unit-test.result }}")"
+          INTEGRATION_RESULT="$(normalize_optional_result "${{ needs.integration-test.result }}")"
+          DOCKER_BUILD_RESULT="$(normalize_optional_result "${{ needs.docker-build-test.result }}")"
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            if [[ "$DETECT_CHANGES_RESULT" == "success" ]] && \
+               [[ "$RISK_CLASSIFIER_RESULT" == "success" ]] && \
+               [[ "$LINT_RESULT" == "success" ]] && \
+               [[ "$SECRET_SCAN_RESULT" == "success" ]] && \
+               [[ "$PIPELINE_CONTRACT_RESULT" == "success" ]] && \
+               [[ "$BOUNDARY_RESULT" == "success" ]] && \
+               [[ "$REQUIRED_E2E_GATE_RESULT" == "success" ]]; then
+              echo "✅ PR fast-path checks passed!"
+              exit 0
+            else
+              echo "❌ PR fast-path checks failed:"
+              echo "  Detect Changes: ${DETECT_CHANGES_RESULT}"
+              echo "  Risk Classifier: ${RISK_CLASSIFIER_RESULT} (raw=${{ needs.risk-classifier.result }})"
+              echo "  Lint: ${LINT_RESULT}"
+              echo "  Secret Scan (Gitleaks): ${SECRET_SCAN_RESULT} (raw=${{ needs.secret-scan.result }})"
+              echo "  Pipeline Contract: ${PIPELINE_CONTRACT_RESULT}"
+              echo "  Zetherion Boundary: ${BOUNDARY_RESULT} (raw=${{ needs.zetherion-boundary-check.result }})"
+              echo "  Required E2E Gate: ${REQUIRED_E2E_GATE_RESULT} (raw=${{ needs.required-e2e-gate.result }})"
+              exit 1
+            fi
+          fi
+
+          if [[ "$DETECT_CHANGES_RESULT" == "success" ]] && \
+             [[ "$LINT_RESULT" == "success" ]] && \
              [[ "$RISK_CLASSIFIER_RESULT" == "success" ]] && \
              [[ "$TYPE_CHECK_RESULT" == "success" ]] && \
              [[ "$SECURITY_RESULT" == "success" ]] && \
@@ -671,7 +672,7 @@ jobs:
              [[ "$LICENSE_RESULT" == "success" ]] && \
              [[ "$PRE_COMMIT_RESULT" == "success" ]] && \
              [[ "$DOCS_RESULT" == "success" ]] && \
-             [[ "${{ needs.pipeline-contract.result }}" == "success" ]] && \
+             [[ "$PIPELINE_CONTRACT_RESULT" == "success" ]] && \
              [[ "$BOUNDARY_RESULT" == "success" ]] && \
              [[ "$UNIT_RESULT" == "success" ]] && \
              [[ "$REQUIRED_E2E_GATE_RESULT" == "success" ]] && \
@@ -681,7 +682,8 @@ jobs:
             exit 0
           else
             echo "❌ Some CI checks failed:"
-            echo "  Lint: ${{ needs.lint.result }}"
+            echo "  Detect Changes: ${DETECT_CHANGES_RESULT}"
+            echo "  Lint: ${LINT_RESULT}"
             echo "  Risk Classifier: ${RISK_CLASSIFIER_RESULT} (raw=${{ needs.risk-classifier.result }})"
             echo "  Type Check: ${TYPE_CHECK_RESULT} (raw=${{ needs.type-check.result }})"
             echo "  Security (Bandit): ${SECURITY_RESULT} (raw=${{ needs.security.result }})"
@@ -689,9 +691,9 @@ jobs:
             echo "  Secret Scan (Gitleaks): ${SECRET_SCAN_RESULT} (raw=${{ needs.secret-scan.result }})"
             echo "  Dependency Audit: ${DEPENDENCY_AUDIT_RESULT} (raw=${{ needs.dependency-audit.result }})"
             echo "  License Check: ${LICENSE_RESULT} (raw=${{ needs.license-check.result }})"
-            echo "  Pre-commit: ${{ needs.pre-commit.result }}"
+            echo "  Pre-commit: ${PRE_COMMIT_RESULT} (raw=${{ needs.pre-commit.result }})"
             echo "  Docs Contracts: ${DOCS_RESULT} (raw=${{ needs.docs-contract.result }})"
-            echo "  Pipeline Contract: ${{ needs.pipeline-contract.result }}"
+            echo "  Pipeline Contract: ${PIPELINE_CONTRACT_RESULT}"
             echo "  Zetherion Boundary: ${BOUNDARY_RESULT} (raw=${{ needs.zetherion-boundary-check.result }})"
             echo "  Unit Tests: ${UNIT_RESULT} (raw=${{ needs.unit-test.result }})"
             echo "  Required E2E Gate: ${REQUIRED_E2E_GATE_RESULT} (raw=${{ needs.required-e2e-gate.result }})"
@@ -703,10 +705,30 @@ jobs:
       - name: Post summary
         if: always()
         run: |
+          EVENT_NAME="${{ github.event_name }}"
           echo "### CI Pipeline Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            echo "#### PR Fast Path" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Detect Changes | ${{ needs.detect-changes.result }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Risk Classifier | ${{ needs.risk-classifier.result }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Linting | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Secret Scan (Gitleaks) | ${{ needs.secret-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Pipeline Contract | ${{ needs.pipeline-contract.result }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Zetherion Boundary | ${{ needs.zetherion-boundary-check.result }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Required E2E Gate | ${{ needs.required-e2e-gate.result }} |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Deferred off PR fast path: Type Checking, Security (Bandit), Docs Contracts, Unit Tests, Docker Build Test, Semgrep, Dependency Audit, License Check, Pre-commit, and Integration Tests." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
           echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Detect Changes | ${{ needs.detect-changes.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Linting | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Risk Classifier | ${{ needs.risk-classifier.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Type Checking | ${{ needs.type-check.result }} |" >> $GITHUB_STEP_SUMMARY
@@ -733,6 +755,7 @@ jobs:
       contents: read
     needs:
       [
+        detect-changes,
         risk-classifier,
         lint,
         type-check,
@@ -759,7 +782,7 @@ jobs:
         run: |
           python scripts/ci_failure_attribution.py \
             --output ci-failure-attribution.json \
-            --job-results "risk-classifier=${{ needs.risk-classifier.result }},lint=${{ needs.lint.result }},type-check=${{ needs.type-check.result }},security=${{ needs.security.result }},semgrep=${{ needs.semgrep.result }},secret-scan=${{ needs.secret-scan.result }},dependency-audit=${{ needs.dependency-audit.result }},license-check=${{ needs.license-check.result }},pre-commit=${{ needs.pre-commit.result }},docs-contract=${{ needs.docs-contract.result }},pipeline-contract=${{ needs.pipeline-contract.result }},zetherion-boundary-check=${{ needs.zetherion-boundary-check.result }},unit-test=${{ needs.unit-test.result }},required-e2e-gate=${{ needs.required-e2e-gate.result }},integration-test=${{ needs.integration-test.result }},docker-build-test=${{ needs.docker-build-test.result }}"
+            --job-results "detect-changes=${{ needs.detect-changes.result }},risk-classifier=${{ needs.risk-classifier.result }},lint=${{ needs.lint.result }},type-check=${{ needs.type-check.result }},security=${{ needs.security.result }},semgrep=${{ needs.semgrep.result }},secret-scan=${{ needs.secret-scan.result }},dependency-audit=${{ needs.dependency-audit.result }},license-check=${{ needs.license-check.result }},pre-commit=${{ needs.pre-commit.result }},docs-contract=${{ needs.docs-contract.result }},pipeline-contract=${{ needs.pipeline-contract.result }},zetherion-boundary-check=${{ needs.zetherion-boundary-check.result }},unit-test=${{ needs.unit-test.result }},required-e2e-gate=${{ needs.required-e2e-gate.result }},integration-test=${{ needs.integration-test.result }},docker-build-test=${{ needs.docker-build-test.result }}"
 
       - name: Upload attribution artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4

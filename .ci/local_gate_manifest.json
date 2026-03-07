@@ -21,6 +21,7 @@
     "src/zetherion_ai/security/trust_policy.py",
     ".github/workflows/**",
     ".ci/pipeline_contract.json",
+    "scripts/check_pipeline_contract.py",
     "scripts/check-cicd-success.sh",
     "scripts/ci-required-e2e-gate.sh",
     "scripts/ci_required_e2e_gate.py",
@@ -30,7 +31,10 @@
     "scripts/validate-deployment-receipt.py",
     "scripts/check-optional-service-guards.py",
     "scripts/windows/deploy-runner.ps1",
-    "scripts/verify-windows-host.ps1"
+    "scripts/verify-windows-host.ps1",
+    ".ci/local_gate_manifest.json",
+    "scripts/local_gate_plan.py",
+    "scripts/run-local-gate-preflight.sh"
   ],
   "requirements": {
     "endpoint-doc-bundle": {
@@ -76,10 +80,11 @@
     },
     "ci-failure-attribution-regression-suite": {
       "kind": "pytest",
-      "description": "Run the targeted CI failure-attribution and local-gate-enforcement regression suite.",
+      "description": "Run the targeted CI failure-attribution, pipeline-contract, and local-gate-enforcement regression suite.",
       "pytest_targets": [
         "tests/unit/test_ci_failure_attribution.py",
-        "tests/unit/test_require_local_gate_update.py"
+        "tests/unit/test_require_local_gate_update.py",
+        "tests/unit/test_check_pipeline_contract.py"
       ]
     },
     "deploy-preflight-regression-suite": {
@@ -164,12 +169,16 @@
       "patterns": [
         ".github/workflows/**",
         ".ci/pipeline_contract.json",
+        "scripts/check_pipeline_contract.py",
         "scripts/check-cicd-success.sh",
         "scripts/ci-required-e2e-gate.sh",
         "scripts/ci_required_e2e_gate.py",
         "scripts/ci_e2e_risk_classifier.py",
         "scripts/ci_failure_attribution.py",
-        "scripts/require-local-gate-update.sh"
+        "scripts/require-local-gate-update.sh",
+        ".ci/local_gate_manifest.json",
+        "scripts/local_gate_plan.py",
+        "scripts/run-local-gate-preflight.sh"
       ],
       "requirements": [
         "ci-receipt-regression-suite",

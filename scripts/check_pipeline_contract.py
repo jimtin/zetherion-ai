@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 
 REQUIRED_JOBS = {
+    "detect-changes",
+    "risk-classifier",
     "lint",
     "type-check",
     "security",
@@ -19,7 +21,9 @@ REQUIRED_JOBS = {
     "pipeline-contract",
     "zetherion-boundary-check",
     "unit-test",
+    "required-e2e-gate",
     "integration-test",
+    "docker-build-test",
 }
 
 
