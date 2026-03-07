@@ -35,6 +35,23 @@ def test_missing_job_mapping_reports_contract_gap() -> None:
     assert failure.reason_code == "PIPELINE_CONTRACT_GAP"
 
 
+def test_detect_changes_failure_is_classified_as_ci_only() -> None:
+    module = _load_module()
+    contract = {
+        "jobs": {
+            "detect-changes": {
+                "local_equivalent": False,
+                "local_stage": "ci-policy",
+                "note": "Changed-path detection is CI workflow orchestration.",
+            }
+        }
+    }
+
+    failure = module.classify_failure("detect-changes", "failure", contract)
+    assert failure.reason_code == "CI_ONLY_ENVIRONMENT_DIFF"
+    assert "Changed-path detection is CI workflow orchestration." in failure.explanation
+
+
 def test_local_stage_maps_to_specific_local_gate_breach_reason() -> None:
     module = _load_module()
     contract = {

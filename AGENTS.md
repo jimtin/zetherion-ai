@@ -53,7 +53,7 @@ This is the only supported full local gate. Do not substitute ad-hoc pytest comm
    - `Pipeline Contract`
    - `Secret Scan (Gitleaks)`
    - `Zetherion Boundary Check`
-5. Additional path-gated local-equivalent CI jobs may still run until the PR fast-path rollout lands; do not treat skipped heavy jobs as permission to skip the local heavy gate.
+5. PR fast path now runs only `detect-changes`, `risk-classifier`, `lint`, `secret-scan`, `pipeline-contract`, `zetherion-boundary-check`, `required-e2e-gate`, `CI Summary`, and `CI Failure Attribution`; heavy local-equivalent jobs are deferred off PRs to push or scheduled/manual runs.
 
 ## API Documentation Contract (Mandatory)
 

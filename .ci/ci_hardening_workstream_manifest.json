@@ -2,7 +2,7 @@
   "workstream": "segmented-ci-hardening-and-spend-reduction",
   "contract_version": 1,
   "recorded_at": "2026-03-08",
-  "status": "segment-2-receipt-regressions-covered",
+  "status": "segment-3-pr-fast-path-landed",
   "segment_contract": {
     "branch_prefix": "codex/seg-ci-",
     "one_segment_per_pr": true,
@@ -27,8 +27,9 @@
       "Zetherion Boundary Check"
     ],
     "notes": [
-      "GitHub currently validates exact-SHA local E2E receipt evidence instead of executing the full E2E suites directly on PRs.",
-      "Additional path-gated local-equivalent jobs may still run on PRs until Segment 3 slims the GitHub fast path."
+      "GitHub validates exact-SHA local E2E receipt evidence instead of executing the full E2E suites directly on PRs.",
+      "PR fast path is limited to detect-changes, risk-classifier, lint, secret-scan, pipeline-contract, zetherion-boundary-check, required-e2e-gate, CI Summary, and CI Failure Attribution.",
+      "Heavy local-equivalent jobs are deferred off PRs to push or scheduled/manual verification runs."
     ]
   },
   "capabilities": [
