@@ -33,7 +33,7 @@ This is the only supported full local gate. Do not substitute ad-hoc pytest comm
 13. Protected shared-infra and shared-runtime coverage-sensitive paths must be covered by the source-controlled local gate manifest (`.ci/local_gate_manifest.json`); unmapped protected changes fail local validation before push.
 14. Canonical static analysis must run both `scripts/check_pipeline_contract.py` and `scripts/check-endpoint-doc-bundle.py` so route/doc-contract mismatches fail locally before push.
 15. Unit-test coverage must remain `>=90%` in canonical runs; coverage regressions block push/release.
-16. Shared model/context/storage/startup changes mapped in `.ci/local_gate_manifest.json` must run the bounded `unit-full` lane before push.
+16. Shared trust/personal/profile/portfolio/routing/queue/model/context/storage/startup changes mapped in `.ci/local_gate_manifest.json` must run the bounded `unit-full` lane before push.
 17. Critical-path integration suites must run in canonical validation, including dev-watcher onboarding paths.
 18. Full end-to-end validation is mandatory for substantial delivery: Docker E2E (`test_e2e.py`) and required Discord E2E must both pass.
 19. This repository is Zetherion-only. Top-level `cgs/**` website/UI files are disallowed here.

@@ -11,7 +11,14 @@
     "src/zetherion_ai/**/context.py",
     "src/zetherion_ai/**/*storage*.py",
     "src/zetherion_ai/main.py",
-    "src/zetherion_ai/skills/server.py"
+    "src/zetherion_ai/skills/server.py",
+    "src/zetherion_ai/trust/**",
+    "src/zetherion_ai/personal/**",
+    "src/zetherion_ai/profile/**",
+    "src/zetherion_ai/portfolio/**",
+    "src/zetherion_ai/routing/**",
+    "src/zetherion_ai/queue/**",
+    "src/zetherion_ai/security/trust_policy.py"
   ],
   "requirements": {
     "endpoint-doc-bundle": {
@@ -80,7 +87,14 @@
         "src/zetherion_ai/**/context.py",
         "src/zetherion_ai/**/*storage*.py",
         "src/zetherion_ai/main.py",
-        "src/zetherion_ai/skills/server.py"
+        "src/zetherion_ai/skills/server.py",
+        "src/zetherion_ai/trust/**",
+        "src/zetherion_ai/personal/**",
+        "src/zetherion_ai/profile/**",
+        "src/zetherion_ai/portfolio/**",
+        "src/zetherion_ai/routing/**",
+        "src/zetherion_ai/queue/**",
+        "src/zetherion_ai/security/trust_policy.py"
       ],
       "requirements": [
         "unit-full"
