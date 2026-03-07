@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the single supported local full-test procedure, the exact-SHA receipt proof model, and the CI failure-attribution policy used to explain why a CI failure was or was not caught locally before deployment. Segment-level rollout metadata now lives in `.ci/ci_hardening_workstream_manifest.json`, and the reviewed rejection baseline is recorded in `docs/development/ci-hardening-baseline.md`.
+This document defines the single supported local full-test procedure, the committed local-receipt proof model, and the CI failure-attribution policy used to explain why a CI failure was or was not caught locally before deployment. Segment-level rollout metadata now lives in `.ci/ci_hardening_workstream_manifest.json`, and the reviewed rejection baseline is recorded in `docs/development/ci-hardening-baseline.md`.
 
 ## Canonical Local Gate
 
@@ -51,7 +51,7 @@ Defaults:
 1. stall threshold: 45 seconds without process output
 2. stalled/timeout lanes are terminated and diagnostics are captured
 3. lane executions are appended to `docs/migration/test-execution-log.md` by default
-4. exact-SHA local-gate preflight lanes write to `artifacts/testing/local-gate-preflight-log.md` so validation receipts do not dirty the commit being validated
+4. local-gate preflight lanes write to `artifacts/testing/local-gate-preflight-log.md` so validation receipts do not dirty the commit being validated
 
 Lane order:
 
@@ -93,7 +93,7 @@ The preflight is driven by the source-controlled manifest at `.ci/local_gate_man
 The active PR contract today is:
 
 1. current required branch checks are `CI Summary`, `Linting & Formatting`, `Pipeline Contract`, `Secret Scan (Gitleaks)`, and `Zetherion Boundary Check`
-2. required E2E on PRs is enforced by exact-SHA local receipt validation, not by running full E2E suites directly in GitHub Actions
+2. required E2E on PRs is enforced by committed local receipt validation, not by running full E2E suites directly in GitHub Actions
 3. PR fast path is limited to `detect-changes`, `risk-classifier`, `lint`, `secret-scan`, `pipeline-contract`, `zetherion-boundary-check`, `required-e2e-gate`, `CI Summary`, and `CI Failure Attribution`
 4. heavy local-equivalent jobs such as unit, type-check, security, docs-contract, and docker-build are deferred off PRs to push or weekly/manual verification runs
 5. weekly/manual runs remain the place for the heaviest independent verification lanes, including CodeQL and the broader heavy-job graph on `ci.yml`

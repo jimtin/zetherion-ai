@@ -12,7 +12,8 @@ DOCKER_LOG_PATH="${DOCKER_LOG_PATH:-docker-e2e.log}"
 DISCORD_LOG_PATH="${DISCORD_LOG_PATH:-discord-e2e.log}"
 DISCORD_RESULT_PATH="${DISCORD_RESULT_PATH:-.artifacts/discord-e2e-last-run.json}"
 DISCORD_E2E_PROVIDER="${DISCORD_E2E_PROVIDER:-groq}"
-HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+CURRENT_HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+RECEIPT_HEAD_SHA="${LOCAL_E2E_RECEIPT_HEAD_SHA:-local}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.test.yml}"
 PROJECT="${PROJECT:-zetherion-ai-test}"
 PRESERVE_TEST_VOLUMES="${PRESERVE_TEST_VOLUMES:-false}"
@@ -227,7 +228,8 @@ contains_skips() {
 
 write_receipt() {
     RECEIPT_PATH="$RECEIPT_PATH" \
-    HEAD_SHA="$HEAD_SHA" \
+    HEAD_SHA="$RECEIPT_HEAD_SHA" \
+    CURRENT_HEAD_SHA="$CURRENT_HEAD_SHA" \
     RECEIPT_STATUS="$RECEIPT_STATUS" \
     RECEIPT_REASON_CODE="$RECEIPT_REASON_CODE" \
     RECEIPT_REASON="$RECEIPT_REASON" \
@@ -255,7 +257,8 @@ if discord_result_path.is_file():
 payload = {
     "generated_at": dt.datetime.now(dt.UTC).isoformat(),
     "run_context": "local",
-    "head_sha": os.environ.get("HEAD_SHA", "").strip(),
+    "head_sha": os.environ.get("HEAD_SHA", "local").strip(),
+    "source_head_sha": os.environ.get("CURRENT_HEAD_SHA", "").strip(),
     "status": os.environ.get("RECEIPT_STATUS", "failed"),
     "reason_code": os.environ.get("RECEIPT_REASON_CODE", ""),
     "reason": os.environ.get("RECEIPT_REASON", ""),

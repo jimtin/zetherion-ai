@@ -124,3 +124,40 @@ def test_required_valid_local_receipt_succeeds(tmp_path: Path) -> None:
     assert exit_code == 0
     assert payload["status"] == "success"
     assert payload["reason_code"] == "local_receipt_validated"
+
+
+def test_required_local_mode_receipt_succeeds_without_sha_coupling(tmp_path: Path) -> None:
+    module = _load_module()
+
+    expected_sha = "b" * 40
+    receipt_path = tmp_path / ".ci" / "e2e-receipt.json"
+    receipt_path.parent.mkdir(parents=True, exist_ok=True)
+    receipt_path.write_text(
+        json.dumps(
+            {
+                "status": "success",
+                "run_context": "local",
+                "head_sha": "local",
+                "source_head_sha": expected_sha,
+                "suites": {
+                    "docker_e2e": {"status": "passed"},
+                    "discord_required_e2e": {"status": "passed"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = module.GateConfig(
+        required=True,
+        decision_reason_code="substantial_path_match",
+        decision_reason="Substantial runtime paths changed.",
+        expected_sha=expected_sha,
+        local_receipt_path=receipt_path,
+        output_path=tmp_path / "e2e-contract-receipt.json",
+    )
+
+    exit_code, payload = module.run_gate(config)
+    assert exit_code == 0
+    assert payload["status"] == "success"
+    assert payload["reason_code"] == "local_receipt_validated"
