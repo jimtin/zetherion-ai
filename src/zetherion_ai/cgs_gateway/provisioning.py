@@ -478,7 +478,7 @@ class CGSTenantProvisioningOrchestrator:
             include_archived=False,
         )
         if status >= 400:
-            raise map_upstream_error(status=status, payload=payload, source="public_api")
+            raise map_upstream_error(status=status, payload=payload, source="upstream")
 
         documents = payload.get("documents") if isinstance(payload, dict) else []
         if not isinstance(documents, list):
@@ -518,7 +518,7 @@ class CGSTenantProvisioningOrchestrator:
                 raise map_upstream_error(
                     status=reindex_status,
                     payload=reindex_payload,
-                    source="public_api",
+                    source="upstream",
                 )
             summary["reindexed"] += 1
         return summary
@@ -582,7 +582,7 @@ class CGSTenantProvisioningOrchestrator:
             payload=release_marker,
         )
         if status >= 400:
-            raise map_upstream_error(status=status, payload=payload, source="public_api")
+            raise map_upstream_error(status=status, payload=payload, source="upstream")
         return payload if isinstance(payload, dict) else {"payload": payload}
 
     def _resolve_stage_transition(
