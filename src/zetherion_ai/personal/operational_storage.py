@@ -147,6 +147,7 @@ class OwnerPersonalIntelligenceStorage:
     ) -> PersonalOperationalItem:
         """Insert or update one owner operational-state item."""
         data = item.to_db_row()
+        # self._schema is regex-validated before interpolation into SQL identifiers.
         table = f'"{self._schema}".personal_operational_items'
         metadata_json = json.dumps(data["metadata"])
         tags_json = json.dumps(data["tags"])
@@ -154,7 +155,7 @@ class OwnerPersonalIntelligenceStorage:
         detail_value = self._encrypt_text(data["detail"])
 
         if item.id is None:
-            sql = f"""
+            sql = f"""  # nosec B608
                 INSERT INTO {table}
                     (user_id, item_type, title_value, detail_value, status, due_at,
                      tags, metadata_json, source, external_ref, completed_at)
@@ -175,7 +176,7 @@ class OwnerPersonalIntelligenceStorage:
                 data["completed_at"],
             )
         else:
-            sql = f"""
+            sql = f"""  # nosec B608
                 UPDATE {table}
                    SET item_type = $2,
                        title_value = $3,
@@ -222,8 +223,9 @@ class OwnerPersonalIntelligenceStorage:
         limit: int = 25,
     ) -> list[PersonalOperationalItem]:
         """List owner operational-state items with optional filters."""
+        # self._schema is regex-validated before interpolation into SQL identifiers.
         table = f'"{self._schema}".personal_operational_items'
-        query = f"SELECT * FROM {table} WHERE user_id = $1"
+        query = f"SELECT * FROM {table} WHERE user_id = $1"  # nosec B608
         params: list[Any] = [user_id]
         idx = 2
 
@@ -256,13 +258,14 @@ class OwnerPersonalIntelligenceStorage:
     async def upsert_review_item(self, item: PersonalReviewItem) -> PersonalReviewItem:
         """Insert or update one owner review-queue item."""
         data = item.to_db_row()
+        # self._schema is regex-validated before interpolation into SQL identifiers.
         table = f'"{self._schema}".personal_review_items'
         metadata_json = json.dumps(data["metadata"])
         title_value = self._encrypt_text(data["title"])
         detail_value = self._encrypt_text(data["detail"])
 
         if item.id is None:
-            sql = f"""
+            sql = f"""  # nosec B608
                 INSERT INTO {table}
                     (user_id, item_type, title_value, detail_value, status, source,
                      related_resource, priority, metadata_json, due_at, resolved_at)
@@ -283,7 +286,7 @@ class OwnerPersonalIntelligenceStorage:
                 data["resolved_at"],
             )
         else:
-            sql = f"""
+            sql = f"""  # nosec B608
                 UPDATE {table}
                    SET item_type = $2,
                        title_value = $3,
@@ -330,8 +333,9 @@ class OwnerPersonalIntelligenceStorage:
         limit: int = 25,
     ) -> list[PersonalReviewItem]:
         """List owner review queue items with optional filters."""
+        # self._schema is regex-validated before interpolation into SQL identifiers.
         table = f'"{self._schema}".personal_review_items'
-        query = f"SELECT * FROM {table} WHERE user_id = $1"
+        query = f"SELECT * FROM {table} WHERE user_id = $1"  # nosec B608
         params: list[Any] = [user_id]
         idx = 2
 
@@ -363,8 +367,9 @@ class OwnerPersonalIntelligenceStorage:
         status: PersonalReviewItemStatus = PersonalReviewItemStatus.RESOLVED,
     ) -> PersonalReviewItem | None:
         """Resolve or dismiss a review item."""
+        # self._schema is regex-validated before interpolation into SQL identifiers.
         table = f'"{self._schema}".personal_review_items'
-        sql = f"""
+        sql = f"""  # nosec B608
             UPDATE {table}
                SET status = $1,
                    resolved_at = now(),
