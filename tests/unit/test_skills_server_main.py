@@ -40,6 +40,7 @@ def _configure_mock_settings(mock_get_settings: MagicMock) -> MagicMock:
     mock_settings.updater_release_signature_asset = "release-manifest.sig"
     mock_settings.updater_release_certificate_asset = "release-manifest.pem"
     mock_settings.postgres_owner_personal_schema = "owner_personal"
+    mock_settings.postgres_owner_portfolio_schema = "owner_portfolio"
     mock_settings.postgres_control_plane_schema = "control_plane"
     mock_settings.github_token = None
     mock_get_settings.return_value = mock_settings

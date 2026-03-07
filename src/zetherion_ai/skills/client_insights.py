@@ -15,6 +15,12 @@ from collections import Counter
 from typing import TYPE_CHECKING, Any
 
 from zetherion_ai.logging import get_logger
+from zetherion_ai.portfolio import (
+    DERIVATION_KIND_TENANT_HEALTH,
+    build_owner_portfolio_snapshot,
+    build_tenant_health_derived_dataset,
+    health_indicator_for_summary,
+)
 from zetherion_ai.skills.base import (
     HeartbeatAction,
     Skill,
@@ -27,26 +33,24 @@ from zetherion_ai.skills.permissions import Permission, PermissionSet
 if TYPE_CHECKING:
     from zetherion_ai.agent.inference import InferenceBroker
     from zetherion_ai.api.tenant import TenantManager
+    from zetherion_ai.portfolio.storage import PortfolioStorage
 
 log = get_logger("zetherion_ai.skills.client_insights")
 
-# Heartbeat frequency: run L3 every 12th beat (~1 hour at 5-min beats)
 _L3_HEARTBEAT_INTERVAL = 12
-# L4 cross-tenant analysis: every 288th beat (~24 hours)
 _L4_HEARTBEAT_INTERVAL = 288
+_SENTIMENT_DROP_THRESHOLD = -0.2
+_ESCALATION_RATE_THRESHOLD = 0.15
 
-# Thresholds for L5 alerts
-_SENTIMENT_DROP_THRESHOLD = -0.2  # >20% sentiment drop triggers alert
-_ESCALATION_RATE_THRESHOLD = 0.15  # >15% escalation rate triggers alert
-
-# LLM prompt for cross-tenant analysis
 _L4_ANALYSIS_PROMPT = """\
-You are a business intelligence analyst reviewing chat data across multiple
-client tenants. Provide strategic insights for the platform owner.
+You are a business intelligence analyst reviewing derived tenant health data
+across multiple client tenants. Provide strategic insights for the platform
+owner. Use only the provided derived summaries. Do not assume access to raw
+messages or direct tenant conversation transcripts.
 
 Respond ONLY with valid JSON. No markdown, no commentary.
 
-Tenant data:
+Tenant derived summaries:
 {tenant_data}
 
 Analyse and provide:
@@ -66,10 +70,12 @@ class ClientInsightsSkill(Skill):
         self,
         inference_broker: InferenceBroker | None = None,
         tenant_manager: TenantManager | None = None,
+        portfolio_storage: PortfolioStorage | None = None,
     ) -> None:
         super().__init__(memory=None)
         self._broker = inference_broker
         self._tenant_manager = tenant_manager
+        self._portfolio_storage = portfolio_storage
         self._beat_count = 0
 
     @property
@@ -97,8 +103,16 @@ class ClientInsightsSkill(Skill):
             log.warning("client_insights_no_broker")
         if self._tenant_manager is None:
             log.warning("client_insights_no_tenant_manager")
+        if self._portfolio_storage is None:
+            log.warning("client_insights_no_portfolio_storage")
+        else:
+            await self._portfolio_storage.initialize()
         log.info("client_insights_initialized")
         return True
+
+    async def cleanup(self) -> None:
+        if self._portfolio_storage is not None:
+            await self._portfolio_storage.close()
 
     async def handle(self, request: SkillRequest) -> SkillResponse:
         intent = request.intent
@@ -114,32 +128,22 @@ class ClientInsightsSkill(Skill):
         )
 
     async def on_heartbeat(self, user_ids: list[str]) -> list[HeartbeatAction]:
-        """Periodic aggregation and alerting."""
         self._beat_count += 1
         actions: list[HeartbeatAction] = []
 
-        if self._tenant_manager is None:
+        if self._tenant_manager is None or self._portfolio_storage is None:
             return actions
 
-        # L3: Per-tenant aggregation
         if self._beat_count % _L3_HEARTBEAT_INTERVAL == 0:
-            l3_actions = await self._run_l3_aggregation(user_ids)
-            actions.extend(l3_actions)
+            actions.extend(await self._run_l3_aggregation(user_ids))
 
-        # L4: Cross-tenant analysis
         if self._beat_count % _L4_HEARTBEAT_INTERVAL == 0:
-            l4_actions = await self._run_l4_analysis(user_ids)
-            actions.extend(l4_actions)
+            actions.extend(await self._run_l4_analysis(user_ids))
 
         return actions
 
-    # ------------------------------------------------------------------
-    # Intent handlers
-    # ------------------------------------------------------------------
-
     async def _handle_portfolio_summary(self, request: SkillRequest) -> SkillResponse:
-        """On-demand: "How are my clients doing?" """
-        if self._tenant_manager is None:
+        if self._tenant_manager is None or self._portfolio_storage is None:
             return SkillResponse.error_response(request.id, "Client insights not configured.")
 
         tenants = await self._tenant_manager.list_tenants()
@@ -151,21 +155,19 @@ class ClientInsightsSkill(Skill):
                 data={"tenants": [], "count": 0},
             )
 
-        summaries = []
-        for t in tenants:
-            tenant_id = str(t["tenant_id"])
-            interactions = await self._tenant_manager.get_interactions(tenant_id, limit=100)
-            summary = self._aggregate_tenant(t, interactions)
-            summaries.append(summary)
+        snapshots = [
+            await self._derive_owner_snapshot_for_tenant(t, source="client_portfolio_summary")
+            for t in tenants
+        ]
+        summaries = [snapshot["summary"] for snapshot in snapshots]
 
-        # Build readable report
         lines = [f"**Portfolio Summary — {len(summaries)} client(s):**\n"]
-        for s in summaries:
-            status = self._health_indicator(s)
+        for summary in summaries:
+            status = self._health_indicator(summary)
             lines.append(
-                f"- {status} **{s['name']}** — "
-                f"{s['total_interactions']} interactions, "
-                f"avg sentiment: {s['avg_sentiment']}"
+                f"- {status} **{summary['tenant_name']}** — "
+                f"{summary['total_interactions']} interactions, "
+                f"avg sentiment: {summary['avg_sentiment']}"
             )
 
         return SkillResponse(
@@ -176,50 +178,51 @@ class ClientInsightsSkill(Skill):
         )
 
     async def _handle_health_check(self, request: SkillRequest) -> SkillResponse:
-        """Health check for a specific tenant."""
         ctx = request.context
-        tenant_id = ctx.get("tenant_id", "")
+        tenant_id = str(ctx.get("tenant_id") or "").strip()
 
-        if not tenant_id or self._tenant_manager is None:
+        if not tenant_id or self._tenant_manager is None or self._portfolio_storage is None:
             return SkillResponse.error_response(request.id, "tenant_id is required.")
 
         tenant = await self._tenant_manager.get_tenant(tenant_id)
         if tenant is None:
             return SkillResponse.error_response(request.id, f"Tenant `{tenant_id}` not found.")
 
-        interactions = await self._tenant_manager.get_interactions(tenant_id, limit=100)
-        summary = self._aggregate_tenant(tenant, interactions)
+        snapshot = await self._derive_owner_snapshot_for_tenant(
+            tenant,
+            source="client_health_check",
+        )
+        summary = snapshot["summary"]
         status = self._health_indicator(summary)
 
         return SkillResponse(
             request_id=request.id,
             success=True,
             message=(
-                f"{status} **{summary['name']}**\n"
+                f"{status} **{summary['tenant_name']}**\n"
                 f"- Interactions: {summary['total_interactions']}\n"
                 f"- Avg sentiment: {summary['avg_sentiment']}\n"
                 f"- Escalation rate: {summary['escalation_rate']:.0%}\n"
                 f"- Resolution rate: {summary['resolution_rate']:.0%}"
             ),
-            data={"health": summary},
+            data={"health": summary, "provenance": snapshot.get("provenance", {})},
         )
 
     async def _handle_cross_tenant(self, request: SkillRequest) -> SkillResponse:
-        """Cross-tenant analysis using LLM."""
-        if self._tenant_manager is None:
+        if self._tenant_manager is None or self._portfolio_storage is None:
             return SkillResponse.error_response(request.id, "Client insights not configured.")
         if self._broker is None:
             return SkillResponse.error_response(
-                request.id, "No LLM configured for cross-tenant analysis."
+                request.id,
+                "No LLM configured for cross-tenant analysis.",
             )
 
         tenants = await self._tenant_manager.list_tenants()
-        summaries = []
-        for t in tenants:
-            interactions = await self._tenant_manager.get_interactions(
-                str(t["tenant_id"]), limit=100
-            )
-            summaries.append(self._aggregate_tenant(t, interactions))
+        snapshots = [
+            await self._derive_owner_snapshot_for_tenant(t, source="cross_tenant_analysis")
+            for t in tenants
+        ]
+        summaries = [snapshot["summary"] for snapshot in snapshots]
 
         import json
 
@@ -227,6 +230,7 @@ class ClientInsightsSkill(Skill):
 
         try:
             from zetherion_ai.agent.providers import TaskType
+            from zetherion_ai.skills.tenant_intelligence import TenantIntelligenceSkill
 
             result = await self._broker.infer(
                 prompt=prompt,
@@ -234,10 +238,6 @@ class ClientInsightsSkill(Skill):
                 temperature=0.3,
                 max_tokens=1000,
             )
-            from zetherion_ai.skills.tenant_intelligence import (
-                TenantIntelligenceSkill,
-            )
-
             analysis = TenantIntelligenceSkill._parse_json_response(result.content)
         except Exception:
             log.exception("cross_tenant_analysis_failed")
@@ -252,32 +252,35 @@ class ClientInsightsSkill(Skill):
             request_id=request.id,
             success=True,
             message="Cross-tenant analysis complete.",
-            data={"analysis": analysis},
+            data={
+                "analysis": analysis,
+                "portfolio": summaries,
+            },
         )
 
-    # ------------------------------------------------------------------
-    # L3 — Periodic per-tenant aggregation
-    # ------------------------------------------------------------------
-
     async def _run_l3_aggregation(self, user_ids: list[str]) -> list[HeartbeatAction]:
-        """Run L3 per-tenant aggregation and generate alerts."""
         actions: list[HeartbeatAction] = []
-        if self._tenant_manager is None:
+        if self._tenant_manager is None or self._portfolio_storage is None:
             return actions
 
         tenants = await self._tenant_manager.list_tenants()
         alerts: list[str] = []
 
-        for t in tenants:
-            tenant_id = str(t["tenant_id"])
-            interactions = await self._tenant_manager.get_interactions(tenant_id, limit=100)
-            summary = self._aggregate_tenant(t, interactions)
-
-            # L5: Check thresholds
+        for tenant in tenants:
+            snapshot = await self._derive_owner_snapshot_for_tenant(
+                tenant,
+                source="heartbeat_l3_aggregation",
+            )
+            summary = snapshot["summary"]
             if summary["escalation_rate"] > _ESCALATION_RATE_THRESHOLD:
                 alerts.append(
                     f"High escalation rate ({summary['escalation_rate']:.0%}) "
-                    f"for **{summary['name']}** — chatbot may need tuning."
+                    f"for **{summary['tenant_name']}** — chatbot may need tuning."
+                )
+            elif summary["avg_sentiment"] < _SENTIMENT_DROP_THRESHOLD:
+                alerts.append(
+                    f"Sentiment dropped for **{summary['tenant_name']}** "
+                    f"(avg {summary['avg_sentiment']})."
                 )
 
         if alerts and user_ids:
@@ -293,17 +296,11 @@ class ClientInsightsSkill(Skill):
 
         return actions
 
-    # ------------------------------------------------------------------
-    # L4 — Cross-tenant analysis (periodic)
-    # ------------------------------------------------------------------
-
     async def _run_l4_analysis(self, user_ids: list[str]) -> list[HeartbeatAction]:
-        """Run L4 cross-tenant analysis and notify James."""
         actions: list[HeartbeatAction] = []
-        if self._tenant_manager is None or self._broker is None:
+        if self._tenant_manager is None or self._broker is None or self._portfolio_storage is None:
             return actions
 
-        # Use the handle method to run the analysis
         request = SkillRequest(intent="cross_tenant_analysis")
         response = await self.handle(request)
 
@@ -335,16 +332,60 @@ class ClientInsightsSkill(Skill):
 
         return actions
 
-    # ------------------------------------------------------------------
-    # Aggregation helpers
-    # ------------------------------------------------------------------
+    async def _derive_owner_snapshot_for_tenant(
+        self,
+        tenant: dict[str, Any],
+        *,
+        source: str,
+    ) -> dict[str, Any]:
+        if self._tenant_manager is None or self._portfolio_storage is None:
+            raise RuntimeError("Client insights storage is not configured")
+
+        tenant_id = str(tenant.get("tenant_id") or "").strip()
+        interactions = await self._tenant_manager.get_interactions(tenant_id, limit=100)
+        raw_summary = self._aggregate_tenant(tenant, interactions)
+        derived_payload = build_tenant_health_derived_dataset(
+            zetherion_tenant_id=tenant_id,
+            tenant_name=str(tenant.get("name") or raw_summary.get("name") or "Unknown"),
+            raw_summary=raw_summary,
+            source=source,
+            provenance={
+                "input_count": len(interactions),
+                "tenant_domain": tenant.get("domain"),
+            },
+        )
+        derived_dataset = await self._portfolio_storage.upsert_tenant_derived_dataset(
+            zetherion_tenant_id=tenant_id,
+            tenant_name=str(tenant.get("name") or raw_summary.get("name") or "Unknown"),
+            derivation_kind=DERIVATION_KIND_TENANT_HEALTH,
+            source=source,
+            summary=derived_payload["summary"],
+            provenance=derived_payload["provenance"],
+        )
+        snapshot_payload = build_owner_portfolio_snapshot(
+            source_dataset_id=str(derived_dataset.get("dataset_id") or ""),
+            derived_summary=(derived_dataset.get("summary") or {}),
+            source=source,
+            provenance={
+                "tenant_domain": tenant.get("domain"),
+                "source_dataset_id": str(derived_dataset.get("dataset_id") or ""),
+            },
+        )
+        return await self._portfolio_storage.upsert_owner_portfolio_snapshot(
+            zetherion_tenant_id=tenant_id,
+            tenant_name=str(tenant.get("name") or raw_summary.get("name") or "Unknown"),
+            derivation_kind=DERIVATION_KIND_TENANT_HEALTH,
+            source_dataset_id=str(derived_dataset.get("dataset_id") or ""),
+            source=source,
+            summary=snapshot_payload["summary"],
+            provenance=snapshot_payload["provenance"],
+        )
 
     @staticmethod
     def _aggregate_tenant(
         tenant: dict[str, Any],
         interactions: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        """Aggregate interaction data for a single tenant."""
         sentiment_map = {
             "very_negative": -1.0,
             "negative": -0.5,
@@ -362,8 +403,8 @@ class ClientInsightsSkill(Skill):
         avg_sentiment = sum(sentiments) / len(sentiments) if sentiments else 0.0
 
         outcomes = [i.get("outcome") for i in interactions if i.get("outcome")]
-        escalated = sum(1 for o in outcomes if o == "escalated")
-        resolved = sum(1 for o in outcomes if o == "resolved")
+        escalated = sum(1 for outcome in outcomes if outcome == "escalated")
+        resolved = sum(1 for outcome in outcomes if outcome == "resolved")
 
         escalation_rate = escalated / total if total > 0 else 0.0
         resolution_rate = resolved / len(outcomes) if outcomes else 0.0
@@ -375,10 +416,10 @@ class ClientInsightsSkill(Skill):
                 intent_counts[intent] = intent_counts.get(intent, 0) + 1
 
         behavior_summaries = [
-            i
-            for i in interactions
-            if i.get("interaction_type") == "web_behavior_summary"
-            and isinstance(i.get("entities"), dict)
+            interaction
+            for interaction in interactions
+            if interaction.get("interaction_type") == "web_behavior_summary"
+            and isinstance(interaction.get("entities"), dict)
         ]
         behavior_total = len(behavior_summaries)
         behavior_converted = 0
@@ -408,7 +449,7 @@ class ClientInsightsSkill(Skill):
             "escalation_rate": round(escalation_rate, 3),
             "resolution_rate": round(resolution_rate, 3),
             "top_intents": dict(
-                sorted(intent_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+                sorted(intent_counts.items(), key=lambda item: item[1], reverse=True)[:5]
             ),
             "behavior_sessions": behavior_total,
             "behavior_conversion_rate": round(behavior_conversion_rate, 3),
@@ -417,9 +458,4 @@ class ClientInsightsSkill(Skill):
 
     @staticmethod
     def _health_indicator(summary: dict[str, Any]) -> str:
-        """Return a red/amber/green text indicator."""
-        if summary["escalation_rate"] > _ESCALATION_RATE_THRESHOLD:
-            return "[RED]"
-        if summary["avg_sentiment"] < -0.2:
-            return "[AMBER]"
-        return "[GREEN]"
+        return f"[{health_indicator_for_summary(summary).upper()}]"

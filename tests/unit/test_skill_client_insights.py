@@ -1,4 +1,4 @@
-"""Tests for client_insights skill — portfolio intelligence for James."""
+"""Tests for client_insights skill -- portfolio intelligence for James."""
 
 from __future__ import annotations
 
@@ -90,17 +90,64 @@ def _make_tenant_manager() -> AsyncMock:
     return tm
 
 
+def _make_portfolio_storage() -> MagicMock:
+    storage = MagicMock()
+    storage.initialize = AsyncMock()
+    storage.close = AsyncMock()
+
+    async def _upsert_tenant_derived_dataset(**kwargs: object) -> dict[str, object]:
+        return {
+            "dataset_id": f"tds_{str(kwargs['zetherion_tenant_id'])[-8:]}",
+            "zetherion_tenant_id": kwargs["zetherion_tenant_id"],
+            "tenant_name": kwargs["tenant_name"],
+            "derivation_kind": kwargs["derivation_kind"],
+            "trust_domain": "tenant_derived",
+            "source": kwargs["source"],
+            "summary": dict(kwargs["summary"]),
+            "provenance": dict(kwargs["provenance"] or {}),
+        }
+
+    async def _upsert_owner_portfolio_snapshot(**kwargs: object) -> dict[str, object]:
+        return {
+            "snapshot_id": f"ops_{str(kwargs['zetherion_tenant_id'])[-8:]}",
+            "zetherion_tenant_id": kwargs["zetherion_tenant_id"],
+            "tenant_name": kwargs["tenant_name"],
+            "derivation_kind": kwargs["derivation_kind"],
+            "trust_domain": "owner_portfolio",
+            "source_dataset_id": kwargs["source_dataset_id"],
+            "source": kwargs["source"],
+            "summary": dict(kwargs["summary"]),
+            "provenance": dict(kwargs["provenance"] or {}),
+        }
+
+    storage.upsert_tenant_derived_dataset = AsyncMock(side_effect=_upsert_tenant_derived_dataset)
+    storage.upsert_owner_portfolio_snapshot = AsyncMock(
+        side_effect=_upsert_owner_portfolio_snapshot
+    )
+    return storage
+
+
 @pytest.fixture
-def skill() -> ClientInsightsSkill:
+def portfolio_storage() -> MagicMock:
+    return _make_portfolio_storage()
+
+
+@pytest.fixture
+def skill(portfolio_storage: MagicMock) -> ClientInsightsSkill:
     return ClientInsightsSkill(
         inference_broker=_make_broker(),
         tenant_manager=_make_tenant_manager(),
+        portfolio_storage=portfolio_storage,
     )
 
 
 @pytest.fixture
-def skill_no_tm() -> ClientInsightsSkill:
-    return ClientInsightsSkill(inference_broker=_make_broker(), tenant_manager=None)
+def skill_no_tm(portfolio_storage: MagicMock) -> ClientInsightsSkill:
+    return ClientInsightsSkill(
+        inference_broker=_make_broker(),
+        tenant_manager=None,
+        portfolio_storage=portfolio_storage,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -122,11 +169,18 @@ class TestInitialize:
     @pytest.mark.asyncio
     async def test_init_success(self, skill: ClientInsightsSkill) -> None:
         assert await skill.initialize() is True
+        skill._portfolio_storage.initialize.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_safe_init_ready(self, skill: ClientInsightsSkill) -> None:
         await skill.safe_initialize()
         assert skill.status == SkillStatus.READY
+        skill._portfolio_storage.initialize.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_cleanup_closes_storage(self, skill: ClientInsightsSkill) -> None:
+        await skill.cleanup()
+        skill._portfolio_storage.close.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -139,11 +193,8 @@ class TestAggregation:
         summary = ClientInsightsSkill._aggregate_tenant(_TENANT_A, _INTERACTIONS)
         assert summary["name"] == "Bob's Plumbing"
         assert summary["total_interactions"] == 3
-        # avg sentiment: (0.5 + -0.5 + 0.0) / 3 = 0.0
         assert summary["avg_sentiment"] == 0.0
-        # escalation: 1/3
         assert abs(summary["escalation_rate"] - 0.333) < 0.01
-        # resolution: 2/3
         assert abs(summary["resolution_rate"] - 0.667) < 0.01
         assert "enquiry" in summary["top_intents"]
 
@@ -155,24 +206,15 @@ class TestAggregation:
         assert summary["resolution_rate"] == 0.0
 
     def test_health_indicator_green(self) -> None:
-        summary = {
-            "escalation_rate": 0.05,
-            "avg_sentiment": 0.3,
-        }
+        summary = {"escalation_rate": 0.05, "avg_sentiment": 0.3}
         assert ClientInsightsSkill._health_indicator(summary) == "[GREEN]"
 
     def test_health_indicator_amber(self) -> None:
-        summary = {
-            "escalation_rate": 0.05,
-            "avg_sentiment": -0.3,
-        }
+        summary = {"escalation_rate": 0.05, "avg_sentiment": -0.3}
         assert ClientInsightsSkill._health_indicator(summary) == "[AMBER]"
 
     def test_health_indicator_red(self) -> None:
-        summary = {
-            "escalation_rate": 0.20,
-            "avg_sentiment": 0.5,
-        }
+        summary = {"escalation_rate": 0.20, "avg_sentiment": 0.5}
         assert ClientInsightsSkill._health_indicator(summary) == "[RED]"
 
 
@@ -190,6 +232,8 @@ class TestPortfolioSummary:
         assert resp.success is True
         assert resp.data["count"] == 2
         assert "Bob's Plumbing" in resp.message
+        assert skill._portfolio_storage.upsert_tenant_derived_dataset.await_count == 2
+        assert skill._portfolio_storage.upsert_owner_portfolio_snapshot.await_count == 2
 
     @pytest.mark.asyncio
     async def test_portfolio_no_clients(self, skill: ClientInsightsSkill) -> None:
@@ -199,6 +243,8 @@ class TestPortfolioSummary:
         resp = await skill.safe_handle(req)
         assert resp.success is True
         assert "No active clients" in resp.message
+        skill._portfolio_storage.upsert_tenant_derived_dataset.assert_not_awaited()
+        skill._portfolio_storage.upsert_owner_portfolio_snapshot.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_portfolio_no_tm(self, skill_no_tm: ClientInsightsSkill) -> None:
@@ -225,6 +271,9 @@ class TestHealthCheck:
         assert resp.success is True
         assert "Bob's Plumbing" in resp.message
         assert "health" in resp.data
+        assert resp.data["provenance"]["input_trust_domain"] == "tenant_derived"
+        assert resp.data["provenance"]["output_trust_domain"] == "owner_portfolio"
+        assert resp.data["provenance"]["source_dataset_id"].startswith("tds_")
 
     @pytest.mark.asyncio
     async def test_health_check_not_found(self, skill: ClientInsightsSkill) -> None:
@@ -261,13 +310,23 @@ class TestCrossTenantAnalysis:
         analysis = resp.data["analysis"]
         assert len(analysis["patterns"]) > 0
         assert len(analysis["recommendations"]) > 0
+        prompt = skill._broker.infer.await_args.kwargs["prompt"]
+        assert "bobsplumbing.com" not in prompt
+        assert str(_INTERACTIONS[0]["interaction_id"]) not in prompt
+        assert '"tenant_name": "Bob\'s Plumbing"' in prompt
 
     @pytest.mark.asyncio
-    async def test_cross_tenant_no_broker(self, skill_no_tm: ClientInsightsSkill) -> None:
-        await skill_no_tm.safe_initialize()
+    async def test_cross_tenant_no_broker(self, portfolio_storage: MagicMock) -> None:
+        skill = ClientInsightsSkill(
+            inference_broker=None,
+            tenant_manager=_make_tenant_manager(),
+            portfolio_storage=portfolio_storage,
+        )
+        await skill.safe_initialize()
         req = SkillRequest(intent="cross_tenant_analysis")
-        resp = await skill_no_tm.safe_handle(req)
+        resp = await skill.safe_handle(req)
         assert resp.success is False
+        assert "No LLM configured" in (resp.error or "")
 
 
 # ---------------------------------------------------------------------------
@@ -278,10 +337,8 @@ class TestCrossTenantAnalysis:
 class TestHeartbeat:
     @pytest.mark.asyncio
     async def test_heartbeat_l3_triggers(self, skill: ClientInsightsSkill) -> None:
-        # Simulate enough beats to trigger L3 (every 12th beat)
-        skill._beat_count = 11  # Next beat will be 12
+        skill._beat_count = 11
         actions = await skill.on_heartbeat(["user123"])
-        # Should have run L3 aggregation; with escalation_rate ~33% > 15%
         assert any(a.skill_name == "client_insights" for a in actions)
 
     @pytest.mark.asyncio
@@ -292,7 +349,7 @@ class TestHeartbeat:
 
     @pytest.mark.asyncio
     async def test_heartbeat_no_l3_on_wrong_interval(self, skill: ClientInsightsSkill) -> None:
-        skill._beat_count = 5  # Not a multiple of 12
+        skill._beat_count = 5
         actions = await skill.on_heartbeat(["user123"])
         assert actions == []
 
@@ -314,24 +371,40 @@ class TestUnknownIntent:
 
 class TestAdditionalCoverage:
     @pytest.mark.asyncio
-    async def test_initialize_without_broker_logs_warning(self) -> None:
-        skill = ClientInsightsSkill(inference_broker=None, tenant_manager=_make_tenant_manager())
-        # Keep this explicit call to hit init warning paths.
+    async def test_initialize_without_broker_logs_warning(
+        self, portfolio_storage: MagicMock
+    ) -> None:
+        skill = ClientInsightsSkill(
+            inference_broker=None,
+            tenant_manager=_make_tenant_manager(),
+            portfolio_storage=portfolio_storage,
+        )
         assert await skill.initialize() is True
+        portfolio_storage.initialize.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_cross_tenant_requires_broker(self) -> None:
-        skill = ClientInsightsSkill(inference_broker=None, tenant_manager=_make_tenant_manager())
+    async def test_cross_tenant_requires_broker(self, portfolio_storage: MagicMock) -> None:
+        skill = ClientInsightsSkill(
+            inference_broker=None,
+            tenant_manager=_make_tenant_manager(),
+            portfolio_storage=portfolio_storage,
+        )
         await skill.safe_initialize()
         resp = await skill.safe_handle(SkillRequest(intent="cross_tenant_analysis"))
         assert resp.success is False
         assert "No LLM configured" in (resp.error or "")
 
     @pytest.mark.asyncio
-    async def test_cross_tenant_broker_failure_returns_empty_analysis(self) -> None:
+    async def test_cross_tenant_broker_failure_returns_empty_analysis(
+        self, portfolio_storage: MagicMock
+    ) -> None:
         broker = MagicMock()
         broker.infer = AsyncMock(side_effect=RuntimeError("boom"))
-        skill = ClientInsightsSkill(inference_broker=broker, tenant_manager=_make_tenant_manager())
+        skill = ClientInsightsSkill(
+            inference_broker=broker,
+            tenant_manager=_make_tenant_manager(),
+            portfolio_storage=portfolio_storage,
+        )
         await skill.safe_initialize()
         resp = await skill.safe_handle(SkillRequest(intent="cross_tenant_analysis"))
         assert resp.success is True
@@ -343,13 +416,17 @@ class TestAdditionalCoverage:
         }
 
     @pytest.mark.asyncio
-    async def test_run_l3_aggregation_no_tenant_manager(self) -> None:
-        skill = ClientInsightsSkill(inference_broker=_make_broker(), tenant_manager=None)
+    async def test_run_l3_aggregation_no_tenant_manager(self, portfolio_storage: MagicMock) -> None:
+        skill = ClientInsightsSkill(
+            inference_broker=_make_broker(),
+            tenant_manager=None,
+            portfolio_storage=portfolio_storage,
+        )
         actions = await skill._run_l3_aggregation(["user123"])
         assert actions == []
 
     @pytest.mark.asyncio
-    async def test_run_l3_aggregation_no_alerts(self) -> None:
+    async def test_run_l3_aggregation_no_alerts(self, portfolio_storage: MagicMock) -> None:
         tm = _make_tenant_manager()
         tm.get_interactions = AsyncMock(
             return_value=[
@@ -357,7 +434,11 @@ class TestAdditionalCoverage:
                 {"sentiment": "neutral", "intent": "enquiry", "outcome": "resolved"},
             ]
         )
-        skill = ClientInsightsSkill(inference_broker=_make_broker(), tenant_manager=tm)
+        skill = ClientInsightsSkill(
+            inference_broker=_make_broker(),
+            tenant_manager=tm,
+            portfolio_storage=portfolio_storage,
+        )
         actions = await skill._run_l3_aggregation(["user123"])
         assert actions == []
 
