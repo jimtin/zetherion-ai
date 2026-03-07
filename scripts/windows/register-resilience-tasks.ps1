@@ -8,11 +8,15 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$PromotionsTaskName = "ZetherionPostDeployPromotions",
     [Parameter(Mandatory = $false)]
+    [string]$CanaryTaskName = "ZetherionDiscordCanary",
+    [Parameter(Mandatory = $false)]
     [string]$LegacyTaskName = "ZetherionDockerAutoStart",
     [Parameter(Mandatory = $false)]
     [int]$WatchdogIntervalMinutes = 5,
     [Parameter(Mandatory = $false)]
     [int]$PromotionsIntervalMinutes = 10,
+    [Parameter(Mandatory = $false)]
+    [int]$CanaryIntervalMinutes = 360,
     [Parameter(Mandatory = $false)]
     [string]$OutputPath = "resilience-registration.json"
 )
@@ -25,6 +29,9 @@ if ($WatchdogIntervalMinutes -lt 1) {
 }
 if ($PromotionsIntervalMinutes -lt 1) {
     throw "PromotionsIntervalMinutes must be >= 1."
+}
+if ($CanaryIntervalMinutes -lt 1) {
+    throw "CanaryIntervalMinutes must be >= 1."
 }
 
 function Write-RegistrationResult {
@@ -190,6 +197,7 @@ $result = [ordered]@{
         startup_task_registered = $false
         watchdog_task_registered = $false
         promotions_task_registered = $false
+        canary_task_registered = $false
         legacy_task_disabled = $false
         recovery_tasks_registered = $false
     }
@@ -197,13 +205,16 @@ $result = [ordered]@{
         startup_task = $StartupTaskName
         watchdog_task = $WatchdogTaskName
         promotions_task = $PromotionsTaskName
+        canary_task = $CanaryTaskName
         legacy_task = $LegacyTaskName
         deploy_path = $DeployPath
         watchdog_interval_minutes = $WatchdogIntervalMinutes
         promotions_interval_minutes = $PromotionsIntervalMinutes
+        canary_interval_minutes = $CanaryIntervalMinutes
         startup_task_probe = $null
         watchdog_task_probe = $null
         promotions_task_probe = $null
+        canary_task_probe = $null
         bootstrap_required = $false
         failure_code = ""
         registration_actor = $registrationActor
@@ -219,6 +230,8 @@ try {
     $startupScriptPath = Join-Path $DeployPath "scripts\windows\startup-recover.ps1"
     $watchdogScriptPath = Join-Path $DeployPath "scripts\windows\runtime-watchdog.ps1"
     $promotionsWatchScriptPath = Join-Path $DeployPath "scripts\windows\promotions-watch.ps1"
+    $canaryScriptPath = Join-Path $DeployPath "scripts\windows\discord-canary-runner.ps1"
+    $canaryPythonScriptPath = Join-Path $DeployPath "scripts\windows\discord-canary.py"
 
     if (-not (Test-Path $startupScriptPath)) {
         $sourceStartupScriptPath = Join-Path $PSScriptRoot "startup-recover.ps1"
@@ -256,6 +269,30 @@ try {
         Copy-Item -Path $sourcePromotionsWatchScriptPath -Destination $promotionsWatchScriptPath -Force
         $result.details.actions_taken += "bootstrapped_recovery_script:promotions-watch.ps1"
     }
+    if (-not (Test-Path $canaryScriptPath)) {
+        $sourceCanaryScriptPath = Join-Path $PSScriptRoot "discord-canary-runner.ps1"
+        if (-not (Test-Path $sourceCanaryScriptPath)) {
+            throw "Discord canary runner script not found at $canaryScriptPath or $sourceCanaryScriptPath"
+        }
+        $canaryParent = Split-Path -Parent $canaryScriptPath
+        if ($canaryParent -and -not (Test-Path $canaryParent)) {
+            New-Item -ItemType Directory -Path $canaryParent -Force | Out-Null
+        }
+        Copy-Item -Path $sourceCanaryScriptPath -Destination $canaryScriptPath -Force
+        $result.details.actions_taken += "bootstrapped_recovery_script:discord-canary-runner.ps1"
+    }
+    if (-not (Test-Path $canaryPythonScriptPath)) {
+        $sourceCanaryPythonScriptPath = Join-Path $PSScriptRoot "discord-canary.py"
+        if (-not (Test-Path $sourceCanaryPythonScriptPath)) {
+            throw "Discord canary Python script not found at $canaryPythonScriptPath or $sourceCanaryPythonScriptPath"
+        }
+        $canaryPythonParent = Split-Path -Parent $canaryPythonScriptPath
+        if ($canaryPythonParent -and -not (Test-Path $canaryPythonParent)) {
+            New-Item -ItemType Directory -Path $canaryPythonParent -Force | Out-Null
+        }
+        Copy-Item -Path $sourceCanaryPythonScriptPath -Destination $canaryPythonScriptPath -Force
+        $result.details.actions_taken += "bootstrapped_recovery_script:discord-canary.py"
+    }
 
     $legacyTask = Get-ScheduledTask -TaskName $LegacyTaskName -ErrorAction SilentlyContinue
     if ($legacyTask) {
@@ -274,15 +311,18 @@ try {
     $startupProbe = Get-RecoveryTaskRecord -TaskName $StartupTaskName -ScriptNeedle "startup-recover.ps1"
     $watchdogProbe = Get-RecoveryTaskRecord -TaskName $WatchdogTaskName -ScriptNeedle "runtime-watchdog.ps1"
     $promotionsProbe = Get-RecoveryTaskRecord -TaskName $PromotionsTaskName -ScriptNeedle "promotions-watch.ps1"
+    $canaryProbe = Get-RecoveryTaskRecord -TaskName $CanaryTaskName -ScriptNeedle "discord-canary-runner.ps1"
     $result.details.startup_task_probe = $startupProbe
     $result.details.watchdog_task_probe = $watchdogProbe
     $result.details.promotions_task_probe = $promotionsProbe
+    $result.details.canary_task_probe = $canaryProbe
 
-    if ($startupProbe.passes -and $watchdogProbe.passes -and $promotionsProbe.passes) {
-        $result.details.actions_taken += "recovery_tasks_already_registered"
+    if ($startupProbe.passes -and $watchdogProbe.passes -and $promotionsProbe.passes -and $canaryProbe.passes) {
+        $result.details.actions_taken += "resilience_tasks_already_registered"
         $result.checks.startup_task_registered = $true
         $result.checks.watchdog_task_registered = $true
         $result.checks.promotions_task_registered = $true
+        $result.checks.canary_task_registered = $true
     } else {
         $registrationAccessDenied = $false
         try {
@@ -350,6 +390,29 @@ try {
                 -Description "Process post-deploy promotions (blog + release) on startup and periodic schedule."
             Register-ScheduledTask -TaskName $PromotionsTaskName -InputObject $promotionsTask -Force | Out-Null
             $result.details.actions_taken += "registered_promotions_task:$PromotionsTaskName"
+
+            $canaryAction = New-ScheduledTaskAction `
+                -Execute "pwsh.exe" `
+                -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$canaryScriptPath`" -DeployPath `"$DeployPath`""
+            $canaryStartupTrigger = New-ScheduledTaskTrigger -AtStartup
+            $canaryRecurringTrigger = New-ScheduledTaskTrigger `
+                -Once `
+                -At ((Get-Date).AddMinutes(3)) `
+                -RepetitionInterval (New-TimeSpan -Minutes $CanaryIntervalMinutes) `
+                -RepetitionDuration (New-TimeSpan -Days 3650)
+            $canarySettings = New-ScheduledTaskSettingsSet `
+                -StartWhenAvailable `
+                -AllowStartIfOnBatteries `
+                -DontStopIfGoingOnBatteries `
+                -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+            $canaryTask = New-ScheduledTask `
+                -Action $canaryAction `
+                -Trigger @($canaryStartupTrigger, $canaryRecurringTrigger) `
+                -Principal $principal `
+                -Settings $canarySettings `
+                -Description "Run the isolated Discord production canary on startup and periodic schedule."
+            Register-ScheduledTask -TaskName $CanaryTaskName -InputObject $canaryTask -Force | Out-Null
+            $result.details.actions_taken += "registered_canary_task:$CanaryTaskName"
         } catch {
             $message = $_.Exception.Message
             if ($message -and $message -like "*Access is denied*") {
@@ -364,9 +427,11 @@ try {
         $startupProbe = Get-RecoveryTaskRecord -TaskName $StartupTaskName -ScriptNeedle "startup-recover.ps1"
         $watchdogProbe = Get-RecoveryTaskRecord -TaskName $WatchdogTaskName -ScriptNeedle "runtime-watchdog.ps1"
         $promotionsProbe = Get-RecoveryTaskRecord -TaskName $PromotionsTaskName -ScriptNeedle "promotions-watch.ps1"
+        $canaryProbe = Get-RecoveryTaskRecord -TaskName $CanaryTaskName -ScriptNeedle "discord-canary-runner.ps1"
         $result.details.startup_task_probe = $startupProbe
         $result.details.watchdog_task_probe = $watchdogProbe
         $result.details.promotions_task_probe = $promotionsProbe
+        $result.details.canary_task_probe = $canaryProbe
 
         $result.checks.startup_task_registered = [bool](
             $startupProbe.passes -or $startupProbe.degraded_pass
@@ -377,12 +442,16 @@ try {
         $result.checks.promotions_task_registered = [bool](
             $promotionsProbe.passes -or $promotionsProbe.degraded_pass
         )
+        $result.checks.canary_task_registered = [bool](
+            $canaryProbe.passes -or $canaryProbe.degraded_pass
+        )
 
         if ($registrationAccessDenied) {
             $missingTasks = @()
             if (-not $startupProbe.exists) { $missingTasks += $StartupTaskName }
             if (-not $watchdogProbe.exists) { $missingTasks += $WatchdogTaskName }
             if (-not $promotionsProbe.exists) { $missingTasks += $PromotionsTaskName }
+            if (-not $canaryProbe.exists) { $missingTasks += $CanaryTaskName }
 
             if ($missingTasks.Count -gt 0) {
                 $result.details.bootstrap_required = $true
@@ -404,6 +473,7 @@ try {
     $result.status = if (
         $result.checks.recovery_tasks_registered -and
         $result.checks.promotions_task_registered -and
+        $result.checks.canary_task_registered -and
         $result.checks.legacy_task_disabled
     ) {
         "success"

@@ -292,7 +292,90 @@ catch {
     Add-Check -Name "rbac_owner" -Status "warn" -Message "Could not check RBAC users"
 }
 
-# 8. Disk Space
+# 8. Discord production canary
+try {
+    $canaryReceiptPath = Join-Path $DeploymentPath "data\discord-canary\last-run.json"
+    $canaryStatePath = Join-Path $DeploymentPath "data\discord-canary\state.json"
+    $intervalRaw = Get-EnvValueFromFile -Path $envPath -Key "WINDOWS_DISCORD_CANARY_INTERVAL_MINUTES"
+    $staleRaw = Get-EnvValueFromFile -Path $envPath -Key "WINDOWS_DISCORD_CANARY_STALE_MINUTES"
+
+    $intervalMinutes = 360
+    $parsedInterval = 0
+    if ([int]::TryParse($intervalRaw, [ref]$parsedInterval) -and $parsedInterval -gt 0) {
+        $intervalMinutes = $parsedInterval
+    }
+
+    $staleMinutes = [Math]::Max(($intervalMinutes * 2), ($intervalMinutes + 30))
+    $parsedStale = 0
+    if ([int]::TryParse($staleRaw, [ref]$parsedStale) -and $parsedStale -gt 0) {
+        $staleMinutes = $parsedStale
+    }
+
+    if (-not (Test-Path $canaryReceiptPath)) {
+        Add-Check -Name "discord_canary" -Status "warn" -Message "No Discord canary receipt found at $canaryReceiptPath"
+    }
+    else {
+        $canaryReceipt = Get-Content $canaryReceiptPath -Raw | ConvertFrom-Json
+        $canaryState = $null
+        if (Test-Path $canaryStatePath) {
+            $canaryState = Get-Content $canaryStatePath -Raw | ConvertFrom-Json
+        }
+
+        $status = ([string]$canaryReceipt.status)
+        $cleanupStatus = $(if ($canaryReceipt.discord_result) { [string]$canaryReceipt.discord_result.cleanup_status } else { "" })
+        $generatedAtRaw = ([string]$canaryReceipt.generated_at)
+        $lastSuccessRaw = if ($canaryState) { [string]$canaryState.last_success_at } else { "" }
+
+        $generatedAt = $null
+        if ($generatedAtRaw) {
+            try {
+                $generatedAt = [DateTimeOffset]::Parse($generatedAtRaw)
+            }
+            catch {
+                $generatedAt = $null
+            }
+        }
+
+        $lastSuccess = $null
+        if ($lastSuccessRaw) {
+            try {
+                $lastSuccess = [DateTimeOffset]::Parse($lastSuccessRaw)
+            }
+            catch {
+                $lastSuccess = $null
+            }
+        }
+
+        $now = [DateTimeOffset]::UtcNow
+        $referenceTime = if ($lastSuccess) { $lastSuccess } else { $generatedAt }
+        $isStale = $true
+        if ($referenceTime) {
+            $ageMinutes = ($now - $referenceTime).TotalMinutes
+            $isStale = ($ageMinutes -gt $staleMinutes)
+        }
+
+        if ($isStale) {
+            Add-Check -Name "discord_canary" -Status "warn" -Message "Discord canary is stale or has never succeeded (status=$status, stale_threshold_minutes=$staleMinutes)"
+        }
+        elseif ($status -eq "success" -and ($cleanupStatus -eq "" -or $cleanupStatus -eq "cleaned")) {
+            Add-Check -Name "discord_canary" -Status "pass" -Message "Discord canary passed recently and cleaned its synthetic channel"
+        }
+        elseif ($status -eq "cleanup_degraded") {
+            Add-Check -Name "discord_canary" -Status "warn" -Message "Discord canary passed but cleanup was degraded (cleanup_status=$cleanupStatus)"
+        }
+        elseif ($status -eq "lease_contended") {
+            Add-Check -Name "discord_canary" -Status "warn" -Message "Discord canary lease was contended; it will retry on the next scheduled interval"
+        }
+        else {
+            Add-Check -Name "discord_canary" -Status "warn" -Message "Discord canary last status was $status"
+        }
+    }
+}
+catch {
+    Add-Check -Name "discord_canary" -Status "warn" -Message "Could not check Discord canary status"
+}
+
+# 9. Disk Space
 try {
     $drive = Get-PSDrive C
     $freeGB = [math]::Round($drive.Free / 1GB, 1)
@@ -310,7 +393,7 @@ catch {
     Add-Check -Name "disk_space" -Status "warn" -Message "Could not check disk space"
 }
 
-# 9. Docker Credential Store
+# 10. Docker Credential Store
 try {
     $dockerConfig = Get-Content "$env:USERPROFILE\.docker\config.json" | ConvertFrom-Json
     if ($dockerConfig.credsStore -eq "desktop") {

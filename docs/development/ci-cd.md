@@ -206,6 +206,7 @@ Weekly or manual GitHub runs remain the independent heavy-verification cadence f
 | `docs.yml` (`Deploy Documentation`) | push to `main` when docs-site sources change, or manual dispatch | Build strict MkDocs output and republish GitHub Pages without rerunning docs-contract checks |
 | `codeql.yml` (`CodeQL`) | weekly schedule or manual dispatch | Independent GitHub-native code scanning, kept off the PR fast path |
 | Windows local promotions worker (`scripts/windows/promotions-runner.ps1` + `scripts/windows/promotions-watch.ps1`) | successful Windows deployment receipt for `main` SHA | Validate deployment receipt, build merge intelligence, generate/publish CGS blog, and auto-increment GitHub release |
+| Windows Discord production canary (`scripts/windows/discord-canary-runner.ps1`) | startup plus every 6 hours by default on the Windows host | Run the isolated full-parity Discord E2E canary against the production bot, persist receipts/logs, and degrade host health on failure without rolling back deploys |
 
 Windows promotion gates:
 
@@ -266,9 +267,31 @@ Expected `checks` in the JSON output:
 - `startup_task_registered=true`
 - `watchdog_task_registered=true`
 - `promotions_task_registered=true`
+- `canary_task_registered=true`
 - `all_tasks_registered=true`
 
-#### 4. Verify announcement notification path
+#### 4. Run the Windows Discord production canary manually
+
+```powershell
+pwsh -File .\scripts\windows\discord-canary-runner.ps1 `
+  -DeployPath "C:\ZetherionAI" `
+  -OutputPath "C:\ZetherionAI\data\discord-canary\manual-run.json" `
+  -StatePath "C:\ZetherionAI\data\discord-canary\state.json" `
+  -LogPath "C:\ZetherionAI\data\discord-canary\manual-run.log" `
+  -ResultPath "C:\ZetherionAI\data\discord-canary\manual-discord-result.json"
+
+Get-Content "C:\ZetherionAI\data\discord-canary\manual-run.json"
+```
+
+Expected outcomes:
+- `status=success`: canary ran and cleaned its isolated synthetic channel
+- `status=cleanup_degraded`: test execution passed, but channel or synthetic artifact cleanup needs attention
+- `status=lease_contended`: another active canary or E2E run holds the target-bot lease; the scheduled task should retry later
+- `status=failed|timeout|runner_error`: production-parity canary failed and should surface in host verification plus announcements
+
+The host verifier reads `C:\ZetherionAI\data\discord-canary\last-run.json` and `state.json`, treating stale or failing canaries as degraded health rather than deploy rollback triggers.
+
+#### 5. Verify announcement notification path
 
 ```powershell
 python .\scripts\windows\announcement-emit.py `
@@ -288,7 +311,7 @@ Expected statuses:
 - `dry_run` or `deduped`: secret resolution and idempotency wiring are working.
 - `queued_non_blocking`: API path was unavailable and event was safely spooled for retry.
 
-#### 5. Troubleshoot CGS publish contract and promotions pipeline
+#### 6. Troubleshoot CGS publish contract and promotions pipeline
 
 ```powershell
 pwsh -File .\scripts\windows\promotions-runner.ps1 `
@@ -311,7 +334,7 @@ Use these artifacts to diagnose failures:
 - `C:\ZetherionAI\data\promotions\state.json`
 - `C:\ZetherionAI\data\promotions\queue.json`
 
-#### 6. Promotions-task strict mode
+#### 7. Promotions-task strict mode
 
 `Deploy Windows` supports a strict gate toggle:
 - `WINDOWS_REQUIRE_PROMOTIONS_TASK=false` (default): missing promotions task is warning-only.

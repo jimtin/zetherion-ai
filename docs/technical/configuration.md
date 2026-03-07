@@ -293,7 +293,21 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `ANNOUNCEMENT_EMIT_ENABLED` | `false` | Windows deploy/promotions announcement emit toggle |
 | `ANNOUNCEMENT_API_URL` | `http://127.0.0.1:8080/announcements/events` | Internal Skills announcement event endpoint used by Windows scripts |
 | `ANNOUNCEMENT_API_SECRET` | unset | Shared secret for `X-API-Secret` when Windows emits internal announcement events |
-| `ANNOUNCEMENT_TARGET_USER_ID` | unset | Announcement recipient user id for Windows deploy/promotions events |
+| `ANNOUNCEMENT_TARGET_USER_ID` | unset | Announcement recipient user id for Windows deploy/promotions and Discord canary events |
+| `WINDOWS_DISCORD_CANARY_INTERVAL_MINUTES` | `360` | Scheduled Discord production canary cadence on the Windows host |
+| `WINDOWS_DISCORD_CANARY_STALE_MINUTES` | derived | Optional host-verifier stale threshold override for Discord canary receipts |
+| `WINDOWS_DISCORD_CANARY_ENABLED` | inherits `DISCORD_E2E_ENABLED` | Optional override for enabling the Windows Discord canary wrapper |
+| `WINDOWS_DISCORD_CANARY_PROVIDER` | inherits `DISCORD_E2E_PROVIDER` | Provider used by the Windows Discord canary (`groq` or `local`) |
+| `WINDOWS_DISCORD_CANARY_TEST_BOT_TOKEN` | inherits `TEST_DISCORD_BOT_TOKEN` | Synthetic Discord test principal token used to drive the canary conversation |
+| `WINDOWS_DISCORD_CANARY_TARGET_TOKEN` | inherits `DISCORD_TOKEN` | Production bot token targeted by the Windows canary wrapper |
+| `WINDOWS_DISCORD_CANARY_TARGET_BOT_ID` | inherits `TEST_DISCORD_TARGET_BOT_ID` | Optional explicit production bot user id for target-lease enforcement |
+| `WINDOWS_DISCORD_CANARY_GUILD_ID` | inherits `TEST_DISCORD_GUILD_ID` | Guild used for isolated Windows canary channels |
+| `WINDOWS_DISCORD_CANARY_PARENT_CHANNEL_ID` | inherits `TEST_DISCORD_E2E_PARENT_CHANNEL_ID` | Optional parent channel for isolated canary threads/channels |
+| `WINDOWS_DISCORD_CANARY_CATEGORY_ID` | inherits `TEST_DISCORD_E2E_CATEGORY_ID` | Optional dedicated canary category id |
+| `WINDOWS_DISCORD_CANARY_CATEGORY_NAME` | inherits `TEST_DISCORD_E2E_CATEGORY_NAME` | Optional category name used if the category id is not pre-provisioned |
+| `WINDOWS_DISCORD_CANARY_CHANNEL_PREFIX` | `zeth-canary` | Prefix for isolated Windows canary channels |
+| `WINDOWS_DISCORD_CANARY_TTL_MINUTES` | `60` | Lease/channel TTL for Windows canary runs before janitor cleanup |
+| `WINDOWS_DISCORD_CANARY_ALLOWED_AUTHOR_IDS` | inherits `DISCORD_E2E_ALLOWED_AUTHOR_IDS` | Synthetic author allowlist for narrow rate-limit bypass during canary runs |
 | `DISCORD_DM_NOTIFY_ENABLED` | legacy | Legacy alias fallback for announcement enablement (kept for compatibility) |
 | `DISCORD_NOTIFY_USER_ID` | legacy | Legacy alias fallback for announcement target user id (kept for compatibility) |
 | `ANALYTICS_EVENT_RETENTION_DAYS` | `90` | Retention window for raw web events |

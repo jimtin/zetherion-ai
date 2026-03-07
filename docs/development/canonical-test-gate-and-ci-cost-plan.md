@@ -97,8 +97,9 @@ The active PR contract today is:
 3. PR fast path is limited to `detect-changes`, `risk-classifier`, `lint`, `secret-scan`, `pipeline-contract`, `zetherion-boundary-check`, `required-e2e-gate`, `CI Summary`, and `CI Failure Attribution`
 4. heavy local-equivalent jobs such as unit, type-check, security, docs-contract, and docker-build are deferred off PRs to push or weekly/manual verification runs
 5. weekly/manual runs remain the place for the heaviest independent verification lanes, including CodeQL and the broader heavy-job graph on `ci.yml`
-6. documentation deployment now runs on `main` only when docs-site sources change or via manual dispatch, and it no longer reruns docs-contract validation already enforced elsewhere
-7. in-progress runs are canceled on new commits via `concurrency`
+6. the Windows host runs an isolated Discord production canary on startup and every 6 hours by default, using the same blessed wrapper contract but a synthetic test principal and isolated canary channels
+7. documentation deployment now runs on `main` only when docs-site sources change or via manual dispatch, and it no longer reruns docs-contract validation already enforced elsewhere
+8. in-progress runs are canceled on new commits via `concurrency`
 
 ## Failure Attribution
 

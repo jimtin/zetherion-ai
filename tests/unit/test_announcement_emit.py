@@ -309,3 +309,51 @@ def test_flush_outbox_replays_queued_events(announcement_module, monkeypatch, ca
     assert second_payload["flushed"] == 1
     assert second_payload["pending"] == 0
     assert list(outbox_dir.glob("*.json")) == []
+
+
+def test_discord_canary_failure_maps_to_health_category(
+    announcement_module, monkeypatch, capsys, tmp_path
+):
+    monkeypatch.setattr(
+        announcement_module,
+        "_load_promotions_secrets",
+        lambda _path: (
+            {
+                "ANNOUNCEMENT_API_SECRET": "api-secret",
+                "ANNOUNCEMENT_EMIT_ENABLED": "true",
+                "ANNOUNCEMENT_TARGET_USER_ID": "606",
+            },
+            None,
+        ),
+    )
+
+    captured = {}
+
+    def fake_attempt_emit(*, api_url, api_secret, request_payload):
+        captured["request_payload"] = request_payload
+        return True, "accepted"
+
+    monkeypatch.setattr(announcement_module, "_attempt_emit", fake_attempt_emit)
+
+    code, payload = _run_main(
+        announcement_module,
+        monkeypatch,
+        capsys,
+        [
+            "--event",
+            "discord_canary",
+            "--sha",
+            "abc1234",
+            "--status",
+            "failed",
+            "--secrets-path",
+            str(tmp_path / "unused.bin"),
+            "--state-path",
+            str(tmp_path / "state.json"),
+        ],
+    )
+
+    assert code == 0
+    assert payload["status"] == "sent"
+    assert captured["request_payload"]["category"] == "health.discord_canary"
+    assert captured["request_payload"]["severity"] == "critical"
