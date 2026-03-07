@@ -155,13 +155,13 @@ class OwnerPersonalIntelligenceStorage:
         detail_value = self._encrypt_text(data["detail"])
 
         if item.id is None:
-            sql = f"""  # nosec B608
+            sql = f"""
                 INSERT INTO {table}
                     (user_id, item_type, title_value, detail_value, status, due_at,
                      tags, metadata_json, source, external_ref, completed_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11)
                 RETURNING *
-            """
+            """  # nosec B608 - self._schema is regex-validated before interpolation
             args = (
                 data["user_id"],
                 data["item_type"],
@@ -176,7 +176,7 @@ class OwnerPersonalIntelligenceStorage:
                 data["completed_at"],
             )
         else:
-            sql = f"""  # nosec B608
+            sql = f"""
                 UPDATE {table}
                    SET item_type = $2,
                        title_value = $3,
@@ -191,7 +191,7 @@ class OwnerPersonalIntelligenceStorage:
                        updated_at = now()
                  WHERE id = $1 AND user_id = $12
                 RETURNING *
-            """
+            """  # nosec B608 - self._schema is regex-validated before interpolation
             args = (
                 item.id,
                 data["item_type"],
@@ -265,13 +265,13 @@ class OwnerPersonalIntelligenceStorage:
         detail_value = self._encrypt_text(data["detail"])
 
         if item.id is None:
-            sql = f"""  # nosec B608
+            sql = f"""
                 INSERT INTO {table}
                     (user_id, item_type, title_value, detail_value, status, source,
                      related_resource, priority, metadata_json, due_at, resolved_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11)
                 RETURNING *
-            """
+            """  # nosec B608 - self._schema is regex-validated before interpolation
             args = (
                 data["user_id"],
                 data["item_type"],
@@ -286,7 +286,7 @@ class OwnerPersonalIntelligenceStorage:
                 data["resolved_at"],
             )
         else:
-            sql = f"""  # nosec B608
+            sql = f"""
                 UPDATE {table}
                    SET item_type = $2,
                        title_value = $3,
@@ -301,7 +301,7 @@ class OwnerPersonalIntelligenceStorage:
                        updated_at = now()
                  WHERE id = $1 AND user_id = $12
                 RETURNING *
-            """
+            """  # nosec B608 - self._schema is regex-validated before interpolation
             args = (
                 item.id,
                 data["item_type"],
@@ -369,14 +369,14 @@ class OwnerPersonalIntelligenceStorage:
         """Resolve or dismiss a review item."""
         # self._schema is regex-validated before interpolation into SQL identifiers.
         table = f'"{self._schema}".personal_review_items'
-        sql = f"""  # nosec B608
+        sql = f"""
             UPDATE {table}
                SET status = $1,
                    resolved_at = now(),
                    updated_at = now()
              WHERE id = $2 AND user_id = $3
             RETURNING *
-        """
+        """  # nosec B608 - self._schema is regex-validated before interpolation
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(sql, status.value, review_item_id, user_id)
         if row is None:
