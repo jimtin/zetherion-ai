@@ -17,7 +17,9 @@ Authoritative exposure rule:
 - Autonomous merge execution route was added under `/service/ai/v1/internal/admin/tenants/{tenant_id}/automerge/execute` with trust-policy guards.
 - Internal trust-policy gating now enforces deny-by-default for sensitive namespaces and approval flow reuse for high-risk actions.
 - Worker operator control routes were added under `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*`
-  for node lifecycle operations (quarantine/unquarantine), job retry/cancel, and worker event auditing.
+  for node lifecycle operations (quarantine/unquarantine), delegation grants, job retry/cancel, and worker event auditing.
+- Worker delegation grants were added under `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*`
+  to enforce TTL-scoped repo and Codex session access for sub-workers without widening datastore access.
 - Worker messaging grants were added under `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*`
   to enforce deny-by-default worker WhatsApp access with TTL-scoped per-node/per-chat exceptions.
 - Internal tenant provisioning retries are now idempotent on `cgs_tenant_id`, and the lifecycle response exposes `isolation_stage` plus `provisioning_status` so rollout state can be tracked during onboarding.

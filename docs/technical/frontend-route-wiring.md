@@ -68,6 +68,9 @@ This guide maps CGS `/service/ai/v1` routes to expected frontend flows.
 | Worker job retry | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/jobs/{job_id}/retry` | `POST` | Resets step to pending and requeues continuation |
 | Worker job cancel | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/jobs/{job_id}/cancel` | `POST` | Cancels running/queued job and blocks step |
 | Worker event feed | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/events` | `GET` | Supports `node_id`, `job_id`, `limit` |
+| Worker delegation grant list | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/delegation/grants` | `GET` | Requires `node_id`; supports `resource_scope_prefix`, `limit` |
+| Worker delegation grant upsert | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/delegation/grants` | `PUT` | TTL-limited repo/Codex grant; may require approval (`AI_APPROVAL_REQUIRED`) |
+| Worker delegation grant revoke | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/delegation/grants/{grant_id}` | `DELETE` | Immediate revoke; may require approval (`AI_APPROVAL_REQUIRED`) |
 | Worker messaging grant list | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/messaging/grants` | `GET` | Supports `node_id`, `provider`, `chat_id`, `include_expired`, `include_revoked`, `limit` |
 | Worker messaging grant upsert | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}` | `PUT` | TTL-limited per-chat read/send grant; may require approval (`AI_APPROVAL_REQUIRED`) |
 | Worker messaging grant revoke | `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/messaging/grants/{grant_id}` | `DELETE` | Immediate revoke; may require approval (`AI_APPROVAL_REQUIRED`) |

@@ -197,6 +197,9 @@ Messaging admin routes (local-bridge first):
 - `POST /workers/jobs/{job_id}/retry`
 - `POST /workers/jobs/{job_id}/cancel`
 - `GET /workers/events`
+- `GET /workers/delegation/grants`
+- `PUT /workers/nodes/{node_id}/delegation/grants`
+- `DELETE /workers/delegation/grants/{grant_id}`
 - `GET /workers/messaging/grants`
 - `PUT /workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}`
 - `DELETE /workers/messaging/grants/{grant_id}`
@@ -210,6 +213,7 @@ Security rules:
 - OAuth app read/write additionally require `cgs:zetherion-secrets-admin`.
 - OAuth app writes and mailbox disconnects require approved `change_ticket_id`.
 - Messaging send may return `AI_APPROVAL_REQUIRED` and requires approved `change_ticket_id` when policy is not explicitly elevated.
+- Worker delegation grant upsert/revoke may return `AI_APPROVAL_REQUIRED` and require approved `change_ticket_id` unless explicitly elevated.
 - Worker messaging grant upsert/revoke may return `AI_APPROVAL_REQUIRED` and require approved `change_ticket_id` unless explicitly elevated.
 - Automerge execute requires trust-policy allow (`automerge.execute`) including policy enabled + branch/risk guard flags.
 

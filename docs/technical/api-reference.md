@@ -387,6 +387,18 @@ Cancel a worker job and mark the associated step/plan blocked/failed.
 
 List worker lifecycle/job events (optional filters: `node_id`, `job_id`, `limit`).
 
+### GET /admin/tenants/{tenant_id}/workers/delegation/grants
+
+List scoped worker delegation grants for one node (filters: `node_id`, `resource_scope_prefix`, `limit`).
+
+### PUT /admin/tenants/{tenant_id}/workers/nodes/{node_id}/delegation/grants
+
+Create/update one TTL-limited worker delegation grant for a specific node/resource scope with explicit permissions such as `repo.patch`, `repo.commit`, `repo.pr.open`, or `codex.session.control`.
+
+### DELETE /admin/tenants/{tenant_id}/workers/delegation/grants/{grant_id}
+
+Revoke one worker delegation grant immediately.
+
 ### GET /admin/tenants/{tenant_id}/workers/messaging/grants
 
 List scoped worker messaging grants (filters: `node_id`, `provider`, `chat_id`,

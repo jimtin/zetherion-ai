@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Segment 11 Worker Delegation Hardening and Codex Control (2026-03-07)
+
+- Impacted capability IDs:
+  - `worker.delegation.control-plane-routes`
+  - `worker.delegation.trust-policy-approval-gate`
+  - `worker.delegation.cgs-route-contract`
+- Impacted workflow scenario IDs:
+  - `isolation.segment11.manage-worker-delegation-grants-via-skills-admin`
+  - `isolation.segment11.manage-worker-delegation-grants-via-cgs-admin`
+  - `isolation.segment11.require-two-person-approval-for-worker-delegation-grants`
+- Added Skills and CGS internal-admin route surfaces for listing, upserting, and revoking worker delegation grants, using scoped resource payloads instead of path-encoded repo or Codex identifiers.
+- Added explicit `worker.delegation.grant` trust-policy gating so high-risk worker repo/Codex grant changes reuse the same approval-required and two-person workflow as other sensitive worker mutations.
+- Updated worker control route tests, OpenAPI, and operator-facing route documentation so delegation grants are covered by the existing docs bundle and validation suites before push.
+
 ### Added - Segment 14 Legacy Cutover and Safety Cleanup (2026-03-07)
 
 - Impacted capability IDs:

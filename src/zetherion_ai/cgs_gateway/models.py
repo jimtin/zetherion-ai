@@ -306,6 +306,25 @@ class TenantAdminWorkerMessagingGrantDeleteRequest(BaseModel):
     change_ticket_id: str | None = None
 
 
+class TenantAdminWorkerDelegationGrantPutRequest(BaseModel):
+    """Create/update scoped worker delegation grant for one node/resource."""
+
+    resource_scope: str = Field(min_length=1, max_length=1024)
+    permissions: list[str] = Field(default_factory=list)
+    ttl_seconds: int = Field(default=3600, ge=60, le=1_209_600)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    explicitly_elevated: bool = False
+    change_ticket_id: str | None = None
+
+
+class TenantAdminWorkerDelegationGrantDeleteRequest(BaseModel):
+    """Revoke one worker delegation grant."""
+
+    reason: str | None = Field(default=None, max_length=500)
+    explicitly_elevated: bool = False
+    change_ticket_id: str | None = None
+
+
 class TenantAdminAutomergeExecuteRequest(BaseModel):
     """Execute guarded autonomous PR orchestration for one tenant."""
 

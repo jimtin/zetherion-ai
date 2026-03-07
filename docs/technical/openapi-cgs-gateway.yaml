@@ -1239,6 +1239,69 @@ paths:
       responses:
         '200':
           description: Tenant worker event list envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/delegation/grants:
+    get:
+      summary: List worker delegation grants for one tenant node
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: node_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: resource_scope_prefix
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+      responses:
+        '200':
+          description: Worker delegation grant list envelope
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/delegation/grants:
+    put:
+      summary: Create or rotate one worker delegation grant for a node/resource scope
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: node_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWorkerDelegationGrantPutRequest'
+      responses:
+        '200':
+          description: Worker delegation grant upserted
+  /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/delegation/grants/{grant_id}:
+    delete:
+      summary: Revoke one worker delegation grant
+      parameters:
+        - $ref: '#/components/parameters/TenantIdPath'
+        - name: grant_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminWorkerDelegationGrantDeleteRequest'
+      responses:
+        '200':
+          description: Worker delegation grant revoked
   /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/messaging/grants:
     get:
       summary: List worker messaging grants for one tenant
@@ -2055,6 +2118,44 @@ components:
           type: string
           maxLength: 500
           nullable: true
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminWorkerDelegationGrantPutRequest:
+      type: object
+      properties:
+        resource_scope:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        permissions:
+          type: array
+          items:
+            type: string
+        ttl_seconds:
+          type: integer
+          minimum: 60
+          maximum: 1209600
+          default: 3600
+        metadata:
+          type: object
+          additionalProperties: true
+        explicitly_elevated:
+          type: boolean
+          default: false
+        change_ticket_id:
+          type: string
+          nullable: true
+    AdminWorkerDelegationGrantDeleteRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+          nullable: true
+        explicitly_elevated:
+          type: boolean
+          default: false
         change_ticket_id:
           type: string
           nullable: true

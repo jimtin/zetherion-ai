@@ -3485,6 +3485,160 @@ class SkillsServer:
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=400)
 
+    async def handle_tenant_list_worker_delegation_grants(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        try:
+            self._admin_actor(request)
+            limit = self._parse_int(request.query.get("limit", 200), "limit")
+            grants = await self._tenant_admin_manager.list_worker_delegation_grants(
+                tenant_id=tenant_id,
+                node_id=request.query.get("node_id") or "",
+                resource_scope_prefix=request.query.get("resource_scope_prefix"),
+            )
+            return web.json_response(
+                {
+                    "ok": True,
+                    "grants": [_serialise_record(dict(grant)) for grant in list(grants)[:limit]],
+                }
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+
+    async def handle_tenant_put_worker_delegation_grant(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        node_id = request.match_info["node_id"]
+        try:
+            actor = self._admin_actor(request)
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                raise ValueError("JSON body must be an object")
+            metadata = payload.get("metadata")
+            if metadata is not None and not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object when provided")
+            explicitly_elevated = self._parse_bool(
+                payload.get("explicitly_elevated"),
+                "explicitly_elevated",
+                default=False,
+            )
+            decision = self._trust_policy_evaluator.evaluate(
+                tenant_id=tenant_id,
+                action="worker.delegation.grant",
+                context={
+                    "method": "PUT",
+                    "subpath": f"/workers/nodes/{node_id}/delegation/grants",
+                    "explicitly_elevated": explicitly_elevated,
+                },
+            )
+            if not decision.allowed:
+                return web.json_response(
+                    self._policy_error_payload(decision),
+                    status=decision.status,
+                )
+            grant = await self._tenant_admin_manager.put_worker_delegation_grant(
+                tenant_id=tenant_id,
+                node_id=node_id,
+                resource_scope=str(payload.get("resource_scope") or "").strip(),
+                permissions=list(payload.get("permissions") or []),
+                ttl_seconds=self._parse_int(payload.get("ttl_seconds", 3600), "ttl_seconds"),
+                metadata=metadata if isinstance(metadata, dict) else None,
+                actor=actor,
+            )
+            await self._record_security_event(
+                tenant_id=tenant_id,
+                event_type="worker_delegation_grant_upserted",
+                severity="medium",
+                action="worker.delegation.grant",
+                source="skills-admin",
+                payload={
+                    "grant_id": str(grant.get("grant_id") or ""),
+                    "node_id": str(grant.get("node_id") or node_id),
+                    "resource_scope": str(grant.get("resource_scope") or ""),
+                    "permissions": list(grant.get("permissions") or []),
+                },
+            )
+            return web.json_response({"ok": True, "grant": _serialise_record(grant)})
+        except JSONDecodeError:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+        except ValueError as exc:
+            message = str(exc)
+            status = 404 if "not found" in message.lower() else 400
+            return web.json_response({"error": message}, status=status)
+
+    async def handle_tenant_revoke_worker_delegation_grant(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        if self._tenant_admin_manager is None:
+            return web.json_response({"error": "Tenant admin is not configured"}, status=501)
+        tenant_id = request.match_info["tenant_id"]
+        grant_id = request.match_info["grant_id"]
+        try:
+            actor = self._admin_actor(request)
+            payload: dict[str, Any] = {}
+            raw = await request.text()
+            if raw.strip():
+                try:
+                    parsed = json.loads(raw)
+                except Exception as exc:
+                    raise ValueError("Invalid JSON body") from exc
+                if not isinstance(parsed, dict):
+                    raise ValueError("Invalid JSON body")
+                payload = parsed
+            explicitly_elevated = self._parse_bool(
+                payload.get("explicitly_elevated"),
+                "explicitly_elevated",
+                default=False,
+            )
+            decision = self._trust_policy_evaluator.evaluate(
+                tenant_id=tenant_id,
+                action="worker.delegation.grant",
+                context={
+                    "method": "DELETE",
+                    "subpath": f"/workers/delegation/grants/{grant_id}",
+                    "explicitly_elevated": explicitly_elevated,
+                },
+            )
+            if not decision.allowed:
+                return web.json_response(
+                    self._policy_error_payload(decision),
+                    status=decision.status,
+                )
+            reason = str(payload.get("reason") or "").strip() or None
+            revoked = await self._tenant_admin_manager.revoke_worker_delegation_grant(
+                tenant_id=tenant_id,
+                grant_id=grant_id,
+                actor=actor,
+                reason=reason,
+            )
+            await self._record_security_event(
+                tenant_id=tenant_id,
+                event_type="worker_delegation_grant_revoked",
+                severity="medium",
+                action="worker.delegation.grant",
+                source="skills-admin",
+                payload={
+                    "grant_id": str(revoked.get("grant_id") or grant_id),
+                    "node_id": str(revoked.get("node_id") or ""),
+                    "resource_scope": str(revoked.get("resource_scope") or ""),
+                    "idempotent": bool(revoked.get("idempotent")),
+                },
+            )
+            return web.json_response({"ok": True, "grant": _serialise_record(revoked)})
+        except ValueError as exc:
+            message = str(exc)
+            status = 404 if "not found" in message.lower() else 400
+            return web.json_response({"error": message}, status=status)
+
     async def handle_tenant_list_worker_messaging_grants(
         self,
         request: web.Request,
@@ -4364,6 +4518,18 @@ class SkillsServer:
         app.router.add_get(
             tenant_prefix + "/workers/events",
             self.handle_tenant_list_worker_events,
+        )
+        app.router.add_get(
+            tenant_prefix + "/workers/delegation/grants",
+            self.handle_tenant_list_worker_delegation_grants,
+        )
+        app.router.add_put(
+            tenant_prefix + "/workers/nodes/{node_id}/delegation/grants",
+            self.handle_tenant_put_worker_delegation_grant,
+        )
+        app.router.add_delete(
+            tenant_prefix + "/workers/delegation/grants/{grant_id}",
+            self.handle_tenant_revoke_worker_delegation_grant,
         )
         app.router.add_get(
             tenant_prefix + "/workers/messaging/grants",

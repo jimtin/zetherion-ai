@@ -1316,6 +1316,31 @@ async def test_internal_admin_worker_route_matrix_success_paths() -> None:
             return 200, {"ok": True, "job": {"job_id": "job-1", "status": "running"}}
         if method == "GET" and subpath == "/workers/events":
             return 200, {"ok": True, "events": [{"event_id": 1}]}
+        if method == "GET" and subpath == "/workers/delegation/grants":
+            return 200, {"ok": True, "grants": []}
+        if method == "PUT" and subpath == "/workers/nodes/node-1/delegation/grants":
+            return 200, {
+                "ok": True,
+                "grant": {
+                    "grant_id": "66666666-6666-6666-6666-666666666666",
+                    "node_id": "node-1",
+                    "resource_scope": (json_body or {}).get(
+                        "resource_scope", "repo:/workspace/repo"
+                    ),
+                    "permissions": (json_body or {}).get("permissions", []),
+                },
+            }
+        if (
+            method == "DELETE"
+            and subpath == "/workers/delegation/grants/66666666-6666-6666-6666-666666666666"
+        ):
+            return 200, {
+                "ok": True,
+                "grant": {
+                    "grant_id": "66666666-6666-6666-6666-666666666666",
+                    "idempotent": False,
+                },
+            }
         if method == "GET" and subpath == "/workers/messaging/grants":
             return 200, {"ok": True, "grants": []}
         if method == "PUT" and subpath == "/workers/nodes/node-1/messaging/grants/whatsapp/chat-1":
@@ -1413,6 +1438,29 @@ async def test_internal_admin_worker_route_matrix_success_paths() -> None:
         )
         assert events.status == 200
 
+        delegation_grants = await client.get(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/delegation/grants",
+            params={"node_id": "node-1", "resource_scope_prefix": "repo:*", "limit": "10"},
+        )
+        assert delegation_grants.status == 200
+
+        delegation_grant_upsert = await client.put(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/nodes/node-1/delegation/grants",
+            json={
+                "resource_scope": "repo:/workspace/repo",
+                "permissions": ["repo.patch", "repo.commit"],
+                "ttl_seconds": 3600,
+                "explicitly_elevated": True,
+            },
+        )
+        assert delegation_grant_upsert.status == 200
+
+        delegation_grant_revoke = await client.delete(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/delegation/grants/66666666-6666-6666-6666-666666666666",
+            json={"reason": "cleanup", "explicitly_elevated": True},
+        )
+        assert delegation_grant_revoke.status == 200
+
         grants = await client.get(
             "/service/ai/v1/internal/admin/tenants/tenant-a/workers/messaging/grants",
             params={"node_id": "node-1", "provider": "whatsapp", "chat_id": "chat-1"},
@@ -1458,6 +1506,15 @@ async def test_internal_admin_worker_route_matrix_success_paths() -> None:
     assert "/workers/jobs/job-1/retry" in forwarded_subpaths
     assert "/workers/jobs/job-1/cancel" in forwarded_subpaths
     assert "/workers/events" in forwarded_subpaths
+    assert "/workers/delegation/grants" in forwarded_subpaths
+    assert "/workers/nodes/node-1/delegation/grants" in forwarded_subpaths
+    delegation_call = next(
+        call
+        for call in app["cgs_skills_client"].request_tenant_admin_json.await_args_list
+        if call.kwargs.get("subpath") == "/workers/nodes/node-1/delegation/grants"
+    )
+    assert delegation_call.kwargs["json_body"]["permissions"] == ["repo.patch", "repo.commit"]
+    assert "/workers/delegation/grants/66666666-6666-6666-6666-666666666666" in forwarded_subpaths
     assert "/workers/messaging/grants" in forwarded_subpaths
     assert "/workers/nodes/node-1/messaging/grants/whatsapp/chat-1" in forwarded_subpaths
     grant_call = next(
@@ -1557,6 +1614,80 @@ async def test_internal_admin_worker_capability_update_returns_approval_required
     ]
     assert "/workers/nodes/node-1" in forwarded_subpaths
     assert "/workers/nodes/node-1/capabilities" not in forwarded_subpaths
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_worker_delegation_grant_returns_approval_required(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, storage, _ = _runtime_app(
+        principal_scopes=["cgs:internal", "cgs:zetherion-admin"],
+        principal_claims={"step_up": True, "allowed_tenants": ["tenant-a"]},
+    )
+    storage.get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "is_active": True,
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+        }
+    )
+    storage.create_admin_change = AsyncMock(
+        return_value={"change_id": "chg-worker-delegation-grant", "status": "pending"}
+    )
+
+    allow = TrustPolicyDecision(
+        action="tenant_admin.read",
+        action_class=TrustActionClass.READ,
+        outcome=TrustDecisionOutcome.ALLOW,
+        status=200,
+        code="AI_OK",
+        message="Allowed",
+        details={},
+    )
+    approval_required = TrustPolicyDecision(
+        action="worker.delegation.grant",
+        action_class=TrustActionClass.CRITICAL,
+        outcome=TrustDecisionOutcome.APPROVAL_REQUIRED,
+        status=409,
+        code="AI_APPROVAL_REQUIRED",
+        message="This action requires approval before apply",
+        details={},
+        requires_two_person=True,
+    )
+
+    def _evaluate(**kwargs: object) -> TrustPolicyDecision:
+        action = str(kwargs.get("action", ""))
+        if action == "worker.delegation.grant":
+            return approval_required
+        return allow
+
+    monkeypatch.setattr(
+        "zetherion_ai.cgs_gateway.routes.internal_admin._TRUST_POLICY_EVALUATOR",
+        SimpleNamespace(evaluate=_evaluate),
+    )
+
+    app["cgs_skills_client"].request_tenant_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+    app["cgs_skills_client"].request_admin_json = AsyncMock(return_value=(200, {"ok": True}))
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.put(
+            "/service/ai/v1/internal/admin/tenants/tenant-a/workers/nodes/node-1/delegation/grants",
+            json={
+                "resource_scope": "repo:/workspace/repo",
+                "permissions": ["repo.patch", "repo.commit"],
+                "ttl_seconds": 3600,
+            },
+        )
+        assert response.status == 409
+        body = await response.json()
+        assert body["error"]["code"] == "AI_APPROVAL_REQUIRED"
+        assert body["error"]["details"]["change_ticket_id"] == "chg-worker-delegation-grant"
+
+    forwarded_subpaths = [
+        call.kwargs.get("subpath")
+        for call in app["cgs_skills_client"].request_tenant_admin_json.await_args_list
+    ]
+    assert "/workers/nodes/node-1/delegation/grants" not in forwarded_subpaths
 
 
 @pytest.mark.asyncio
