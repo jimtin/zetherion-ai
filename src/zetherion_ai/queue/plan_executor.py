@@ -295,9 +295,11 @@ class PlanContinuationExecutor:
         if user_id is None:
             return
         try:
-            step = completion.get("step") if isinstance(completion.get("step"), dict) else {}
-            completed_plan = (
-                completion.get("plan") if isinstance(completion.get("plan"), dict) else plan
+            raw_step = completion.get("step")
+            step: dict[str, Any] = raw_step if isinstance(raw_step, dict) else {}
+            raw_completed_plan = completion.get("plan")
+            completed_plan: dict[str, Any] = (
+                raw_completed_plan if isinstance(raw_completed_plan, dict) else plan
             )
             await self._review_inbox.enqueue_overnight_summary(
                 user_id=user_id,
