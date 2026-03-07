@@ -12,6 +12,12 @@ from enum import StrEnum
 from zetherion_ai.logging import get_logger
 from zetherion_ai.personal.models import PersonalPolicy, PolicyDomain, PolicyMode
 from zetherion_ai.personal.storage import PersonalStorage
+from zetherion_ai.trust.runtime import (
+    record_personal_action_decision,
+    record_personal_action_feedback,
+    sync_personal_policy_to_trust,
+)
+from zetherion_ai.trust.storage import TrustStorage
 
 log = get_logger("zetherion_ai.personal.actions")
 
@@ -66,8 +72,9 @@ class ActionController:
     should be auto-executed, drafted, asked about, or blocked.
     """
 
-    def __init__(self, storage: PersonalStorage) -> None:
+    def __init__(self, storage: PersonalStorage, trust_storage: TrustStorage | None = None) -> None:
         self._storage = storage
+        self._trust_storage = trust_storage
 
     async def decide(self, user_id: int, domain: str, action: str) -> ActionDecision:
         """Determine how to handle an action based on policy and trust.
@@ -82,12 +89,17 @@ class ActionController:
         """
         policy = await self._storage.get_policy(user_id, domain, action)
 
-        def _finalize(decision: ActionDecision) -> ActionDecision:
+        async def _finalize(decision: ActionDecision) -> ActionDecision:
             _record_personal_action_shadow_decision(user_id=user_id, decision=decision)
+            await record_personal_action_decision(
+                self._trust_storage,
+                user_id=user_id,
+                decision=decision,
+            )
             return decision
 
         if policy is None:
-            return _finalize(
+            return await _finalize(
                 ActionDecision(
                     domain=domain,
                     action=action,
@@ -102,7 +114,7 @@ class ActionController:
         trust = policy.trust_score
 
         if mode == PolicyMode.NEVER.value:
-            return _finalize(
+            return await _finalize(
                 ActionDecision(
                     domain=domain,
                     action=action,
@@ -114,7 +126,7 @@ class ActionController:
             )
 
         if mode == PolicyMode.AUTO.value:
-            return _finalize(
+            return await _finalize(
                 ActionDecision(
                     domain=domain,
                     action=action,
@@ -127,7 +139,7 @@ class ActionController:
 
         if mode == PolicyMode.DRAFT.value:
             if trust >= AUTO_TRUST_THRESHOLD:
-                return _finalize(
+                return await _finalize(
                     ActionDecision(
                         domain=domain,
                         action=action,
@@ -140,7 +152,7 @@ class ActionController:
                         ),
                     )
                 )
-            return _finalize(
+            return await _finalize(
                 ActionDecision(
                     domain=domain,
                     action=action,
@@ -151,7 +163,7 @@ class ActionController:
                 )
             )
 
-        return _finalize(
+        return await _finalize(
             ActionDecision(
                 domain=domain,
                 action=action,
@@ -193,6 +205,14 @@ class ActionController:
                 delta=delta,
                 new_trust=new_score,
             )
+            policy = await self._storage.get_policy(user_id, domain, action)
+            if policy is not None:
+                await record_personal_action_feedback(
+                    self._trust_storage,
+                    policy=policy,
+                    outcome=outcome.value,
+                    metadata={"legacy_trust_score": new_score},
+                )
 
         return new_score
 
@@ -216,7 +236,10 @@ class ActionController:
             action=action,
             mode=mode,
         )
-        return await self._storage.upsert_policy(policy)
+        policy_id = await self._storage.upsert_policy(policy)
+        policy.id = policy_id
+        await sync_personal_policy_to_trust(self._trust_storage, policy=policy)
+        return policy_id
 
     async def reset_domain(self, user_id: int, domain: str) -> int:
         """Reset all trust scores for a domain to 0.0.
@@ -224,7 +247,11 @@ class ActionController:
         Returns:
             Number of policies affected.
         """
-        return await self._storage.reset_domain_trust(user_id, domain)
+        count = await self._storage.reset_domain_trust(user_id, domain)
+        if count > 0 and self._trust_storage is not None:
+            for policy in await self._storage.list_policies(user_id, domain=domain):
+                await sync_personal_policy_to_trust(self._trust_storage, policy=policy)
+        return count
 
 
 def _record_personal_action_shadow_decision(*, user_id: int, decision: ActionDecision) -> None:
@@ -240,7 +267,7 @@ def _record_personal_action_shadow_decision(*, user_id: int, decision: ActionDec
             metadata={"domain": decision.domain},
         )
         resource = TrustResource(
-            resource_id=f"{decision.domain}:{decision.action}",
+            resource_id=f"owner_personal:{decision.domain}:{decision.action}",
             resource_type="personal_action",
             metadata={"domain": decision.domain},
         )

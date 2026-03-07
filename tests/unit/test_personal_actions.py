@@ -692,3 +692,100 @@ class TestActionControllerShadowHook:
 
         assert decision.mode == PolicyMode.ASK.value
         assert recorded == [{"user_id": 12345, "decision": decision}]
+
+
+class TestActionControllerCanonicalTrust:
+    """Tests for canonical trust persistence hooks."""
+
+    @pytest.mark.asyncio
+    async def test_decide_records_canonical_trust_audit_when_configured(self, monkeypatch):
+        storage = _make_storage()
+        storage.get_policy.return_value = None
+        trust_storage = object()
+        controller = ActionController(storage, trust_storage=trust_storage)
+        recorded = AsyncMock()
+        monkeypatch.setattr(
+            "zetherion_ai.personal.actions.record_personal_action_decision",
+            recorded,
+        )
+
+        decision = await controller.decide(12345, "email", "auto_reply")
+
+        recorded.assert_awaited_once_with(
+            trust_storage,
+            user_id=12345,
+            decision=decision,
+        )
+
+    @pytest.mark.asyncio
+    async def test_record_outcome_syncs_canonical_feedback_when_configured(self, monkeypatch):
+        storage = _make_storage()
+        policy = _make_policy(mode="draft", trust_score=0.60)
+        storage.update_trust_score.return_value = 0.60
+        storage.get_policy.return_value = policy
+        trust_storage = object()
+        controller = ActionController(storage, trust_storage=trust_storage)
+        recorded = AsyncMock()
+        monkeypatch.setattr(
+            "zetherion_ai.personal.actions.record_personal_action_feedback",
+            recorded,
+        )
+
+        new_score = await controller.record_outcome(
+            12345,
+            "email",
+            "auto_reply_ack",
+            ActionOutcome.APPROVED,
+        )
+
+        assert new_score == 0.60
+        recorded.assert_awaited_once_with(
+            trust_storage,
+            policy=policy,
+            outcome="approved",
+            metadata={"legacy_trust_score": 0.60},
+        )
+
+    @pytest.mark.asyncio
+    async def test_set_mode_backfills_canonical_policy_when_configured(self, monkeypatch):
+        storage = _make_storage()
+        storage.upsert_policy.return_value = 91
+        trust_storage = object()
+        controller = ActionController(storage, trust_storage=trust_storage)
+        synced = AsyncMock()
+        monkeypatch.setattr(
+            "zetherion_ai.personal.actions.sync_personal_policy_to_trust",
+            synced,
+        )
+
+        policy_id = await controller.set_mode(12345, "email", "auto_reply_ack", PolicyMode.DRAFT)
+
+        assert policy_id == 91
+        synced.assert_awaited_once()
+        assert synced.await_args.args[0] is trust_storage
+        synced_policy = synced.await_args.kwargs["policy"]
+        assert synced_policy.id == 91
+        assert synced_policy.domain == PolicyDomain.EMAIL
+        assert synced_policy.action == "auto_reply_ack"
+
+    @pytest.mark.asyncio
+    async def test_reset_domain_syncs_existing_policies_when_configured(self, monkeypatch):
+        storage = _make_storage()
+        storage.reset_domain_trust.return_value = 2
+        storage.list_policies.return_value = [
+            _make_policy(domain=PolicyDomain.EMAIL, action="auto_reply_ack"),
+            _make_policy(domain=PolicyDomain.EMAIL, action="send_digest"),
+        ]
+        trust_storage = object()
+        controller = ActionController(storage, trust_storage=trust_storage)
+        synced = AsyncMock()
+        monkeypatch.setattr(
+            "zetherion_ai.personal.actions.sync_personal_policy_to_trust",
+            synced,
+        )
+
+        count = await controller.reset_domain(12345, "email")
+
+        assert count == 2
+        storage.list_policies.assert_awaited_once_with(12345, domain="email")
+        assert synced.await_count == 2

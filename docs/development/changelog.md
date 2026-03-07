@@ -13,6 +13,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Segment 10 Personal Action Migration (2026-03-07)
+
+- Impacted capability IDs:
+  - `trust.runtime.personal-action-canonical-audit`
+  - `trust.runtime.personal-policy-feedback-sync`
+  - `trust.runtime.routing-canonical-audit`
+  - `startup.skills-routing-trust-storage-wiring`
+- Impacted workflow scenario IDs:
+  - `isolation.segment10.audit-personal-action-decisions`
+  - `isolation.segment10.sync-personal-policy-feedback`
+  - `isolation.segment10.audit-email-task-calendar-routing`
+  - `isolation.segment10.bootstrap-routing-trust-storage`
+- Added `src/zetherion_ai/trust/runtime.py` so personal-action and routing decisions can be normalized into canonical trust audits without widening live autonomy behavior.
+- Updated `src/zetherion_ai/personal/actions.py` to persist canonical trust audits for decisions, record canonical feedback outcomes, and keep owner-personal policy/scorecard state synchronized with the legacy personal policy store.
+- Updated `src/zetherion_ai/routing/task_calendar_router.py`, `src/zetherion_ai/routing/email_router.py`, and `src/zetherion_ai/skills/server.py` so email/task/calendar routing decisions now emit canonical trust audits through the control-plane trust store while preserving the existing route behavior.
+- Added focused unit coverage for the new runtime helper mappings plus the personal-action and routing audit hooks to restore the repo-wide `unit-full` coverage floor locally before push.
+
 ### Added - Segment 8 Personal Intelligence Foundation (2026-03-07)
 
 - Impacted capability IDs:

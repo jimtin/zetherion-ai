@@ -4714,6 +4714,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             from zetherion_ai.routing.task_calendar_router import TaskCalendarRouter
             from zetherion_ai.security.content_pipeline import ContentSecurityPipeline
             from zetherion_ai.skills.gmail.accounts import GmailAccountManager
+            from zetherion_ai.trust.storage import TrustStorage
 
             integration_pool = await asyncpg.create_pool(
                 dsn=settings.postgres_dsn,
@@ -4774,10 +4775,21 @@ def main() -> None:  # pragma: no cover — CLI entry-point
                 )
 
             security_pipeline = ContentSecurityPipeline()
+            routing_trust_storage: TrustStorage | None = None
+            if runtime_db_pool is not None:
+                try:
+                    routing_trust_storage = TrustStorage(
+                        schema=settings.postgres_control_plane_schema
+                    )
+                    await routing_trust_storage.initialize(runtime_db_pool)
+                except Exception:
+                    routing_trust_storage = None
+                    log.exception("routing_trust_storage_init_failed")
             task_calendar_router = TaskCalendarRouter(
                 storage=integration_storage,
                 providers=provider_registry,
                 security=security_pipeline,
+                trust_storage=routing_trust_storage,
             )
 
             async def resolve_email_user_context(user_id: int) -> dict[str, Any]:
@@ -4812,6 +4824,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
                 local_extraction_required=settings.local_extraction_required,
                 user_context_resolver=resolve_email_user_context,
                 attachment_handling_enabled=False,
+                trust_storage=routing_trust_storage,
             )
             email_skill.configure(
                 router=email_router,
