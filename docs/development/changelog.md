@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment CI-00 Contract Alignment and Failure Baseline (2026-03-08)
+
+- Impacted capability IDs:
+  - `ci.contract.alignment`
+- Impacted workflow scenario IDs:
+  - `pr.docs_only_fast_path`
+  - `pr.receipt_sha_mismatch_rejected`
+- Added `.ci/ci_hardening_workstream_manifest.json` so the CI hardening rollout now has one source-controlled manifest for segment contract rules, capability IDs, workflow scenario IDs, and the current required-check inventory.
+- Added `docs/development/ci-hardening-baseline.md` to record the reviewed CI rejection classes and the current `main` ruleset checks before any workflow behavior changes land.
+- Updated `AGENTS.md`, `docs/development/canonical-test-gate-and-ci-cost-plan.md`, and `docs/development/ci-cd.md` so the documented contract matches the current receipt-driven PR model: heavy validation remains local and exact-SHA receipts are the proof path for required E2E.
+
 ### Changed - CI/CD Receipt Verification Pending-State Handling (2026-03-08)
 
 - Impacted capability IDs:

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the single supported local full-test procedure and the CI failure-attribution policy used to explain why a CI failure was or was not caught locally before deployment.
+This document defines the single supported local full-test procedure, the exact-SHA receipt proof model, and the CI failure-attribution policy used to explain why a CI failure was or was not caught locally before deployment. Segment-level rollout metadata now lives in `.ci/ci_hardening_workstream_manifest.json`, and the reviewed rejection baseline is recorded in `docs/development/ci-hardening-baseline.md`.
 
 ## Canonical Local Gate
 
@@ -85,13 +85,15 @@ The preflight is driven by the source-controlled manifest at `.ci/local_gate_man
 - targeted Qdrant/data-plane regression tests
 - targeted replay-store regression tests
 
-## CI Cost Strategy
+## Current GitHub Proof and Cost Contract
 
-The CI workflow applies maximum reduction defaults:
+The active PR contract today is:
 
-1. heavy jobs run in `schedule`/`workflow_dispatch` only
-2. docs and integration jobs are path-gated
-3. in-progress runs are canceled on new commits via `concurrency`
+1. current required branch checks are `CI Summary`, `Linting & Formatting`, `Pipeline Contract`, `Secret Scan (Gitleaks)`, and `Zetherion Boundary Check`
+2. required E2E on PRs is enforced by exact-SHA local receipt validation, not by running full E2E suites directly in GitHub Actions
+3. additional local-equivalent jobs such as unit, type-check, security, and docs-contract are still path-gated in GitHub until the PR fast-path rollout lands
+4. weekly/manual runs remain the place for the heaviest independent verification lanes
+5. in-progress runs are canceled on new commits via `concurrency`
 
 ## Failure Attribution
 

@@ -1,0 +1,146 @@
+{
+  "workstream": "segmented-ci-hardening-and-spend-reduction",
+  "contract_version": 1,
+  "recorded_at": "2026-03-08",
+  "status": "segment-0-baselined",
+  "segment_contract": {
+    "branch_prefix": "codex/seg-ci-",
+    "one_segment_per_pr": true,
+    "require_capability_ids": true,
+    "require_workflow_scenario_ids": true,
+    "require_local_deterministic_evidence_before_push": true,
+    "notes": [
+      "Current required checks remain in force until Segment 3 lands.",
+      "Workflow, receipt, or deploy-script changes require regression coverage in the same PR.",
+      "Windows deploy behavior changes require post-merge verification on the Windows host."
+    ]
+  },
+  "current_contract": {
+    "local_heavy_gate_entrypoint": "./scripts/test-full.sh",
+    "local_required_e2e_receipt_entrypoint": "bash scripts/local-required-e2e-receipt.sh",
+    "required_e2e_receipt_path": ".ci/e2e-receipt.json",
+    "github_required_check_inventory": [
+      "CI Summary",
+      "Linting & Formatting",
+      "Pipeline Contract",
+      "Secret Scan (Gitleaks)",
+      "Zetherion Boundary Check"
+    ],
+    "notes": [
+      "GitHub currently validates exact-SHA local E2E receipt evidence instead of executing the full E2E suites directly on PRs.",
+      "Additional path-gated local-equivalent jobs may still run on PRs until Segment 3 slims the GitHub fast path."
+    ]
+  },
+  "capabilities": [
+    "ci.contract.alignment",
+    "ci.local_preflight",
+    "ci.receipt.validation",
+    "ci.pr.fast_path",
+    "ci.weekly.independent_verification",
+    "deploy.windows.core_aux_health",
+    "ci.failure_attribution",
+    "ci.cost.observability"
+  ],
+  "workflow_scenarios": [
+    "pr.docs_only_fast_path",
+    "pr.shared_runtime_requires_unit_full",
+    "pr.vector_regression_pack_required",
+    "pr.receipt_script_change_requires_regression_pack",
+    "pr.receipt_sha_mismatch_rejected",
+    "deploy.aux_misconfig_degraded",
+    "deploy.core_failure_rollback",
+    "weekly.full_independent_verification"
+  ],
+  "segments": [
+    {
+      "id": "seg-ci-00-contract-alignment",
+      "title": "Contract Alignment and Failure Baseline",
+      "capability_ids": [
+        "ci.contract.alignment"
+      ],
+      "workflow_scenario_ids": [
+        "pr.docs_only_fast_path",
+        "pr.receipt_sha_mismatch_rejected"
+      ]
+    },
+    {
+      "id": "seg-ci-01-local-gate-expansion",
+      "title": "Local Gate Expansion for Shared Runtime Changes",
+      "capability_ids": [
+        "ci.local_preflight"
+      ],
+      "workflow_scenario_ids": [
+        "pr.shared_runtime_requires_unit_full",
+        "pr.vector_regression_pack_required"
+      ]
+    },
+    {
+      "id": "seg-ci-02-script-receipt-regressions",
+      "title": "Script and Receipt Regression Packs",
+      "capability_ids": [
+        "ci.receipt.validation",
+        "ci.failure_attribution"
+      ],
+      "workflow_scenario_ids": [
+        "pr.receipt_script_change_requires_regression_pack",
+        "pr.receipt_sha_mismatch_rejected"
+      ]
+    },
+    {
+      "id": "seg-ci-03-pr-fast-path",
+      "title": "PR CI Fast Path and Ruleset Alignment",
+      "capability_ids": [
+        "ci.pr.fast_path",
+        "ci.receipt.validation"
+      ],
+      "workflow_scenario_ids": [
+        "pr.docs_only_fast_path",
+        "pr.receipt_sha_mismatch_rejected"
+      ]
+    },
+    {
+      "id": "seg-ci-04-heavy-verification-offload",
+      "title": "Heavy Verification Offload and Workflow Noise Removal",
+      "capability_ids": [
+        "ci.weekly.independent_verification",
+        "ci.pr.fast_path"
+      ],
+      "workflow_scenario_ids": [
+        "weekly.full_independent_verification",
+        "pr.docs_only_fast_path"
+      ]
+    },
+    {
+      "id": "seg-ci-05-windows-core-vs-aux",
+      "title": "Windows Deploy Core vs Auxiliary Split",
+      "capability_ids": [
+        "deploy.windows.core_aux_health"
+      ],
+      "workflow_scenario_ids": [
+        "deploy.aux_misconfig_degraded",
+        "deploy.core_failure_rollback"
+      ]
+    },
+    {
+      "id": "seg-ci-06-cost-observability",
+      "title": "Cost Observability and Cache Hygiene",
+      "capability_ids": [
+        "ci.cost.observability"
+      ],
+      "workflow_scenario_ids": [
+        "weekly.full_independent_verification"
+      ]
+    },
+    {
+      "id": "seg-ci-07-closeout-enforcement",
+      "title": "Closeout and Policy Enforcement",
+      "capability_ids": [
+        "ci.contract.alignment",
+        "ci.failure_attribution"
+      ],
+      "workflow_scenario_ids": [
+        "pr.receipt_sha_mismatch_rejected"
+      ]
+    }
+  ]
+}
