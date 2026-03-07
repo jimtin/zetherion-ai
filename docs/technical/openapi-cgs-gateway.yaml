@@ -302,7 +302,7 @@ paths:
         '200':
           description: Tenant mapping list envelope
     post:
-      summary: Create or map tenant from internal lifecycle flow
+      summary: Create or reconcile tenant from internal lifecycle flow
       requestBody:
         required: true
         content:
@@ -310,8 +310,10 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateTenantRequest'
       responses:
+        '200':
+          description: Existing tenant mapping reconciled and returned
         '201':
-          description: Tenant mapping created
+          description: Tenant mapping created with default isolation-stage metadata
   /service/ai/v1/internal/tenants/{tenant_id}:
     patch:
       summary: Update tenant profile/configuration

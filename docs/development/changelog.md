@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Segment 4 CGS Provisioning and Reconciliation Orchestrator (2026-03-07)
+
+- Impacted capability IDs:
+  - `isolation.cgs.idempotent-provisioning`
+  - `isolation.cgs.mapping-isolation-stage`
+  - `isolation.cgs.reconciliation-candidates`
+- Impacted workflow scenario IDs:
+  - `isolation.segment4.cgs-create-tenant-idempotent-retry`
+  - `isolation.segment4.cgs-existing-tenant-reconcile-without-duplicate-upstream-create`
+  - `isolation.segment4.cgs-track-isolation-stage-and-provisioning-baseline`
+- Added `CGSTenantProvisioningOrchestrator` so repeated internal tenant create requests reuse existing mappings instead of creating duplicate upstream tenants.
+- Added first-class `isolation_stage` persistence plus provisioning/reconciliation metadata on `cgs_ai_tenants` to support staged upgrades of existing clients.
+- Added reconciliation candidate helpers and route/test coverage for idempotent create responses that now report `isolation_stage` and `provisioning_status`.
+
 ### Added - Segment 2 Data Plane Isolation Foundation (2026-03-06)
 
 - Impacted capability IDs:

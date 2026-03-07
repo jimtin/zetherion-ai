@@ -151,7 +151,7 @@ Error envelope:
 | CGS Internal Endpoint | Method | Purpose | Upstream | Status |
 |---|---|---|---|---|
 | `/service/ai/v1/internal/tenants` | `GET` | List tenants | Skills `client_list` | Ready |
-| `/service/ai/v1/internal/tenants` | `POST` | Create tenant + API key | Skills `client_create` | Ready |
+| `/service/ai/v1/internal/tenants` | `POST` | Create or reconcile tenant mapping + API key | Skills `client_create` | Ready |
 | `/service/ai/v1/internal/tenants/{tenant_id}` | `PATCH` | Update tenant config | Skills `client_configure` | Ready |
 | `/service/ai/v1/internal/tenants/{tenant_id}/deactivate` | `POST` | Deactivate tenant | Skills `client_deactivate` | Ready |
 | `/service/ai/v1/internal/tenants/{tenant_id}/keys/rotate` | `POST` | Rotate tenant API key | Skills `client_rotate_key` | Ready |
@@ -521,8 +521,10 @@ Request:
 ```
 
 CGS behavior:
-- Call Zetherion Skills API `/handle` with intent `client_create`.
-- Persist returned tenant ID and API key in CGS tenant registry.
+- If `cgs_tenant_id` is new, call Zetherion Skills API `/handle` with intent `client_create`.
+- If `cgs_tenant_id` already exists, reconcile the existing mapping instead of creating a duplicate upstream tenant.
+- Persist returned tenant ID and API key in CGS tenant registry with `isolation_stage` and provisioning metadata.
+- Response includes `provisioning_status` (`created` or `existing`) for operator visibility.
 
 ## 7.19 `PATCH /service/ai/v1/internal/tenants/{tenant_id}`
 
