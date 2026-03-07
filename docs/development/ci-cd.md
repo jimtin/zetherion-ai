@@ -116,7 +116,8 @@ This script is the canonical full local gate before merge. It performs:
 2. Unit tests + `mypy` + `pip-audit` (parallel)
 3. In-process integration tests
 4. Docker test environment rebuild/start (`docker-compose.test.yml`)
-5. Full Docker E2E and Discord E2E suites
+5. Docker and Discord E2E smoke preflight against the externally managed test stack
+6. Full Docker E2E and Discord E2E suites
 
 Run it directly:
 

@@ -719,6 +719,51 @@ if [ "$DOCKER_EXIT" -ne 0 ] || grep -q "DOCKER_ERROR" "$DOCKER_LOG" 2>/dev/null;
 fi
 echo "[$(ts)] Docker environment confirmed ready."
 
+# ── Step 3.5: E2E smoke preflight ─────────────────────────────────
+echo ""
+echo "[$(ts)] [3.5/5] E2E smoke preflight..."
+
+DOCKER_SMOKE_LOG="$(mktemp)"
+DISCORD_SMOKE_LOG="$(mktemp)"
+
+if DOCKER_MANAGED_EXTERNALLY=true "$PYTHON_BIN" -m pytest \
+    tests/integration/test_e2e.py::test_docker_services_running \
+    tests/integration/test_e2e.py::test_skills_service_health \
+    -m "integration and not optional_e2e" --timeout=120 -v --tb=short -s --no-cov \
+    > "$DOCKER_SMOKE_LOG" 2>&1; then
+    echo "[$(ts)] Docker E2E smoke preflight passed."
+else
+    echo "[$(ts)] Docker E2E smoke preflight FAILED."
+    cat "$DOCKER_SMOKE_LOG"
+    rm -f "$DOCKER_SMOKE_LOG" "$DISCORD_SMOKE_LOG"
+    exit 1
+fi
+if ! assert_no_skips_in_log "Docker E2E smoke preflight" "$DOCKER_SMOKE_LOG"; then
+    cat "$DOCKER_SMOKE_LOG"
+    rm -f "$DOCKER_SMOKE_LOG" "$DISCORD_SMOKE_LOG"
+    exit 1
+fi
+
+if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
+    if scripts/run-required-discord-e2e.sh -- -k test_bot_responds_to_message \
+        > "$DISCORD_SMOKE_LOG" 2>&1; then
+        echo "[$(ts)] Discord E2E smoke preflight passed."
+    else
+        echo "[$(ts)] Discord E2E smoke preflight FAILED."
+        cat "$DISCORD_SMOKE_LOG"
+        rm -f "$DOCKER_SMOKE_LOG" "$DISCORD_SMOKE_LOG"
+        exit 1
+    fi
+    if ! assert_no_skips_in_log "Discord E2E smoke preflight" "$DISCORD_SMOKE_LOG"; then
+        cat "$DISCORD_SMOKE_LOG"
+        rm -f "$DOCKER_SMOKE_LOG" "$DISCORD_SMOKE_LOG"
+        exit 1
+    fi
+fi
+
+rm -f "$DOCKER_SMOKE_LOG" "$DISCORD_SMOKE_LOG"
+echo "[$(ts)] [3.5/5] E2E smoke preflight passed."
+
 # ── Step 4: Required Docker E2E tests (concurrent) ────────────────
 echo ""
 echo "[$(ts)] [4/5] Required Docker E2E tests (concurrent)..."

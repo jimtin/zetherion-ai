@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `push` and `pull_request` triggers from `.github/workflows/codeql.yml` so CodeQL runs only on its weekly cadence or by manual dispatch, eliminating skipped PR check noise.
 - Narrowed `.github/workflows/docs.yml` so docs deployment runs on `main` only when docs-site sources change, and removed duplicate docs-contract validation from that publish workflow.
 - Extended `scripts/check_pipeline_contract.py` and its regression coverage so weekly-heavy verification cadence, PR-run cancellation, and workflow-trigger spend controls are now enforced in-repo.
+- Added Docker/Discord E2E smoke preflight to `scripts/pre-push-tests.sh` and richer Docker E2E failure diagnostics so a not-yet-stable test stack fails fast instead of burning the full concurrent E2E tranche.
 
 ### Changed - Segment CI-03 PR CI Fast Path and Ruleset Alignment (2026-03-08)
 

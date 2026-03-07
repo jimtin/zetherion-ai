@@ -21,9 +21,10 @@ Windows wrapper:
 The canonical gate delegates to `scripts/pre-push-tests.sh` and enforces:
 
 1. strict required tests
-2. required Discord E2E
-3. fail-fast stage exits
-4. automatic test-environment teardown
+2. required Docker and Discord E2E smoke preflight before the long E2E fan-out
+3. required Discord E2E
+4. fail-fast stage exits
+5. automatic test-environment teardown
 
 ## Bounded Lane Protocol
 

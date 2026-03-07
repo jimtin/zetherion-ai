@@ -375,8 +375,19 @@ def docker_env() -> Generator[DockerEnvironment, None, None]:
 
         # Wait for services to be healthy
         if not env.wait_for_healthy():
-            logs = env.get_logs("zetherion_ai")
-            pytest.fail(f"Services failed to become healthy.\n\nLogs:\n{logs}")
+            diagnostics: list[str] = []
+            for service in (
+                "zetherion-ai-skills",
+                "zetherion-ai-api",
+                "zetherion-ai-bot",
+                "zetherion-ai-cgs-gateway",
+            ):
+                service_logs = env.get_logs(service)
+                if service_logs.strip():
+                    diagnostics.append(f"=== {service} ===\n{service_logs}")
+            if not diagnostics:
+                diagnostics.append("(no compose logs captured)")
+            pytest.fail("Services failed to become healthy.\n\nLogs:\n" + "\n\n".join(diagnostics))
 
         # Brief pause for services to fully initialize
         time.sleep(2)
