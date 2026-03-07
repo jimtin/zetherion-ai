@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment CI-02 Script and Receipt Regression Packs (2026-03-08)
+
+- Impacted capability IDs:
+  - `ci.receipt.validation`
+  - `ci.failure_attribution`
+- Impacted workflow scenario IDs:
+  - `pr.receipt_script_change_requires_regression_pack`
+  - `pr.receipt_sha_mismatch_rejected`
+- Added targeted regression coverage for `scripts/check-cicd-success.sh`, `scripts/validate-deployment-receipt.py`, and `scripts/require-local-gate-update.sh` so receipt parsing and deployment-receipt contract changes fail locally before burning CI minutes.
+- Expanded `.ci/local_gate_manifest.json` and `scripts/run-local-gate-preflight.sh` so workflow, receipt, failure-attribution, and deploy-preflight helper changes now require the matching regression suites.
+- Updated `scripts/ci_failure_attribution.py` and `scripts/require-local-gate-update.sh` so local-gate misses now emit explicit `LOCAL_GATE_BREACH_*` reason codes instead of collapsing everything into one generic bucket.
+
 ### Changed - Segment CI-01 Local Gate Expansion for Shared Runtime Changes (2026-03-08)
 
 - Impacted capability IDs:

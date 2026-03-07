@@ -35,6 +35,23 @@ def test_missing_job_mapping_reports_contract_gap() -> None:
     assert failure.reason_code == "PIPELINE_CONTRACT_GAP"
 
 
+def test_local_stage_maps_to_specific_local_gate_breach_reason() -> None:
+    module = _load_module()
+    contract = {
+        "jobs": {
+            "unit-test": {
+                "local_equivalent": True,
+                "local_stage": "unit+mypy",
+                "note": "unit tests with coverage and mypy run locally",
+            }
+        }
+    }
+
+    failure = module.classify_failure("unit-test", "failure", contract)
+    assert failure.reason_code == "LOCAL_GATE_BREACH_UNIT_AND_MYPY"
+    assert "Local gate stage: unit+mypy" in failure.explanation
+
+
 def test_local_equivalent_failure_maps_to_local_breach() -> None:
     module = _load_module()
     contract = {

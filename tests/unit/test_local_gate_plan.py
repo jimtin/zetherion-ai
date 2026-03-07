@@ -148,6 +148,54 @@ def test_replay_store_change_requires_targeted_regression_suite() -> None:
     assert plan["unmapped_protected_paths"] == []
 
 
+def test_ci_support_script_change_requires_regression_packs() -> None:
+    module = _load_module()
+    manifest = module.load_manifest()
+
+    plan = module.build_plan(
+        changed_paths=["scripts/check-cicd-success.sh"],
+        manifest=manifest,
+    )
+
+    assert _requirement_ids(plan) == {
+        "ci-failure-attribution-regression-suite",
+        "ci-receipt-regression-suite",
+    }
+    assert plan["unmapped_protected_paths"] == []
+
+
+def test_deploy_preflight_helper_change_requires_regression_packs() -> None:
+    module = _load_module()
+    manifest = module.load_manifest()
+
+    plan = module.build_plan(
+        changed_paths=["scripts/windows/deploy-runner.ps1"],
+        manifest=manifest,
+    )
+
+    assert _requirement_ids(plan) == {
+        "ci-receipt-regression-suite",
+        "deploy-preflight-regression-suite",
+    }
+    assert plan["unmapped_protected_paths"] == []
+
+
+def test_failure_attribution_script_change_requires_targeted_suite() -> None:
+    module = _load_module()
+    manifest = module.load_manifest()
+
+    plan = module.build_plan(
+        changed_paths=["scripts/ci_failure_attribution.py"],
+        manifest=manifest,
+    )
+
+    assert _requirement_ids(plan) == {
+        "ci-failure-attribution-regression-suite",
+        "ci-receipt-regression-suite",
+    }
+    assert plan["unmapped_protected_paths"] == []
+
+
 def test_unmapped_protected_paths_are_reported() -> None:
     module = _load_module()
     manifest = {

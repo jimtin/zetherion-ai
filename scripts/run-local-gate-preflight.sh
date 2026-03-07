@@ -154,7 +154,7 @@ for requirement_id in "${REQUIREMENT_IDS[@]}"; do
             echo "[local-gate] Running bounded unit-full lane..."
             node scripts/testing/run-bounded.mjs --lane unit-full --log-file "$LOCAL_GATE_LANE_LOG_FILE"
             ;;
-        qdrant-regression-suite|replay-store-regression-suite)
+        qdrant-regression-suite|replay-store-regression-suite|ci-receipt-regression-suite|ci-failure-attribution-regression-suite|deploy-preflight-regression-suite)
             PYTEST_TARGETS=()
             while IFS= read -r pytest_target; do
                 if [[ -n "$pytest_target" ]]; then

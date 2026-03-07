@@ -137,6 +137,8 @@ The preflight is driven by the source-controlled manifest at `.ci/local_gate_man
 - bounded `unit-full` for shared trust/personal/profile/portfolio/routing/queue/model/context/storage/startup paths that can move the repo-wide coverage floor
 - targeted Qdrant/data-plane regression tests
 - targeted replay-store regression tests
+- targeted receipt/workflow-support regression suites for receipt validation, local gate enforcement, and CI failure-attribution changes
+- targeted Windows deploy-preflight regression suites for deployment-receipt validation and optional-service guard changes
 
 Protected shared-infra and shared-runtime coverage-sensitive paths must stay mapped in `.ci/local_gate_manifest.json`; local validation fails fast when a protected path changes without an explicit local gate mapping.
 

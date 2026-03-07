@@ -107,7 +107,7 @@ fi
 
 NEEDS_LOCAL_GATE_UPDATE="$({
   jq -r '
-    [.failures[].reason_code] | any(. == "SHOULD_HAVE_BEEN_CAUGHT_LOCALLY")
+    [.failures[].reason_code] | any(. == "SHOULD_HAVE_BEEN_CAUGHT_LOCALLY" or startswith("LOCAL_GATE_BREACH_"))
   ' "$ATTR_PATH"
 })"
 NEEDS_CONTRACT_UPDATE="$({

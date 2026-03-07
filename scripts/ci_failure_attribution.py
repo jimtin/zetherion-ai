@@ -13,6 +13,15 @@ from typing import Any
 
 DEFAULT_CONTRACT = Path(".ci/pipeline_contract.json")
 
+LOCAL_STAGE_REASON_CODES = {
+    "static-analysis": "LOCAL_GATE_BREACH_STATIC_ANALYSIS",
+    "unit+mypy": "LOCAL_GATE_BREACH_UNIT_AND_MYPY",
+    "integration": "LOCAL_GATE_BREACH_INTEGRATION",
+    "e2e": "LOCAL_GATE_BREACH_REQUIRED_E2E_RECEIPT",
+    "pre-push-boundary": "LOCAL_GATE_BREACH_BOUNDARY",
+    "superset-local": "LOCAL_GATE_BREACH_SUPERSET_LOCAL",
+}
+
 
 @dataclass(frozen=True)
 class JobFailure:
@@ -59,14 +68,17 @@ def classify_failure(job: str, result: str, contract: dict[str, Any]) -> JobFail
         )
 
     local_equivalent = bool(job_contract.get("local_equivalent", False))
+    local_stage = str(job_contract.get("local_stage", "")).strip()
     note = str(job_contract.get("note", "")).strip()
 
     if local_equivalent:
-        reason_code = "SHOULD_HAVE_BEEN_CAUGHT_LOCALLY"
+        reason_code = LOCAL_STAGE_REASON_CODES.get(local_stage, "SHOULD_HAVE_BEEN_CAUGHT_LOCALLY")
         explanation = (
             "This CI job has a local equivalent in the canonical test-full pipeline. "
             "If CI failed here, the local gate was likely bypassed or not run on the same commit."
         )
+        if local_stage:
+            explanation = f"{explanation} Local gate stage: {local_stage}."
     else:
         reason_code = "CI_ONLY_ENVIRONMENT_DIFF"
         explanation = (
