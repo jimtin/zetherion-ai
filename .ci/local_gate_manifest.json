@@ -18,7 +18,19 @@
     "src/zetherion_ai/portfolio/**",
     "src/zetherion_ai/routing/**",
     "src/zetherion_ai/queue/**",
-    "src/zetherion_ai/security/trust_policy.py"
+    "src/zetherion_ai/security/trust_policy.py",
+    ".github/workflows/**",
+    ".ci/pipeline_contract.json",
+    "scripts/check-cicd-success.sh",
+    "scripts/ci-required-e2e-gate.sh",
+    "scripts/ci_required_e2e_gate.py",
+    "scripts/ci_e2e_risk_classifier.py",
+    "scripts/ci_failure_attribution.py",
+    "scripts/require-local-gate-update.sh",
+    "scripts/validate-deployment-receipt.py",
+    "scripts/check-optional-service-guards.py",
+    "scripts/windows/deploy-runner.ps1",
+    "scripts/verify-windows-host.ps1"
   ],
   "requirements": {
     "endpoint-doc-bundle": {
@@ -51,6 +63,31 @@
       "description": "Run the targeted replay-store regression suite.",
       "pytest_targets": [
         "tests/unit/test_analytics_replay_store.py"
+      ]
+    },
+    "ci-receipt-regression-suite": {
+      "kind": "pytest",
+      "description": "Run the targeted receipt, shell, and deployment-receipt regression suite.",
+      "pytest_targets": [
+        "tests/unit/test_check_cicd_success.py",
+        "tests/unit/test_ci_required_e2e_gate.py",
+        "tests/unit/test_validate_deployment_receipt.py"
+      ]
+    },
+    "ci-failure-attribution-regression-suite": {
+      "kind": "pytest",
+      "description": "Run the targeted CI failure-attribution and local-gate-enforcement regression suite.",
+      "pytest_targets": [
+        "tests/unit/test_ci_failure_attribution.py",
+        "tests/unit/test_require_local_gate_update.py"
+      ]
+    },
+    "deploy-preflight-regression-suite": {
+      "kind": "pytest",
+      "description": "Run the targeted Windows deploy preflight and optional-service regression suite.",
+      "pytest_targets": [
+        "tests/unit/test_check_optional_service_guards.py",
+        "tests/unit/test_validate_deployment_receipt.py"
       ]
     }
   },
@@ -119,6 +156,38 @@
       ],
       "requirements": [
         "replay-store-regression-suite"
+      ]
+    },
+    {
+      "id": "ci-support-regressions",
+      "covers_protected": true,
+      "patterns": [
+        ".github/workflows/**",
+        ".ci/pipeline_contract.json",
+        "scripts/check-cicd-success.sh",
+        "scripts/ci-required-e2e-gate.sh",
+        "scripts/ci_required_e2e_gate.py",
+        "scripts/ci_e2e_risk_classifier.py",
+        "scripts/ci_failure_attribution.py",
+        "scripts/require-local-gate-update.sh"
+      ],
+      "requirements": [
+        "ci-receipt-regression-suite",
+        "ci-failure-attribution-regression-suite"
+      ]
+    },
+    {
+      "id": "deploy-preflight-regressions",
+      "covers_protected": true,
+      "patterns": [
+        "scripts/validate-deployment-receipt.py",
+        "scripts/check-optional-service-guards.py",
+        "scripts/windows/deploy-runner.ps1",
+        "scripts/verify-windows-host.ps1"
+      ],
+      "requirements": [
+        "deploy-preflight-regression-suite",
+        "ci-receipt-regression-suite"
       ]
     }
   ]

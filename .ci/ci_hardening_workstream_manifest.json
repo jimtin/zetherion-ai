@@ -2,7 +2,7 @@
   "workstream": "segmented-ci-hardening-and-spend-reduction",
   "contract_version": 1,
   "recorded_at": "2026-03-08",
-  "status": "segment-1-local-preflight-expanded",
+  "status": "segment-2-receipt-regressions-covered",
   "segment_contract": {
     "branch_prefix": "codex/seg-ci-",
     "one_segment_per_pr": true,

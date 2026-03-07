@@ -84,6 +84,8 @@ The preflight is driven by the source-controlled manifest at `.ci/local_gate_man
 - bounded `unit-full` for shared trust/personal/profile/portfolio/routing/queue/model/context/storage/startup paths that can move the repo-wide coverage floor
 - targeted Qdrant/data-plane regression tests
 - targeted replay-store regression tests
+- targeted receipt/workflow-support regression suites for receipt validation, local gate enforcement, and CI failure-attribution changes
+- targeted Windows deploy-preflight regression suites for deployment-receipt validation and optional-service guard changes
 
 ## Current GitHub Proof and Cost Contract
 
