@@ -3867,7 +3867,7 @@ class TenantAdminManager:
         tenant_id: str,
         provider: str = "whatsapp",
     ) -> dict[str, Any] | None:
-        provider_norm = self._normalize_worker_messaging_provider(provider)
+        provider_norm = self._normalize_messaging_provider(provider)
         row = await self._fetchrow(
             """
             SELECT tenant_id::text AS tenant_id,
@@ -3905,7 +3905,7 @@ class TenantAdminManager:
         session_ref: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        provider_norm = self._normalize_worker_messaging_provider(provider)
+        provider_norm = self._normalize_messaging_provider(provider)
         mode = str(bridge_mode or "local_sidecar").strip().lower()
         if mode not in {"local_sidecar", "cloud_bridge"}:
             raise ValueError("bridge_mode must be one of: local_sidecar, cloud_bridge")
@@ -3976,7 +3976,7 @@ class TenantAdminManager:
         chat_id: str,
         provider: str = "whatsapp",
     ) -> dict[str, Any] | None:
-        provider_norm = self._normalize_worker_messaging_provider(provider)
+        provider_norm = self._normalize_messaging_provider(provider)
         chat = str(chat_id or "").strip()
         if not chat:
             raise ValueError("Missing chat_id")
