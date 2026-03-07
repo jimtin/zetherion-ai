@@ -16,7 +16,11 @@ from zetherion_ai.trust.engine import (
     TrustRiskClass,
 )
 from zetherion_ai.trust.storage import (
+    TrustDecisionAuditInput,
+    TrustFeedbackEventInput,
     TrustGrantInput,
+    TrustPolicyInput,
+    TrustScorecardInput,
     TrustStorage,
     ensure_trust_storage_schema,
     normalize_grant_permissions,
@@ -167,3 +171,329 @@ async def test_record_shadow_decision_persists_canonical_decision(mock_pool) -> 
 
     assert audit.adapter_name == "trust_policy"
     assert audit.trace == ("legacy_outcome=allow",)
+
+
+@pytest.mark.asyncio
+async def test_upsert_policy_normalizes_scope_and_metadata(mock_pool) -> None:
+    pool, conn = mock_pool
+    now = datetime.now(UTC)
+    conn.fetchrow.return_value = {
+        "policy_id": "11111111-1111-1111-1111-111111111111",
+        "tenant_id": None,
+        "principal_id": "owner-1",
+        "principal_type": "owner",
+        "resource_scope": "owner_personal:calendar:write",
+        "action": "calendar.write",
+        "mode": "ask",
+        "risk_class": "moderate",
+        "source_system": "personal_policy",
+        "source_record_id": "policy-1",
+        "metadata_json": {"domain": "calendar"},
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    storage = TrustStorage(schema="control_plane")
+    storage._pool = pool  # type: ignore[attr-defined]
+    policy = await storage.upsert_policy(
+        TrustPolicyInput(
+            principal_id="owner-1",
+            principal_type="owner",
+            resource_scope="owner_personal:calendar:write",
+            action="calendar.write",
+            mode="ask",
+            risk_class="moderate",
+            source_system="personal_policy",
+            source_record_id="policy-1",
+            metadata={"domain": "calendar"},
+        )
+    )
+
+    assert policy.resource_scope == "owner_personal:calendar:write"
+    args = conn.fetchrow.await_args.args
+    assert args[5] == "owner_personal:calendar:write"
+    assert args[11] == '{"domain":"calendar"}'
+
+
+@pytest.mark.asyncio
+async def test_revoke_grant_updates_existing_record(mock_pool) -> None:
+    pool, conn = mock_pool
+    revoked_at = datetime.now(UTC)
+    conn.fetchrow.return_value = {
+        "grant_id": "55555555-5555-5555-5555-555555555555",
+        "tenant_id": "tenant-a",
+        "grantee_id": "node-1",
+        "grantee_type": "worker_node",
+        "resource_scope": "messaging.chat:whatsapp:chat-1",
+        "permissions_json": ["read"],
+        "granted_by_id": "owner-1",
+        "granted_by_type": "owner",
+        "source_system": "worker_messaging_grant",
+        "source_record_id": "legacy-grant-1",
+        "metadata_json": {},
+        "issued_at": datetime.now(UTC),
+        "expires_at": None,
+        "revoked_at": revoked_at,
+        "revoke_reason": "expired",
+    }
+
+    storage = TrustStorage(schema="control_plane")
+    storage._pool = pool  # type: ignore[attr-defined]
+    grant = await storage.revoke_grant(
+        "55555555-5555-5555-5555-555555555555",
+        revoke_reason="expired",
+    )
+
+    assert grant.revoked_at == revoked_at
+    assert grant.revoke_reason == "expired"
+    sql, grant_id, reason = conn.fetchrow.await_args.args
+    assert 'UPDATE "control_plane".trust_grants' in sql
+    assert grant_id == "55555555-5555-5555-5555-555555555555"
+    assert reason == "expired"
+
+
+@pytest.mark.asyncio
+async def test_list_active_grants_applies_optional_filters(mock_pool) -> None:
+    pool, conn = mock_pool
+    conn.fetch.return_value = [
+        {
+            "grant_id": "55555555-5555-5555-5555-555555555555",
+            "tenant_id": "tenant-a",
+            "grantee_id": "node-1",
+            "grantee_type": "worker_node",
+            "resource_scope": "messaging.chat:whatsapp:chat-1",
+            "permissions_json": ["read"],
+            "granted_by_id": "owner-1",
+            "granted_by_type": "owner",
+            "source_system": "worker_messaging_grant",
+            "source_record_id": "legacy-grant-1",
+            "metadata_json": {},
+            "issued_at": datetime.now(UTC),
+            "expires_at": None,
+            "revoked_at": None,
+            "revoke_reason": None,
+        }
+    ]
+
+    storage = TrustStorage(schema="control_plane")
+    storage._pool = pool  # type: ignore[attr-defined]
+    grants = await storage.list_active_grants(
+        grantee_id="node-1",
+        grantee_type="worker_node",
+        tenant_id="tenant-a",
+        resource_scope_prefix="messaging.chat:whatsapp:*",
+    )
+
+    assert len(grants) == 1
+    sql, *params = conn.fetch.await_args.args
+    assert "tenant_id = $3" in sql
+    assert "resource_scope LIKE $4" in sql
+    assert params == ["node-1", "worker_node", "tenant-a", "messaging.chat:whatsapp:%"]
+
+
+@pytest.mark.asyncio
+async def test_record_feedback_event_persists_delta_and_metadata(mock_pool) -> None:
+    pool, conn = mock_pool
+    now = datetime.now(UTC)
+    conn.fetchrow.return_value = {
+        "event_id": "77777777-7777-7777-7777-777777777777",
+        "tenant_id": "tenant-a",
+        "subject_id": "owner-1",
+        "subject_type": "owner",
+        "resource_scope": "owner_personal:calendar:write",
+        "action": "calendar.write",
+        "outcome": "approved",
+        "delta": 0.5,
+        "source_system": "manual",
+        "metadata_json": {"reason": "approved"},
+        "created_at": now,
+    }
+
+    storage = TrustStorage(schema="control_plane")
+    storage._pool = pool  # type: ignore[attr-defined]
+    event = await storage.record_feedback_event(
+        TrustFeedbackEventInput(
+            tenant_id="tenant-a",
+            subject_id="owner-1",
+            subject_type="owner",
+            resource_scope="owner_personal:calendar:write",
+            action="calendar.write",
+            outcome="approved",
+            delta=0.5,
+            metadata={"reason": "approved"},
+        )
+    )
+
+    assert event.delta == 0.5
+    args = conn.fetchrow.await_args.args
+    assert args[5] == "owner_personal:calendar:write"
+    assert args[10] == '{"reason":"approved"}'
+
+
+@pytest.mark.asyncio
+async def test_record_decision_audit_persists_canonical_scope(mock_pool) -> None:
+    pool, conn = mock_pool
+    now = datetime.now(UTC)
+    conn.fetchrow.return_value = {
+        "decision_id": "88888888-8888-8888-8888-888888888888",
+        "tenant_id": "tenant-a",
+        "adapter_name": "github_autonomy",
+        "principal_id": "owner-1",
+        "principal_type": "owner",
+        "resource_scope": "repo:*",
+        "action": "github.pr.open",
+        "outcome": "allow",
+        "mode": "auto",
+        "risk_class": "moderate",
+        "reason_code": "ok",
+        "requires_two_person": False,
+        "source_system": "shadow_engine",
+        "trace_json": ["matched"],
+        "metadata_json": {"status": 200},
+        "created_at": now,
+    }
+
+    storage = TrustStorage(schema="control_plane")
+    storage._pool = pool  # type: ignore[attr-defined]
+    audit = await storage.record_decision_audit(
+        TrustDecisionAuditInput(
+            tenant_id="tenant-a",
+            adapter_name="github_autonomy",
+            principal_id="owner-1",
+            principal_type="owner",
+            resource_scope="repo:*",
+            action="github.pr.open",
+            outcome="allow",
+            mode="auto",
+            risk_class="moderate",
+            reason_code="ok",
+            trace=("matched",),
+            metadata={"status": 200},
+        )
+    )
+
+    assert audit.resource_scope == "repo:*"
+    args = conn.fetchrow.await_args.args
+    assert args[6] == "repo:*"
+    assert args[14] == '["matched"]'
+
+
+@pytest.mark.asyncio
+async def test_record_shadow_decision_omits_noncanonical_resource_scope(mock_pool) -> None:
+    pool, conn = mock_pool
+    now = datetime.now(UTC)
+    conn.fetchrow.return_value = {
+        "decision_id": "99999999-9999-9999-9999-999999999999",
+        "tenant_id": "tenant-a",
+        "adapter_name": "trust_policy",
+        "principal_id": "tenant-a",
+        "principal_type": "tenant",
+        "resource_scope": None,
+        "action": "messaging.read",
+        "outcome": "allow",
+        "mode": "auto",
+        "risk_class": "high",
+        "reason_code": "AI_OK",
+        "requires_two_person": False,
+        "source_system": "shadow_engine",
+        "trace_json": ["legacy_outcome=allow"],
+        "metadata_json": {"status": 200},
+        "created_at": now,
+    }
+
+    storage = TrustStorage(schema="control_plane")
+    storage._pool = pool  # type: ignore[attr-defined]
+    await storage.record_shadow_decision(
+        TrustDecision(
+            adapter_name="trust_policy",
+            action="messaging.read",
+            outcome=TrustOutcome.ALLOW,
+            mode=TrustMode.AUTO,
+            risk_class=TrustRiskClass.HIGH,
+            reason_code="AI_OK",
+            principal=TrustPrincipal(
+                principal_id="tenant-a",
+                principal_type="tenant",
+                tenant_id="tenant-a",
+            ),
+            resource=TrustResource(
+                resource_id="messaging.read",
+                resource_type="trust_action",
+                tenant_id="tenant-a",
+            ),
+            trace=("legacy_outcome=allow",),
+            metadata={"status": 200},
+        )
+    )
+
+    args = conn.fetchrow.await_args.args
+    assert args[6] is None
+
+
+def test_normalize_resource_scope_rejects_blank_suffix() -> None:
+    with pytest.raises(ValueError, match="Resource scope suffix is required"):
+        normalize_resource_scope("owner_personal:")
+
+
+def test_trust_storage_requires_initialize_before_use() -> None:
+    storage = TrustStorage(schema="control_plane")
+
+    with pytest.raises(RuntimeError, match="TrustStorage is not initialized"):
+        storage._require_pool()
+
+
+@pytest.mark.asyncio
+async def test_ensure_trust_storage_schema_skips_invalid_pool_object() -> None:
+    assert await ensure_trust_storage_schema(object(), schema="control_plane") == ()
+
+
+@pytest.mark.asyncio
+async def test_upsert_scorecard_persists_level_and_ceiling(mock_pool) -> None:
+    pool, conn = mock_pool
+    now = datetime.now(UTC)
+    conn.fetchrow.return_value = {
+        "scorecard_id": "12121212-1212-1212-1212-121212121212",
+        "tenant_id": "tenant-a",
+        "subject_id": "channel-1",
+        "subject_type": "tenant_channel",
+        "resource_scope": "tenant:tenant-a:youtube:channel:channel-1",
+        "action": "youtube.reply.approve",
+        "score": 0.8,
+        "approvals": 8,
+        "rejections": 1,
+        "edits": 0,
+        "total_interactions": 9,
+        "level": "guided",
+        "ceiling": 0.9,
+        "source_system": "youtube_trust",
+        "source_record_id": "tenant-a:channel-1",
+        "metadata_json": {"trust_level": 2},
+        "updated_at": now,
+    }
+
+    storage = TrustStorage(schema="control_plane")
+    storage._pool = pool  # type: ignore[attr-defined]
+    scorecard = await storage.upsert_scorecard(
+        TrustScorecardInput(
+            tenant_id="tenant-a",
+            subject_id="channel-1",
+            subject_type="tenant_channel",
+            resource_scope="tenant:tenant-a:youtube:channel:channel-1",
+            action="youtube.reply.approve",
+            score=0.8,
+            approvals=8,
+            rejections=1,
+            total_interactions=9,
+            level="guided",
+            ceiling=0.9,
+            source_system="youtube_trust",
+            source_record_id="tenant-a:channel-1",
+            metadata={"trust_level": 2},
+        )
+    )
+
+    assert scorecard.level == "guided"
+    assert scorecard.ceiling == 0.9
+    args = conn.fetchrow.await_args.args
+    assert args[5] == "tenant:tenant-a:youtube:channel:channel-1"
+    assert args[16] == '{"trust_level":2}'
