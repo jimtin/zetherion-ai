@@ -273,7 +273,7 @@ class TrustStorage:
                     metadata_json = EXCLUDED.metadata_json,
                     updated_at = NOW()
                 RETURNING *
-                """,
+                """,  # nosec B608 - self._schema is regex-validated before interpolation
                 str(uuid4()),
                 policy.tenant_id,
                 policy.principal_id,
@@ -329,7 +329,7 @@ class TrustStorage:
                     revoked_at = NULL,
                     revoke_reason = NULL
                 RETURNING *
-                """,
+                """,  # nosec B608 - self._schema is regex-validated before interpolation
                 str(uuid4()),
                 grant.tenant_id,
                 grant.grantee_id,
@@ -359,7 +359,7 @@ class TrustStorage:
                     revoke_reason = $2
                 WHERE grant_id = $1::uuid
                 RETURNING *
-                """,
+                """,  # nosec B608 - self._schema is regex-validated before interpolation
                 str(grant_id),
                 revoke_reason,
             )
@@ -396,7 +396,7 @@ class TrustStorage:
                 FROM "{self._schema}".trust_grants
                 WHERE {' AND '.join(where)}
                 ORDER BY expires_at ASC NULLS LAST, issued_at DESC
-                """,
+                """,  # nosec B608 - self._schema is validated and WHERE clauses use placeholders only
                 *params,
             )
         return [_grant_from_row(row) for row in rows]
@@ -447,7 +447,7 @@ class TrustStorage:
                     metadata_json = EXCLUDED.metadata_json,
                     updated_at = NOW()
                 RETURNING *
-                """,
+                """,  # nosec B608 - self._schema is regex-validated before interpolation
                 str(uuid4()),
                 scorecard.tenant_id,
                 scorecard.subject_id,
@@ -493,7 +493,7 @@ class TrustStorage:
                     $1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb
                 )
                 RETURNING *
-                """,
+                """,  # nosec B608 - self._schema is regex-validated before interpolation
                 str(uuid4()),
                 event.tenant_id,
                 event.subject_id,
@@ -543,7 +543,7 @@ class TrustStorage:
                     $9, $10, $11, $12, $13, $14::jsonb, $15::jsonb
                 )
                 RETURNING *
-                """,
+                """,  # nosec B608 - self._schema is regex-validated before interpolation
                 str(uuid4()),
                 audit.tenant_id,
                 audit.adapter_name,

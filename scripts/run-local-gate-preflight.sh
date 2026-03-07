@@ -143,6 +143,10 @@ for requirement_id in "${REQUIREMENT_IDS[@]}"; do
             echo "[local-gate] Running strict mypy for src/zetherion_ai..."
             "$PYTHON_BIN" -m mypy src/zetherion_ai --config-file=pyproject.toml
             ;;
+        bandit-src)
+            echo "[local-gate] Running Bandit security scan for src/..."
+            "$PYTHON_BIN" -m bandit -r src/ -c pyproject.toml
+            ;;
         qdrant-regression-suite|replay-store-regression-suite)
             PYTEST_TARGETS=()
             while IFS= read -r pytest_target; do

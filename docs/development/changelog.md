@@ -20,15 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `trust.grants.generic-resource-scope`
   - `trust.backfill.legacy-source-normalization`
   - `ci.endpoint-doc-bundle.route-sensitive-diff`
+  - `ci.local-gate.bandit-src`
 - Impacted workflow scenario IDs:
   - `isolation.segment7.bootstrap-control-plane-trust-tables`
   - `isolation.segment7.backfill-personal-gmail-github-youtube-worker-trust`
   - `isolation.segment7.persist-shadow-decision-audit`
   - `ci.segment7.ignore-nonroute-api-server-bootstrap-edits`
+  - `ci.segment7.catch-bandit-before-push`
 - Added `src/zetherion_ai/trust/storage.py` with canonical control-plane tables for trust policies, grants, scorecards, feedback events, and decision audit rows.
 - Added `src/zetherion_ai/trust/backfill.py` so current personal, Gmail, GitHub, YouTube, and worker messaging trust records can be mapped into the canonical store without changing live enforcement.
 - Bootstrapped the canonical trust schema during app/API/skills startup and extended the isolation inventory baseline to declare the new control-plane trust tables explicitly.
 - Narrowed `scripts/check-endpoint-doc-bundle.py` so docs-bundle enforcement still catches route-surface edits, but no longer false-positives on bootstrap-only server wiring changes.
+- Added a Bandit exact-SHA local-gate requirement for Python source changes so security-scan regressions fail before push instead of burning CI minutes.
 
 ### Added - Segment 6 Unified Trust Engine Shadow Mode (2026-03-07)
 
