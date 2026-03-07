@@ -325,6 +325,41 @@ class OwnerPersonalIntelligenceStorage:
             raise RuntimeError("Upsert personal review item returned no row")
         return self._review_item_from_row(dict(row))
 
+    async def get_review_item_by_related_resource(
+        self,
+        user_id: int,
+        related_resource: str,
+        *,
+        source: str | None = None,
+        pending_only: bool = False,
+    ) -> PersonalReviewItem | None:
+        """Fetch the newest review item for one related resource."""
+
+        resource = str(related_resource or "").strip()
+        if not resource:
+            raise ValueError("related_resource is required")
+
+        table = f'"{self._schema}".personal_review_items'
+        query = f"SELECT * FROM {table} WHERE user_id = $1 AND related_resource = $2"  # nosec B608
+        params: list[Any] = [user_id, resource]
+        idx = 3
+
+        if source:
+            query += f" AND source = ${idx}"
+            params.append(source)
+            idx += 1
+        if pending_only:
+            query += f" AND status = ${idx}"
+            params.append(PersonalReviewItemStatus.PENDING.value)
+            idx += 1
+
+        query += " ORDER BY created_at DESC LIMIT 1"
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(query, *params)
+        if row is None:
+            return None
+        return self._review_item_from_row(dict(row))
+
     async def list_review_items(
         self,
         user_id: int,

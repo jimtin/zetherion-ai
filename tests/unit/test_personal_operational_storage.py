@@ -425,3 +425,45 @@ async def test_ensure_owner_personal_intelligence_schema_skips_none_pool() -> No
 @pytest.mark.asyncio
 async def test_ensure_owner_personal_intelligence_schema_skips_type_error_pool() -> None:
     assert await ensure_owner_personal_intelligence_schema(_TypeErrorPool()) == ()
+
+
+@pytest.mark.asyncio
+async def test_get_review_item_by_related_resource_filters_pending_source() -> None:
+    pool, conn = _make_mock_pool()
+    conn.fetchrow.return_value = {
+        "id": 12,
+        "user_id": 42,
+        "item_type": "blocked",
+        "title_value": "Review blocked plan",
+        "detail_value": "Need operator help",
+        "status": "pending",
+        "source": "plan_executor",
+        "related_resource": "execution_plan:plan-1:blocked",
+        "priority": 90,
+        "metadata_json": {"plan_id": "plan-1"},
+        "due_at": None,
+        "created_at": datetime(2026, 3, 7, 13, 0, 0),
+        "updated_at": datetime(2026, 3, 7, 13, 0, 0),
+        "resolved_at": None,
+    }
+    storage = OwnerPersonalIntelligenceStorage(pool, schema="owner_personal")
+
+    item = await storage.get_review_item_by_related_resource(
+        42,
+        "execution_plan:plan-1:blocked",
+        source="plan_executor",
+        pending_only=True,
+    )
+
+    assert item is not None
+    assert item.related_resource == "execution_plan:plan-1:blocked"
+    sql, *args = conn.fetchrow.await_args.args
+    assert "related_resource = $2" in sql
+    assert "source = $3" in sql
+    assert "status = $4" in sql
+    assert args == [
+        42,
+        "execution_plan:plan-1:blocked",
+        "plan_executor",
+        PersonalReviewItemStatus.PENDING.value,
+    ]

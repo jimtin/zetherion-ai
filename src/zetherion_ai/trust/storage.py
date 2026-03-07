@@ -401,6 +401,166 @@ class TrustStorage:
             )
         return [_grant_from_row(row) for row in rows]
 
+    async def get_scorecard(
+        self,
+        *,
+        subject_id: str,
+        subject_type: str,
+        resource_scope: str,
+        action: str,
+        tenant_id: str | None = None,
+    ) -> TrustScorecardRecord | None:
+        """Fetch the latest canonical scorecard for one subject/resource/action tuple."""
+
+        pool = self._require_pool()
+        normalized_scope = normalize_resource_scope(resource_scope)
+        params: list[Any] = [subject_id, subject_type, normalized_scope, action]
+        where = [
+            "subject_id = $1",
+            "subject_type = $2",
+            "resource_scope = $3",
+            "action = $4",
+        ]
+        if tenant_id is None:
+            where.append("tenant_id IS NULL")
+        else:
+            params.append(tenant_id)
+            where.append(f"tenant_id = ${len(params)}")
+
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT *
+                FROM "{self._schema}".trust_scorecards
+                WHERE {' AND '.join(where)}
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,  # nosec B608 - self._schema is regex-validated and values use placeholders only
+                *params,
+            )
+        return _scorecard_from_row(row) if row is not None else None
+
+    async def record_feedback_outcome(
+        self,
+        *,
+        subject_id: str,
+        subject_type: str,
+        resource_scope: str,
+        action: str,
+        outcome: str,
+        tenant_id: str | None = None,
+        source_system: str = "review_inbox",
+        metadata: dict[str, Any] | None = None,
+        level: str | None = None,
+        ceiling: float | None = None,
+    ) -> tuple[TrustFeedbackEventRecord, TrustScorecardRecord]:
+        """Record one feedback event and fold it into the canonical scorecard."""
+
+        normalized_scope = normalize_resource_scope(resource_scope)
+        normalized_outcome = _normalize_text(outcome)
+        merged_metadata = dict(metadata or {})
+        pool = self._require_pool()
+        current = await self.get_scorecard(
+            subject_id=subject_id,
+            subject_type=subject_type,
+            resource_scope=normalized_scope,
+            action=action,
+            tenant_id=tenant_id,
+        )
+
+        delta = _feedback_delta(normalized_outcome)
+        approvals, rejections, edits = _feedback_counters(normalized_outcome)
+        effective_ceiling = (
+            current.ceiling if current is not None and current.ceiling is not None else ceiling
+        )
+        next_score = _clamp_score(
+            (current.score if current is not None else 0.0) + delta,
+            ceiling=effective_ceiling,
+        )
+        next_level = level or _feedback_level(next_score)
+
+        if current is None:
+            scorecard = await self.upsert_scorecard(
+                TrustScorecardInput(
+                    tenant_id=tenant_id,
+                    subject_id=subject_id,
+                    subject_type=subject_type,
+                    resource_scope=normalized_scope,
+                    action=action,
+                    score=next_score,
+                    approvals=approvals,
+                    rejections=rejections,
+                    edits=edits,
+                    total_interactions=1,
+                    level=next_level,
+                    ceiling=effective_ceiling,
+                    source_system=source_system,
+                    source_record_id=_feedback_source_record_id(
+                        tenant_id=tenant_id,
+                        subject_id=subject_id,
+                        subject_type=subject_type,
+                        resource_scope=normalized_scope,
+                        action=action,
+                    ),
+                    metadata=merged_metadata,
+                )
+            )
+        else:
+            merged_row_metadata = dict(current.metadata)
+            merged_row_metadata.update(merged_metadata)
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    f"""
+                    UPDATE "{self._schema}".trust_scorecards
+                    SET score = $2,
+                        approvals = $3,
+                        rejections = $4,
+                        edits = $5,
+                        total_interactions = $6,
+                        level = $7,
+                        ceiling = $8,
+                        metadata_json = $9::jsonb,
+                        updated_at = NOW()
+                    WHERE scorecard_id = $1::uuid
+                    RETURNING *
+                    """,  # nosec B608 - self._schema is regex-validated before interpolation
+                    current.scorecard_id,
+                    next_score,
+                    current.approvals + approvals,
+                    current.rejections + rejections,
+                    current.edits + edits,
+                    current.total_interactions + 1,
+                    next_level,
+                    effective_ceiling,
+                    _as_json_text(merged_row_metadata),
+                )
+            if row is None:
+                raise RuntimeError("Failed to update trust scorecard from feedback")
+            scorecard = _scorecard_from_row(row)
+
+        event_metadata = dict(merged_metadata)
+        event_metadata.update(
+            {
+                "score_after": scorecard.score,
+                "scorecard_id": scorecard.scorecard_id,
+                "level_after": scorecard.level,
+            }
+        )
+        event = await self.record_feedback_event(
+            TrustFeedbackEventInput(
+                tenant_id=tenant_id,
+                subject_id=subject_id,
+                subject_type=subject_type,
+                resource_scope=normalized_scope,
+                action=action,
+                outcome=normalized_outcome,
+                delta=delta,
+                source_system=source_system,
+                metadata=event_metadata,
+            )
+        )
+        return event, scorecard
+
     async def upsert_scorecard(self, scorecard: TrustScorecardInput) -> TrustScorecardRecord:
         pool = self._require_pool()
         resource_scope = normalize_resource_scope(scorecard.resource_scope)
@@ -818,6 +978,55 @@ def _json_list(value: Any) -> list[str]:
             return []
         return [str(item) for item in parsed] if isinstance(parsed, list) else []
     return []
+
+
+def _feedback_delta(outcome: str) -> float:
+    deltas = {
+        "approved": 0.05,
+        "minor_edit": -0.02,
+        "major_edit": -0.10,
+        "rejected": -0.20,
+        "escalated": 0.0,
+    }
+    return float(deltas.get(_normalize_text(outcome), 0.0))
+
+
+def _feedback_counters(outcome: str) -> tuple[int, int, int]:
+    normalized = _normalize_text(outcome)
+    if normalized == "approved":
+        return (1, 0, 0)
+    if normalized == "rejected":
+        return (0, 1, 0)
+    if normalized in {"minor_edit", "major_edit"}:
+        return (0, 0, 1)
+    return (0, 0, 0)
+
+
+def _clamp_score(score: float, *, ceiling: float | None = None) -> float:
+    upper_bound = min(1.0, ceiling) if ceiling is not None else 1.0
+    return max(0.0, min(float(score), upper_bound))
+
+
+def _feedback_level(score: float) -> str:
+    if score >= 0.85:
+        return "auto"
+    if score >= 0.60:
+        return "draft"
+    if score >= 0.25:
+        return "ask"
+    return "review"
+
+
+def _feedback_source_record_id(
+    *,
+    tenant_id: str | None,
+    subject_id: str,
+    subject_type: str,
+    resource_scope: str,
+    action: str,
+) -> str:
+    tenant_part = str(tenant_id).strip() if tenant_id is not None else "owner"
+    return f"{tenant_part}:{subject_type}:{subject_id}:{resource_scope}:{action}"
 
 
 def _policy_from_row(row: Any) -> TrustPolicyRecord:

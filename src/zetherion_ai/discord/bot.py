@@ -120,6 +120,7 @@ class ZetherionAIBot(discord.Client):
         self._heartbeat_scheduler: HeartbeatScheduler | None = None
         self._announcement_repository: AnnouncementRepository | None = None
         self._announcement_dispatcher: AnnouncementDispatcher | None = None
+        self._owner_review_inbox: Any | None = None
         self._last_message_time: float = 0.0
         self._dev_watcher_wizards: dict[int, dict[str, Any]] = {}
 
@@ -342,6 +343,28 @@ class ZetherionAIBot(discord.Client):
             user_manager_dict = getattr(self._user_manager, "__dict__", {})
             if "_pool" in user_manager_dict:
                 runtime_pool = getattr(self._user_manager, "_pool", None)
+        if runtime_pool is not None and plan_executor is not None:
+            try:
+                from zetherion_ai.personal.operational_storage import (
+                    OwnerPersonalIntelligenceStorage,
+                )
+                from zetherion_ai.personal.review_inbox import OwnerReviewInbox
+                from zetherion_ai.trust.storage import TrustStorage
+
+                trust_storage = TrustStorage(schema=get_settings().postgres_control_plane_schema)
+                await trust_storage.initialize(runtime_pool)
+                review_inbox = OwnerReviewInbox(
+                    storage=OwnerPersonalIntelligenceStorage(
+                        runtime_pool,
+                        schema=get_settings().postgres_owner_personal_schema,
+                    ),
+                    trust_storage=trust_storage,
+                )
+                plan_executor.attach_review_inbox(review_inbox)
+                self._owner_review_inbox = review_inbox
+            except Exception:
+                log.exception("owner_review_inbox_init_failed")
+
         if runtime_pool is not None:
             try:
                 repository = AnnouncementRepository()
