@@ -523,14 +523,14 @@ Request:
 CGS behavior:
 - If `cgs_tenant_id` is new, call Zetherion Skills API `/handle` with intent `client_create`.
 - If `cgs_tenant_id` already exists, reconcile the existing mapping instead of creating a duplicate upstream tenant.
-- Persist returned tenant ID and API key in CGS tenant registry with `isolation_stage` and provisioning metadata.
+- Persist returned tenant ID and API key in CGS tenant registry with `isolation_stage` and provisioning metadata. Seed owner-portfolio derivation state so follow-up reconciles can mirror derived tenant health snapshots with provenance IDs.
 - Response includes `provisioning_status` (`created` or `existing`) for operator visibility.
 
 ## 7.19 `PATCH /service/ai/v1/internal/tenants/{tenant_id}`
 
 Internal update endpoint:
 - Maps to `client_configure`.
-- Also performs staged tenant migration for existing clients, including bounded document reindex backfill, release-marker capture, migration receipt persistence, and owner-safe tenant health snapshots.
+- Also performs staged tenant migration for existing clients, including bounded document reindex backfill, release-marker capture, migration receipt persistence, and owner-safe tenant health snapshots. Owner-facing snapshots are now derived from tenant-derived datasets first, and CGS stores the mirrored summary plus provenance references returned by the control plane.
 
 ## 7.20 `POST /service/ai/v1/internal/tenants/{tenant_id}/deactivate`
 
