@@ -351,7 +351,7 @@ def test_get_level_records_shadow_decision(monkeypatch):
     recorded: list[dict[str, object]] = []
 
     monkeypatch.setattr(
-        "zetherion_ai.skills.github.models._record_github_autonomy_shadow_decision",
+        "zetherion_ai.skills.github.models._record_github_autonomy_decision",
         lambda **kwargs: recorded.append(kwargs),
     )
 

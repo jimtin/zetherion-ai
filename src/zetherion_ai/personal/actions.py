@@ -90,7 +90,7 @@ class ActionController:
         policy = await self._storage.get_policy(user_id, domain, action)
 
         async def _finalize(decision: ActionDecision) -> ActionDecision:
-            _record_personal_action_shadow_decision(user_id=user_id, decision=decision)
+            _record_personal_action_trust_decision(user_id=user_id, decision=decision)
             await record_personal_action_decision(
                 self._trust_storage,
                 user_id=user_id,
@@ -254,11 +254,11 @@ class ActionController:
         return count
 
 
-def _record_personal_action_shadow_decision(*, user_id: int, decision: ActionDecision) -> None:
+def _record_personal_action_trust_decision(*, user_id: int, decision: ActionDecision) -> None:
     """Record a non-blocking shadow decision for personal-action evaluation."""
 
     try:
-        from zetherion_ai.trust import TrustPrincipal, TrustResource, record_shadow_decision
+        from zetherion_ai.trust import TrustPrincipal, TrustResource, record_decision
         from zetherion_ai.trust.adapters import build_personal_action_signature
 
         principal = TrustPrincipal(
@@ -271,7 +271,7 @@ def _record_personal_action_shadow_decision(*, user_id: int, decision: ActionDec
             resource_type="personal_action",
             metadata={"domain": decision.domain},
         )
-        record_shadow_decision(
+        record_decision(
             adapter_name="personal_action",
             action=decision.action,
             principal=principal,
@@ -281,3 +281,9 @@ def _record_personal_action_shadow_decision(*, user_id: int, decision: ActionDec
         )
     except Exception:
         return None
+
+
+def _record_personal_action_shadow_decision(*, user_id: int, decision: ActionDecision) -> None:
+    """Compatibility wrapper for legacy shadow-mode callers."""
+
+    return _record_personal_action_trust_decision(user_id=user_id, decision=decision)

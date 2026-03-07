@@ -126,9 +126,10 @@ After pushing, completion must be proven by CI/CD results for the exact commit S
 
 Rules:
 
-1. All refs require successful `CI/CD Pipeline`.
-2. `main` additionally requires successful `Deploy Windows` and a valid `deployment-receipt.json` artifact.
-3. `main` receipt checks must all be true:
+1. Non-`main` refs require successful `CI/CD Pipeline` for the exact SHA.
+2. `main` accepts either successful `CI/CD Pipeline` for the exact SHA or successful `CI Gate / CI Summary` plus `CI Gate / Required E2E Gate` check-runs for that exact SHA.
+3. `main` additionally requires successful `Deploy Windows` and a valid `deployment-receipt.json` artifact.
+4. `main` receipt checks must all be true:
    - `containers_healthy`
    - `bot_startup_markers`
    - `postgres_model_keys`

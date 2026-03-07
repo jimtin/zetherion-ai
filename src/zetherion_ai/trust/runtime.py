@@ -78,7 +78,7 @@ async def record_personal_action_decision(
         return None
     try:
         canonical = build_personal_action_trust_decision(user_id=user_id, decision=decision)
-        return await trust_storage.record_shadow_decision(canonical, source_system=source_system)
+        return await trust_storage.record_decision(canonical, source_system=source_system)
     except Exception as exc:
         log.warning(
             "personal_action_trust_audit_failed",
@@ -269,7 +269,7 @@ async def record_routing_trust_decision(
             source_type=source_type,
             decision=decision,
         )
-        return await trust_storage.record_shadow_decision(canonical, source_system=source_system)
+        return await trust_storage.record_decision(canonical, source_system=source_system)
     except Exception as exc:
         log.warning(
             "routing_trust_audit_failed",

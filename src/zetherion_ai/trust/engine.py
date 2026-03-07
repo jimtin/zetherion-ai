@@ -1,4 +1,4 @@
-"""Canonical trust-engine shadow evaluation primitives."""
+"""Canonical trust-engine evaluation primitives."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ class TrustResource:
 
 @dataclass(frozen=True)
 class TrustDecision:
-    """Canonical trust-engine decision used for shadow-mode parity."""
+    """Canonical trust-engine decision."""
 
     adapter_name: str
     action: str
@@ -93,7 +93,7 @@ class TrustDecisionSignature:
 
 @dataclass(frozen=True)
 class TrustShadowResult:
-    """Result of one shadow evaluation."""
+    """Result of one canonical decision evaluation."""
 
     adapter_name: str
     action: str
@@ -106,17 +106,17 @@ TrustAdapter = Callable[..., TrustDecision]
 
 
 class TrustEngine:
-    """Registry-backed trust engine used in shadow mode."""
+    """Registry-backed trust engine used for canonical decision evaluation."""
 
     def __init__(self, *, adapters: Mapping[str, TrustAdapter] | None = None) -> None:
         self._adapters: dict[str, TrustAdapter] = dict(adapters or {})
 
     def register_adapter(self, name: str, adapter: TrustAdapter) -> None:
-        """Register or replace one shadow adapter."""
+        """Register or replace one adapter."""
 
         self._adapters[name] = adapter
 
-    def shadow_evaluate(
+    def evaluate(
         self,
         *,
         adapter_name: str,
@@ -126,12 +126,12 @@ class TrustEngine:
         context: Mapping[str, Any] | None = None,
         legacy_signature: TrustDecisionSignature | None = None,
     ) -> TrustShadowResult | None:
-        """Run one non-throwing shadow evaluation."""
+        """Run one non-throwing canonical decision evaluation."""
 
         adapter = self._adapters.get(adapter_name)
         if adapter is None:
             log.warning(
-                "trust_shadow_error",
+                "trust_decision_error",
                 adapter_name=adapter_name,
                 action=action,
                 error="adapter_not_registered",
@@ -155,7 +155,7 @@ class TrustEngine:
                 diff=diff,
             )
             log.info(
-                "trust_shadow_decision",
+                "trust_decision",
                 adapter_name=adapter_name,
                 action=action,
                 outcome=decision.outcome.value,
@@ -173,7 +173,7 @@ class TrustEngine:
             )
             if diff:
                 log.warning(
-                    "trust_shadow_diff",
+                    "trust_decision_diff",
                     adapter_name=adapter_name,
                     action=action,
                     diff=diff,
@@ -184,12 +184,33 @@ class TrustEngine:
             return result
         except Exception as exc:  # pragma: no cover - guarded by caller contract tests
             log.warning(
-                "trust_shadow_error",
+                "trust_decision_error",
                 adapter_name=adapter_name,
                 action=action,
                 error=str(exc),
             )
             return None
+
+    def shadow_evaluate(
+        self,
+        *,
+        adapter_name: str,
+        action: str,
+        principal: TrustPrincipal | None,
+        resource: TrustResource | None,
+        context: Mapping[str, Any] | None = None,
+        legacy_signature: TrustDecisionSignature | None = None,
+    ) -> TrustShadowResult | None:
+        """Compatibility wrapper for legacy shadow-mode callers."""
+
+        return self.evaluate(
+            adapter_name=adapter_name,
+            action=action,
+            principal=principal,
+            resource=resource,
+            context=context,
+            legacy_signature=legacy_signature,
+        )
 
     @staticmethod
     def _build_diff(
@@ -223,29 +244,62 @@ class TrustEngine:
         return diff
 
 
-_SHADOW_ENGINE: TrustEngine | None = None
-_SHADOW_ENGINE_LOCK = Lock()
+_TRUST_ENGINE: TrustEngine | None = None
+_TRUST_ENGINE_LOCK = Lock()
+
+
+def get_trust_engine() -> TrustEngine:
+    """Return the process-wide canonical trust engine singleton."""
+
+    global _TRUST_ENGINE
+    if _TRUST_ENGINE is None:
+        with _TRUST_ENGINE_LOCK:
+            if _TRUST_ENGINE is None:
+                from zetherion_ai.trust.adapters import build_shadow_adapters
+
+                _TRUST_ENGINE = TrustEngine(adapters=build_shadow_adapters())
+    return _TRUST_ENGINE
+
+
+def set_trust_engine(engine: TrustEngine | None) -> None:
+    """Override the process-wide trust engine, primarily for tests."""
+
+    global _TRUST_ENGINE
+    with _TRUST_ENGINE_LOCK:
+        _TRUST_ENGINE = engine
+
+
+def record_decision(
+    *,
+    adapter_name: str,
+    action: str,
+    principal: TrustPrincipal | None,
+    resource: TrustResource | None,
+    context: Mapping[str, Any] | None = None,
+    legacy_signature: TrustDecisionSignature | None = None,
+) -> TrustShadowResult | None:
+    """Convenience wrapper for non-throwing canonical decision recording."""
+
+    return get_trust_engine().evaluate(
+        adapter_name=adapter_name,
+        action=action,
+        principal=principal,
+        resource=resource,
+        context=context,
+        legacy_signature=legacy_signature,
+    )
 
 
 def get_shadow_trust_engine() -> TrustEngine:
-    """Return the process-wide shadow trust engine singleton."""
+    """Compatibility wrapper for legacy shadow-mode imports."""
 
-    global _SHADOW_ENGINE
-    if _SHADOW_ENGINE is None:
-        with _SHADOW_ENGINE_LOCK:
-            if _SHADOW_ENGINE is None:
-                from zetherion_ai.trust.adapters import build_shadow_adapters
-
-                _SHADOW_ENGINE = TrustEngine(adapters=build_shadow_adapters())
-    return _SHADOW_ENGINE
+    return get_trust_engine()
 
 
 def set_shadow_trust_engine(engine: TrustEngine | None) -> None:
-    """Override the process-wide shadow trust engine, primarily for tests."""
+    """Compatibility wrapper for legacy shadow-mode imports."""
 
-    global _SHADOW_ENGINE
-    with _SHADOW_ENGINE_LOCK:
-        _SHADOW_ENGINE = engine
+    set_trust_engine(engine)
 
 
 def record_shadow_decision(
@@ -257,9 +311,9 @@ def record_shadow_decision(
     context: Mapping[str, Any] | None = None,
     legacy_signature: TrustDecisionSignature | None = None,
 ) -> TrustShadowResult | None:
-    """Convenience wrapper for non-throwing shadow recording."""
+    """Compatibility wrapper for legacy shadow-mode imports."""
 
-    return get_shadow_trust_engine().shadow_evaluate(
+    return record_decision(
         adapter_name=adapter_name,
         action=action,
         principal=principal,

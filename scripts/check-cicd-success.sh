@@ -2,20 +2,21 @@
 set -euo pipefail
 
 usage() {
-  cat <<'EOF'
+  cat <<'USAGE'
 Usage:
   scripts/check-cicd-success.sh --sha <sha> [--ref <ref>]
 
 Rules:
-  - All refs require a successful "CI/CD Pipeline" run for the target SHA.
-  - main/refs/heads/main also require a successful "Deploy Windows" run and
+  - All refs require successful CI evidence for the target SHA.
+  - main/refs/heads/main additionally require a successful "Deploy Windows" run and
     a valid deployment-receipt artifact proving runtime + resilience success.
-EOF
+USAGE
 }
 
 SHA=""
 REF=""
 TARGET_SHA=""
+REPO_SLUG="jimtin/zetherion-ai"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -67,9 +68,7 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-ALL_RUNS_JSON="$(gh run list \
-  --limit 100 \
-  --json databaseId,workflowName,headSha,headBranch,status,conclusion,createdAt,url)"
+ALL_RUNS_JSON="$(gh run list --limit 100 --json databaseId,workflowName,headSha,headBranch,status,conclusion,createdAt,url)"
 
 CI_RUNS_JSON="$(
   jq -c '
@@ -81,7 +80,7 @@ CI_RUNS_JSON="$(
   ' <<<"$ALL_RUNS_JSON"
 )"
 
-CI_RUN_ID="$(
+CI_RUN_ID="$({
   jq -r --arg sha "$TARGET_SHA" --arg sha_short "$SHA" '
     map(select(
       (.headSha == $sha or (.headSha | startswith($sha_short)))
@@ -92,27 +91,49 @@ CI_RUN_ID="$(
     | reverse
     | .[0].databaseId // empty
   ' <<<"$CI_RUNS_JSON"
-)"
+} || true)"
 
-if [[ -z "$CI_RUN_ID" ]]; then
-  echo "ERROR: No successful CI/CD Pipeline run found for commit $TARGET_SHA."
-  echo "$CI_RUNS_JSON" | jq -r '.[] | "- run=\(.databaseId) branch=\(.headBranch) status=\(.status) conclusion=\(.conclusion)"'
-  exit 1
-fi
+CI_SOURCE="workflow"
 
-CI_BRANCH="$(
+CI_BRANCH="$({
   jq -r --arg id "$CI_RUN_ID" '
     map(select((.databaseId | tostring) == $id))
     | .[0].headBranch // ""
   ' <<<"$CI_RUNS_JSON"
-)"
+} || true)"
 
 EFFECTIVE_REF="$REF"
 if [[ -z "$EFFECTIVE_REF" || "$EFFECTIVE_REF" == "HEAD" ]]; then
   EFFECTIVE_REF="$CI_BRANCH"
 fi
 
-echo "CI success verified: run_id=$CI_RUN_ID sha=$TARGET_SHA ref=$EFFECTIVE_REF"
+if [[ -z "$CI_RUN_ID" && ( "$EFFECTIVE_REF" == "main" || "$EFFECTIVE_REF" == "refs/heads/main" ) ]]; then
+  CHECK_RUNS_JSON="$(gh api "repos/$REPO_SLUG/commits/$TARGET_SHA/check-runs")"
+  CI_GATE_SUMMARY_OK="$({
+    jq -r '
+      any(.check_runs[]?; .name == "CI Gate / CI Summary" and .status == "completed" and .conclusion == "success")
+    ' <<<"$CHECK_RUNS_JSON"
+  } || true)"
+  CI_GATE_E2E_OK="$({
+    jq -r '
+      any(.check_runs[]?; .name == "CI Gate / Required E2E Gate" and .status == "completed" and .conclusion == "success")
+    ' <<<"$CHECK_RUNS_JSON"
+  } || true)"
+  if [[ "$CI_GATE_SUMMARY_OK" == "true" && "$CI_GATE_E2E_OK" == "true" ]]; then
+    CI_SOURCE="check-runs"
+  fi
+fi
+
+if [[ -z "$CI_RUN_ID" && "$CI_SOURCE" != "check-runs" ]]; then
+  echo "ERROR: No successful CI evidence found for commit $TARGET_SHA."
+  echo "$CI_RUNS_JSON" | jq -r '.[] | "- run=\(.databaseId) branch=\(.headBranch) sha=\(.headSha) status=\(.status) conclusion=\(.conclusion)"'
+  if [[ "$EFFECTIVE_REF" == "main" || "$EFFECTIVE_REF" == "refs/heads/main" ]]; then
+    echo "Main fallback requires successful check-runs named \"CI Gate / CI Summary\" and \"CI Gate / Required E2E Gate\"."
+  fi
+  exit 1
+fi
+
+echo "CI success verified: source=$CI_SOURCE sha=$TARGET_SHA ref=$EFFECTIVE_REF${CI_RUN_ID:+ run_id=$CI_RUN_ID}"
 
 if [[ "$EFFECTIVE_REF" != "main" && "$EFFECTIVE_REF" != "refs/heads/main" ]]; then
   exit 0
@@ -128,7 +149,7 @@ DEPLOY_RUNS_JSON="$(
   ' <<<"$ALL_RUNS_JSON"
 )"
 
-DEPLOY_RUN_ID="$(
+DEPLOY_RUN_ID="$({
   jq -r --arg sha "$TARGET_SHA" --arg sha_short "$SHA" '
     map(select(
       (.headSha == $sha or (.headSha | startswith($sha_short)))
@@ -139,11 +160,11 @@ DEPLOY_RUN_ID="$(
     | reverse
     | .[0].databaseId // empty
   ' <<<"$DEPLOY_RUNS_JSON"
-)"
+} || true)"
 
 if [[ -z "$DEPLOY_RUN_ID" ]]; then
   echo "ERROR: main requires successful Deploy Windows run for commit $TARGET_SHA."
-  echo "$DEPLOY_RUNS_JSON" | jq -r '.[] | "- run=\(.databaseId) branch=\(.headBranch) status=\(.status) conclusion=\(.conclusion)"'
+  echo "$DEPLOY_RUNS_JSON" | jq -r '.[] | "- run=\(.databaseId) branch=\(.headBranch) sha=\(.headSha) status=\(.status) conclusion=\(.conclusion)"'
   exit 1
 fi
 
@@ -164,7 +185,7 @@ if [[ -z "$RECEIPT_PATH" ]]; then
   exit 1
 fi
 
-IS_VALID="$(
+IS_VALID="$({
   jq -r --arg sha "$TARGET_SHA" --arg sha_short "$SHA" '
     .status == "success"
     and (.target_sha == $sha or (.target_sha | startswith($sha_short)))
@@ -177,7 +198,7 @@ IS_VALID="$(
     and .checks.runner_service_persistent == true
     and .checks.docker_service_persistent == true
   ' "$RECEIPT_PATH"
-)"
+} || true)"
 
 if [[ "$IS_VALID" != "true" ]]; then
   echo "ERROR: deployment receipt did not satisfy success contract:"

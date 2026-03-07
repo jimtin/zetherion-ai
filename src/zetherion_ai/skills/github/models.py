@@ -681,7 +681,7 @@ class AutonomyConfig:
     def get_level(self, action: ActionType) -> AutonomyLevel:
         """Get the autonomy level for an action."""
         level = self.settings.get(action, AutonomyLevel.ASK)
-        _record_github_autonomy_shadow_decision(action=action, level=level)
+        _record_github_autonomy_decision(action=action, level=level)
         return level
 
     def set_level(self, action: ActionType, level: AutonomyLevel) -> bool:
@@ -721,11 +721,11 @@ class AutonomyConfig:
         return cls(settings=settings if settings else dict(DEFAULT_AUTONOMY))
 
 
-def _record_github_autonomy_shadow_decision(*, action: ActionType, level: AutonomyLevel) -> None:
+def _record_github_autonomy_decision(*, action: ActionType, level: AutonomyLevel) -> None:
     """Record a non-blocking shadow decision for GitHub autonomy checks."""
 
     try:
-        from zetherion_ai.trust import TrustPrincipal, TrustResource, record_shadow_decision
+        from zetherion_ai.trust import TrustPrincipal, TrustResource, record_decision
         from zetherion_ai.trust.adapters import build_github_autonomy_signature
 
         principal = TrustPrincipal(
@@ -736,7 +736,7 @@ def _record_github_autonomy_shadow_decision(*, action: ActionType, level: Autono
             resource_id=action.value,
             resource_type="github_action",
         )
-        record_shadow_decision(
+        record_decision(
             adapter_name="github_autonomy",
             action=action.value,
             principal=principal,
@@ -746,3 +746,9 @@ def _record_github_autonomy_shadow_decision(*, action: ActionType, level: Autono
         )
     except Exception:
         return None
+
+
+def _record_github_autonomy_shadow_decision(*, action: ActionType, level: AutonomyLevel) -> None:
+    """Compatibility wrapper for legacy shadow-mode callers."""
+
+    return _record_github_autonomy_decision(action=action, level=level)

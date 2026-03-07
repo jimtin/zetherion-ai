@@ -13,7 +13,7 @@ from zetherion_ai.logging import get_logger
 from zetherion_ai.trust.engine import TrustDecision
 
 if TYPE_CHECKING:
-    import asyncpg  # type: ignore[import-not-found,import-untyped]
+    import asyncpg  # type: ignore[import-untyped]
 
 log = get_logger("zetherion_ai.trust.storage")
 
@@ -725,13 +725,13 @@ class TrustStorage:
             raise RuntimeError("Failed to record trust decision audit")
         return _audit_from_row(row)
 
-    async def record_shadow_decision(
+    async def record_decision(
         self,
         decision: TrustDecision,
         *,
-        source_system: str = "shadow_engine",
+        source_system: str = "trust_engine",
     ) -> TrustDecisionAuditRecord:
-        """Persist one canonical shadow trust decision."""
+        """Persist one canonical trust decision."""
 
         resource_scope = None
         if decision.resource is not None:
@@ -759,6 +759,17 @@ class TrustStorage:
                 metadata=decision.metadata,
             )
         )
+
+    async def record_shadow_decision(
+        self,
+        decision: TrustDecision,
+        *,
+        source_system: str = "shadow_engine",
+    ) -> TrustDecisionAuditRecord:
+        """Compatibility wrapper for legacy shadow-mode call sites."""
+
+        effective_source = "trust_engine" if source_system == "shadow_engine" else source_system
+        return await self.record_decision(decision, source_system=effective_source)
 
     def _require_pool(self) -> asyncpg.Pool:
         if self._pool is None:

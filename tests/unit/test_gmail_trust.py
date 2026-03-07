@@ -706,7 +706,7 @@ class TestShadowHook:
         recorded: list[dict[str, object]] = []
 
         monkeypatch.setattr(
-            "zetherion_ai.skills.gmail.trust._record_gmail_trust_shadow_decision",
+            "zetherion_ai.skills.gmail.trust._record_gmail_trust_decision",
             lambda **kwargs: recorded.append(kwargs),
         )
 
