@@ -41,6 +41,7 @@ async def test_internal_create_tenant_success(
     app_with_internal_and_reporting: web.Application,
 ) -> None:
     app = app_with_internal_and_reporting
+    app["cgs_storage"].get_tenant_mapping = AsyncMock(return_value=None)
     app["cgs_skills_client"].handle_intent = AsyncMock(
         return_value=(
             200,
@@ -60,6 +61,7 @@ async def test_internal_create_tenant_success(
             "name": "Tenant A",
             "domain": "tenant-a.example",
             "key_version": 1,
+            "isolation_stage": "legacy",
         }
     )
 
@@ -78,6 +80,59 @@ async def test_internal_create_tenant_success(
         assert body["error"] is None
         assert body["data"]["cgs_tenant_id"] == "tenant-a"
         assert body["data"]["api_key"] == "sk_live_new"
+        assert body["data"]["isolation_stage"] == "legacy"
+        assert body["data"]["provisioning_status"] == "created"
+
+
+@pytest.mark.asyncio
+async def test_internal_create_tenant_is_idempotent_for_existing_mapping(
+    app_with_internal_and_reporting: web.Application,
+) -> None:
+    app = app_with_internal_and_reporting
+    app["cgs_storage"].get_tenant_mapping = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+            "name": "Tenant A",
+            "domain": "tenant-a.example",
+            "zetherion_api_key": "sk_live_existing",
+            "key_version": 2,
+            "is_active": True,
+            "isolation_stage": "shadow",
+            "metadata": {"provisioning": {"owner_portfolio_ready": True}},
+        }
+    )
+    app["cgs_storage"].update_tenant_profile = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+            "name": "Tenant A",
+            "domain": "tenant-a.example",
+            "key_version": 2,
+            "isolation_stage": "shadow",
+            "is_active": True,
+            "metadata": {"provisioning": {"owner_portfolio_ready": True}},
+        }
+    )
+    app["cgs_skills_client"].handle_intent = AsyncMock()
+
+    async with TestClient(TestServer(app)) as client:
+        resp = await client.post(
+            "/service/ai/v1/internal/tenants",
+            json={
+                "cgs_tenant_id": "tenant-a",
+                "name": "Tenant A",
+                "domain": "tenant-a.example",
+            },
+        )
+        assert resp.status == 200
+        body = await resp.json()
+        assert body["error"] is None
+        assert body["data"]["api_key"] == "sk_live_existing"
+        assert body["data"]["provisioning_status"] == "existing"
+        assert body["data"]["isolation_stage"] == "shadow"
+
+    app["cgs_skills_client"].handle_intent.assert_not_awaited()
 
 
 @pytest.mark.asyncio

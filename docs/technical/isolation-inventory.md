@@ -52,6 +52,8 @@ The manifest captures the current state of:
 - `control_plane`
   - CGS tenant mappings, audits, request logs, queueing, rollout, and
     announcement dispatch
+  - CGS tenant mappings now carry first-class `isolation_stage` and
+    provisioning reconciliation metadata for staged client upgrades
 
 ### Domains that are not isolated yet
 

@@ -18,6 +18,7 @@ from zetherion_ai.cgs_gateway.models import (
     CreateTenantRequest,
     ReleaseMarkerRequest,
 )
+from zetherion_ai.cgs_gateway.provisioning import CGSTenantProvisioningOrchestrator
 from zetherion_ai.cgs_gateway.routes._utils import (
     canonical_upstream_headers,
     enforce_tenant_access,
@@ -120,42 +121,18 @@ async def handle_internal_create_tenant(request: web.Request) -> web.Response:
 
     skills_client = request.app["cgs_skills_client"]
     storage = request.app["cgs_storage"]
-
-    status, skill_response = await skills_client.handle_intent(
-        intent="client_create",
-        user_id=str(principal(request).sub),
-        message="",
-        request_id=rid,
-        context={
-            "name": payload.name,
-            "domain": payload.domain,
-            "config": payload.config or {},
-        },
+    orchestrator = CGSTenantProvisioningOrchestrator(
+        storage=storage,
+        skills_client=skills_client,
     )
-    if status >= 400:
-        raise map_upstream_error(status=status, payload=skill_response, source="skills")
 
-    skill_data = _extract_skill_data(skill_response)
-    zetherion_tenant_id = str(skill_data.get("tenant_id", ""))
-    api_key = str(skill_data.get("api_key", ""))
-    if not zetherion_tenant_id or not api_key:
-        raise GatewayError(
-            code="AI_SKILLS_UPSTREAM_ERROR",
-            message="Skills API response missing tenant_id/api_key",
-            status=502,
-            details={"upstream": skill_response},
-        )
-
-    mapping = await storage.upsert_tenant_mapping(
+    mapping, api_key, created = await orchestrator.provision_tenant(
         cgs_tenant_id=payload.cgs_tenant_id,
-        zetherion_tenant_id=zetherion_tenant_id,
         name=payload.name,
         domain=payload.domain,
-        zetherion_api_key=api_key,
-        metadata={
-            "source": "cgs_internal_create",
-            "config": payload.config or {},
-        },
+        config=payload.config,
+        user_id=str(principal(request).sub),
+        request_id=rid,
     )
 
     response_data = {
@@ -165,8 +142,10 @@ async def handle_internal_create_tenant(request: web.Request) -> web.Response:
         "domain": mapping.get("domain"),
         "api_key": api_key,
         "key_version": mapping["key_version"],
+        "isolation_stage": mapping.get("isolation_stage"),
+        "provisioning_status": "created" if created else "existing",
     }
-    return success_response(rid, response_data, status=201)
+    return success_response(rid, response_data, status=201 if created else 200)
 
 
 async def handle_internal_update_tenant(request: web.Request) -> web.Response:
