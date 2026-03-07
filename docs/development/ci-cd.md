@@ -115,9 +115,10 @@ This script is the canonical full local gate before merge. It performs:
 1. Static analysis (`ruff`, `bandit`, `gitleaks`, `hadolint`, license checks)
 2. Unit tests + `mypy` + `pip-audit` (parallel)
 3. In-process integration tests
-4. Docker test environment rebuild/start (`docker-compose.test.yml`)
-5. Docker and Discord E2E smoke preflight against the externally managed test stack
-6. Full Docker E2E and Discord E2E suites
+4. Isolated Docker test environment provisioning via `scripts/e2e_run_manager.py` + `docker-compose.test.yml`
+5. Docker test environment rebuild/start against the per-run Compose project
+6. Docker and Discord E2E smoke preflight against the externally managed per-run test stack
+7. Full Docker E2E and Discord E2E suites
 
 Run it directly:
 
@@ -130,6 +131,8 @@ Run the changed-file preflight directly when you need fast feedback before the f
 ```bash
 bash scripts/run-local-gate-preflight.sh --base-ref origin/main --head-ref HEAD
 ```
+
+Each invocation now provisions a unique Compose project, host-port map, and stack root under `.artifacts/e2e-runs/` before Docker-backed E2E begins. Residual stacks are cleaned through the same run manager and an expired-run janitor path.
 
 The preflight is driven by the source-controlled manifest at `.ci/local_gate_manifest.json`. It currently requires local fast-fail coverage for:
 
@@ -149,7 +152,7 @@ When a PR is classified `e2e_required=true`, generate local receipt evidence for
 bash scripts/local-required-e2e-receipt.sh
 ```
 
-This writes `.ci/e2e-receipt.json` (head-SHA bound) and must be committed with the PR.
+This writes `.ci/e2e-receipt.json` (head-SHA bound) and must be committed with the PR. Segment 5 extends the receipt with `e2e_run_id`, `compose_project`, `stack_root`, and `docker_cleanup_status` so CI and operators can trace isolated Docker-backed E2E runs.
 
 ### Setup
 
@@ -477,6 +480,7 @@ git push
 | `scripts/run-local-gate-preflight.sh` | Fast-fail pre-push runner for manifest-mapped docs, mypy, and regression suites |
 | `scripts/test-full.sh` | Full production-parity test pipeline (unit + integration + Docker E2E + Discord E2E) |
 | `scripts/ci_e2e_risk_classifier.py` | Changed-path risk classifier for required E2E enforcement |
+| `scripts/e2e_run_manager.py` + `scripts/e2e_run_manager.sh` | Allocate per-run Docker E2E project names, ports, artifact roots, and janitor cleanup for local/canary runs |
 | `scripts/local-required-e2e-receipt.sh` | Local required-E2E runner + receipt writer (`.ci/e2e-receipt.json`) |
 | `scripts/ci-required-e2e-gate.sh` | CI validator for local required-E2E receipt contract (`e2e-contract-receipt`) |
 | `.github/workflows/ci.yml` | GitHub Actions CI/CD workflow (policy + quality + test jobs) |

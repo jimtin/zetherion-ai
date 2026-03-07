@@ -1,0 +1,121 @@
+"""Helpers for isolated Docker-backed E2E runs."""
+
+from __future__ import annotations
+
+import os
+import subprocess
+from dataclasses import dataclass
+
+DEFAULT_COMPOSE_FILE = "docker-compose.test.yml"
+DEFAULT_PROJECT = "zetherion-ai-test"
+
+
+@dataclass(frozen=True)
+class E2ERuntime:
+    compose_file: str
+    project_name: str
+    run_id: str
+    stack_root: str
+    skills_port: int
+    api_port: int
+    cgs_gateway_port: int
+    whatsapp_bridge_port: int
+    postgres_port: int
+    qdrant_port: int
+    ollama_port: int
+    ollama_router_port: int
+
+    @property
+    def skills_url(self) -> str:
+        return f"http://localhost:{self.skills_port}"
+
+    @property
+    def api_url(self) -> str:
+        return f"http://localhost:{self.api_port}"
+
+    @property
+    def cgs_gateway_url(self) -> str:
+        return f"http://localhost:{self.cgs_gateway_port}"
+
+    @property
+    def qdrant_url(self) -> str:
+        return f"http://localhost:{self.qdrant_port}"
+
+    @property
+    def postgres_dsn(self) -> str:
+        return f"postgresql://zetherion:password@localhost:{self.postgres_port}/zetherion"
+
+    def compose_base_command(self) -> list[str]:
+        return ["docker", "compose", "-f", self.compose_file, "-p", self.project_name]
+
+    def service_container_id(self, service: str) -> str | None:
+        result = subprocess.run(
+            [*self.compose_base_command(), "ps", "-q", service],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+        container_id = result.stdout.strip().splitlines()
+        return container_id[0].strip() if container_id else None
+
+    def service_running(self, service: str) -> bool:
+        container_id = self.service_container_id(service)
+        if not container_id:
+            return False
+        result = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.Status}}", container_id],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.returncode == 0 and result.stdout.strip() == "running"
+
+    def service_health(self, service: str) -> str:
+        container_id = self.service_container_id(service)
+        if not container_id:
+            return "missing"
+        result = subprocess.run(
+            [
+                "docker",
+                "inspect",
+                "--format",
+                "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}",
+                container_id,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return "missing"
+        return result.stdout.strip() or "missing"
+
+
+_runtime: E2ERuntime | None = None
+
+
+def get_runtime() -> E2ERuntime:
+    global _runtime
+    if _runtime is not None:
+        return _runtime
+
+    def _port(name: str, default: int) -> int:
+        return int(os.getenv(name, str(default)))
+
+    _runtime = E2ERuntime(
+        compose_file=os.getenv("COMPOSE_FILE", DEFAULT_COMPOSE_FILE),
+        project_name=os.getenv("E2E_PROJECT_NAME", os.getenv("PROJECT", DEFAULT_PROJECT)),
+        run_id=os.getenv("E2E_RUN_ID", "static"),
+        stack_root=os.getenv("E2E_STACK_ROOT", ""),
+        skills_port=_port("E2E_SKILLS_HOST_PORT", 18080),
+        api_port=_port("E2E_API_HOST_PORT", 28443),
+        cgs_gateway_port=_port("E2E_CGS_GATEWAY_HOST_PORT", 28444),
+        whatsapp_bridge_port=_port("E2E_WHATSAPP_BRIDGE_HOST_PORT", 18877),
+        postgres_port=_port("E2E_POSTGRES_HOST_PORT", 15432),
+        qdrant_port=_port("E2E_QDRANT_HOST_PORT", 16333),
+        ollama_port=_port("E2E_OLLAMA_HOST_PORT", 21434),
+        ollama_router_port=_port("E2E_OLLAMA_ROUTER_HOST_PORT", 31434),
+    )
+    return _runtime

@@ -3,7 +3,7 @@
 Tests the full flow against a real PostgreSQL database:
 instance registration, report ingestion, fleet summary, and deletion.
 
-PostgreSQL is expected on localhost:15432 (the Docker test environment).
+PostgreSQL is expected on the host port assigned by the isolated Docker test environment.
 """
 
 from __future__ import annotations
@@ -14,6 +14,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
+
+from tests.integration.e2e_runtime import get_runtime
 
 try:
     import asyncpg  # type: ignore[import-not-found,import-untyped]
@@ -28,7 +30,8 @@ from zetherion_ai.telemetry.models import (
 from zetherion_ai.telemetry.receiver import TelemetryReceiver
 from zetherion_ai.telemetry.storage import TelemetryStorage
 
-POSTGRES_DSN = "postgresql://zetherion:password@localhost:15432/zetherion"
+RUNTIME = get_runtime()
+POSTGRES_DSN = RUNTIME.postgres_dsn
 SKIP_INTEGRATION = os.getenv("SKIP_INTEGRATION_TESTS", "false").lower() == "true"
 
 
@@ -47,7 +50,7 @@ async def pg_pool():
     try:
         pool = await asyncpg.create_pool(POSTGRES_DSN, min_size=1, max_size=3, timeout=5)
     except Exception:
-        pytest.skip("PostgreSQL not reachable at localhost:15432")
+        pytest.skip(f"PostgreSQL not reachable at {POSTGRES_DSN}")
     yield pool
     await pool.close()
 

@@ -13,6 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment CI-05 Containerized E2E Run Isolation (2026-03-08)
+
+- Impacted capability IDs:
+  - `ci.e2e.run_isolation`
+  - `ci.local_preflight`
+- Impacted workflow scenario IDs:
+  - `e2e.concurrent_docker_runs_isolated`
+  - `e2e.stale_stack_janitor_cleanup`
+- Added `scripts/e2e_run_manager.py` and `scripts/e2e_run_manager.sh` so local Docker-backed E2E runs now allocate a unique run id, Compose project, artifact root, host-port map, and cleanup manifest per invocation.
+- Converted `docker-compose.test.yml` to env-driven host ports and per-run stack roots, and removed fixed `container_name` declarations so concurrent local runs can coexist.
+- Updated `scripts/pre-push-tests.sh`, `scripts/local-required-e2e-receipt.sh`, and the Docker-backed integration tests to consume runtime metadata instead of assuming one global `zetherion-ai-test` stack.
+- Expanded `.ci/local_gate_manifest.json` with an isolated E2E harness regression suite so future harness or wrapper changes must prove the run manager/runtime contract locally before push.
+
 ### Changed - Segment CI-04 Heavy Verification Offload and Workflow Noise Removal (2026-03-08)
 
 - Impacted capability IDs:

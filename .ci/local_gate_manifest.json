@@ -34,7 +34,18 @@
     "scripts/verify-windows-host.ps1",
     ".ci/local_gate_manifest.json",
     "scripts/local_gate_plan.py",
-    "scripts/run-local-gate-preflight.sh"
+    "scripts/run-local-gate-preflight.sh",
+    "docker-compose.test.yml",
+    "scripts/e2e_run_manager.py",
+    "scripts/e2e_run_manager.sh",
+    "scripts/pre-push-tests.sh",
+    "scripts/test-full.sh",
+    "scripts/local-required-e2e-receipt.sh",
+    "tests/integration/e2e_runtime.py",
+    "tests/integration/test_e2e.py",
+    "tests/integration/test_health_e2e.py",
+    "tests/integration/test_update_e2e.py",
+    "tests/integration/test_telemetry_e2e.py"
   ],
   "requirements": {
     "endpoint-doc-bundle": {
@@ -93,6 +104,14 @@
       "pytest_targets": [
         "tests/unit/test_check_optional_service_guards.py",
         "tests/unit/test_validate_deployment_receipt.py"
+      ]
+    },
+    "e2e-isolation-regression-suite": {
+      "kind": "pytest",
+      "description": "Run the isolated E2E harness regression suite.",
+      "pytest_targets": [
+        "tests/unit/test_e2e_run_manager.py",
+        "tests/unit/test_e2e_runtime.py"
       ]
     }
   },
@@ -178,7 +197,10 @@
         "scripts/require-local-gate-update.sh",
         ".ci/local_gate_manifest.json",
         "scripts/local_gate_plan.py",
-        "scripts/run-local-gate-preflight.sh"
+        "scripts/run-local-gate-preflight.sh",
+        "scripts/pre-push-tests.sh",
+        "scripts/test-full.sh",
+        "scripts/local-required-e2e-receipt.sh"
       ],
       "requirements": [
         "ci-receipt-regression-suite",
@@ -197,6 +219,26 @@
       "requirements": [
         "deploy-preflight-regression-suite",
         "ci-receipt-regression-suite"
+      ]
+    },
+    {
+      "id": "e2e-harness-isolation-regressions",
+      "covers_protected": true,
+      "patterns": [
+        "docker-compose.test.yml",
+        "scripts/e2e_run_manager.py",
+        "scripts/e2e_run_manager.sh",
+        "scripts/pre-push-tests.sh",
+        "scripts/test-full.sh",
+        "scripts/local-required-e2e-receipt.sh",
+        "tests/integration/e2e_runtime.py",
+        "tests/integration/test_e2e.py",
+        "tests/integration/test_health_e2e.py",
+        "tests/integration/test_update_e2e.py",
+        "tests/integration/test_telemetry_e2e.py"
+      ],
+      "requirements": [
+        "e2e-isolation-regression-suite"
       ]
     }
   ]

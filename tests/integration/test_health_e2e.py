@@ -1,8 +1,8 @@
 """End-to-end Docker integration tests for the Health Analyzer system.
 
 Exercises the health analysis pipeline against the real Docker Compose
-test environment (``docker-compose.test.yml``).  The skills service runs
-on port 18080 and PostgreSQL on port 15432.
+test environment (``docker-compose.test.yml``). The skills service and
+PostgreSQL run on the host ports assigned to the isolated E2E runtime.
 
 Run with::
 
@@ -20,8 +20,11 @@ import httpx
 import pytest
 import pytest_asyncio
 
-SKILLS_URL = "http://localhost:18080"
-POSTGRES_DSN = "postgresql://zetherion:password@localhost:15432/zetherion"
+from tests.integration.e2e_runtime import get_runtime
+
+RUNTIME = get_runtime()
+SKILLS_URL = RUNTIME.skills_url
+POSTGRES_DSN = RUNTIME.postgres_dsn
 
 SKIP_INTEGRATION = os.getenv("SKIP_INTEGRATION_TESTS", "false").lower() == "true"
 
@@ -33,7 +36,9 @@ SKIP_INTEGRATION = os.getenv("SKIP_INTEGRATION_TESTS", "false").lower() == "true
 
 def _get_api_secret() -> str | None:
     """Resolve skills API secret from test container env with robust fallbacks."""
-    container_name = "zetherion-ai-test-skills"
+    container_id = RUNTIME.service_container_id("zetherion-ai-skills")
+    if not container_id:
+        return None
     secret_keys = ("SKILLS_API_SECRET", "ZETHERION_SKILLS_API_SECRET")
 
     # Prefer docker inspect because distroless images may not include printenv.
@@ -44,7 +49,7 @@ def _get_api_secret() -> str | None:
                 "inspect",
                 "--format",
                 "{{json .Config.Env}}",
-                container_name,
+                container_id,
             ],
             capture_output=True,
             text=True,
@@ -70,7 +75,7 @@ def _get_api_secret() -> str | None:
                 [
                     "docker",
                     "exec",
-                    container_name,
+                    container_id,
                     "printenv",
                     key,
                 ],
@@ -94,22 +99,7 @@ def _get_api_secret() -> str | None:
 def _docker_running() -> bool:
     """Return True if the skills container is running."""
     try:
-        result = subprocess.run(
-            [
-                "docker",
-                "ps",
-                "--filter",
-                "name=zetherion-ai-test-skills",
-                "--filter",
-                "status=running",
-                "--format",
-                "{{.Names}}",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        return "zetherion-ai-test-skills" in result.stdout
+        return RUNTIME.service_running("zetherion-ai-skills")
     except Exception:
         return False
 

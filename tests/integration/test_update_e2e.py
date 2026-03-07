@@ -2,7 +2,7 @@
 
 Exercises the UpdateCheckerSkill through the real skills server running inside
 the Docker Compose test environment (``docker-compose.test.yml``).  Tests hit
-the HTTP endpoints exposed on port 18080 with ``httpx`` sync calls.
+the HTTP endpoints exposed by the isolated runtime with ``httpx`` sync calls.
 
 Requires the full Docker test stack to be running.  When Docker is not
 available or ``SKIP_INTEGRATION_TESTS=true``, all tests are skipped gracefully.
@@ -17,7 +17,10 @@ import subprocess
 import httpx
 import pytest
 
-SKILLS_URL = "http://localhost:18080"
+from tests.integration.e2e_runtime import get_runtime
+
+RUNTIME = get_runtime()
+SKILLS_URL = RUNTIME.skills_url
 SKIP_INTEGRATION = os.getenv("SKIP_INTEGRATION_TESTS", "false").lower() == "true"
 
 
@@ -28,7 +31,9 @@ SKIP_INTEGRATION = os.getenv("SKIP_INTEGRATION_TESTS", "false").lower() == "true
 
 def _get_api_secret() -> str | None:
     """Resolve skills API secret from test container env with robust fallbacks."""
-    container_name = "zetherion-ai-test-skills"
+    container_id = RUNTIME.service_container_id("zetherion-ai-skills")
+    if not container_id:
+        return None
     secret_keys = ("SKILLS_API_SECRET", "ZETHERION_SKILLS_API_SECRET")
 
     # Prefer docker inspect because distroless images may not include printenv.
@@ -39,7 +44,7 @@ def _get_api_secret() -> str | None:
                 "inspect",
                 "--format",
                 "{{json .Config.Env}}",
-                container_name,
+                container_id,
             ],
             capture_output=True,
             text=True,
@@ -65,7 +70,7 @@ def _get_api_secret() -> str | None:
                 [
                     "docker",
                     "exec",
-                    container_name,
+                    container_id,
                     "printenv",
                     key,
                 ],

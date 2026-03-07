@@ -6,7 +6,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: zetherion-ai-test-bot
     restart: "no"  # Don't restart during tests
     read_only: true
     security_opt:
@@ -43,8 +42,8 @@ services:
       - ALLOWED_USER_IDS=1468994603633086485
       - OWNER_USER_ID=1468994603633086485
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
+      - ${E2E_STACK_ROOT:-./.artifacts/e2e-runs/static}/data:/app/data
+      - ${E2E_STACK_ROOT:-./.artifacts/e2e-runs/static}/logs:/app/logs
     networks:
       - zetherion-ai-test-net
 
@@ -53,7 +52,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
-    container_name: zetherion-ai-test-api
     restart: "no"
     read_only: true
     security_opt:
@@ -82,7 +80,7 @@ services:
       - ENVIRONMENT=test
     # Expose port for integration test health checks
     ports:
-      - "28443:8443"
+      - "${E2E_API_HOST_PORT:-28443}:8443"
     networks:
       - zetherion-ai-test-net
     # Use Dockerfile HEALTHCHECK - distroless can only exec via ENTRYPOINT
@@ -92,7 +90,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
-    container_name: zetherion-ai-test-cgs-gateway
     command: ["-m", "zetherion_ai.cgs_gateway.server"]
     restart: "no"
     read_only: true
@@ -123,9 +120,9 @@ services:
       - ZETHERION_SKILLS_API_SECRET=${ZETHERION_SKILLS_API_SECRET:-${SKILLS_API_SECRET:-test-skills-secret}}
       - ENVIRONMENT=test
     volumes:
-      - ./data:/app/data
+      - ${E2E_STACK_ROOT:-./.artifacts/e2e-runs/static}/data:/app/data
     ports:
-      - "28444:8443"
+      - "${E2E_CGS_GATEWAY_HOST_PORT:-28444}:8443"
     networks:
       - zetherion-ai-test-net
 
@@ -133,7 +130,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.skills
-    container_name: zetherion-ai-test-skills
     restart: "no"
     read_only: true
     security_opt:
@@ -165,9 +161,9 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     # Expose port for integration test health checks
     ports:
-      - "18080:8080"
+      - "${E2E_SKILLS_HOST_PORT:-18080}:8080"
     volumes:
-      - ./data:/app/data
+      - ${E2E_STACK_ROOT:-./.artifacts/e2e-runs/static}/data:/app/data
     networks:
       - zetherion-ai-test-net
     # Use Dockerfile HEALTHCHECK - distroless can only exec via ENTRYPOINT
@@ -176,7 +172,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.whatsapp-bridge
-    container_name: zetherion-ai-test-whatsapp-bridge
     restart: "no"
     security_opt:
       - no-new-privileges:true
@@ -196,22 +191,21 @@ services:
       - WHATSAPP_BRIDGE_STATE_PATH=/app/data/whatsapp-bridge-state.enc
       - WHATSAPP_BRIDGE_STATE_KEY=MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=
     ports:
-      - "18877:8877"
+      - "${E2E_WHATSAPP_BRIDGE_HOST_PORT:-18877}:8877"
     volumes:
-      - ./data:/app/data
+      - ${E2E_STACK_ROOT:-./.artifacts/e2e-runs/static}/data:/app/data
     networks:
       - zetherion-ai-test-net
 
   # Ollama Router Container (small, fast model for routing)
   ollama-router:
     image: ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed
-    container_name: zetherion-ai-test-ollama-router
     restart: "no"
     security_opt:
       - no-new-privileges:true
     # Expose port for integration tests (host needs to reach router)
     ports:
-      - "31434:11434"
+      - "${E2E_OLLAMA_ROUTER_HOST_PORT:-31434}:11434"
     healthcheck:
       test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/11434' || exit 1"]
       interval: 10s
@@ -234,13 +228,12 @@ services:
   # Ollama Generation Container (larger model for complex queries + embeddings)
   ollama:
     image: ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed
-    container_name: zetherion-ai-test-ollama
     restart: "no"
     security_opt:
       - no-new-privileges:true
     # Use different host port for tests (21434 instead of 11434)
     ports:
-      - "21434:11434"
+      - "${E2E_OLLAMA_HOST_PORT:-21434}:11434"
     healthcheck:
       test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/11434' || exit 1"]
       interval: 10s
@@ -263,7 +256,6 @@ services:
 
   postgres:
     image: postgres:17-alpine
-    container_name: zetherion-ai-test-postgres
     restart: "no"
     security_opt:
       - no-new-privileges:true
@@ -278,7 +270,7 @@ services:
       retries: 5
       start_period: 10s
     ports:
-      - "15432:5432"
+      - "${E2E_POSTGRES_HOST_PORT:-15432}:5432"
     volumes:
       - postgres_data_test:/var/lib/postgresql/data
     networks:
@@ -286,13 +278,12 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest@sha256:0425e3e03e7fd9b3dc95c4214546afe19de2eb2e28ca621441a56663ac6e1f46
-    container_name: zetherion-ai-test-qdrant
     restart: "no"
     security_opt:
       - no-new-privileges:true
     # Use different host port for tests (16333 instead of 6333)
     ports:
-      - "16333:6333"
+      - "${E2E_QDRANT_HOST_PORT:-16333}:6333"
     healthcheck:
       test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/6333' || exit 1"]
       interval: 10s
