@@ -3156,17 +3156,42 @@ class SkillsServer:
                 denied_reasons=denied_reasons,
             )
             if denied_reasons:
-                seen: set[tuple[str, str, str, str, str]] = set()
+                seen: set[tuple[str, str, str, str, str, str]] = set()
                 for denied in denied_reasons[:8]:
+                    denial_kind = str(denied.get("kind") or "messaging_grant").strip().lower()
                     permission = str(denied.get("permission") or "").strip().lower()
                     provider = str(denied.get("provider") or "").strip().lower()
                     chat_id = str(denied.get("chat_id") or "").strip()
+                    resource_scope = str(denied.get("resource_scope") or "").strip()
                     reason = str(denied.get("reason") or "grant_required").strip().lower()
                     job_ref = str(denied.get("job_id") or "").strip()
-                    key = (job_ref, permission, provider, chat_id, reason)
+                    key = (
+                        job_ref,
+                        denial_kind,
+                        permission,
+                        provider,
+                        chat_id,
+                        resource_scope or reason,
+                    )
                     if key in seen:
                         continue
                     seen.add(key)
+                    if denial_kind == "delegation_grant":
+                        await self._record_security_event(
+                            tenant_id=tenant_id,
+                            event_type="worker_delegation_access_denied",
+                            severity="high",
+                            action=str(denied.get("action") or permission or "worker.delegation"),
+                            source="worker-bridge",
+                            payload={
+                                "node_id": node_id,
+                                "job_id": job_ref or None,
+                                "permission": permission or None,
+                                "resource_scope": resource_scope or None,
+                                "reason": reason,
+                            },
+                        )
+                        continue
                     action_name = (
                         "messaging.read"
                         if permission == "read"

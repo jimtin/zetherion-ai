@@ -167,6 +167,7 @@ class WorkerJob:
     runner: str
     payload: dict[str, Any]
     required_capabilities: tuple[str, ...]
+    delegation_access: dict[str, Any] | None = None
 
     @classmethod
     def from_claim_payload(cls, payload: dict[str, Any]) -> WorkerJob:
@@ -180,6 +181,10 @@ class WorkerJob:
             raw_payload = {}
         if not isinstance(raw_payload, dict):
             raise ValueError("job payload must be an object")
+        delegation_access_raw = raw_payload.get("worker_delegation_access")
+        delegation_access = (
+            dict(delegation_access_raw) if isinstance(delegation_access_raw, dict) else None
+        )
         required_capabilities = tuple(_parse_string_list(payload.get("required_capabilities")))
         return cls(
             job_id=job_id,
@@ -187,6 +192,7 @@ class WorkerJob:
             runner=runner,
             payload=raw_payload,
             required_capabilities=required_capabilities,
+            delegation_access=delegation_access,
         )
 
 
@@ -841,6 +847,7 @@ class WorkerRuntime:
 
         try:
             self._enforce_action(job.action)
+            self._enforce_worker_delegation_access(job)
             runner = self._resolve_runner(job.runner)
             logger.append(
                 "job_started",
@@ -975,6 +982,70 @@ class WorkerRuntime:
                 code="WORKER_GUARDRAIL_ACTION_NOT_ALLOWED",
                 message=f"Action '{normalized}' is not allowlisted",
                 details={"action": normalized},
+            )
+
+    def _enforce_worker_delegation_access(self, job: WorkerJob) -> None:
+        normalized_action = job.action.strip().lower()
+        if normalized_action not in {
+            "repo.patch",
+            "repo.commit",
+            "repo.pr.open",
+            "codex.session.control",
+        }:
+            return
+        access = job.delegation_access or {}
+        if not access:
+            raise GuardrailError(
+                code="WORKER_GUARDRAIL_DELEGATION_REQUIRED",
+                message="Worker delegation access metadata is required for this action",
+                details={"action": normalized_action, "job_id": job.job_id},
+            )
+        permission = str(access.get("permission") or "").strip().lower()
+        resource_scope = str(access.get("resource_scope") or "").strip()
+        if permission != normalized_action:
+            raise GuardrailError(
+                code="WORKER_GUARDRAIL_DELEGATION_PERMISSION_MISMATCH",
+                message="Delegation permission does not match the claimed action",
+                details={
+                    "action": normalized_action,
+                    "permission": permission,
+                    "job_id": job.job_id,
+                },
+            )
+        if normalized_action in {"repo.patch", "repo.commit", "repo.pr.open"}:
+            repo_root = str(
+                job.payload.get("repo_root")
+                or job.payload.get("workspace_root")
+                or job.payload.get("workdir")
+                or ""
+            ).strip()
+            expected_scope = f"repo:{repo_root}" if repo_root else ""
+            if not repo_root or resource_scope not in {expected_scope, "repo:*"}:
+                raise GuardrailError(
+                    code="WORKER_GUARDRAIL_DELEGATION_SCOPE_MISMATCH",
+                    message="Delegation scope does not match repo_root",
+                    details={
+                        "action": normalized_action,
+                        "resource_scope": resource_scope,
+                        "expected_scope": expected_scope,
+                        "job_id": job.job_id,
+                    },
+                )
+            return
+        session_id = str(
+            job.payload.get("session_id") or job.payload.get("codex_session_id") or ""
+        ).strip()
+        expected_scope = f"codex.session:{session_id}" if session_id else ""
+        if not session_id or resource_scope not in {expected_scope, "codex.session:*"}:
+            raise GuardrailError(
+                code="WORKER_GUARDRAIL_DELEGATION_SCOPE_MISMATCH",
+                message="Delegation scope does not match codex session",
+                details={
+                    "action": normalized_action,
+                    "resource_scope": resource_scope,
+                    "expected_scope": expected_scope,
+                    "job_id": job.job_id,
+                },
             )
 
     def _job_logger(self, job_id: str) -> TamperEvidentJobLog:

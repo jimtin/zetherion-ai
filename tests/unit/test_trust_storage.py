@@ -46,6 +46,9 @@ def test_normalize_resource_scope_accepts_supported_prefixes() -> None:
     assert normalize_resource_scope("messaging.chat:whatsapp:chat-1") == (
         "messaging.chat:whatsapp:chat-1"
     )
+    assert normalize_resource_scope("worker_artifact:tenant-a:plan-1:step-1:retry-1") == (
+        "worker_artifact:tenant-a:plan-1:step-1:retry-1"
+    )
 
 
 def test_normalize_resource_scope_rejects_unknown_prefix() -> None:
