@@ -42,6 +42,8 @@ from zetherion_ai.routing.personality_prompt import build_personality_prompt
 from zetherion_ai.routing.registry import ProviderRegistry
 from zetherion_ai.routing.task_calendar_router import TaskCalendarRouter
 from zetherion_ai.security.content_pipeline import ContentSecurityPipeline
+from zetherion_ai.trust.runtime import record_routing_trust_decision
+from zetherion_ai.trust.storage import TrustStorage
 
 if TYPE_CHECKING:
     from zetherion_ai.personal.storage import PersonalStorage
@@ -128,6 +130,7 @@ class EmailRouter:
         local_extraction_required: bool = True,
         user_context_resolver: Callable[[int], Awaitable[dict[str, Any]]] | None = None,
         attachment_handling_enabled: bool = False,
+        trust_storage: TrustStorage | None = None,
     ) -> None:
         self._storage = storage
         self._providers = providers
@@ -138,6 +141,7 @@ class EmailRouter:
         self._local_extraction_required = local_extraction_required
         self._user_context_resolver = user_context_resolver
         self._attachment_handling_enabled = attachment_handling_enabled
+        self._trust_storage = trust_storage
         self._personal_storage: PersonalStorage | None = None
 
         settings = get_settings()
@@ -323,6 +327,7 @@ class EmailRouter:
                 "email",
                 duplicate_decision,
             )
+            await self._record_route_trust_decision(user_id=user_id, decision=duplicate_decision)
             return duplicate_decision
 
         attachment_meta = self._attachment_filter_metadata(email)
@@ -457,6 +462,7 @@ class EmailRouter:
                 },
             )
             await self._storage.record_routing_decision(user_id, provider, "email", decision)
+            await self._record_route_trust_decision(user_id=user_id, decision=decision)
             await self._storage.upsert_object_link(
                 user_id=user_id,
                 provider=provider,
@@ -489,6 +495,7 @@ class EmailRouter:
                 },
             )
             await self._storage.record_routing_decision(user_id, provider, "email", decision)
+            await self._record_route_trust_decision(user_id=user_id, decision=decision)
             await self._storage.upsert_object_link(
                 user_id=user_id,
                 provider=provider,
@@ -543,6 +550,7 @@ class EmailRouter:
                 "email",
                 final_decision,
             )
+            await self._record_route_trust_decision(user_id=user_id, decision=final_decision)
 
         final_decision.metadata = {
             **(final_decision.metadata or {}),
@@ -654,6 +662,7 @@ class EmailRouter:
                 metadata=metadata,
             )
             await self._storage.record_routing_decision(user_id, provider, "email", decision)
+            await self._record_route_trust_decision(user_id=user_id, decision=decision)
             return decision
 
         await self._store_email(
@@ -673,6 +682,7 @@ class EmailRouter:
             metadata=metadata,
         )
         await self._storage.record_routing_decision(user_id, provider, "email", decision)
+        await self._record_route_trust_decision(user_id=user_id, decision=decision)
         return decision
 
     async def _classify_email(
@@ -1389,6 +1399,21 @@ class EmailRouter:
             to_emails=[str(x) for x in raw.get("to_emails", []) if isinstance(x, str)],
             received_at=received_at,
             metadata={k: v for k, v in raw.items() if k not in {"body_text", "body_preview"}},
+        )
+
+    async def _record_route_trust_decision(
+        self,
+        *,
+        user_id: int,
+        decision: RouteDecision,
+    ) -> None:
+        await record_routing_trust_decision(
+            self._trust_storage,
+            user_id=user_id,
+            action="routing.email.process",
+            source_type=IngestionSource.EMAIL.value,
+            decision=decision,
+            source_system="email_router",
         )
 
     def _resolve_owner_email(self, *, account_ref: str, email: NormalizedEmail) -> str:

@@ -24,6 +24,8 @@ from zetherion_ai.routing.models import (
 from zetherion_ai.routing.policies import conflict_mode
 from zetherion_ai.routing.registry import ProviderRegistry
 from zetherion_ai.security.content_pipeline import ContentSecurityPipeline
+from zetherion_ai.trust.runtime import record_routing_trust_decision
+from zetherion_ai.trust.storage import TrustStorage
 
 log = get_logger("zetherion_ai.routing.task_calendar_router")
 
@@ -37,10 +39,12 @@ class TaskCalendarRouter:
         storage: IntegrationStorage,
         providers: ProviderRegistry,
         security: ContentSecurityPipeline,
+        trust_storage: TrustStorage | None = None,
     ) -> None:
         self._storage = storage
         self._providers = providers
         self._security = security
+        self._trust_storage = trust_storage
 
     async def route_task(
         self,
@@ -52,15 +56,21 @@ class TaskCalendarRouter:
         security_checked: bool = False,
     ) -> RouteDecision:
         """Route a normalized task, scheduling an event when time-bound."""
+        source_type = envelope.source_type.value
         if not security_checked:
             security_decision = await self._security_gate(
                 user_id=user_id,
                 provider=provider,
-                source_type=envelope.source_type.value,
+                source_type=source_type,
                 content=self._content_from_envelope(envelope),
             )
             if security_decision is not None:
-                return security_decision
+                return await self._finalize_decision(
+                    user_id=user_id,
+                    action="routing.tasks.route",
+                    source_type=source_type,
+                    decision=security_decision,
+                )
 
         if task.scheduled_start and task.scheduled_end:
             event = NormalizedEvent(
@@ -81,11 +91,16 @@ class TaskCalendarRouter:
 
         adapters = self._providers.adapters(provider)
         if adapters is None or adapters.task is None:
-            return RouteDecision(
-                mode=RouteMode.DRAFT,
-                route_tag=RouteTag.TASK_CANDIDATE,
-                reason=f"No task adapter configured for provider '{provider}'",
-                provider=provider,
+            return await self._finalize_decision(
+                user_id=user_id,
+                action="routing.tasks.route",
+                source_type=source_type,
+                decision=RouteDecision(
+                    mode=RouteMode.DRAFT,
+                    route_tag=RouteTag.TASK_CANDIDATE,
+                    reason=f"No task adapter configured for provider '{provider}'",
+                    provider=provider,
+                ),
             )
 
         task_lists = await adapters.task.list_task_lists(user_id)
@@ -102,23 +117,28 @@ class TaskCalendarRouter:
             DestinationType.TASK_LIST,
         )
         if primary is None:
-            return RouteDecision(
-                mode=RouteMode.ASK,
-                route_tag=RouteTag.TASK_CANDIDATE,
-                reason="No primary task list configured. Ask the user to choose one.",
-                provider=provider,
-                metadata={
-                    "needs_primary_selection": True,
-                    "task_list_options": [
-                        {
-                            "id": t.destination_id,
-                            "name": t.display_name,
-                            "writable": t.writable,
-                            "is_primary": t.is_primary,
-                        }
-                        for t in task_lists
-                    ],
-                },
+            return await self._finalize_decision(
+                user_id=user_id,
+                action="routing.tasks.route",
+                source_type=source_type,
+                decision=RouteDecision(
+                    mode=RouteMode.ASK,
+                    route_tag=RouteTag.TASK_CANDIDATE,
+                    reason="No primary task list configured. Ask the user to choose one.",
+                    provider=provider,
+                    metadata={
+                        "needs_primary_selection": True,
+                        "task_list_options": [
+                            {
+                                "id": t.destination_id,
+                                "name": t.display_name,
+                                "writable": t.writable,
+                                "is_primary": t.is_primary,
+                            }
+                            for t in task_lists
+                        ],
+                    },
+                ),
             )
 
         created = await adapters.task.create_task(user_id, primary.destination_id, task)
@@ -133,26 +153,25 @@ class TaskCalendarRouter:
             metadata={"title": created.title},
         )
 
-        decision = RouteDecision(
-            mode=RouteMode.AUTO,
-            route_tag=RouteTag.TASK_CANDIDATE,
-            reason="Task routed to primary task list",
-            provider=provider,
-            target=DestinationRef(
+        return await self._finalize_decision(
+            user_id=user_id,
+            action="routing.tasks.route",
+            source_type=source_type,
+            decision=RouteDecision(
+                mode=RouteMode.AUTO,
+                route_tag=RouteTag.TASK_CANDIDATE,
+                reason="Task routed to primary task list",
                 provider=provider,
-                destination_id=primary.destination_id,
-                destination_type=DestinationType.TASK_LIST,
-                display_name=primary.display_name,
+                target=DestinationRef(
+                    provider=provider,
+                    destination_id=primary.destination_id,
+                    destination_type=DestinationType.TASK_LIST,
+                    display_name=primary.display_name,
+                ),
+                metadata={"external_task_id": created.task_id},
             ),
-            metadata={"external_task_id": created.task_id},
+            persist_routing_decision=True,
         )
-        await self._storage.record_routing_decision(
-            user_id,
-            provider,
-            envelope.source_type.value,
-            decision,
-        )
-        return decision
 
     async def route_event(
         self,
@@ -165,23 +184,34 @@ class TaskCalendarRouter:
         security_checked: bool = False,
     ) -> RouteDecision:
         """Route a normalized event with conflict checks across calendars."""
+        source_type = envelope.source_type.value
         if not security_checked:
             security_decision = await self._security_gate(
                 user_id=user_id,
                 provider=provider,
-                source_type=envelope.source_type.value,
+                source_type=source_type,
                 content=self._content_from_envelope(envelope),
             )
             if security_decision is not None:
-                return security_decision
+                return await self._finalize_decision(
+                    user_id=user_id,
+                    action="routing.calendar.route",
+                    source_type=source_type,
+                    decision=security_decision,
+                )
 
         adapters = self._providers.adapters(provider)
         if adapters is None or adapters.calendar is None:
-            return RouteDecision(
-                mode=RouteMode.DRAFT,
-                route_tag=route_tag,
-                reason=f"No calendar adapter configured for provider '{provider}'",
-                provider=provider,
+            return await self._finalize_decision(
+                user_id=user_id,
+                action="routing.calendar.route",
+                source_type=source_type,
+                decision=RouteDecision(
+                    mode=RouteMode.DRAFT,
+                    route_tag=route_tag,
+                    reason=f"No calendar adapter configured for provider '{provider}'",
+                    provider=provider,
+                ),
             )
 
         calendars = await adapters.calendar.list_calendars(user_id)
@@ -198,23 +228,28 @@ class TaskCalendarRouter:
             DestinationType.CALENDAR,
         )
         if primary is None:
-            return RouteDecision(
-                mode=RouteMode.ASK,
-                route_tag=route_tag,
-                reason="No primary calendar configured. Ask the user to choose one.",
-                provider=provider,
-                metadata={
-                    "needs_primary_selection": True,
-                    "calendar_options": [
-                        {
-                            "id": c.destination_id,
-                            "name": c.display_name,
-                            "writable": c.writable,
-                            "is_primary": c.is_primary,
-                        }
-                        for c in calendars
-                    ],
-                },
+            return await self._finalize_decision(
+                user_id=user_id,
+                action="routing.calendar.route",
+                source_type=source_type,
+                decision=RouteDecision(
+                    mode=RouteMode.ASK,
+                    route_tag=route_tag,
+                    reason="No primary calendar configured. Ask the user to choose one.",
+                    provider=provider,
+                    metadata={
+                        "needs_primary_selection": True,
+                        "calendar_options": [
+                            {
+                                "id": c.destination_id,
+                                "name": c.display_name,
+                                "writable": c.writable,
+                                "is_primary": c.is_primary,
+                            }
+                            for c in calendars
+                        ],
+                    },
+                ),
             )
 
         calendar_ids = [c.destination_id for c in calendars] or [primary.destination_id]
@@ -239,49 +274,47 @@ class TaskCalendarRouter:
             attendee_impacting=attendee_impacting,
         )
         if conflict and conflict.requires_confirmation:
-            decision = RouteDecision(
-                mode=RouteMode.ASK,
-                route_tag=route_tag,
-                reason=conflict.suggestion,
-                provider=provider,
-                target=DestinationRef(
+            return await self._finalize_decision(
+                user_id=user_id,
+                action="routing.calendar.route",
+                source_type=source_type,
+                decision=RouteDecision(
+                    mode=RouteMode.ASK,
+                    route_tag=route_tag,
+                    reason=conflict.suggestion,
                     provider=provider,
-                    destination_id=primary.destination_id,
-                    destination_type=DestinationType.CALENDAR,
-                    display_name=primary.display_name,
+                    target=DestinationRef(
+                        provider=provider,
+                        destination_id=primary.destination_id,
+                        destination_type=DestinationType.CALENDAR,
+                        display_name=primary.display_name,
+                    ),
+                    conflict=conflict,
                 ),
-                conflict=conflict,
+                persist_routing_decision=True,
             )
-            await self._storage.record_routing_decision(
-                user_id,
-                provider,
-                envelope.source_type.value,
-                decision,
-            )
-            return decision
 
         if conflict and conflict.severity >= 0.25:
-            decision = RouteDecision(
-                mode=RouteMode.DRAFT,
-                route_tag=route_tag,
-                reason=conflict.suggestion,
-                provider=provider,
-                target=DestinationRef(
+            return await self._finalize_decision(
+                user_id=user_id,
+                action="routing.calendar.route",
+                source_type=source_type,
+                decision=RouteDecision(
+                    mode=RouteMode.DRAFT,
+                    route_tag=route_tag,
+                    reason=conflict.suggestion,
                     provider=provider,
-                    destination_id=primary.destination_id,
-                    destination_type=DestinationType.CALENDAR,
-                    display_name=primary.display_name,
+                    target=DestinationRef(
+                        provider=provider,
+                        destination_id=primary.destination_id,
+                        destination_type=DestinationType.CALENDAR,
+                        display_name=primary.display_name,
+                    ),
+                    conflict=conflict,
+                    metadata={"draft_only": True},
                 ),
-                conflict=conflict,
-                metadata={"draft_only": True},
+                persist_routing_decision=True,
             )
-            await self._storage.record_routing_decision(
-                user_id,
-                provider,
-                envelope.source_type.value,
-                decision,
-            )
-            return decision
 
         created = await adapters.calendar.create_event(user_id, primary.destination_id, event)
         local_id = self._stable_local_id(event.title, event.start.isoformat())
@@ -295,27 +328,26 @@ class TaskCalendarRouter:
             metadata={"title": created.title},
         )
 
-        decision = RouteDecision(
-            mode=RouteMode.AUTO,
-            route_tag=route_tag,
-            reason="Event routed to primary calendar",
-            provider=provider,
-            target=DestinationRef(
+        return await self._finalize_decision(
+            user_id=user_id,
+            action="routing.calendar.route",
+            source_type=source_type,
+            decision=RouteDecision(
+                mode=RouteMode.AUTO,
+                route_tag=route_tag,
+                reason="Event routed to primary calendar",
                 provider=provider,
-                destination_id=primary.destination_id,
-                destination_type=DestinationType.CALENDAR,
-                display_name=primary.display_name,
+                target=DestinationRef(
+                    provider=provider,
+                    destination_id=primary.destination_id,
+                    destination_type=DestinationType.CALENDAR,
+                    display_name=primary.display_name,
+                ),
+                conflict=conflict,
+                metadata={"external_event_id": created.event_id},
             ),
-            conflict=conflict,
-            metadata={"external_event_id": created.event_id},
+            persist_routing_decision=True,
         )
-        await self._storage.record_routing_decision(
-            user_id,
-            provider,
-            envelope.source_type.value,
-            decision,
-        )
-        return decision
 
     async def _security_gate(
         self,
@@ -444,6 +476,32 @@ class TaskCalendarRouter:
                 writable=rec.writable,
                 metadata=rec.metadata,
             )
+
+    async def _finalize_decision(
+        self,
+        *,
+        user_id: int,
+        action: str,
+        source_type: str,
+        decision: RouteDecision,
+        persist_routing_decision: bool = False,
+    ) -> RouteDecision:
+        if persist_routing_decision:
+            await self._storage.record_routing_decision(
+                user_id,
+                decision.provider,
+                source_type,
+                decision,
+            )
+        await record_routing_trust_decision(
+            self._trust_storage,
+            user_id=user_id,
+            action=action,
+            source_type=source_type,
+            decision=decision,
+            source_system="task_calendar_router",
+        )
+        return decision
 
     def _content_from_envelope(self, envelope: IngestionEnvelope) -> str:
         payload = envelope.payload

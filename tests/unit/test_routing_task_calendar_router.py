@@ -200,3 +200,38 @@ async def test_conflict_scan_uses_all_connected_calendars() -> None:
     calendar_ids = args.args[1]
     assert "primary-cal" in calendar_ids
     assert "shared-cal" in calendar_ids
+
+
+@pytest.mark.asyncio
+async def test_low_conflict_auto_write_records_canonical_trust_audit(monkeypatch) -> None:
+    storage = _StorageStub()
+    security = _SecurityStub()
+    adapter = _CalendarAdapter(conflicts=_existing_conflict(overlap_minutes=10))
+    recorded = AsyncMock()
+    monkeypatch.setattr(
+        "zetherion_ai.routing.task_calendar_router.record_routing_trust_decision",
+        recorded,
+    )
+    trust_storage = object()
+    router = TaskCalendarRouter(
+        storage=storage,
+        providers=_registry(adapter),
+        security=security,
+        trust_storage=trust_storage,
+    )
+
+    decision = await router.route_event(
+        user_id=123,
+        provider="google",
+        envelope=_envelope(),
+        event=_event(priority="medium", attendees=False),
+    )
+
+    recorded.assert_awaited_once_with(
+        trust_storage,
+        user_id=123,
+        action="routing.calendar.route",
+        source_type="email",
+        decision=decision,
+        source_system="task_calendar_router",
+    )

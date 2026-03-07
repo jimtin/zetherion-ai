@@ -1396,3 +1396,47 @@ async def test_persist_signals_enriches_owner_communication_style() -> None:
     enriched = personal_storage.upsert_profile.await_args.args[0]
     # formality should be blended toward formal (0.8)
     assert enriched.communication_style.formality > 0.5
+
+
+@pytest.mark.asyncio
+async def test_blocked_email_records_canonical_trust_audit(monkeypatch) -> None:
+    storage = _StorageStub()
+    providers = _ProvidersStub()
+    security = MagicMock()
+    security.analyze = AsyncMock(
+        return_value=_SecResult(ThreatVerdict(action=ThreatAction.BLOCK, score=0.9, tier_reached=2))
+    )
+    task_calendar = _TaskCalendarStub()
+    inference = MagicMock()
+    recorded = AsyncMock()
+    monkeypatch.setattr(
+        "zetherion_ai.routing.email_router.record_routing_trust_decision",
+        recorded,
+    )
+    trust_storage = object()
+
+    router = EmailRouter(
+        storage=storage,
+        providers=providers,
+        security=security,
+        task_calendar_router=task_calendar,
+        inference=inference,
+        trust_storage=trust_storage,
+    )
+
+    decision = await router.process_email(
+        user_id=123,
+        provider="google",
+        account_ref="default",
+        email=_email(),
+    )
+
+    assert decision.mode == RouteMode.BLOCK
+    recorded.assert_awaited_once_with(
+        trust_storage,
+        user_id=123,
+        action="routing.email.process",
+        source_type="email",
+        decision=decision,
+        source_system="email_router",
+    )
