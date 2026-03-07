@@ -112,7 +112,7 @@ class DockerEnvironment:
             "ollama-router": "healthy",
             "ollama": "healthy",
             "zetherion-ai-skills": "healthy",
-            "zetherion-ai-bot": "running",
+            "zetherion-ai-bot": "healthy",
         }
 
         while time.time() - start_time < timeout:
