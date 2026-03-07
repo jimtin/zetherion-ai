@@ -27,21 +27,20 @@ Every code change passes through three automated quality tiers before reaching p
                              |
                              v
 +---------------------------------------------------------------+
-|  Tier 3: GitHub Actions CI/CD (~5-10 min)                     |
-|  Runs: on push/PR to main or develop                          |
-|  Checks: lint, type-check, security (Bandit + Semgrep),       |
-|          dependency audit, license compliance, pre-commit,     |
-|          tests (Python 3.12 + 3.13 matrix), Docker build +    |
-|          Trivy scan, SBOM generation                           |
-|  Effect: blocks PR merge if any required check fails          |
+|  Tier 3: GitHub Actions CI/CD (~1-5 min fast path on PRs)     |
+|  Runs: on push/PR to main or develop, plus schedule/manual    |
+|  Checks: always-on invariant jobs, path-gated local-equivalent|
+|          jobs, and exact-SHA receipt validation for required  |
+|          E2E evidence                                         |
+|  Effect: blocks PR merge using the active required-check set  |
 +---------------------------------------------------------------+
 ```
 
 **Design philosophy:**
 
-- **Fast feedback locally** -- pre-commit catches formatting and security issues in seconds.
-- **Confidence before push** -- local gates catch failures before CI, including a full containerized validation path.
-- **Comprehensive CI** -- GitHub Actions catches cross-version issues, container problems, and dependency vulnerabilities.
+- **Fast feedback locally** -- pre-commit catches formatting and hygiene issues in seconds.
+- **Confidence before push** -- local gates produce the authoritative heavy-lane evidence, including the required local receipt path for substantial E2E work.
+- **Cost-aware GitHub validation** -- GitHub verifies invariants, path-gated regressions, and exact-SHA receipts without rerunning the full local heavy suite on every PR.
 
 ## Pre-Commit Hooks
 
@@ -166,7 +165,7 @@ This is handled automatically by `./scripts/setup-git-hooks.sh`.
 git push --no-verify origin main
 ```
 
-If you bypass the pre-push hook, GitHub Actions will still catch failures. However, this means slower feedback -- you will not discover test failures until CI runs 5-10 minutes later.
+Normal workflows must not bypass the pre-push hook. If you do, GitHub may still reject the PR through fast invariant checks, path-gated jobs, or receipt validation, but that is treated as a process breach because it wastes CI minutes and delays feedback.
 
 ## GitHub Actions
 
@@ -179,6 +178,18 @@ The CI/CD pipeline is defined in `.github/workflows/ci.yml`.
 | `push` | To `main` or `develop` branches |
 | `pull_request` | Targeting `main` or `develop` branches |
 | `workflow_dispatch` | Manual trigger from GitHub UI or `gh workflow run ci.yml` |
+
+### Current Required PR Checks
+
+The active `main` branch ruleset currently requires these check contexts:
+
+- `CI Summary`
+- `Linting & Formatting`
+- `Pipeline Contract`
+- `Secret Scan (Gitleaks)`
+- `Zetherion Boundary Check`
+
+The `required-e2e-gate` job validates local exact-SHA receipt evidence when the risk classifier marks a PR `e2e_required=true`; GitHub does not execute the full E2E suites directly on PRs. Additional local-equivalent jobs remain path-gated until the fast-path rollout changes the workflow contract.
 
 ### Additional Main-Branch Automation
 

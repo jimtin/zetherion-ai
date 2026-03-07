@@ -42,6 +42,19 @@ This is the only supported full local gate. Do not substitute ad-hoc pytest comm
 22. When `e2e_required=true`, CI must validate a local required-E2E receipt (`.ci/e2e-receipt.json`) for the PR head SHA; CI must not execute full E2E suites directly.
 23. For isolated Discord E2E debugging, use `./scripts/run-required-discord-e2e.sh`; direct `pytest tests/integration/test_discord_e2e.py ...` invocation is not accepted as workflow evidence.
 
+## Current CI Proof Contract
+
+1. `./scripts/test-full.sh` remains the only supported heavy local gate for substantial delivery.
+2. When `e2e_required=true`, run `bash scripts/local-required-e2e-receipt.sh` after the full gate passes and commit `.ci/e2e-receipt.json`.
+3. GitHub currently validates exact-SHA receipt evidence for required E2E instead of executing the full E2E suites directly on PRs.
+4. Current required branch checks are:
+   - `CI Summary`
+   - `Linting & Formatting`
+   - `Pipeline Contract`
+   - `Secret Scan (Gitleaks)`
+   - `Zetherion Boundary Check`
+5. Additional path-gated local-equivalent CI jobs may still run until the PR fast-path rollout lands; do not treat skipped heavy jobs as permission to skip the local heavy gate.
+
 ## API Documentation Contract (Mandatory)
 
 1. Any new API endpoint set (public API and/or CGS gateway) must include an extensive documentation bundle before merge.
