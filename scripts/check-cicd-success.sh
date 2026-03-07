@@ -145,7 +145,7 @@ summarize_latest_run_state() {
     map(select(.headSha == $sha or (.headSha | startswith($sha_short))))
     | sort_by(.createdAt)
     | reverse
-    | if length == 0 then "" else .[0] | "run=\(.databaseId) status=\(.status) conclusion=\(.conclusion // \"pending\") branch=\(.headBranch // \"\") url=\(.url // \"\")" end
+    | if length == 0 then "" else .[0] | "run=\(.databaseId) status=\(.status) conclusion=\(.conclusion // "pending") branch=\(.headBranch // "") url=\(.url // "")" end
   ' <<<"$runs_json"
 }
 
@@ -187,7 +187,7 @@ summarize_required_check_runs() {
           or .name == "CI Gate / Required E2E Gate"
           or .name == "Required E2E Gate"
         )
-      | "\(.name):status=\(.status) conclusion=\(.conclusion // \"pending\")"
+      | "\(.name):status=\(.status) conclusion=\(.conclusion // "pending")"
     ]
     | if length == 0 then "none" else join("; ") end
   ' <<<"$check_runs_json"
