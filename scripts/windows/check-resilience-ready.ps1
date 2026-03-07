@@ -8,6 +8,8 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$PromotionsTaskName = "ZetherionPostDeployPromotions",
     [Parameter(Mandatory = $false)]
+    [string]$CanaryTaskName = "ZetherionDiscordCanary",
+    [Parameter(Mandatory = $false)]
     [string]$OutputPath = "resilience-ready.json"
 )
 
@@ -126,6 +128,7 @@ function Test-RecoveryTask {
 $checks = [ordered]@{
     recovery_tasks_registered = $false
     promotions_task_registered = $false
+    canary_task_registered = $false
     runner_service_persistent = $false
     docker_service_persistent = $false
 }
@@ -135,9 +138,11 @@ $details = [ordered]@{
     startup_task_name = $StartupTaskName
     watchdog_task_name = $WatchdogTaskName
     promotions_task_name = $PromotionsTaskName
+    canary_task_name = $CanaryTaskName
     startup_task = $null
     watchdog_task = $null
     promotions_task = $null
+    canary_task = $null
     runner_services = @()
     docker_service = $null
     network_service_in_docker_users = $false
@@ -147,6 +152,7 @@ try {
     $details.startup_task = Test-RecoveryTask -TaskName $StartupTaskName -ScriptNeedle "startup-recover.ps1"
     $details.watchdog_task = Test-RecoveryTask -TaskName $WatchdogTaskName -ScriptNeedle "runtime-watchdog.ps1"
     $details.promotions_task = Test-RecoveryTask -TaskName $PromotionsTaskName -ScriptNeedle "promotions-watch.ps1"
+    $details.canary_task = Test-RecoveryTask -TaskName $CanaryTaskName -ScriptNeedle "discord-canary-runner.ps1"
 
     $checks.recovery_tasks_registered = [bool](
         ($details.startup_task.passes -or $details.startup_task.degraded_pass) -and
@@ -154,6 +160,9 @@ try {
     )
     $checks.promotions_task_registered = [bool](
         ($details.promotions_task.passes -or $details.promotions_task.degraded_pass)
+    )
+    $checks.canary_task_registered = [bool](
+        ($details.canary_task.passes -or $details.canary_task.degraded_pass)
     )
 
     $runnerServices = @(
@@ -178,7 +187,8 @@ try {
             }
         }
         $checks.runner_service_persistent = [bool]$allRunnerServicesPersistent
-    } else {
+    }
+    else {
         $checks.runner_service_persistent = $false
     }
 
@@ -189,7 +199,8 @@ try {
             status = $dockerService.Status.ToString()
             start_type = $dockerService.StartType.ToString()
         }
-    } else {
+    }
+    else {
         $details.docker_service = [ordered]@{
             name = "com.docker.service"
             status = "missing"
@@ -223,8 +234,6 @@ try {
         $allowServiceFallback = @("1", "true", "yes", "on") -contains $normalized
     }
 
-    # Some hardened Windows runners cannot register scheduled tasks (access denied)
-    # but still provide durable recovery through persistent runner/docker services.
     if (
         -not $checks.recovery_tasks_registered `
         -and $allowServiceFallback `
@@ -238,7 +247,6 @@ try {
     }
 }
 catch {
-    # Keep defaults false and include error string in payload.
     $details.error = $_.Exception.Message
 }
 

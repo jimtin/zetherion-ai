@@ -51,7 +51,14 @@
     "scripts/discord_e2e_run_manager.py",
     "scripts/discord_e2e_run_manager.sh",
     "scripts/run-required-discord-e2e.sh",
-    "tests/integration/test_discord_e2e.py"
+    "tests/integration/test_discord_e2e.py",
+    "scripts/windows/discord-canary.py",
+    "scripts/windows/discord-canary-runner.ps1",
+    "scripts/windows/register-resilience-tasks.ps1",
+    "scripts/windows/verify-resilience-tasks.ps1",
+    "scripts/windows/bootstrap-resilience-tasks.ps1",
+    "scripts/windows/check-resilience-ready.ps1",
+    "scripts/windows/announcement-emit.py"
   ],
   "requirements": {
     "endpoint-doc-bundle": {
@@ -120,6 +127,14 @@
         "tests/unit/test_e2e_runtime.py",
         "tests/unit/test_discord_e2e_run_manager.py",
         "tests/unit/test_discord_e2e_isolation.py"
+      ]
+    },
+    "windows-discord-canary-regression-suite": {
+      "kind": "pytest",
+      "description": "Run the targeted Windows Discord canary and announcement regression suite.",
+      "pytest_targets": [
+        "tests/unit/test_windows_discord_canary.py",
+        "tests/unit/test_announcement_emit.py"
       ]
     }
   },
@@ -262,6 +277,24 @@
       ],
       "requirements": [
         "e2e-isolation-regression-suite"
+      ]
+    },
+    {
+      "id": "windows-discord-canary-regressions",
+      "covers_protected": true,
+      "patterns": [
+        "scripts/windows/discord-canary.py",
+        "scripts/windows/discord-canary-runner.ps1",
+        "scripts/windows/register-resilience-tasks.ps1",
+        "scripts/windows/verify-resilience-tasks.ps1",
+        "scripts/windows/bootstrap-resilience-tasks.ps1",
+        "scripts/windows/check-resilience-ready.ps1",
+        "scripts/windows/announcement-emit.py",
+        "scripts/verify-windows-host.ps1"
+      ],
+      "requirements": [
+        "windows-discord-canary-regression-suite",
+        "deploy-preflight-regression-suite"
       ]
     }
   ]

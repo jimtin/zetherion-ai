@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment CI-07 Windows Full-Parity Production Discord Canary (2026-03-08)
+
+- Impacted capability IDs:
+  - `ci.e2e.discord_isolation`
+  - `ci.weekly.independent_verification`
+- Impacted workflow scenario IDs:
+  - `e2e.windows_discord_canary`
+- Added `scripts/windows/discord-canary.py` and `scripts/windows/discord-canary-runner.ps1` so the Windows host can execute the blessed isolated Discord E2E wrapper in `windows_prod_canary` mode, persist run receipts/state/logs under `C:\ZetherionAI\data\discord-canary`, and classify results as success, cleanup degradation, lease contention, timeout, or runner failure.
+- Extended the Windows resilience task scripts plus `.ci/local_gate_manifest.json` so the canary runner is registered, verified, and covered by a dedicated local regression suite before push.
+- Updated `scripts/verify-windows-host.ps1` and `scripts/windows/announcement-emit.py` so host verification surfaces stale/failed canaries and Windows can emit `discord_canary` health announcements without turning canary degradation into a deploy rollback.
+
 ### Changed - Segment CI-06 Discord E2E Channel Isolation, Target Lease, and Synthetic Cleanup (2026-03-08)
 
 - Impacted capability IDs:

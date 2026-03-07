@@ -258,11 +258,22 @@ def _category_and_severity(*, event: str, status: str) -> tuple[str, str]:
     success = normalized in {"success", "ok", "completed", "done", "skipped_existing_success"}
     if event == "deploy":
         return ("deploy.completed", "normal") if success else ("deploy.failed", "critical")
-    return ("promotions.completed", "normal") if success else ("promotions.failed", "critical")
+    if event == "promotions":
+        return ("promotions.completed", "normal") if success else ("promotions.failed", "critical")
+    if success:
+        return ("health.discord_canary", "normal")
+    if normalized == "cleanup_degraded":
+        return ("health.discord_canary", "high")
+    return ("health.discord_canary", "critical")
 
 
 def _title(*, event: str, status: str) -> str:
-    event_title = "Deploy" if event == "deploy" else "Promotions"
+    if event == "deploy":
+        event_title = "Deploy"
+    elif event == "promotions":
+        event_title = "Promotions"
+    else:
+        event_title = "Discord canary"
     return f"{event_title} status: {status.strip() or 'unknown'}"
 
 
@@ -326,7 +337,9 @@ def _attempt_emit(
     return False, "missing_receipt_and_ok_flag"
 
 
-def _mark_sent(*, state_path: Path, idempotency_key: str, event: str, sha: str, status: str) -> None:
+def _mark_sent(
+    *, state_path: Path, idempotency_key: str, event: str, sha: str, status: str
+) -> None:
     state = _read_json(state_path, default={"sent": {}})
     sent = state.get("sent")
     if not isinstance(sent, dict):
@@ -396,7 +409,7 @@ def _flush_outbox(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--event", choices=["deploy", "promotions"], default="")
+    parser.add_argument("--event", choices=["deploy", "promotions", "discord_canary"], default="")
     parser.add_argument("--sha", default="")
     parser.add_argument("--status", default="")
     parser.add_argument("--message", default="")
@@ -424,7 +437,9 @@ def main() -> int:
         _emit_status("disabled")
         return 0
 
-    api_secret = _resolve_api_secret(override_secret=_normalize_id(args.api_secret), secrets=secrets)
+    api_secret = _resolve_api_secret(
+        override_secret=_normalize_id(args.api_secret), secrets=secrets
+    )
     if not api_secret:
         _emit_status("skipped_missing_api_secret")
         return 0

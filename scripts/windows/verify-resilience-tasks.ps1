@@ -8,6 +8,8 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$PromotionsTaskName = "ZetherionPostDeployPromotions",
     [Parameter(Mandatory = $false)]
+    [string]$CanaryTaskName = "ZetherionDiscordCanary",
+    [Parameter(Mandatory = $false)]
     [string]$OutputPath = "resilience-verify.json"
 )
 
@@ -67,14 +69,16 @@ function Get-TriggerFacts {
         $typeValue = ""
         try {
             $typeValue = [string]$trigger.TriggerType
-        } catch {
+        }
+        catch {
             $typeValue = ""
         }
 
         if (-not $typeValue) {
             try {
                 $typeValue = [string]$trigger.CimClass.CimClassName
-            } catch {
+            }
+            catch {
                 $typeValue = ""
             }
         }
@@ -91,10 +95,12 @@ function Get-TriggerFacts {
         try {
             if ($trigger.Repetition -and $trigger.Repetition.Interval) {
                 $interval = [string]$trigger.Repetition.Interval
-            } elseif ($trigger.RepetitionInterval) {
+            }
+            elseif ($trigger.RepetitionInterval) {
                 $interval = [string]$trigger.RepetitionInterval
             }
-        } catch {
+        }
+        catch {
             $interval = ""
         }
 
@@ -188,6 +194,7 @@ $result = [ordered]@{
         startup_task_registered = $false
         watchdog_task_registered = $false
         promotions_task_registered = $false
+        canary_task_registered = $false
         all_tasks_registered = $false
     }
     details = [ordered]@{
@@ -214,10 +221,18 @@ $result = [ordered]@{
                 requires_startup_trigger = $true
                 requires_repetition_trigger = $true
             }
+            canary = [ordered]@{
+                task_name = $CanaryTaskName
+                script = "discord-canary-runner.ps1"
+                principal = "SYSTEM"
+                requires_startup_trigger = $true
+                requires_repetition_trigger = $true
+            }
         }
         startup_task = $null
         watchdog_task = $null
         promotions_task = $null
+        canary_task = $null
     }
     status = "failed"
     error = ""
@@ -242,17 +257,26 @@ try {
         -RequireStartupTrigger $true `
         -RequireRepetitionTrigger $true
 
+    $canary = Get-TaskVerification `
+        -TaskName $CanaryTaskName `
+        -ScriptNeedle "discord-canary-runner.ps1" `
+        -RequireStartupTrigger $true `
+        -RequireRepetitionTrigger $true
+
     $result.details.startup_task = $startup
     $result.details.watchdog_task = $watchdog
     $result.details.promotions_task = $promotions
+    $result.details.canary_task = $canary
 
     $result.checks.startup_task_registered = [bool]$startup.passes
     $result.checks.watchdog_task_registered = [bool]$watchdog.passes
     $result.checks.promotions_task_registered = [bool]$promotions.passes
+    $result.checks.canary_task_registered = [bool]$canary.passes
     $result.checks.all_tasks_registered = [bool](
         $result.checks.startup_task_registered -and
         $result.checks.watchdog_task_registered -and
-        $result.checks.promotions_task_registered
+        $result.checks.promotions_task_registered -and
+        $result.checks.canary_task_registered
     )
 
     $result.status = if ($result.checks.all_tasks_registered) { "success" } else { "failed" }

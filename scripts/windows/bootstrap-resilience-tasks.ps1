@@ -8,9 +8,13 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$PromotionsTaskName = "ZetherionPostDeployPromotions",
     [Parameter(Mandatory = $false)]
+    [string]$CanaryTaskName = "ZetherionDiscordCanary",
+    [Parameter(Mandatory = $false)]
     [int]$WatchdogIntervalMinutes = 5,
     [Parameter(Mandatory = $false)]
     [int]$PromotionsIntervalMinutes = 10,
+    [Parameter(Mandatory = $false)]
+    [int]$CanaryIntervalMinutes = 360,
     [Parameter(Mandatory = $false)]
     [string]$OutputPath = "resilience-bootstrap.json"
 )
@@ -82,6 +86,7 @@ $result = [ordered]@{
         startup_task = $StartupTaskName
         watchdog_task = $WatchdogTaskName
         promotions_task = $PromotionsTaskName
+        canary_task = $CanaryTaskName
         registration_output_path = $registrationPath
         verification_output_path = $verificationPath
         registration_exit_code = $null
@@ -109,8 +114,10 @@ try {
         -StartupTaskName $StartupTaskName `
         -WatchdogTaskName $WatchdogTaskName `
         -PromotionsTaskName $PromotionsTaskName `
+        -CanaryTaskName $CanaryTaskName `
         -WatchdogIntervalMinutes $WatchdogIntervalMinutes `
         -PromotionsIntervalMinutes $PromotionsIntervalMinutes `
+        -CanaryIntervalMinutes $CanaryIntervalMinutes `
         -OutputPath $registrationPath
     $registrationExitCode = $LASTEXITCODE
     $result.details.registration_exit_code = $registrationExitCode
@@ -125,6 +132,7 @@ try {
         -StartupTaskName $StartupTaskName `
         -WatchdogTaskName $WatchdogTaskName `
         -PromotionsTaskName $PromotionsTaskName `
+        -CanaryTaskName $CanaryTaskName `
         -OutputPath $verificationPath
     $verificationExitCode = $LASTEXITCODE
     $result.details.verification_exit_code = $verificationExitCode
