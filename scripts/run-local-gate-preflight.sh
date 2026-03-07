@@ -154,13 +154,27 @@ for requirement_id in "${REQUIREMENT_IDS[@]}"; do
             echo "[local-gate] Running bounded unit-full lane..."
             node scripts/testing/run-bounded.mjs --lane unit-full --log-file "$LOCAL_GATE_LANE_LOG_FILE"
             ;;
-        qdrant-regression-suite|replay-store-regression-suite|ci-receipt-regression-suite|ci-failure-attribution-regression-suite|deploy-preflight-regression-suite|e2e-isolation-regression-suite)
-            PYTEST_TARGETS=()
-            while IFS= read -r pytest_target; do
-                if [[ -n "$pytest_target" ]]; then
-                    PYTEST_TARGETS+=("$pytest_target")
-                fi
-            done < <("$PYTHON_BIN" - <<'PY' "$PLAN_FILE" "$requirement_id"
+        *)
+            REQUIREMENT_KIND="$("$PYTHON_BIN" - <<'PY' "$PLAN_FILE" "$requirement_id"
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+requirement_id = sys.argv[2]
+for requirement in payload.get("requirements", []):
+    if requirement["id"] == requirement_id:
+        print(requirement.get("kind", ""))
+        break
+PY
+)"
+            if [[ "$REQUIREMENT_KIND" == "pytest" ]]; then
+                PYTEST_TARGETS=()
+                while IFS= read -r pytest_target; do
+                    if [[ -n "$pytest_target" ]]; then
+                        PYTEST_TARGETS+=("$pytest_target")
+                    fi
+                done < <("$PYTHON_BIN" - <<'PY' "$PLAN_FILE" "$requirement_id"
 import json
 import sys
 from pathlib import Path
@@ -174,15 +188,15 @@ for requirement in payload.get("requirements", []):
         break
 PY
 )
-            if [[ ${#PYTEST_TARGETS[@]} -gt 0 ]]; then
-                echo "[local-gate] Running targeted regression suite for $requirement_id..."
-                node scripts/testing/run-bounded.mjs --lane targeted-unit --log-file "$LOCAL_GATE_LANE_LOG_FILE" -- \
-                    "$PYTHON_BIN" -m pytest "${PYTEST_TARGETS[@]}" -q --tb=short --no-cov
+                if [[ ${#PYTEST_TARGETS[@]} -gt 0 ]]; then
+                    echo "[local-gate] Running targeted regression suite for $requirement_id..."
+                    node scripts/testing/run-bounded.mjs --lane targeted-unit --log-file "$LOCAL_GATE_LANE_LOG_FILE" -- \
+                        "$PYTHON_BIN" -m pytest "${PYTEST_TARGETS[@]}" -q --tb=short --no-cov
+                fi
+            else
+                echo "ERROR: Unknown local-gate requirement '$requirement_id' (kind=$REQUIREMENT_KIND)."
+                exit 1
             fi
-            ;;
-        *)
-            echo "ERROR: Unknown local-gate requirement '$requirement_id'."
-            exit 1
             ;;
     esac
 done
