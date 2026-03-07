@@ -4612,6 +4612,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             from zetherion_ai.settings_manager import SettingsManager
             from zetherion_ai.trust.data_plane import ensure_postgres_isolation_schemas
             from zetherion_ai.trust.scope import TrustDomain
+            from zetherion_ai.trust.storage import ensure_trust_storage_schema
 
             runtime_db_pool = await asyncpg.create_pool(
                 dsn=settings.postgres_dsn,
@@ -4625,6 +4626,10 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             else:
                 log.info("skills_runtime_schema_ensured")
             await ensure_postgres_isolation_schemas(runtime_db_pool, settings)
+            await ensure_trust_storage_schema(
+                runtime_db_pool,
+                schema=settings.postgres_control_plane_schema,
+            )
             runtime_settings_manager = SettingsManager()
             await runtime_settings_manager.initialize(runtime_db_pool)
             set_settings_manager(runtime_settings_manager)

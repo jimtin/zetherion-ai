@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Segment 7 Canonical Trust Persistence and Grants (2026-03-07)
+
+- Impacted capability IDs:
+  - `trust.persistence.canonical-store`
+  - `trust.grants.generic-resource-scope`
+  - `trust.backfill.legacy-source-normalization`
+- Impacted workflow scenario IDs:
+  - `isolation.segment7.bootstrap-control-plane-trust-tables`
+  - `isolation.segment7.backfill-personal-gmail-github-youtube-worker-trust`
+  - `isolation.segment7.persist-shadow-decision-audit`
+- Added `src/zetherion_ai/trust/storage.py` with canonical control-plane tables for trust policies, grants, scorecards, feedback events, and decision audit rows.
+- Added `src/zetherion_ai/trust/backfill.py` so current personal, Gmail, GitHub, YouTube, and worker messaging trust records can be mapped into the canonical store without changing live enforcement.
+- Bootstrapped the canonical trust schema during app/API/skills startup and extended the isolation inventory baseline to declare the new control-plane trust tables explicitly.
+
 ### Added - Segment 6 Unified Trust Engine Shadow Mode (2026-03-07)
 
 - Impacted capability IDs:

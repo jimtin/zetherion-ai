@@ -23,6 +23,7 @@ from zetherion_ai.security.secrets import SecretsManager
 from zetherion_ai.settings_manager import SettingsManager
 from zetherion_ai.trust.data_plane import ensure_postgres_isolation_schemas
 from zetherion_ai.trust.scope import TrustDomain
+from zetherion_ai.trust.storage import ensure_trust_storage_schema
 
 
 async def _bootstrap_dynamic_model_settings(
@@ -120,6 +121,10 @@ async def main() -> None:
     await user_manager.initialize()
     if user_manager._pool:
         await ensure_postgres_isolation_schemas(user_manager._pool, settings)
+        await ensure_trust_storage_schema(
+            user_manager._pool,
+            schema=settings.postgres_control_plane_schema,
+        )
     log.info("user_manager_initialized")
 
     # Initialize runtime settings manager (shares DB with user manager)

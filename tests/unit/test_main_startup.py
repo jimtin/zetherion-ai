@@ -13,6 +13,8 @@ from zetherion_ai.trust.scope import TrustDomain
 class TestMainStartup:
     """Tests for main() startup wiring and encryption initialization."""
 
+    @patch("zetherion_ai.main.ensure_trust_storage_schema", new_callable=AsyncMock)
+    @patch("zetherion_ai.main.ensure_postgres_isolation_schemas", new_callable=AsyncMock)
     @patch("zetherion_ai.main.set_settings_manager")
     @patch("zetherion_ai.main.SettingsManager")
     @patch("zetherion_ai.main.UserManager")
@@ -33,6 +35,8 @@ class TestMainStartup:
         mock_user_manager_cls,
         mock_settings_manager_cls,
         mock_set_settings_manager,
+        mock_ensure_postgres_isolation_schemas,
+        mock_ensure_trust_storage_schema,
     ) -> None:
         """Runtime encryption bundle should always be created."""
         from zetherion_ai.main import main
@@ -46,6 +50,7 @@ class TestMainStartup:
         settings.qdrant_owner_url = "http://localhost:6333"
         settings.discord_token.get_secret_value.return_value = "fake-token"
         settings.postgres_dsn = "postgresql://test:test@localhost:5432/test"
+        settings.postgres_control_plane_schema = "control_plane"
         mock_get_settings.return_value = settings
         mock_get_logger.return_value = MagicMock()
 
@@ -75,7 +80,17 @@ class TestMainStartup:
         await main()
 
         mock_build_runtime_encryptors.assert_called_once_with(settings)
+        mock_ensure_postgres_isolation_schemas.assert_awaited_once_with(
+            mock_user_mgr._pool,
+            settings,
+        )
+        mock_ensure_trust_storage_schema.assert_awaited_once_with(
+            mock_user_mgr._pool,
+            schema="control_plane",
+        )
 
+    @patch("zetherion_ai.main.ensure_trust_storage_schema", new_callable=AsyncMock)
+    @patch("zetherion_ai.main.ensure_postgres_isolation_schemas", new_callable=AsyncMock)
     @patch("zetherion_ai.main.set_settings_manager")
     @patch("zetherion_ai.main.SettingsManager")
     @patch("zetherion_ai.main.UserManager")
@@ -96,6 +111,8 @@ class TestMainStartup:
         mock_user_manager_cls,
         mock_settings_manager_cls,
         mock_set_settings_manager,
+        mock_ensure_postgres_isolation_schemas,
+        mock_ensure_trust_storage_schema,
     ) -> None:
         """QdrantMemory should be instantiated with the owner-domain encryptor."""
         from zetherion_ai.main import main
@@ -109,6 +126,7 @@ class TestMainStartup:
         settings.qdrant_owner_url = "http://owner-qdrant:6333"
         settings.discord_token.get_secret_value.return_value = "fake-token"
         settings.postgres_dsn = "postgresql://test:test@localhost:5432/test"
+        settings.postgres_control_plane_schema = "control_plane"
         mock_get_settings.return_value = settings
         mock_get_logger.return_value = MagicMock()
 
@@ -161,6 +179,8 @@ class TestMainStartup:
             if saved is not None:
                 os.environ["ENCRYPTION_PASSPHRASE"] = saved
 
+    @patch("zetherion_ai.main.ensure_trust_storage_schema", new_callable=AsyncMock)
+    @patch("zetherion_ai.main.ensure_postgres_isolation_schemas", new_callable=AsyncMock)
     @patch("zetherion_ai.main.set_settings_manager")
     @patch("zetherion_ai.main.SettingsManager")
     @patch("zetherion_ai.main.UserManager")
@@ -181,6 +201,8 @@ class TestMainStartup:
         mock_user_manager_cls,
         mock_settings_manager_cls,
         mock_set_settings_manager,
+        mock_ensure_postgres_isolation_schemas,
+        mock_ensure_trust_storage_schema,
     ) -> None:
         """ZetherionAIBot should receive the memory, user manager, and settings manager."""
         from zetherion_ai.main import main
@@ -194,6 +216,7 @@ class TestMainStartup:
         settings.qdrant_owner_url = "http://localhost:6333"
         settings.discord_token.get_secret_value.return_value = "fake-token"
         settings.postgres_dsn = "postgresql://test:test@localhost:5432/test"
+        settings.postgres_control_plane_schema = "control_plane"
         mock_get_settings.return_value = settings
         mock_get_logger.return_value = MagicMock()
 
@@ -228,6 +251,8 @@ class TestMainStartup:
         assert call_kwargs["settings_manager"] is mock_settings_mgr
         mock_bot.start.assert_awaited_once_with("fake-token")
 
+    @patch("zetherion_ai.main.ensure_trust_storage_schema", new_callable=AsyncMock)
+    @patch("zetherion_ai.main.ensure_postgres_isolation_schemas", new_callable=AsyncMock)
     @patch("zetherion_ai.main.set_settings_manager")
     @patch("zetherion_ai.main.SettingsManager")
     @patch("zetherion_ai.main.UserManager")
@@ -248,6 +273,8 @@ class TestMainStartup:
         mock_user_manager_cls,
         mock_settings_manager_cls,
         mock_set_settings_manager,
+        mock_ensure_postgres_isolation_schemas,
+        mock_ensure_trust_storage_schema,
     ) -> None:
         """Startup should seed model settings into DB when keys are missing."""
         from zetherion_ai.main import main
@@ -261,6 +288,7 @@ class TestMainStartup:
         settings.qdrant_owner_url = "http://localhost:6333"
         settings.discord_token.get_secret_value.return_value = "fake-token"
         settings.postgres_dsn = "postgresql://test:test@localhost:5432/test"
+        settings.postgres_control_plane_schema = "control_plane"
         settings.owner_user_id = 123
         settings.openai_model = "gpt-5.2"
         settings.claude_model = "claude-sonnet-4-5-20250929"

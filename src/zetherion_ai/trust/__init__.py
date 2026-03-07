@@ -1,5 +1,6 @@
-"""Trust-domain primitives and shadow trust-engine helpers."""
+"""Trust-domain primitives, shadow trust-engine helpers, and persistence interfaces."""
 
+from zetherion_ai.trust.backfill import TrustBackfillService
 from zetherion_ai.trust.engine import (
     TrustDecision,
     TrustDecisionSignature,
@@ -27,6 +28,22 @@ from zetherion_ai.trust.scope import (
     evaluate_prompt_scope,
     prompt_fragment,
 )
+from zetherion_ai.trust.storage import (
+    TrustDecisionAuditInput,
+    TrustDecisionAuditRecord,
+    TrustFeedbackEventInput,
+    TrustFeedbackEventRecord,
+    TrustGrantInput,
+    TrustGrantRecord,
+    TrustPolicyInput,
+    TrustPolicyRecord,
+    TrustScorecardInput,
+    TrustScorecardRecord,
+    TrustStorage,
+    ensure_trust_storage_schema,
+    normalize_grant_permissions,
+    normalize_resource_scope,
+)
 
 __all__ = [
     "DataScope",
@@ -36,19 +53,34 @@ __all__ = [
     "ScopeLabel",
     "ScopedPrincipal",
     "ScopedResource",
+    "TrustBackfillService",
     "TrustDecision",
+    "TrustDecisionAuditInput",
+    "TrustDecisionAuditRecord",
     "TrustDecisionSignature",
     "TrustDomain",
     "TrustEngine",
+    "TrustFeedbackEventInput",
+    "TrustFeedbackEventRecord",
+    "TrustGrantInput",
+    "TrustGrantRecord",
     "TrustMode",
     "TrustOutcome",
+    "TrustPolicyInput",
+    "TrustPolicyRecord",
     "TrustPrincipal",
     "TrustResource",
     "TrustRiskClass",
+    "TrustScorecardInput",
+    "TrustScorecardRecord",
     "TrustShadowResult",
+    "TrustStorage",
     "assemble_prompt_fragments",
+    "ensure_trust_storage_schema",
     "evaluate_prompt_scope",
     "get_shadow_trust_engine",
+    "normalize_grant_permissions",
+    "normalize_resource_scope",
     "prompt_fragment",
     "record_shadow_decision",
     "set_shadow_trust_engine",

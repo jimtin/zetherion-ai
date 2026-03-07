@@ -39,6 +39,7 @@ def _configure_mock_settings(mock_get_settings: MagicMock) -> MagicMock:
     mock_settings.updater_release_manifest_asset = "release-manifest.json"
     mock_settings.updater_release_signature_asset = "release-manifest.sig"
     mock_settings.updater_release_certificate_asset = "release-manifest.pem"
+    mock_settings.postgres_control_plane_schema = "control_plane"
     mock_settings.github_token = None
     mock_get_settings.return_value = mock_settings
     return mock_settings
@@ -373,9 +374,15 @@ def test_work_router_startup_uses_runtime_tenant_encryptor(
                 return_value=MagicMock(),
             )
         )
-        stack.enter_context(
+        mock_ensure_postgres_isolation_schemas = stack.enter_context(
             patch(
                 "zetherion_ai.trust.data_plane.ensure_postgres_isolation_schemas",
+                new_callable=AsyncMock,
+            )
+        )
+        mock_ensure_trust_storage_schema = stack.enter_context(
+            patch(
+                "zetherion_ai.trust.storage.ensure_trust_storage_schema",
                 new_callable=AsyncMock,
             )
         )
@@ -541,6 +548,11 @@ def test_work_router_startup_uses_runtime_tenant_encryptor(
     mock_build_runtime_encryptors.assert_called_once_with(mock_settings)
     mock_gmail_account_manager.assert_called_once_with(integration_pool, tenant_encryptor)
     tenant_manager.initialize.assert_awaited_once()
+    mock_ensure_postgres_isolation_schemas.assert_awaited_once_with(runtime_pool, mock_settings)
+    mock_ensure_trust_storage_schema.assert_awaited_once_with(
+        runtime_pool,
+        schema="control_plane",
+    )
     mock_run_server.assert_awaited_once()
     runtime_pool.close.assert_awaited_once()
     integration_pool.close.assert_awaited_once()
