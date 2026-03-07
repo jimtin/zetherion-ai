@@ -2910,12 +2910,12 @@ Owners: <code>Catalyst Group Solutions (CGS) Platform</code>, <code>Zetherion Ba
 <p>CGS behavior:
 - If <code>cgs_tenant_id</code> is new, call Zetherion Skills API <code>/handle</code> with intent <code>client_create</code>.
 - If <code>cgs_tenant_id</code> already exists, reconcile the existing mapping instead of creating a duplicate upstream tenant.
-- Persist returned tenant ID and API key in CGS tenant registry with <code>isolation_stage</code> and provisioning metadata.
+- Persist returned tenant ID and API key in CGS tenant registry with <code>isolation_stage</code> and provisioning metadata. Seed owner-portfolio derivation state so follow-up reconciles can mirror derived tenant health snapshots with provenance IDs.
 - Response includes <code>provisioning_status</code> (<code>created</code> or <code>existing</code>) for operator visibility.</p>
 <h2 id="719-patch-serviceaiv1internaltenantstenant_id">7.19 <code>PATCH /service/ai/v1/internal/tenants/{tenant_id}</code><a class="headerlink" href="#719-patch-serviceaiv1internaltenantstenant_id" title="Permanent link">&para;</a></h2>
 <p>Internal update endpoint:
 - Maps to <code>client_configure</code>.
-- Also performs staged tenant migration for existing clients, including bounded document reindex backfill, release-marker capture, migration receipt persistence, and owner-safe tenant health snapshots.</p>
+- Also performs staged tenant migration for existing clients, including bounded document reindex backfill, release-marker capture, migration receipt persistence, and owner-safe tenant health snapshots. Owner-facing snapshots are now derived from tenant-derived datasets first, and CGS stores the mirrored summary plus provenance references returned by the control plane.</p>
 <h2 id="720-post-serviceaiv1internaltenantstenant_iddeactivate">7.20 <code>POST /service/ai/v1/internal/tenants/{tenant_id}/deactivate</code><a class="headerlink" href="#720-post-serviceaiv1internaltenantstenant_iddeactivate" title="Permanent link">&para;</a></h2>
 <p>Internal deactivation endpoint:
 - Maps to <code>client_deactivate</code>.</p>

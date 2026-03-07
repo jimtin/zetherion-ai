@@ -2181,7 +2181,7 @@
 <li>Worker messaging grants were added under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*</code>
   to enforce deny-by-default worker WhatsApp access with TTL-scoped per-node/per-chat exceptions.</li>
 <li>Internal tenant provisioning retries are now idempotent on <code>cgs_tenant_id</code>, and the lifecycle response exposes <code>isolation_stage</code> plus <code>provisioning_status</code> so rollout state can be tracked during onboarding.</li>
-<li>Existing tenants can now be migrated in-place through the same internal patch route, which records migration receipts, bounded tenant vector backfill status, and owner-safe portfolio snapshots before cutover.</li>
+<li>Existing tenants can now be migrated in-place through the same internal patch route, which records migration receipts, bounded tenant vector backfill status, and owner-safe portfolio snapshots before cutover. CGS now stores the mirrored owner-portfolio summary with provenance links back to the tenant-derived dataset produced inside Zetherion.</li>
 </ul>
 <h2 id="capability-outcome">Capability Outcome<a class="headerlink" href="#capability-outcome" title="Permanent link">&para;</a></h2>
 <p>After implementing this kit, operators can:

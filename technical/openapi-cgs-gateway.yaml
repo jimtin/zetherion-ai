@@ -303,6 +303,11 @@ paths:
           description: Tenant mapping list envelope
     post:
       summary: Create or reconcile tenant from internal lifecycle flow
+      description: |
+        Creates a new tenant mapping or reconciles an existing one without changing the
+        external CGS contract. The lifecycle flow also seeds owner-portfolio derivation
+        state so later migration reconciles can mirror derived tenant-health summaries
+        and provenance identifiers into the CGS snapshot record.
       requestBody:
         required: true
         content:
@@ -313,10 +318,15 @@ paths:
         '200':
           description: Existing tenant mapping reconciled and returned
         '201':
-          description: Tenant mapping created with default isolation-stage metadata
+          description: Tenant mapping created with default isolation-stage metadata and owner-portfolio derivation bootstrap state
   /service/ai/v1/internal/tenants/{tenant_id}:
     patch:
       summary: Update tenant profile/configuration
+      description: |
+        Runs tenant reconciliation or staged migration for an existing mapping. When
+        owner-portfolio derivation is enabled, the route mirrors the derived owner
+        snapshot summary plus provenance identifiers returned by Zetherion into CGS
+        reporting storage.
       parameters:
         - $ref: '#/components/parameters/TenantIdPath'
       requestBody:
@@ -327,7 +337,7 @@ paths:
               $ref: '#/components/schemas/ConfigureTenantRequest'
       responses:
         '200':
-          description: Tenant mapping updated or migrated
+          description: Tenant mapping updated or migrated, with derived owner-portfolio snapshot metadata when available
   /service/ai/v1/internal/tenants/{tenant_id}/deactivate:
     post:
       summary: Deactivate internal tenant mapping

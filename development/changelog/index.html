@@ -1632,10 +1632,54 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#added-segment-10-personal-action-migration-2026-03-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 10 Personal Action Migration (2026-03-07)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-segment-8-personal-intelligence-foundation-2026-03-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 8 Personal Intelligence Foundation (2026-03-07)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-segment-7-canonical-trust-persistence-and-grants-2026-03-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 7 Canonical Trust Persistence and Grants (2026-03-07)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added-segment-6-unified-trust-engine-shadow-mode-2026-03-07" class="md-nav__link">
     <span class="md-ellipsis">
       
         Added - Segment 6 Unified Trust Engine Shadow Mode (2026-03-07)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-segment-12-owner-portfolio-intelligence-pipeline-2026-03-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 12 Owner Portfolio Intelligence Pipeline (2026-03-07)
       
     </span>
   </a>
@@ -2731,10 +2775,54 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#added-segment-10-personal-action-migration-2026-03-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 10 Personal Action Migration (2026-03-07)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-segment-8-personal-intelligence-foundation-2026-03-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 8 Personal Intelligence Foundation (2026-03-07)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-segment-7-canonical-trust-persistence-and-grants-2026-03-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 7 Canonical Trust Persistence and Grants (2026-03-07)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added-segment-6-unified-trust-engine-shadow-mode-2026-03-07" class="md-nav__link">
     <span class="md-ellipsis">
       
         Added - Segment 6 Unified Trust Engine Shadow Mode (2026-03-07)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-segment-12-owner-portfolio-intelligence-pipeline-2026-03-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 12 Owner Portfolio Intelligence Pipeline (2026-03-07)
       
     </span>
   </a>
@@ -3689,6 +3777,60 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 </blockquote>
 <hr />
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="added-segment-10-personal-action-migration-2026-03-07">Added - Segment 10 Personal Action Migration (2026-03-07)<a class="headerlink" href="#added-segment-10-personal-action-migration-2026-03-07" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>trust.runtime.personal-action-canonical-audit</code></li>
+<li><code>trust.runtime.personal-policy-feedback-sync</code></li>
+<li><code>trust.runtime.routing-canonical-audit</code></li>
+<li><code>startup.skills-routing-trust-storage-wiring</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>isolation.segment10.audit-personal-action-decisions</code></li>
+<li><code>isolation.segment10.sync-personal-policy-feedback</code></li>
+<li><code>isolation.segment10.audit-email-task-calendar-routing</code></li>
+<li><code>isolation.segment10.bootstrap-routing-trust-storage</code></li>
+<li>Added <code>src/zetherion_ai/trust/runtime.py</code> so personal-action and routing decisions can be normalized into canonical trust audits without widening live autonomy behavior.</li>
+<li>Updated <code>src/zetherion_ai/personal/actions.py</code> to persist canonical trust audits for decisions, record canonical feedback outcomes, and keep owner-personal policy/scorecard state synchronized with the legacy personal policy store.</li>
+<li>Updated <code>src/zetherion_ai/routing/task_calendar_router.py</code>, <code>src/zetherion_ai/routing/email_router.py</code>, and <code>src/zetherion_ai/skills/server.py</code> so email/task/calendar routing decisions now emit canonical trust audits through the control-plane trust store while preserving the existing route behavior.</li>
+<li>Added focused unit coverage for the new runtime helper mappings plus the personal-action and routing audit hooks to restore the repo-wide <code>unit-full</code> coverage floor locally before push.</li>
+</ul>
+<h3 id="added-segment-8-personal-intelligence-foundation-2026-03-07">Added - Segment 8 Personal Intelligence Foundation (2026-03-07)<a class="headerlink" href="#added-segment-8-personal-intelligence-foundation-2026-03-07" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>personal.owner-operational-state.persistence</code></li>
+<li><code>personal.owner-review-state.persistence</code></li>
+<li><code>personal.context.operational-review-state</code></li>
+<li><code>startup.owner-personal-intelligence-schema-bootstrap</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>isolation.segment8.persist-owner-commitments-blockers-plans</code></li>
+<li><code>isolation.segment8.persist-owner-review-queue</code></li>
+<li><code>isolation.segment8.include-owner-operational-context</code></li>
+<li><code>isolation.segment8.bootstrap-owner-personal-intelligence-schema</code></li>
+<li>Added <code>src/zetherion_ai/personal/operational_storage.py</code> with owner-personal relational persistence for commitments, projects, deadlines, routines, waiting-fors, blockers, active plans, and canonical review items.</li>
+<li>Extended <code>src/zetherion_ai/personal/models.py</code> and <code>src/zetherion_ai/personal/context.py</code> so owner operational state and pending review items can be carried into personal decision context safely from the <code>owner_personal</code> trust domain.</li>
+<li>Bootstrapped the owner-personal intelligence schema during app and skills startup and recorded the new owner-personal relational storage family in the isolation compatibility baseline.</li>
+<li>Added focused unit coverage for owner-personal operational/review storage, prompt-fragment rendering, and startup bootstrap wiring.</li>
+</ul>
+<h3 id="added-segment-7-canonical-trust-persistence-and-grants-2026-03-07">Added - Segment 7 Canonical Trust Persistence and Grants (2026-03-07)<a class="headerlink" href="#added-segment-7-canonical-trust-persistence-and-grants-2026-03-07" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>trust.persistence.canonical-store</code></li>
+<li><code>trust.grants.generic-resource-scope</code></li>
+<li><code>trust.backfill.legacy-source-normalization</code></li>
+<li><code>ci.endpoint-doc-bundle.route-sensitive-diff</code></li>
+<li><code>ci.local-gate.bandit-src</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>isolation.segment7.bootstrap-control-plane-trust-tables</code></li>
+<li><code>isolation.segment7.backfill-personal-gmail-github-youtube-worker-trust</code></li>
+<li><code>isolation.segment7.persist-shadow-decision-audit</code></li>
+<li><code>ci.segment7.ignore-nonroute-api-server-bootstrap-edits</code></li>
+<li><code>ci.segment7.catch-bandit-before-push</code></li>
+<li>Added <code>src/zetherion_ai/trust/storage.py</code> with canonical control-plane tables for trust policies, grants, scorecards, feedback events, and decision audit rows.</li>
+<li>Added <code>src/zetherion_ai/trust/backfill.py</code> so current personal, Gmail, GitHub, YouTube, and worker messaging trust records can be mapped into the canonical store without changing live enforcement.</li>
+<li>Bootstrapped the canonical trust schema during app/API/skills startup and extended the isolation inventory baseline to declare the new control-plane trust tables explicitly.</li>
+<li>Narrowed <code>scripts/check-endpoint-doc-bundle.py</code> so docs-bundle enforcement still catches route-surface edits, but no longer false-positives on bootstrap-only server wiring changes.</li>
+<li>Added a Bandit exact-SHA local-gate requirement for Python source changes so security-scan regressions fail before push instead of burning CI minutes.</li>
+</ul>
 <h3 id="added-segment-6-unified-trust-engine-shadow-mode-2026-03-07">Added - Segment 6 Unified Trust Engine Shadow Mode (2026-03-07)<a class="headerlink" href="#added-segment-6-unified-trust-engine-shadow-mode-2026-03-07" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Impacted capability IDs:</li>
@@ -3702,6 +3844,20 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 <li>Added <code>src/zetherion_ai/trust/engine.py</code> and <code>src/zetherion_ai/trust/adapters.py</code> to normalize legacy autonomy decisions into one canonical trust decision model without changing live enforcement.</li>
 <li>Wired non-blocking shadow recording into tenant trust policy, personal actions, Gmail trust, GitHub autonomy, and YouTube trust so each decision path now emits comparable <code>trust_shadow_decision</code> telemetry.</li>
 <li>Added focused unit coverage for the new engine/adapters plus hook-level contract tests to keep shadow-mode wiring from regressing silently.</li>
+</ul>
+<h3 id="added-segment-12-owner-portfolio-intelligence-pipeline-2026-03-07">Added - Segment 12 Owner Portfolio Intelligence Pipeline (2026-03-07)<a class="headerlink" href="#added-segment-12-owner-portfolio-intelligence-pipeline-2026-03-07" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>isolation.owner-portfolio.tenant-derived-dataset-pipeline</code></li>
+<li><code>isolation.owner-portfolio.cgs-mirrored-snapshot-provenance</code></li>
+<li><code>isolation.owner-portfolio.client-insights-derived-only-analysis</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>isolation.segment12.derive-tenant-health-dataset-before-owner-snapshot</code></li>
+<li><code>isolation.segment12.cgs-reconcile-mirrors-owner-portfolio-summary</code></li>
+<li><code>isolation.segment12.cross-tenant-analysis-uses-derived-summaries-only</code></li>
+<li>Added <code>src/zetherion_ai/portfolio/derivation.py</code> and <code>src/zetherion_ai/portfolio/storage.py</code> so tenant health summaries are normalized into <code>tenant_derived</code> datasets before owner-facing portfolio snapshots are stored.</li>
+<li>Updated <code>ClientInsightsSkill</code> to persist tenant-derived datasets plus owner-portfolio snapshots, and to keep cross-tenant prompts limited to derived summaries instead of raw tenant interaction payloads.</li>
+<li>Updated CGS internal tenant create/reconcile flows to mirror the derived owner-portfolio summary and provenance references into the existing CGS owner snapshot record without changing the public route contract.</li>
 </ul>
 <h3 id="added-segment-4-cgs-provisioning-and-reconciliation-orchestrator-2026-03-07">Added - Segment 4 CGS Provisioning and Reconciliation Orchestrator (2026-03-07)<a class="headerlink" href="#added-segment-4-cgs-provisioning-and-reconciliation-orchestrator-2026-03-07" title="Permanent link">&para;</a></h3>
 <ul>

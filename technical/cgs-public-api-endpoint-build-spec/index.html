@@ -2830,7 +2830,7 @@ Used by frontend provider/model selector UI.</p>
 </ul>
 <p>Returns mapped CGS tenant list.</p>
 <h3 id="post-internaltenants"><code>POST /internal/tenants</code><a class="headerlink" href="#post-internaltenants" title="Permanent link">&para;</a></h3>
-<p>Creates tenant in Zetherion via Skills API intent <code>client_create</code> when the CGS tenant is new; retries reconcile the existing mapping instead of creating a duplicate upstream tenant. Response now reports <code>isolation_stage</code> and <code>provisioning_status</code>.</p>
+<p>Creates tenant in Zetherion via Skills API intent <code>client_create</code> when the CGS tenant is new; retries reconcile the existing mapping instead of creating a duplicate upstream tenant. Response now reports <code>isolation_stage</code> and <code>provisioning_status</code>. The same lifecycle flow now seeds owner-portfolio derivation state so later reconciles can mirror tenant-derived health summaries into the CGS snapshot record with provenance.</p>
 <p>Request body:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p">{</span>
 <a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">&quot;cgs_tenant_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tenant-a&quot;</span><span class="p">,</span>
@@ -2853,7 +2853,7 @@ Used by frontend provider/model selector UI.</p>
 <li><code>document_backfill_limit</code></li>
 <li><code>release_marker</code></li>
 </ul>
-<p>Migration responses include <code>isolation_stage</code>, <code>reconciliation_issues</code>, <code>migration_receipt_id</code>, <code>migration_status</code>, runtime policy, bounded vector-backfill summary, and optional owner-portfolio snapshot/release-marker references.</p>
+<p>Migration responses include <code>isolation_stage</code>, <code>reconciliation_issues</code>, <code>migration_receipt_id</code>, <code>migration_status</code>, runtime policy, bounded vector-backfill summary, and optional owner-portfolio snapshot/release-marker references. When owner-portfolio derivation is enabled, CGS mirrors the derived summary and provenance identifiers returned by Zetherion instead of storing the raw health payload directly.</p>
 <h3 id="post-internaltenantstenant_iddeactivate"><code>POST /internal/tenants/{tenant_id}/deactivate</code><a class="headerlink" href="#post-internaltenantstenant_iddeactivate" title="Permanent link">&para;</a></h3>
 <p>Deactivates tenant via Skills intent <code>client_deactivate</code> and local mapping.</p>
 <h3 id="post-internaltenantstenant_idkeysrotate"><code>POST /internal/tenants/{tenant_id}/keys/rotate</code><a class="headerlink" href="#post-internaltenantstenant_idkeysrotate" title="Permanent link">&para;</a></h3>

@@ -2003,6 +2003,7 @@ modules are tracked until their planned cutover segments land.</p>
 <ul>
 <li><code>owner_personal</code></li>
 <li><code>src/zetherion_ai/personal/storage.py</code></li>
+<li><code>src/zetherion_ai/personal/operational_storage.py</code> now owns owner-personal commitments, blockers, active plans, and review-queue state in the owner schema</li>
 <li>Gmail account/email state</li>
 <li>calendar, tasks, milestones, and dev journal vector collections</li>
 <li><code>tenant_raw</code></li>
@@ -2014,6 +2015,7 @@ modules are tracked until their planned cutover segments land.</p>
     announcement dispatch</li>
 <li>CGS tenant mappings now carry first-class <code>isolation_stage</code> and
     provisioning reconciliation metadata for staged client upgrades</li>
+<li>Canonical trust persistence now lives in <code>src/zetherion_ai/trust/storage.py</code> under the control-plane schema, covering trust policies, grants, scorecards, feedback, and decision audit rows for staged backfill</li>
 </ul>
 <h3 id="domains-that-are-not-isolated-yet">Domains that are not isolated yet<a class="headerlink" href="#domains-that-are-not-isolated-yet" title="Permanent link">&para;</a></h3>
 <ul>

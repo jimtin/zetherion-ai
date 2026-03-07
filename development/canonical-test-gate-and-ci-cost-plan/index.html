@@ -1901,6 +1901,7 @@
 <ul>
 <li>endpoint docs bundle changes on API/CGS route files</li>
 <li>strict <code>mypy src/zetherion_ai --config-file=pyproject.toml</code> for runtime Python changes</li>
+<li>bounded <code>unit-full</code> for shared model/context/storage/startup paths that can move the repo-wide coverage floor</li>
 <li>targeted Qdrant/data-plane regression tests</li>
 <li>targeted replay-store regression tests</li>
 </ul>
@@ -1930,7 +1931,7 @@
 </ul>
 <h2 id="operating-rule">Operating Rule<a class="headerlink" href="#operating-rule" title="Permanent link">&para;</a></h2>
 <p>When CI fails, inspect attribution first. If attribution says a failure should have been caught locally, treat that as a process breach and enforce canonical local gate usage before the next push.</p>
-<p>Protected shared-infra paths must stay mapped in <code>.ci/local_gate_manifest.json</code>; local validation fails fast when a protected path changes without an explicit local gate mapping.</p>
+<p>Protected shared-infra and shared-runtime coverage-sensitive paths must stay mapped in <code>.ci/local_gate_manifest.json</code>; local validation fails fast when a protected path changes without an explicit local gate mapping.</p>
 <h2 id="cicd-proof-of-completion">CI/CD Proof of Completion<a class="headerlink" href="#cicd-proof-of-completion" title="Permanent link">&para;</a></h2>
 <p>After pushing, completion must be proven by CI/CD results for the exact commit SHA:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>./scripts/check-cicd-success.sh<span class="w"> </span>--sha<span class="w"> </span>&lt;commit_sha&gt;<span class="w"> </span>--ref<span class="w"> </span>&lt;ref&gt;

@@ -2570,13 +2570,13 @@
 <td>Tenant create</td>
 <td><code>/service/ai/v1/internal/tenants</code></td>
 <td><code>POST</code></td>
-<td>Operator-only lifecycle onboarding; idempotent on <code>cgs_tenant_id</code> and returns <code>isolation_stage</code> + <code>provisioning_status</code></td>
+<td>Operator-only lifecycle onboarding; idempotent on <code>cgs_tenant_id</code>, returns <code>isolation_stage</code> + <code>provisioning_status</code>, and seeds owner-portfolio derivation state for later reconciles</td>
 </tr>
 <tr>
 <td>Tenant profile edit</td>
 <td><code>/service/ai/v1/internal/tenants/{tenant_id}</code></td>
 <td><code>PATCH</code></td>
-<td>Enforces operator tenant-claim policy; also drives staged migration receipts, bounded document backfill, and owner-safe portfolio snapshots</td>
+<td>Enforces operator tenant-claim policy; also drives staged migration receipts, bounded document backfill, and owner-safe portfolio snapshots mirrored from tenant-derived summaries with provenance</td>
 </tr>
 <tr>
 <td>Tenant deactivate</td>
