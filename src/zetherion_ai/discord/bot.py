@@ -25,6 +25,7 @@ from zetherion_ai.announcements.discord_adapter import DiscordDMChannelAdapter
 from zetherion_ai.announcements.dispatcher import AnnouncementDispatcher
 from zetherion_ai.config import get_dynamic, get_dynamic_for_tenant, get_secret, get_settings
 from zetherion_ai.constants import KEEP_WARM_INTERVAL_SECONDS, MAX_DISCORD_MESSAGE_LENGTH
+from zetherion_ai.discord.e2e_lease import DiscordE2ELease
 from zetherion_ai.discord.security import (
     RateLimiter,
     SecurityPipeline,
@@ -813,6 +814,82 @@ class ZetherionAIBot(discord.Client):
             return await self._user_manager.is_allowed(user_id)
         return True
 
+    def _discord_e2e_lease_for_message(
+        self,
+        message: discord.Message,
+    ) -> DiscordE2ELease | None:
+        """Return an active synthetic-test lease for a Discord message, if allowed."""
+        settings = get_settings()
+        if not getattr(settings, "discord_e2e_enabled", False):
+            return None
+        channel = message.channel
+        if not isinstance(channel, discord.TextChannel | discord.Thread):
+            return None
+        if message.guild is None or self.user is None:
+            return None
+
+        allowed_authors = set(getattr(settings, "discord_e2e_allowed_author_ids", []))
+        if message.author.id not in allowed_authors:
+            return None
+
+        allowed_guild_id = getattr(settings, "discord_e2e_guild_id", None)
+        if allowed_guild_id is not None and message.guild.id != allowed_guild_id:
+            return None
+
+        allowed_category_id = getattr(settings, "discord_e2e_category_id", None)
+        allowed_parent_channel_id = getattr(settings, "discord_e2e_parent_channel_id", None)
+        channel_prefix = str(
+            getattr(settings, "discord_e2e_channel_prefix", "zeth-e2e") or ""
+        ).strip()
+        if not channel_prefix or not channel.name.lower().startswith(channel_prefix.lower()):
+            return None
+
+        if isinstance(channel, discord.Thread):
+            if (
+                allowed_parent_channel_id is not None
+                and channel.parent_id != allowed_parent_channel_id
+            ):
+                return None
+        else:
+            if allowed_category_id is not None and channel.category_id != allowed_category_id:
+                return None
+
+        lease = DiscordE2ELease.from_channel_metadata(
+            topic=getattr(channel, "topic", None),
+            name=getattr(channel, "name", None),
+            channel_prefix=channel_prefix,
+            guild_id=message.guild.id,
+        )
+        if lease is None or not lease.is_active():
+            return None
+        if lease.target_bot_id != self.user.id:
+            return None
+        if lease.author_id != message.author.id:
+            return None
+        if lease.guild_id != message.guild.id:
+            return None
+        if (
+            not isinstance(channel, discord.Thread)
+            and lease.category_id is not None
+            and channel.category_id != lease.category_id
+        ):
+            return None
+        return lease
+
+    def _discord_e2e_lease_for_interaction(
+        self,
+        interaction: discord.Interaction[discord.Client],
+    ) -> DiscordE2ELease | None:
+        """Return an active synthetic-test lease for a slash interaction, if allowed."""
+        channel = interaction.channel
+        if not isinstance(channel, discord.TextChannel | discord.Thread):
+            return None
+        fake_message = type("MessageLike", (), {})()
+        fake_message.channel = channel
+        fake_message.guild = interaction.guild
+        fake_message.author = interaction.user
+        return self._discord_e2e_lease_for_message(fake_message)
+
     async def on_message(self, message: discord.Message) -> None:
         """Handle incoming messages."""
         # Ignore own messages
@@ -870,8 +947,16 @@ class ZetherionAIBot(discord.Client):
                 )
                 return
 
-            # Check rate limit
-            allowed, warning = self._rate_limiter.check(message.author.id)
+            e2e_lease = self._discord_e2e_lease_for_message(message)
+            if e2e_lease is not None:
+                structlog.contextvars.bind_contextvars(
+                    synthetic_test_run=True,
+                    discord_e2e_run_id=e2e_lease.run_id,
+                )
+                allowed = True
+                warning = None
+            else:
+                allowed, warning = self._rate_limiter.check(message.author.id)
             if not allowed:
                 if warning:
                     await message.reply(warning, mention_author=True)
@@ -2223,7 +2308,16 @@ class ZetherionAIBot(discord.Client):
             )
             return False
 
-        allowed, warning = self._rate_limiter.check(interaction.user.id)
+        e2e_lease = self._discord_e2e_lease_for_interaction(interaction)
+        if e2e_lease is not None:
+            structlog.contextvars.bind_contextvars(
+                synthetic_test_run=True,
+                discord_e2e_run_id=e2e_lease.run_id,
+            )
+            allowed = True
+            warning = None
+        else:
+            allowed, warning = self._rate_limiter.check(interaction.user.id)
         if not allowed:
             await interaction.response.send_message(
                 warning or "Rate limited. Please wait.",

@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment CI-06 Discord E2E Channel Isolation, Target Lease, and Synthetic Cleanup (2026-03-08)
+
+- Impacted capability IDs:
+  - `ci.e2e.discord_isolation`
+- Impacted workflow scenario IDs:
+  - `e2e.concurrent_discord_runs_isolated`
+  - `e2e.target_lease_unavailable`
+- Added `src/zetherion_ai/discord/e2e_lease.py`, `scripts/discord_e2e_run_manager.py`, and `scripts/discord_e2e_run_manager.sh` so required Discord E2E runs now create one ephemeral channel per run, encode target-bot lease metadata in the channel topic, and janitor stale channels before the next invocation.
+- Updated `scripts/run-required-discord-e2e.sh`, `scripts/pre-push-tests.sh`, and `scripts/local-required-e2e-receipt.sh` so canonical Discord E2E always runs through the isolated channel/thread wrapper, writes machine-readable run metadata, and records cleanup/lease status in the local E2E receipt. Standalone wrapper use is documented as diagnostic-only; merge evidence comes from `bash scripts/local-required-e2e-receipt.sh`.
+- Added narrow bot-side synthetic-test rate-limit bypass checks in `src/zetherion_ai/discord/bot.py` and `src/zetherion_ai/config.py`, scoped to allowlisted authors plus active leased channels only.
+- Updated `tests/integration/test_discord_e2e.py` to run-tag mutating artifacts and write cleanup prompts, and expanded `.ci/local_gate_manifest.json` with Discord E2E isolation regression coverage so wrapper/bot changes must prove the lease contract locally before push.
+
 ### Changed - Segment CI-05 Containerized E2E Run Isolation (2026-03-08)
 
 - Impacted capability IDs:

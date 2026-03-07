@@ -215,6 +215,57 @@ def _build_simple_chat_prompt(message: str) -> str:
     )
 
 
+_USER_KNOWLEDGE_SUMMARY_PATTERNS = (
+    "what do you know about me",
+    "what have you learned about me",
+    "what do you remember about me",
+    "give me a summary of what you know about me",
+)
+_MEMORY_STORE_PATTERNS = (
+    re.compile(r"^\s*remember(?:\s+that)?\b", re.IGNORECASE),
+    re.compile(r"^\s*note(?:\s+that)?\b", re.IGNORECASE),
+)
+_MEMORY_RECALL_PATTERNS = (
+    re.compile(r"^\s*what(?:'s| is)\s+my\b", re.IGNORECASE),
+    re.compile(r"^\s*what\s+are\s+my\b", re.IGNORECASE),
+    re.compile(r"^\s*where\s+do\s+i\s+live\b", re.IGNORECASE),
+    re.compile(r"^\s*when\s+is\s+my\b", re.IGNORECASE),
+)
+
+
+def classify_with_heuristics(message: str) -> RoutingDecision | None:
+    normalized = " ".join(message.strip().lower().split())
+    normalized = normalized.rstrip("?!.")
+    if not normalized:
+        return None
+
+    if normalized in _USER_KNOWLEDGE_SUMMARY_PATTERNS:
+        return RoutingDecision(
+            intent=MessageIntent.USER_KNOWLEDGE_SUMMARY,
+            confidence=1.0,
+            reasoning="Deterministic user-knowledge summary phrase",
+            use_claude=False,
+        )
+
+    if any(pattern.search(message) for pattern in _MEMORY_STORE_PATTERNS):
+        return RoutingDecision(
+            intent=MessageIntent.MEMORY_STORE,
+            confidence=1.0,
+            reasoning="Deterministic memory-store phrase",
+            use_claude=False,
+        )
+
+    if any(pattern.search(message) for pattern in _MEMORY_RECALL_PATTERNS):
+        return RoutingDecision(
+            intent=MessageIntent.MEMORY_RECALL,
+            confidence=1.0,
+            reasoning="Deterministic memory-recall phrase",
+            use_claude=False,
+        )
+
+    return None
+
+
 class GeminiRouterBackend:
     """Router backend using Gemini Flash."""
 
@@ -523,6 +574,14 @@ class MessageRouter:
         Returns:
             RoutingDecision with intent and routing info.
         """
+        heuristic = classify_with_heuristics(message)
+        if heuristic is not None:
+            log.debug(
+                "message_classified_via_heuristic",
+                intent=heuristic.intent.value,
+                confidence=heuristic.confidence,
+            )
+            return heuristic
         return await self._backend.classify(message)
 
     async def generate_simple_response(self, message: str) -> str:

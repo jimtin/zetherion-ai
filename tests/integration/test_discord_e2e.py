@@ -3,13 +3,14 @@
 These tests send actual messages through Discord and verify bot responses.
 Requires:
 - TEST_DISCORD_BOT_TOKEN environment variable (separate test bot)
-- TEST_DISCORD_CHANNEL_ID environment variable (test channel ID)
+- TEST_DISCORD_CHANNEL_ID environment variable (wrapper-managed ephemeral test channel ID)
 - TEST_DISCORD_TARGET_BOT_ID environment variable (optional, ID of bot to test)
 - DISCORD_E2E_PROVIDER (optional, default: groq; allowed: groq|local)
 - Test Discord server set up
 """
 
 import asyncio
+import json
 import os
 import re
 from collections.abc import AsyncGenerator
@@ -39,6 +40,21 @@ DISCORD_E2E_PROVIDER = os.getenv("DISCORD_E2E_PROVIDER", "groq").strip().lower()
 if DISCORD_E2E_PROVIDER not in {"groq", "local"}:
     DISCORD_E2E_PROVIDER = "groq"
 
+DISCORD_E2E_RUN_ID = (os.getenv("DISCORD_E2E_RUN_ID", "manual-run") or "manual-run").strip()
+DISCORD_E2E_RUN_SUFFIX = DISCORD_E2E_RUN_ID[-12:]
+DISCORD_E2E_CLEANUP_LEDGER_PATH = (os.getenv("DISCORD_E2E_CLEANUP_LEDGER_PATH", "") or "").strip()
+
+
+def _append_cleanup_prompt(*, label: str, prompt: str) -> None:
+    if not DISCORD_E2E_CLEANUP_LEDGER_PATH.strip():
+        return
+    ledger_path = Path(DISCORD_E2E_CLEANUP_LEDGER_PATH)
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"label": label, "prompt": prompt}
+    with ledger_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, sort_keys=True) + "\n")
+
+
 # Skip if test Discord credentials not provided
 SKIP_DISCORD_E2E = not all(
     [
@@ -48,8 +64,9 @@ SKIP_DISCORD_E2E = not all(
 )
 
 SKIP_REASON = (
-    "Discord E2E tests require TEST_DISCORD_BOT_TOKEN and TEST_DISCORD_CHANNEL_ID "
-    "environment variables. Set these in your .env to run Discord E2E tests."
+    "Discord E2E tests require TEST_DISCORD_BOT_TOKEN and a wrapper-provided "
+    "TEST_DISCORD_CHANNEL_ID environment variable. Set these in your .env to run "
+    "Discord E2E tests."
 )
 
 
@@ -123,7 +140,7 @@ class DiscordTestClient:
         self.token = token
         self.channel_id = channel_id
         self.client: discord.Client | None = None
-        self.channel: discord.TextChannel | None = None
+        self.channel: discord.TextChannel | discord.Thread | None = None
         self._client_task: asyncio.Task | None = None
 
     async def start(self) -> None:
@@ -141,8 +158,8 @@ class DiscordTestClient:
             print(f"✅ Test client logged in as {self.client.user}")  # type: ignore[union-attr]
             # Get test channel
             channel = self.client.get_channel(self.channel_id)  # type: ignore[union-attr]
-            if not isinstance(channel, discord.TextChannel):
-                raise RuntimeError(f"Channel {self.channel_id} is not a text channel")
+            if not isinstance(channel, discord.TextChannel | discord.Thread):
+                raise RuntimeError(f"Channel {self.channel_id} is not a supported test channel")
             self.channel = channel
 
         # Start client in background task
@@ -200,8 +217,9 @@ class DiscordTestClient:
         # Search for various name patterns
         bot_name_patterns = ["zetherion", "zeth", "secureclaw"]
 
-        if isinstance(self.channel, discord.TextChannel) and self.channel.guild:
-            for member in self.channel.guild.members:
+        guild = getattr(self.channel, "guild", None)
+        if guild is not None:
+            for member in guild.members:
                 if member.bot and member.id != self.client.user.id:  # type: ignore[union-attr]
                     name_lower = member.name.lower()
                     if any(pattern in name_lower for pattern in bot_name_patterns):
@@ -210,7 +228,7 @@ class DiscordTestClient:
 
             # If no match found, list all bots for debugging
             print("Available bots in guild:")
-            for member in self.channel.guild.members:
+            for member in guild.members:
                 if member.bot and member.id != self.client.user.id:  # type: ignore[union-attr]
                     print(f"  - {member.name} (ID: {member.id})")
 
@@ -405,7 +423,11 @@ async def test_bot_remembers_information(discord_test_client: DiscordTestClient)
     if not bot_id:
         pytest.skip("Could not find Zetherion AI bot in channel")
 
-    favorite_color = f"purple-{uuid4().hex[:6]}"
+    favorite_color = f"purple-{DISCORD_E2E_RUN_SUFFIX}-{uuid4().hex[:4]}"
+    _append_cleanup_prompt(
+        label=f"favorite-color:{favorite_color}",
+        prompt=f"Forget that my favorite color is {favorite_color}",
+    )
 
     # Store memory
     store_message = await discord_test_client.send_message(
@@ -537,9 +559,12 @@ async def test_bot_creates_task(discord_test_client: DiscordTestClient) -> None:
     if not bot_id:
         pytest.skip("Could not find Zetherion AI bot in channel")
 
-    test_message = await discord_test_client.send_message(
-        f"<@{bot_id}> add a task to review the design docs"
+    task_title = f"review the design docs {DISCORD_E2E_RUN_SUFFIX}-{uuid4().hex[:4]}"
+    _append_cleanup_prompt(
+        label=f"task:{task_title}",
+        prompt=f"Delete the task {task_title}",
     )
+    test_message = await discord_test_client.send_message(f"<@{bot_id}> add a task to {task_title}")
     response = None
 
     try:
@@ -564,13 +589,15 @@ async def test_bot_lists_tasks(discord_test_client: DiscordTestClient) -> None:
     if not bot_id:
         pytest.skip("Could not find Zetherion AI bot in channel")
 
-    task_title = f"review design docs batch {uuid4().int % 10000}"
+    task_title = f"review design docs {DISCORD_E2E_RUN_SUFFIX}-{uuid4().hex[:4]}"
+    _append_cleanup_prompt(
+        label=f"task:{task_title}",
+        prompt=f"Delete the task {task_title}",
+    )
     create_message = await discord_test_client.send_message(
         f"<@{bot_id}> add a task to {task_title}"
     )
     create_response = None
-    retry_create_message = None
-    retry_create_response = None
     list_message = None
     response = None
 
@@ -579,18 +606,6 @@ async def test_bot_lists_tasks(discord_test_client: DiscordTestClient) -> None:
             create_message, timeout=90.0, bot_id=bot_id
         )
         assert create_response is not None, "Bot did not acknowledge task creation"
-        if "created task:" not in create_response.content.lower():
-            task_title = "review the design docs"
-            retry_create_message = await discord_test_client.send_message(
-                f"<@{bot_id}> add a task to {task_title}"
-            )
-            retry_create_response = await discord_test_client.wait_for_bot_response(
-                retry_create_message, timeout=90.0, bot_id=bot_id
-            )
-            assert retry_create_response is not None, "Bot did not acknowledge retry task creation"
-            assert (
-                "created task:" in retry_create_response.content.lower()
-            ), f"Unexpected retry task creation response: {retry_create_response.content}"
 
         list_message = await discord_test_client.send_message(f"<@{bot_id}> show my tasks")
         response = await discord_test_client.wait_for_bot_response(
@@ -604,10 +619,6 @@ async def test_bot_lists_tasks(discord_test_client: DiscordTestClient) -> None:
         await discord_test_client.delete_message(create_message)
         if create_response:
             await discord_test_client.delete_message(create_response)
-        if retry_create_message:
-            await discord_test_client.delete_message(retry_create_message)
-        if retry_create_response:
-            await discord_test_client.delete_message(retry_create_response)
         if list_message:
             await discord_test_client.delete_message(list_message)
         if response:
@@ -675,13 +686,22 @@ async def test_bot_multi_turn(discord_test_client: DiscordTestClient) -> None:
     if not bot_id:
         pytest.skip("Could not find Zetherion AI bot in channel")
 
-    favorite_color = f"teal-{uuid4().hex[:6]}"
+    profession_marker = f"software engineer {DISCORD_E2E_RUN_SUFFIX}-{uuid4().hex[:4]}"
+    favorite_color = f"teal-{DISCORD_E2E_RUN_SUFFIX}-{uuid4().hex[:4]}"
+    _append_cleanup_prompt(
+        label=f"profession:{profession_marker}",
+        prompt=f"Forget that I work as a {profession_marker}",
+    )
+    _append_cleanup_prompt(
+        label=f"favorite-color:{favorite_color}",
+        prompt=f"Forget that my favorite color is {favorite_color}",
+    )
     messages_to_delete: list[discord.Message] = []
 
     try:
         # Turn 1: Remember profession
         msg1 = await discord_test_client.send_message(
-            f"<@{bot_id}> remember that I work as a software engineer"
+            f"<@{bot_id}> remember that I work as a {profession_marker}"
         )
         messages_to_delete.append(msg1)
         resp1 = await discord_test_client.wait_for_bot_response(msg1, timeout=90.0, bot_id=bot_id)
@@ -705,9 +725,7 @@ async def test_bot_multi_turn(discord_test_client: DiscordTestClient) -> None:
         resp3 = await discord_test_client.wait_for_bot_response(msg3, timeout=90.0, bot_id=bot_id)
         assert resp3 is not None, "Bot did not respond to turn 3"
         messages_to_delete.append(resp3)
-
-        summary_text = resp3.content.lower()
-        assert "software engineer" in summary_text, "Summary missing remembered profession"
+        assert "software engineer" in resp3.content.lower(), "Summary missing remembered profession"
         recalled_color, explanation = validate_memory_recall(resp3.content, favorite_color)
         assert recalled_color, f"Summary missing remembered favorite color: {explanation}"
         print(f"✅ Multi-turn response: {resp3.content[:200]}...")

@@ -388,7 +388,10 @@ The following variables are intentionally excluded from the runtime reference or
 are script/test-only compatibility knobs:
 
 - `TEST_DISCORD_BOT_TOKEN`
-- `TEST_DISCORD_CHANNEL_ID`
+- `TEST_DISCORD_GUILD_ID`
+- `TEST_DISCORD_E2E_CATEGORY_ID`
+- `TEST_DISCORD_E2E_CATEGORY_NAME`
+- `TEST_DISCORD_E2E_CHANNEL_PREFIX`
 - `TEST_DISCORD_TARGET_BOT_ID`
 - `OLLAMA_DOCKER_MEMORY`
 - `DOCKER_SOCKET_PATH`

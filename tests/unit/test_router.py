@@ -624,6 +624,40 @@ class TestMessageRouter:
         assert is_healthy is True
 
 
+class TestMessageRouterHeuristics:
+    """Tests for deterministic routing heuristics in the wrapper."""
+
+    @pytest.mark.asyncio
+    async def test_memory_store_phrase_bypasses_backend(self):
+        mock_backend = AsyncMock()
+        router = MessageRouter(backend=mock_backend)
+
+        decision = await router.classify("Remember that my favorite color is blue")
+
+        assert decision.intent == MessageIntent.MEMORY_STORE
+        mock_backend.classify.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_memory_recall_phrase_bypasses_backend(self):
+        mock_backend = AsyncMock()
+        router = MessageRouter(backend=mock_backend)
+
+        decision = await router.classify("What's my favorite color?")
+
+        assert decision.intent == MessageIntent.MEMORY_RECALL
+        mock_backend.classify.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_user_knowledge_summary_phrase_bypasses_backend(self):
+        mock_backend = AsyncMock()
+        router = MessageRouter(backend=mock_backend)
+
+        decision = await router.classify("What do you know about me?")
+
+        assert decision.intent == MessageIntent.USER_KNOWLEDGE_SUMMARY
+        mock_backend.classify.assert_not_called()
+
+
 class TestGroqRouterBackend:
     """Tests for GroqRouterBackend."""
 

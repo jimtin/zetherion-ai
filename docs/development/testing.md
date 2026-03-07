@@ -144,10 +144,20 @@ tests/
 | Integration tests | `tests/integration/` (`@pytest.mark.integration`) | Medium | Local services and HTTP flows |
 | Discord E2E | `tests/integration/test_discord_e2e.py` (`@pytest.mark.discord_e2e`) | Slow | Real Discord API |
 
-For isolated Discord E2E debugging, use the blessed wrapper:
+For isolated Discord E2E debugging, use the blessed wrapper. It allocates a dedicated ephemeral channel or thread for the run, acquires a target-bot lease, and cleans the Discord surface afterward. This wrapper is diagnostic-only on its own; authoritative merge evidence comes from `bash scripts/local-required-e2e-receipt.sh`, which boots the local bot container before invoking it:
 
 ```bash
 ./scripts/run-required-discord-e2e.sh -- -k test_bot_responds_to_message
+```
+
+Required local Discord E2E scope config:
+
+```bash
+TEST_DISCORD_BOT_TOKEN=<test-bot-token>
+TEST_DISCORD_GUILD_ID=<guild-id>
+TEST_DISCORD_E2E_CATEGORY_ID=<category-id>  # or TEST_DISCORD_E2E_CATEGORY_NAME
+DISCORD_E2E_ALLOWED_AUTHOR_IDS=<test-bot-user-id>
+DISCORD_E2E_ENABLED=true
 ```
 
 Do not treat direct ad hoc `pytest tests/integration/test_discord_e2e.py ...` invocations as canonical evidence.

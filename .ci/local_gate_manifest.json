@@ -45,7 +45,13 @@
     "tests/integration/test_e2e.py",
     "tests/integration/test_health_e2e.py",
     "tests/integration/test_update_e2e.py",
-    "tests/integration/test_telemetry_e2e.py"
+    "tests/integration/test_telemetry_e2e.py",
+    "src/zetherion_ai/discord/bot.py",
+    "src/zetherion_ai/discord/e2e_lease.py",
+    "scripts/discord_e2e_run_manager.py",
+    "scripts/discord_e2e_run_manager.sh",
+    "scripts/run-required-discord-e2e.sh",
+    "tests/integration/test_discord_e2e.py"
   ],
   "requirements": {
     "endpoint-doc-bundle": {
@@ -111,7 +117,9 @@
       "description": "Run the isolated E2E harness regression suite.",
       "pytest_targets": [
         "tests/unit/test_e2e_run_manager.py",
-        "tests/unit/test_e2e_runtime.py"
+        "tests/unit/test_e2e_runtime.py",
+        "tests/unit/test_discord_e2e_run_manager.py",
+        "tests/unit/test_discord_e2e_isolation.py"
       ]
     }
   },
@@ -236,6 +244,21 @@
         "tests/integration/test_health_e2e.py",
         "tests/integration/test_update_e2e.py",
         "tests/integration/test_telemetry_e2e.py"
+      ],
+      "requirements": [
+        "e2e-isolation-regression-suite"
+      ]
+    },
+    {
+      "id": "discord-e2e-isolation-regressions",
+      "covers_protected": true,
+      "patterns": [
+        "src/zetherion_ai/discord/bot.py",
+        "src/zetherion_ai/discord/e2e_lease.py",
+        "scripts/discord_e2e_run_manager.py",
+        "scripts/discord_e2e_run_manager.sh",
+        "scripts/run-required-discord-e2e.sh",
+        "tests/integration/test_discord_e2e.py"
       ],
       "requirements": [
         "e2e-isolation-regression-suite"
