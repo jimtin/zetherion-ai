@@ -10,6 +10,7 @@ cd "$REPO_DIR"
 RECEIPT_PATH="${LOCAL_E2E_RECEIPT_PATH:-.ci/e2e-receipt.json}"
 DOCKER_LOG_PATH="${DOCKER_LOG_PATH:-docker-e2e.log}"
 DISCORD_LOG_PATH="${DISCORD_LOG_PATH:-discord-e2e.log}"
+DISCORD_RESULT_PATH="${DISCORD_RESULT_PATH:-.artifacts/discord-e2e-last-run.json}"
 DISCORD_E2E_PROVIDER="${DISCORD_E2E_PROVIDER:-groq}"
 HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.test.yml}"
@@ -127,6 +128,7 @@ refresh_receipt_cleanup_status() {
     fi
     RECEIPT_PATH="$RECEIPT_PATH" \
     E2E_DOCKER_CLEANUP_STATUS="$E2E_DOCKER_CLEANUP_STATUS" \
+    DISCORD_RESULT_PATH="$DISCORD_RESULT_PATH" \
     "$PYTHON_BIN" - <<'PY'
 import json
 import os
@@ -234,6 +236,7 @@ write_receipt() {
     SUITE_DISCORD_STATUS="$SUITE_DISCORD_STATUS" \
     SUITE_DISCORD_REASON="$SUITE_DISCORD_REASON" \
     DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" \
+    DISCORD_RESULT_PATH="$DISCORD_RESULT_PATH" \
     MISSING_ENV="$MISSING_ENV" \
     "$PYTHON_BIN" - <<'PY'
 import datetime as dt
@@ -243,6 +246,11 @@ from pathlib import Path
 
 missing_env_raw = (os.environ.get("MISSING_ENV") or "").strip()
 missing_env = [item for item in missing_env_raw.split(",") if item]
+
+discord_result_path = Path(os.environ.get("DISCORD_RESULT_PATH", ""))
+discord_result = {}
+if discord_result_path.is_file():
+    discord_result = json.loads(discord_result_path.read_text(encoding="utf-8"))
 
 payload = {
     "generated_at": dt.datetime.now(dt.UTC).isoformat(),
@@ -256,6 +264,10 @@ payload = {
     "compose_project": os.environ.get("PROJECT", ""),
     "docker_cleanup_status": os.environ.get("E2E_DOCKER_CLEANUP_STATUS", "pending"),
     "stack_root": os.environ.get("E2E_STACK_ROOT", ""),
+    "discord_channel_id": discord_result.get("channel_id", ""),
+    "discord_cleanup_status": discord_result.get("cleanup_status", "not_run"),
+    "target_lease_status": discord_result.get("target_lease_status", "not_run"),
+    "synthetic_test_run": bool(discord_result.get("synthetic_test_run", False)),
     "missing_env": missing_env,
     "suites": {
         "docker_e2e": {
@@ -280,10 +292,11 @@ PY
 
 declare -a required_env=(
     "TEST_DISCORD_BOT_TOKEN"
-    "TEST_DISCORD_CHANNEL_ID"
+    "TEST_DISCORD_GUILD_ID"
+    "DISCORD_E2E_ENABLED"
+    "DISCORD_E2E_ALLOWED_AUTHOR_IDS"
     "OPENAI_API_KEY"
     "GEMINI_API_KEY"
-    "DISCORD_TOKEN"
 )
 provider_normalized="$(printf '%s' "$DISCORD_E2E_PROVIDER" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 if [[ -z "$provider_normalized" ]]; then
@@ -301,6 +314,12 @@ for var_name in "${required_env[@]}"; do
         missing_env+=("$var_name")
     fi
 done
+if [[ -z "${DISCORD_TOKEN_TEST:-}" && -z "${DISCORD_TOKEN:-}" ]]; then
+    missing_env+=("DISCORD_TOKEN_TEST|DISCORD_TOKEN")
+fi
+if [[ -z "${TEST_DISCORD_E2E_PARENT_CHANNEL_ID:-}" && -z "${TEST_DISCORD_E2E_CATEGORY_ID:-}" && -z "${TEST_DISCORD_E2E_CATEGORY_NAME:-}" ]]; then
+    missing_env+=("TEST_DISCORD_E2E_PARENT_CHANNEL_ID|TEST_DISCORD_E2E_CATEGORY_ID|TEST_DISCORD_E2E_CATEGORY_NAME")
+fi
 
 if [[ "${#missing_env[@]}" -gt 0 ]]; then
     MISSING_ENV="$(IFS=,; echo "${missing_env[*]}")"
@@ -333,6 +352,26 @@ run_suite() {
     if [[ "$exit_code" -ne 0 ]]; then
         suite_status="failed"
         suite_reason="pytest_exit_nonzero"
+        if [[ "$suite_key" == "discord" && -f "$DISCORD_RESULT_PATH" ]]; then
+            suite_reason="$($PYTHON_BIN - "$DISCORD_RESULT_PATH" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    print("pytest_exit_nonzero")
+    raise SystemExit(0)
+lease_status = str(payload.get("target_lease_status", "")).strip()
+if lease_status:
+    print(lease_status)
+else:
+    print("pytest_exit_nonzero")
+PY
+)"
+        fi
     elif contains_skips "$log_file"; then
         suite_status="failed"
         suite_reason="required_suite_reported_skips"
@@ -362,14 +401,8 @@ run_suite \
 run_suite \
     "discord" \
     "$DISCORD_LOG_PATH" \
-    env DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true SSL_CERT_FILE="$SSL_CERT_FILE" \
-    "$PYTHON_BIN" -m pytest tests/integration/test_discord_e2e.py \
-    -m "discord_e2e and not optional_e2e" \
-    --timeout=180 \
-    -v \
-    --tb=short \
-    -s \
-    --no-cov
+    env DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true SSL_CERT_FILE="$SSL_CERT_FILE" DISCORD_E2E_RESULT_PATH="$DISCORD_RESULT_PATH" \
+    scripts/run-required-discord-e2e.sh
 
 if [[ "$SUITE_DOCKER_STATUS" == "passed" && "$SUITE_DISCORD_STATUS" == "passed" ]]; then
     RECEIPT_STATUS="success"

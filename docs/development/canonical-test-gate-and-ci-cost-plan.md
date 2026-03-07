@@ -22,7 +22,7 @@ The canonical gate delegates to `scripts/pre-push-tests.sh` and enforces:
 
 1. strict required tests
 2. required Docker and Discord E2E smoke preflight before the long E2E fan-out
-3. required Discord E2E
+3. required Discord E2E through the blessed isolated-channel wrapper (one ephemeral channel and one target-bot lease per run)
 4. fail-fast stage exits
 5. automatic test-environment teardown
 

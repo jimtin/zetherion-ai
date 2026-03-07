@@ -1,13 +1,31 @@
 {
-  "status": "success",
+  "generated_at": "2026-03-07T23:17:18.017833+00:00",
   "run_context": "local",
-  "head_sha": "local",
+  "head_sha": "0b19218ec545abb2bccc719cd0dae29b41b31d9d",
+  "status": "success",
+  "reason_code": "required_suites_passed",
+  "reason": "Required local Docker and Discord E2E suites passed.",
+  "provider": "groq",
+  "e2e_run_id": "run-20260307-231415-b6a8b6",
+  "compose_project": "zetherion-ai-test-run-20260307-231415-b6a8b6",
+  "docker_cleanup_status": "cleaned",
+  "stack_root": "/Users/jameshinton/Developer/PersonalBot/.artifacts/e2e-runs/stacks/run-20260307-231415-b6a8b6",
+  "discord_channel_id": "1479980861502787766",
+  "discord_cleanup_status": "cleaned",
+  "target_lease_status": "acquired",
+  "synthetic_test_run": true,
+  "missing_env": [],
   "suites": {
     "docker_e2e": {
-      "status": "passed"
+      "test_path": "tests/integration/test_e2e.py",
+      "status": "passed",
+      "reason_code": "ok"
     },
     "discord_required_e2e": {
-      "status": "passed"
+      "test_path": "tests/integration/test_discord_e2e.py",
+      "marker": "discord_e2e and not optional_e2e",
+      "status": "passed",
+      "reason_code": "ok"
     }
   }
 }

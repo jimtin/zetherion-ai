@@ -15,7 +15,9 @@ This document lists all GitHub secrets for Zetherion AI's CI/CD pipeline and loc
 | `ANTHROPIC_API_KEY` | Optional | Claude API for complex tasks | Local integration tests only |
 | `OPENAI_API_KEY` | Optional | OpenAI API for complex tasks | Local integration tests only |
 | `TEST_DISCORD_BOT_TOKEN` | Optional | Test bot token for E2E tests | Local Discord E2E tests only |
-| `TEST_DISCORD_CHANNEL_ID` | Optional | Test channel ID for E2E tests | Local Discord E2E tests only |
+| `TEST_DISCORD_GUILD_ID` | Optional | Discord guild ID used to create isolated E2E channels | Local Discord E2E tests only |
+| `TEST_DISCORD_E2E_CATEGORY_ID` | Optional | Discord category ID for isolated E2E channels | Local Discord E2E tests only |
+| `TEST_DISCORD_E2E_CATEGORY_NAME` | Optional | Discord category name to create/reuse when category ID is not set | Local Discord E2E tests only |
 
 All 6 secrets are optional. They are only needed if you want to run integration or E2E tests locally.
 
@@ -165,28 +167,28 @@ See [`../technical/architecture.md`](../technical/architecture.md) for how these
 
 ---
 
-### TEST_DISCORD_CHANNEL_ID
+### Discord E2E Isolation Scope
 
-**Purpose:** Discord channel ID where the test bot will send messages during E2E testing.
+**Purpose:** The blessed Discord E2E wrapper now creates one ephemeral channel per run instead of reusing a fixed shared channel.
 
-**Required for:**
+**Required for local Discord E2E runs:**
 
-- Discord E2E tests alongside `TEST_DISCORD_BOT_TOKEN`
-- If not provided, Discord E2E tests are skipped automatically
+- `TEST_DISCORD_GUILD_ID`
+- `TEST_DISCORD_E2E_CATEGORY_ID` or `TEST_DISCORD_E2E_CATEGORY_NAME`
+- `DISCORD_E2E_ALLOWED_AUTHOR_IDS`
+- `DISCORD_E2E_ENABLED=true`
 
-**How to get it:**
+**How to get the scope IDs:**
 
 1. Enable Developer Mode in Discord: User Settings -> Advanced -> Developer Mode (toggle ON)
-2. Right-click the test channel
-3. Click "Copy Channel ID"
-
-**Format:** `1234567890123456789` (18-19 digit numeric string).
+2. Right-click the target guild/category and copy the IDs you need
+3. Point the wrapper at an isolated E2E category, not a shared human test channel
 
 **Important:**
 
-- Use a dedicated test channel
-- The test bot must have access to this channel
-- Messages will be posted during test runs
+- The wrapper acquires a target-bot lease and deletes the ephemeral channel on exit
+- Concurrent runs should share the guild/category but not the same channel
+- For merge evidence, use `bash scripts/local-required-e2e-receipt.sh`; `./scripts/run-required-discord-e2e.sh` is the blessed isolated Discord wrapper for debugging and for the receipt script itself. Do not use direct ad hoc `pytest` against a shared channel
 
 ---
 
@@ -221,15 +223,18 @@ Run with canonical full gate:
 Add these additional variables to your `.env` file:
 
 ```bash
-# Required for Discord E2E tests
+# Required for isolated Discord E2E tests
 TEST_DISCORD_BOT_TOKEN=<your-test-bot-token>
-TEST_DISCORD_CHANNEL_ID=<your-test-channel-id>
+TEST_DISCORD_GUILD_ID=<your-test-guild-id>
+TEST_DISCORD_E2E_CATEGORY_ID=<your-test-category-id>  # or TEST_DISCORD_E2E_CATEGORY_NAME
+DISCORD_E2E_ALLOWED_AUTHOR_IDS=<your-test-bot-user-id>
+DISCORD_E2E_ENABLED=true
 ```
 
-Run with:
+Run with the blessed wrapper so each invocation creates and cleans its own ephemeral test channel:
 
 ```bash
-pytest tests/integration/test_discord_e2e.py -v -s -m discord_e2e
+./scripts/run-required-discord-e2e.sh -- -k test_bot_responds_to_message
 ```
 
 See [`../technical/configuration.md`](../technical/configuration.md) for the full list of environment variables.
@@ -258,7 +263,8 @@ gh secret set GEMINI_API_KEY
 gh secret set ANTHROPIC_API_KEY
 gh secret set OPENAI_API_KEY
 gh secret set TEST_DISCORD_BOT_TOKEN
-gh secret set TEST_DISCORD_CHANNEL_ID
+gh secret set TEST_DISCORD_GUILD_ID
+gh secret set TEST_DISCORD_E2E_CATEGORY_ID
 ```
 
 You will be prompted to paste the value for each secret.

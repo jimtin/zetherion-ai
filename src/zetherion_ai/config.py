@@ -190,6 +190,41 @@ class Settings(BaseSettings):
     allow_bot_messages: bool = Field(
         default=False, description="Allow messages from other bots (for E2E testing only)"
     )
+    discord_e2e_enabled: bool = Field(
+        default=False,
+        description="Enable narrow Discord E2E synthetic-test bypass rules",
+    )
+    discord_e2e_allowed_author_ids_str: str | None = Field(
+        default=None,
+        alias="DISCORD_E2E_ALLOWED_AUTHOR_IDS",
+        description="Discord author IDs allowed to use synthetic E2E channels (comma-separated)",
+    )
+    discord_e2e_guild_id: int | None = Field(
+        default=None,
+        description="Allowlisted Discord guild ID for synthetic E2E channels",
+    )
+    discord_e2e_category_id: int | None = Field(
+        default=None,
+        description="Allowlisted Discord category ID for synthetic E2E channels",
+    )
+    discord_e2e_parent_channel_id: int | None = Field(
+        default=None,
+        description="Allowlisted Discord parent channel ID for synthetic E2E threads",
+    )
+    discord_e2e_channel_prefix: str = Field(
+        default="zeth-e2e",
+        description="Required channel-name prefix for synthetic Discord E2E channels",
+    )
+
+    @property
+    def discord_e2e_allowed_author_ids(self) -> list[int]:
+        """Parse and return synthetic Discord E2E author IDs as a list."""
+        if self.discord_e2e_allowed_author_ids_str is None:
+            return []
+        value = self.discord_e2e_allowed_author_ids_str.strip()
+        if not value:
+            return []
+        return [int(uid.strip()) for uid in value.split(",") if uid.strip()]
 
     # Dev Agent Configuration
     dev_agent_enabled: bool = Field(

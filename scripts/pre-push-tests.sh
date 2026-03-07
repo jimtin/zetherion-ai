@@ -441,7 +441,23 @@ if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
     OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-3072}"
 
     require_env_var "TEST_DISCORD_BOT_TOKEN"
-    require_env_var "TEST_DISCORD_CHANNEL_ID"
+    DISCORD_E2E_ENABLED="${DISCORD_E2E_ENABLED:-true}"
+    DISCORD_E2E_GUILD_ID="${DISCORD_E2E_GUILD_ID:-${TEST_DISCORD_GUILD_ID:-}}"
+    DISCORD_E2E_PARENT_CHANNEL_ID="${DISCORD_E2E_PARENT_CHANNEL_ID:-${TEST_DISCORD_E2E_PARENT_CHANNEL_ID:-}}"
+    DISCORD_E2E_CHANNEL_PREFIX="${DISCORD_E2E_CHANNEL_PREFIX:-${TEST_DISCORD_E2E_CHANNEL_PREFIX:-zeth-e2e}}"
+    export DISCORD_E2E_ENABLED DISCORD_E2E_GUILD_ID DISCORD_E2E_PARENT_CHANNEL_ID DISCORD_E2E_CHANNEL_PREFIX
+
+    require_env_var "TEST_DISCORD_GUILD_ID"
+    if [ -z "${DISCORD_TOKEN_TEST:-}" ] && [ -z "${DISCORD_TOKEN:-}" ]; then
+        echo "[$(ts)] ERROR: Set DISCORD_TOKEN_TEST or DISCORD_TOKEN for isolated Discord E2E runs."
+        exit 1
+    fi
+    require_env_var "DISCORD_E2E_ENABLED"
+    require_env_var "DISCORD_E2E_ALLOWED_AUTHOR_IDS"
+    if [ -z "${TEST_DISCORD_E2E_PARENT_CHANNEL_ID:-}" ] && [ -z "${TEST_DISCORD_E2E_CATEGORY_ID:-}" ] && [ -z "${TEST_DISCORD_E2E_CATEGORY_NAME:-}" ]; then
+        echo "[$(ts)] ERROR: Set TEST_DISCORD_E2E_PARENT_CHANNEL_ID or TEST_DISCORD_E2E_CATEGORY_ID/NAME for isolated Discord E2E runs."
+        exit 1
+    fi
     require_env_var "OPENAI_API_KEY"
     if [ "$DISCORD_E2E_PROVIDER" = "groq" ]; then
         require_env_var "GROQ_API_KEY"
@@ -778,10 +794,8 @@ HEARTBEAT_PID=$!
 # Launch required test groups concurrently.
 # Keep Discord first in wait order so a Discord failure fails fast.
 if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
-    DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true "$PYTHON_BIN" -m pytest \
-        tests/integration/test_discord_e2e.py \
-        -m "discord_e2e and not optional_e2e" --timeout=180 -v --tb=short -s --no-cov \
-        > "$E2E_LOG_C" 2>&1 &
+    DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true \
+        scripts/run-required-discord-e2e.sh > "$E2E_LOG_C" 2>&1 &
     E2E_PIDS+=($!)
     E2E_NAMES+=("Discord E2E tests")
     DISCORD_REQUIRED_STARTED=true
