@@ -81,7 +81,7 @@ The preflight is driven by the source-controlled manifest at `.ci/local_gate_man
 
 - endpoint docs bundle changes on API/CGS route files
 - strict `mypy src/zetherion_ai --config-file=pyproject.toml` for runtime Python changes
-- bounded `unit-full` for shared model/context/storage/startup paths that can move the repo-wide coverage floor
+- bounded `unit-full` for shared trust/personal/profile/portfolio/routing/queue/model/context/storage/startup paths that can move the repo-wide coverage floor
 - targeted Qdrant/data-plane regression tests
 - targeted replay-store regression tests
 

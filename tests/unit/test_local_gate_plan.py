@@ -61,6 +61,58 @@ def test_startup_bootstrap_change_requires_unit_full() -> None:
     assert plan["unmapped_protected_paths"] == []
 
 
+def test_trust_runtime_change_requires_unit_full() -> None:
+    module = _load_module()
+    manifest = module.load_manifest()
+
+    plan = module.build_plan(
+        changed_paths=["src/zetherion_ai/trust/runtime.py"],
+        manifest=manifest,
+    )
+
+    assert _requirement_ids(plan) == {"bandit-src", "mypy-src", "unit-full"}
+    assert plan["unmapped_protected_paths"] == []
+
+
+def test_profile_builder_change_requires_unit_full() -> None:
+    module = _load_module()
+    manifest = module.load_manifest()
+
+    plan = module.build_plan(
+        changed_paths=["src/zetherion_ai/profile/builder.py"],
+        manifest=manifest,
+    )
+
+    assert _requirement_ids(plan) == {"bandit-src", "mypy-src", "unit-full"}
+    assert plan["unmapped_protected_paths"] == []
+
+
+def test_routing_policy_change_requires_unit_full() -> None:
+    module = _load_module()
+    manifest = module.load_manifest()
+
+    plan = module.build_plan(
+        changed_paths=["src/zetherion_ai/routing/policies.py"],
+        manifest=manifest,
+    )
+
+    assert _requirement_ids(plan) == {"bandit-src", "mypy-src", "unit-full"}
+    assert plan["unmapped_protected_paths"] == []
+
+
+def test_queue_manager_change_requires_unit_full() -> None:
+    module = _load_module()
+    manifest = module.load_manifest()
+
+    plan = module.build_plan(
+        changed_paths=["src/zetherion_ai/queue/manager.py"],
+        manifest=manifest,
+    )
+
+    assert _requirement_ids(plan) == {"bandit-src", "mypy-src", "unit-full"}
+    assert plan["unmapped_protected_paths"] == []
+
+
 def test_qdrant_change_requires_targeted_regression_suite() -> None:
     module = _load_module()
     manifest = module.load_manifest()
@@ -124,6 +176,8 @@ def test_unmapped_protected_paths_are_reported() -> None:
 
 
 # The real manifest should never leave a protected path uncovered.
+# The real manifest should never leave a protected path uncovered, including the
+# shared-runtime directory globs added for the CI hardening rollout.
 def test_manifest_protected_globs_are_all_covered_by_a_rule() -> None:
     module = _load_module()
     manifest = module.load_manifest()

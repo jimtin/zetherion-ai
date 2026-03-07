@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment CI-01 Local Gate Expansion for Shared Runtime Changes (2026-03-08)
+
+- Impacted capability IDs:
+  - `ci.local_preflight`
+- Impacted workflow scenario IDs:
+  - `pr.shared_runtime_requires_unit_full`
+  - `pr.vector_regression_pack_required`
+- Expanded `.ci/local_gate_manifest.json` so shared-runtime directories under trust, personal, profile, portfolio, routing, queueing, and `security/trust_policy.py` now require bounded `unit-full` in addition to the existing type-check and Bandit requirements.
+- Added focused local-gate planner coverage for trust runtime, profile builder, routing policy, and queue manager changes so the expanded shared-runtime guard cannot regress silently.
+- Updated operator-facing gate docs to reflect the widened shared-runtime coverage floor before the later PR-fast-path workflow changes land.
+
 ### Changed - Segment CI-00 Contract Alignment and Failure Baseline (2026-03-08)
 
 - Impacted capability IDs:
