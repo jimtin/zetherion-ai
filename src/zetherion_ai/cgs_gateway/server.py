@@ -28,6 +28,7 @@ from zetherion_ai.cgs_gateway.upstream.public_api_client import PublicAPIClient
 from zetherion_ai.cgs_gateway.upstream.skills_client import SkillsClient
 from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
+from zetherion_ai.portfolio.storage import PortfolioStorage
 from zetherion_ai.security.encryption import FieldEncryptor
 from zetherion_ai.security.keys import KeyManager
 
@@ -119,6 +120,7 @@ class CGSGatewayServer:
         allowed_origins: list[str] | None,
         jwt_verifier: JWTVerifier,
         storage: CGSGatewayStorage,
+        portfolio_storage: PortfolioStorage,
         public_client: PublicAPIClient,
         skills_client: SkillsClient,
         blog_publish_token: str | None = None,
@@ -131,6 +133,7 @@ class CGSGatewayServer:
         self._allowed_origins = allowed_origins
         self._jwt_verifier = jwt_verifier
         self._storage = storage
+        self._portfolio_storage = portfolio_storage
         self._public_client = public_client
         self._skills_client = skills_client
         self._blog_publish_token = (blog_publish_token or "").strip()
@@ -152,6 +155,7 @@ class CGSGatewayServer:
 
         app = web.Application(middlewares=middlewares)
         app["cgs_storage"] = self._storage
+        app["owner_portfolio_storage"] = self._portfolio_storage
         app["cgs_public_client"] = self._public_client
         app["cgs_skills_client"] = self._skills_client
         app["cgs_blog_publish_token"] = self._blog_publish_token
@@ -170,6 +174,7 @@ class CGSGatewayServer:
 
     async def start(self) -> None:
         await self._storage.initialize()
+        await self._portfolio_storage.initialize()
         await self._public_client.start()
         await self._skills_client.start()
 
@@ -191,6 +196,7 @@ class CGSGatewayServer:
 
         await self._skills_client.close()
         await self._public_client.close()
+        await self._portfolio_storage.close()
         await self._storage.close()
         log.info("cgs_gateway_stopped")
 
@@ -224,6 +230,10 @@ async def run_server(
         encryptor=encryptor,
         owner_portfolio_schema=postgres_owner_portfolio_schema,
     )
+    portfolio_storage = PortfolioStorage(
+        dsn=postgres_dsn,
+        owner_portfolio_schema=postgres_owner_portfolio_schema,
+    )
     public_client = PublicAPIClient(base_url=zetherion_public_api_base_url)
     skills_client = SkillsClient(
         base_url=zetherion_skills_api_base_url,
@@ -237,6 +247,7 @@ async def run_server(
         allowed_origins=allowed_origins,
         jwt_verifier=verifier,
         storage=storage,
+        portfolio_storage=portfolio_storage,
         public_client=public_client,
         skills_client=skills_client,
         blog_publish_token=blog_publish_token,

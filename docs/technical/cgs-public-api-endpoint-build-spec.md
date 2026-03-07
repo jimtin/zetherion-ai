@@ -450,7 +450,7 @@ Returns mapped CGS tenant list.
 
 ### `POST /internal/tenants`
 
-Creates tenant in Zetherion via Skills API intent `client_create` when the CGS tenant is new; retries reconcile the existing mapping instead of creating a duplicate upstream tenant. Response now reports `isolation_stage` and `provisioning_status`.
+Creates tenant in Zetherion via Skills API intent `client_create` when the CGS tenant is new; retries reconcile the existing mapping instead of creating a duplicate upstream tenant. Response now reports `isolation_stage` and `provisioning_status`. The same lifecycle flow now seeds owner-portfolio derivation state so later reconciles can mirror tenant-derived health summaries into the CGS snapshot record with provenance.
 
 Request body:
 
@@ -480,7 +480,7 @@ Supported migration fields:
 - `document_backfill_limit`
 - `release_marker`
 
-Migration responses include `isolation_stage`, `reconciliation_issues`, `migration_receipt_id`, `migration_status`, runtime policy, bounded vector-backfill summary, and optional owner-portfolio snapshot/release-marker references.
+Migration responses include `isolation_stage`, `reconciliation_issues`, `migration_receipt_id`, `migration_status`, runtime policy, bounded vector-backfill summary, and optional owner-portfolio snapshot/release-marker references. When owner-portfolio derivation is enabled, CGS mirrors the derived summary and provenance identifiers returned by Zetherion instead of storing the raw health payload directly.
 
 ### `POST /internal/tenants/{tenant_id}/deactivate`
 

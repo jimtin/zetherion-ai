@@ -434,6 +434,10 @@ async def test_gateway_server_create_app_and_start_stop(monkeypatch: pytest.Monk
     skills_client.start = AsyncMock()
     skills_client.close = AsyncMock()
 
+    portfolio_storage = MagicMock()
+    portfolio_storage.initialize = AsyncMock()
+    portfolio_storage.close = AsyncMock()
+
     verifier = MagicMock()
     verifier.verify.return_value = AuthPrincipal(sub="u1", tenant_id="tenant-a", claims={})
 
@@ -456,6 +460,7 @@ async def test_gateway_server_create_app_and_start_stop(monkeypatch: pytest.Monk
         allowed_origins=["https://app.example"],
         jwt_verifier=verifier,
         storage=storage,
+        portfolio_storage=portfolio_storage,
         public_client=public_client,
         skills_client=skills_client,
     )
@@ -480,12 +485,14 @@ async def test_gateway_server_create_app_and_start_stop(monkeypatch: pytest.Monk
     assert started["host"] == "127.0.0.1"
     assert started["port"] == 8743
     storage.initialize.assert_awaited_once()
+    portfolio_storage.initialize.assert_awaited_once()
     public_client.start.assert_awaited_once()
     skills_client.start.assert_awaited_once()
 
     await server.stop()
     skills_client.close.assert_awaited_once()
     public_client.close.assert_awaited_once()
+    portfolio_storage.close.assert_awaited_once()
     storage.close.assert_awaited_once()
 
 

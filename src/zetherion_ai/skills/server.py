@@ -4562,6 +4562,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
     if settings.postgres_dsn:
         from zetherion_ai.agent.inference import InferenceBroker
         from zetherion_ai.api.tenant import TenantManager
+        from zetherion_ai.portfolio.storage import PortfolioStorage
         from zetherion_ai.skills.client_app_watcher import ClientAppWatcherSkill
         from zetherion_ai.skills.client_insights import ClientInsightsSkill
         from zetherion_ai.skills.client_provisioning import ClientProvisioningSkill
@@ -4569,6 +4570,10 @@ def main() -> None:  # pragma: no cover — CLI entry-point
 
         _tenant_manager = TenantManager(dsn=settings.postgres_dsn)
         _tenant_inference_broker = InferenceBroker()
+        _portfolio_storage = PortfolioStorage(
+            dsn=settings.postgres_dsn,
+            owner_portfolio_schema=settings.postgres_owner_portfolio_schema,
+        )
         registry.register(ClientProvisioningSkill(tenant_manager=_tenant_manager))
         registry.register(
             TenantIntelligenceSkill(
@@ -4580,6 +4585,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             ClientInsightsSkill(
                 inference_broker=_tenant_inference_broker,
                 tenant_manager=_tenant_manager,
+                portfolio_storage=_portfolio_storage,
             )
         )
         registry.register(ClientAppWatcherSkill(tenant_manager=_tenant_manager))

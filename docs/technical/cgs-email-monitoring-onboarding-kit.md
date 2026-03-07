@@ -21,7 +21,7 @@ Authoritative exposure rule:
 - Worker messaging grants were added under `/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*`
   to enforce deny-by-default worker WhatsApp access with TTL-scoped per-node/per-chat exceptions.
 - Internal tenant provisioning retries are now idempotent on `cgs_tenant_id`, and the lifecycle response exposes `isolation_stage` plus `provisioning_status` so rollout state can be tracked during onboarding.
-- Existing tenants can now be migrated in-place through the same internal patch route, which records migration receipts, bounded tenant vector backfill status, and owner-safe portfolio snapshots before cutover.
+- Existing tenants can now be migrated in-place through the same internal patch route, which records migration receipts, bounded tenant vector backfill status, and owner-safe portfolio snapshots before cutover. CGS now stores the mirrored owner-portfolio summary with provenance links back to the tenant-derived dataset produced inside Zetherion.
 
 ## Capability Outcome
 

@@ -124,6 +124,7 @@ async def handle_internal_create_tenant(request: web.Request) -> web.Response:
     orchestrator = CGSTenantProvisioningOrchestrator(
         storage=storage,
         skills_client=skills_client,
+        portfolio_storage=request.app.get("owner_portfolio_storage"),
     )
 
     mapping, api_key, created = await orchestrator.provision_tenant(
@@ -171,6 +172,7 @@ async def handle_internal_update_tenant(request: web.Request) -> web.Response:
         storage=request.app["cgs_storage"],
         skills_client=request.app["cgs_skills_client"],
         public_client=request.app.get("cgs_public_client"),
+        portfolio_storage=request.app.get("owner_portfolio_storage"),
     )
     updated = await orchestrator.reconcile_tenant(
         cgs_tenant_id=cgs_tenant_id,

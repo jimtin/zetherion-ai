@@ -82,6 +82,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Wired non-blocking shadow recording into tenant trust policy, personal actions, Gmail trust, GitHub autonomy, and YouTube trust so each decision path now emits comparable `trust_shadow_decision` telemetry.
 - Added focused unit coverage for the new engine/adapters plus hook-level contract tests to keep shadow-mode wiring from regressing silently.
 
+### Added - Segment 12 Owner Portfolio Intelligence Pipeline (2026-03-07)
+
+- Impacted capability IDs:
+  - `isolation.owner-portfolio.tenant-derived-dataset-pipeline`
+  - `isolation.owner-portfolio.cgs-mirrored-snapshot-provenance`
+  - `isolation.owner-portfolio.client-insights-derived-only-analysis`
+- Impacted workflow scenario IDs:
+  - `isolation.segment12.derive-tenant-health-dataset-before-owner-snapshot`
+  - `isolation.segment12.cgs-reconcile-mirrors-owner-portfolio-summary`
+  - `isolation.segment12.cross-tenant-analysis-uses-derived-summaries-only`
+- Added `src/zetherion_ai/portfolio/derivation.py` and `src/zetherion_ai/portfolio/storage.py` so tenant health summaries are normalized into `tenant_derived` datasets before owner-facing portfolio snapshots are stored.
+- Updated `ClientInsightsSkill` to persist tenant-derived datasets plus owner-portfolio snapshots, and to keep cross-tenant prompts limited to derived summaries instead of raw tenant interaction payloads.
+- Updated CGS internal tenant create/reconcile flows to mirror the derived owner-portfolio summary and provenance references into the existing CGS owner snapshot record without changing the public route contract.
+
 ### Added - Segment 4 CGS Provisioning and Reconciliation Orchestrator (2026-03-07)
 
 - Impacted capability IDs:
