@@ -95,6 +95,7 @@ async def test_storage_tenant_mapping_methods() -> None:
             "key_version": 2,
             "is_active": True,
             "metadata": {},
+            "isolation_stage": "legacy",
             "created_at": "2026-02-27T00:00:00Z",
             "updated_at": "2026-02-27T00:00:00Z",
         }
@@ -109,6 +110,7 @@ async def test_storage_tenant_mapping_methods() -> None:
                 "key_version": 2,
                 "is_active": True,
                 "metadata": {},
+                "isolation_stage": "legacy",
                 "created_at": "2026-02-27T00:00:00Z",
                 "updated_at": "2026-02-27T00:00:00Z",
             }
@@ -136,6 +138,7 @@ async def test_storage_tenant_mapping_methods() -> None:
             "key_version": 2,
             "is_active": True,
             "metadata": {},
+            "isolation_stage": "legacy",
             "created_at": "2026-02-27T00:00:00Z",
             "updated_at": "2026-02-27T00:00:00Z",
         }
@@ -156,6 +159,7 @@ async def test_storage_tenant_mapping_methods() -> None:
         name="Tenant A2",
         domain="tenant2.example",
         metadata={"tier": "gold"},
+        isolation_stage="shadow",
     )
     assert updated_with_fields is not None
 
@@ -166,6 +170,52 @@ async def test_storage_tenant_mapping_methods() -> None:
     assert rotated is not None
     deactivated = await storage.deactivate_tenant_mapping("tenant-a")
     assert deactivated is True
+
+
+@pytest.mark.asyncio
+async def test_storage_reconciliation_helpers() -> None:
+    storage = CGSGatewayStorage(dsn="postgres://test", encryptor=_DummyEncryptor())
+    storage._fetch = AsyncMock(
+        return_value=[
+            {
+                "cgs_tenant_id": "tenant-a",
+                "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+                "name": "Tenant A",
+                "domain": "tenant.example",
+                "key_version": 2,
+                "is_active": True,
+                "metadata": {},
+                "isolation_stage": "legacy",
+                "created_at": "2026-02-27T00:00:00Z",
+                "updated_at": "2026-02-27T00:00:00Z",
+            }
+        ]
+    )
+    storage._fetchrow = AsyncMock(
+        return_value={
+            "cgs_tenant_id": "tenant-a",
+            "zetherion_tenant_id": "11111111-1111-1111-1111-111111111111",
+            "name": "Tenant A",
+            "domain": "tenant.example",
+            "zetherion_api_key_enc": "enc::sk-live",
+            "key_version": 2,
+            "is_active": True,
+            "metadata": {},
+            "isolation_stage": "legacy",
+            "created_at": "2026-02-27T00:00:00Z",
+            "updated_at": "2026-02-27T00:00:00Z",
+        }
+    )
+
+    candidates = await storage.list_tenant_reconciliation_candidates()
+    assert candidates[0]["cgs_tenant_id"] == "tenant-a"
+
+    mapping = await storage.get_tenant_mapping_by_zetherion_tenant_id(
+        "11111111-1111-1111-1111-111111111111"
+    )
+    assert mapping is not None
+    assert mapping["zetherion_api_key"] == "sk-live"
+    assert mapping["isolation_stage"] == "legacy"
 
 
 @pytest.mark.asyncio

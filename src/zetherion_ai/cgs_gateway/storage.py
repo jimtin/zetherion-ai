@@ -15,6 +15,22 @@ from zetherion_ai.security.encryption import FieldEncryptor
 
 log = get_logger("zetherion_ai.cgs_gateway.storage")
 
+TENANT_ISOLATION_STAGES = (
+    "legacy",
+    "shadow",
+    "dual_write",
+    "cutover_ready",
+    "isolated",
+)
+DEFAULT_TENANT_ISOLATION_STAGE = "legacy"
+
+
+def _normalize_isolation_stage(value: str | None) -> str:
+    stage = str(value or DEFAULT_TENANT_ISOLATION_STAGE).strip().lower()
+    if stage not in TENANT_ISOLATION_STAGES:
+        raise ValueError(f"Unsupported isolation stage: {value!r}")
+    return stage
+
 
 def _payload_fingerprint(payload: dict[str, Any]) -> str:
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -32,12 +48,32 @@ CREATE TABLE IF NOT EXISTS cgs_ai_tenants (
     key_version             INT NOT NULL DEFAULT 1,
     is_active               BOOLEAN NOT NULL DEFAULT TRUE,
     metadata                JSONB DEFAULT '{}'::jsonb,
+    isolation_stage         TEXT NOT NULL DEFAULT 'legacy'
+                            CHECK (
+                                isolation_stage IN (
+                                    'legacy',
+                                    'shadow',
+                                    'dual_write',
+                                    'cutover_ready',
+                                    'isolated'
+                                )
+                            ),
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE cgs_ai_tenants
+    ADD COLUMN IF NOT EXISTS isolation_stage TEXT NOT NULL DEFAULT 'legacy';
+ALTER TABLE cgs_ai_tenants
+    DROP CONSTRAINT IF EXISTS cgs_ai_tenants_isolation_stage_check;
+ALTER TABLE cgs_ai_tenants
+    ADD CONSTRAINT cgs_ai_tenants_isolation_stage_check
+    CHECK (isolation_stage IN ('legacy', 'shadow', 'dual_write', 'cutover_ready', 'isolated'));
+
 CREATE INDEX IF NOT EXISTS idx_cgs_ai_tenants_zt_tenant
     ON cgs_ai_tenants (zetherion_tenant_id);
+CREATE INDEX IF NOT EXISTS idx_cgs_ai_tenants_isolation_stage
+    ON cgs_ai_tenants (isolation_stage);
 
 CREATE TABLE IF NOT EXISTS cgs_ai_conversations (
     id                          SERIAL PRIMARY KEY,
@@ -202,8 +238,10 @@ class CGSGatewayStorage:
         zetherion_api_key: str,
         metadata: dict[str, Any] | None = None,
         key_version: int = 1,
+        isolation_stage: str = DEFAULT_TENANT_ISOLATION_STAGE,
     ) -> dict[str, Any]:
         """Create or update a tenant mapping row."""
+        normalized_stage = _normalize_isolation_stage(isolation_stage)
         row = await self._fetchrow(
             """
             INSERT INTO cgs_ai_tenants (
@@ -214,8 +252,9 @@ class CGSGatewayStorage:
                 zetherion_api_key_enc,
                 key_version,
                 metadata,
+                isolation_stage,
                 is_active
-            ) VALUES ($1, $2::uuid, $3, $4, $5, $6, $7::jsonb, TRUE)
+            ) VALUES ($1, $2::uuid, $3, $4, $5, $6, $7::jsonb, $8, TRUE)
             ON CONFLICT (cgs_tenant_id)
             DO UPDATE SET
                 zetherion_tenant_id = EXCLUDED.zetherion_tenant_id,
@@ -224,10 +263,11 @@ class CGSGatewayStorage:
                 zetherion_api_key_enc = EXCLUDED.zetherion_api_key_enc,
                 key_version = EXCLUDED.key_version,
                 metadata = EXCLUDED.metadata,
+                isolation_stage = EXCLUDED.isolation_stage,
                 is_active = TRUE,
                 updated_at = now()
             RETURNING cgs_tenant_id, zetherion_tenant_id, name, domain,
-                      key_version, is_active, metadata, created_at, updated_at
+                      key_version, is_active, metadata, isolation_stage, created_at, updated_at
             """,
             cgs_tenant_id,
             zetherion_tenant_id,
@@ -236,6 +276,7 @@ class CGSGatewayStorage:
             self._encrypt(zetherion_api_key),
             key_version,
             json.dumps(metadata or {}),
+            normalized_stage,
         )
         if row is None:
             raise RuntimeError("Upsert tenant mapping returned no row")
@@ -247,7 +288,7 @@ class CGSGatewayStorage:
             """
             SELECT cgs_tenant_id, zetherion_tenant_id, name, domain,
                    zetherion_api_key_enc, key_version, is_active,
-                   metadata, created_at, updated_at
+                   metadata, isolation_stage, created_at, updated_at
             FROM cgs_ai_tenants
             WHERE cgs_tenant_id = $1
             """,
@@ -265,7 +306,7 @@ class CGSGatewayStorage:
             rows = await self._fetch(
                 """
                 SELECT cgs_tenant_id, zetherion_tenant_id, name, domain,
-                       key_version, is_active, metadata, created_at, updated_at
+                       key_version, is_active, metadata, isolation_stage, created_at, updated_at
                 FROM cgs_ai_tenants
                 WHERE is_active = TRUE
                 ORDER BY created_at
@@ -275,7 +316,7 @@ class CGSGatewayStorage:
             rows = await self._fetch(
                 """
                 SELECT cgs_tenant_id, zetherion_tenant_id, name, domain,
-                       key_version, is_active, metadata, created_at, updated_at
+                       key_version, is_active, metadata, isolation_stage, created_at, updated_at
                 FROM cgs_ai_tenants
                 ORDER BY created_at
                 """
@@ -289,6 +330,7 @@ class CGSGatewayStorage:
         name: str | None = None,
         domain: str | None = None,
         metadata: dict[str, Any] | None = None,
+        isolation_stage: str | None = None,
     ) -> dict[str, Any] | None:
         """Update non-secret tenant mapping fields."""
         sets: list[str] = []
@@ -307,12 +349,16 @@ class CGSGatewayStorage:
             sets.append(f"metadata = ${idx}::jsonb")
             args.append(json.dumps(metadata))
             idx += 1
+        if isolation_stage is not None:
+            sets.append(f"isolation_stage = ${idx}")
+            args.append(_normalize_isolation_stage(isolation_stage))
+            idx += 1
 
         if not sets:
             row = await self._fetchrow(
                 """
                 SELECT cgs_tenant_id, zetherion_tenant_id, name, domain,
-                       key_version, is_active, metadata, created_at, updated_at
+                       key_version, is_active, metadata, isolation_stage, created_at, updated_at
                 FROM cgs_ai_tenants
                 WHERE cgs_tenant_id = $1
                 """,
@@ -328,7 +374,7 @@ class CGSGatewayStorage:
             SET {", ".join(sets)}
             WHERE cgs_tenant_id = ${idx}
             RETURNING cgs_tenant_id, zetherion_tenant_id, name, domain,
-                      key_version, is_active, metadata, created_at, updated_at
+                      key_version, is_active, metadata, isolation_stage, created_at, updated_at
             """,  # nosec B608
             *args,
         )
@@ -349,7 +395,7 @@ class CGSGatewayStorage:
                 updated_at = now()
             WHERE cgs_tenant_id = $2
             RETURNING cgs_tenant_id, zetherion_tenant_id, name, domain,
-                      key_version, is_active, metadata, created_at, updated_at
+                      key_version, is_active, metadata, isolation_stage, created_at, updated_at
             """,
             self._encrypt(new_api_key),
             cgs_tenant_id,
@@ -367,6 +413,47 @@ class CGSGatewayStorage:
             cgs_tenant_id,
         )
         return result == "UPDATE 1"
+
+    async def list_tenant_reconciliation_candidates(self) -> list[dict[str, Any]]:
+        """Return tenant mappings that still need isolation rollout or baseline checks."""
+        rows = await self._fetch(
+            """
+            SELECT cgs_tenant_id, zetherion_tenant_id, name, domain,
+                   key_version, is_active, metadata, isolation_stage, created_at, updated_at
+            FROM cgs_ai_tenants
+            WHERE is_active = TRUE
+              AND (
+                    isolation_stage <> 'isolated'
+                    OR COALESCE(
+                         metadata->'provisioning'->>'owner_portfolio_ready',
+                         'false'
+                       ) <> 'true'
+                    OR metadata->'provisioning'->>'last_reconciled_at' IS NULL
+                  )
+            ORDER BY created_at
+            """
+        )
+        return [dict(r) for r in rows]
+
+    async def get_tenant_mapping_by_zetherion_tenant_id(
+        self, zetherion_tenant_id: str
+    ) -> dict[str, Any] | None:
+        """Fetch a tenant mapping using the upstream tenant id."""
+        row = await self._fetchrow(
+            """
+            SELECT cgs_tenant_id, zetherion_tenant_id, name, domain,
+                   zetherion_api_key_enc, key_version, is_active,
+                   metadata, isolation_stage, created_at, updated_at
+            FROM cgs_ai_tenants
+            WHERE zetherion_tenant_id = $1::uuid
+            """,
+            zetherion_tenant_id,
+        )
+        if row is None:
+            return None
+        result = dict(row)
+        result["zetherion_api_key"] = self._decrypt(str(result.pop("zetherion_api_key_enc")))
+        return result
 
     async def create_conversation(
         self,

@@ -1957,6 +1957,7 @@ async def test_internal_rotate_key_missing_api_key_is_error() -> None:
 @pytest.mark.asyncio
 async def test_internal_create_tenant_error_paths() -> None:
     app, storage, _ = _runtime_app()
+    storage.get_tenant_mapping = AsyncMock(return_value=None)
     app["cgs_skills_client"].handle_intent = AsyncMock(return_value=(500, {"error": True}))
     storage.upsert_tenant_mapping = AsyncMock()
 

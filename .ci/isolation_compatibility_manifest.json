@@ -179,7 +179,7 @@
         "cgs_ai_admin_changes",
         "cgs_ai_blog_publish_receipts"
       ],
-      "migration_note": "Tenant mapping metadata will gain isolation-stage status during Segment 4."
+      "migration_note": "CGS tenant mappings now persist isolation_stage plus provisioning/reconciliation metadata; existing tenants still require staged rollout into shadow/dual_write/cutover_ready/isolated states."
     },
     {
       "id": "integrations-relational",
