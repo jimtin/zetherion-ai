@@ -31,7 +31,7 @@ def test_api_route_change_requires_docs_bundle_and_mypy() -> None:
         manifest=manifest,
     )
 
-    assert _requirement_ids(plan) == {"endpoint-doc-bundle", "mypy-src"}
+    assert _requirement_ids(plan) == {"bandit-src", "endpoint-doc-bundle", "mypy-src"}
     assert plan["unmapped_protected_paths"] == []
 
 
@@ -44,7 +44,7 @@ def test_qdrant_change_requires_targeted_regression_suite() -> None:
         manifest=manifest,
     )
 
-    assert _requirement_ids(plan) == {"mypy-src", "qdrant-regression-suite"}
+    assert _requirement_ids(plan) == {"bandit-src", "mypy-src", "qdrant-regression-suite"}
     qdrant_requirement = next(
         item
         for item in plan["requirements"]
@@ -66,7 +66,7 @@ def test_replay_store_change_requires_targeted_regression_suite() -> None:
         manifest=manifest,
     )
 
-    assert _requirement_ids(plan) == {"mypy-src", "replay-store-regression-suite"}
+    assert _requirement_ids(plan) == {"bandit-src", "mypy-src", "replay-store-regression-suite"}
     assert plan["unmapped_protected_paths"] == []
 
 

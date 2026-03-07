@@ -17,6 +17,10 @@
       "kind": "check",
       "description": "Run strict mypy over src/zetherion_ai against the exact commit being pushed."
     },
+    "bandit-src": {
+      "kind": "check",
+      "description": "Run Bandit over src/ against the exact commit being pushed."
+    },
     "qdrant-regression-suite": {
       "kind": "pytest",
       "description": "Run the targeted Qdrant and data-plane regression suite.",
@@ -42,7 +46,8 @@
         "updater_sidecar/**"
       ],
       "requirements": [
-        "mypy-src"
+        "mypy-src",
+        "bandit-src"
       ]
     },
     {
