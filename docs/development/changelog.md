@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - CI/CD Receipt Verification Pending-State Handling (2026-03-08)
+
+- Impacted capability IDs:
+  - `ci.receipt.pending-state-diagnostics`
+  - `ci.receipt.main-post-merge-wait-support`
+- Impacted workflow scenario IDs:
+  - `verification.post-merge.main-check-runs-pending`
+  - `verification.post-merge.deploy-windows-pending`
+- Updated `scripts/check-cicd-success.sh` so it distinguishes pending evidence from missing evidence, surfaces associated merged-PR context for `main`, and supports optional `--wait-seconds` polling during post-merge verification.
+- Preserved the existing proof contract: non-`main` refs still require exact-SHA `CI/CD Pipeline` success, and `main` still requires exact-SHA `CI Gate / CI Summary` plus `CI Gate / Required E2E Gate` and a valid `Deploy Windows` deployment receipt.
+
 ### Added - Segment 11 Worker Delegation Hardening and Codex Control (2026-03-07)
 
 - Impacted capability IDs:

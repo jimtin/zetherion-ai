@@ -125,6 +125,12 @@ After pushing, completion must be proven by CI/CD results for the exact commit S
 ./scripts/check-cicd-success.sh --sha <commit_sha> --ref <ref>
 ```
 
+When verifying a freshly promoted `main` commit immediately after merge, optional polling is available so pending `CI Gate` or `Deploy Windows` evidence is reported clearly instead of as a missing-evidence failure:
+
+```bash
+./scripts/check-cicd-success.sh --sha <commit_sha> --ref main --wait-seconds 180
+```
+
 Rules:
 
 1. Non-`main` refs require successful `CI/CD Pipeline` for the exact SHA.
