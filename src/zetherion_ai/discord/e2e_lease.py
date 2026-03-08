@@ -136,7 +136,7 @@ class DiscordE2ELease:
                 category_id=None,
                 channel_prefix=channel_prefix,
             )
-        except (TypeError, ValueError):
+        except (OverflowError, TypeError, ValueError):
             return None
 
     @classmethod
