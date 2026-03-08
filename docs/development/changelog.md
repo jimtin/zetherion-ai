@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - Windows Discord canary wrapper path on host (2026-03-08)
+- Switched the Windows canary launcher to invoke `scripts/run-required-discord-e2e.sh` relative to the deploy root instead of passing a raw `C:\...` path into Git Bash, which was being mangled into an invalid shell path on the Windows host.
+- Added unit coverage to assert the canary subprocess uses the repo-relative wrapper command while keeping the deploy root as the working directory.
+
 ### Fixed - Windows PowerShell compatibility for resilience scripts (2026-03-08)
 - Replaced PowerShell 7-only null-coalescing syntax in host-facing Windows scripts so manual host execution and scheduled-task bootstrap work under Windows PowerShell 5.1 as well as `pwsh`.
 - Added `scripts/check-windows-powershell-compat.py` plus unit coverage and wired it into the bounded `check` lane and deploy-preflight local-gate regressions so incompatible syntax is rejected before push.

@@ -406,11 +406,12 @@ def run_canary(
     wrapper_path = deploy_path / "scripts" / "run-required-discord-e2e.sh"
     if not wrapper_path.exists():
         raise RuntimeError(f"Discord E2E wrapper not found: {wrapper_path}")
+    wrapper_command = wrapper_path.relative_to(deploy_path).as_posix()
 
     result_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    command = [bash_path, str(wrapper_path)]
+    command = [bash_path, wrapper_command]
     started_at = _now_iso()
     timed_out = False
     exit_code = 1
