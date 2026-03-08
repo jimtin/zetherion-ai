@@ -173,7 +173,7 @@ catch {
 }
 
 # 5. Container Health (blue/green topology)
-$expectedContainers = @(
+$coreContainers = @(
     "zetherion-ai-bot",
     "zetherion-ai-skills-blue",
     "zetherion-ai-skills-green",
@@ -189,11 +189,12 @@ $expectedContainers = @(
     "zetherion-ai-updater",
     "zetherion-ai-dev-agent"
 )
+$auxiliaryContainers = @()
 
 $envPath = Join-Path $DeploymentPath ".env"
 $cloudflareToken = Get-EnvValueFromFile -Path $envPath -Key "CLOUDFLARE_TUNNEL_TOKEN"
 if ($cloudflareToken) {
-    $expectedContainers += "zetherion-ai-cloudflared"
+    $auxiliaryContainers += "zetherion-ai-cloudflared"
 }
 
 $whatsappEnabled = Test-Truthy -Value (Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_ENABLED")
@@ -202,31 +203,53 @@ $whatsappStateKey = Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_ST
 $whatsappTenantId = Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_TENANT_ID"
 $whatsappIngestUrl = Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_INGEST_URL"
 if ($whatsappEnabled -and $whatsappSigningSecret -and $whatsappStateKey -and $whatsappTenantId -and $whatsappIngestUrl) {
-    $expectedContainers += "zetherion-ai-whatsapp-bridge"
+    $auxiliaryContainers += "zetherion-ai-whatsapp-bridge"
 }
 
-$allHealthy = $true
-foreach ($container in $expectedContainers) {
+function Test-ContainerHealthy {
+    param([string]$ContainerName)
+
     try {
-        $status = docker inspect --format "{{.State.Status}}" $container 2>&1
-        $health = docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" $container 2>&1
-        if ($status -eq "running" -and ($health -eq "healthy" -or $health -eq "no-healthcheck")) {
-            # pass
-        }
-        else {
-            $allHealthy = $false
-        }
+        $status = docker inspect --format "{{.State.Status}}" $ContainerName 2>&1
+        $health = docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" $ContainerName 2>&1
+        return ($status -eq "running" -and ($health -eq "healthy" -or $health -eq "no-healthcheck"))
     }
     catch {
-        $allHealthy = $false
+        return $false
     }
 }
 
-if ($allHealthy) {
-    Add-Check -Name "containers" -Status "pass" -Message "All expected runtime containers are running and healthy"
+$coreFailures = @()
+foreach ($container in $coreContainers) {
+    if (-not (Test-ContainerHealthy -ContainerName $container)) {
+        $coreFailures += $container
+    }
+}
+
+if ($coreFailures.Count -eq 0) {
+    Add-Check -Name "containers" -Status "pass" -Message "All expected core runtime containers are running and healthy"
 }
 else {
-    Add-Check -Name "containers" -Status "fail" -Message "Some containers are not running or unhealthy"
+    Add-Check -Name "containers" -Status "fail" -Message "Core runtime containers unhealthy: $($coreFailures -join ', ')"
+}
+
+if ($auxiliaryContainers.Count -eq 0) {
+    Add-Check -Name "containers_auxiliary" -Status "pass" -Message "No auxiliary runtime containers are enabled"
+}
+else {
+    $auxFailures = @()
+    foreach ($container in $auxiliaryContainers) {
+        if (-not (Test-ContainerHealthy -ContainerName $container)) {
+            $auxFailures += $container
+        }
+    }
+
+    if ($auxFailures.Count -eq 0) {
+        Add-Check -Name "containers_auxiliary" -Status "pass" -Message "All enabled auxiliary runtime containers are running and healthy"
+    }
+    else {
+        Add-Check -Name "containers_auxiliary" -Status "warn" -Message "Auxiliary runtime containers unhealthy: $($auxFailures -join ', ')"
+    }
 }
 
 # 6. Ollama Models

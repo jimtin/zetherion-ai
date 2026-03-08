@@ -289,7 +289,7 @@ Expected outcomes:
 - `status=lease_contended`: another active canary or E2E run holds the target-bot lease; the scheduled task should retry later
 - `status=failed|timeout|runner_error`: production-parity canary failed and should surface in host verification plus announcements
 
-The host verifier reads `C:\ZetherionAI\data\discord-canary\last-run.json` and `state.json`, treating stale or failing canaries as degraded health rather than deploy rollback triggers.
+The host verifier reads `C:\ZetherionAI\data\discord-canary\last-run.json` and `state.json`, treating stale or failing canaries as degraded health rather than deploy rollback triggers. Windows deploy receipts also split `core_status` from `aux_status`, so `cloudflared` or `whatsapp-bridge` degradation surfaces as a warning without rolling back unrelated releases unless `WINDOWS_REQUIRE_HEALTHY_AUXILIARY_SERVICES=true`.
 
 #### 5. Verify announcement notification path
 

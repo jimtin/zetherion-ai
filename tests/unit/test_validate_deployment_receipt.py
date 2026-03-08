@@ -31,8 +31,11 @@ def _valid_receipt(sha: str) -> dict[str, object]:
         "status": "success",
         "target_sha": sha,
         "deployed_sha": sha,
+        "core_status": "healthy",
+        "aux_status": "healthy",
         "checks": {
             "containers_healthy": True,
+            "auxiliary_services_healthy": True,
             "bot_startup_markers": True,
             "postgres_model_keys": True,
             "fallback_probe": True,
@@ -65,3 +68,41 @@ def test_validate_deployment_receipt_rejects_failed_health_check(tmp_path: Path)
     assert result.returncode == 1
     assert "ERROR: receipt health checks failed:" in result.stdout
     assert "bot_startup_markers" in result.stdout
+
+
+def test_validate_deployment_receipt_accepts_degraded_auxiliary_services(tmp_path: Path) -> None:
+    sha = "e" * 40
+    payload = _valid_receipt(sha)
+    payload["aux_status"] = "degraded"
+    payload["checks"]["auxiliary_services_healthy"] = False  # type: ignore[index]
+    receipt_path = _write_receipt(tmp_path, payload)
+
+    result = _run_validator(receipt_path=receipt_path)
+
+    assert result.returncode == 0, result.stderr + result.stdout
+
+
+def test_validate_deployment_receipt_rejects_failed_core_status(tmp_path: Path) -> None:
+    sha = "f" * 40
+    payload = _valid_receipt(sha)
+    payload["core_status"] = "failed"
+    receipt_path = _write_receipt(tmp_path, payload)
+
+    result = _run_validator(receipt_path=receipt_path)
+
+    assert result.returncode == 1
+    assert "core_status" in result.stdout
+
+
+def test_validate_deployment_receipt_rejects_inconsistent_auxiliary_contract(
+    tmp_path: Path,
+) -> None:
+    sha = "1" * 40
+    payload = _valid_receipt(sha)
+    payload["aux_status"] = "degraded"
+    receipt_path = _write_receipt(tmp_path, payload)
+
+    result = _run_validator(receipt_path=receipt_path)
+
+    assert result.returncode == 1
+    assert "aux_status degraded" in result.stdout

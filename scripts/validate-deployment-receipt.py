@@ -16,6 +16,7 @@ _REQUIRED_CHECKS = {
     "runner_service_persistent",
     "docker_service_persistent",
 }
+_ALLOWED_AUX_STATUSES = {"healthy", "degraded", "not_enabled"}
 
 
 def _normalize_sha(value: str | None) -> str:
@@ -75,9 +76,32 @@ def main() -> int:
         )
         return 1
 
+    core_status = str(payload.get("core_status", ""))
+    aux_status = str(payload.get("aux_status", ""))
+    if core_status != "healthy":
+        print(f"ERROR: receipt core_status must be 'healthy' (got {core_status!r})")
+        return 1
+    if aux_status not in _ALLOWED_AUX_STATUSES:
+        print(
+            "ERROR: receipt aux_status must be one of "
+            f"{sorted(_ALLOWED_AUX_STATUSES)!r} (got {aux_status!r})"
+        )
+        return 1
+
     checks = payload.get("checks")
     if not isinstance(checks, dict):
         print("ERROR: receipt checks must be an object")
+        return 1
+
+    auxiliary_services_healthy = checks.get("auxiliary_services_healthy")
+    if aux_status == "degraded" and auxiliary_services_healthy is not False:
+        print("ERROR: receipt aux_status degraded requires checks.auxiliary_services_healthy=false")
+        return 1
+    if aux_status in {"healthy", "not_enabled"} and auxiliary_services_healthy is not True:
+        print(
+            "ERROR: receipt aux_status healthy/not_enabled requires "
+            "checks.auxiliary_services_healthy=true"
+        )
         return 1
 
     failed: list[str] = []

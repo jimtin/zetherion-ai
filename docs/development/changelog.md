@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment CI-08 Windows deploy core vs auxiliary health split (2026-03-08)
+
+- Impacted capability IDs:
+  - `deploy.windows.core_aux_health`
+  - `ci.receipt.validation`
+- Impacted workflow scenario IDs:
+  - `deploy.aux_misconfig_degraded`
+  - `deploy.core_failure_rollback`
+- Split the Windows deploy success contract into `core_status` and `aux_status`, so auxiliary service degradation warns without rolling back unrelated releases by default.
+- Added `scripts/check-windows-deploy-contract.py` plus unit coverage and wired it into the bounded `check` lane and deploy-preflight regressions to keep the workflow, runtime verifier, and host verifier aligned.
+- Updated Windows host verification to report auxiliary container degradation as a warning via `containers_auxiliary`, while keeping core runtime failures blocking.
+
 ### Fixed - Documentation contract parity and local gate coverage (2026-03-08)
 - Impacted capability IDs:
   - `ci.local_preflight`

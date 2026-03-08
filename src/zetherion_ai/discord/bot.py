@@ -823,7 +823,7 @@ class ZetherionAIBot(discord.Client):
         if not getattr(settings, "discord_e2e_enabled", False):
             return None
         channel = message.channel
-        if not isinstance(channel, discord.TextChannel | discord.Thread):
+        if not isinstance(channel, discord.TextChannel):
             return None
         if message.guild is None or self.user is None:
             return None
@@ -837,22 +837,13 @@ class ZetherionAIBot(discord.Client):
             return None
 
         allowed_category_id = getattr(settings, "discord_e2e_category_id", None)
-        allowed_parent_channel_id = getattr(settings, "discord_e2e_parent_channel_id", None)
         channel_prefix = str(
             getattr(settings, "discord_e2e_channel_prefix", "zeth-e2e") or ""
         ).strip()
         if not channel_prefix or not channel.name.lower().startswith(channel_prefix.lower()):
             return None
-
-        if isinstance(channel, discord.Thread):
-            if (
-                allowed_parent_channel_id is not None
-                and channel.parent_id != allowed_parent_channel_id
-            ):
-                return None
-        else:
-            if allowed_category_id is not None and channel.category_id != allowed_category_id:
-                return None
+        if allowed_category_id is not None and channel.category_id != allowed_category_id:
+            return None
 
         lease = DiscordE2ELease.from_channel_metadata(
             topic=getattr(channel, "topic", None),
@@ -882,7 +873,7 @@ class ZetherionAIBot(discord.Client):
     ) -> DiscordE2ELease | None:
         """Return an active synthetic-test lease for a slash interaction, if allowed."""
         channel = interaction.channel
-        if not isinstance(channel, discord.TextChannel | discord.Thread):
+        if not isinstance(channel, discord.TextChannel):
             return None
         fake_message = type("MessageLike", (), {})()
         fake_message.channel = channel

@@ -41,6 +41,7 @@ jobs:
       WINDOWS_DEPLOYMENT_RECEIPTS_PATH: C:\ZetherionAI\data\deployment-receipts
       WINDOWS_RESILIENCE_ALLOW_SERVICE_FALLBACK: "true"
       WINDOWS_REQUIRE_PROMOTIONS_TASK: "false"
+      WINDOWS_REQUIRE_HEALTHY_AUXILIARY_SERVICES: "false"
     steps:
       - name: Determine deployment target
         id: target
@@ -255,15 +256,22 @@ jobs:
           if (Test-Path $verifyResultPath) {
             $verifyResult = Get-Content $verifyResultPath -Raw | ConvertFrom-Json
             $checks = $verifyResult.checks
+            $details = $verifyResult.details
             "containers_healthy=$($checks.containers_healthy)" >> $env:GITHUB_OUTPUT
+            "auxiliary_services_healthy=$($checks.auxiliary_services_healthy)" >> $env:GITHUB_OUTPUT
             "bot_startup_markers=$($checks.bot_startup_markers)" >> $env:GITHUB_OUTPUT
             "postgres_model_keys=$($checks.postgres_model_keys)" >> $env:GITHUB_OUTPUT
             "fallback_probe=$($checks.fallback_probe)" >> $env:GITHUB_OUTPUT
+            "core_status=$($details.core_status)" >> $env:GITHUB_OUTPUT
+            "aux_status=$($details.aux_status)" >> $env:GITHUB_OUTPUT
           } else {
             "containers_healthy=false" >> $env:GITHUB_OUTPUT
+            "auxiliary_services_healthy=false" >> $env:GITHUB_OUTPUT
             "bot_startup_markers=false" >> $env:GITHUB_OUTPUT
             "postgres_model_keys=false" >> $env:GITHUB_OUTPUT
             "fallback_probe=false" >> $env:GITHUB_OUTPUT
+            "core_status=failed" >> $env:GITHUB_OUTPUT
+            "aux_status=unknown" >> $env:GITHUB_OUTPUT
           }
 
           if ($exitCode -ne 0) {
@@ -334,15 +342,21 @@ jobs:
             }
           }
 
+          $coreStatus = if ($verify.details -and $verify.details.core_status) { [string]$verify.details.core_status } else { "failed" }
+          $auxStatus = if ($verify.details -and $verify.details.aux_status) { [string]$verify.details.aux_status } else { "unknown" }
+
           $receipt = [ordered]@{
             target_sha = "${{ steps.target.outputs.target_sha }}"
             deployed_sha = "${{ steps.deploy.outputs.deployed_sha }}"
             ref = "${{ steps.target.outputs.target_ref }}"
             deployed_at = [DateTime]::UtcNow.ToString("o")
             workflow_run_id = "${{ steps.target.outputs.source_workflow_run_id }}"
+            core_status = $coreStatus
+            aux_status = $auxStatus
             checks = [ordered]@{
               qdrant_dimensions_aligned = [bool]$qdrantAligned
               containers_healthy = [bool]$verify.checks.containers_healthy
+              auxiliary_services_healthy = [bool]$verify.checks.auxiliary_services_healthy
               bot_startup_markers = [bool]$verify.checks.bot_startup_markers
               postgres_model_keys = [bool]$verify.checks.postgres_model_keys
               fallback_probe = [bool]$verify.checks.fallback_probe
@@ -495,6 +509,25 @@ jobs:
             Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- resilience_registration_bootstrap_required: $registrationBootstrapRequired"
           }
 
+      - name: Warn when auxiliary services are degraded
+        if: ${{ always() && steps.receipt.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = "Stop"
+
+          $receipt = Get-Content "${{ steps.receipt.outputs.receipt_path }}" -Raw | ConvertFrom-Json
+          if ($receipt.aux_status -ne "degraded") {
+            exit 0
+          }
+
+          $warningMessage = "aux_status=degraded (core_status=$($receipt.core_status))"
+          Write-Warning $warningMessage
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Auxiliary Services Warning"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- aux_status: degraded"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- core_status: $($receipt.core_status)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- auxiliary_services_healthy: $($receipt.checks.auxiliary_services_healthy)"
+
       - name: Enforce receipt success gate
         if: always()
         shell: pwsh
@@ -514,6 +547,10 @@ jobs:
           }
 
           $checks = $receipt.checks
+          if ($receipt.core_status -ne "healthy") { throw "Receipt core_status is '$($receipt.core_status)' (expected 'healthy')." }
+          if ($receipt.aux_status -notin @("healthy", "degraded", "not_enabled")) {
+            throw "Receipt aux_status is '$($receipt.aux_status)' (expected healthy|degraded|not_enabled)."
+          }
           if (-not $checks.qdrant_dimensions_aligned) { throw "Receipt check failed: qdrant_dimensions_aligned" }
           if (-not $checks.containers_healthy) { throw "Receipt check failed: containers_healthy" }
           if (-not $checks.bot_startup_markers) { throw "Receipt check failed: bot_startup_markers" }
@@ -531,6 +568,16 @@ jobs:
           }
           if ($requirePromotionsTask -and -not $checks.promotions_task_registered) {
             throw "Receipt check failed: promotions_task_registered (WINDOWS_REQUIRE_PROMOTIONS_TASK=$requireRaw)."
+          }
+
+          $requireAuxRaw = [string]$env:WINDOWS_REQUIRE_HEALTHY_AUXILIARY_SERVICES
+          $requireHealthyAuxiliaryServices = $false
+          if ($requireAuxRaw) {
+            $normalizedAux = $requireAuxRaw.Trim().ToLowerInvariant()
+            $requireHealthyAuxiliaryServices = @("1", "true", "yes", "on") -contains $normalizedAux
+          }
+          if ($requireHealthyAuxiliaryServices -and $receipt.aux_status -eq "degraded") {
+            throw "Receipt check failed: aux_status=degraded (WINDOWS_REQUIRE_HEALTHY_AUXILIARY_SERVICES=$requireAuxRaw)."
           }
 
       - name: Emit deploy completion announcement
