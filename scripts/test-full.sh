@@ -37,6 +37,7 @@ required = (
     "mypy",
     "bandit",
     "pip_audit",
+    "mkdocs",
 )
 missing = [name for name in required if importlib.util.find_spec(name) is None]
 raise SystemExit(1 if missing else 0)

@@ -1,5 +1,6 @@
 # Dev dependencies
 -r requirements.txt
+-r docs/requirements.txt
 
 # Testing
 pytest==9.0.2

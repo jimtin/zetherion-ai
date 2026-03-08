@@ -62,7 +62,18 @@
     "scripts/windows/verify-resilience-tasks.ps1",
     "scripts/windows/bootstrap-resilience-tasks.ps1",
     "scripts/windows/check-resilience-ready.ps1",
-    "scripts/windows/announcement-emit.py"
+    "scripts/windows/announcement-emit.py",
+    "docs/**",
+    "README.md",
+    "mkdocs.yml",
+    ".env.example",
+    "requirements-dev.txt",
+    "docs/requirements.txt",
+    "scripts/check-docs-nav.py",
+    "scripts/check-docs-links.py",
+    "scripts/check-route-doc-parity.py",
+    "scripts/check-cgs-route-doc-parity.py",
+    "scripts/check-env-doc-parity.py"
   ],
   "requirements": {
     "endpoint-doc-bundle": {
@@ -141,6 +152,11 @@
         "tests/unit/test_windows_discord_canary.py",
         "tests/unit/test_announcement_emit.py"
       ]
+    },
+    "docs-contract": {
+      "kind": "check",
+      "description": "Run the full documentation contract suite (nav, links, parity, and strict MkDocs build).",
+      "pytest_targets": []
     }
   },
   "rules": [
@@ -166,6 +182,30 @@
       ],
       "requirements": [
         "endpoint-doc-bundle"
+      ]
+    },
+    {
+      "id": "docs-contract-regressions",
+      "covers_protected": true,
+      "patterns": [
+        "docs/**",
+        "README.md",
+        "mkdocs.yml",
+        ".env.example",
+        "requirements-dev.txt",
+        "docs/requirements.txt",
+        "src/zetherion_ai/config.py",
+        "scripts/check-docs-nav.py",
+        "scripts/check-docs-links.py",
+        "scripts/check-route-doc-parity.py",
+        "scripts/check-cgs-route-doc-parity.py",
+        "scripts/check-env-doc-parity.py",
+        "scripts/pre-push-tests.sh",
+        "scripts/test-full.sh",
+        "scripts/testing/lanes.mjs"
+      ],
+      "requirements": [
+        "docs-contract"
       ]
     },
     {

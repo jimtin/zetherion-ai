@@ -58,6 +58,8 @@ regexes = [
     '''(your_token|your_key|your_secret|placeholder|example_key|your_.*_here)''',
     # Test fixtures with fake tokens
     '''test[-_](discord|gemini|anthropic|openai)[-_](token|key)''',
+    # Empty Windows Discord canary placeholders in .env.example
+    '''(?ms)^WINDOWS_DISCORD_CANARY_ENABLED=(?:false)?\s*\nWINDOWS_DISCORD_CANARY_PROVIDER=(?:groq)?\s*$''',
     # Common variable names that trigger false positives
     '''(DISCORD_TOKEN|GEMINI_API_KEY|ANTHROPIC_API_KEY|OPENAI_API_KEY)=\$\{''',
     # Documentation with REDACTED placeholders

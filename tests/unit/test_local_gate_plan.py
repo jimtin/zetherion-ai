@@ -35,6 +35,19 @@ def test_api_route_change_requires_docs_bundle_and_mypy() -> None:
     assert plan["unmapped_protected_paths"] == []
 
 
+def test_docs_configuration_change_requires_docs_contract() -> None:
+    module = _load_module()
+    manifest = module.load_manifest()
+
+    plan = module.build_plan(
+        changed_paths=["docs/technical/configuration.md", ".env.example"],
+        manifest=manifest,
+    )
+
+    assert _requirement_ids(plan) == {"docs-contract"}
+    assert plan["unmapped_protected_paths"] == []
+
+
 def test_shared_operational_storage_change_requires_unit_full() -> None:
     module = _load_module()
     manifest = module.load_manifest()

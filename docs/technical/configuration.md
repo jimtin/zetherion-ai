@@ -294,6 +294,13 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `ANNOUNCEMENT_API_URL` | `http://127.0.0.1:8080/announcements/events` | Internal Skills announcement event endpoint used by Windows scripts |
 | `ANNOUNCEMENT_API_SECRET` | unset | Shared secret for `X-API-Secret` when Windows emits internal announcement events |
 | `ANNOUNCEMENT_TARGET_USER_ID` | unset | Announcement recipient user id for Windows deploy/promotions and Discord canary events |
+| `DISCORD_E2E_ENABLED` | `false` | Enable the narrow synthetic Discord E2E bypass for isolated test channels |
+| `DISCORD_E2E_ALLOWED_AUTHOR_IDS` | unset | Comma-separated Discord user IDs allowed to drive isolated synthetic E2E runs |
+| `DISCORD_E2E_GUILD_ID` | unset | Allowlisted guild ID for isolated Discord E2E runs |
+| `DISCORD_E2E_CATEGORY_ID` | unset | Allowlisted category ID for isolated Discord E2E channels |
+| `DISCORD_E2E_PARENT_CHANNEL_ID` | unset | Allowlisted parent channel ID for isolated Discord E2E threads |
+| `DISCORD_E2E_CHANNEL_PREFIX` | `zeth-e2e` | Required name prefix for isolated Discord E2E channels |
+| `DISCORD_E2E_PROVIDER` | `groq` | Provider used by required Discord E2E runs (`groq` or `local`) |
 | `WINDOWS_DISCORD_CANARY_INTERVAL_MINUTES` | `360` | Scheduled Discord production canary cadence on the Windows host |
 | `WINDOWS_DISCORD_CANARY_STALE_MINUTES` | derived | Optional host-verifier stale threshold override for Discord canary receipts |
 | `WINDOWS_DISCORD_CANARY_ENABLED` | inherits `DISCORD_E2E_ENABLED` | Optional override for enabling the Windows Discord canary wrapper |
