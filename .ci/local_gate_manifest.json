@@ -32,6 +32,9 @@
     "scripts/check-optional-service-guards.py",
     "scripts/check-windows-powershell-compat.py",
     "scripts/windows/deploy-runner.ps1",
+    "scripts/windows/test-promotions-secrets.ps1",
+    "scripts/windows/promotions-runner.ps1",
+    "scripts/windows/verify-runtime.ps1",
     "scripts/verify-windows-host.ps1",
     ".ci/local_gate_manifest.json",
     "scripts/local_gate_plan.py",
@@ -240,6 +243,9 @@
         "scripts/check-optional-service-guards.py",
         "scripts/check-windows-powershell-compat.py",
         "scripts/windows/deploy-runner.ps1",
+        "scripts/windows/test-promotions-secrets.ps1",
+        "scripts/windows/promotions-runner.ps1",
+        "scripts/windows/verify-runtime.ps1",
         "scripts/verify-windows-host.ps1"
       ],
       "requirements": [
