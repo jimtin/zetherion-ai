@@ -649,9 +649,8 @@ class Agent:
             return False
         if any(hint in normalized for hint in OWNER_REPAIR_REQUEST_HINTS):
             return True
-        return (
-            ("what happened" in normalized or "why did you" in normalized)
-            and ("response" in normalized or "answer" in normalized)
+        return ("what happened" in normalized or "why did you" in normalized) and (
+            "response" in normalized or "answer" in normalized
         )
 
     def _is_owner_conversation_continuation(

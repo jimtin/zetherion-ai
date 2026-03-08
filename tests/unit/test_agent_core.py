@@ -1329,7 +1329,6 @@ class TestAdditionalIntentParsers:
         )
         assert agent._parse_youtube_intent("health audit", "management") == "yt_channel_health"
         assert (
-            agent._parse_youtube_intent("state status", "management")
-            == "yt_get_management_state"
+            agent._parse_youtube_intent("state status", "management") == "yt_get_management_state"
         )
         assert agent._parse_youtube_intent("unknown", "unknown") == "unknown"
