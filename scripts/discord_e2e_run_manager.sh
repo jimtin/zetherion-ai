@@ -24,8 +24,8 @@ require_discord_e2e_scope() {
         echo "ERROR: TEST_DISCORD_GUILD_ID is required for isolated Discord E2E runs." >&2
         return 1
     fi
-    if [[ -z "${TEST_DISCORD_E2E_PARENT_CHANNEL_ID:-}" && -z "${TEST_DISCORD_E2E_CATEGORY_ID:-}" && -z "${TEST_DISCORD_E2E_CATEGORY_NAME:-}" ]]; then
-        echo "ERROR: Set TEST_DISCORD_E2E_PARENT_CHANNEL_ID or TEST_DISCORD_E2E_CATEGORY_ID/NAME for isolated Discord E2E runs." >&2
+    if [[ -z "${TEST_DISCORD_E2E_CATEGORY_ID:-}" && -z "${TEST_DISCORD_E2E_CATEGORY_NAME:-}" ]]; then
+        echo "ERROR: Set TEST_DISCORD_E2E_CATEGORY_ID or TEST_DISCORD_E2E_CATEGORY_NAME for isolated Discord E2E runs." >&2
         return 1
     fi
     return 0
@@ -35,9 +35,6 @@ _discord_e2e_scope_args() {
     local -a args=()
     args+=(--runs-root "$DISCORD_E2E_RUNS_ROOT")
     args+=(--guild-id "$TEST_DISCORD_GUILD_ID")
-    if [[ -n "${TEST_DISCORD_E2E_PARENT_CHANNEL_ID:-}" ]]; then
-        args+=(--parent-channel-id "$TEST_DISCORD_E2E_PARENT_CHANNEL_ID")
-    fi
     if [[ -n "${TEST_DISCORD_E2E_CATEGORY_ID:-}" ]]; then
         args+=(--category-id "$TEST_DISCORD_E2E_CATEGORY_ID")
     fi

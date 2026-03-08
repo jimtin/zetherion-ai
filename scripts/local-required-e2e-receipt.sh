@@ -39,7 +39,11 @@ load_repo_env() {
 
 activate_repo_venv() {
     local candidate
-    for candidate in "$REPO_DIR/.venv/bin/activate" "$REPO_DIR/venv/bin/activate"; do
+    for candidate in \
+        "$REPO_DIR/.venv/bin/activate" \
+        "$REPO_DIR/venv/bin/activate" \
+        "$REPO_DIR/.venv/Scripts/activate" \
+        "$REPO_DIR/venv/Scripts/activate"; do
         if [[ -f "$candidate" ]]; then
             # shellcheck source=/dev/null
             source "$candidate"
@@ -55,8 +59,10 @@ resolve_python_bin() {
         "$REPO_DIR/.venv/bin/python" \
         "$REPO_DIR/venv/bin/python" \
         "$REPO_DIR/.venv/bin/python3" \
-        "$REPO_DIR/venv/bin/python3"; do
-        if [[ -x "$candidate" ]]; then
+        "$REPO_DIR/venv/bin/python3" \
+        "$REPO_DIR/.venv/Scripts/python.exe" \
+        "$REPO_DIR/venv/Scripts/python.exe"; do
+        if [[ -x "$candidate" || -f "$candidate" ]]; then
             printf '%s\n' "$candidate"
             return 0
         fi
@@ -74,12 +80,21 @@ resolve_python_bin() {
 }
 
 ensure_python_ca_bundle() {
-    if [[ -n "${SSL_CERT_FILE:-}" && -r "${SSL_CERT_FILE:-}" ]]; then
+    local provided_bundle="${SSL_CERT_FILE:-}"
+    if [[ -n "$provided_bundle" && ! -r "$provided_bundle" ]] && command -v cygpath >/dev/null 2>&1; then
+        local normalized_provided_bundle
+        normalized_provided_bundle="$(cygpath -u "$provided_bundle" 2>/dev/null || true)"
+        if [[ -n "$normalized_provided_bundle" ]]; then
+            provided_bundle="$normalized_provided_bundle"
+        fi
+    fi
+    if [[ -n "$provided_bundle" && -r "$provided_bundle" ]]; then
+        export SSL_CERT_FILE="$provided_bundle"
         return 0
     fi
 
     local ca_bundle
-    ca_bundle="$($PYTHON_BIN - <<'PY'
+    ca_bundle="$($PYTHON_BIN - <<'PY' | tr -d '\r'
 import os
 import ssl
 from pathlib import Path
@@ -105,6 +120,14 @@ if _readable(certifi_path):
 raise SystemExit(1)
 PY
 )" || true
+
+    if [[ -n "$ca_bundle" && ! -r "$ca_bundle" ]] && command -v cygpath >/dev/null 2>&1; then
+        local normalized_bundle
+        normalized_bundle="$(cygpath -u "$ca_bundle" 2>/dev/null || true)"
+        if [[ -n "$normalized_bundle" ]]; then
+            ca_bundle="$normalized_bundle"
+        fi
+    fi
 
     if [[ -z "$ca_bundle" || ! -r "$ca_bundle" ]]; then
         echo "ERROR: Could not determine a readable CA bundle for Python TLS verification."
@@ -320,8 +343,8 @@ done
 if [[ -z "${DISCORD_TOKEN_TEST:-}" && -z "${DISCORD_TOKEN:-}" ]]; then
     missing_env+=("DISCORD_TOKEN_TEST|DISCORD_TOKEN")
 fi
-if [[ -z "${TEST_DISCORD_E2E_PARENT_CHANNEL_ID:-}" && -z "${TEST_DISCORD_E2E_CATEGORY_ID:-}" && -z "${TEST_DISCORD_E2E_CATEGORY_NAME:-}" ]]; then
-    missing_env+=("TEST_DISCORD_E2E_PARENT_CHANNEL_ID|TEST_DISCORD_E2E_CATEGORY_ID|TEST_DISCORD_E2E_CATEGORY_NAME")
+if [[ -z "${TEST_DISCORD_E2E_CATEGORY_ID:-}" && -z "${TEST_DISCORD_E2E_CATEGORY_NAME:-}" ]]; then
+    missing_env+=("TEST_DISCORD_E2E_CATEGORY_ID|TEST_DISCORD_E2E_CATEGORY_NAME")
 fi
 
 if [[ "${#missing_env[@]}" -gt 0 ]]; then

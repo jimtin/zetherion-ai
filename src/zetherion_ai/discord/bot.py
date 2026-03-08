@@ -920,8 +920,10 @@ class ZetherionAIBot(discord.Client):
                 await self._handle_dev_event(message)
             return  # All other webhooks are ignored
 
-        # Ignore messages from bots (unless explicitly allowed for testing)
-        if message.author.bot and not get_settings().allow_bot_messages:
+        e2e_lease = self._discord_e2e_lease_for_message(message)
+
+        # Ignore messages from bots unless explicitly allowed or scoped to an active E2E lease.
+        if message.author.bot and e2e_lease is None and not get_settings().allow_bot_messages:
             return
 
         # Only respond to DMs or mentions
@@ -938,8 +940,10 @@ class ZetherionAIBot(discord.Client):
         )
         self._last_message_time = time.time()
         try:
-            # Check allowlist
-            if not await self._is_message_user_allowed(message=message, is_dm=is_dm):
+            # Check allowlist unless the message is scoped to an active synthetic E2E lease.
+            if e2e_lease is None and not await self._is_message_user_allowed(
+                message=message, is_dm=is_dm
+            ):
                 log.warning("user_not_allowed")
                 await message.reply(
                     "Sorry, you're not authorized to use this bot.",
@@ -947,7 +951,6 @@ class ZetherionAIBot(discord.Client):
                 )
                 return
 
-            e2e_lease = self._discord_e2e_lease_for_message(message)
             if e2e_lease is not None:
                 structlog.contextvars.bind_contextvars(
                     synthetic_test_run=True,
@@ -2301,14 +2304,14 @@ class ZetherionAIBot(discord.Client):
 
         Returns True if request is allowed, False if blocked (response already sent).
         """
-        if not await self._is_interaction_user_allowed(interaction):
+        e2e_lease = self._discord_e2e_lease_for_interaction(interaction)
+        if e2e_lease is None and not await self._is_interaction_user_allowed(interaction):
             await interaction.response.send_message(
                 "Sorry, you're not authorized to use this bot.",
                 ephemeral=True,
             )
             return False
 
-        e2e_lease = self._discord_e2e_lease_for_interaction(interaction)
         if e2e_lease is not None:
             structlog.contextvars.bind_contextvars(
                 synthetic_test_run=True,

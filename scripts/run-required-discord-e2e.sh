@@ -15,7 +15,7 @@ Runs the required Discord E2E suite using the repo-local contract. Standalone ex
 - sources .env if present
 - activates the repo-local virtualenv if present
 - validates required credentials and E2E scope config
-- creates an isolated Discord channel or thread with a target-bot lease
+- creates an isolated Discord channel with a target-bot lease
 - executes the canonical required Discord E2E pytest command against the configured target bot
 - cleans the channel and synthetic test artifacts on exit
 
@@ -35,17 +35,59 @@ if [[ "${1:-}" == "--" ]]; then
 fi
 
 load_repo_env() {
-    if [[ -f "$REPO_DIR/.env" ]]; then
-        set -a
-        # shellcheck source=/dev/null
-        source "$REPO_DIR/.env"
-        set +a
+    if [[ ! -f "$REPO_DIR/.env" ]]; then
+        return 0
     fi
+
+    local preserved_keys=(
+        DISCORD_E2E_ALLOWED_AUTHOR_IDS
+        DISCORD_E2E_ENABLED
+        DISCORD_E2E_MODE
+        DISCORD_E2E_PROVIDER
+        DISCORD_E2E_RESULT_PATH
+        DISCORD_TOKEN
+        GEMINI_API_KEY
+        GROQ_API_KEY
+        OPENAI_API_KEY
+        SSL_CERT_FILE
+        TEST_DISCORD_BOT_TOKEN
+        TEST_DISCORD_CHANNEL_ID
+        TEST_DISCORD_E2E_CATEGORY_ID
+        TEST_DISCORD_E2E_CATEGORY_NAME
+        TEST_DISCORD_E2E_CHANNEL_PREFIX
+        TEST_DISCORD_E2E_TTL_MINUTES
+        TEST_DISCORD_GUILD_ID
+        TEST_DISCORD_TARGET_BOT_ID
+    )
+    local key
+    local restore_file
+    restore_file="$(mktemp "${TMPDIR:-/tmp}/discord-e2e-env-restore.XXXXXX")"
+
+    for key in "${preserved_keys[@]}"; do
+        if [[ -n "${!key+x}" ]]; then
+            printf 'export %s=%q\n' "$key" "${!key}" >>"$restore_file"
+        else
+            printf 'unset %s\n' "$key" >>"$restore_file"
+        fi
+    done
+
+    set -a
+    # shellcheck source=/dev/null
+    source "$REPO_DIR/.env"
+    set +a
+
+    # shellcheck source=/dev/null
+    source "$restore_file"
+    rm -f "$restore_file"
 }
 
 activate_repo_venv() {
     local candidate
-    for candidate in "$REPO_DIR/.venv/bin/activate" "$REPO_DIR/venv/bin/activate"; do
+    for candidate in \
+        "$REPO_DIR/.venv/bin/activate" \
+        "$REPO_DIR/venv/bin/activate" \
+        "$REPO_DIR/.venv/Scripts/activate" \
+        "$REPO_DIR/venv/Scripts/activate"; do
         if [[ -f "$candidate" ]]; then
             # shellcheck source=/dev/null
             source "$candidate"
@@ -69,8 +111,10 @@ resolve_python_bin() {
         "$REPO_DIR/.venv/bin/python" \
         "$REPO_DIR/venv/bin/python" \
         "$REPO_DIR/.venv/bin/python3" \
-        "$REPO_DIR/venv/bin/python3"; do
-        if [[ -x "$candidate" ]]; then
+        "$REPO_DIR/venv/bin/python3" \
+        "$REPO_DIR/.venv/Scripts/python.exe" \
+        "$REPO_DIR/venv/Scripts/python.exe"; do
+        if [[ -x "$candidate" || -f "$candidate" ]]; then
             printf '%s\n' "$candidate"
             return 0
         fi
@@ -88,12 +132,21 @@ resolve_python_bin() {
 }
 
 ensure_python_ca_bundle() {
-    if [[ -n "${SSL_CERT_FILE:-}" && -r "${SSL_CERT_FILE:-}" ]]; then
+    local provided_bundle="${SSL_CERT_FILE:-}"
+    if [[ -n "$provided_bundle" && ! -r "$provided_bundle" ]] && command -v cygpath >/dev/null 2>&1; then
+        local normalized_provided_bundle
+        normalized_provided_bundle="$(cygpath -u "$provided_bundle" 2>/dev/null || true)"
+        if [[ -n "$normalized_provided_bundle" ]]; then
+            provided_bundle="$normalized_provided_bundle"
+        fi
+    fi
+    if [[ -n "$provided_bundle" && -r "$provided_bundle" ]]; then
+        export SSL_CERT_FILE="$provided_bundle"
         return 0
     fi
 
     local ca_bundle
-    ca_bundle="$($PYTHON_BIN - <<'PY'
+    ca_bundle="$($PYTHON_BIN - <<'PY' | tr -d '\r'
 import os
 import ssl
 from pathlib import Path
@@ -121,6 +174,22 @@ if _readable(certifi_path):
 raise SystemExit(1)
 PY
 )" || true
+
+    if [[ -n "$ca_bundle" && ! -r "$ca_bundle" ]] && command -v cygpath >/dev/null 2>&1; then
+        local normalized_bundle
+        normalized_bundle="$(cygpath -u "$ca_bundle" 2>/dev/null || true)"
+        if [[ -n "$normalized_bundle" ]]; then
+            ca_bundle="$normalized_bundle"
+        fi
+    fi
+
+    if [[ -n "$ca_bundle" && ! -r "$ca_bundle" ]] && command -v cygpath >/dev/null 2>&1; then
+        local normalized_bundle
+        normalized_bundle="$(cygpath -u "$ca_bundle" 2>/dev/null || true)"
+        if [[ -n "$normalized_bundle" ]]; then
+            ca_bundle="$normalized_bundle"
+        fi
+    fi
 
     if [[ -z "$ca_bundle" || ! -r "$ca_bundle" ]]; then
         echo "ERROR: Could not determine a readable CA bundle for Python TLS verification." >&2
@@ -231,8 +300,8 @@ require_env_var "GEMINI_API_KEY"
 if [[ "$DISCORD_E2E_PROVIDER" == "groq" ]]; then
     require_env_var "GROQ_API_KEY"
 fi
-if [[ -z "${TEST_DISCORD_E2E_PARENT_CHANNEL_ID:-}" && -z "${TEST_DISCORD_E2E_CATEGORY_ID:-}" && -z "${TEST_DISCORD_E2E_CATEGORY_NAME:-}" ]]; then
-    echo "ERROR: Set TEST_DISCORD_E2E_PARENT_CHANNEL_ID or TEST_DISCORD_E2E_CATEGORY_ID/NAME for Discord E2E isolation." >&2
+if [[ -z "${TEST_DISCORD_E2E_CATEGORY_ID:-}" && -z "${TEST_DISCORD_E2E_CATEGORY_NAME:-}" ]]; then
+    echo "ERROR: Set TEST_DISCORD_E2E_CATEGORY_ID or TEST_DISCORD_E2E_CATEGORY_NAME for Discord E2E isolation." >&2
     exit 1
 fi
 
@@ -243,6 +312,13 @@ trap 'handle_signal 130' INT
 trap 'handle_signal 143' TERM
 
 start_discord_e2e_run
+
+PYTEST_TIMEOUT_ARGS=(--timeout=180)
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+        PYTEST_TIMEOUT_ARGS+=(--timeout-method=thread)
+        ;;
+esac
 
 echo "[discord-e2e] Running required Discord E2E via blessed wrapper (provider=$DISCORD_E2E_PROVIDER, run_id=${DISCORD_E2E_RUN_ID}, channel_id=${TEST_DISCORD_CHANNEL_ID}, ssl_cert=$SSL_CERT_FILE)"
 
@@ -257,7 +333,7 @@ env \
     "$PYTHON_BIN" -m pytest \
     tests/integration/test_discord_e2e.py \
     -m "discord_e2e and not optional_e2e" \
-    --timeout=180 \
+    "${PYTEST_TIMEOUT_ARGS[@]}" \
     -v \
     --tb=short \
     -s \

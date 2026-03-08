@@ -13,6 +13,7 @@ import asyncio
 import json
 import os
 import re
+import sys
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from uuid import uuid4
@@ -53,6 +54,22 @@ def _append_cleanup_prompt(*, label: str, prompt: str) -> None:
     payload = {"label": label, "prompt": prompt}
     with ledger_path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, sort_keys=True) + "\n")
+
+
+def _safe_print(message: object) -> None:
+    text = str(message)
+    stream = sys.stdout
+    try:
+        stream.write(text + "\n")
+        stream.flush()
+        return
+    except UnicodeEncodeError:
+        fallback_encoding = getattr(stream, "encoding", None) or "utf-8"
+        fallback = text.encode(fallback_encoding, errors="replace").decode(
+            fallback_encoding, errors="replace"
+        )
+        stream.write(fallback + "\n")
+        stream.flush()
 
 
 # Skip if test Discord credentials not provided
@@ -155,7 +172,7 @@ class DiscordTestClient:
 
         @self.client.event
         async def on_ready() -> None:
-            print(f"✅ Test client logged in as {self.client.user}")  # type: ignore[union-attr]
+            _safe_print(f"✅ Test client logged in as {self.client.user}")  # type: ignore[union-attr]
             # Get test channel
             channel = self.client.get_channel(self.channel_id)  # type: ignore[union-attr]
             if not isinstance(channel, discord.TextChannel | discord.Thread):
@@ -208,10 +225,10 @@ class DiscordTestClient:
         if explicit_bot_id:
             try:
                 bot_id = int(explicit_bot_id)
-                print(f"Using explicit bot ID from TEST_DISCORD_TARGET_BOT_ID: {bot_id}")
+                _safe_print(f"Using explicit bot ID from TEST_DISCORD_TARGET_BOT_ID: {bot_id}")
                 return bot_id
             except ValueError:
-                print(f"Warning: Invalid TEST_DISCORD_TARGET_BOT_ID: {explicit_bot_id}")
+                _safe_print(f"Warning: Invalid TEST_DISCORD_TARGET_BOT_ID: {explicit_bot_id}")
 
         # Look for Zetherion AI bot in guild (excluding ourselves, the test bot)
         # Search for various name patterns
@@ -223,14 +240,14 @@ class DiscordTestClient:
                 if member.bot and member.id != self.client.user.id:  # type: ignore[union-attr]
                     name_lower = member.name.lower()
                     if any(pattern in name_lower for pattern in bot_name_patterns):
-                        print(f"Found Zetherion AI bot: {member.name} (ID: {member.id})")
+                        _safe_print(f"Found Zetherion AI bot: {member.name} (ID: {member.id})")
                         return member.id
 
             # If no match found, list all bots for debugging
-            print("Available bots in guild:")
+            _safe_print("Available bots in guild:")
             for member in guild.members:
                 if member.bot and member.id != self.client.user.id:  # type: ignore[union-attr]
-                    print(f"  - {member.name} (ID: {member.id})")
+                    _safe_print(f"  - {member.name} (ID: {member.id})")
 
         return None
 
@@ -261,7 +278,7 @@ class DiscordTestClient:
                 async for message in self.channel.history(limit=50):
                     if message.author.bot and message.author.id != self.client.user.id:  # type: ignore[union-attr]
                         bot_id = message.author.id
-                        print(f"Found bot from history: {message.author.name} (ID: {bot_id})")
+                        _safe_print(f"Found bot from history: {message.author.name} (ID: {bot_id})")
                         break
 
             if not bot_id:
@@ -278,26 +295,28 @@ class DiscordTestClient:
                 and reference_message_id == after_message.id
             )
             bot_match = message.author.id == bot_id
-            print(
+            _safe_print(
                 f"Check: author={message.author.name}, bot_match={bot_match}, "
                 f"reply_to={reference_message_id}, expected={after_message.id}, is_match={is_match}"
             )
             return is_match
 
         try:
-            print(f"Waiting for response from bot_id={bot_id} in channel={self.channel_id}...")
+            _safe_print(
+                f"Waiting for response from bot_id={bot_id} in channel={self.channel_id}..."
+            )
             response = await self.client.wait_for("message", check=check, timeout=timeout)
-            print(f"Got response: {response.content[:100] if response else 'None'}")
+            _safe_print(f"Got response: {response.content[:100] if response else 'None'}")
             return response
         except TimeoutError:
             # Check message history as fallback
-            print("Timeout reached, checking message history...")
+            _safe_print("Timeout reached, checking message history...")
             async for msg in self.channel.history(limit=20):
                 content = msg.content[:50] if msg.content else "[empty]"
-                print(f"  History: {msg.author.name} ({msg.author.id}): {content}...")
+                _safe_print(f"  History: {msg.author.name} ({msg.author.id}): {content}...")
                 reference_message_id = msg.reference.message_id if msg.reference else None
                 if msg.author.id == bot_id and reference_message_id == after_message.id:
-                    print("Found response in history (reply-correlated)!")
+                    _safe_print("Found response in history (reply-correlated)!")
                     return msg
             return None
 
@@ -335,7 +354,7 @@ async def discord_test_client() -> AsyncGenerator[DiscordTestClient, None]:
     """
     if SKIP_DISCORD_E2E:
         pytest.skip(SKIP_REASON)
-    print(f"Discord E2E provider mode: {DISCORD_E2E_PROVIDER}")
+    _safe_print(f"Discord E2E provider mode: {DISCORD_E2E_PROVIDER}")
 
     token = os.getenv("TEST_DISCORD_BOT_TOKEN", "")
     channel_id = int(os.getenv("TEST_DISCORD_CHANNEL_ID", "0"))
@@ -373,7 +392,7 @@ async def test_bot_responds_to_message(discord_test_client: DiscordTestClient) -
 
         assert response is not None, "Bot did not respond within timeout"
         assert len(response.content) > 0, "Bot response was empty"
-        print(f"✅ Bot responded: {response.content[:100]}...")
+        _safe_print(f"✅ Bot responded: {response.content[:100]}...")
 
     finally:
         # Cleanup test messages
@@ -404,7 +423,7 @@ async def test_bot_handles_complex_query(discord_test_client: DiscordTestClient)
 
         assert response is not None, "Bot did not respond to complex query"
         assert len(response.content) > 50, "Bot response too short for complex query"
-        print(f"✅ Bot handled complex query: {response.content[:100]}...")
+        _safe_print(f"✅ Bot handled complex query: {response.content[:100]}...")
 
     finally:
         await discord_test_client.delete_message(test_message)
@@ -462,8 +481,8 @@ async def test_bot_remembers_information(discord_test_client: DiscordTestClient)
             # Validate that the bot successfully recalled the information.
             success, explanation = validate_memory_recall(recall_response.content, favorite_color)
             last_recall_explanation = explanation
-            print(f"Memory validation (attempt {attempt}/3): {explanation}")
-            print(f"Bot response: {recall_response.content[:200]}...")
+            _safe_print(f"Memory validation (attempt {attempt}/3): {explanation}")
+            _safe_print(f"Bot response: {recall_response.content[:200]}...")
 
             if success:
                 memory_recall_success = True
@@ -477,7 +496,7 @@ async def test_bot_remembers_information(discord_test_client: DiscordTestClient)
             "Bot failed to recall stored memory after retries. "
             f"Final explanation: {last_recall_explanation}"
         )
-        print("✅ Memory test completed successfully")
+        _safe_print("✅ Memory test completed successfully")
 
     finally:
         await discord_test_client.delete_message(store_message)
@@ -510,7 +529,7 @@ async def test_bot_handles_mention(discord_test_client: DiscordTestClient) -> No
 
         assert response is not None, "Bot did not respond to mention"
         assert len(response.content) > 0, "Bot response was empty"
-        print(f"✅ Bot responded to mention: {response.content[:100]}...")
+        _safe_print(f"✅ Bot responded to mention: {response.content[:100]}...")
 
     finally:
         await discord_test_client.delete_message(test_message)
@@ -539,7 +558,7 @@ async def test_bot_slash_commands_available(discord_test_client: DiscordTestClie
         for expected in expected_commands:
             assert expected in command_names, f"Command /{expected} not registered"
 
-        print(f"✅ All slash commands registered: {command_names}")
+        _safe_print(f"✅ All slash commands registered: {command_names}")
     except Exception as e:
         # If we can't fetch commands, skip the test rather than fail
         pytest.skip(f"Could not fetch commands: {e}")
@@ -573,7 +592,7 @@ async def test_bot_creates_task(discord_test_client: DiscordTestClient) -> None:
         )
         assert response is not None, "Bot did not respond to task creation"
         assert len(response.content) > 0, "Bot response was empty"
-        print(f"✅ Bot acknowledged task creation: {response.content[:100]}...")
+        _safe_print(f"✅ Bot acknowledged task creation: {response.content[:100]}...")
     finally:
         await discord_test_client.delete_message(test_message)
         if response:
@@ -614,7 +633,7 @@ async def test_bot_lists_tasks(discord_test_client: DiscordTestClient) -> None:
         assert response is not None, "Bot did not respond to task listing"
         assert len(response.content) > 0, "Bot response was empty"
         assert task_title in response.content.lower(), "Bot did not list the created task title"
-        print(f"✅ Bot listed tasks: {response.content[:100]}...")
+        _safe_print(f"✅ Bot listed tasks: {response.content[:100]}...")
     finally:
         await discord_test_client.delete_message(create_message)
         if create_response:
@@ -645,7 +664,7 @@ async def test_bot_shows_schedule(discord_test_client: DiscordTestClient) -> Non
         )
         assert response is not None, "Bot did not respond to schedule query"
         assert len(response.content) > 0, "Bot response was empty"
-        print(f"✅ Bot showed schedule: {response.content[:100]}...")
+        _safe_print(f"✅ Bot showed schedule: {response.content[:100]}...")
     finally:
         await discord_test_client.delete_message(test_message)
         if response:
@@ -670,7 +689,7 @@ async def test_bot_profile_query(discord_test_client: DiscordTestClient) -> None
         )
         assert response is not None, "Bot did not respond to profile query"
         assert len(response.content) > 0, "Bot response was empty"
-        print(f"✅ Bot responded to profile query: {response.content[:100]}...")
+        _safe_print(f"✅ Bot responded to profile query: {response.content[:100]}...")
     finally:
         await discord_test_client.delete_message(test_message)
         if response:
@@ -728,7 +747,7 @@ async def test_bot_multi_turn(discord_test_client: DiscordTestClient) -> None:
         assert "software engineer" in resp3.content.lower(), "Summary missing remembered profession"
         recalled_color, explanation = validate_memory_recall(resp3.content, favorite_color)
         assert recalled_color, f"Summary missing remembered favorite color: {explanation}"
-        print(f"✅ Multi-turn response: {resp3.content[:200]}...")
+        _safe_print(f"✅ Multi-turn response: {resp3.content[:200]}...")
 
     finally:
         for msg in messages_to_delete:

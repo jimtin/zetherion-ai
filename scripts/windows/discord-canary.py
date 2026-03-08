@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
+import shlex
 import shutil
+import ssl
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -27,8 +30,28 @@ DEFAULT_ANNOUNCEMENT_OUTBOX_DIR = DEFAULT_DEPLOY_PATH / "data" / "announcements"
 DEFAULT_TIMEOUT_SECONDS = 20 * 60
 DEFAULT_TTL_MINUTES = 60
 DEFAULT_CHANNEL_PREFIX = "zeth-canary"
+RUNTIME_CHANNEL_PREFIX_DEFAULT = "zeth-e2e"
 DEFAULT_INTERVAL_MINUTES = 6 * 60
 LEASE_CONTENDED_TOKEN = "target_lease_unavailable"
+BRIDGED_BASH_ENV_KEYS = (
+    "DISCORD_E2E_ALLOWED_AUTHOR_IDS",
+    "DISCORD_E2E_ENABLED",
+    "DISCORD_E2E_MODE",
+    "DISCORD_E2E_PROVIDER",
+    "DISCORD_E2E_RESULT_PATH",
+    "DISCORD_TOKEN",
+    "GEMINI_API_KEY",
+    "GROQ_API_KEY",
+    "OPENAI_API_KEY",
+    "SSL_CERT_FILE",
+    "TEST_DISCORD_BOT_TOKEN",
+    "TEST_DISCORD_E2E_CATEGORY_ID",
+    "TEST_DISCORD_E2E_CATEGORY_NAME",
+    "TEST_DISCORD_E2E_CHANNEL_PREFIX",
+    "TEST_DISCORD_E2E_TTL_MINUTES",
+    "TEST_DISCORD_GUILD_ID",
+    "TEST_DISCORD_TARGET_BOT_ID",
+)
 
 
 SUCCESS_EXIT_STATUSES = {"success", "cleanup_degraded", "lease_contended"}
@@ -101,15 +124,122 @@ def _resolve_first(
 
 def resolve_bash_executable(*, base_env: dict[str, str] | None = None) -> str:
     env = base_env or os.environ
-    for candidate in (
-        env.get("BASH_EXE", ""),
-        shutil.which("bash"),
+    explicit = str(env.get("BASH_EXE", "")).strip()
+    if explicit and Path(explicit).exists():
+        return explicit
+
+    git_bash_candidates = (
         r"C:\Program Files\Git\bin\bash.exe",
         r"C:\Program Files\Git\usr\bin\bash.exe",
-    ):
-        if candidate and Path(candidate).exists():
-            return str(candidate)
+    )
+    for candidate in git_bash_candidates:
+        if Path(candidate).exists():
+            return candidate
+
+    discovered = shutil.which("bash")
+    if discovered and Path(discovered).exists():
+        normalized = discovered.replace("/", "\\").lower()
+        if normalized.endswith(r"windows\system32\bash.exe"):
+            raise RuntimeError(
+                "Resolved bash.exe points at the Windows system bash shim; "
+                "install Git for Windows or set BASH_EXE to Git Bash."
+            )
+        return str(discovered)
+
     raise RuntimeError("bash executable not found; install Git for Windows or set BASH_EXE")
+
+
+def _readable_file(path_value: str | None) -> bool:
+    return bool(path_value) and Path(path_value).is_file() and os.access(path_value, os.R_OK)
+
+
+def _split_csv_tokens(raw: str) -> tuple[str, ...]:
+    return tuple(sorted({part.strip() for part in str(raw).split(",") if part.strip()}))
+
+
+def _resolve_python_ca_bundle() -> str:
+    verify = ssl.get_default_verify_paths()
+    if _readable_file(verify.cafile):
+        return str(verify.cafile)
+    try:
+        import certifi  # type: ignore
+    except Exception:
+        return ""
+
+    certifi_path = certifi.where()
+    if _readable_file(certifi_path):
+        return str(certifi_path)
+    return ""
+
+
+def _validate_runtime_e2e_alignment(
+    *,
+    child_env: dict[str, str],
+    file_env: dict[str, str],
+    base_env: dict[str, str],
+) -> None:
+    runtime_enabled = (
+        _resolve_first(
+            "DISCORD_E2E_ENABLED",
+            file_env=file_env,
+            base_env=base_env,
+            default="false",
+        )
+        .strip()
+        .lower()
+    )
+    child_enabled = str(child_env.get("DISCORD_E2E_ENABLED", "")).strip().lower() or "true"
+    runtime_prefix = _resolve_first(
+        "DISCORD_E2E_CHANNEL_PREFIX",
+        file_env=file_env,
+        base_env=base_env,
+        default=RUNTIME_CHANNEL_PREFIX_DEFAULT,
+    ).strip()
+    child_prefix = str(child_env.get("TEST_DISCORD_E2E_CHANNEL_PREFIX", "")).strip()
+    runtime_allowed_authors = _split_csv_tokens(
+        _resolve_first(
+            "DISCORD_E2E_ALLOWED_AUTHOR_IDS",
+            file_env=file_env,
+            base_env=base_env,
+        )
+    )
+    child_allowed_authors = _split_csv_tokens(
+        str(child_env.get("DISCORD_E2E_ALLOWED_AUTHOR_IDS", ""))
+    )
+
+    mismatches: list[str] = []
+    if child_enabled == "true" and runtime_enabled != "true":
+        mismatches.append(
+            "runtime DISCORD_E2E_ENABLED must be true for Windows canary synthetic traffic"
+        )
+    if child_prefix and child_prefix != runtime_prefix:
+        mismatches.append(
+            "runtime DISCORD_E2E_CHANNEL_PREFIX="
+            f"{runtime_prefix!r} does not match canary channel prefix {child_prefix!r}"
+        )
+    if child_allowed_authors != runtime_allowed_authors:
+        mismatches.append(
+            "runtime DISCORD_E2E_ALLOWED_AUTHOR_IDS="
+            f"{','.join(runtime_allowed_authors)!r} does not match canary allowed authors "
+            f"{','.join(child_allowed_authors)!r}"
+        )
+
+    scoped_pairs = (
+        ("DISCORD_E2E_GUILD_ID", "TEST_DISCORD_GUILD_ID"),
+        ("DISCORD_E2E_CATEGORY_ID", "TEST_DISCORD_E2E_CATEGORY_ID"),
+    )
+    for runtime_key, child_key in scoped_pairs:
+        runtime_value = _resolve_first(runtime_key, file_env=file_env, base_env=base_env).strip()
+        child_value = str(child_env.get(child_key, "")).strip()
+        if runtime_value and child_value and runtime_value != child_value:
+            mismatches.append(
+                "runtime "
+                f"{runtime_key}={runtime_value!r} does not match canary "
+                f"{child_key}={child_value!r}"
+            )
+
+    if mismatches:
+        raise RuntimeError("discord_canary_runtime_scope_mismatch: " + "; ".join(mismatches))
 
 
 def build_child_env(
@@ -132,18 +262,14 @@ def build_child_env(
     )
     child["TEST_DISCORD_GUILD_ID"] = _resolve_first(
         "WINDOWS_DISCORD_CANARY_GUILD_ID",
+        "DISCORD_E2E_GUILD_ID",
         "TEST_DISCORD_GUILD_ID",
-        file_env=file_env,
-        base_env=effective_env,
-    )
-    child["TEST_DISCORD_E2E_PARENT_CHANNEL_ID"] = _resolve_first(
-        "WINDOWS_DISCORD_CANARY_PARENT_CHANNEL_ID",
-        "TEST_DISCORD_E2E_PARENT_CHANNEL_ID",
         file_env=file_env,
         base_env=effective_env,
     )
     child["TEST_DISCORD_E2E_CATEGORY_ID"] = _resolve_first(
         "WINDOWS_DISCORD_CANARY_CATEGORY_ID",
+        "DISCORD_E2E_CATEGORY_ID",
         "TEST_DISCORD_E2E_CATEGORY_ID",
         file_env=file_env,
         base_env=effective_env,
@@ -156,10 +282,11 @@ def build_child_env(
     )
     child["TEST_DISCORD_E2E_CHANNEL_PREFIX"] = _resolve_first(
         "WINDOWS_DISCORD_CANARY_CHANNEL_PREFIX",
+        "DISCORD_E2E_CHANNEL_PREFIX",
         "TEST_DISCORD_E2E_CHANNEL_PREFIX",
         file_env=file_env,
         base_env=effective_env,
-        default=DEFAULT_CHANNEL_PREFIX,
+        default=RUNTIME_CHANNEL_PREFIX_DEFAULT,
     )
     child["TEST_DISCORD_E2E_TTL_MINUTES"] = _resolve_first(
         "WINDOWS_DISCORD_CANARY_TTL_MINUTES",
@@ -198,7 +325,6 @@ def build_child_env(
         child["DISCORD_TOKEN"] = target_token
     target_bot_id = _resolve_first(
         "WINDOWS_DISCORD_CANARY_TARGET_BOT_ID",
-        "TEST_DISCORD_TARGET_BOT_ID",
         file_env=file_env,
         base_env=effective_env,
     )
@@ -206,6 +332,32 @@ def build_child_env(
         child["TEST_DISCORD_TARGET_BOT_ID"] = target_bot_id
     else:
         child.pop("TEST_DISCORD_TARGET_BOT_ID", None)
+
+    for passthrough_key in ("OPENAI_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY"):
+        passthrough_value = _env_lookup(
+            passthrough_key,
+            file_env=file_env,
+            base_env=effective_env,
+        )
+        if passthrough_value:
+            child[passthrough_key] = passthrough_value
+
+    ssl_cert_file = _resolve_first(
+        "WINDOWS_DISCORD_CANARY_SSL_CERT_FILE",
+        "SSL_CERT_FILE",
+        file_env=file_env,
+        base_env=effective_env,
+    )
+    if not _readable_file(ssl_cert_file):
+        ssl_cert_file = _resolve_python_ca_bundle()
+    if ssl_cert_file:
+        child["SSL_CERT_FILE"] = ssl_cert_file
+
+    _validate_runtime_e2e_alignment(
+        child_env=child,
+        file_env=file_env,
+        base_env=effective_env,
+    )
 
     # Force the canary to target the live production bot identity,
     # never the local test bot token.
@@ -387,14 +539,78 @@ def _update_state(state: dict[str, Any], receipt: dict[str, Any]) -> dict[str, A
 def prepare_bash_wrapper(*, deploy_path: Path, wrapper_path: Path) -> str:
     wrapper_bytes = wrapper_path.read_bytes()
     normalized_bytes = wrapper_bytes.replace(b"\r\n", b"\n")
-    if normalized_bytes == wrapper_bytes:
+    sibling_manager_path = wrapper_path.with_name("discord_e2e_run_manager.sh")
+    sibling_manager_bytes = b""
+    sibling_manager_normalized = b""
+    if sibling_manager_path.exists():
+        sibling_manager_bytes = sibling_manager_path.read_bytes()
+        sibling_manager_normalized = sibling_manager_bytes.replace(b"\r\n", b"\n")
+
+    repo_env_path = deploy_path / ".env"
+    repo_env_normalized = b""
+    repo_env_needs_normalization = False
+    if repo_env_path.exists():
+        repo_env_bytes = repo_env_path.read_bytes()
+        repo_env_normalized = repo_env_bytes.replace(b"\r\n", b"\n")
+        repo_env_needs_normalization = repo_env_normalized != repo_env_bytes
+
+    wrapper_needs_normalization = normalized_bytes != wrapper_bytes
+    manager_needs_normalization = (
+        sibling_manager_path.exists() and sibling_manager_normalized != sibling_manager_bytes
+    )
+    if (
+        not wrapper_needs_normalization
+        and not manager_needs_normalization
+        and not repo_env_needs_normalization
+    ):
         return wrapper_path.relative_to(deploy_path).as_posix()
 
-    normalized_dir = deploy_path / "data" / "discord-canary" / "normalized-wrapper"
-    normalized_dir.mkdir(parents=True, exist_ok=True)
-    normalized_path = normalized_dir / wrapper_path.name
+    normalized_path = wrapper_path.with_name("run-required-discord-e2e.normalized.sh")
+    if sibling_manager_path.exists():
+        normalized_manager_name = "discord_e2e_run_manager.normalized.sh"
+        normalized_bytes = normalized_bytes.replace(
+            b"discord_e2e_run_manager.sh",
+            normalized_manager_name.encode("utf-8"),
+        )
+        sibling_manager_path.with_name(normalized_manager_name).write_bytes(
+            sibling_manager_normalized
+        )
+
+    if repo_env_needs_normalization:
+        normalized_env_path = (
+            deploy_path / "data" / "discord-canary" / "bash-env" / "repo.env.normalized"
+        )
+        normalized_env_path.parent.mkdir(parents=True, exist_ok=True)
+        normalized_env_path.write_bytes(repo_env_normalized)
+        normalized_bytes = normalized_bytes.replace(
+            b'source "$REPO_DIR/.env"',
+            b'source "$REPO_DIR/data/discord-canary/bash-env/repo.env.normalized"',
+        )
+
     normalized_path.write_bytes(normalized_bytes)
     return normalized_path.relative_to(deploy_path).as_posix()
+
+
+def prepare_bash_env_bridge(*, deploy_path: Path, child_env: dict[str, str]) -> str:
+    bridge_dir = deploy_path / "data" / "discord-canary" / "bash-env"
+    bridge_dir.mkdir(parents=True, exist_ok=True)
+    bridge_path = bridge_dir / "required-discord-e2e.env.sh"
+
+    lines = ["#!/usr/bin/env bash", "set -euo pipefail"]
+    for key in BRIDGED_BASH_ENV_KEYS:
+        value = str(child_env.get(key, "")).strip()
+        if not value:
+            continue
+        lines.append(f"export {key}={shlex.quote(value)}")
+    bridge_path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    return bridge_path.relative_to(deploy_path).as_posix()
+
+
+def build_bash_wrapper_command(*, env_bridge_path: str, wrapper_command: str) -> list[str]:
+    return [
+        "-lc",
+        f". {shlex.quote(env_bridge_path)} && exec {shlex.quote(f'./{wrapper_command}')}",
+    ]
 
 
 def run_canary(
@@ -420,11 +636,20 @@ def run_canary(
     if not wrapper_path.exists():
         raise RuntimeError(f"Discord E2E wrapper not found: {wrapper_path}")
     wrapper_command = prepare_bash_wrapper(deploy_path=deploy_path, wrapper_path=wrapper_path)
+    env_bridge_path = prepare_bash_env_bridge(deploy_path=deploy_path, child_env=child_env)
 
     result_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    with contextlib.suppress(OSError):
+        result_path.unlink(missing_ok=True)
 
-    command = [bash_path, wrapper_command]
+    command = [
+        bash_path,
+        *build_bash_wrapper_command(
+            env_bridge_path=env_bridge_path,
+            wrapper_command=wrapper_command,
+        ),
+    ]
     started_at = _now_iso()
     timed_out = False
     exit_code = 1

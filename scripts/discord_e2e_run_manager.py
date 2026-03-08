@@ -31,6 +31,27 @@ DEFAULT_MODE = "local_required"
 API_BASE_URL = "https://discord.com/api/v10"
 
 
+TEST_BOT_CHANNEL_ALLOW = 1024 | 2048 | 8192 | 65536
+TARGET_BOT_CHANNEL_ALLOW = 1024 | 2048 | 8192 | 16384 | 32768 | 65536
+
+
+def _channel_permission_overwrites(*, test_bot_id: int, target_bot_id: int) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": str(test_bot_id),
+            "type": 1,
+            "allow": str(TEST_BOT_CHANNEL_ALLOW),
+            "deny": "0",
+        },
+        {
+            "id": str(target_bot_id),
+            "type": 1,
+            "allow": str(TARGET_BOT_CHANNEL_ALLOW),
+            "deny": "0",
+        },
+    ]
+
+
 @dataclass(frozen=True)
 class RunPaths:
     manifest_path: Path
@@ -268,14 +289,20 @@ def create_run(
     mode: str,
     test_api: DiscordAPI,
     target_api: DiscordAPI,
+    admin_api: DiscordAPI,
     parent_run_id: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, str]]:
     ensure_layout(runs_root)
 
     test_bot = test_api.get_current_user()
     target_bot = target_api.get_current_user()
+    admin_bot = admin_api.get_current_user()
     test_bot_id = int(test_bot["id"])
-    target_bot_id = int(os.environ.get("TEST_DISCORD_TARGET_BOT_ID") or target_bot["id"])
+    admin_bot_id = int(admin_bot["id"])
+    if mode == "windows_prod_canary":
+        target_bot_id = int(target_bot["id"])
+    else:
+        target_bot_id = int(os.environ.get("TEST_DISCORD_TARGET_BOT_ID") or target_bot["id"])
     ensure_author_allowlist(test_bot_id)
 
     resource_type = "thread" if parent_channel_id is not None else "channel"
@@ -283,14 +310,14 @@ def create_run(
     resolved_parent_channel_id: int | None = None
     if resource_type == "thread":
         parent_channel = resolve_parent_channel(
-            target_api,
+            admin_api,
             guild_id=guild_id,
             parent_channel_id=parent_channel_id,
         )
         resolved_parent_channel_id = int(parent_channel["id"])
     else:
         category = resolve_category(
-            target_api,
+            admin_api,
             guild_id=guild_id,
             category_id=category_id,
             category_name=category_name,
@@ -299,7 +326,7 @@ def create_run(
 
     now = _now()
     conflicts = list_run_channels(
-        target_api,
+        admin_api,
         guild_id=guild_id,
         category_id=resolved_category_id,
         parent_channel_id=resolved_parent_channel_id,
@@ -333,7 +360,7 @@ def create_run(
 
     if resource_type == "thread":
         resource_name = lease.to_thread_name()
-        created_channel = target_api.create_thread(
+        created_channel = admin_api.create_thread(
             resolved_parent_channel_id,
             {
                 "name": resource_name,
@@ -343,13 +370,17 @@ def create_run(
         )
     else:
         resource_name = f"{channel_prefix}-{run_id}"[:100]
-        created_channel = target_api.create_guild_channel(
+        created_channel = admin_api.create_guild_channel(
             guild_id,
             {
                 "name": resource_name,
                 "type": 0,
                 "parent_id": str(resolved_category_id),
                 "topic": lease.to_topic(),
+                "permission_overwrites": _channel_permission_overwrites(
+                    test_bot_id=test_bot_id,
+                    target_bot_id=target_bot_id,
+                ),
             },
         )
     channel_id = int(created_channel["id"])
@@ -365,6 +396,7 @@ def create_run(
         "channel_prefix": channel_prefix,
         "test_bot_id": test_bot_id,
         "target_bot_id": target_bot_id,
+        "admin_bot_id": admin_bot_id,
         "channel": {
             "id": channel_id,
             "name": str(created_channel.get("name", resource_name)),
@@ -706,13 +738,43 @@ def _build_test_api() -> DiscordAPI:
     return DiscordAPI(token)
 
 
-def _build_target_api() -> DiscordAPI:
+def _resolve_target_token(*, mode: str | None = None) -> str:
+    run_mode = str(mode or os.environ.get("DISCORD_E2E_MODE", "")).strip().lower()
+    if run_mode == "windows_prod_canary":
+        token = str(os.environ.get("DISCORD_TOKEN", "")).strip()
+        if not token:
+            raise DiscordE2ERunManagerError(
+                "DISCORD_TOKEN is required for windows_prod_canary target provisioning"
+            )
+        return token
+
     token = str(
         os.environ.get("DISCORD_TOKEN_TEST", "") or os.environ.get("DISCORD_TOKEN", "")
     ).strip()
     if not token:
         raise DiscordE2ERunManagerError("DISCORD_TOKEN_TEST or DISCORD_TOKEN is required")
-    return DiscordAPI(token)
+    return token
+
+
+def _build_target_api() -> DiscordAPI:
+    return DiscordAPI(_resolve_target_token())
+
+
+def _resolve_admin_token() -> str:
+    token = str(
+        os.environ.get("DISCORD_E2E_ADMIN_TOKEN", "")
+        or os.environ.get("DISCORD_TOKEN", "")
+        or os.environ.get("TEST_DISCORD_BOT_TOKEN", "")
+    ).strip()
+    if not token:
+        raise DiscordE2ERunManagerError(
+            "DISCORD_E2E_ADMIN_TOKEN, DISCORD_TOKEN, or TEST_DISCORD_BOT_TOKEN is required"
+        )
+    return token
+
+
+def _build_admin_api() -> DiscordAPI:
+    return DiscordAPI(_resolve_admin_token())
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -722,6 +784,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "start":
         test_api = _build_test_api()
         target_api = _build_target_api()
+        admin_api = _build_admin_api()
         try:
             manifest, exports = create_run(
                 runs_root=Path(args.runs_root),
@@ -734,6 +797,7 @@ def main(argv: list[str] | None = None) -> int:
                 mode=args.mode,
                 test_api=test_api,
                 target_api=target_api,
+                admin_api=admin_api,
                 parent_run_id=str(os.environ.get("E2E_RUN_ID", "")).strip() or None,
             )
             if args.shell:
@@ -746,10 +810,11 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             test_api.close()
             target_api.close()
+            admin_api.close()
 
     if args.command == "cleanup":
         test_api = _build_test_api()
-        admin_api = _build_target_api()
+        admin_api = _build_admin_api()
         try:
             payload = cleanup_run(
                 manifest_path=Path(args.manifest),
@@ -765,7 +830,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "janitor":
         test_api = _build_test_api()
-        admin_api = _build_target_api()
+        admin_api = _build_admin_api()
         try:
             result = janitor(
                 runs_root=Path(args.runs_root),
