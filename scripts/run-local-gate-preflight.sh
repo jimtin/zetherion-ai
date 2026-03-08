@@ -142,6 +142,15 @@ for requirement_id in "${REQUIREMENT_IDS[@]}"; do
             echo "[local-gate] Running endpoint docs bundle check..."
             DOCS_BUNDLE_BASE_SHA="$BASE_REF" "$PYTHON_BIN" scripts/check-endpoint-doc-bundle.py
             ;;
+        docs-contract)
+            echo "[local-gate] Running documentation contract suite..."
+            scripts/check-docs-nav.py
+            scripts/check-docs-links.py
+            scripts/check-route-doc-parity.py
+            scripts/check-cgs-route-doc-parity.py
+            scripts/check-env-doc-parity.py
+            "$PYTHON_BIN" -m mkdocs build --strict
+            ;;
         mypy-src)
             echo "[local-gate] Running strict mypy for src/zetherion_ai..."
             "$PYTHON_BIN" -m mypy src/zetherion_ai --config-file=pyproject.toml

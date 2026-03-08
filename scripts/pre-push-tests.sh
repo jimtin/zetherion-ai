@@ -518,7 +518,12 @@ fi
 start_static_check "pipeline contract" "$PYTHON_BIN scripts/check_pipeline_contract.py"
 start_static_check "optional service guards" "$PYTHON_BIN scripts/check-optional-service-guards.py"
 start_static_check "endpoint docs bundle" "$PYTHON_BIN scripts/check-endpoint-doc-bundle.py"
+start_static_check "docs nav" "scripts/check-docs-nav.py"
+start_static_check "docs links" "scripts/check-docs-links.py"
+start_static_check "route doc parity" "scripts/check-route-doc-parity.py"
 start_static_check "cgs route-doc parity" "$PYTHON_BIN scripts/check-cgs-route-doc-parity.py"
+start_static_check "env doc parity" "scripts/check-env-doc-parity.py"
+start_static_check "docs build strict" "$PYTHON_BIN -m mkdocs build --strict"
 
 if command -v gitleaks >/dev/null 2>&1; then
     start_static_check "gitleaks" "gitleaks detect --no-git --redact --config=.gitleaks.toml"

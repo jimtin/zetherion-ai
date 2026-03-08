@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - Documentation contract parity and local gate coverage (2026-03-08)
+- Impacted capability IDs:
+  - `ci.local_preflight`
+  - `ci.receipt.validation`
+- Impacted workflow scenario IDs:
+  - `pr.receipt_script_change_requires_regression_pack`
+  - `pr.docs_only_fast_path`
+- Added the missing Discord E2E and Windows Discord canary environment variables to `.env.example` and the configuration reference so post-merge `Documentation Contracts` no longer fail on env-doc parity drift.
+- Hardened the local deterministic gates so docs changes now run the full documentation contract suite, including `mkdocs build --strict`, before push.
+
 ### Fixed - Trust storage schema bootstrap concurrency in container startup (2026-03-08)
 - Serialized canonical trust schema creation with a PostgreSQL advisory transaction lock so concurrent service startup cannot race while creating `control_plane.trust_*` tables.
 - Added unit coverage for schema-specific advisory lock selection and trust-storage bootstrap sequencing so this startup failure is caught locally before the full containerized gate.
