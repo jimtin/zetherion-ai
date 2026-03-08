@@ -1778,10 +1778,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#ci-cost-strategy" class="md-nav__link">
+  <a href="#current-github-proof-and-cost-contract" class="md-nav__link">
     <span class="md-ellipsis">
       
-        CI Cost Strategy
+        Current GitHub Proof and Cost Contract
       
     </span>
   </a>
@@ -1843,7 +1843,7 @@
 
 <h1 id="canonical-test-gate-and-ci-cost-controls">Canonical Test Gate and CI Cost Controls<a class="headerlink" href="#canonical-test-gate-and-ci-cost-controls" title="Permanent link">&para;</a></h1>
 <h2 id="purpose">Purpose<a class="headerlink" href="#purpose" title="Permanent link">&para;</a></h2>
-<p>This document defines the single supported local full-test procedure and the CI failure-attribution policy used to explain why a CI failure was or was not caught locally before deployment.</p>
+<p>This document defines the single supported local full-test procedure, the committed local-receipt proof model, and the CI failure-attribution policy used to explain why a CI failure was or was not caught locally before deployment. Segment-level rollout metadata now lives in <code>.ci/ci_hardening_workstream_manifest.json</code>, and the reviewed rejection baseline is recorded in <code>docs/development/ci-hardening-baseline.md</code>.</p>
 <h2 id="canonical-local-gate">Canonical Local Gate<a class="headerlink" href="#canonical-local-gate" title="Permanent link">&para;</a></h2>
 <p>Run this command for full validation:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>./scripts/test-full.sh
@@ -1854,7 +1854,8 @@
 <p>The canonical gate delegates to <code>scripts/pre-push-tests.sh</code> and enforces:</p>
 <ol>
 <li>strict required tests</li>
-<li>required Discord E2E</li>
+<li>required Docker and Discord E2E smoke preflight before the long E2E fan-out</li>
+<li>required Discord E2E through the blessed isolated-channel wrapper (one ephemeral channel and one target-bot lease per run)</li>
 <li>fail-fast stage exits</li>
 <li>automatic test-environment teardown</li>
 </ol>
@@ -1872,7 +1873,8 @@
 <ol>
 <li>stall threshold: 45 seconds without process output</li>
 <li>stalled/timeout lanes are terminated and diagnostics are captured</li>
-<li>lane executions are appended to <code>docs/migration/test-execution-log.md</code></li>
+<li>lane executions are appended to <code>docs/migration/test-execution-log.md</code> by default</li>
+<li>local-gate preflight lanes write to <code>artifacts/testing/local-gate-preflight-log.md</code> so validation receipts do not dirty the commit being validated</li>
 </ol>
 <p>Lane order:</p>
 <ol>
@@ -1897,19 +1899,27 @@
 <li>run <code>scripts/run-local-gate-preflight.sh</code> against the exact <code>&lt;base, head&gt;</code> push range</li>
 <li>then execute <code>./scripts/test-full.sh</code></li>
 </ol>
-<p>The preflight is driven by the source-controlled manifest at <code>.ci/local_gate_manifest.json</code>. It currently requires local fast-fail coverage for:</p>
+<p>The preflight is driven by the source-controlled manifest at <code>.ci/local_gate_manifest.json</code>. Its bounded lane receipts are written to <code>artifacts/testing/local-gate-preflight-log.md</code> so exact-SHA validation does not mutate tracked files. It currently requires local fast-fail coverage for:</p>
 <ul>
 <li>endpoint docs bundle changes on API/CGS route files</li>
 <li>strict <code>mypy src/zetherion_ai --config-file=pyproject.toml</code> for runtime Python changes</li>
-<li>bounded <code>unit-full</code> for shared model/context/storage/startup paths that can move the repo-wide coverage floor</li>
+<li>bounded <code>unit-full</code> for shared trust/personal/profile/portfolio/routing/queue/model/context/storage/startup paths that can move the repo-wide coverage floor</li>
 <li>targeted Qdrant/data-plane regression tests</li>
 <li>targeted replay-store regression tests</li>
+<li>targeted receipt/workflow-support regression suites for receipt validation, local gate enforcement, and CI failure-attribution changes</li>
+<li>Windows host compatibility guards for PowerShell scripts that must run under <code>powershell.exe</code> as well as <code>pwsh</code></li>
+<li>targeted Windows deploy-preflight regression suites for deployment-receipt validation and optional-service guard changes</li>
 </ul>
-<h2 id="ci-cost-strategy">CI Cost Strategy<a class="headerlink" href="#ci-cost-strategy" title="Permanent link">&para;</a></h2>
-<p>The CI workflow applies maximum reduction defaults:</p>
+<h2 id="current-github-proof-and-cost-contract">Current GitHub Proof and Cost Contract<a class="headerlink" href="#current-github-proof-and-cost-contract" title="Permanent link">&para;</a></h2>
+<p>The active PR contract today is:</p>
 <ol>
-<li>heavy jobs run in <code>schedule</code>/<code>workflow_dispatch</code> only</li>
-<li>docs and integration jobs are path-gated</li>
+<li>current required branch checks are <code>CI Summary</code>, <code>Linting &amp; Formatting</code>, <code>Pipeline Contract</code>, <code>Secret Scan (Gitleaks)</code>, and <code>Zetherion Boundary Check</code></li>
+<li>required E2E on PRs is enforced by committed local receipt validation, not by running full E2E suites directly in GitHub Actions</li>
+<li>PR fast path is limited to <code>detect-changes</code>, <code>risk-classifier</code>, <code>lint</code>, <code>secret-scan</code>, <code>pipeline-contract</code>, <code>zetherion-boundary-check</code>, <code>required-e2e-gate</code>, <code>CI Summary</code>, and <code>CI Failure Attribution</code></li>
+<li>heavy local-equivalent jobs such as unit, type-check, security, docs-contract, and docker-build are deferred off PRs to push or weekly/manual verification runs</li>
+<li>weekly/manual runs remain the place for the heaviest independent verification lanes, including CodeQL and the broader heavy-job graph on <code>ci.yml</code></li>
+<li>the Windows host runs an isolated Discord production canary on startup and every 6 hours by default, using the same blessed wrapper contract but a synthetic test principal and isolated canary channels</li>
+<li>documentation deployment now runs on <code>main</code> only when docs-site sources change or via manual dispatch, and it no longer reruns docs-contract validation already enforced elsewhere</li>
 <li>in-progress runs are canceled on new commits via <code>concurrency</code></li>
 </ol>
 <h2 id="failure-attribution">Failure Attribution<a class="headerlink" href="#failure-attribution" title="Permanent link">&para;</a></h2>
@@ -1936,9 +1946,13 @@
 <p>After pushing, completion must be proven by CI/CD results for the exact commit SHA:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>./scripts/check-cicd-success.sh<span class="w"> </span>--sha<span class="w"> </span>&lt;commit_sha&gt;<span class="w"> </span>--ref<span class="w"> </span>&lt;ref&gt;
 </code></pre></div>
+<p>When verifying a freshly promoted <code>main</code> commit immediately after merge, optional polling is available so pending <code>CI Gate</code> or <code>Deploy Windows</code> evidence is reported clearly instead of as a missing-evidence failure:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./scripts/check-cicd-success.sh<span class="w"> </span>--sha<span class="w"> </span>&lt;commit_sha&gt;<span class="w"> </span>--ref<span class="w"> </span>main<span class="w"> </span>--wait-seconds<span class="w"> </span><span class="m">180</span>
+</code></pre></div>
 <p>Rules:</p>
 <ol>
-<li>All refs require successful <code>CI/CD Pipeline</code>.</li>
+<li>Non-<code>main</code> refs require successful <code>CI/CD Pipeline</code> for the exact SHA.</li>
+<li><code>main</code> accepts either successful <code>CI/CD Pipeline</code> for the exact SHA or successful <code>CI Gate / CI Summary</code> plus <code>CI Gate / Required E2E Gate</code> check-runs for that exact SHA.</li>
 <li><code>main</code> additionally requires successful <code>Deploy Windows</code> and a valid <code>deployment-receipt.json</code> artifact.</li>
 <li><code>main</code> receipt checks must all be true:</li>
 <li><code>containers_healthy</code></li>
@@ -1950,7 +1964,7 @@
 <li><code>docker_service_persistent</code></li>
 </ol>
 <p>If CI failure attribution includes <code>SHOULD_HAVE_BEEN_CAUGHT_LOCALLY</code> or <code>PIPELINE_CONTRACT_GAP</code>, enforce local gate updates in the same fix cycle:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>./scripts/require-local-gate-update.sh<span class="w"> </span>--sha<span class="w"> </span>&lt;failed_commit_sha&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>./scripts/require-local-gate-update.sh<span class="w"> </span>--sha<span class="w"> </span>&lt;failed_commit_sha&gt;
 </code></pre></div>
 
 

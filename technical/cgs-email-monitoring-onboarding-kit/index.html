@@ -2177,7 +2177,9 @@
 <li>Autonomous merge execution route was added under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/automerge/execute</code> with trust-policy guards.</li>
 <li>Internal trust-policy gating now enforces deny-by-default for sensitive namespaces and approval flow reuse for high-risk actions.</li>
 <li>Worker operator control routes were added under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*</code>
-  for node lifecycle operations (quarantine/unquarantine), job retry/cancel, and worker event auditing.</li>
+  for node lifecycle operations (quarantine/unquarantine), delegation grants, job retry/cancel, and worker event auditing.</li>
+<li>Worker delegation grants were added under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*</code>
+  to enforce TTL-scoped repo and Codex session access for sub-workers without widening datastore access.</li>
 <li>Worker messaging grants were added under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*</code>
   to enforce deny-by-default worker WhatsApp access with TTL-scoped per-node/per-chat exceptions.</li>
 <li>Internal tenant provisioning retries are now idempotent on <code>cgs_tenant_id</code>, and the lifecycle response exposes <code>isolation_stage</code> plus <code>provisioning_status</code> so rollout state can be tracked during onboarding.</li>

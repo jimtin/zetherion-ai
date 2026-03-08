@@ -1653,6 +1653,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#current-required-pr-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current Required PR Checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#additional-main-branch-automation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1709,10 +1720,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#4-verify-announcement-notification-path" class="md-nav__link">
+  <a href="#4-run-the-windows-discord-production-canary-manually" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. Verify announcement notification path
+        4. Run the Windows Discord production canary manually
       
     </span>
   </a>
@@ -1720,10 +1731,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#5-troubleshoot-cgs-publish-contract-and-promotions-pipeline" class="md-nav__link">
+  <a href="#5-verify-announcement-notification-path" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Troubleshoot CGS publish contract and promotions pipeline
+        5. Verify announcement notification path
       
     </span>
   </a>
@@ -1731,10 +1742,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#6-promotions-task-strict-mode" class="md-nav__link">
+  <a href="#6-troubleshoot-cgs-publish-contract-and-promotions-pipeline" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. Promotions-task strict mode
+        6. Troubleshoot CGS publish contract and promotions pipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-promotions-task-strict-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Promotions-task strict mode
       
     </span>
   </a>
@@ -2362,6 +2384,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#current-required-pr-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current Required PR Checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#additional-main-branch-automation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2418,10 +2451,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#4-verify-announcement-notification-path" class="md-nav__link">
+  <a href="#4-run-the-windows-discord-production-canary-manually" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. Verify announcement notification path
+        4. Run the Windows Discord production canary manually
       
     </span>
   </a>
@@ -2429,10 +2462,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#5-troubleshoot-cgs-publish-contract-and-promotions-pipeline" class="md-nav__link">
+  <a href="#5-verify-announcement-notification-path" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Troubleshoot CGS publish contract and promotions pipeline
+        5. Verify announcement notification path
       
     </span>
   </a>
@@ -2440,10 +2473,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#6-promotions-task-strict-mode" class="md-nav__link">
+  <a href="#6-troubleshoot-cgs-publish-contract-and-promotions-pipeline" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. Promotions-task strict mode
+        6. Troubleshoot CGS publish contract and promotions pipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-promotions-task-strict-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Promotions-task strict mode
       
     </span>
   </a>
@@ -2698,20 +2742,19 @@
 <a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>                             |
 <a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>                             v
 <a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>+---------------------------------------------------------------+
-<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>|  Tier 3: GitHub Actions CI/CD (~5-10 min)                     |
-<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>|  Runs: on push/PR to main or develop                          |
-<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>|  Checks: lint, type-check, security (Bandit + Semgrep),       |
-<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>|          dependency audit, license compliance, pre-commit,     |
-<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>|          tests (Python 3.12 + 3.13 matrix), Docker build +    |
-<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>|          Trivy scan, SBOM generation                           |
-<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>|  Effect: blocks PR merge if any required check fails          |
-<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>+---------------------------------------------------------------+
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>|  Tier 3: GitHub Actions CI/CD (~1-3 min fast path on PRs)     |
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>|  Runs: on push/PR to main or develop, plus schedule/manual    |
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>|  Checks: PR fast-path invariants, diff secret scan, boundary  |
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>|          checks, and exact-SHA receipt validation for         |
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>|          required E2E evidence                                |
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>|  Effect: blocks PR merge using the active required-check set  |
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>+---------------------------------------------------------------+
 </code></pre></div>
 <p><strong>Design philosophy:</strong></p>
 <ul>
-<li><strong>Fast feedback locally</strong> -- pre-commit catches formatting and security issues in seconds.</li>
-<li><strong>Confidence before push</strong> -- local gates catch failures before CI, including a full containerized validation path.</li>
-<li><strong>Comprehensive CI</strong> -- GitHub Actions catches cross-version issues, container problems, and dependency vulnerabilities.</li>
+<li><strong>Fast feedback locally</strong> -- pre-commit catches formatting and hygiene issues in seconds.</li>
+<li><strong>Confidence before push</strong> -- local gates produce the authoritative heavy-lane evidence, including the required local receipt path for substantial E2E work.</li>
+<li><strong>Cost-aware GitHub validation</strong> -- PRs run only the fast-path invariant checks plus committed local-receipt validation; heavier local-equivalent jobs are deferred to push or scheduled/manual runs.</li>
 </ul>
 <h2 id="pre-commit-hooks">Pre-Commit Hooks<a class="headerlink" href="#pre-commit-hooks" title="Permanent link">&para;</a></h2>
 <p>Pre-commit hooks run automatically on every <code>git commit</code>. They are defined in <code>.pre-commit-config.yaml</code> and managed by the <a href="https://pre-commit.com/">pre-commit</a> framework.</p>
@@ -2823,7 +2866,9 @@
 <li>Static analysis (<code>ruff</code>, <code>bandit</code>, <code>gitleaks</code>, <code>hadolint</code>, license checks)</li>
 <li>Unit tests + <code>mypy</code> + <code>pip-audit</code> (parallel)</li>
 <li>In-process integration tests</li>
-<li>Docker test environment rebuild/start (<code>docker-compose.test.yml</code>)</li>
+<li>Isolated Docker test environment provisioning via <code>scripts/e2e_run_manager.py</code> + <code>docker-compose.test.yml</code></li>
+<li>Docker test environment rebuild/start against the per-run Compose project</li>
+<li>Docker and Discord E2E smoke preflight against the externally managed per-run test stack</li>
 <li>Full Docker E2E and Discord E2E suites</li>
 </ol>
 <p>Run it directly:</p>
@@ -2832,19 +2877,22 @@
 <p>Run the changed-file preflight directly when you need fast feedback before the full gate:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>bash<span class="w"> </span>scripts/run-local-gate-preflight.sh<span class="w"> </span>--base-ref<span class="w"> </span>origin/main<span class="w"> </span>--head-ref<span class="w"> </span>HEAD
 </code></pre></div>
+<p>Each invocation now provisions a unique Compose project, host-port map, and stack root under <code>.artifacts/e2e-runs/</code> before Docker-backed E2E begins. Residual stacks are cleaned through the same run manager and an expired-run janitor path.</p>
 <p>The preflight is driven by the source-controlled manifest at <code>.ci/local_gate_manifest.json</code>. It currently requires local fast-fail coverage for:</p>
 <ul>
 <li>endpoint docs bundle changes on API/CGS route files</li>
 <li>strict <code>mypy src/zetherion_ai --config-file=pyproject.toml</code> for runtime Python changes</li>
-<li>bounded <code>unit-full</code> for shared model/context/storage/startup paths that can move the repo-wide coverage floor</li>
+<li>bounded <code>unit-full</code> for shared trust/personal/profile/portfolio/routing/queue/model/context/storage/startup paths that can move the repo-wide coverage floor</li>
 <li>targeted Qdrant/data-plane regression tests</li>
 <li>targeted replay-store regression tests</li>
+<li>targeted receipt/workflow-support regression suites for receipt validation, local gate enforcement, and CI failure-attribution changes</li>
+<li>targeted Windows deploy-preflight regression suites for deployment-receipt validation and optional-service guard changes</li>
 </ul>
 <p>Protected shared-infra and shared-runtime coverage-sensitive paths must stay mapped in <code>.ci/local_gate_manifest.json</code>; local validation fails fast when a protected path changes without an explicit local gate mapping.</p>
 <p>When a PR is classified <code>e2e_required=true</code>, generate local receipt evidence for CI after the full local gate passes:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>bash<span class="w"> </span>scripts/local-required-e2e-receipt.sh
 </code></pre></div>
-<p>This writes <code>.ci/e2e-receipt.json</code> (head-SHA bound) and must be committed with the PR.</p>
+<p>This writes <code>.ci/e2e-receipt.json</code> (head-SHA bound) and must be committed with the PR. Segment 5 extends the receipt with <code>e2e_run_id</code>, <code>compose_project</code>, <code>stack_root</code>, and <code>docker_cleanup_status</code> so CI and operators can trace isolated Docker-backed E2E runs.</p>
 <h3 id="setup_1">Setup<a class="headerlink" href="#setup_1" title="Permanent link">&para;</a></h3>
 <p>The pre-push hook is installed as a symlink:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>ln<span class="w"> </span>-sf<span class="w"> </span>../../.git-hooks/pre-push<span class="w"> </span>.git/hooks/pre-push
@@ -2854,7 +2902,7 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># Skip pre-push hook (not recommended)</span>
 <a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>git<span class="w"> </span>push<span class="w"> </span>--no-verify<span class="w"> </span>origin<span class="w"> </span>main
 </code></pre></div>
-<p>If you bypass the pre-push hook, GitHub Actions will still catch failures. However, this means slower feedback -- you will not discover test failures until CI runs 5-10 minutes later.</p>
+<p>Normal workflows must not bypass the pre-push hook. If you do, GitHub may still reject the PR through fast invariant checks, path-gated jobs, or receipt validation, but that is treated as a process breach because it wastes CI minutes and delays feedback.</p>
 <h2 id="github-actions">GitHub Actions<a class="headerlink" href="#github-actions" title="Permanent link">&para;</a></h2>
 <p>The CI/CD pipeline is defined in <code>.github/workflows/ci.yml</code>.</p>
 <h3 id="workflow-triggers">Workflow Triggers<a class="headerlink" href="#workflow-triggers" title="Permanent link">&para;</a></h3>
@@ -2880,6 +2928,17 @@
 </tr>
 </tbody>
 </table>
+<h3 id="current-required-pr-checks">Current Required PR Checks<a class="headerlink" href="#current-required-pr-checks" title="Permanent link">&para;</a></h3>
+<p>The active <code>main</code> branch ruleset currently requires these check contexts:</p>
+<ul>
+<li><code>CI Summary</code></li>
+<li><code>Linting &amp; Formatting</code></li>
+<li><code>Pipeline Contract</code></li>
+<li><code>Secret Scan (Gitleaks)</code></li>
+<li><code>Zetherion Boundary Check</code></li>
+</ul>
+<p>The <code>required-e2e-gate</code> job validates the committed local receipt contract when the risk classifier marks a PR <code>e2e_required=true</code>; GitHub does not execute the full E2E suites directly on PRs. Committed receipts use <code>head_sha=local</code> because tracked receipt files cannot self-hash the final commit without recursion. The PR fast path is now limited to <code>detect-changes</code>, <code>risk-classifier</code>, <code>lint</code>, <code>secret-scan</code>, <code>pipeline-contract</code>, <code>zetherion-boundary-check</code>, <code>required-e2e-gate</code>, <code>CI Summary</code>, and <code>CI Failure Attribution</code>.</p>
+<p>Weekly or manual GitHub runs remain the independent heavy-verification cadence for <code>type-check</code>, <code>security</code>, <code>semgrep</code>, <code>dependency-audit</code>, <code>license-check</code>, <code>pre-commit</code>, <code>docs-contract</code>, <code>unit-test</code>, <code>integration-test</code>, <code>docker-build-test</code>, and CodeQL.</p>
 <h3 id="additional-main-branch-automation">Additional Main-Branch Automation<a class="headerlink" href="#additional-main-branch-automation" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -2892,13 +2951,23 @@
 <tbody>
 <tr>
 <td><code>docs.yml</code> (<code>Deploy Documentation</code>)</td>
-<td>every push to <code>main</code></td>
-<td>Rebuild + republish full docs suite on each <code>main</code> merge</td>
+<td>push to <code>main</code> when docs-site sources change, or manual dispatch</td>
+<td>Build strict MkDocs output and republish GitHub Pages without rerunning docs-contract checks</td>
+</tr>
+<tr>
+<td><code>codeql.yml</code> (<code>CodeQL</code>)</td>
+<td>weekly schedule or manual dispatch</td>
+<td>Independent GitHub-native code scanning, kept off the PR fast path</td>
 </tr>
 <tr>
 <td>Windows local promotions worker (<code>scripts/windows/promotions-runner.ps1</code> + <code>scripts/windows/promotions-watch.ps1</code>)</td>
 <td>successful Windows deployment receipt for <code>main</code> SHA</td>
 <td>Validate deployment receipt, build merge intelligence, generate/publish CGS blog, and auto-increment GitHub release</td>
+</tr>
+<tr>
+<td>Windows Discord production canary (<code>scripts/windows/discord-canary-runner.ps1</code>)</td>
+<td>startup plus every 6 hours by default on the Windows host</td>
+<td>Run the isolated full-parity Discord E2E canary against the production bot, persist receipts/logs, and degrade host health on failure without rolling back deploys</td>
 </tr>
 </tbody>
 </table>
@@ -2950,99 +3019,116 @@
 - <code>startup_task_registered=true</code>
 - <code>watchdog_task_registered=true</code>
 - <code>promotions_task_registered=true</code>
+- <code>canary_task_registered=true</code>
 - <code>all_tasks_registered=true</code></p>
-<h4 id="4-verify-announcement-notification-path">4. Verify announcement notification path<a class="headerlink" href="#4-verify-announcement-notification-path" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">python</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">windows</span><span class="p">\</span><span class="n">announcement-emit</span><span class="p">.</span><span class="n">py</span> <span class="p">`</span>
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>  <span class="p">-</span><span class="n">-event</span> <span class="n">deploy</span> <span class="p">`</span>
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>  <span class="p">-</span><span class="n">-sha</span> <span class="s2">&quot;&lt;sha&gt;&quot;</span> <span class="p">`</span>
-<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>  <span class="p">-</span><span class="n">-status</span> <span class="n">success</span> <span class="p">`</span>
-<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>  <span class="p">-</span><span class="n">-run-url</span> <span class="s2">&quot;https://github.com/jimtin/zetherion-ai/actions/runs/&lt;run-id&gt;&quot;</span> <span class="p">`</span>
-<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>  <span class="p">-</span><span class="n">-stage-results</span> <span class="s2">&quot;manual=smoke&quot;</span> <span class="p">`</span>
-<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>  <span class="p">-</span><span class="n">-dry-run</span>
-<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>
-<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="n">pwsh</span> <span class="o">-File</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">windows</span><span class="p">\</span><span class="n">announcements-flush</span><span class="p">.</span><span class="n">ps1</span> <span class="p">`</span>
-<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>  <span class="n">-DeployPath</span> <span class="s2">&quot;C:\ZetherionAI&quot;</span> <span class="p">`</span>
-<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>  <span class="n">-OutputPath</span> <span class="s2">&quot;C:\ZetherionAI\data\announcements\flush-manual.json&quot;</span>
+<h4 id="4-run-the-windows-discord-production-canary-manually">4. Run the Windows Discord production canary manually<a class="headerlink" href="#4-run-the-windows-discord-production-canary-manually" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">pwsh</span> <span class="o">-File</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">windows</span><span class="p">\</span><span class="n">discord-canary-runner</span><span class="p">.</span><span class="n">ps1</span> <span class="p">`</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>  <span class="n">-DeployPath</span> <span class="s2">&quot;C:\ZetherionAI&quot;</span> <span class="p">`</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>  <span class="n">-OutputPath</span> <span class="s2">&quot;C:\ZetherionAI\data\discord-canary\manual-run.json&quot;</span> <span class="p">`</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>  <span class="n">-StatePath</span> <span class="s2">&quot;C:\ZetherionAI\data\discord-canary\state.json&quot;</span> <span class="p">`</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>  <span class="n">-LogPath</span> <span class="s2">&quot;C:\ZetherionAI\data\discord-canary\manual-run.log&quot;</span> <span class="p">`</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>  <span class="n">-ResultPath</span> <span class="s2">&quot;C:\ZetherionAI\data\discord-canary\manual-discord-result.json&quot;</span>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="nb">Get-Content</span> <span class="s2">&quot;C:\ZetherionAI\data\discord-canary\manual-run.json&quot;</span>
+</code></pre></div>
+<p>Expected outcomes:
+- <code>status=success</code>: canary ran and cleaned its isolated synthetic channel
+- <code>status=cleanup_degraded</code>: test execution passed, but channel or synthetic artifact cleanup needs attention
+- <code>status=lease_contended</code>: another active canary or E2E run holds the target-bot lease; the scheduled task should retry later
+- <code>status=failed|timeout|runner_error</code>: production-parity canary failed and should surface in host verification plus announcements</p>
+<p>The host verifier reads <code>C:\ZetherionAI\data\discord-canary\last-run.json</code> and <code>state.json</code>, treating stale or failing canaries as degraded health rather than deploy rollback triggers.</p>
+<h4 id="5-verify-announcement-notification-path">5. Verify announcement notification path<a class="headerlink" href="#5-verify-announcement-notification-path" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">python</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">windows</span><span class="p">\</span><span class="n">announcement-emit</span><span class="p">.</span><span class="n">py</span> <span class="p">`</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>  <span class="p">-</span><span class="n">-event</span> <span class="n">deploy</span> <span class="p">`</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>  <span class="p">-</span><span class="n">-sha</span> <span class="s2">&quot;&lt;sha&gt;&quot;</span> <span class="p">`</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>  <span class="p">-</span><span class="n">-status</span> <span class="n">success</span> <span class="p">`</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>  <span class="p">-</span><span class="n">-run-url</span> <span class="s2">&quot;https://github.com/jimtin/zetherion-ai/actions/runs/&lt;run-id&gt;&quot;</span> <span class="p">`</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>  <span class="p">-</span><span class="n">-stage-results</span> <span class="s2">&quot;manual=smoke&quot;</span> <span class="p">`</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>  <span class="p">-</span><span class="n">-dry-run</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="n">pwsh</span> <span class="o">-File</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">windows</span><span class="p">\</span><span class="n">announcements-flush</span><span class="p">.</span><span class="n">ps1</span> <span class="p">`</span>
+<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>  <span class="n">-DeployPath</span> <span class="s2">&quot;C:\ZetherionAI&quot;</span> <span class="p">`</span>
+<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>  <span class="n">-OutputPath</span> <span class="s2">&quot;C:\ZetherionAI\data\announcements\flush-manual.json&quot;</span>
 </code></pre></div>
 <p>Expected statuses:
 - <code>dry_run</code> or <code>deduped</code>: secret resolution and idempotency wiring are working.
 - <code>queued_non_blocking</code>: API path was unavailable and event was safely spooled for retry.</p>
-<h4 id="5-troubleshoot-cgs-publish-contract-and-promotions-pipeline">5. Troubleshoot CGS publish contract and promotions pipeline<a class="headerlink" href="#5-troubleshoot-cgs-publish-contract-and-promotions-pipeline" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">pwsh</span> <span class="o">-File</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">windows</span><span class="p">\</span><span class="n">promotions-runner</span><span class="p">.</span><span class="n">ps1</span> <span class="p">`</span>
-<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>  <span class="n">-Sha</span> <span class="s2">&quot;&lt;sha&gt;&quot;</span> <span class="p">`</span>
-<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>  <span class="n">-ReceiptPath</span> <span class="s2">&quot;C:\ZetherionAI\data\deployment-receipts\&lt;sha&gt;.json&quot;</span> <span class="p">`</span>
-<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>  <span class="n">-DeployPath</span> <span class="s2">&quot;C:\ZetherionAI&quot;</span> <span class="p">`</span>
-<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>  <span class="n">-OutputPath</span> <span class="s2">&quot;C:\ZetherionAI\data\promotions\last-run.json&quot;</span>
-<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>
-<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="n">python</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">windows</span><span class="p">\</span><span class="n">promotions-pipeline</span><span class="p">.</span><span class="n">py</span> <span class="p">`</span>
-<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>  <span class="p">-</span><span class="n">-sha</span> <span class="s2">&quot;&lt;sha&gt;&quot;</span> <span class="p">`</span>
-<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>  <span class="p">-</span><span class="n">-deploy-path</span> <span class="s2">&quot;C:\ZetherionAI&quot;</span> <span class="p">`</span>
-<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>  <span class="p">-</span><span class="n">-deployment-receipt</span> <span class="s2">&quot;C:\ZetherionAI\data\deployment-receipts\&lt;sha&gt;.json&quot;</span> <span class="p">`</span>
-<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>  <span class="p">-</span><span class="n">-data-root</span> <span class="s2">&quot;C:\ZetherionAI\data\promotions&quot;</span> <span class="p">`</span>
-<a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a>  <span class="p">-</span><span class="n">-repo</span> <span class="s2">&quot;jimtin/zetherion-ai&quot;</span>
+<h4 id="6-troubleshoot-cgs-publish-contract-and-promotions-pipeline">6. Troubleshoot CGS publish contract and promotions pipeline<a class="headerlink" href="#6-troubleshoot-cgs-publish-contract-and-promotions-pipeline" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="n">pwsh</span> <span class="o">-File</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">windows</span><span class="p">\</span><span class="n">promotions-runner</span><span class="p">.</span><span class="n">ps1</span> <span class="p">`</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>  <span class="n">-Sha</span> <span class="s2">&quot;&lt;sha&gt;&quot;</span> <span class="p">`</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>  <span class="n">-ReceiptPath</span> <span class="s2">&quot;C:\ZetherionAI\data\deployment-receipts\&lt;sha&gt;.json&quot;</span> <span class="p">`</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>  <span class="n">-DeployPath</span> <span class="s2">&quot;C:\ZetherionAI&quot;</span> <span class="p">`</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>  <span class="n">-OutputPath</span> <span class="s2">&quot;C:\ZetherionAI\data\promotions\last-run.json&quot;</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="n">python</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">windows</span><span class="p">\</span><span class="n">promotions-pipeline</span><span class="p">.</span><span class="n">py</span> <span class="p">`</span>
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>  <span class="p">-</span><span class="n">-sha</span> <span class="s2">&quot;&lt;sha&gt;&quot;</span> <span class="p">`</span>
+<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>  <span class="p">-</span><span class="n">-deploy-path</span> <span class="s2">&quot;C:\ZetherionAI&quot;</span> <span class="p">`</span>
+<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>  <span class="p">-</span><span class="n">-deployment-receipt</span> <span class="s2">&quot;C:\ZetherionAI\data\deployment-receipts\&lt;sha&gt;.json&quot;</span> <span class="p">`</span>
+<a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a>  <span class="p">-</span><span class="n">-data-root</span> <span class="s2">&quot;C:\ZetherionAI\data\promotions&quot;</span> <span class="p">`</span>
+<a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a>  <span class="p">-</span><span class="n">-repo</span> <span class="s2">&quot;jimtin/zetherion-ai&quot;</span>
 </code></pre></div>
 <p>Use these artifacts to diagnose failures:
 - <code>C:\ZetherionAI\data\promotions\analysis\&lt;sha&gt;.json</code>
 - <code>C:\ZetherionAI\data\promotions\receipts\&lt;sha&gt;.json</code>
 - <code>C:\ZetherionAI\data\promotions\state.json</code>
 - <code>C:\ZetherionAI\data\promotions\queue.json</code></p>
-<h4 id="6-promotions-task-strict-mode">6. Promotions-task strict mode<a class="headerlink" href="#6-promotions-task-strict-mode" title="Permanent link">&para;</a></h4>
+<h4 id="7-promotions-task-strict-mode">7. Promotions-task strict mode<a class="headerlink" href="#7-promotions-task-strict-mode" title="Permanent link">&para;</a></h4>
 <p><code>Deploy Windows</code> supports a strict gate toggle:
 - <code>WINDOWS_REQUIRE_PROMOTIONS_TASK=false</code> (default): missing promotions task is warning-only.
 - <code>WINDOWS_REQUIRE_PROMOTIONS_TASK=true</code>: receipt gate fails if <code>promotions_task_registered=false</code>.</p>
 <p>Keep the default during burn-in. Enable strict mode only after repeated successful deployments confirm task registration is stable.</p>
 <h3 id="jobs">Jobs<a class="headerlink" href="#jobs" title="Permanent link">&para;</a></h3>
 <p>The pipeline runs the following jobs. Jobs without dependency arrows run in parallel.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>+------------------+    +-------------------+    +-------------------+
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>|   lint (~5s)     |    | type-check (~10s) |    | security (~10s)   |
-<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>|  Ruff lint +     |    | mypy strict mode  |    | Bandit scan on    |
-<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>|  format check    |    | on src/           |    | src/              |
-<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>+------------------+    +-------------------+    +-------------------+
-<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>
-<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>+------------------+    +-------------------+    +-------------------+
-<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>| semgrep (~30s)   |    | dependency-audit  |    | license-check     |
-<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>| SAST analysis    |    | pip-audit with    |    | pip-licenses       |
-<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>| uploads SARIF    |    | --strict --desc   |    | allow-list check  |
-<a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a>+------------------+    +-------------------+    +-------------------+
-<a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a>
-<a id="__codelineno-14-13" name="__codelineno-14-13" href="#__codelineno-14-13"></a>+------------------+    +-------------------------------+
-<a id="__codelineno-14-14" name="__codelineno-14-14" href="#__codelineno-14-14"></a>| pre-commit (~30s)|    | test (~60s)                   |
-<a id="__codelineno-14-15" name="__codelineno-14-15" href="#__codelineno-14-15"></a>| All hooks via    |    | Python 3.12 + 3.13 matrix     |
-<a id="__codelineno-14-16" name="__codelineno-14-16" href="#__codelineno-14-16"></a>| pre-commit/action|    | pytest + coverage + Codecov   |
-<a id="__codelineno-14-17" name="__codelineno-14-17" href="#__codelineno-14-17"></a>+------------------+    +-------------------------------+
-<a id="__codelineno-14-18" name="__codelineno-14-18" href="#__codelineno-14-18"></a>
-<a id="__codelineno-14-19" name="__codelineno-14-19" href="#__codelineno-14-19"></a>+----------------------------------------------+
-<a id="__codelineno-14-20" name="__codelineno-14-20" href="#__codelineno-14-20"></a>| docker-build (~2 min)                        |
-<a id="__codelineno-14-21" name="__codelineno-14-21" href="#__codelineno-14-21"></a>| Build image, Trivy vulnerability scan,       |
-<a id="__codelineno-14-22" name="__codelineno-14-22" href="#__codelineno-14-22"></a>| SBOM generation, docker-compose config check |
-<a id="__codelineno-14-23" name="__codelineno-14-23" href="#__codelineno-14-23"></a>+----------------------------------------------+
-<a id="__codelineno-14-24" name="__codelineno-14-24" href="#__codelineno-14-24"></a>
-<a id="__codelineno-14-25" name="__codelineno-14-25" href="#__codelineno-14-25"></a>            +-------------------------------+
-<a id="__codelineno-14-26" name="__codelineno-14-26" href="#__codelineno-14-26"></a>            | summary (~5s)                 |
-<a id="__codelineno-14-27" name="__codelineno-14-27" href="#__codelineno-14-27"></a>            | Aggregates all job results    |
-<a id="__codelineno-14-28" name="__codelineno-14-28" href="#__codelineno-14-28"></a>            | Posts table to PR summary     |
-<a id="__codelineno-14-29" name="__codelineno-14-29" href="#__codelineno-14-29"></a>            | Fails if any job failed       |
-<a id="__codelineno-14-30" name="__codelineno-14-30" href="#__codelineno-14-30"></a>            +-------------------------------+
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>+------------------+    +-------------------+    +-------------------+
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>|   lint (~5s)     |    | type-check (~10s) |    | security (~10s)   |
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>|  Ruff lint +     |    | mypy strict mode  |    | Bandit scan on    |
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>|  format check    |    | on src/           |    | src/              |
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>+------------------+    +-------------------+    +-------------------+
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>+------------------+    +-------------------+    +-------------------+
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>| semgrep (~30s)   |    | dependency-audit  |    | license-check     |
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>| SAST analysis    |    | pip-audit with    |    | pip-licenses       |
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a>| uploads SARIF    |    | --strict --desc   |    | allow-list check  |
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>+------------------+    +-------------------+    +-------------------+
+<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a>
+<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a>+------------------+    +-------------------------------+
+<a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a>| pre-commit (~30s)|    | test (~60s)                   |
+<a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a>| All hooks via    |    | Python 3.12 + 3.13 matrix     |
+<a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a>| pre-commit/action|    | pytest + coverage + Codecov   |
+<a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a>+------------------+    +-------------------------------+
+<a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a>
+<a id="__codelineno-15-19" name="__codelineno-15-19" href="#__codelineno-15-19"></a>+----------------------------------------------+
+<a id="__codelineno-15-20" name="__codelineno-15-20" href="#__codelineno-15-20"></a>| docker-build (~2 min)                        |
+<a id="__codelineno-15-21" name="__codelineno-15-21" href="#__codelineno-15-21"></a>| Build image, Trivy vulnerability scan,       |
+<a id="__codelineno-15-22" name="__codelineno-15-22" href="#__codelineno-15-22"></a>| SBOM generation, docker-compose config check |
+<a id="__codelineno-15-23" name="__codelineno-15-23" href="#__codelineno-15-23"></a>+----------------------------------------------+
+<a id="__codelineno-15-24" name="__codelineno-15-24" href="#__codelineno-15-24"></a>
+<a id="__codelineno-15-25" name="__codelineno-15-25" href="#__codelineno-15-25"></a>            +-------------------------------+
+<a id="__codelineno-15-26" name="__codelineno-15-26" href="#__codelineno-15-26"></a>            | summary (~5s)                 |
+<a id="__codelineno-15-27" name="__codelineno-15-27" href="#__codelineno-15-27"></a>            | Aggregates all job results    |
+<a id="__codelineno-15-28" name="__codelineno-15-28" href="#__codelineno-15-28"></a>            | Posts table to PR summary     |
+<a id="__codelineno-15-29" name="__codelineno-15-29" href="#__codelineno-15-29"></a>            | Fails if any job failed       |
+<a id="__codelineno-15-30" name="__codelineno-15-30" href="#__codelineno-15-30"></a>            +-------------------------------+
 </code></pre></div>
 <h3 id="job-details">Job Details<a class="headerlink" href="#job-details" title="Permanent link">&para;</a></h3>
 <p><strong>lint</strong> -- Installs <code>ruff==0.8.4</code> and runs <code>ruff check</code> + <code>ruff format --check</code> against <code>src/</code> and <code>tests/</code>.</p>
-<p><strong>type-check</strong> -- Installs full project dependencies, then runs <code>mypy src/zetherion_ai --config-file=pyproject.toml</code> in strict mode.</p>
-<p><strong>security</strong> -- Runs <code>bandit -r src/ -c pyproject.toml</code> to detect common Python security issues.</p>
+<p><strong>type-check</strong> -- Installs full project dependencies, then runs <code>mypy src/zetherion_ai --config-file=pyproject.toml</code> in strict mode. This job is deferred off PRs and runs on push code changes plus scheduled/manual heavy verification.</p>
+<p><strong>security</strong> -- Runs <code>bandit -r src/ -c pyproject.toml</code> to detect common Python security issues. This job is deferred off PRs and runs on push code changes plus scheduled/manual heavy verification.</p>
 <p><strong>semgrep</strong> -- Runs Semgrep with <code>--config auto</code> for static application security testing. Uploads SARIF results to the GitHub Security tab.</p>
 <p><strong>dependency-audit</strong> -- Runs <code>pip-audit -r requirements.txt --strict --desc on</code> to check all dependencies for known CVEs.</p>
 <p><strong>license-check</strong> -- Runs <code>pip-licenses</code> to verify all dependency licenses are in the approved allow-list (MIT, BSD, Apache, ISC, PSF, MPL-2.0, Unlicense, CC0, Zlib).</p>
 <p><strong>pre-commit</strong> -- Runs all pre-commit hooks via the <code>pre-commit/action@v3</code> GitHub Action.</p>
-<p><strong>docs-contract</strong> -- Runs docs navigation/link checks and route/env parity checks, then builds docs with <code>mkdocs build --strict</code>.</p>
+<p><strong>docs-contract</strong> -- Runs docs navigation/link checks and route/env parity checks, then builds docs with <code>mkdocs build --strict</code>. This job is deferred off PRs and runs on push docs changes plus scheduled/manual verification.</p>
 <p><strong>pipeline-contract</strong> -- Validates CI pipeline-contract mappings plus endpoint docs bundle and announcement DM guardrails (<code>scripts/check-announcement-dm-guard.py</code>) to block direct <code>user.send(...)</code> regressions in announcement-producing paths.</p>
 <p><strong>risk-classifier</strong> -- Computes server-side <code>e2e_required=true|false</code> from changed-path policy. Ambiguous classifications fail-safe to <code>e2e_required=true</code>.</p>
-<p><strong>required-e2e-gate</strong> -- Always emits <code>e2e-contract-receipt</code> artifact. If <code>e2e_required=true</code>, CI validates committed local receipt evidence (<code>.ci/e2e-receipt.json</code>) for the PR head SHA. CI does not run full E2E suites directly.</p>
+<p><strong>required-e2e-gate</strong> -- Always emits <code>e2e-contract-receipt</code> artifact. If <code>e2e_required=true</code>, CI validates the committed local receipt contract (<code>.ci/e2e-receipt.json</code>). Committed receipts use <code>head_sha=local</code>, and the tested commit is recorded separately to avoid hash recursion. CI does not run full E2E suites directly.</p>
 <p><strong>zetherion-boundary-check</strong> -- Enforces Zetherion-only repository boundary and fails when top-level <code>cgs/**</code> UI paths are introduced.</p>
-<p><strong>test</strong> -- Matrix build across Python 3.12 and 3.13. Runs <code>pytest tests/ -m "not integration"</code> with coverage. Uploads coverage XML to Codecov (Python 3.12 only). Uploads HTML coverage report as a build artifact (retained 30 days).</p>
-<p><strong>docker-build</strong> -- Builds the Docker image using Buildx with GHA caching. Runs Trivy vulnerability scanner (CRITICAL + HIGH severity). Generates an SPDX SBOM via Anchore. Validates <code>docker-compose.yml</code> syntax. Uploads Trivy SARIF to GitHub Security tab and SBOM as a build artifact (retained 90 days).</p>
-<p><strong>summary</strong> -- Waits for all other jobs. Checks every job result. Posts a markdown results table to the PR summary. Exits with failure if any required job failed.</p>
+<p><strong>test</strong> -- Matrix build across Python 3.12 and 3.13. Runs <code>pytest tests/ -m "not integration"</code> with coverage. Uploads coverage XML to Codecov (Python 3.12 only). Uploads HTML coverage report as a build artifact (retained 30 days). This job is deferred off PRs and runs on push code changes plus scheduled/manual heavy verification.</p>
+<p><strong>docker-build</strong> -- Validates <code>docker-compose.yml</code> syntax and builds the Skills image. This job is deferred off PRs and runs on push Docker changes plus scheduled/manual verification.</p>
+<p><strong>summary</strong> -- Waits for all other jobs. On pull requests it evaluates only the fast-path contract jobs. On push/scheduled/manual runs it evaluates the full active job graph. Posts a markdown results table to the workflow summary and fails when the required contract for that event fails.</p>
 <h3 id="integration-test-control">Integration Test Control<a class="headerlink" href="#integration-test-control" title="Permanent link">&para;</a></h3>
 <p>Integration tests can be skipped by including <code>[skip integration]</code> in the commit message:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;docs: Update README [skip integration]&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;docs: Update README [skip integration]&quot;</span>
 </code></pre></div>
 <p><strong>When to skip:</strong>
 - Documentation-only changes
@@ -3167,12 +3253,12 @@
 <li><strong>Rotate the secret immediately.</strong> Regenerate the token/key in the provider dashboard (Discord Developer Portal, Google Cloud Console, Anthropic Dashboard, OpenAI Dashboard).</li>
 <li><strong>If already pushed</strong>, use BFG Repo-Cleaner to remove the secret from git history:</li>
 </ol>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>git<span class="w"> </span>clone<span class="w"> </span>--mirror<span class="w"> </span>git@github.com:user/repo.git
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>bfg<span class="w"> </span>--replace-text<span class="w"> </span>passwords.txt<span class="w"> </span>repo.git
-<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="nb">cd</span><span class="w"> </span>repo.git
-<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>git<span class="w"> </span>reflog<span class="w"> </span>expire<span class="w"> </span>--expire<span class="o">=</span>now<span class="w"> </span>--all
-<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>git<span class="w"> </span>gc<span class="w"> </span>--prune<span class="o">=</span>now<span class="w"> </span>--aggressive
-<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>git<span class="w"> </span>push
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>git<span class="w"> </span>clone<span class="w"> </span>--mirror<span class="w"> </span>git@github.com:user/repo.git
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>bfg<span class="w"> </span>--replace-text<span class="w"> </span>passwords.txt<span class="w"> </span>repo.git
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="nb">cd</span><span class="w"> </span>repo.git
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>git<span class="w"> </span>reflog<span class="w"> </span>expire<span class="w"> </span>--expire<span class="o">=</span>now<span class="w"> </span>--all
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>git<span class="w"> </span>gc<span class="w"> </span>--prune<span class="o">=</span>now<span class="w"> </span>--aggressive
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>git<span class="w"> </span>push
 </code></pre></div>
 <ol>
 <li><strong>Update <code>.env</code></strong> with the new rotated secret.</li>
@@ -3214,6 +3300,10 @@
 <tr>
 <td><code>scripts/ci_e2e_risk_classifier.py</code></td>
 <td>Changed-path risk classifier for required E2E enforcement</td>
+</tr>
+<tr>
+<td><code>scripts/e2e_run_manager.py</code> + <code>scripts/e2e_run_manager.sh</code></td>
+<td>Allocate per-run Docker E2E project names, ports, artifact roots, and janitor cleanup for local/canary runs</td>
 </tr>
 <tr>
 <td><code>scripts/local-required-e2e-receipt.sh</code></td>
@@ -3261,47 +3351,47 @@
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
 <h3 id="hook-installation-issues">Hook Installation Issues<a class="headerlink" href="#hook-installation-issues" title="Permanent link">&para;</a></h3>
 <p><strong>Problem:</strong> <code>pre-commit: command not found</code></p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>pip<span class="w"> </span>install<span class="w"> </span>pre-commit
-<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>pre-commit<span class="w"> </span>install
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>pip<span class="w"> </span>install<span class="w"> </span>pre-commit
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>pre-commit<span class="w"> </span>install
 </code></pre></div>
 <p><strong>Problem:</strong> Pre-push hook not running</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="c1"># Verify the symlink exists</span>
-<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>ls<span class="w"> </span>-la<span class="w"> </span>.git/hooks/pre-push
-<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>
-<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="c1"># Recreate if missing</span>
-<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>ln<span class="w"> </span>-sf<span class="w"> </span>../../.git-hooks/pre-push<span class="w"> </span>.git/hooks/pre-push
-<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>
-<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="c1"># Or re-run setup</span>
-<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a>./scripts/setup-git-hooks.sh
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="c1"># Verify the symlink exists</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>ls<span class="w"> </span>-la<span class="w"> </span>.git/hooks/pre-push
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="c1"># Recreate if missing</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>ln<span class="w"> </span>-sf<span class="w"> </span>../../.git-hooks/pre-push<span class="w"> </span>.git/hooks/pre-push
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="c1"># Or re-run setup</span>
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>./scripts/setup-git-hooks.sh
 </code></pre></div>
 <p><strong>Problem:</strong> Hooks installed but not triggering</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="c1"># Verify hook types are installed</span>
-<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>pre-commit<span class="w"> </span>install<span class="w"> </span>--hook-type<span class="w"> </span>pre-commit<span class="w"> </span>--hook-type<span class="w"> </span>pre-push
-<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>
-<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="c1"># Test manually</span>
-<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>pre-commit<span class="w"> </span>run<span class="w"> </span>--all-files
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="c1"># Verify hook types are installed</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>pre-commit<span class="w"> </span>install<span class="w"> </span>--hook-type<span class="w"> </span>pre-commit<span class="w"> </span>--hook-type<span class="w"> </span>pre-push
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="c1"># Test manually</span>
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>pre-commit<span class="w"> </span>run<span class="w"> </span>--all-files
 </code></pre></div>
 <h3 id="test-failures-blocking-push">Test Failures Blocking Push<a class="headerlink" href="#test-failures-blocking-push" title="Permanent link">&para;</a></h3>
 <p><strong>Problem:</strong> Tests fail during local gates and block push/merge.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="c1"># Fast path (same shape as hook)</span>
-<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration and not discord_e2e&quot;</span><span class="w"> </span>-v<span class="w"> </span>--tb<span class="o">=</span>long
-<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>
-<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="c1"># Full production-parity path</span>
-<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>bash<span class="w"> </span>scripts/test-full.sh
-<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a>
-<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="c1"># Run only the failing test with debug output</span>
-<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>pytest<span class="w"> </span>tests/unit/test_agent_core.py::test_failing_case<span class="w"> </span>-s<span class="w"> </span>-vv
-<a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a>
-<a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a><span class="c1"># If tests pass individually but fail together, check for fixture pollution</span>
-<a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration and not discord_e2e&quot;</span><span class="w"> </span>-p<span class="w"> </span>no:randomly<span class="w"> </span>--tb<span class="o">=</span>short
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="c1"># Fast path (same shape as hook)</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration and not discord_e2e&quot;</span><span class="w"> </span>-v<span class="w"> </span>--tb<span class="o">=</span>long
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="c1"># Full production-parity path</span>
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>bash<span class="w"> </span>scripts/test-full.sh
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>
+<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a><span class="c1"># Run only the failing test with debug output</span>
+<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a>pytest<span class="w"> </span>tests/unit/test_agent_core.py::test_failing_case<span class="w"> </span>-s<span class="w"> </span>-vv
+<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a>
+<a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a><span class="c1"># If tests pass individually but fail together, check for fixture pollution</span>
+<a id="__codelineno-21-11" name="__codelineno-21-11" href="#__codelineno-21-11"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration and not discord_e2e&quot;</span><span class="w"> </span>-p<span class="w"> </span>no:randomly<span class="w"> </span>--tb<span class="o">=</span>short
 </code></pre></div>
 <p><strong>Problem:</strong> Coverage threshold not met</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="c1"># Check current coverage with missing lines</span>
-<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration and not discord_e2e&quot;</span><span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>term-missing
-<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>
-<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="c1"># Generate HTML report for detailed analysis</span>
-<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration and not discord_e2e&quot;</span><span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>html
-<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>open<span class="w"> </span>htmlcov/index.html
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="c1"># Check current coverage with missing lines</span>
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration and not discord_e2e&quot;</span><span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>term-missing
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="c1"># Generate HTML report for detailed analysis</span>
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>pytest<span class="w"> </span>tests/<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not integration and not discord_e2e&quot;</span><span class="w"> </span>--cov<span class="o">=</span>src/zetherion_ai<span class="w"> </span>--cov-report<span class="o">=</span>html
+<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a>open<span class="w"> </span>htmlcov/index.html
 </code></pre></div>
 <h3 id="ci-failures">CI Failures<a class="headerlink" href="#ci-failures" title="Permanent link">&para;</a></h3>
 <p><strong>Problem:</strong> Tests pass locally but fail on GitHub Actions.</p>
@@ -3337,31 +3427,31 @@
 </tbody>
 </table>
 <p><strong>Problem:</strong> Docker build fails on GitHub Actions</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="c1"># Test the Docker build locally</span>
-<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>docker<span class="w"> </span>build<span class="w"> </span>-t<span class="w"> </span>zetherion_ai:test<span class="w"> </span>.
-<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>
-<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="c1"># Validate docker-compose.yml</span>
-<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>docker<span class="w"> </span>compose<span class="w"> </span>config
-<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a>
-<a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a><span class="c1"># Check for Dockerfile linting issues</span>
-<a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a>hadolint<span class="w"> </span>Dockerfile
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="c1"># Test the Docker build locally</span>
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>docker<span class="w"> </span>build<span class="w"> </span>-t<span class="w"> </span>zetherion_ai:test<span class="w"> </span>.
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="c1"># Validate docker-compose.yml</span>
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a>docker<span class="w"> </span>compose<span class="w"> </span>config
+<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a>
+<a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a><span class="c1"># Check for Dockerfile linting issues</span>
+<a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a>hadolint<span class="w"> </span>Dockerfile
 </code></pre></div>
 <p><strong>Problem:</strong> Trivy reports CRITICAL vulnerabilities</p>
 <p>Trivy runs with <code>exit-code: 0</code> (non-blocking) by default. Results appear in the GitHub Security tab. To investigate locally:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="c1"># Install Trivy</span>
-<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>brew<span class="w"> </span>install<span class="w"> </span>trivy
-<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>
-<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="c1"># Scan the local image</span>
-<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a>docker<span class="w"> </span>build<span class="w"> </span>-t<span class="w"> </span>zetherion_ai:test<span class="w"> </span>.
-<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a>trivy<span class="w"> </span>image<span class="w"> </span>--severity<span class="w"> </span>CRITICAL,HIGH<span class="w"> </span>zetherion_ai:test
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="c1"># Install Trivy</span>
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>brew<span class="w"> </span>install<span class="w"> </span>trivy
+<a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a>
+<a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a><span class="c1"># Scan the local image</span>
+<a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a>docker<span class="w"> </span>build<span class="w"> </span>-t<span class="w"> </span>zetherion_ai:test<span class="w"> </span>.
+<a id="__codelineno-24-6" name="__codelineno-24-6" href="#__codelineno-24-6"></a>trivy<span class="w"> </span>image<span class="w"> </span>--severity<span class="w"> </span>CRITICAL,HIGH<span class="w"> </span>zetherion_ai:test
 </code></pre></div>
 <h3 id="semgrep-or-bandit-false-positives">Semgrep or Bandit False Positives<a class="headerlink" href="#semgrep-or-bandit-false-positives" title="Permanent link">&para;</a></h3>
 <p><strong>Problem:</strong> Security scanner flags legitimate code.</p>
 <p>For Bandit, add a <code># nosec</code> comment with justification:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># nosec B603 -- input is validated above</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">shell</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>  <span class="c1"># nosec B603 -- input is validated above</span>
 </code></pre></div>
 <p>For Semgrep, add a <code># nosemgrep</code> comment:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="nb">eval</span><span class="p">(</span><span class="n">trusted_expression</span><span class="p">)</span>  <span class="c1"># nosemgrep: python.lang.security.audit.eval</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="nb">eval</span><span class="p">(</span><span class="n">trusted_expression</span><span class="p">)</span>  <span class="c1"># nosemgrep: python.lang.security.audit.eval</span>
 </code></pre></div>
 <p>For persistent false positives, update the tool configuration in <code>pyproject.toml</code> (Bandit) or add a <code>.semgrepignore</code> file.</p>
 <h2 id="related-documentation">Related Documentation<a class="headerlink" href="#related-documentation" title="Permanent link">&para;</a></h2>

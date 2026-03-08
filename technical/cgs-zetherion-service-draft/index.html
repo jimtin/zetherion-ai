@@ -2639,6 +2639,9 @@ Owners: <code>Catalyst Group Solutions (CGS) Platform</code>, <code>Zetherion Ba
 - <code>POST /workers/jobs/{job_id}/retry</code>
 - <code>POST /workers/jobs/{job_id}/cancel</code>
 - <code>GET /workers/events</code>
+- <code>GET /workers/delegation/grants</code>
+- <code>PUT /workers/nodes/{node_id}/delegation/grants</code>
+- <code>DELETE /workers/delegation/grants/{grant_id}</code>
 - <code>GET /workers/messaging/grants</code>
 - <code>PUT /workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}</code>
 - <code>DELETE /workers/messaging/grants/{grant_id}</code>
@@ -2651,6 +2654,7 @@ Owners: <code>Catalyst Group Solutions (CGS) Platform</code>, <code>Zetherion Ba
 - OAuth app read/write additionally require <code>cgs:zetherion-secrets-admin</code>.
 - OAuth app writes and mailbox disconnects require approved <code>change_ticket_id</code>.
 - Messaging send may return <code>AI_APPROVAL_REQUIRED</code> and requires approved <code>change_ticket_id</code> when policy is not explicitly elevated.
+- Worker delegation grant upsert/revoke may return <code>AI_APPROVAL_REQUIRED</code> and require approved <code>change_ticket_id</code> unless explicitly elevated.
 - Worker messaging grant upsert/revoke may return <code>AI_APPROVAL_REQUIRED</code> and require approved <code>change_ticket_id</code> unless explicitly elevated.
 - Automerge execute requires trust-policy allow (<code>automerge.execute</code>) including policy enabled + branch/risk guard flags.</p>
 <h3 id="63-company-reporting-endpoints">6.3 Company Reporting Endpoints<a class="headerlink" href="#63-company-reporting-endpoints" title="Permanent link">&para;</a></h3>

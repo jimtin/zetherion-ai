@@ -1670,10 +1670,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#test_discord_channel_id" class="md-nav__link">
+  <a href="#discord-e2e-isolation-scope" class="md-nav__link">
     <span class="md-ellipsis">
       
-        TEST_DISCORD_CHANNEL_ID
+        Discord E2E Isolation Scope
       
     </span>
   </a>
@@ -2251,10 +2251,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#test_discord_channel_id" class="md-nav__link">
+  <a href="#discord-e2e-isolation-scope" class="md-nav__link">
     <span class="md-ellipsis">
       
-        TEST_DISCORD_CHANNEL_ID
+        Discord E2E Isolation Scope
       
     </span>
   </a>
@@ -2578,9 +2578,21 @@
 <td>Local Discord E2E tests only</td>
 </tr>
 <tr>
-<td><code>TEST_DISCORD_CHANNEL_ID</code></td>
+<td><code>TEST_DISCORD_GUILD_ID</code></td>
 <td>Optional</td>
-<td>Test channel ID for E2E tests</td>
+<td>Discord guild ID used to create isolated E2E channels</td>
+<td>Local Discord E2E tests only</td>
+</tr>
+<tr>
+<td><code>TEST_DISCORD_E2E_CATEGORY_ID</code></td>
+<td>Optional</td>
+<td>Discord category ID for isolated E2E channels</td>
+<td>Local Discord E2E tests only</td>
+</tr>
+<tr>
+<td><code>TEST_DISCORD_E2E_CATEGORY_NAME</code></td>
+<td>Optional</td>
+<td>Discord category name to create/reuse when category ID is not set</td>
 <td>Local Discord E2E tests only</td>
 </tr>
 </tbody>
@@ -2705,25 +2717,26 @@
 </ul>
 <p><strong>Format:</strong> Same as <code>DISCORD_TOKEN</code>.</p>
 <hr />
-<h3 id="test_discord_channel_id">TEST_DISCORD_CHANNEL_ID<a class="headerlink" href="#test_discord_channel_id" title="Permanent link">&para;</a></h3>
-<p><strong>Purpose:</strong> Discord channel ID where the test bot will send messages during E2E testing.</p>
-<p><strong>Required for:</strong></p>
+<h3 id="discord-e2e-isolation-scope">Discord E2E Isolation Scope<a class="headerlink" href="#discord-e2e-isolation-scope" title="Permanent link">&para;</a></h3>
+<p><strong>Purpose:</strong> The blessed Discord E2E wrapper now creates one ephemeral channel per run instead of reusing a fixed shared channel.</p>
+<p><strong>Required for local Discord E2E runs:</strong></p>
 <ul>
-<li>Discord E2E tests alongside <code>TEST_DISCORD_BOT_TOKEN</code></li>
-<li>If not provided, Discord E2E tests are skipped automatically</li>
+<li><code>TEST_DISCORD_GUILD_ID</code></li>
+<li><code>TEST_DISCORD_E2E_CATEGORY_ID</code> or <code>TEST_DISCORD_E2E_CATEGORY_NAME</code></li>
+<li><code>DISCORD_E2E_ALLOWED_AUTHOR_IDS</code></li>
+<li><code>DISCORD_E2E_ENABLED=true</code></li>
 </ul>
-<p><strong>How to get it:</strong></p>
+<p><strong>How to get the scope IDs:</strong></p>
 <ol>
 <li>Enable Developer Mode in Discord: User Settings -&gt; Advanced -&gt; Developer Mode (toggle ON)</li>
-<li>Right-click the test channel</li>
-<li>Click "Copy Channel ID"</li>
+<li>Right-click the target guild/category and copy the IDs you need</li>
+<li>Point the wrapper at an isolated E2E category, not a shared human test channel</li>
 </ol>
-<p><strong>Format:</strong> <code>1234567890123456789</code> (18-19 digit numeric string).</p>
 <p><strong>Important:</strong></p>
 <ul>
-<li>Use a dedicated test channel</li>
-<li>The test bot must have access to this channel</li>
-<li>Messages will be posted during test runs</li>
+<li>The wrapper acquires a target-bot lease and deletes the ephemeral channel on exit</li>
+<li>Concurrent runs should share the guild/category but not the same channel</li>
+<li>For merge evidence, use <code>bash scripts/local-required-e2e-receipt.sh</code>; <code>./scripts/run-required-discord-e2e.sh</code> is the blessed isolated Discord wrapper for debugging and for the receipt script itself. Do not use direct ad hoc <code>pytest</code> against a shared channel</li>
 </ul>
 <hr />
 <h2 id="quick-setup-guide">Quick Setup Guide<a class="headerlink" href="#quick-setup-guide" title="Permanent link">&para;</a></h2>
@@ -2744,12 +2757,15 @@
 </code></pre></div>
 <h3 id="for-discord-e2e-tests">For Discord E2E Tests<a class="headerlink" href="#for-discord-e2e-tests" title="Permanent link">&para;</a></h3>
 <p>Add these additional variables to your <code>.env</code> file:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Required for Discord E2E tests</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Required for isolated Discord E2E tests</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nv">TEST_DISCORD_BOT_TOKEN</span><span class="o">=</span>&lt;your-test-bot-token&gt;
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nv">TEST_DISCORD_CHANNEL_ID</span><span class="o">=</span>&lt;your-test-channel-id&gt;
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nv">TEST_DISCORD_GUILD_ID</span><span class="o">=</span>&lt;your-test-guild-id&gt;
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="nv">TEST_DISCORD_E2E_CATEGORY_ID</span><span class="o">=</span>&lt;your-test-category-id&gt;<span class="w">  </span><span class="c1"># or TEST_DISCORD_E2E_CATEGORY_NAME</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nv">DISCORD_E2E_ALLOWED_AUTHOR_IDS</span><span class="o">=</span>&lt;your-test-bot-user-id&gt;
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nv">DISCORD_E2E_ENABLED</span><span class="o">=</span><span class="nb">true</span>
 </code></pre></div>
-<p>Run with:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>pytest<span class="w"> </span>tests/integration/test_discord_e2e.py<span class="w"> </span>-v<span class="w"> </span>-s<span class="w"> </span>-m<span class="w"> </span>discord_e2e
+<p>Run with the blessed wrapper so each invocation creates and cleans its own ephemeral test channel:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>./scripts/run-required-discord-e2e.sh<span class="w"> </span>--<span class="w"> </span>-k<span class="w"> </span>test_bot_responds_to_message
 </code></pre></div>
 <p>See <a href="../../technical/configuration/"><code>../technical/configuration.md</code></a> for the full list of environment variables.</p>
 <hr />
@@ -2773,7 +2789,8 @@
 <a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>gh<span class="w"> </span>secret<span class="w"> </span><span class="nb">set</span><span class="w"> </span>ANTHROPIC_API_KEY
 <a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>gh<span class="w"> </span>secret<span class="w"> </span><span class="nb">set</span><span class="w"> </span>OPENAI_API_KEY
 <a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>gh<span class="w"> </span>secret<span class="w"> </span><span class="nb">set</span><span class="w"> </span>TEST_DISCORD_BOT_TOKEN
-<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>gh<span class="w"> </span>secret<span class="w"> </span><span class="nb">set</span><span class="w"> </span>TEST_DISCORD_CHANNEL_ID
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>gh<span class="w"> </span>secret<span class="w"> </span><span class="nb">set</span><span class="w"> </span>TEST_DISCORD_GUILD_ID
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>gh<span class="w"> </span>secret<span class="w"> </span><span class="nb">set</span><span class="w"> </span>TEST_DISCORD_E2E_CATEGORY_ID
 </code></pre></div>
 <p>You will be prompted to paste the value for each secret.</p>
 <hr />

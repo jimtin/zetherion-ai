@@ -3279,7 +3279,77 @@ in <code>config.py</code>.</p>
 <tr>
 <td><code>ANNOUNCEMENT_TARGET_USER_ID</code></td>
 <td>unset</td>
-<td>Announcement recipient user id for Windows deploy/promotions events</td>
+<td>Announcement recipient user id for Windows deploy/promotions and Discord canary events</td>
+</tr>
+<tr>
+<td><code>WINDOWS_DISCORD_CANARY_INTERVAL_MINUTES</code></td>
+<td><code>360</code></td>
+<td>Scheduled Discord production canary cadence on the Windows host</td>
+</tr>
+<tr>
+<td><code>WINDOWS_DISCORD_CANARY_STALE_MINUTES</code></td>
+<td>derived</td>
+<td>Optional host-verifier stale threshold override for Discord canary receipts</td>
+</tr>
+<tr>
+<td><code>WINDOWS_DISCORD_CANARY_ENABLED</code></td>
+<td>inherits <code>DISCORD_E2E_ENABLED</code></td>
+<td>Optional override for enabling the Windows Discord canary wrapper</td>
+</tr>
+<tr>
+<td><code>WINDOWS_DISCORD_CANARY_PROVIDER</code></td>
+<td>inherits <code>DISCORD_E2E_PROVIDER</code></td>
+<td>Provider used by the Windows Discord canary (<code>groq</code> or <code>local</code>)</td>
+</tr>
+<tr>
+<td><code>WINDOWS_DISCORD_CANARY_TEST_BOT_TOKEN</code></td>
+<td>inherits <code>TEST_DISCORD_BOT_TOKEN</code></td>
+<td>Synthetic Discord test principal token used to drive the canary conversation</td>
+</tr>
+<tr>
+<td><code>WINDOWS_DISCORD_CANARY_TARGET_TOKEN</code></td>
+<td>inherits <code>DISCORD_TOKEN</code></td>
+<td>Production bot token targeted by the Windows canary wrapper</td>
+</tr>
+<tr>
+<td><code>WINDOWS_DISCORD_CANARY_TARGET_BOT_ID</code></td>
+<td>inherits <code>TEST_DISCORD_TARGET_BOT_ID</code></td>
+<td>Optional explicit production bot user id for target-lease enforcement</td>
+</tr>
+<tr>
+<td><code>WINDOWS_DISCORD_CANARY_GUILD_ID</code></td>
+<td>inherits <code>TEST_DISCORD_GUILD_ID</code></td>
+<td>Guild used for isolated Windows canary channels</td>
+</tr>
+<tr>
+<td><code>WINDOWS_DISCORD_CANARY_PARENT_CHANNEL_ID</code></td>
+<td>inherits <code>TEST_DISCORD_E2E_PARENT_CHANNEL_ID</code></td>
+<td>Optional parent channel for isolated canary threads/channels</td>
+</tr>
+<tr>
+<td><code>WINDOWS_DISCORD_CANARY_CATEGORY_ID</code></td>
+<td>inherits <code>TEST_DISCORD_E2E_CATEGORY_ID</code></td>
+<td>Optional dedicated canary category id</td>
+</tr>
+<tr>
+<td><code>WINDOWS_DISCORD_CANARY_CATEGORY_NAME</code></td>
+<td>inherits <code>TEST_DISCORD_E2E_CATEGORY_NAME</code></td>
+<td>Optional category name used if the category id is not pre-provisioned</td>
+</tr>
+<tr>
+<td><code>WINDOWS_DISCORD_CANARY_CHANNEL_PREFIX</code></td>
+<td><code>zeth-canary</code></td>
+<td>Prefix for isolated Windows canary channels</td>
+</tr>
+<tr>
+<td><code>WINDOWS_DISCORD_CANARY_TTL_MINUTES</code></td>
+<td><code>60</code></td>
+<td>Lease/channel TTL for Windows canary runs before janitor cleanup</td>
+</tr>
+<tr>
+<td><code>WINDOWS_DISCORD_CANARY_ALLOWED_AUTHOR_IDS</code></td>
+<td>inherits <code>DISCORD_E2E_ALLOWED_AUTHOR_IDS</code></td>
+<td>Synthetic author allowlist for narrow rate-limit bypass during canary runs</td>
 </tr>
 <tr>
 <td><code>DISCORD_DM_NOTIFY_ENABLED</code></td>
@@ -3632,7 +3702,10 @@ in <code>config.py</code>.</p>
 are script/test-only compatibility knobs:</p>
 <ul>
 <li><code>TEST_DISCORD_BOT_TOKEN</code></li>
-<li><code>TEST_DISCORD_CHANNEL_ID</code></li>
+<li><code>TEST_DISCORD_GUILD_ID</code></li>
+<li><code>TEST_DISCORD_E2E_CATEGORY_ID</code></li>
+<li><code>TEST_DISCORD_E2E_CATEGORY_NAME</code></li>
+<li><code>TEST_DISCORD_E2E_CHANNEL_PREFIX</code></li>
 <li><code>TEST_DISCORD_TARGET_BOT_ID</code></li>
 <li><code>OLLAMA_DOCKER_MEMORY</code></li>
 <li><code>DOCKER_SOCKET_PATH</code></li>

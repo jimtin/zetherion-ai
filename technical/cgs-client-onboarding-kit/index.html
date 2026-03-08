@@ -2255,6 +2255,10 @@ All integration is through CGS <code>/service/ai/v1</code>.</p>
 - Internal autonomous merge execution route was added under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/automerge/execute</code>.
 - Worker operator control routes were added under <code>/service/ai/v1/internal/admin/tenants/{tenant_id}/workers/*</code>
   for node inventory, quarantine/unquarantine, job inspection, retry/cancel, and lifecycle events.
+- Worker delegation grant routes were added for scoped repo/Codex control:
+  - <code>GET /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/delegation/grants</code>
+  - <code>PUT /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/delegation/grants</code>
+  - <code>DELETE /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/delegation/grants/{grant_id}</code>
 - Worker messaging grant routes were added for scoped WhatsApp boundary control:
   - <code>GET /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/messaging/grants</code>
   - <code>PUT /service/ai/v1/internal/admin/tenants/{tenant_id}/workers/nodes/{node_id}/messaging/grants/{provider}/{chat_id}</code>
