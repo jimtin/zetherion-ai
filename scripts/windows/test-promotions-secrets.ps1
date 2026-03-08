@@ -50,6 +50,31 @@ function Require-Secret {
     return $value
 }
 
+function Get-OptionalSecret {
+    param(
+        [object]$Secrets,
+        [string]$Name,
+        [string]$Default = ""
+    )
+
+    $property = $Secrets.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return $Default
+    }
+
+    $value = $property.Value
+    if ($null -eq $value) {
+        return $Default
+    }
+
+    $text = [string]$value
+    if (-not $text) {
+        return $Default
+    }
+
+    return $text
+}
+
 $payload = Decode-SecretsPayload -Path $SecretPath
 if (-not $payload.secrets) {
     throw "Secret payload missing 'secrets' object."
@@ -112,8 +137,8 @@ $result = [ordered]@{
     required_keys_present = $true
     model_primary = $primaryModel
     model_secondary = $secondaryModel
-    blog_publish_enabled = [string]($secrets.BLOG_PUBLISH_ENABLED ?? "true")
-    release_auto_increment_enabled = [string]($secrets.RELEASE_AUTO_INCREMENT_ENABLED ?? "true")
+    blog_publish_enabled = Get-OptionalSecret -Secrets $secrets -Name "BLOG_PUBLISH_ENABLED" -Default "true"
+    release_auto_increment_enabled = Get-OptionalSecret -Secrets $secrets -Name "RELEASE_AUTO_INCREMENT_ENABLED" -Default "true"
     announcement_emit_enabled = $announcementEnabledRaw
     announcement_target_user_id_present = [bool]$announcementTargetUserId
     announcement_api_secret_present = [bool]$announcementApiSecret

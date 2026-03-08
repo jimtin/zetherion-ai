@@ -30,6 +30,7 @@
     "scripts/require-local-gate-update.sh",
     "scripts/validate-deployment-receipt.py",
     "scripts/check-optional-service-guards.py",
+    "scripts/check-windows-powershell-compat.py",
     "scripts/windows/deploy-runner.ps1",
     "scripts/verify-windows-host.ps1",
     ".ci/local_gate_manifest.json",
@@ -116,6 +117,7 @@
       "description": "Run the targeted Windows deploy preflight and optional-service regression suite.",
       "pytest_targets": [
         "tests/unit/test_check_optional_service_guards.py",
+        "tests/unit/test_check_windows_powershell_compat.py",
         "tests/unit/test_validate_deployment_receipt.py"
       ]
     },
@@ -236,6 +238,7 @@
       "patterns": [
         "scripts/validate-deployment-receipt.py",
         "scripts/check-optional-service-guards.py",
+        "scripts/check-windows-powershell-compat.py",
         "scripts/windows/deploy-runner.ps1",
         "scripts/verify-windows-host.ps1"
       ],

@@ -106,7 +106,10 @@ function Test-RecoveryTask {
     $query = @(& schtasks /Query /TN $TaskName /FO LIST 2>$null)
     if ($LASTEXITCODE -eq 0 -and $query.Count -gt 0) {
         $parsed = Parse-SchtasksListOutput -Lines $query
-        $status = [string]($parsed["Status"] ?? "")
+        $status = ""
+        if ($parsed.ContainsKey("Status")) {
+            $status = [string]$parsed["Status"]
+        }
         $enabledFromStatus = -not ($status -match "Disabled")
         $stateLooksActive = [bool]($status -match "Ready|Running|Queued")
 

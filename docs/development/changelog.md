@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - Windows PowerShell compatibility for resilience scripts (2026-03-08)
+- Replaced PowerShell 7-only null-coalescing syntax in host-facing Windows scripts so manual host execution and scheduled-task bootstrap work under Windows PowerShell 5.1 as well as `pwsh`.
+- Added `scripts/check-windows-powershell-compat.py` plus unit coverage and wired it into the bounded `check` lane and deploy-preflight local-gate regressions so incompatible syntax is rejected before push.
+
 ### Changed - Segment CI-07 Windows Full-Parity Production Discord Canary (2026-03-08)
 
 - Impacted capability IDs:
