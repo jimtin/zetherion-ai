@@ -14,6 +14,7 @@ $ErrorActionPreference = "Stop"
 
 $checks = [ordered]@{
     containers_healthy = $false
+    auxiliary_services_healthy = $true
     bot_startup_markers = $false
     postgres_model_keys = $false
     fallback_probe = $false
@@ -21,12 +22,19 @@ $checks = [ordered]@{
 
 $details = [ordered]@{
     container_health = ""
+    auxiliary_container_health = ""
     bot_marker_check = ""
     postgres_keys = @()
     fallback_probe_output = ""
     optional_services_skipped = @()
     monitored_services = @()
     unhealthy_services = @()
+    core_services = @()
+    unhealthy_core_services = @()
+    auxiliary_services = @()
+    unhealthy_auxiliary_services = @()
+    core_status = "failed"
+    aux_status = "healthy"
 }
 
 function Write-VerifyResult {
@@ -214,6 +222,11 @@ try {
             $optionalServices.Add("zetherion-ai-whatsapp-bridge") | Out-Null
         }
 
+        $auxiliaryServiceNames = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+        foreach ($name in @("cloudflared", "zetherion-ai-cloudflared", "whatsapp-bridge", "zetherion-ai-whatsapp-bridge")) {
+            $auxiliaryServiceNames.Add($name) | Out-Null
+        }
+
         $monitoredServices = @(
             $services | Where-Object {
                 $serviceName = Get-ComposeServiceField -Service $_ -Name "Service"
@@ -232,8 +245,52 @@ try {
             }
         )
 
+        $coreServices = @(
+            $monitoredServices | Where-Object {
+                $serviceName = Get-ComposeServiceField -Service $_ -Name "Service"
+                $containerName = Get-ComposeServiceField -Service $_ -Name "Name"
+                -not ($auxiliaryServiceNames.Contains($serviceName) -or $auxiliaryServiceNames.Contains($containerName))
+            }
+        )
+        $auxiliaryServices = @(
+            $monitoredServices | Where-Object {
+                $serviceName = Get-ComposeServiceField -Service $_ -Name "Service"
+                $containerName = Get-ComposeServiceField -Service $_ -Name "Name"
+                $auxiliaryServiceNames.Contains($serviceName) -or $auxiliaryServiceNames.Contains($containerName)
+            }
+        )
+
+        $details.core_services = @(
+            $coreServices | ForEach-Object {
+                $serviceName = Get-ComposeServiceField -Service $_ -Name "Service"
+                if ($serviceName) {
+                    return $serviceName
+                }
+                return (Get-ComposeServiceField -Service $_ -Name "Name")
+            }
+        )
+        $details.auxiliary_services = @(
+            $auxiliaryServices | ForEach-Object {
+                $serviceName = Get-ComposeServiceField -Service $_ -Name "Service"
+                if ($serviceName) {
+                    return $serviceName
+                }
+                return (Get-ComposeServiceField -Service $_ -Name "Name")
+            }
+        )
+
         $badServices = @(
             $monitoredServices | Where-Object {
+                ($_.Status -match "Exited|Restarting|Dead|Created|unhealthy")
+            }
+        )
+        $badCoreServices = @(
+            $coreServices | Where-Object {
+                ($_.Status -match "Exited|Restarting|Dead|Created|unhealthy")
+            }
+        )
+        $badAuxiliaryServices = @(
+            $auxiliaryServices | Where-Object {
                 ($_.Status -match "Exited|Restarting|Dead|Created|unhealthy")
             }
         )
@@ -246,12 +303,48 @@ try {
                 return (Get-ComposeServiceField -Service $_ -Name "Name")
             }
         )
+        $details.unhealthy_core_services = @(
+            $badCoreServices | ForEach-Object {
+                $serviceName = Get-ComposeServiceField -Service $_ -Name "Service"
+                if ($serviceName) {
+                    return $serviceName
+                }
+                return (Get-ComposeServiceField -Service $_ -Name "Name")
+            }
+        )
+        $details.unhealthy_auxiliary_services = @(
+            $badAuxiliaryServices | ForEach-Object {
+                $serviceName = Get-ComposeServiceField -Service $_ -Name "Service"
+                if ($serviceName) {
+                    return $serviceName
+                }
+                return (Get-ComposeServiceField -Service $_ -Name "Name")
+            }
+        )
 
-        if ($monitoredServices.Count -gt 0 -and $badServices.Count -eq 0) {
+        if ($coreServices.Count -gt 0 -and $badCoreServices.Count -eq 0) {
             $checks.containers_healthy = $true
-            $details.container_health = "All monitored services reported non-failing status."
+            $details.container_health = "All monitored core services reported non-failing status."
+            $details.core_status = "healthy"
         } else {
-            $details.container_health = "One or more monitored services were unhealthy or not running."
+            $details.container_health = "One or more monitored core services were unhealthy or not running."
+            $details.core_status = "failed"
+        }
+
+        if ($auxiliaryServices.Count -eq 0) {
+            $checks.auxiliary_services_healthy = $true
+            $details.auxiliary_container_health = "No auxiliary services are enabled for this deployment."
+            $details.aux_status = "not_enabled"
+        }
+        elseif ($badAuxiliaryServices.Count -eq 0) {
+            $checks.auxiliary_services_healthy = $true
+            $details.auxiliary_container_health = "All monitored auxiliary services reported non-failing status."
+            $details.aux_status = "healthy"
+        }
+        else {
+            $checks.auxiliary_services_healthy = $false
+            $details.auxiliary_container_health = "One or more monitored auxiliary services were unhealthy or not running."
+            $details.aux_status = "degraded"
         }
 
         $requiredMarkers = @(

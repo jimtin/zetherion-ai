@@ -207,10 +207,6 @@ class Settings(BaseSettings):
         default=None,
         description="Allowlisted Discord category ID for synthetic E2E channels",
     )
-    discord_e2e_parent_channel_id: int | None = Field(
-        default=None,
-        description="Allowlisted Discord parent channel ID for synthetic E2E threads",
-    )
     discord_e2e_channel_prefix: str = Field(
         default="zeth-e2e",
         description="Required channel-name prefix for synthetic Discord E2E channels",

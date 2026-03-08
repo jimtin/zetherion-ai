@@ -253,9 +253,13 @@ validate_deploy_receipt() {
   is_valid="$({
     jq -r --arg sha "$target_sha" --arg sha_short "$sha_short" '
       .status == "success"
+      and .core_status == "healthy"
+      and (.aux_status == "healthy" or .aux_status == "degraded" or .aux_status == "not_enabled")
       and (.target_sha == $sha or (.target_sha | startswith($sha_short)))
       and (.deployed_sha == $sha or (.deployed_sha | startswith($sha_short)))
       and .checks.containers_healthy == true
+      and (.checks.auxiliary_services_healthy == true or .checks.auxiliary_services_healthy == false)
+      and ((.aux_status == "degraded" and .checks.auxiliary_services_healthy == false) or ((.aux_status == "healthy" or .aux_status == "not_enabled") and .checks.auxiliary_services_healthy == true))
       and .checks.bot_startup_markers == true
       and .checks.postgres_model_keys == true
       and .checks.fallback_probe == true

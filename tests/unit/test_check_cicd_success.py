@@ -118,8 +118,11 @@ def test_main_check_run_fallback_validates_deploy_receipt(tmp_path: Path) -> Non
                         "status": "success",
                         "target_sha": target_sha,
                         "deployed_sha": target_sha,
+                        "core_status": "healthy",
+                        "aux_status": "degraded",
                         "checks": {
                             "containers_healthy": True,
+                            "auxiliary_services_healthy": False,
                             "bot_startup_markers": True,
                             "postgres_model_keys": True,
                             "fallback_probe": True,

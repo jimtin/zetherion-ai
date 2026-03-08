@@ -31,6 +31,7 @@
     "scripts/validate-deployment-receipt.py",
     "scripts/check-optional-service-guards.py",
     "scripts/check-windows-powershell-compat.py",
+    "scripts/check-windows-deploy-contract.py",
     "scripts/windows/deploy-runner.ps1",
     "scripts/windows/test-promotions-secrets.ps1",
     "scripts/windows/promotions-runner.ps1",
@@ -132,6 +133,7 @@
       "pytest_targets": [
         "tests/unit/test_check_optional_service_guards.py",
         "tests/unit/test_check_windows_powershell_compat.py",
+        "tests/unit/test_check_windows_deploy_contract.py",
         "tests/unit/test_validate_deployment_receipt.py"
       ]
     },
@@ -282,6 +284,7 @@
         "scripts/validate-deployment-receipt.py",
         "scripts/check-optional-service-guards.py",
         "scripts/check-windows-powershell-compat.py",
+        "scripts/check-windows-deploy-contract.py",
         "scripts/windows/deploy-runner.ps1",
         "scripts/windows/test-promotions-secrets.ps1",
         "scripts/windows/promotions-runner.ps1",
