@@ -14,6 +14,9 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CI_ARTIFACT_RETENTION_DAYS: 14
+
 jobs:
   detect-changes:
     name: Detect Changes
@@ -95,7 +98,7 @@ jobs:
         with:
           name: e2e-risk-classifier
           path: e2e-risk-classifier-receipt.json
-          retention-days: 30
+          retention-days: ${{ env.CI_ARTIFACT_RETENTION_DAYS }}
 
   lint:
     name: Linting & Formatting
@@ -462,7 +465,7 @@ jobs:
         with:
           name: coverage-report
           path: htmlcov/
-          retention-days: 30
+          retention-days: ${{ env.CI_ARTIFACT_RETENTION_DAYS }}
 
   required-e2e-gate:
     name: Required E2E Gate
@@ -492,7 +495,7 @@ jobs:
           path: |
             e2e-contract-receipt.json
             .ci/e2e-receipt.json
-          retention-days: 30
+          retention-days: ${{ env.CI_ARTIFACT_RETENTION_DAYS }}
 
   integration-test:
     name: Integration (${{ matrix.shard.name }})
@@ -576,6 +579,63 @@ jobs:
 
       - name: Build Skills image
         run: docker build -f Dockerfile.skills -t zetherion-ai-skills-ci:${{ github.sha }} .
+
+  ci-cost-report:
+    name: CI Cost Report
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    needs:
+      [
+        detect-changes,
+        risk-classifier,
+        lint,
+        type-check,
+        security,
+        semgrep,
+        secret-scan,
+        dependency-audit,
+        license-check,
+        pre-commit,
+        docs-contract,
+        pipeline-contract,
+        zetherion-boundary-check,
+        unit-test,
+        required-e2e-gate,
+        integration-test,
+        docker-build-test,
+      ]
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Generate CI cost report
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_WORKFLOW_NAME: ${{ github.workflow }}
+        run: |
+          python scripts/ci_cost_report.py run \
+            --repo "$GITHUB_REPOSITORY" \
+            --run-id "$GITHUB_RUN_ID" \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --workflow-name "$GITHUB_WORKFLOW_NAME" \
+            --contract .ci/pipeline_contract.json \
+            --output ci-cost-report.json
+
+      - name: Upload CI cost report artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        if: always()
+        with:
+          name: ci-cost-report
+          path: ci-cost-report.json
+          if-no-files-found: warn
+          retention-days: ${{ env.CI_ARTIFACT_RETENTION_DAYS }}
 
   # ============================================================================
   # Summary Job
@@ -790,4 +850,4 @@ jobs:
         with:
           name: ci-failure-attribution
           path: ci-failure-attribution.json
-          retention-days: 30
+          retention-days: ${{ env.CI_ARTIFACT_RETENTION_DAYS }}

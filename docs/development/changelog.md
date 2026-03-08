@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment CI-09 Cost observability and cache hygiene (2026-03-08)
+
+- Impacted capability IDs:
+  - `ci.cost.observability`
+  - `ci.contract.alignment`
+- Impacted workflow scenario IDs:
+  - `weekly.full_independent_verification`
+  - `pr.docs_only_fast_path`
+- Added `scripts/ci_cost_report.py` and a non-blocking `CI Cost Report` job so every CI run now emits a machine-readable runtime summary with job duration estimates and execution-class visibility.
+- Added `scripts/ci_cache_hygiene.py` plus a weekly `CI Maintenance` workflow that summarizes recent CI usage and prunes stale GitHub Actions caches with an auditable JSON receipt.
+- Reduced CI artifact retention in `.github/workflows/ci.yml` from 30 days to 14 days for short-lived observability artifacts and extended the pipeline contract check to keep the new maintenance workflow aligned.
+
 ### Changed - Segment CI-08 Windows deploy core vs auxiliary health split (2026-03-08)
 
 - Impacted capability IDs:

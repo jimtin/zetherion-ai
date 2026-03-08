@@ -35,6 +35,12 @@ DOCS_DEPLOY_REQUIRED_PATHS = {
     "docs/requirements.txt",
     ".github/workflows/docs.yml",
 }
+CI_MAINTENANCE_REQUIRED_TOKENS = (
+    "name: CI Maintenance",
+    "scripts/ci_cost_report.py summary",
+    "scripts/ci_cache_hygiene.py",
+    "actions: write",
+)
 
 
 def validate_pipeline_contract(contract_path: Path) -> list[str]:
@@ -60,6 +66,10 @@ def validate_workflow_contracts(repo_root: Path) -> list[str]:
         errors.append("CI workflow must keep concurrency grouping for superseded PR cancellation.")
     if "cancel-in-progress: true" not in ci_text:
         errors.append("CI workflow must cancel superseded in-progress runs.")
+    if "name: CI Cost Report" not in ci_text:
+        errors.append("CI workflow must publish the CI Cost Report job.")
+    if "scripts/ci_cost_report.py run" not in ci_text:
+        errors.append("CI workflow must generate a per-run CI cost report artifact.")
 
     codeql_text = (repo_root / ".github/workflows/codeql.yml").read_text(encoding="utf-8")
     if re.search(r"(?m)^  push:\s*$", codeql_text):
@@ -96,6 +106,20 @@ def validate_workflow_contracts(repo_root: Path) -> list[str]:
     for command in ("mkdocs build --strict", "mkdocs gh-deploy --force"):
         if command not in docs_text:
             errors.append(f"Docs deploy workflow must run `{command}`.")
+
+    maintenance_path = repo_root / ".github/workflows/ci-maintenance.yml"
+    if not maintenance_path.exists():
+        errors.append("CI maintenance workflow must exist.")
+        return errors
+
+    maintenance_text = maintenance_path.read_text(encoding="utf-8")
+    if not re.search(r"(?m)^  schedule:\s*$", maintenance_text):
+        errors.append("CI maintenance workflow must keep a weekly schedule trigger.")
+    if not re.search(r"(?m)^  workflow_dispatch:\s*$", maintenance_text):
+        errors.append("CI maintenance workflow must keep manual dispatch support.")
+    for token in CI_MAINTENANCE_REQUIRED_TOKENS:
+        if token not in maintenance_text:
+            errors.append(f"CI maintenance workflow missing required token: {token}")
 
     return errors
 
