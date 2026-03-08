@@ -964,6 +964,130 @@ class TestGenerateResponseSkillIntents:
         call_args = agent._handle_skill_intent.call_args
         assert call_args[0][2] == "milestone_tracker"
 
+    async def test_low_confidence_dev_watcher_followup_falls_back_to_conversation(self):
+        """Owner follow-up turns should not stay on low-confidence dev_watcher routes."""
+        mock_memory = AsyncMock()
+        mock_memory.get_recent_context = AsyncMock(
+            return_value=[
+                {"role": "user", "content": "I'm editing the recording of Bev."},
+                {"role": "assistant", "content": "Tell me more about what needs changing."},
+            ]
+        )
+        mock_router = AsyncMock()
+        mock_router.classify = AsyncMock(
+            return_value=_routing(
+                MessageIntent.DEV_WATCHER,
+                confidence=0.76,
+                reasoning="might be asking what to work on next",
+            ),
+        )
+
+        agent = _make_agent(mock_memory=mock_memory, mock_router=mock_router)
+        agent._handle_complex_task = AsyncMock(
+            return_value="Let's make the intro sound warmer and more natural."
+        )
+        agent._handle_skill_intent = AsyncMock(return_value="dev status")
+
+        result = await agent.generate_response(
+            user_id=123,
+            channel_id=456,
+            message="I need the Bev recording to sound more conversational.",
+        )
+
+        assert "warmer" in result
+        agent._handle_skill_intent.assert_not_awaited()
+        agent._handle_complex_task.assert_awaited_once()
+        routed_call = agent._handle_complex_task.await_args.args
+        assert routed_call[3].intent == MessageIntent.COMPLEX_TASK
+        metadata = mock_memory.store_message.await_args_list[0].kwargs["metadata"]
+        assert metadata["routing_trace"]["original_intent"] == "dev_watcher"
+        assert metadata["routing_trace"]["final_intent"] == "complex_task"
+        assert metadata["routing_trace"]["guardrail_action"] == "fallback_to_conversation"
+
+    async def test_low_confidence_memory_recall_followup_falls_back_to_conversation(self):
+        """Low-confidence memory-recall follow-ups should stay conversational."""
+        mock_memory = AsyncMock()
+        mock_memory.get_recent_context = AsyncMock(
+            return_value=[
+                {"role": "user", "content": "That rewrite still feels stiff."},
+                {"role": "assistant", "content": "I can try another version."},
+            ]
+        )
+        mock_router = AsyncMock()
+        mock_router.classify = AsyncMock(
+            return_value=_routing(
+                MessageIntent.MEMORY_RECALL,
+                confidence=0.79,
+                reasoning="asking about prior response",
+            ),
+        )
+
+        agent = _make_agent(mock_memory=mock_memory, mock_router=mock_router)
+        agent._handle_complex_task = AsyncMock(
+            return_value="Sure. I'll rewrite it with a warmer, more natural tone."
+        )
+        agent._handle_skill_intent = AsyncMock(return_value="memory recall")
+
+        result = await agent.generate_response(
+            user_id=123,
+            channel_id=456,
+            message="Can you try that again but make it more natural?",
+        )
+
+        assert "rewrite" in result.lower()
+        agent._handle_skill_intent.assert_not_awaited()
+        agent._handle_complex_task.assert_awaited_once()
+        routed_call = agent._handle_complex_task.await_args.args
+        assert routed_call[3].intent == MessageIntent.COMPLEX_TASK
+
+    async def test_repair_followup_explains_previous_bad_route(self):
+        """Repair follow-ups should explain the previous bad route instead of re-misrouting."""
+        mock_memory = AsyncMock()
+        mock_memory.get_recent_context = AsyncMock(
+            return_value=[
+                {
+                    "role": "user",
+                    "content": "I'm editing the recording of Bev and need help with the tone.",
+                },
+                {
+                    "role": "assistant",
+                    "content": "Here's your dev status summary.",
+                    "routing_trace": {
+                        "original_intent": "dev_watcher",
+                        "final_intent": "dev_watcher",
+                        "original_reasoning": "development status request",
+                    },
+                },
+            ]
+        )
+        mock_router = AsyncMock()
+        mock_router.classify = AsyncMock(
+            return_value=_routing(
+                MessageIntent.MEMORY_RECALL,
+                confidence=0.73,
+                reasoning="asking about prior answer",
+            ),
+        )
+
+        agent = _make_agent(mock_memory=mock_memory, mock_router=mock_router)
+        agent._handle_complex_task = AsyncMock(return_value="unexpected complex task")
+        agent._handle_skill_intent = AsyncMock(return_value="unexpected skill")
+
+        result = await agent.generate_response(
+            user_id=123,
+            channel_id=456,
+            message="What happened with that response?",
+        )
+
+        assert "dev watcher request" in result.lower()
+        assert "current conversation" in result.lower()
+        agent._handle_skill_intent.assert_not_awaited()
+        agent._handle_complex_task.assert_not_awaited()
+        assert mock_memory.store_message.await_count == 2
+        metadata = mock_memory.store_message.await_args_list[0].kwargs["metadata"]
+        assert metadata["routing_trace"]["guardrail_action"] == "repair_response_explanation"
+        assert metadata["routing_trace"]["final_intent"] == "simple_query"
+
 
 # ===========================================================================
 # _parse_dev_watcher_intent
@@ -1041,3 +1165,171 @@ class TestParseMilestoneIntent:
     def test_default_fallback(self):
         agent = _make_agent()
         assert agent._parse_milestone_intent("show milestones") == "milestone_list"
+
+
+class TestOwnerGuardrailHelpers:
+    """Tests for owner-only conversational guardrail helpers."""
+
+    async def test_load_recent_messages_for_guardrails_handles_exception(self):
+        """Guardrail context loading should degrade to an empty list on failure."""
+        agent = _make_agent()
+        agent._memory.get_recent_context = AsyncMock(side_effect=RuntimeError("qdrant offline"))
+
+        result = await agent._load_recent_messages_for_guardrails(
+            user_id=123,
+            channel_id=456,
+        )
+
+        assert result == []
+
+    async def test_load_recent_messages_for_guardrails_rejects_non_list(self):
+        """Guardrail context loading should reject non-list payloads."""
+        agent = _make_agent()
+        agent._memory.get_recent_context = AsyncMock(return_value={"role": "assistant"})
+
+        result = await agent._load_recent_messages_for_guardrails(
+            user_id=123,
+            channel_id=456,
+        )
+
+        assert result == []
+
+    def test_owner_repair_request_is_meta_only(self):
+        """Repair detection should catch meta-questions, not normal rewrites."""
+        agent = _make_agent()
+
+        assert agent._is_owner_repair_request("What happened with that response?") is True
+        assert agent._is_owner_repair_request("Why did you answer like that?") is True
+        assert agent._is_owner_repair_request("Can you try that again but warmer?") is False
+
+    def test_owner_conversation_continuation_and_trace_helpers(self):
+        """Continuation helpers should recognize short referential follow-ups."""
+        agent = _make_agent()
+        recent_messages = [
+            {"role": "user", "content": "That script still sounds stiff."},
+            {"role": "assistant", "content": "I can revise it."},
+        ]
+
+        assert (
+            agent._is_owner_conversation_continuation(
+                "Can you make that sound warmer?",
+                recent_messages,
+            )
+            is True
+        )
+        assert (
+            agent._is_owner_conversation_continuation(
+                "Write a full launch plan for me",
+                [],
+            )
+            is False
+        )
+        assert agent._find_last_message_by_role(recent_messages, "assistant") == recent_messages[1]
+        assert (
+            agent._find_previous_user_turn(
+                recent_messages,
+                before_message=recent_messages[1],
+            )
+            == recent_messages[0]
+        )
+        assert agent._extract_routing_trace({"routing_trace": {"final_intent": "dev_watcher"}}) == {
+            "final_intent": "dev_watcher"
+        }
+        assert agent._extract_routing_trace("bad") is None
+
+    def test_owner_repair_response_without_trace_uses_generic_explanation(self):
+        """Repair explanation should still work when no routing trace was stored yet."""
+        agent = _make_agent()
+
+        response = agent._build_owner_repair_response(
+            recent_messages=[
+                {"role": "user", "content": "I needed help rewriting this intro."},
+                {"role": "assistant", "content": "Here is an unrelated answer."},
+            ]
+        )
+
+        assert "over-interpreted" in response
+        assert "current conversation" in response
+
+
+class TestAdditionalIntentParsers:
+    """Additional coverage for parser branches in Agent core."""
+
+    def test_parse_deadline_and_format_deadline(self):
+        """Deadline helpers should parse valid ISO values and ignore invalid ones."""
+        agent = _make_agent()
+
+        assert agent._parse_deadline("") is None
+        assert agent._parse_deadline("not-a-date") is None
+        assert agent._format_deadline("2026-03-10T09:30:00Z") == "2026-03-10"
+
+    def test_parse_personal_model_intent_branches(self):
+        """Personal-model parser should cover all explicit branch families."""
+        agent = _make_agent()
+
+        assert agent._parse_personal_model_intent("show my contacts") == "personal_contacts"
+        assert agent._parse_personal_model_intent("forget this learning") == "personal_forget"
+        assert agent._parse_personal_model_intent("export my personal data") == "personal_export"
+        assert agent._parse_personal_model_intent("show my policies") == "personal_policies"
+        assert agent._parse_personal_model_intent("set my timezone to PST") == "personal_update"
+        assert agent._parse_personal_model_intent("what do you know about me") == "personal_summary"
+
+    def test_parse_email_intent_branches(self):
+        """Email parser should cover branch-specific intents."""
+        agent = _make_agent()
+
+        assert agent._parse_email_intent("review draft emails") == "email_drafts"
+        assert agent._parse_email_intent("give me a weekly digest") == "email_digest"
+        assert agent._parse_email_intent("gmail account status") == "email_status"
+        assert agent._parse_email_intent("find email from Alice") == "email_search"
+        assert agent._parse_email_intent("show my calendar events today") == "email_calendar"
+        assert agent._parse_email_intent("any unread or urgent mail?") == "email_unread"
+        assert agent._parse_email_intent("check email") == "email_check"
+
+    def test_parse_email_router_intent_branches(self):
+        """Provider-agnostic email router parser should cover management actions."""
+        agent = _make_agent()
+
+        assert agent._parse_email_router_intent("connect gmail") == "email_connect"
+        assert agent._parse_email_router_intent("remove email account") == "email_disconnect"
+        assert (
+            agent._parse_email_router_intent("set the primary calendar")
+            == "email_set_primary_calendar"
+        )
+        assert (
+            agent._parse_email_router_intent("set the primary task list")
+            == "email_set_primary_task_list"
+        )
+        assert agent._parse_email_router_intent("show email queue status") == "email_queue_status"
+        assert agent._parse_email_router_intent("resume email queue") == "email_queue_resume"
+        assert agent._parse_email_router_intent("email account status") == "email_status"
+        assert agent._parse_email_router_intent("route my inbox") == "email_route"
+
+    def test_parse_health_update_and_youtube_intents(self):
+        """Health, update, and YouTube parsers should cover their explicit branches."""
+        agent = _make_agent()
+
+        assert agent._parse_health_intent("show yesterday's report") == "health_report"
+        assert agent._parse_health_intent("run system diagnostics") == "system_status"
+        assert agent._parse_update_intent("resume updates") == "resume_updates"
+        assert agent._parse_update_intent("rollback the update") == "rollback_update"
+        assert agent._parse_update_intent("install the latest release") == "apply_update"
+        assert agent._parse_update_intent("what version are you on") == "update_status"
+        assert (
+            agent._parse_youtube_intent("channel analysis report", "intelligence")
+            == "yt_analyze_channel"
+        )
+        assert (
+            agent._parse_youtube_intent("show strategy history", "strategy")
+            == "yt_strategy_history"
+        )
+        assert (
+            agent._parse_youtube_intent("setup YouTube management", "management")
+            == "yt_configure_management"
+        )
+        assert agent._parse_youtube_intent("health audit", "management") == "yt_channel_health"
+        assert (
+            agent._parse_youtube_intent("state status", "management")
+            == "yt_get_management_state"
+        )
+        assert agent._parse_youtube_intent("unknown", "unknown") == "unknown"

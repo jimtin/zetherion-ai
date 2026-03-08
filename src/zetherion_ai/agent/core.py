@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -96,6 +97,91 @@ USER_KNOWLEDGE_QUERY_HINTS = frozenset(
         "tell me what you know about me",
     }
 )
+OWNER_ROUTING_GUARDRAIL_CONFIDENCE = 0.9
+OWNER_ROUTING_TRACE_HISTORY_LIMIT = 6
+OWNER_REPAIR_REQUEST_HINTS = frozenset(
+    {
+        "what happened with that response",
+        "what happened with that answer",
+        "why did you respond like that",
+        "why did you answer like that",
+        "explain that response",
+        "explain that answer",
+    }
+)
+OWNER_CONVERSATION_REFERENCE_MARKERS = frozenset(
+    {
+        "that",
+        "this",
+        "it",
+        "response",
+        "answer",
+        "again",
+        "instead",
+        "meant",
+        "wrong",
+        "earlier",
+        "before",
+        "follow up",
+        "follow-up",
+        "clarify",
+        "rephrase",
+    }
+)
+OWNER_DEV_WATCHER_HINTS = frozenset(
+    {
+        "dev",
+        "code",
+        "coding",
+        "repo",
+        "repository",
+        "pull request",
+        "pr",
+        "commit",
+        "branch",
+        "deployment",
+        "deploy",
+        "release",
+        "ci",
+        "pipeline",
+        "build",
+        "journal",
+        "milestone",
+        "work on next",
+        "what should i work on",
+        "what did i code",
+        "what did i build",
+    }
+)
+OWNER_MEMORY_RECALL_HINTS = frozenset(
+    {
+        "remember",
+        "remember about me",
+        "what do you know about me",
+        "what have you learned about me",
+        "what do you remember about me",
+        "what's my",
+        "what is my",
+        "what are my",
+        "favorite",
+        "preferences",
+        "birthday",
+        "where do i live",
+        "where am i from",
+        "what did we talk about",
+        "do you remember",
+    }
+)
+
+
+@dataclass
+class OwnerRoutingGuardrailResult:
+    """Result of the owner-only routing guardrail pass."""
+
+    routing: RoutingDecision
+    routing_trace: dict[str, Any]
+    early_response: str | None = None
+    should_store_exchange: bool = False
 
 
 class Agent:
@@ -190,124 +276,151 @@ class Agent:
         # Step 1: Classify the message intent
         async with timed_operation("message_routing") as t:
             routing = await self._router.classify(message)
+        initial_routing = routing
+        guardrail = await self._apply_owner_conversation_guardrails(
+            user_id=user_id,
+            channel_id=channel_id,
+            message=message,
+            routing=routing,
+        )
+        routing = guardrail.routing
         log.info(
             "message_routed",
             intent=routing.intent.value,
+            initial_intent=initial_routing.intent.value,
             use_claude=routing.use_claude,
             confidence=routing.confidence,
+            initial_confidence=initial_routing.confidence,
+            guardrail_action=guardrail.routing_trace.get("guardrail_action"),
             duration_ms=t["elapsed_ms"],
         )
 
         # Step 2: Handle based on intent
         async with timed_operation("intent_handling") as t:
-            docs_response = await self._maybe_answer_from_docs(
-                user_id=user_id,
-                message=message,
-                routing=routing,
-            )
-            if docs_response is not None:
-                response = docs_response
+            if guardrail.early_response is not None:
+                response = guardrail.early_response
             else:
-                match routing.intent:
-                    case MessageIntent.MEMORY_STORE:
-                        response = await self._handle_memory_store(message, user_id=user_id)
-                    case MessageIntent.MEMORY_RECALL:
-                        if self._is_user_knowledge_summary_query(message):
+                docs_response = await self._maybe_answer_from_docs(
+                    user_id=user_id,
+                    message=message,
+                    routing=routing,
+                )
+                if docs_response is not None:
+                    response = docs_response
+                else:
+                    match routing.intent:
+                        case MessageIntent.MEMORY_STORE:
+                            response = await self._handle_memory_store(message, user_id=user_id)
+                        case MessageIntent.MEMORY_RECALL:
+                            if self._is_user_knowledge_summary_query(message):
+                                response = await self._handle_user_knowledge_summary(
+                                    user_id,
+                                    message,
+                                )
+                            else:
+                                response = await self._handle_memory_recall(user_id, message)
+                        case MessageIntent.USER_KNOWLEDGE_SUMMARY:
                             response = await self._handle_user_knowledge_summary(user_id, message)
-                        else:
-                            response = await self._handle_memory_recall(user_id, message)
-                    case MessageIntent.USER_KNOWLEDGE_SUMMARY:
-                        response = await self._handle_user_knowledge_summary(user_id, message)
-                    case MessageIntent.SYSTEM_COMMAND:
-                        response = await self._handle_system_command(message)
-                    case MessageIntent.SIMPLE_QUERY:
-                        response = await self._handle_simple_query(message)
-                    case MessageIntent.SYSTEM_HEALTH:
-                        response = await self._handle_skill_intent(
-                            user_id,
-                            message,
-                            "health_analyzer",
-                        )
-                    case MessageIntent.COMPLEX_TASK:
-                        response = await self._handle_complex_task(
-                            user_id,
-                            channel_id,
-                            message,
-                            routing,
-                        )
-                    # Skill intents (Phase 5G)
-                    case MessageIntent.TASK_MANAGEMENT:
-                        response = await self._handle_skill_intent(user_id, message, "task_manager")
-                    case MessageIntent.CALENDAR_QUERY:
-                        response = await self._handle_skill_intent(user_id, message, "calendar")
-                    case MessageIntent.PROFILE_QUERY:
-                        if self._is_user_knowledge_summary_query(message):
-                            response = await self._handle_user_knowledge_summary(user_id, message)
-                        else:
+                        case MessageIntent.SYSTEM_COMMAND:
+                            response = await self._handle_system_command(message)
+                        case MessageIntent.SIMPLE_QUERY:
+                            response = await self._handle_simple_query(message)
+                        case MessageIntent.SYSTEM_HEALTH:
                             response = await self._handle_skill_intent(
                                 user_id,
                                 message,
-                                "profile_manager",
+                                "health_analyzer",
                             )
-                    case MessageIntent.PERSONAL_MODEL:
-                        if self._is_user_knowledge_summary_query(message):
-                            response = await self._handle_user_knowledge_summary(user_id, message)
-                        else:
+                        case MessageIntent.COMPLEX_TASK:
+                            response = await self._handle_complex_task(
+                                user_id,
+                                channel_id,
+                                message,
+                                routing,
+                            )
+                        # Skill intents (Phase 5G)
+                        case MessageIntent.TASK_MANAGEMENT:
                             response = await self._handle_skill_intent(
                                 user_id,
                                 message,
-                                "personal_model",
+                                "task_manager",
                             )
-                    case MessageIntent.EMAIL_MANAGEMENT:
-                        response = await self._handle_skill_intent(
-                            user_id,
-                            message,
-                            "email",
-                        )
-                    case MessageIntent.UPDATE_MANAGEMENT:
-                        response = await self._handle_skill_intent(
-                            user_id,
-                            message,
-                            "update_checker",
-                        )
-                    case MessageIntent.DEV_WATCHER:
-                        response = await self._handle_skill_intent(
-                            user_id,
-                            message,
-                            "dev_watcher",
-                        )
-                    case MessageIntent.MILESTONE_MANAGEMENT:
-                        response = await self._handle_skill_intent(
-                            user_id,
-                            message,
-                            "milestone_tracker",
-                        )
-                    # YouTube skill intents (Phase 12)
-                    case MessageIntent.YOUTUBE_INTELLIGENCE:
-                        response = await self._handle_skill_intent(
-                            user_id,
-                            message,
-                            "youtube_intelligence",
-                        )
-                    case MessageIntent.YOUTUBE_MANAGEMENT:
-                        response = await self._handle_skill_intent(
-                            user_id,
-                            message,
-                            "youtube_management",
-                        )
-                    case MessageIntent.YOUTUBE_STRATEGY:
-                        response = await self._handle_skill_intent(
-                            user_id,
-                            message,
-                            "youtube_strategy",
-                        )
-                    case _:
-                        response = await self._handle_complex_task(
-                            user_id,
-                            channel_id,
-                            message,
-                            routing,
-                        )
+                        case MessageIntent.CALENDAR_QUERY:
+                            response = await self._handle_skill_intent(user_id, message, "calendar")
+                        case MessageIntent.PROFILE_QUERY:
+                            if self._is_user_knowledge_summary_query(message):
+                                response = await self._handle_user_knowledge_summary(
+                                    user_id,
+                                    message,
+                                )
+                            else:
+                                response = await self._handle_skill_intent(
+                                    user_id,
+                                    message,
+                                    "profile_manager",
+                                )
+                        case MessageIntent.PERSONAL_MODEL:
+                            if self._is_user_knowledge_summary_query(message):
+                                response = await self._handle_user_knowledge_summary(
+                                    user_id,
+                                    message,
+                                )
+                            else:
+                                response = await self._handle_skill_intent(
+                                    user_id,
+                                    message,
+                                    "personal_model",
+                                )
+                        case MessageIntent.EMAIL_MANAGEMENT:
+                            response = await self._handle_skill_intent(
+                                user_id,
+                                message,
+                                "email",
+                            )
+                        case MessageIntent.UPDATE_MANAGEMENT:
+                            response = await self._handle_skill_intent(
+                                user_id,
+                                message,
+                                "update_checker",
+                            )
+                        case MessageIntent.DEV_WATCHER:
+                            response = await self._handle_skill_intent(
+                                user_id,
+                                message,
+                                "dev_watcher",
+                            )
+                        case MessageIntent.MILESTONE_MANAGEMENT:
+                            response = await self._handle_skill_intent(
+                                user_id,
+                                message,
+                                "milestone_tracker",
+                            )
+                        # YouTube skill intents (Phase 12)
+                        case MessageIntent.YOUTUBE_INTELLIGENCE:
+                            response = await self._handle_skill_intent(
+                                user_id,
+                                message,
+                                "youtube_intelligence",
+                            )
+                        case MessageIntent.YOUTUBE_MANAGEMENT:
+                            response = await self._handle_skill_intent(
+                                user_id,
+                                message,
+                                "youtube_management",
+                            )
+                        case MessageIntent.YOUTUBE_STRATEGY:
+                            response = await self._handle_skill_intent(
+                                user_id,
+                                message,
+                                "youtube_strategy",
+                            )
+                        case _:
+                            response = await self._handle_complex_task(
+                                user_id,
+                                channel_id,
+                                message,
+                                routing,
+                            )
         log.info(
             "intent_handled",
             intent=routing.intent.value,
@@ -316,7 +429,11 @@ class Agent:
         )
 
         # Step 3: Store the exchange in memory (skip for lightweight intents)
-        if routing.intent not in (MessageIntent.SIMPLE_QUERY, MessageIntent.SYSTEM_COMMAND):
+        should_store_exchange = (
+            routing.intent not in (MessageIntent.SIMPLE_QUERY, MessageIntent.SYSTEM_COMMAND)
+            or guardrail.should_store_exchange
+        )
+        if should_store_exchange:
             try:
                 async with timed_operation("memory_storage") as t:
                     await self._memory.store_message(
@@ -324,13 +441,20 @@ class Agent:
                         channel_id=channel_id,
                         role="user",
                         content=message,
-                        metadata={"intent": routing.intent.value},
+                        metadata={
+                            "intent": routing.intent.value,
+                            "routing_trace": guardrail.routing_trace,
+                        },
                     )
                     await self._memory.store_message(
                         user_id=user_id,
                         channel_id=channel_id,
                         role="assistant",
                         content=response,
+                        metadata={
+                            "intent": routing.intent.value,
+                            "routing_trace": guardrail.routing_trace,
+                        },
                     )
                 log.debug("messages_stored", duration_ms=t["elapsed_ms"])
             except Exception as exc:
@@ -351,6 +475,306 @@ class Agent:
         )
 
         return response
+
+    async def _apply_owner_conversation_guardrails(
+        self,
+        *,
+        user_id: int,
+        channel_id: int,
+        message: str,
+        routing: RoutingDecision,
+    ) -> OwnerRoutingGuardrailResult:
+        """Apply owner-only conversational guardrails before skill dispatch."""
+        routing_trace = {
+            "original_intent": routing.intent.value,
+            "original_confidence": routing.confidence,
+            "original_reasoning": routing.reasoning,
+            "final_intent": routing.intent.value,
+            "guardrail_action": "pass_through",
+            "guardrail_reason": "",
+        }
+
+        if not self._needs_owner_guardrail_review(message, routing):
+            return OwnerRoutingGuardrailResult(routing=routing, routing_trace=routing_trace)
+
+        recent_messages = await self._load_recent_messages_for_guardrails(
+            user_id=user_id,
+            channel_id=channel_id,
+        )
+
+        if self._is_owner_repair_request(message):
+            repair_response = self._build_owner_repair_response(
+                recent_messages=recent_messages,
+            )
+            routing_trace.update(
+                {
+                    "final_intent": MessageIntent.SIMPLE_QUERY.value,
+                    "guardrail_action": "repair_response_explanation",
+                    "guardrail_reason": "Detected follow-up question about the previous reply",
+                }
+            )
+            return OwnerRoutingGuardrailResult(
+                routing=RoutingDecision(
+                    intent=MessageIntent.SIMPLE_QUERY,
+                    confidence=1.0,
+                    reasoning="Owner repair follow-up",
+                    use_claude=False,
+                ),
+                routing_trace=routing_trace,
+                early_response=repair_response,
+                should_store_exchange=True,
+            )
+
+        if self._should_fallback_dev_watcher_route(
+            message=message,
+            routing=routing,
+            recent_messages=recent_messages,
+        ):
+            routing_trace.update(
+                {
+                    "final_intent": MessageIntent.COMPLEX_TASK.value,
+                    "guardrail_action": "fallback_to_conversation",
+                    "guardrail_reason": "Low-confidence dev_watcher route lacked dev-specific cues",
+                }
+            )
+            return OwnerRoutingGuardrailResult(
+                routing=RoutingDecision(
+                    intent=MessageIntent.COMPLEX_TASK,
+                    confidence=max(routing.confidence, 0.6),
+                    reasoning="Owner conversation guardrail overrode dev_watcher route",
+                    use_claude=False,
+                ),
+                routing_trace=routing_trace,
+            )
+
+        if self._should_fallback_memory_recall_route(
+            message=message,
+            routing=routing,
+            recent_messages=recent_messages,
+        ):
+            routing_trace.update(
+                {
+                    "final_intent": MessageIntent.COMPLEX_TASK.value,
+                    "guardrail_action": "fallback_to_conversation",
+                    "guardrail_reason": (
+                        "Low-confidence memory_recall route looked like a "
+                        "conversational follow-up"
+                    ),
+                }
+            )
+            return OwnerRoutingGuardrailResult(
+                routing=RoutingDecision(
+                    intent=MessageIntent.COMPLEX_TASK,
+                    confidence=max(routing.confidence, 0.6),
+                    reasoning="Owner conversation guardrail overrode memory_recall route",
+                    use_claude=False,
+                ),
+                routing_trace=routing_trace,
+            )
+
+        return OwnerRoutingGuardrailResult(routing=routing, routing_trace=routing_trace)
+
+    @staticmethod
+    def _normalize_owner_guardrail_message(message: str) -> str:
+        """Normalize message text for conversational guardrail checks."""
+        return " ".join(message.strip().lower().split())
+
+    def _needs_owner_guardrail_review(self, message: str, routing: RoutingDecision) -> bool:
+        """Return True when owner-only follow-up guardrails should inspect the turn."""
+        if routing.intent in (MessageIntent.DEV_WATCHER, MessageIntent.MEMORY_RECALL):
+            return True
+        return self._is_owner_repair_request(message)
+
+    async def _load_recent_messages_for_guardrails(
+        self,
+        *,
+        user_id: int,
+        channel_id: int,
+    ) -> list[dict[str, Any]]:
+        """Load recent owner conversation turns used by routing guardrails."""
+        try:
+            recent_messages = await self._memory.get_recent_context(
+                user_id=user_id,
+                channel_id=channel_id,
+                limit=OWNER_ROUTING_TRACE_HISTORY_LIMIT,
+            )
+        except Exception as exc:
+            log.debug(
+                "owner_guardrail_context_unavailable",
+                user_id=user_id,
+                channel_id=channel_id,
+                error=str(exc),
+            )
+            return []
+        if isinstance(recent_messages, list):
+            return recent_messages
+        return []
+
+    def _should_fallback_dev_watcher_route(
+        self,
+        *,
+        message: str,
+        routing: RoutingDecision,
+        recent_messages: list[dict[str, Any]],
+    ) -> bool:
+        """Return True when an owner dev-watcher route should stay conversational."""
+        if routing.intent is not MessageIntent.DEV_WATCHER:
+            return False
+        if self._looks_like_dev_watcher_request(message):
+            return False
+        return routing.confidence < OWNER_ROUTING_GUARDRAIL_CONFIDENCE or (
+            self._is_owner_conversation_continuation(message, recent_messages)
+        )
+
+    def _should_fallback_memory_recall_route(
+        self,
+        *,
+        message: str,
+        routing: RoutingDecision,
+        recent_messages: list[dict[str, Any]],
+    ) -> bool:
+        """Return True when an owner memory-recall route should stay conversational."""
+        if routing.intent is not MessageIntent.MEMORY_RECALL:
+            return False
+        if self._looks_like_memory_recall_request(message):
+            return False
+        return routing.confidence < OWNER_ROUTING_GUARDRAIL_CONFIDENCE or (
+            self._is_owner_conversation_continuation(message, recent_messages)
+        )
+
+    def _is_owner_repair_request(self, message: str) -> bool:
+        """Detect follow-up turns asking why the previous answer was off-track."""
+        normalized = self._normalize_owner_guardrail_message(message)
+        if not normalized:
+            return False
+        if any(hint in normalized for hint in OWNER_REPAIR_REQUEST_HINTS):
+            return True
+        return (
+            ("what happened" in normalized or "why did you" in normalized)
+            and ("response" in normalized or "answer" in normalized)
+        )
+
+    def _is_owner_conversation_continuation(
+        self,
+        message: str,
+        recent_messages: list[dict[str, Any]],
+    ) -> bool:
+        """Detect short owner follow-ups that should remain in the current conversation."""
+        if not recent_messages:
+            return False
+
+        last_assistant = self._find_last_message_by_role(recent_messages, "assistant")
+        if last_assistant is None:
+            return False
+
+        normalized = self._normalize_owner_guardrail_message(message)
+        if not normalized:
+            return False
+        if self._is_owner_repair_request(message):
+            return True
+
+        tokens = normalized.split()
+        if len(tokens) > 18:
+            return False
+
+        return any(marker in normalized for marker in OWNER_CONVERSATION_REFERENCE_MARKERS)
+
+    def _looks_like_dev_watcher_request(self, message: str) -> bool:
+        """Return True when the message clearly belongs to dev_watcher."""
+        normalized = self._normalize_owner_guardrail_message(message)
+        return any(hint in normalized for hint in OWNER_DEV_WATCHER_HINTS)
+
+    def _looks_like_memory_recall_request(self, message: str) -> bool:
+        """Return True when the message clearly asks for remembered owner context."""
+        normalized = self._normalize_owner_guardrail_message(message)
+        if any(hint in normalized for hint in OWNER_MEMORY_RECALL_HINTS):
+            return True
+        return self._is_user_knowledge_summary_query(message)
+
+    @staticmethod
+    def _find_last_message_by_role(
+        recent_messages: list[dict[str, Any]],
+        role: str,
+    ) -> dict[str, Any] | None:
+        """Find the most recent message with the given role."""
+        for entry in reversed(recent_messages):
+            if isinstance(entry, dict) and entry.get("role") == role:
+                return entry
+        return None
+
+    @staticmethod
+    def _extract_routing_trace(message_entry: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Extract a stored routing trace from a conversation record when present."""
+        if not isinstance(message_entry, dict):
+            return None
+        routing_trace = message_entry.get("routing_trace")
+        if isinstance(routing_trace, dict):
+            return routing_trace
+        return None
+
+    def _find_previous_user_turn(
+        self,
+        recent_messages: list[dict[str, Any]],
+        *,
+        before_message: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        """Find the most recent user turn before a given assistant reply."""
+        if before_message is None:
+            return self._find_last_message_by_role(recent_messages, "user")
+
+        for index in range(len(recent_messages) - 1, -1, -1):
+            if recent_messages[index] is before_message:
+                for candidate in reversed(recent_messages[:index]):
+                    if isinstance(candidate, dict) and candidate.get("role") == "user":
+                        return candidate
+                break
+        return self._find_last_message_by_role(recent_messages, "user")
+
+    @staticmethod
+    def _humanize_routing_intent(intent_name: str | None) -> str:
+        """Render an intent enum value as a human-readable phrase."""
+        if not intent_name:
+            return "specialist route"
+        return intent_name.replace("_", " ")
+
+    def _build_owner_repair_response(
+        self,
+        *,
+        recent_messages: list[dict[str, Any]],
+    ) -> str:
+        """Explain an off-track owner reply in plain conversational language."""
+        last_assistant = self._find_last_message_by_role(recent_messages, "assistant")
+        last_user = self._find_previous_user_turn(recent_messages, before_message=last_assistant)
+        last_trace = self._extract_routing_trace(last_assistant)
+
+        route_name = self._humanize_routing_intent(
+            (last_trace or {}).get("final_intent") or (last_trace or {}).get("original_intent")
+        )
+        prior_reasoning = str((last_trace or {}).get("original_reasoning") or "").strip()
+
+        if last_trace is None:
+            opening = "I over-interpreted the previous turn and answered too narrowly."
+        else:
+            opening = (
+                f"I treated the previous turn like a {route_name} request, "
+                "which was the wrong call."
+            )
+
+        if last_user is not None:
+            prior_message = str(last_user.get("content") or "").strip()
+            if prior_message:
+                snippet = prior_message[:120]
+                if len(prior_message) > 120:
+                    snippet += "..."
+                opening += f' You were still talking about "{snippet}".'
+
+        if prior_reasoning:
+            opening += f" The router likely fixated on {prior_reasoning.lower().rstrip('.')}."
+
+        return (
+            f"{opening} I should have stayed in the current conversation and answered your "
+            "actual follow-up directly."
+        )
 
     async def _handle_simple_query(self, message: str) -> str:
         """Handle simple queries with Gemini Flash (cheap/fast).
