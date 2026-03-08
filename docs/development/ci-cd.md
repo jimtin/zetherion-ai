@@ -196,6 +196,7 @@ The active `main` branch ruleset currently requires these check contexts:
 - `Zetherion Boundary Check`
 
 The `required-e2e-gate` job validates the committed local receipt contract when the risk classifier marks a PR `e2e_required=true`; GitHub does not execute the full E2E suites directly on PRs. Committed receipts use `head_sha=local` because tracked receipt files cannot self-hash the final commit without recursion. The PR fast path is now limited to `detect-changes`, `risk-classifier`, `lint`, `secret-scan`, `pipeline-contract`, `zetherion-boundary-check`, `required-e2e-gate`, `CI Summary`, and `CI Failure Attribution`.
+The required `Pipeline Contract` job also validates pull-request metadata on PR events: the head branch must start with `codex/`, capability IDs and workflow scenario IDs must be declared in the PR body, deterministic validation evidence must be listed, and the receipt checklist must be explicitly checked. A successful run prints `Pull-request metadata matches policy.`
 
 Weekly or manual GitHub runs remain the independent heavy-verification cadence for `type-check`, `security`, `semgrep`, `dependency-audit`, `license-check`, `pre-commit`, `docs-contract`, `unit-test`, `integration-test`, `docker-build-test`, and CodeQL. The PR fast path also publishes a best-effort `CI Cost Report`, while the weekly/manual `CI Maintenance` workflow emits usage summaries and stale-cache hygiene receipts.
 

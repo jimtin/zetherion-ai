@@ -11,6 +11,6 @@
 
 ## Receipt / Verification
 - [ ] Included deterministic local evidence for this segment.
-- [ ] If `e2e_required=true`, updated and committed `.ci/e2e-receipt.json`.
-- [ ] If this PR changes CI, deploy, or gating logic, same-PR regression coverage is included.
-- [ ] If this PR changes Windows deploy behavior, post-merge Windows verification is included or explicitly marked not applicable.
+- [ ] Updated and committed `.ci/e2e-receipt.json`, or this PR is not `e2e_required`.
+- [ ] Same-PR regression coverage is included, or this PR does not change CI, deploy, or gating logic.
+- [ ] Windows post-merge verification is included, or this PR does not change Windows deploy behavior.

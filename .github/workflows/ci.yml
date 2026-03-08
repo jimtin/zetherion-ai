@@ -379,6 +379,10 @@ jobs:
           python scripts/check-announcement-dm-guard.py
           python scripts/check-optional-service-guards.py
 
+      - name: Validate PR metadata policy
+        if: ${{ github.event_name == 'pull_request' }}
+        run: python scripts/check_pr_metadata.py --event-path "$GITHUB_EVENT_PATH"
+
   zetherion-boundary-check:
     name: Zetherion Boundary Check
     runs-on: ubuntu-latest

@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - PR metadata policy enforcement for agent handoff (2026-03-08)
+
+- Added `scripts/check_pr_metadata.py` plus unit coverage so the required `Pipeline Contract` job now rejects pull requests that do not use a `codex/` head branch or that leave capability IDs, workflow scenario IDs, validation evidence, or receipt checklist items as placeholders.
+- Updated `.github/pull_request_template.md`, `AGENTS.md`, `docs/development/ci-cd.md`, and the local gate manifest so another agent is constrained by repository policy and CI enforcement instead of relying on remembered process.
+
 ### Changed - Segment CI-10 Closeout and policy enforcement (2026-03-08)
 
 - Impacted capability IDs:
