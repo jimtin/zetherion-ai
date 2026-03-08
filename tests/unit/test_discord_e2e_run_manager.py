@@ -215,7 +215,6 @@ def test_create_run_fails_when_target_bot_lease_is_active(tmp_path: Path) -> Non
         )
 
 
-
 def test_create_run_windows_prod_canary_ignores_stale_test_target_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -269,6 +268,7 @@ def test_resolve_target_token_prefers_test_token_for_local_required(
 
     assert module._resolve_target_token() == "test-token"
 
+
 def test_resolve_admin_token_prefers_explicit_admin_token(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_module()
     monkeypatch.setenv("DISCORD_E2E_ADMIN_TOKEN", "admin-token")
@@ -285,6 +285,7 @@ def test_resolve_admin_token_falls_back_to_runtime_token(monkeypatch: pytest.Mon
     monkeypatch.setenv("TEST_DISCORD_BOT_TOKEN", "synthetic-token")
 
     assert module._resolve_admin_token() == "prod-token"
+
 
 def test_cleanup_run_replays_cleanup_prompts_and_deletes_channel(tmp_path: Path) -> None:
     module = _load_module()
