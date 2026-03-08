@@ -39,3 +39,4 @@ Supporting source of truth for the rollout contract lives in `.ci/ci_hardening_w
 - Segment 2 will add deterministic regression coverage for receipt, shell, and CI-support code.
 - Segment 3 slims PR CI to the fast-path contract; the required ruleset contexts remain unchanged because they already matched the target required-check set.
 - Segment 5 now inserts isolated Docker-backed E2E stack orchestration before any further deploy hardening so concurrent local runs do not collide on project names, ports, bind mounts, or residual containers.
+- The workstream closes by validating policy docs and the PR template through the pipeline contract guard. Future CI, deploy, or gating PRs must fill `.github/pull_request_template.md` with capability IDs, workflow scenario IDs, and receipt/verification evidence.

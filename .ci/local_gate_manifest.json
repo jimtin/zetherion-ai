@@ -77,7 +77,12 @@
     "scripts/check-docs-links.py",
     "scripts/check-route-doc-parity.py",
     "scripts/check-cgs-route-doc-parity.py",
-    "scripts/check-env-doc-parity.py"
+    "scripts/check-env-doc-parity.py",
+    ".ci/ci_hardening_workstream_manifest.json",
+    ".github/pull_request_template.md",
+    "AGENTS.md",
+    "docs/development/ci-cd.md",
+    "docs/development/ci-hardening-baseline.md"
   ],
   "requirements": {
     "endpoint-doc-bundle": {
@@ -278,7 +283,12 @@
         "scripts/run-local-gate-preflight.sh",
         "scripts/pre-push-tests.sh",
         "scripts/test-full.sh",
-        "scripts/local-required-e2e-receipt.sh"
+        "scripts/local-required-e2e-receipt.sh",
+        ".ci/ci_hardening_workstream_manifest.json",
+        ".github/pull_request_template.md",
+        "AGENTS.md",
+        "docs/development/ci-cd.md",
+        "docs/development/ci-hardening-baseline.md"
       ],
       "requirements": [
         "ci-receipt-regression-suite",
