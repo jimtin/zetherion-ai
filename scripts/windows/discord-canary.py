@@ -384,6 +384,19 @@ def _update_state(state: dict[str, Any], receipt: dict[str, Any]) -> dict[str, A
     return updated
 
 
+def prepare_bash_wrapper(*, deploy_path: Path, wrapper_path: Path) -> str:
+    wrapper_bytes = wrapper_path.read_bytes()
+    normalized_bytes = wrapper_bytes.replace(b"\r\n", b"\n")
+    if normalized_bytes == wrapper_bytes:
+        return wrapper_path.relative_to(deploy_path).as_posix()
+
+    normalized_dir = deploy_path / "data" / "discord-canary" / "normalized-wrapper"
+    normalized_dir.mkdir(parents=True, exist_ok=True)
+    normalized_path = normalized_dir / wrapper_path.name
+    normalized_path.write_bytes(normalized_bytes)
+    return normalized_path.relative_to(deploy_path).as_posix()
+
+
 def run_canary(
     *,
     deploy_path: Path,
@@ -406,7 +419,7 @@ def run_canary(
     wrapper_path = deploy_path / "scripts" / "run-required-discord-e2e.sh"
     if not wrapper_path.exists():
         raise RuntimeError(f"Discord E2E wrapper not found: {wrapper_path}")
-    wrapper_command = wrapper_path.relative_to(deploy_path).as_posix()
+    wrapper_command = prepare_bash_wrapper(deploy_path=deploy_path, wrapper_path=wrapper_path)
 
     result_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.parent.mkdir(parents=True, exist_ok=True)
