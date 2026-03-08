@@ -29,8 +29,10 @@ It does not cover external gateway/public API mapping.
 5. `seg5-zeth-archive-worker-guardrails` (completed): archive/purge maintenance worker logic, server lifecycle loop wiring, retrieval exclusion for `archiving|archived|purged`, and regression tests.
 6. Remaining segments continue in strict one-PR-per-segment order for additional hardening only.
 
-## Implementation Status Update (2026-03-05)
+## Implementation Status Update (2026-03-08)
 
+- Upstream tenant session/chat routes now persist tenant-local `memory_subject_id`, rolling `conversation_summary`, and durable `tenant_subject_memories` for public API conversational recall.
+- That conversational runtime work stays in `tenant_raw` and does not change the document archive/delete/restore contract defined in this specification.
 - Segment 2 data-plane isolation foundation added owner-vs-tenant storage-plane
   routing, object-storage domain prefixes, additive PostgreSQL isolation schema
   bootstrap, and encryption-domain helpers beneath the upstream runtime.

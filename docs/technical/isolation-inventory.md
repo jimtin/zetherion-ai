@@ -50,6 +50,9 @@ The manifest captures the current state of:
   - tenant chat, document, messaging, and execution data in
     `src/zetherion_ai/api/tenant.py` and
     `src/zetherion_ai/admin/tenant_admin_manager.py`
+  - tenant session recall state now includes `chat_sessions.memory_subject_id`,
+    `chat_sessions.conversation_summary`, and `tenant_subject_memories`, all of
+    which remain tenant-local and are not shared with owner-personal runtime paths
 - `control_plane`
   - CGS tenant mappings, audits, request logs, queueing, rollout, and
     announcement dispatch
@@ -84,6 +87,19 @@ The manifest captures the current state of:
   - prompt and routing surfaces that still depend on implicit caller discipline
     instead of fail-closed scope labels
 
+### Segment 2 tenant conversation additions
+
+- `src/zetherion_ai/api/conversation_runtime.py`
+  - tenant-only prompt context assembler for `/api/v1/chat*`; reads and writes
+    `tenant_raw` session summaries plus durable subject memories
+- `src/zetherion_ai/skills/client_chat.py`
+  - now accepts tenant-scoped context notes from the public API runtime and
+    wraps them in `tenant_raw` scope labels before inference
+- `src/zetherion_ai/api/routes/sessions.py`
+  - now derives `memory_subject_id` from explicit client input or
+    `external_user_id`; the identifier remains tenant-local metadata rather
+    than an auth or cross-domain join key
+
 ## Migration Rules Set by This Baseline
 
 - New isolation work must extend the manifest instead of silently bypassing it.
@@ -96,4 +112,5 @@ The manifest captures the current state of:
 - CGS tenant migration now writes `cgs_ai_tenant_migration_receipts` in the control-plane domain and owner-safe tenant health snapshots into the `owner_portfolio` schema; later segments must preserve that split during cutover.
 - Prompt isolation now starts in `src/zetherion_ai/trust/scope.py`; current
   integrations cover owner agent prompts, tenant chat prompts, email routing
-  prompts, docs knowledge prompts, and tenant document QA prompts.
+  prompts, docs knowledge prompts, tenant document QA prompts, and the tenant
+  public-chat conversation context path.

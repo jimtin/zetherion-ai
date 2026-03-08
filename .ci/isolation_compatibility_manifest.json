@@ -1,6 +1,6 @@
 {
   "segment_id": "segment-0-current-state-isolation-inventory",
-  "generated_on": "2026-03-06",
+  "generated_on": "2026-03-08",
   "impacted_capability_ids": [
     "isolation.inventory.current-state-map",
     "trust.domains.canonical-vocabulary",
@@ -102,6 +102,7 @@
         "tenants",
         "chat_sessions",
         "chat_messages",
+        "tenant_subject_memories",
         "tenant_audit_log",
         "tenant_contacts",
         "tenant_interactions",
@@ -118,7 +119,7 @@
         "tenant_recommendations",
         "tenant_recommendation_feedback"
       ],
-      "migration_note": "Release markers and nonces should move under control_plane during later isolation segments."
+      "migration_note": "Tenant session summaries and subject memories now stay in tenant_raw; release markers and nonces should move under control_plane during later isolation segments."
     },
     {
       "id": "personal-relational",
@@ -432,6 +433,7 @@
       "paths": [
         "src/zetherion_ai/api/server.py",
         "src/zetherion_ai/api/middleware.py",
+        "src/zetherion_ai/api/routes/sessions.py",
         "src/zetherion_ai/api/routes/chat.py",
         "src/zetherion_ai/api/routes/documents.py",
         "src/zetherion_ai/api/routes/messaging.py",
@@ -503,6 +505,8 @@
     {
       "id": "domain-prompts",
       "paths": [
+        "src/zetherion_ai/api/conversation_runtime.py",
+        "src/zetherion_ai/skills/client_chat.py",
         "src/zetherion_ai/skills/gmail/replies.py",
         "src/zetherion_ai/documents/service.py",
         "src/zetherion_ai/agent/docs_knowledge.py"
@@ -512,7 +516,7 @@
         "tenant_raw",
         "control_plane"
       ],
-      "migration_note": "Domain prompt fragments currently rely on caller discipline for scope separation."
+      "migration_note": "Tenant public-chat context assembly now stays in tenant_raw, but domain prompt fragments still rely on caller discipline for some cross-domain separation."
     }
   ],
   "job_flows": [

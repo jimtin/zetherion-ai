@@ -119,6 +119,15 @@ class TestBuildSystemPrompt:
         prompt = build_system_prompt(tenant, signals)
         assert "IMPORTANT" not in prompt
 
+    def test_context_notes_are_added_to_prompt(self) -> None:
+        tenant = {"name": "Bob's Plumbing", "config": {}}
+        prompt = build_system_prompt(
+            tenant,
+            context_notes="Known tenant user context:\n- response style: brief",
+        )
+        assert "Known tenant user context" in prompt
+        assert "response style: brief" in prompt
+
 
 # ---------------------------------------------------------------------------
 # ChatResponse
@@ -269,6 +278,17 @@ class TestGenerateResponse:
         )
         call_kwargs = skill._broker.infer.call_args.kwargs
         assert call_kwargs["messages"] == history
+
+    @pytest.mark.asyncio
+    async def test_passes_context_notes(self, skill: ClientChatSkill) -> None:
+        await skill.generate_response(
+            tenant=_TENANT,
+            message="What services?",
+            context_notes="Known tenant user context:\n- response style: brief",
+        )
+        call_kwargs = skill._broker.infer.call_args.kwargs
+        assert "Known tenant user context" in call_kwargs["system_prompt"]
+        assert "response style: brief" in call_kwargs["system_prompt"]
 
 
 # ---------------------------------------------------------------------------

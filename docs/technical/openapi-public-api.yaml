@@ -3,7 +3,7 @@ info:
   title: Zetherion Upstream API
   version: 1.0.0
   description: Internal `/api/v1` upstream contract consumed by the CGS gateway. External clients should use CGS `/service/ai/v1`.
-  x-maintenance-note: "2026-03-06: added internal data-plane isolation foundations (owner/tenant Qdrant routing, scoped object-storage prefixes, additive PostgreSQL isolation schemas, and owner-vs-tenant encryption domains) without changing the upstream /api/v1 route contract. 2026-03-05: added tenant messaging read/send routes plus document archive/delete + restore lifecycle updates."
+  x-maintenance-note: "2026-03-08: /api/v1/sessions now accepts optional memory_subject_id, derives a tenant-local subject when omitted, and returns conversation_summary metadata for tenant-scoped conversational recall. /api/v1/chat and /api/v1/chat/stream now assemble prompt context from tenant_raw session summaries plus tenant subject memories without changing auth modes or route paths. 2026-03-06: added internal data-plane isolation foundations (owner/tenant Qdrant routing, scoped object-storage prefixes, additive PostgreSQL isolation schemas, and owner-vs-tenant encryption domains) without changing the upstream /api/v1 route contract. 2026-03-05: added tenant messaging read/send routes plus document archive/delete + restore lifecycle updates."
 servers:
   - url: https://{host}
     variables:
@@ -26,6 +26,13 @@ paths:
   /api/v1/sessions:
     post:
       summary: Create tenant chat session
+      description: Create a tenant-scoped session token and optionally bind the session to a stable tenant-local memory subject.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionCreateRequest'
       responses:
         '201':
           description: Session created
@@ -41,6 +48,10 @@ paths:
       responses:
         '200':
           description: Session metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionInfo'
     delete:
       summary: Delete session
       parameters:
@@ -484,6 +495,19 @@ components:
         service:
           type: string
       required: [status, service]
+    SessionCreateRequest:
+      type: object
+      properties:
+        external_user_id:
+          type: string
+          nullable: true
+        memory_subject_id:
+          type: string
+          nullable: true
+          description: Stable tenant-local subject key for cross-session conversational memory. When omitted, the runtime derives it from external_user_id when available.
+        metadata:
+          type: object
+          additionalProperties: true
     SessionResponse:
       type: object
       properties:
@@ -496,12 +520,55 @@ components:
         external_user_id:
           type: string
           nullable: true
+        memory_subject_id:
+          type: string
+          nullable: true
+        conversation_summary:
+          type: string
+          description: Rolling tenant-scoped summary of the active conversation.
         created_at:
+          type: string
+          format: date-time
+        expires_at:
           type: string
           format: date-time
         session_token:
           type: string
-      required: [session_id, tenant_id, created_at, session_token]
+      required: [session_id, tenant_id, conversation_summary, created_at, expires_at, session_token]
+    SessionInfo:
+      type: object
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        external_user_id:
+          type: string
+          nullable: true
+        memory_subject_id:
+          type: string
+          nullable: true
+        conversation_summary:
+          type: string
+          description: Rolling tenant-scoped summary of the active conversation.
+        created_at:
+          type: string
+          format: date-time
+        last_active:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+      required:
+        - session_id
+        - tenant_id
+        - conversation_summary
+        - created_at
+        - last_active
+        - expires_at
     DocumentUploadCreateRequest:
       type: object
       required: [file_name]

@@ -9,8 +9,10 @@ Public exposure rule:
 - External clients must not call Zetherion `/api/v1` directly.
 - CGS `/service/ai/v1` is the only supported public API for this capability.
 
-## Maintenance Note (2026-03-05)
+## Maintenance Note (2026-03-08)
 
+- Upstream tenant conversation routes now support tenant-scoped `memory_subject_id` and rolling `conversation_summary` metadata for `/api/v1/sessions` and `/api/v1/chat*`.
+- Those conversation changes stay in `tenant_raw` and do not alter document intelligence route contracts, storage partitions, or retrieval authorization.
 - Segment 2 data-plane isolation foundation added scoped object-storage prefixes,
   additive PostgreSQL isolation schemas, and owner-vs-tenant Qdrant/encryption
   routing beneath document intelligence storage surfaces.

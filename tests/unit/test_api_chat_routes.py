@@ -45,7 +45,12 @@ def _parse_sse_events(raw: bytes) -> list[dict[str, object]]:
 async def chat_routes_client():
     """aiohttp TestClient with tenant/session context injected."""
     tenant = {"tenant_id": "tenant-1", "name": "Test Tenant", "config": {}}
-    session = {"session_id": "session-1", "tenant_id": "tenant-1"}
+    session = {
+        "session_id": "session-1",
+        "tenant_id": "tenant-1",
+        "memory_subject_id": "subject-1",
+        "conversation_summary": "",
+    }
 
     tenant_manager = AsyncMock()
 
@@ -61,6 +66,9 @@ async def chat_routes_client():
 
     tenant_manager.add_message = AsyncMock(side_effect=_add_message)
     tenant_manager.get_messages = AsyncMock(return_value=[])
+    tenant_manager.list_subject_memories = AsyncMock(return_value=[])
+    tenant_manager.upsert_subject_memory = AsyncMock()
+    tenant_manager.persist_session_context = AsyncMock()
 
     @web.middleware
     async def inject_context(request: web.Request, handler):
@@ -191,6 +199,72 @@ async def test_handle_chat_success_with_context_and_model(chat_routes_client) ->
         {"role": "user", "content": "Earlier question"},
         {"role": "assistant", "content": "Earlier answer"},
     ]
+    assert args["context_notes"] is None
+    tenant_manager.persist_session_context.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_chat_passes_tenant_memory_context(chat_routes_client) -> None:
+    """Known tenant memories and summaries are injected into prompt context."""
+    client, tenant_manager, _, session = chat_routes_client
+    session["conversation_summary"] = "Recent user requests: asked about bathroom pricing"
+    tenant_manager.get_messages = AsyncMock(
+        return_value=[
+            {"role": "assistant", "content": "Earlier answer"},
+            {"role": "user", "content": "Do you still remember my preference?"},
+        ]
+    )
+    tenant_manager.list_subject_memories = AsyncMock(
+        return_value=[
+            {
+                "category": "preference",
+                "memory_key": "response_style",
+                "value": "brief",
+                "confidence": 0.88,
+            }
+        ]
+    )
+
+    skill = MagicMock()
+    skill.generate_response = AsyncMock(
+        return_value=SimpleNamespace(content="Still keeping it brief.", model="test-model")
+    )
+    client.app["client_chat_skill"] = skill
+
+    response = await client.post("/api/v1/chat", json={"message": "Keep going"})
+
+    assert response.status == 200
+    context_notes = skill.generate_response.call_args.kwargs["context_notes"]
+    assert "Recent user requests" in context_notes
+    assert "response style: brief" in context_notes
+
+
+@pytest.mark.asyncio
+async def test_handle_chat_stores_tenant_subject_memory(chat_routes_client) -> None:
+    """Durable tenant preferences are extracted and persisted after a turn."""
+    client, tenant_manager, _, _ = chat_routes_client
+
+    skill = MagicMock()
+    skill.generate_response = AsyncMock(
+        return_value=SimpleNamespace(content="Understood. I'll keep it brief.", model="test-model")
+    )
+    client.app["client_chat_skill"] = skill
+
+    response = await client.post(
+        "/api/v1/chat",
+        json={"message": "Please keep responses brief."},
+    )
+
+    assert response.status == 200
+    tenant_manager.upsert_subject_memory.assert_awaited_once_with(
+        tenant_id="tenant-1",
+        memory_subject_id="subject-1",
+        category="preference",
+        memory_key="response_style",
+        value="brief",
+        source_session_id="session-1",
+        confidence=0.88,
+    )
 
 
 @pytest.mark.asyncio
@@ -280,6 +354,7 @@ async def test_handle_chat_stream_no_broker_uses_placeholder(chat_routes_client)
     assistant_call = tenant_manager.add_message.call_args_list[1].kwargs
     assert assistant_call["role"] == "assistant"
     assert "not configured" in assistant_call["content"]
+    tenant_manager.persist_session_context.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -309,6 +384,7 @@ async def test_handle_chat_stream_success(chat_routes_client) -> None:
     assistant_call = tenant_manager.add_message.call_args_list[1].kwargs
     assert assistant_call["role"] == "assistant"
     assert assistant_call["content"] == "Hello there"
+    tenant_manager.persist_session_context.assert_awaited_once()
 
 
 @pytest.mark.asyncio

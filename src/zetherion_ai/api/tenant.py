@@ -46,11 +46,18 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
     session_id      UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
     tenant_id       UUID         NOT NULL REFERENCES tenants(tenant_id),
     external_user_id TEXT,
+    memory_subject_id TEXT,
     metadata        JSONB        DEFAULT '{}'::jsonb,
+    conversation_summary TEXT    NOT NULL DEFAULT '',
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
     last_active     TIMESTAMPTZ  NOT NULL DEFAULT now(),
     expires_at      TIMESTAMPTZ  NOT NULL DEFAULT (now() + INTERVAL '24 hours')
 );
+
+ALTER TABLE chat_sessions
+    ADD COLUMN IF NOT EXISTS memory_subject_id TEXT;
+ALTER TABLE chat_sessions
+    ADD COLUMN IF NOT EXISTS conversation_summary TEXT NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_tenant_id
     ON chat_sessions (tenant_id);
@@ -58,6 +65,9 @@ CREATE INDEX IF NOT EXISTS idx_chat_sessions_session_id
     ON chat_sessions (session_id);
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_expires
     ON chat_sessions (expires_at);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_memory_subject
+    ON chat_sessions (tenant_id, memory_subject_id)
+    WHERE memory_subject_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS chat_messages (
     id              SERIAL       PRIMARY KEY,
@@ -74,6 +84,24 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_session
     ON chat_messages (session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_tenant
     ON chat_messages (tenant_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS tenant_subject_memories (
+    id               SERIAL       PRIMARY KEY,
+    memory_id        UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    tenant_id        UUID         NOT NULL REFERENCES tenants(tenant_id),
+    memory_subject_id TEXT        NOT NULL,
+    category         VARCHAR(32)  NOT NULL,
+    memory_key       TEXT         NOT NULL,
+    value            TEXT         NOT NULL,
+    source_session_id UUID        REFERENCES chat_sessions(session_id) ON DELETE SET NULL,
+    confidence       DOUBLE PRECISION NOT NULL DEFAULT 0.8,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, memory_subject_id, category, memory_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_subject_memories_lookup
+    ON tenant_subject_memories (tenant_id, memory_subject_id, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS tenant_audit_log (
     id              SERIAL       PRIMARY KEY,
@@ -622,6 +650,7 @@ class TenantManager:
         self,
         tenant_id: str,
         external_user_id: str | None = None,
+        memory_subject_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create a new chat session for a tenant.
@@ -633,13 +662,19 @@ class TenantManager:
 
         row = await self._fetchrow(
             """
-            INSERT INTO chat_sessions (tenant_id, external_user_id, metadata)
-            VALUES ($1::uuid, $2, $3::jsonb)
-            RETURNING session_id, tenant_id, external_user_id,
-                      created_at, last_active, expires_at
+            INSERT INTO chat_sessions (
+                tenant_id,
+                external_user_id,
+                memory_subject_id,
+                metadata
+            )
+            VALUES ($1::uuid, $2, $3, $4::jsonb)
+            RETURNING session_id, tenant_id, external_user_id, memory_subject_id,
+                      conversation_summary, created_at, last_active, expires_at
             """,
             tenant_id,
             external_user_id,
+            memory_subject_id,
             json.dumps(metadata or {}),
         )
 
@@ -654,8 +689,8 @@ class TenantManager:
         """Get a session by UUID."""
         row = await self._fetchrow(
             """
-            SELECT session_id, tenant_id, external_user_id,
-                   created_at, last_active, expires_at
+            SELECT session_id, tenant_id, external_user_id, memory_subject_id,
+                   conversation_summary, created_at, last_active, expires_at
             FROM chat_sessions
             WHERE session_id = $1::uuid AND expires_at > now()
             """,
@@ -668,6 +703,29 @@ class TenantManager:
         await self._execute(
             "UPDATE chat_sessions SET last_active = now() WHERE session_id = $1::uuid",
             session_id,
+        )
+
+    async def persist_session_context(
+        self,
+        *,
+        session_id: str,
+        tenant_id: str,
+        memory_subject_id: str | None,
+        conversation_summary: str,
+    ) -> None:
+        """Persist tenant-scoped conversational state for a session."""
+        await self._execute(
+            """
+            UPDATE chat_sessions
+            SET memory_subject_id = COALESCE($3, memory_subject_id),
+                conversation_summary = $4,
+                last_active = now()
+            WHERE session_id = $1::uuid AND tenant_id = $2::uuid
+            """,
+            session_id,
+            tenant_id,
+            memory_subject_id,
+            conversation_summary,
         )
 
     async def delete_session(self, session_id: str, tenant_id: str) -> bool:
@@ -741,7 +799,7 @@ class TenantManager:
         if before_id:
             rows = await self._fetch(
                 """
-                SELECT message_id, session_id, role, content, created_at
+                SELECT message_id, session_id, role, content, metadata, created_at
                 FROM chat_messages
                 WHERE session_id = $1::uuid AND tenant_id = $2::uuid
                   AND created_at < (
@@ -758,7 +816,7 @@ class TenantManager:
         else:
             rows = await self._fetch(
                 """
-                SELECT message_id, session_id, role, content, created_at
+                SELECT message_id, session_id, role, content, metadata, created_at
                 FROM chat_messages
                 WHERE session_id = $1::uuid AND tenant_id = $2::uuid
                 ORDER BY created_at DESC
@@ -770,6 +828,74 @@ class TenantManager:
             )
         # Reverse so oldest is first (chronological order)
         return [dict(r) for r in reversed(rows)]
+
+    async def upsert_subject_memory(
+        self,
+        *,
+        tenant_id: str,
+        memory_subject_id: str,
+        category: str,
+        memory_key: str,
+        value: str,
+        source_session_id: str | None = None,
+        confidence: float = 0.8,
+    ) -> dict[str, Any]:
+        """Insert or update one tenant-scoped durable memory."""
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_subject_memories (
+                tenant_id,
+                memory_subject_id,
+                category,
+                memory_key,
+                value,
+                source_session_id,
+                confidence
+            )
+            VALUES ($1::uuid, $2, $3, $4, $5, $6::uuid, $7)
+            ON CONFLICT (tenant_id, memory_subject_id, category, memory_key)
+            DO UPDATE SET
+                value = EXCLUDED.value,
+                source_session_id = EXCLUDED.source_session_id,
+                confidence = EXCLUDED.confidence,
+                updated_at = now()
+            RETURNING memory_id, tenant_id, memory_subject_id, category,
+                      memory_key, value, confidence, source_session_id,
+                      created_at, updated_at
+            """,
+            tenant_id,
+            memory_subject_id,
+            category,
+            memory_key,
+            value,
+            source_session_id,
+            confidence,
+        )
+        return dict(row)
+
+    async def list_subject_memories(
+        self,
+        *,
+        tenant_id: str,
+        memory_subject_id: str,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """List durable memories for one tenant-scoped subject."""
+        rows = await self._fetch(
+            """
+            SELECT memory_id, tenant_id, memory_subject_id, category,
+                   memory_key, value, confidence, source_session_id,
+                   created_at, updated_at
+            FROM tenant_subject_memories
+            WHERE tenant_id = $1::uuid AND memory_subject_id = $2
+            ORDER BY updated_at DESC, created_at DESC
+            LIMIT $3
+            """,
+            tenant_id,
+            memory_subject_id,
+            limit,
+        )
+        return [dict(row) for row in rows]
 
     # ------------------------------------------------------------------
     # CRM — Contacts & Interactions (populated by tenant_intelligence)

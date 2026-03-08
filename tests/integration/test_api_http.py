@@ -64,6 +64,8 @@ def _make_session(
         "session_id": session_id,
         "tenant_id": tenant_id,
         "external_user_id": None,
+        "memory_subject_id": None,
+        "conversation_summary": "",
         "created_at": now,
         "last_active": now,
         "expires_at": now,
@@ -139,6 +141,9 @@ async def api_client():
     tm.get_session = AsyncMock(return_value=_make_session())
     tm.touch_session = AsyncMock()
     tm.delete_session = AsyncMock(return_value=True)
+    tm.list_subject_memories = AsyncMock(return_value=[])
+    tm.upsert_subject_memory = AsyncMock()
+    tm.persist_session_context = AsyncMock()
 
     app = _build_app(tm)
     async with TestClient(TestServer(app)) as client:
@@ -181,6 +186,35 @@ async def test_create_session(api_client):
 
 
 @pytest.mark.integration
+async def test_create_session_derives_memory_subject_id(api_client):
+    """POST /api/v1/sessions derives memory_subject_id from external_user_id."""
+    client, tm, api_key = api_client
+    tm.create_session = AsyncMock(
+        return_value=_make_session()
+        | {
+            "external_user_id": "visitor-42",
+            "memory_subject_id": "visitor-42",
+        }
+    )
+
+    resp = await client.post(
+        "/api/v1/sessions",
+        json={"external_user_id": "visitor-42"},
+        headers={"X-API-Key": api_key},
+    )
+
+    assert resp.status == 201
+    data = await resp.json()
+    assert data["memory_subject_id"] == "visitor-42"
+    tm.create_session.assert_awaited_once_with(
+        tenant_id=TENANT_ID,
+        external_user_id="visitor-42",
+        memory_subject_id="visitor-42",
+        metadata={},
+    )
+
+
+@pytest.mark.integration
 async def test_get_session(api_client):
     """GET /api/v1/sessions/{id} returns session info."""
     client, tm, api_key = api_client
@@ -191,6 +225,30 @@ async def test_get_session(api_client):
     assert resp.status == 200
     data = await resp.json()
     assert data["session_id"] == SESSION_ID
+
+
+@pytest.mark.integration
+async def test_get_session_returns_conversation_metadata(api_client):
+    """GET /api/v1/sessions/{id} returns tenant conversation metadata."""
+    client, tm, api_key = api_client
+    tm.get_session = AsyncMock(
+        return_value=_make_session()
+        | {
+            "external_user_id": "visitor-42",
+            "memory_subject_id": "visitor-42",
+            "conversation_summary": "Recent user requests: asked about bathroom pricing",
+        }
+    )
+
+    resp = await client.get(
+        f"/api/v1/sessions/{SESSION_ID}",
+        headers={"X-API-Key": api_key},
+    )
+
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["memory_subject_id"] == "visitor-42"
+    assert data["conversation_summary"] == "Recent user requests: asked about bathroom pricing"
 
 
 @pytest.mark.integration
@@ -335,6 +393,9 @@ async def chat_client():
             _make_message(role="user", content="Hello"),
         ]
     )
+    tm.list_subject_memories = AsyncMock(return_value=[])
+    tm.upsert_subject_memory = AsyncMock()
+    tm.persist_session_context = AsyncMock()
 
     broker.infer = AsyncMock(return_value=_FakeInferenceResult())
     broker.infer_stream = _fake_infer_stream
@@ -371,6 +432,61 @@ async def test_chat_send_message(chat_client):
     # Verify assistant message was stored
     assistant_call = tm.add_message.call_args_list[1]
     assert assistant_call.kwargs["role"] == "assistant"
+
+
+@pytest.mark.integration
+async def test_chat_uses_tenant_memory_context_and_persists_turn(chat_client):
+    """Chat uses tenant memory context and persists updated session state."""
+    client, tm, broker, token = chat_client
+    tm.get_session = AsyncMock(
+        return_value=_make_session()
+        | {
+            "external_user_id": "visitor-42",
+            "memory_subject_id": "visitor-42",
+            "conversation_summary": "Recent user requests: asked about bathroom pricing",
+        }
+    )
+    tm.get_messages = AsyncMock(
+        return_value=[
+            _make_message(role="assistant", content="Earlier answer"),
+            _make_message(role="user", content="Please keep responses brief."),
+        ]
+    )
+    tm.list_subject_memories = AsyncMock(
+        return_value=[
+            {
+                "category": "preference",
+                "memory_key": "response_style",
+                "value": "brief",
+                "confidence": 0.88,
+            }
+        ]
+    )
+
+    resp = await client.post(
+        "/api/v1/chat",
+        json={"message": "Please keep responses brief."},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status == 200
+    system_prompt = next(
+        call.kwargs["system_prompt"]
+        for call in broker.infer.call_args_list
+        if "system_prompt" in call.kwargs
+    )
+    assert "Recent user requests: asked about bathroom pricing" in system_prompt
+    assert "response style: brief" in system_prompt
+    tm.upsert_subject_memory.assert_awaited_once_with(
+        tenant_id=TENANT_ID,
+        memory_subject_id="visitor-42",
+        category="preference",
+        memory_key="response_style",
+        value="brief",
+        source_session_id=SESSION_ID,
+        confidence=0.88,
+    )
+    tm.persist_session_context.assert_awaited_once()
 
 
 @pytest.mark.integration

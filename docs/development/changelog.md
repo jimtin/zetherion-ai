@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Segment 2 tenant conversational runtime and tenant-scoped memory (2026-03-08)
+
+- Impacted capability IDs:
+  - `CAP-ZAI-TENANT-CONVERSATIONAL-RUNTIME`
+  - `CAP-ZAI-TENANT-CROSS-SESSION-MEMORY`
+- Impacted workflow scenario IDs:
+  - `SCN-ZAI-API-MULTITURN-RECALL`
+  - `SCN-ZAI-TENANT-CROSS-SESSION-PREFERENCE`
+- Added `src/zetherion_ai/api/conversation_runtime.py` and wired the public `/api/v1/chat` plus `/api/v1/chat/stream` routes through a tenant-scoped context assembler that feeds rolling session summaries and durable subject memories into `ClientChatSkill` without crossing out of `tenant_raw`.
+- Extended tenant session storage in `src/zetherion_ai/api/tenant.py` and `src/zetherion_ai/api/routes/sessions.py` with `memory_subject_id`, `conversation_summary`, and `tenant_subject_memories`, so `/api/v1/sessions` can pin cross-session memory to a tenant-local subject while preserving existing route shapes.
+- Added deterministic regression coverage for tenant memory extraction, context assembly, session persistence, and public API prompt grounding across the session/chat/runtime surfaces.
+
 ### Fixed - Segment 1 owner conversational guardrails and routing repair (2026-03-08)
 
 - Impacted capability IDs:

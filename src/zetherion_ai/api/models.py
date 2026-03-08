@@ -49,6 +49,7 @@ class SessionCreate(BaseModel):
     """Request body for creating a chat session."""
 
     external_user_id: str | None = Field(default=None, max_length=500)
+    memory_subject_id: str | None = Field(default=None, max_length=500)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -58,6 +59,8 @@ class SessionResponse(BaseModel):
     session_id: str
     tenant_id: str
     external_user_id: str | None
+    memory_subject_id: str | None = None
+    conversation_summary: str = ""
     session_token: str
     created_at: datetime
     expires_at: datetime
@@ -69,6 +72,8 @@ class SessionInfo(BaseModel):
     session_id: str
     tenant_id: str
     external_user_id: str | None
+    memory_subject_id: str | None = None
+    conversation_summary: str = ""
     created_at: datetime
     last_active: datetime
     expires_at: datetime
