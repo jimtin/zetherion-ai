@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
@@ -22,6 +22,7 @@ from zetherion_ai.trust.storage import (
     TrustPolicyInput,
     TrustScorecardInput,
     TrustStorage,
+    _schema_lock_key,
     ensure_trust_storage_schema,
     normalize_grant_permissions,
     normalize_resource_scope,
@@ -31,9 +32,16 @@ from zetherion_ai.trust.storage import (
 @pytest.fixture
 def mock_pool():
     pool = MagicMock()
-    conn = AsyncMock()
+    conn = MagicMock()
+    conn.execute = AsyncMock()
+    conn.fetchrow = AsyncMock()
+    conn.fetch = AsyncMock()
     pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
     pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+    tx = MagicMock()
+    tx.__aenter__ = AsyncMock(return_value=None)
+    tx.__aexit__ = AsyncMock(return_value=None)
+    conn.transaction = MagicMock(return_value=tx)
     return pool, conn
 
 
@@ -67,8 +75,16 @@ async def test_ensure_trust_storage_schema_bootstraps_tables(mock_pool) -> None:
 
     tables = await ensure_trust_storage_schema(pool, schema="control_plane")
 
-    conn.execute.assert_awaited_once()
-    schema_sql = conn.execute.await_args.args[0]
+    conn.execute.assert_has_awaits(
+        [
+            call(
+                "SELECT pg_advisory_xact_lock($1::bigint)",
+                _schema_lock_key("control_plane"),
+            ),
+            call(conn.execute.await_args_list[-1].args[0]),
+        ]
+    )
+    schema_sql = conn.execute.await_args_list[-1].args[0]
     assert 'CREATE SCHEMA IF NOT EXISTS "control_plane"' in schema_sql
     assert 'CREATE TABLE IF NOT EXISTS "control_plane".trust_policies' in schema_sql
     assert tables == (
@@ -78,6 +94,30 @@ async def test_ensure_trust_storage_schema_bootstraps_tables(mock_pool) -> None:
         "control_plane.trust_feedback_events",
         "control_plane.trust_decision_audit",
     )
+
+
+@pytest.mark.asyncio
+async def test_trust_storage_initialize_uses_schema_specific_lock(mock_pool) -> None:
+    pool, conn = mock_pool
+    storage = TrustStorage(schema="owner_personal")
+
+    await storage.initialize(pool)
+
+    assert conn.execute.await_args_list[0] == call(
+        "SELECT pg_advisory_xact_lock($1::bigint)",
+        _schema_lock_key("owner_personal"),
+    )
+    assert (
+        conn.execute.await_args_list[1]
+        .args[0]
+        .lstrip()
+        .startswith('CREATE SCHEMA IF NOT EXISTS "owner_personal"')
+    )
+
+
+def test_schema_lock_key_is_stable_per_schema() -> None:
+    assert _schema_lock_key("control_plane") == _schema_lock_key("control_plane")
+    assert _schema_lock_key("control_plane") != _schema_lock_key("owner_personal")
 
 
 @pytest.mark.asyncio

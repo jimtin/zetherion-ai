@@ -50,6 +50,38 @@ def test_build_child_env_prefers_canary_overrides_and_unsets_test_target(tmp_pat
     assert env["DISCORD_E2E_MODE"] == "windows_prod_canary"
 
 
+def test_prepare_bash_wrapper_keeps_relative_repo_path_for_lf_script(tmp_path: Path) -> None:
+    module = _load_module()
+    deploy_path = tmp_path / "deploy"
+    wrapper_path = deploy_path / "scripts" / "run-required-discord-e2e.sh"
+    wrapper_path.parent.mkdir(parents=True)
+    wrapper_path.write_text("#!/usr/bin/env bash\nset -euo pipefail\n", encoding="utf-8")
+
+    wrapper_command = module.prepare_bash_wrapper(
+        deploy_path=deploy_path,
+        wrapper_path=wrapper_path,
+    )
+
+    assert wrapper_command == "scripts/run-required-discord-e2e.sh"
+
+
+def test_prepare_bash_wrapper_normalizes_crlf_copy(tmp_path: Path) -> None:
+    module = _load_module()
+    deploy_path = tmp_path / "deploy"
+    wrapper_path = deploy_path / "scripts" / "run-required-discord-e2e.sh"
+    wrapper_path.parent.mkdir(parents=True)
+    wrapper_path.write_bytes(b"#!/usr/bin/env bash\r\nset -euo pipefail\r\n")
+
+    wrapper_command = module.prepare_bash_wrapper(
+        deploy_path=deploy_path,
+        wrapper_path=wrapper_path,
+    )
+
+    normalized_path = deploy_path / wrapper_command
+    assert wrapper_command == "data/discord-canary/normalized-wrapper/run-required-discord-e2e.sh"
+    assert normalized_path.read_bytes() == b"#!/usr/bin/env bash\nset -euo pipefail\n"
+
+
 def test_classify_canary_result_maps_lease_contention() -> None:
     module = _load_module()
 
@@ -94,7 +126,8 @@ def test_run_canary_uses_repo_relative_wrapper_path(tmp_path: Path, monkeypatch)
     scripts_dir = deploy_path / "scripts"
     scripts_dir.mkdir(parents=True)
     (scripts_dir / "run-required-discord-e2e.sh").write_text(
-        "#!/usr/bin/env bash\n", encoding="utf-8"
+        "#!/usr/bin/env bash\n",
+        encoding="utf-8",
     )
 
     output_path = tmp_path / "out.json"

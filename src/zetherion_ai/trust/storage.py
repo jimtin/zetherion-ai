@@ -6,6 +6,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from hashlib import blake2b
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -28,6 +29,11 @@ _ALLOWED_RESOURCE_SCOPE_PREFIXES = (
     "messaging.chat:",
     "worker_artifact:",
 )
+
+
+def _schema_lock_key(schema: str) -> int:
+    digest = blake2b(f"trust_storage:{schema}".encode(), digest_size=8).digest()
+    return int.from_bytes(digest, "big", signed=True)
 
 
 @dataclass(frozen=True)
@@ -235,7 +241,11 @@ class TrustStorage:
 
     async def initialize(self, pool: asyncpg.Pool) -> None:
         self._pool = pool
-        async with pool.acquire() as conn:
+        async with pool.acquire() as conn, conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock($1::bigint)",
+                _schema_lock_key(self._schema),
+            )
             await conn.execute(_schema_sql(self._schema))
         log.info("trust_storage_initialized", schema=self._schema)
 

@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - Trust storage schema bootstrap concurrency in container startup (2026-03-08)
+- Serialized canonical trust schema creation with a PostgreSQL advisory transaction lock so concurrent service startup cannot race while creating `control_plane.trust_*` tables.
+- Added unit coverage for schema-specific advisory lock selection and trust-storage bootstrap sequencing so this startup failure is caught locally before the full containerized gate.
+
+### Fixed - Windows shell wrapper line endings for canary runs (2026-03-08)
+- Added `.gitattributes` to force `*.sh` files to check out with LF endings so Git Bash on Windows does not choke on carriage returns in the Discord E2E wrapper.
+- Hardened `scripts/windows/discord-canary.py` to stage an LF-normalized copy of the Discord E2E wrapper under the deploy root before invoking Bash, so the canary remains runnable even if an existing Windows checkout still has CRLF shell scripts.
+
 ### Fixed - Windows Discord canary wrapper path on host (2026-03-08)
 - Switched the Windows canary launcher to invoke `scripts/run-required-discord-e2e.sh` relative to the deploy root instead of passing a raw `C:\...` path into Git Bash, which was being mangled into an invalid shell path on the Windows host.
 - Added unit coverage to assert the canary subprocess uses the repo-relative wrapper command while keeping the deploy root as the working directory.
