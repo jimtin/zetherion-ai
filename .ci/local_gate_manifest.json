@@ -27,6 +27,9 @@
     "scripts/ci_required_e2e_gate.py",
     "scripts/ci_e2e_risk_classifier.py",
     "scripts/ci_failure_attribution.py",
+    "scripts/ci_cost_report.py",
+    "scripts/ci_cache_hygiene.py",
+    ".github/workflows/ci-maintenance.yml",
     "scripts/require-local-gate-update.sh",
     "scripts/validate-deployment-receipt.py",
     "scripts/check-optional-service-guards.py",
@@ -120,11 +123,13 @@
     },
     "ci-failure-attribution-regression-suite": {
       "kind": "pytest",
-      "description": "Run the targeted CI failure-attribution, pipeline-contract, and local-gate-enforcement regression suite.",
+      "description": "Run the targeted CI failure-attribution, pipeline-contract, local-gate-enforcement, and cost-observability regression suite.",
       "pytest_targets": [
         "tests/unit/test_ci_failure_attribution.py",
         "tests/unit/test_require_local_gate_update.py",
-        "tests/unit/test_check_pipeline_contract.py"
+        "tests/unit/test_check_pipeline_contract.py",
+        "tests/unit/test_ci_cost_report.py",
+        "tests/unit/test_ci_cache_hygiene.py"
       ]
     },
     "deploy-preflight-regression-suite": {
@@ -256,6 +261,9 @@
       "id": "ci-support-regressions",
       "covers_protected": true,
       "patterns": [
+        "scripts/ci_cache_hygiene.py",
+        "scripts/ci_cost_report.py",
+        ".github/workflows/ci-maintenance.yml",
         ".github/workflows/**",
         ".ci/pipeline_contract.json",
         "scripts/check_pipeline_contract.py",

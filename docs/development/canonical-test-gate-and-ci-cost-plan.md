@@ -95,7 +95,7 @@ The active PR contract today is:
 
 1. current required branch checks are `CI Summary`, `Linting & Formatting`, `Pipeline Contract`, `Secret Scan (Gitleaks)`, and `Zetherion Boundary Check`
 2. required E2E on PRs is enforced by committed local receipt validation, not by running full E2E suites directly in GitHub Actions
-3. PR fast path is limited to `detect-changes`, `risk-classifier`, `lint`, `secret-scan`, `pipeline-contract`, `zetherion-boundary-check`, `required-e2e-gate`, `CI Summary`, and `CI Failure Attribution`
+3. PR fast path is limited to `detect-changes`, `risk-classifier`, `lint`, `secret-scan`, `pipeline-contract`, `zetherion-boundary-check`, `required-e2e-gate`, `CI Summary`, and `CI Failure Attribution`; `CI Cost Report` runs best-effort for observability only
 4. heavy local-equivalent jobs such as unit, type-check, security, docs-contract, and docker-build are deferred off PRs to push or weekly/manual verification runs
 5. weekly/manual runs remain the place for the heaviest independent verification lanes, including CodeQL and the broader heavy-job graph on `ci.yml`
 6. the Windows host runs an isolated Discord production canary on startup and every 6 hours by default, using the same blessed wrapper contract but a synthetic test principal and isolated canary channels
@@ -108,6 +108,12 @@ On every CI run, `scripts/ci_failure_attribution.py` emits:
 
 - Step Summary table
 - `ci-failure-attribution.json` artifact
+- `ci-cost-report.json` artifact with per-job runtime estimates and execution-class visibility
+
+A separate weekly/manual `CI Maintenance` workflow emits:
+
+- `ci-usage-summary.json` artifact for the last 7 days of CI usage
+- `ci-cache-hygiene.json` artifact describing stale-cache deletions or dry-run candidates
 
 Reason codes:
 

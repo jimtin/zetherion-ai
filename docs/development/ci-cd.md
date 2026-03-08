@@ -405,11 +405,15 @@ The pipeline runs the following jobs. Jobs without dependency arrows run in para
 
 **zetherion-boundary-check** -- Enforces Zetherion-only repository boundary and fails when top-level `cgs/**` UI paths are introduced.
 
-**test** -- Matrix build across Python 3.12 and 3.13. Runs `pytest tests/ -m "not integration"` with coverage. Uploads coverage XML to Codecov (Python 3.12 only). Uploads HTML coverage report as a build artifact (retained 30 days). This job is deferred off PRs and runs on push code changes plus scheduled/manual heavy verification.
+**test** -- Matrix build across Python 3.12 and 3.13. Runs `pytest tests/ -m "not integration"` with coverage. Uploads coverage XML to Codecov (Python 3.12 only). Uploads HTML coverage report as a build artifact (retained 14 days). This job is deferred off PRs and runs on push code changes plus scheduled/manual heavy verification.
 
 **docker-build** -- Validates `docker-compose.yml` syntax and builds the Skills image. This job is deferred off PRs and runs on push Docker changes plus scheduled/manual verification.
 
 **summary** -- Waits for all other jobs. On pull requests it evaluates only the fast-path contract jobs. On push/scheduled/manual runs it evaluates the full active job graph. Posts a markdown results table to the workflow summary and fails when the required contract for that event fails.
+
+**ci-cost-report** -- Best-effort observability job that queries the current workflow run, emits `ci-cost-report.json`, and posts execution-class / duration summaries to the workflow summary without becoming a merge blocker.
+
+**ci-maintenance** -- Separate weekly/manual workflow that emits a 7-day CI usage summary and prunes stale GitHub Actions caches using auditable JSON receipts.
 
 ### Integration Test Control
 

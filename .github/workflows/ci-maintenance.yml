@@ -1,0 +1,68 @@
+name: CI Maintenance
+
+on:
+  schedule:
+    - cron: "45 4 * * 0"
+  workflow_dispatch:
+    inputs:
+      delete_stale_caches:
+        description: Delete stale caches instead of dry-run only
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ci-maintenance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  maintenance:
+    name: Cost Summary and Cache Hygiene
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    env:
+      CI_MAINTENANCE_ARTIFACT_RETENTION_DAYS: 14
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Generate weekly CI usage summary
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python scripts/ci_cost_report.py summary \
+            --repo "$GITHUB_REPOSITORY" \
+            --days 7 \
+            --workflow-name "CI/CD Pipeline" \
+            --workflow-name "Deploy Windows" \
+            --output ci-usage-summary.json
+
+      - name: Prune stale caches
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DELETE_STALE_CACHES: ${{ github.event_name == 'schedule' || inputs.delete_stale_caches }}
+        run: |
+          DELETE_FLAG=""
+          if [[ "$DELETE_STALE_CACHES" == "true" ]]; then
+            DELETE_FLAG="--delete"
+          fi
+          python scripts/ci_cache_hygiene.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --max-age-days 14 \
+            --pr-ref-max-age-days 3 \
+            $DELETE_FLAG \
+            --output ci-cache-hygiene.json
+
+      - name: Upload CI maintenance artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        if: always()
+        with:
+          name: ci-maintenance
+          path: |
+            ci-usage-summary.json
+            ci-cache-hygiene.json
+          retention-days: ${{ env.CI_MAINTENANCE_ARTIFACT_RETENTION_DAYS }}
