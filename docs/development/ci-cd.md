@@ -123,7 +123,7 @@ This script is the canonical full local gate before merge. It performs:
 Run it directly:
 
 ```bash
-bash scripts/test-full.sh
+./scripts/test-full.sh
 ```
 
 Run the changed-file preflight directly when you need fast feedback before the full gate:
@@ -197,7 +197,17 @@ The active `main` branch ruleset currently requires these check contexts:
 
 The `required-e2e-gate` job validates the committed local receipt contract when the risk classifier marks a PR `e2e_required=true`; GitHub does not execute the full E2E suites directly on PRs. Committed receipts use `head_sha=local` because tracked receipt files cannot self-hash the final commit without recursion. The PR fast path is now limited to `detect-changes`, `risk-classifier`, `lint`, `secret-scan`, `pipeline-contract`, `zetherion-boundary-check`, `required-e2e-gate`, `CI Summary`, and `CI Failure Attribution`.
 
-Weekly or manual GitHub runs remain the independent heavy-verification cadence for `type-check`, `security`, `semgrep`, `dependency-audit`, `license-check`, `pre-commit`, `docs-contract`, `unit-test`, `integration-test`, `docker-build-test`, and CodeQL.
+Weekly or manual GitHub runs remain the independent heavy-verification cadence for `type-check`, `security`, `semgrep`, `dependency-audit`, `license-check`, `pre-commit`, `docs-contract`, `unit-test`, `integration-test`, `docker-build-test`, and CodeQL. The PR fast path also publishes a best-effort `CI Cost Report`, while the weekly/manual `CI Maintenance` workflow emits usage summaries and stale-cache hygiene receipts.
+
+### CI / Deploy Change PR Checklist
+
+If a PR changes CI, deploy, or gating logic, fill the checklist in `.github/pull_request_template.md` before requesting review. At minimum, that PR metadata must include:
+
+- impacted capability IDs
+- impacted workflow scenario IDs
+- deterministic local validation evidence for the segment
+- `.ci/e2e-receipt.json` status when `e2e_required=true`
+- post-merge Windows verification notes when deploy behavior changes
 
 ### Additional Main-Branch Automation
 

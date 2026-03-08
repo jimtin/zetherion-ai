@@ -54,6 +54,7 @@ This is the only supported full local gate. Do not substitute ad-hoc pytest comm
    - `Secret Scan (Gitleaks)`
    - `Zetherion Boundary Check`
 5. PR fast path now runs only `detect-changes`, `risk-classifier`, `lint`, `secret-scan`, `pipeline-contract`, `zetherion-boundary-check`, `required-e2e-gate`, `CI Summary`, and `CI Failure Attribution`; heavy local-equivalent jobs are deferred off PRs to push or scheduled/manual runs.
+6. If a PR changes CI, deploy, or gating logic, fill the checklist in `.github/pull_request_template.md` with capability IDs, workflow scenario IDs, deterministic validation evidence, and any required receipt or Windows verification notes.
 
 ## API Documentation Contract (Mandatory)
 

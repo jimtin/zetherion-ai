@@ -1,8 +1,8 @@
 {
   "workstream": "segmented-ci-hardening-and-spend-reduction",
-  "contract_version": 1,
+  "contract_version": 2,
   "recorded_at": "2026-03-08",
-  "status": "segment-7-windows-discord-canary-in-progress",
+  "status": "complete",
   "segment_contract": {
     "branch_prefix": "codex/seg-ci-",
     "one_segment_per_pr": true,
@@ -33,6 +33,17 @@
       "Scheduled/manual GitHub runs remain the independent heavy-verification cadence on main.",
       "CodeQL now runs only on weekly/manual triggers so it does not register skipped PR runs.",
       "Documentation deployment now runs on main only when docs-site sources change or via manual dispatch."
+    ],
+    "pr_fast_path_jobs": [
+      "detect-changes",
+      "risk-classifier",
+      "lint",
+      "secret-scan",
+      "pipeline-contract",
+      "zetherion-boundary-check",
+      "required-e2e-gate",
+      "CI Summary",
+      "CI Failure Attribution"
     ]
   },
   "capabilities": [
@@ -187,5 +198,40 @@
         "pr.receipt_sha_mismatch_rejected"
       ]
     }
-  ]
+  ],
+  "policy_enforcement": {
+    "contract_docs": [
+      "AGENTS.md",
+      "docs/development/ci-cd.md",
+      "docs/development/ci-hardening-baseline.md"
+    ],
+    "pr_template_path": ".github/pull_request_template.md",
+    "doc_specific_tokens": {
+      "AGENTS.md": [
+        ".github/pull_request_template.md",
+        "If a PR changes CI, deploy, or gating logic, fill the checklist"
+      ],
+      "docs/development/ci-cd.md": [
+        "CI Cost Report",
+        "CI Maintenance",
+        "Windows Discord production canary",
+        ".github/pull_request_template.md"
+      ],
+      "docs/development/ci-hardening-baseline.md": [
+        ".ci/ci_hardening_workstream_manifest.json",
+        ".github/pull_request_template.md",
+        "The workstream closes by validating policy docs and the PR template through the pipeline contract guard."
+      ]
+    },
+    "required_pr_template_tokens": [
+      "## Capability IDs",
+      "## Workflow Scenario IDs",
+      "## Validation",
+      "## Receipt / Verification",
+      "- [ ] Included deterministic local evidence for this segment.",
+      "- [ ] If `e2e_required=true`, updated and committed `.ci/e2e-receipt.json`.",
+      "- [ ] If this PR changes CI, deploy, or gating logic, same-PR regression coverage is included.",
+      "- [ ] If this PR changes Windows deploy behavior, post-merge Windows verification is included or explicitly marked not applicable."
+    ]
+  }
 }

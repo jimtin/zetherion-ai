@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Validate that CI pipeline jobs and workflow triggers match the contract."""
+"""Validate that CI pipeline jobs, workflow triggers, and policy docs match the contract."""
 
 from __future__ import annotations
 
 import json
 import re
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = REPO_ROOT / ".ci/pipeline_contract.json"
+WORKSTREAM_MANIFEST_PATH = REPO_ROOT / ".ci/ci_hardening_workstream_manifest.json"
 REQUIRED_JOBS = {
     "detect-changes",
     "risk-classifier",
@@ -43,12 +45,16 @@ CI_MAINTENANCE_REQUIRED_TOKENS = (
 )
 
 
+def _load_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def validate_pipeline_contract(contract_path: Path) -> list[str]:
     errors: list[str] = []
     if not contract_path.exists():
         return [".ci/pipeline_contract.json is missing"]
 
-    data = json.loads(contract_path.read_text(encoding="utf-8"))
+    data = _load_json(contract_path)
     jobs = data.get("jobs", {})
     missing = sorted(job for job in REQUIRED_JOBS if job not in jobs)
     if missing:
@@ -124,10 +130,66 @@ def validate_workflow_contracts(repo_root: Path) -> list[str]:
     return errors
 
 
+def validate_policy_docs(repo_root: Path, manifest_path: Path) -> list[str]:
+    errors: list[str] = []
+    if not manifest_path.exists():
+        return [".ci/ci_hardening_workstream_manifest.json is missing"]
+
+    manifest = _load_json(manifest_path)
+    current_contract = manifest.get("current_contract", {})
+    policy = manifest.get("policy_enforcement", {})
+    contract_docs = policy.get("contract_docs", [])
+    doc_specific_tokens = policy.get("doc_specific_tokens", {})
+    pr_template_path = policy.get("pr_template_path")
+    required_pr_template_tokens = policy.get("required_pr_template_tokens", [])
+
+    if not contract_docs:
+        errors.append("CI hardening manifest must list contract_docs for policy enforcement.")
+        return errors
+
+    required_checks = current_contract.get("github_required_check_inventory", [])
+    pr_fast_path_jobs = current_contract.get("pr_fast_path_jobs", [])
+    heavy_gate = current_contract.get("local_heavy_gate_entrypoint")
+    receipt_entrypoint = current_contract.get("local_required_e2e_receipt_entrypoint")
+
+    common_tokens = [heavy_gate, receipt_entrypoint, *required_checks, *pr_fast_path_jobs]
+    common_tokens = [token for token in common_tokens if token]
+
+    for rel_path in contract_docs:
+        doc_path = repo_root / rel_path
+        if not doc_path.exists():
+            errors.append(f"Policy contract doc missing: {rel_path}")
+            continue
+        text = doc_path.read_text(encoding="utf-8")
+        for token in common_tokens:
+            if token not in text:
+                errors.append(f"{rel_path} missing required contract token: {token}")
+        for token in doc_specific_tokens.get(rel_path, []):
+            if token not in text:
+                errors.append(f"{rel_path} missing required policy token: {token}")
+
+    if not pr_template_path:
+        errors.append("CI hardening manifest must declare pr_template_path.")
+        return errors
+
+    template_path = repo_root / pr_template_path
+    if not template_path.exists():
+        errors.append(f"Pull request template missing: {pr_template_path}")
+        return errors
+
+    template_text = template_path.read_text(encoding="utf-8")
+    for token in required_pr_template_tokens:
+        if token not in template_text:
+            errors.append(f"{pr_template_path} missing required template token: {token}")
+
+    return errors
+
+
 def main() -> int:
     errors = [
         *validate_pipeline_contract(CONTRACT_PATH),
         *validate_workflow_contracts(REPO_ROOT),
+        *validate_policy_docs(REPO_ROOT, WORKSTREAM_MANIFEST_PATH),
     ]
 
     if errors:
@@ -138,6 +200,7 @@ def main() -> int:
 
     print("Pipeline contract is complete.")
     print("Workflow trigger contract is aligned.")
+    print("Policy docs are aligned.")
     return 0
 
 

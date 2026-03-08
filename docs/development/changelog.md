@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - Segment CI-10 Closeout and policy enforcement (2026-03-08)
+
+- Impacted capability IDs:
+  - `ci.contract.alignment`
+  - `ci.failure_attribution`
+- Impacted workflow scenario IDs:
+  - `pr.receipt_sha_mismatch_rejected`
+- Added `.github/pull_request_template.md` so CI/deploy/gating PRs must declare capability IDs, workflow scenario IDs, deterministic validation, and receipt or Windows verification notes in one durable checklist.
+- Extended `.ci/ci_hardening_workstream_manifest.json` and `scripts/check_pipeline_contract.py` so the pipeline contract now fails when `AGENTS.md`, `docs/development/ci-cd.md`, `docs/development/ci-hardening-baseline.md`, or the PR template drift from the enforced CI contract.
+- Marked the CI hardening workstream manifest complete so the closeout state, documented contract, and validation guard now align.
+
 ### Changed - Segment CI-09 Cost observability and cache hygiene (2026-03-08)
 
 - Impacted capability IDs:
