@@ -155,7 +155,12 @@ def detect_signals(message: str) -> L1aSignals:
 # ---------------------------------------------------------------------------
 
 
-def build_system_prompt(tenant: dict[str, Any], signals: L1aSignals | None = None) -> str:
+def build_system_prompt(
+    tenant: dict[str, Any],
+    signals: L1aSignals | None = None,
+    *,
+    context_notes: str | None = None,
+) -> str:
     """Build a system prompt from tenant config, adjusted for L1a signals."""
     config = tenant.get("config", {}) or {}
     custom_prompt = config.get("system_prompt")
@@ -204,6 +209,16 @@ def build_system_prompt(tenant: dict[str, Any], signals: L1aSignals | None = Non
                     source="zetherion_ai.skills.client_chat.escalation_addendum",
                 )
             )
+
+    if context_notes:
+        fragments.append(
+            prompt_fragment(
+                "Use this tenant-scoped conversation context when it is relevant:\n"
+                + context_notes,
+                scope=DataScope.TENANT_RAW,
+                source="zetherion_ai.skills.client_chat.conversation_context",
+            )
+        )
 
     return assemble_prompt_fragments(
         fragments,
@@ -289,6 +304,7 @@ class ClientChatSkill(Skill):
         tenant = ctx.get("tenant", {})
         message = ctx.get("message", request.message)
         history = ctx.get("history", [])
+        context_notes = ctx.get("context_notes")
 
         if not message:
             return SkillResponse.error_response(request.id, "Message is required.")
@@ -297,6 +313,7 @@ class ClientChatSkill(Skill):
             tenant=tenant,
             message=message,
             history=history,
+            context_notes=context_notes,
         )
 
         return SkillResponse(
@@ -316,6 +333,7 @@ class ClientChatSkill(Skill):
         tenant: dict[str, Any],
         message: str,
         history: list[dict[str, str]] | None = None,
+        context_notes: str | None = None,
     ) -> ChatResponse:
         """Generate a chat response for a tenant's end-user.
 
@@ -348,7 +366,7 @@ class ClientChatSkill(Skill):
                 signals=signals,
             )
 
-        system_prompt = build_system_prompt(tenant, signals)
+        system_prompt = build_system_prompt(tenant, signals, context_notes=context_notes)
 
         from zetherion_ai.agent.providers import TaskType
 
@@ -371,6 +389,7 @@ class ClientChatSkill(Skill):
         tenant: dict[str, Any],
         message: str,
         history: list[dict[str, str]] | None = None,
+        context_notes: str | None = None,
     ) -> tuple[L1aSignals, AsyncGenerator[StreamChunk, None]]:
         """Stream a chat response for a tenant's end-user.
 
@@ -393,7 +412,7 @@ class ClientChatSkill(Skill):
         if self._broker is None:
             raise RuntimeError("No InferenceBroker configured for streaming.")
 
-        system_prompt = build_system_prompt(tenant, signals)
+        system_prompt = build_system_prompt(tenant, signals, context_notes=context_notes)
 
         from zetherion_ai.agent.providers import TaskType
 

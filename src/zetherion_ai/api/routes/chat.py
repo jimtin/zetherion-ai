@@ -15,6 +15,7 @@ from typing import Any
 
 from aiohttp import web
 
+from zetherion_ai.api.conversation_runtime import TenantConversationRuntime
 from zetherion_ai.logging import get_logger
 from zetherion_ai.skills.base import SkillRequest
 from zetherion_ai.skills.client_chat import ClientChatSkill
@@ -51,6 +52,16 @@ def _get_chat_skill(request: web.Request) -> ClientChatSkill:
         return skill  # type: ignore[no-any-return]
     broker = request.app.get("inference_broker")
     return ClientChatSkill(inference_broker=broker)
+
+
+def _get_conversation_runtime(request: web.Request) -> TenantConversationRuntime:
+    """Get or lazily create the tenant conversation runtime."""
+    runtime = request.app.get("tenant_conversation_runtime")
+    if isinstance(runtime, TenantConversationRuntime):
+        return runtime
+    runtime = TenantConversationRuntime(tenant_manager=request.app["tenant_manager"])
+    request.app["tenant_conversation_runtime"] = runtime
+    return runtime
 
 
 async def _get_tenant_intelligence_skill(request: web.Request) -> TenantIntelligenceSkill:
@@ -152,18 +163,25 @@ async def handle_chat(request: web.Request) -> web.Response:
 
     # Generate AI response via ClientChatSkill (includes L1a detection)
     chat_skill = _get_chat_skill(request)
+    conversation_runtime = _get_conversation_runtime(request)
+    history: list[dict[str, Any]] = []
     try:
         history = await tenant_manager.get_messages(
             session_id=session_id,
             tenant_id=tenant_id,
             limit=_CONTEXT_WINDOW,
         )
-        context_messages = _format_messages_for_llm(history[:-1])
+        context = await conversation_runtime.build_context(
+            tenant_id=tenant_id,
+            session=session,
+            history=_format_messages_for_llm(history[:-1]),
+        )
 
         result = await chat_skill.generate_response(
             tenant=tenant,
             message=message,
-            history=context_messages,
+            history=context.history,
+            context_notes=context.context_notes,
         )
         assistant_content = result.content
         model_used = result.model
@@ -179,6 +197,20 @@ async def handle_chat(request: web.Request) -> web.Response:
         role="assistant",
         content=assistant_content,
     )
+    try:
+        await conversation_runtime.record_turn(
+            tenant_id=tenant_id,
+            session=session,
+            session_id=session_id,
+            user_message=message,
+            assistant_message=assistant_content,
+            history=[
+                *(history or [{"role": "user", "content": message}]),
+                {"role": "assistant", "content": assistant_content},
+            ],
+        )
+    except Exception:
+        log.exception("chat_runtime_record_turn_failed", tenant_id=tenant_id, session_id=session_id)
 
     response = _serialise(assistant_msg)
     if model_used:
@@ -291,8 +323,10 @@ async def handle_chat_stream(request: web.Request) -> web.StreamResponse:
 
     assistant_content = ""
     model_used = None
+    history: list[dict[str, Any]] = []
 
     chat_skill = _get_chat_skill(request)
+    conversation_runtime = _get_conversation_runtime(request)
     broker = request.app.get("inference_broker")
 
     if broker is None:
@@ -307,12 +341,17 @@ async def handle_chat_stream(request: web.Request) -> web.StreamResponse:
                 tenant_id=tenant_id,
                 limit=_CONTEXT_WINDOW,
             )
-            context_messages = _format_messages_for_llm(history[:-1])
+            context = await conversation_runtime.build_context(
+                tenant_id=tenant_id,
+                session=session,
+                history=_format_messages_for_llm(history[:-1]),
+            )
 
             signals, stream = await chat_skill.generate_stream(
                 tenant=tenant,
                 message=message,
-                history=context_messages,
+                history=context.history,
+                context_notes=context.context_notes,
             )
 
             async for chunk in stream:
@@ -336,6 +375,20 @@ async def handle_chat_stream(request: web.Request) -> web.StreamResponse:
         role="assistant",
         content=assistant_content,
     )
+    try:
+        await conversation_runtime.record_turn(
+            tenant_id=tenant_id,
+            session=session,
+            session_id=session_id,
+            user_message=message,
+            assistant_message=assistant_content,
+            history=[
+                *(history or [{"role": "user", "content": message}]),
+                {"role": "assistant", "content": assistant_content},
+            ],
+        )
+    except Exception:
+        log.exception("chat_stream_record_turn_failed", tenant_id=tenant_id, session_id=session_id)
 
     # Send the done event
     done_payload: dict[str, Any] = {

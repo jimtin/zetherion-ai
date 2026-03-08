@@ -15,6 +15,21 @@ from zetherion_ai.logging import get_logger
 log = get_logger("zetherion_ai.api.routes.sessions")
 
 
+def _derive_memory_subject_id(
+    *,
+    memory_subject_id: str | None,
+    external_user_id: str | None,
+) -> str | None:
+    """Resolve the stable tenant-local subject ID for a session."""
+    explicit = (memory_subject_id or "").strip()
+    if explicit:
+        return explicit
+    derived = (external_user_id or "").strip()
+    if derived:
+        return derived
+    return None
+
+
 def _serialise(record: dict[str, Any]) -> dict[str, Any]:
     """Convert datetime fields to ISO strings for JSON."""
     out = {}
@@ -43,11 +58,16 @@ async def handle_create_session(request: web.Request) -> web.Response:
         data = {}
 
     external_user_id = data.get("external_user_id")
+    memory_subject_id = _derive_memory_subject_id(
+        memory_subject_id=data.get("memory_subject_id"),
+        external_user_id=external_user_id,
+    )
     metadata = data.get("metadata", {})
 
     session = await tenant_manager.create_session(
         tenant_id=str(tenant["tenant_id"]),
         external_user_id=external_user_id,
+        memory_subject_id=memory_subject_id,
         metadata=metadata,
     )
 

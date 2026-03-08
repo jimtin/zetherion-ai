@@ -6,8 +6,10 @@ Exposure rule:
 - External clients consume CGS gateway errors only.
 - `/api/v1` errors are upstream/internal and surfaced through CGS mappings.
 
-## Maintenance Note (2026-03-05)
+## Maintenance Note (2026-03-08)
 
+- Tenant conversational runtime now accepts optional `memory_subject_id` on `POST /api/v1/sessions` and returns `conversation_summary` metadata on session reads; these additions do not introduce new error envelopes or auth failure classes.
+- Tenant chat summary/memory persistence runs after the assistant response and is best-effort; user-visible `/api/v1/chat*` error semantics remain unchanged in this segment.
 - Segment 2 data-plane isolation foundation added internal owner-vs-tenant
   storage and encryption routing; error envelopes and status mappings for
   `/api/v1` and `/service/ai/v1` are unchanged by this segment.
@@ -26,7 +28,7 @@ Exposure rule:
 | Auth failures (`X-API-Key`, `Authorization`) | `401` | `{"error":"..."}` | Missing/invalid key or session token |
 | Tenant/session forbidden/inactive | `403` | `{"error":"..."}` | Tenant isolation/security rule |
 | Unknown resource | `404` | `{"error":"..."}` | Missing session/document/replay chunk |
-| Validation failures | `400` | `{"error":"..."}` | Invalid JSON/body/query/path payload |
+| Validation failures | `400` | `{"error":"..."}` | Invalid JSON/body/query/path payload, including malformed `memory_subject_id`/session-create payloads |
 | Messaging trust-policy deny/approval-required | `403`/`409` | `{"error":"...","code":"AI_*"}` | Trust tier, allowlist, or approval policy gates |
 | Oversized document uploads | `413` | `{"error":"Upload too large ..."}` | Max upload limit in route guard |
 | Upstream dependencies unavailable | `503` | `{"error":"..."}` | Inference service/object storage unavailable |

@@ -12,6 +12,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from zetherion_ai.api.routes.sessions import (
+    _derive_memory_subject_id,
     _serialise,
     handle_create_session,
     handle_delete_session,
@@ -28,6 +29,8 @@ async def sessions_routes_client():
             "session_id": uuid4(),
             "tenant_id": uuid4(),
             "external_user_id": "user-1",
+            "memory_subject_id": "subject-1",
+            "conversation_summary": "",
             "created_at": datetime.now(tz=UTC),
             "metadata": {"source": "tests"},
         }
@@ -60,6 +63,23 @@ def test_serialise_converts_datetime_and_uuid() -> None:
     assert out["name"] == "ok"
 
 
+def test_derive_memory_subject_id_prefers_explicit_value() -> None:
+    assert (
+        _derive_memory_subject_id(
+            memory_subject_id="subject-1",
+            external_user_id="external-1",
+        )
+        == "subject-1"
+    )
+
+
+def test_derive_memory_subject_id_falls_back_to_external_user_id() -> None:
+    assert (
+        _derive_memory_subject_id(memory_subject_id=None, external_user_id="external-1")
+        == "external-1"
+    )
+
+
 @pytest.mark.asyncio
 async def test_handle_create_session_with_payload(sessions_routes_client) -> None:
     client, tenant_manager = sessions_routes_client
@@ -71,10 +91,35 @@ async def test_handle_create_session_with_payload(sessions_routes_client) -> Non
     assert response.status == 201
     body = await response.json()
     assert body["external_user_id"] == "user-1"
+    assert body["memory_subject_id"] == "subject-1"
     assert isinstance(body["session_token"], str)
     tenant_manager.create_session.assert_awaited_once_with(
         tenant_id="tenant-1",
         external_user_id="external-1",
+        memory_subject_id="external-1",
+        metadata={"plan": "pro"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_create_session_with_explicit_memory_subject_id(
+    sessions_routes_client,
+) -> None:
+    client, tenant_manager = sessions_routes_client
+    response = await client.post(
+        "/api/v1/sessions",
+        json={
+            "external_user_id": "external-1",
+            "memory_subject_id": "subject-99",
+            "metadata": {"plan": "pro"},
+        },
+    )
+
+    assert response.status == 201
+    tenant_manager.create_session.assert_awaited_once_with(
+        tenant_id="tenant-1",
+        external_user_id="external-1",
+        memory_subject_id="subject-99",
         metadata={"plan": "pro"},
     )
 
@@ -94,6 +139,7 @@ async def test_handle_create_session_with_invalid_json_defaults_empty_body(
     tenant_manager.create_session.assert_awaited_once_with(
         tenant_id="tenant-1",
         external_user_id=None,
+        memory_subject_id=None,
         metadata={},
     )
 
@@ -128,6 +174,8 @@ async def test_handle_get_session_success(sessions_routes_client) -> None:
     tenant_manager.get_session.return_value = {
         "session_id": "session-1",
         "tenant_id": "tenant-1",
+        "memory_subject_id": "subject-1",
+        "conversation_summary": "Recent user requests: asked about pricing",
         "created_at": now,
     }
 
@@ -136,6 +184,8 @@ async def test_handle_get_session_success(sessions_routes_client) -> None:
     body = await response.json()
     assert body["session_id"] == "session-1"
     assert body["tenant_id"] == "tenant-1"
+    assert body["memory_subject_id"] == "subject-1"
+    assert body["conversation_summary"] == "Recent user requests: asked about pricing"
     assert body["created_at"] == now.isoformat()
 
 

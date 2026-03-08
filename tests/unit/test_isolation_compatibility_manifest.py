@@ -82,3 +82,23 @@ def test_manifest_tracks_known_legacy_compatibility_surfaces():
     manifest = _load_manifest()
     compatibility_paths = {entry["path"] for entry in manifest["compatibility_allowlist"]}
     assert EXPECTED_COMPATIBILITY_PATHS.issubset(compatibility_paths)
+
+
+def test_manifest_tracks_segment_2_tenant_conversation_surfaces() -> None:
+    manifest = _load_manifest()
+
+    tenant_api = next(
+        entry for entry in manifest["storage_families"] if entry["id"] == "tenant-api-relational"
+    )
+    assert "tenant_subject_memories" in tenant_api["tables"]
+
+    public_api_runtime = next(
+        entry for entry in manifest["route_families"] if entry["id"] == "public-api-runtime"
+    )
+    assert "src/zetherion_ai/api/routes/sessions.py" in public_api_runtime["paths"]
+
+    domain_prompts = next(
+        entry for entry in manifest["prompt_sources"] if entry["id"] == "domain-prompts"
+    )
+    assert "src/zetherion_ai/api/conversation_runtime.py" in domain_prompts["paths"]
+    assert "src/zetherion_ai/skills/client_chat.py" in domain_prompts["paths"]

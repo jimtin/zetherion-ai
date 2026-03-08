@@ -222,6 +222,100 @@ async def test_release_marker_and_nonce_methods(tenant_manager: TenantManager) -
 
 
 @pytest.mark.asyncio
+async def test_session_context_and_subject_memory_methods(tenant_manager: TenantManager) -> None:
+    now = datetime.now(UTC)
+    tenant_manager._fetchrow.side_effect = [  # type: ignore[attr-defined]
+        {
+            "session_id": "session-1",
+            "tenant_id": "tenant-1",
+            "external_user_id": "visitor-1",
+            "memory_subject_id": "subject-1",
+            "conversation_summary": "",
+            "created_at": now,
+            "last_active": now,
+            "expires_at": now,
+        },
+        {
+            "memory_id": "memory-1",
+            "tenant_id": "tenant-1",
+            "memory_subject_id": "subject-1",
+            "category": "preference",
+            "memory_key": "response_style",
+            "value": "brief",
+            "confidence": 0.88,
+            "source_session_id": "session-1",
+            "created_at": now,
+            "updated_at": now,
+        },
+    ]
+    tenant_manager._fetch.return_value = [  # type: ignore[attr-defined]
+        {
+            "memory_id": "memory-1",
+            "tenant_id": "tenant-1",
+            "memory_subject_id": "subject-1",
+            "category": "preference",
+            "memory_key": "response_style",
+            "value": "brief",
+            "confidence": 0.88,
+            "source_session_id": "session-1",
+            "created_at": now,
+            "updated_at": now,
+        }
+    ]
+
+    session = await tenant_manager.create_session(
+        "tenant-1",
+        external_user_id="visitor-1",
+        memory_subject_id="subject-1",
+        metadata={"source": "widget"},
+    )
+    assert session["memory_subject_id"] == "subject-1"
+    create_sql_args = tenant_manager._fetchrow.call_args_list[0].args  # type: ignore[attr-defined]
+    assert "memory_subject_id" in create_sql_args[0]
+    assert json.loads(create_sql_args[4]) == {"source": "widget"}
+
+    await tenant_manager.persist_session_context(
+        session_id="session-1",
+        tenant_id="tenant-1",
+        memory_subject_id="subject-1",
+        conversation_summary="Recent user requests: asked about pricing",
+    )
+    persist_sql = tenant_manager._execute.call_args_list[0].args[0]  # type: ignore[attr-defined]
+    assert "conversation_summary" in persist_sql
+
+    subject_memory = await tenant_manager.upsert_subject_memory(
+        tenant_id="tenant-1",
+        memory_subject_id="subject-1",
+        category="preference",
+        memory_key="response_style",
+        value="brief",
+        source_session_id="session-1",
+        confidence=0.88,
+    )
+    assert subject_memory["memory_id"] == "memory-1"
+
+    subject_memories = await tenant_manager.list_subject_memories(
+        tenant_id="tenant-1",
+        memory_subject_id="subject-1",
+        limit=5,
+    )
+    assert subject_memories == [
+        {
+            "memory_id": "memory-1",
+            "tenant_id": "tenant-1",
+            "memory_subject_id": "subject-1",
+            "category": "preference",
+            "memory_key": "response_style",
+            "value": "brief",
+            "confidence": 0.88,
+            "source_session_id": "session-1",
+            "created_at": now,
+            "updated_at": now,
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_prune_and_funnel_methods(tenant_manager: TenantManager) -> None:
     tenant_manager._fetchval.return_value = 7  # type: ignore[attr-defined]
     deleted_count = await tenant_manager.prune_web_events("tenant-1", retention_days=30)

@@ -11,11 +11,13 @@ plus optional tenant-scoped YouTube endpoints.
 This API is distinct from the internal Skills API (`:8080`) and is not the public
 client contract. External clients must integrate through CGS `/service/ai/v1`.
 
-Maintenance note (2026-03-05):
-- Segment 2 data-plane isolation foundation added owner-vs-tenant Qdrant routing,
+Maintenance note (2026-03-08):
+- Segment 2 tenant conversational runtime now lets `POST /api/v1/sessions` accept an optional `memory_subject_id`, derives it from `external_user_id` when omitted, and returns tenant-local conversation metadata (`memory_subject_id`, `conversation_summary`) on session reads.
+- `POST /api/v1/chat` and `POST /api/v1/chat/stream` now assemble tenant-scoped context from the active session summary plus durable tenant subject memories. That context remains inside `tenant_raw`; no owner-personal memory is shared with the public API runtime.
+- Route auth and wire formats remain unchanged in this segment.
+- Previous 2026-03-05 data-plane isolation work added owner-vs-tenant Qdrant routing,
   scoped object-storage prefixes, additive PostgreSQL isolation schemas, and
   owner-vs-tenant encryption domains behind the upstream runtime.
-- No `/api/v1` route, method, auth, or payload contract changed in this segment.
 - Added tenant messaging upstream routes:
   - `GET /api/v1/messaging/chats`
   - `GET /api/v1/messaging/messages`
@@ -95,6 +97,9 @@ Upstream health probe. No authentication required.
 
 Create a tenant session and return a session token.
 
+Use `memory_subject_id` when the client already has a stable tenant-local user identifier.
+If it is omitted, the runtime derives it from `external_user_id` when available.
+
 **Headers:** `X-API-Key`
 
 **Request:**
@@ -102,6 +107,7 @@ Create a tenant session and return a session token.
 ```json
 {
   "external_user_id": "user_123",
+  "memory_subject_id": "user_123",
   "metadata": {
     "source": "web"
   }
@@ -115,7 +121,10 @@ Create a tenant session and return a session token.
   "session_id": "...",
   "tenant_id": "...",
   "external_user_id": "user_123",
+  "memory_subject_id": "user_123",
+  "conversation_summary": "",
   "created_at": "2026-02-24T18:00:00+00:00",
+  "expires_at": "2026-02-25T18:00:00+00:00",
   "session_token": "zt_sess_..."
 }
 ```
@@ -133,8 +142,11 @@ Get session metadata for the authenticated tenant.
   "session_id": "...",
   "tenant_id": "...",
   "external_user_id": "user_123",
+  "memory_subject_id": "user_123",
+  "conversation_summary": "Recent user requests: asked about bathroom pricing",
   "created_at": "2026-02-24T18:00:00+00:00",
-  "updated_at": "2026-02-24T18:05:00+00:00"
+  "last_active": "2026-02-24T18:05:00+00:00",
+  "expires_at": "2026-02-25T18:00:00+00:00"
 }
 ```
 
@@ -159,6 +171,12 @@ Delete a session for the authenticated tenant.
 ### POST /api/v1/chat
 
 Send one message and receive one assistant message.
+
+The runtime now prepends tenant-scoped context from:
+- the session's rolling `conversation_summary`
+- durable memories linked to the session's `memory_subject_id`
+
+Those context notes remain in `tenant_raw` and are never hydrated from owner-personal memory.
 
 **Headers:** `Authorization: Bearer zt_sess_...`
 
