@@ -1915,7 +1915,7 @@
 <ol>
 <li>current required branch checks are <code>CI Summary</code>, <code>Linting &amp; Formatting</code>, <code>Pipeline Contract</code>, <code>Secret Scan (Gitleaks)</code>, and <code>Zetherion Boundary Check</code></li>
 <li>required E2E on PRs is enforced by committed local receipt validation, not by running full E2E suites directly in GitHub Actions</li>
-<li>PR fast path is limited to <code>detect-changes</code>, <code>risk-classifier</code>, <code>lint</code>, <code>secret-scan</code>, <code>pipeline-contract</code>, <code>zetherion-boundary-check</code>, <code>required-e2e-gate</code>, <code>CI Summary</code>, and <code>CI Failure Attribution</code></li>
+<li>PR fast path is limited to <code>detect-changes</code>, <code>risk-classifier</code>, <code>lint</code>, <code>secret-scan</code>, <code>pipeline-contract</code>, <code>zetherion-boundary-check</code>, <code>required-e2e-gate</code>, <code>CI Summary</code>, and <code>CI Failure Attribution</code>; <code>CI Cost Report</code> runs best-effort for observability only</li>
 <li>heavy local-equivalent jobs such as unit, type-check, security, docs-contract, and docker-build are deferred off PRs to push or weekly/manual verification runs</li>
 <li>weekly/manual runs remain the place for the heaviest independent verification lanes, including CodeQL and the broader heavy-job graph on <code>ci.yml</code></li>
 <li>the Windows host runs an isolated Discord production canary on startup and every 6 hours by default, using the same blessed wrapper contract but a synthetic test principal and isolated canary channels</li>
@@ -1927,6 +1927,12 @@
 <ul>
 <li>Step Summary table</li>
 <li><code>ci-failure-attribution.json</code> artifact</li>
+<li><code>ci-cost-report.json</code> artifact with per-job runtime estimates and execution-class visibility</li>
+</ul>
+<p>A separate weekly/manual <code>CI Maintenance</code> workflow emits:</p>
+<ul>
+<li><code>ci-usage-summary.json</code> artifact for the last 7 days of CI usage</li>
+<li><code>ci-cache-hygiene.json</code> artifact describing stale-cache deletions or dry-run candidates</li>
 </ul>
 <p>Reason codes:</p>
 <ul>

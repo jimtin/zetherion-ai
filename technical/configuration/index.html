@@ -3282,6 +3282,36 @@ in <code>config.py</code>.</p>
 <td>Announcement recipient user id for Windows deploy/promotions and Discord canary events</td>
 </tr>
 <tr>
+<td><code>DISCORD_E2E_ENABLED</code></td>
+<td><code>false</code></td>
+<td>Enable the narrow synthetic Discord E2E bypass for isolated test channels</td>
+</tr>
+<tr>
+<td><code>DISCORD_E2E_ALLOWED_AUTHOR_IDS</code></td>
+<td>unset</td>
+<td>Comma-separated Discord user IDs allowed to drive isolated synthetic E2E runs</td>
+</tr>
+<tr>
+<td><code>DISCORD_E2E_GUILD_ID</code></td>
+<td>unset</td>
+<td>Allowlisted guild ID for isolated Discord E2E runs</td>
+</tr>
+<tr>
+<td><code>DISCORD_E2E_CATEGORY_ID</code></td>
+<td>unset</td>
+<td>Allowlisted category ID for isolated Discord E2E channels</td>
+</tr>
+<tr>
+<td><code>DISCORD_E2E_CHANNEL_PREFIX</code></td>
+<td><code>zeth-e2e</code></td>
+<td>Required name prefix for isolated Discord E2E channels</td>
+</tr>
+<tr>
+<td><code>DISCORD_E2E_PROVIDER</code></td>
+<td><code>groq</code></td>
+<td>Provider used by required Discord E2E runs (<code>groq</code> or <code>local</code>)</td>
+</tr>
+<tr>
 <td><code>WINDOWS_DISCORD_CANARY_INTERVAL_MINUTES</code></td>
 <td><code>360</code></td>
 <td>Scheduled Discord production canary cadence on the Windows host</td>
@@ -3313,22 +3343,17 @@ in <code>config.py</code>.</p>
 </tr>
 <tr>
 <td><code>WINDOWS_DISCORD_CANARY_TARGET_BOT_ID</code></td>
-<td>inherits <code>TEST_DISCORD_TARGET_BOT_ID</code></td>
+<td>unset</td>
 <td>Optional explicit production bot user id for target-lease enforcement</td>
 </tr>
 <tr>
 <td><code>WINDOWS_DISCORD_CANARY_GUILD_ID</code></td>
-<td>inherits <code>TEST_DISCORD_GUILD_ID</code></td>
+<td>inherits <code>DISCORD_E2E_GUILD_ID</code>, then <code>TEST_DISCORD_GUILD_ID</code></td>
 <td>Guild used for isolated Windows canary channels</td>
 </tr>
 <tr>
-<td><code>WINDOWS_DISCORD_CANARY_PARENT_CHANNEL_ID</code></td>
-<td>inherits <code>TEST_DISCORD_E2E_PARENT_CHANNEL_ID</code></td>
-<td>Optional parent channel for isolated canary threads/channels</td>
-</tr>
-<tr>
 <td><code>WINDOWS_DISCORD_CANARY_CATEGORY_ID</code></td>
-<td>inherits <code>TEST_DISCORD_E2E_CATEGORY_ID</code></td>
+<td>inherits <code>DISCORD_E2E_CATEGORY_ID</code>, then <code>TEST_DISCORD_E2E_CATEGORY_ID</code></td>
 <td>Optional dedicated canary category id</td>
 </tr>
 <tr>
@@ -3338,8 +3363,8 @@ in <code>config.py</code>.</p>
 </tr>
 <tr>
 <td><code>WINDOWS_DISCORD_CANARY_CHANNEL_PREFIX</code></td>
-<td><code>zeth-canary</code></td>
-<td>Prefix for isolated Windows canary channels</td>
+<td>inherits <code>DISCORD_E2E_CHANNEL_PREFIX</code>, then <code>TEST_DISCORD_E2E_CHANNEL_PREFIX</code>, else <code>zeth-e2e</code></td>
+<td>Prefix for isolated Windows canary channels; if overridden it must match the production bot runtime scope</td>
 </tr>
 <tr>
 <td><code>WINDOWS_DISCORD_CANARY_TTL_MINUTES</code></td>

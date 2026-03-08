@@ -2750,7 +2750,7 @@
 </tr>
 </tbody>
 </table>
-<p>For isolated Discord E2E debugging, use the blessed wrapper. It allocates a dedicated ephemeral channel or thread for the run, acquires a target-bot lease, and cleans the Discord surface afterward. This wrapper is diagnostic-only on its own; authoritative merge evidence comes from <code>bash scripts/local-required-e2e-receipt.sh</code>, which boots the local bot container before invoking it:</p>
+<p>For isolated Discord E2E debugging, use the blessed wrapper. It allocates a dedicated ephemeral channel for the run, acquires a target-bot lease, and cleans the Discord surface afterward. This wrapper is diagnostic-only on its own; authoritative merge evidence comes from <code>bash scripts/local-required-e2e-receipt.sh</code>, which boots the local bot container before invoking it:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>./scripts/run-required-discord-e2e.sh<span class="w"> </span>--<span class="w"> </span>-k<span class="w"> </span>test_bot_responds_to_message
 </code></pre></div>
 <p>Required local Discord E2E scope config:</p>

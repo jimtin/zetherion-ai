@@ -1664,6 +1664,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#ci-deploy-change-pr-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CI / Deploy Change PR Checklist
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#additional-main-branch-automation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2395,6 +2406,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#ci-deploy-change-pr-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CI / Deploy Change PR Checklist
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#additional-main-branch-automation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2872,7 +2894,7 @@
 <li>Full Docker E2E and Discord E2E suites</li>
 </ol>
 <p>Run it directly:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>bash<span class="w"> </span>scripts/test-full.sh
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>./scripts/test-full.sh
 </code></pre></div>
 <p>Run the changed-file preflight directly when you need fast feedback before the full gate:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>bash<span class="w"> </span>scripts/run-local-gate-preflight.sh<span class="w"> </span>--base-ref<span class="w"> </span>origin/main<span class="w"> </span>--head-ref<span class="w"> </span>HEAD
@@ -2937,8 +2959,18 @@
 <li><code>Secret Scan (Gitleaks)</code></li>
 <li><code>Zetherion Boundary Check</code></li>
 </ul>
-<p>The <code>required-e2e-gate</code> job validates the committed local receipt contract when the risk classifier marks a PR <code>e2e_required=true</code>; GitHub does not execute the full E2E suites directly on PRs. Committed receipts use <code>head_sha=local</code> because tracked receipt files cannot self-hash the final commit without recursion. The PR fast path is now limited to <code>detect-changes</code>, <code>risk-classifier</code>, <code>lint</code>, <code>secret-scan</code>, <code>pipeline-contract</code>, <code>zetherion-boundary-check</code>, <code>required-e2e-gate</code>, <code>CI Summary</code>, and <code>CI Failure Attribution</code>.</p>
-<p>Weekly or manual GitHub runs remain the independent heavy-verification cadence for <code>type-check</code>, <code>security</code>, <code>semgrep</code>, <code>dependency-audit</code>, <code>license-check</code>, <code>pre-commit</code>, <code>docs-contract</code>, <code>unit-test</code>, <code>integration-test</code>, <code>docker-build-test</code>, and CodeQL.</p>
+<p>The <code>required-e2e-gate</code> job validates the committed local receipt contract when the risk classifier marks a PR <code>e2e_required=true</code>; GitHub does not execute the full E2E suites directly on PRs. Committed receipts use <code>head_sha=local</code> because tracked receipt files cannot self-hash the final commit without recursion. The PR fast path is now limited to <code>detect-changes</code>, <code>risk-classifier</code>, <code>lint</code>, <code>secret-scan</code>, <code>pipeline-contract</code>, <code>zetherion-boundary-check</code>, <code>required-e2e-gate</code>, <code>CI Summary</code>, and <code>CI Failure Attribution</code>.
+The required <code>Pipeline Contract</code> job also validates pull-request metadata on PR events: the head branch must start with <code>codex/</code>, capability IDs and workflow scenario IDs must be declared in the PR body, deterministic validation evidence must be listed, and the receipt checklist must be explicitly checked. A successful run prints <code>Pull-request metadata matches policy.</code></p>
+<p>Weekly or manual GitHub runs remain the independent heavy-verification cadence for <code>type-check</code>, <code>security</code>, <code>semgrep</code>, <code>dependency-audit</code>, <code>license-check</code>, <code>pre-commit</code>, <code>docs-contract</code>, <code>unit-test</code>, <code>integration-test</code>, <code>docker-build-test</code>, and CodeQL. The PR fast path also publishes a best-effort <code>CI Cost Report</code>, while the weekly/manual <code>CI Maintenance</code> workflow emits usage summaries and stale-cache hygiene receipts.</p>
+<h3 id="ci-deploy-change-pr-checklist">CI / Deploy Change PR Checklist<a class="headerlink" href="#ci-deploy-change-pr-checklist" title="Permanent link">&para;</a></h3>
+<p>If a PR changes CI, deploy, or gating logic, fill the checklist in <code>.github/pull_request_template.md</code> before requesting review. At minimum, that PR metadata must include:</p>
+<ul>
+<li>impacted capability IDs</li>
+<li>impacted workflow scenario IDs</li>
+<li>deterministic local validation evidence for the segment</li>
+<li><code>.ci/e2e-receipt.json</code> status when <code>e2e_required=true</code></li>
+<li>post-merge Windows verification notes when deploy behavior changes</li>
+</ul>
 <h3 id="additional-main-branch-automation">Additional Main-Branch Automation<a class="headerlink" href="#additional-main-branch-automation" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -3036,7 +3068,7 @@
 - <code>status=cleanup_degraded</code>: test execution passed, but channel or synthetic artifact cleanup needs attention
 - <code>status=lease_contended</code>: another active canary or E2E run holds the target-bot lease; the scheduled task should retry later
 - <code>status=failed|timeout|runner_error</code>: production-parity canary failed and should surface in host verification plus announcements</p>
-<p>The host verifier reads <code>C:\ZetherionAI\data\discord-canary\last-run.json</code> and <code>state.json</code>, treating stale or failing canaries as degraded health rather than deploy rollback triggers.</p>
+<p>The host verifier reads <code>C:\ZetherionAI\data\discord-canary\last-run.json</code> and <code>state.json</code>, treating stale or failing canaries as degraded health rather than deploy rollback triggers. Windows deploy receipts also split <code>core_status</code> from <code>aux_status</code>, so <code>cloudflared</code> or <code>whatsapp-bridge</code> degradation surfaces as a warning without rolling back unrelated releases unless <code>WINDOWS_REQUIRE_HEALTHY_AUXILIARY_SERVICES=true</code>.</p>
 <h4 id="5-verify-announcement-notification-path">5. Verify announcement notification path<a class="headerlink" href="#5-verify-announcement-notification-path" title="Permanent link">&para;</a></h4>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">python</span> <span class="p">.\</span><span class="n">scripts</span><span class="p">\</span><span class="n">windows</span><span class="p">\</span><span class="n">announcement-emit</span><span class="p">.</span><span class="n">py</span> <span class="p">`</span>
 <a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>  <span class="p">-</span><span class="n">-event</span> <span class="n">deploy</span> <span class="p">`</span>
@@ -3123,9 +3155,11 @@
 <p><strong>risk-classifier</strong> -- Computes server-side <code>e2e_required=true|false</code> from changed-path policy. Ambiguous classifications fail-safe to <code>e2e_required=true</code>.</p>
 <p><strong>required-e2e-gate</strong> -- Always emits <code>e2e-contract-receipt</code> artifact. If <code>e2e_required=true</code>, CI validates the committed local receipt contract (<code>.ci/e2e-receipt.json</code>). Committed receipts use <code>head_sha=local</code>, and the tested commit is recorded separately to avoid hash recursion. CI does not run full E2E suites directly.</p>
 <p><strong>zetherion-boundary-check</strong> -- Enforces Zetherion-only repository boundary and fails when top-level <code>cgs/**</code> UI paths are introduced.</p>
-<p><strong>test</strong> -- Matrix build across Python 3.12 and 3.13. Runs <code>pytest tests/ -m "not integration"</code> with coverage. Uploads coverage XML to Codecov (Python 3.12 only). Uploads HTML coverage report as a build artifact (retained 30 days). This job is deferred off PRs and runs on push code changes plus scheduled/manual heavy verification.</p>
+<p><strong>test</strong> -- Matrix build across Python 3.12 and 3.13. Runs <code>pytest tests/ -m "not integration"</code> with coverage. Uploads coverage XML to Codecov (Python 3.12 only). Uploads HTML coverage report as a build artifact (retained 14 days). This job is deferred off PRs and runs on push code changes plus scheduled/manual heavy verification.</p>
 <p><strong>docker-build</strong> -- Validates <code>docker-compose.yml</code> syntax and builds the Skills image. This job is deferred off PRs and runs on push Docker changes plus scheduled/manual verification.</p>
 <p><strong>summary</strong> -- Waits for all other jobs. On pull requests it evaluates only the fast-path contract jobs. On push/scheduled/manual runs it evaluates the full active job graph. Posts a markdown results table to the workflow summary and fails when the required contract for that event fails.</p>
+<p><strong>ci-cost-report</strong> -- Best-effort observability job that queries the current workflow run, emits <code>ci-cost-report.json</code>, and posts execution-class / duration summaries to the workflow summary without becoming a merge blocker.</p>
+<p><strong>ci-maintenance</strong> -- Separate weekly/manual workflow that emits a 7-day CI usage summary and prunes stale GitHub Actions caches using auditable JSON receipts.</p>
 <h3 id="integration-test-control">Integration Test Control<a class="headerlink" href="#integration-test-control" title="Permanent link">&para;</a></h3>
 <p>Integration tests can be skipped by including <code>[skip integration]</code> in the commit message:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;docs: Update README [skip integration]&quot;</span>

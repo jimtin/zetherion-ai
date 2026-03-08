@@ -1850,6 +1850,7 @@
 <li>Segment 2 will add deterministic regression coverage for receipt, shell, and CI-support code.</li>
 <li>Segment 3 slims PR CI to the fast-path contract; the required ruleset contexts remain unchanged because they already matched the target required-check set.</li>
 <li>Segment 5 now inserts isolated Docker-backed E2E stack orchestration before any further deploy hardening so concurrent local runs do not collide on project names, ports, bind mounts, or residual containers.</li>
+<li>The workstream closes by validating policy docs and the PR template through the pipeline contract guard. Future CI, deploy, or gating PRs must fill <code>.github/pull_request_template.md</code> with capability IDs, workflow scenario IDs, and receipt/verification evidence.</li>
 </ul>
 
 

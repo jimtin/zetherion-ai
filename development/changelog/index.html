@@ -1632,6 +1632,72 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#changed-pr-metadata-policy-enforcement-for-agent-handoff-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - PR metadata policy enforcement for agent handoff (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-segment-ci-10-closeout-and-policy-enforcement-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Segment CI-10 Closeout and policy enforcement (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-segment-ci-09-cost-observability-and-cache-hygiene-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Segment CI-09 Cost observability and cache hygiene (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-segment-ci-08-windows-deploy-core-vs-auxiliary-health-split-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Segment CI-08 Windows deploy core vs auxiliary health split (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed-documentation-contract-parity-and-local-gate-coverage-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed - Documentation contract parity and local gate coverage (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed-windows-discord-canary-repo-venv-bootstrap-and-bash-path-detection-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed - Windows Discord canary repo-venv bootstrap and Bash path detection (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#fixed-trust-storage-schema-bootstrap-concurrency-in-container-startup-2026-03-08" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2940,6 +3006,72 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#changed-pr-metadata-policy-enforcement-for-agent-handoff-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - PR metadata policy enforcement for agent handoff (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-segment-ci-10-closeout-and-policy-enforcement-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Segment CI-10 Closeout and policy enforcement (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-segment-ci-09-cost-observability-and-cache-hygiene-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Segment CI-09 Cost observability and cache hygiene (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed-segment-ci-08-windows-deploy-core-vs-auxiliary-health-split-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed - Segment CI-08 Windows deploy core vs auxiliary health split (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed-documentation-contract-parity-and-local-gate-coverage-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed - Documentation contract parity and local gate coverage (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed-windows-discord-canary-repo-venv-bootstrap-and-bash-path-detection-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed - Windows Discord canary repo-venv bootstrap and Bash path detection (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#fixed-trust-storage-schema-bootstrap-concurrency-in-container-startup-2026-03-08" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4107,6 +4239,70 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 </blockquote>
 <hr />
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="changed-pr-metadata-policy-enforcement-for-agent-handoff-2026-03-08">Changed - PR metadata policy enforcement for agent handoff (2026-03-08)<a class="headerlink" href="#changed-pr-metadata-policy-enforcement-for-agent-handoff-2026-03-08" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added <code>scripts/check_pr_metadata.py</code> plus unit coverage so the required <code>Pipeline Contract</code> job now rejects pull requests that do not use a <code>codex/</code> head branch or that leave capability IDs, workflow scenario IDs, validation evidence, or receipt checklist items as placeholders.</li>
+<li>Updated <code>.github/pull_request_template.md</code>, <code>AGENTS.md</code>, <code>docs/development/ci-cd.md</code>, and the local gate manifest so another agent is constrained by repository policy and CI enforcement instead of relying on remembered process.</li>
+</ul>
+<h3 id="changed-segment-ci-10-closeout-and-policy-enforcement-2026-03-08">Changed - Segment CI-10 Closeout and policy enforcement (2026-03-08)<a class="headerlink" href="#changed-segment-ci-10-closeout-and-policy-enforcement-2026-03-08" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>ci.contract.alignment</code></li>
+<li><code>ci.failure_attribution</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>pr.receipt_sha_mismatch_rejected</code></li>
+<li>Added <code>.github/pull_request_template.md</code> so CI/deploy/gating PRs must declare capability IDs, workflow scenario IDs, deterministic validation, and receipt or Windows verification notes in one durable checklist.</li>
+<li>Extended <code>.ci/ci_hardening_workstream_manifest.json</code> and <code>scripts/check_pipeline_contract.py</code> so the pipeline contract now fails when <code>AGENTS.md</code>, <code>docs/development/ci-cd.md</code>, <code>docs/development/ci-hardening-baseline.md</code>, or the PR template drift from the enforced CI contract.</li>
+<li>Marked the CI hardening workstream manifest complete so the closeout state, documented contract, and validation guard now align.</li>
+</ul>
+<h3 id="changed-segment-ci-09-cost-observability-and-cache-hygiene-2026-03-08">Changed - Segment CI-09 Cost observability and cache hygiene (2026-03-08)<a class="headerlink" href="#changed-segment-ci-09-cost-observability-and-cache-hygiene-2026-03-08" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>ci.cost.observability</code></li>
+<li><code>ci.contract.alignment</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>weekly.full_independent_verification</code></li>
+<li><code>pr.docs_only_fast_path</code></li>
+<li>Added <code>scripts/ci_cost_report.py</code> and a non-blocking <code>CI Cost Report</code> job so every CI run now emits a machine-readable runtime summary with job duration estimates and execution-class visibility.</li>
+<li>Added <code>scripts/ci_cache_hygiene.py</code> plus a weekly <code>CI Maintenance</code> workflow that summarizes recent CI usage and prunes stale GitHub Actions caches with an auditable JSON receipt.</li>
+<li>Reduced CI artifact retention in <code>.github/workflows/ci.yml</code> from 30 days to 14 days for short-lived observability artifacts and extended the pipeline contract check to keep the new maintenance workflow aligned.</li>
+</ul>
+<h3 id="changed-segment-ci-08-windows-deploy-core-vs-auxiliary-health-split-2026-03-08">Changed - Segment CI-08 Windows deploy core vs auxiliary health split (2026-03-08)<a class="headerlink" href="#changed-segment-ci-08-windows-deploy-core-vs-auxiliary-health-split-2026-03-08" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>deploy.windows.core_aux_health</code></li>
+<li><code>ci.receipt.validation</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>deploy.aux_misconfig_degraded</code></li>
+<li><code>deploy.core_failure_rollback</code></li>
+<li>Split the Windows deploy success contract into <code>core_status</code> and <code>aux_status</code>, so auxiliary service degradation warns without rolling back unrelated releases by default.</li>
+<li>Added <code>scripts/check-windows-deploy-contract.py</code> plus unit coverage and wired it into the bounded <code>check</code> lane and deploy-preflight regressions to keep the workflow, runtime verifier, and host verifier aligned.</li>
+<li>Updated Windows host verification to report auxiliary container degradation as a warning via <code>containers_auxiliary</code>, while keeping core runtime failures blocking.</li>
+</ul>
+<h3 id="fixed-documentation-contract-parity-and-local-gate-coverage-2026-03-08">Fixed - Documentation contract parity and local gate coverage (2026-03-08)<a class="headerlink" href="#fixed-documentation-contract-parity-and-local-gate-coverage-2026-03-08" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>ci.local_preflight</code></li>
+<li><code>ci.receipt.validation</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>pr.receipt_script_change_requires_regression_pack</code></li>
+<li><code>pr.docs_only_fast_path</code></li>
+<li>Added the missing Discord E2E and Windows Discord canary environment variables to <code>.env.example</code> and the configuration reference so post-merge <code>Documentation Contracts</code> no longer fail on env-doc parity drift.</li>
+<li>Hardened the local deterministic gates so docs changes now run the full documentation contract suite, including <code>mkdocs build --strict</code>, before push.</li>
+</ul>
+<h3 id="fixed-windows-discord-canary-repo-venv-bootstrap-and-bash-path-detection-2026-03-08">Fixed - Windows Discord canary repo-venv bootstrap and Bash path detection (2026-03-08)<a class="headerlink" href="#fixed-windows-discord-canary-repo-venv-bootstrap-and-bash-path-detection-2026-03-08" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>ci.weekly.independent_verification</code></li>
+<li><code>ci.e2e.discord_isolation</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>e2e.windows_discord_canary</code></li>
+<li>Hardened <code>scripts/windows/discord-canary.py</code> to normalize a CRLF Windows <code>.env</code> into the canary bash-env staging area and rewrite the normalized wrapper copy to source that LF-safe file, so Git Bash no longer fails before the Discord E2E wrapper starts.</li>
+<li>Updated <code>scripts/run-required-discord-e2e.sh</code> and <code>scripts/local-required-e2e-receipt.sh</code> to recognize Windows-style repo virtualenv paths under <code>.venv/Scripts</code> and <code>venv/Scripts</code> when invoked from Git Bash on the Windows host.</li>
+<li>Updated <code>scripts/windows/discord-canary-runner.ps1</code> to provision and reuse a repo-local <code>.venv</code> with the required dependencies before launching the canary, removing the fallback to an unprepared machine-global Python install.</li>
+<li>Updated <code>src/zetherion_ai/discord/bot.py</code> so active leased Discord E2E messages and interactions can bypass the normal bot-author ignore gate and allowlist checks while expired or unleased bot traffic still fails closed.</li>
+<li>Hardened <code>tests/integration/test_discord_e2e.py</code> with console-safe logging so the Windows canary test client no longer crashes on cp1252-only consoles before the suite can exercise the live bot.</li>
+</ul>
 <h3 id="fixed-trust-storage-schema-bootstrap-concurrency-in-container-startup-2026-03-08">Fixed - Trust storage schema bootstrap concurrency in container startup (2026-03-08)<a class="headerlink" href="#fixed-trust-storage-schema-bootstrap-concurrency-in-container-startup-2026-03-08" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Serialized canonical trust schema creation with a PostgreSQL advisory transaction lock so concurrent service startup cannot race while creating <code>control_plane.trust_*</code> tables.</li>
