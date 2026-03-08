@@ -103,8 +103,9 @@ def test_create_run_creates_channel_and_exports(
     monkeypatch.setattr(module, "make_run_id", lambda prefix="discord": "discord-fixed")
 
     category = {"id": "456", "type": 4, "name": "zeth-e2e"}
-    test_api = FakeDiscordAPI(user_id=1111, channels=[category])
+    test_api = FakeDiscordAPI(user_id=1111, channels=[dict(category)])
     target_api = FakeDiscordAPI(user_id=2222, channels=[dict(category)])
+    admin_api = FakeDiscordAPI(user_id=3333, channels=[dict(category)])
 
     manifest, exports = module.create_run(
         runs_root=tmp_path,
@@ -117,13 +118,17 @@ def test_create_run_creates_channel_and_exports(
         mode="local_required",
         test_api=test_api,
         target_api=target_api,
+        admin_api=admin_api,
         parent_run_id="outer-run",
     )
 
     assert manifest["run_id"] == "discord-fixed"
-    assert target_api.created_channels, "target bot should provision isolated channels"
+    assert admin_api.created_channels, "admin bot should provision isolated channels"
     assert not test_api.created_channels
+    assert not target_api.created_channels
     assert manifest["channel"]["name"].startswith("zeth-e2e-")
+    overwrites = admin_api.created_channels[0]["permission_overwrites"]
+    assert {entry["id"] for entry in overwrites} == {"1111", "2222"}
     assert Path(manifest["cleanup_ledger_path"]).parent.is_dir()
     assert exports["TEST_DISCORD_CHANNEL_ID"] == str(manifest["channel"]["id"])
     assert exports["TEST_DISCORD_TARGET_BOT_ID"] == "2222"
@@ -142,8 +147,9 @@ def test_create_thread_run_creates_thread_and_exports(
     monkeypatch.setattr(module, "make_run_id", lambda prefix="discord": "discord-thread")
 
     parent_channel = {"id": "321", "type": 0, "name": "fam"}
-    test_api = FakeDiscordAPI(user_id=1111, channels=[parent_channel])
+    test_api = FakeDiscordAPI(user_id=1111, channels=[dict(parent_channel)])
     target_api = FakeDiscordAPI(user_id=2222, channels=[dict(parent_channel)])
+    admin_api = FakeDiscordAPI(user_id=3333, channels=[dict(parent_channel)])
 
     manifest, exports = module.create_run(
         runs_root=tmp_path,
@@ -156,11 +162,12 @@ def test_create_thread_run_creates_thread_and_exports(
         mode="local_required",
         test_api=test_api,
         target_api=target_api,
+        admin_api=admin_api,
     )
 
     assert manifest["resource_type"] == "thread"
     assert manifest["parent_channel_id"] == 321
-    assert target_api.created_channels[0]["type"] == 11
+    assert admin_api.created_channels[0]["type"] == 11
     assert manifest["channel"]["name"].startswith("zeth-e2e-m-")
     assert exports["TEST_DISCORD_CHANNEL_ID"] == str(manifest["channel"]["id"])
 
@@ -188,8 +195,9 @@ def test_create_run_fails_when_target_bot_lease_is_active(tmp_path: Path) -> Non
             "topic": future_lease.to_topic(),
         },
     ]
-    test_api = FakeDiscordAPI(user_id=1111, channels=[channels[0]])
-    target_api = FakeDiscordAPI(user_id=2222, channels=channels)
+    test_api = FakeDiscordAPI(user_id=1111, channels=[dict(channel) for channel in channels])
+    target_api = FakeDiscordAPI(user_id=2222, channels=[dict(channel) for channel in channels])
+    admin_api = FakeDiscordAPI(user_id=3333, channels=[dict(channel) for channel in channels])
 
     with pytest.raises(module.DiscordE2ERunManagerError, match="target_lease_unavailable"):
         module.create_run(
@@ -203,8 +211,80 @@ def test_create_run_fails_when_target_bot_lease_is_active(tmp_path: Path) -> Non
             mode="local_required",
             test_api=test_api,
             target_api=target_api,
+            admin_api=admin_api,
         )
 
+
+
+def test_create_run_windows_prod_canary_ignores_stale_test_target_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_module()
+    monkeypatch.setattr(module, "make_run_id", lambda prefix="discord": "discord-canary")
+    monkeypatch.setenv("TEST_DISCORD_TARGET_BOT_ID", "9999")
+
+    category = {"id": "456", "type": 4, "name": "zeth-canary"}
+    test_api = FakeDiscordAPI(user_id=1111, channels=[dict(category)])
+    target_api = FakeDiscordAPI(user_id=2222, channels=[dict(category)])
+    admin_api = FakeDiscordAPI(user_id=3333, channels=[dict(category)])
+
+    manifest, exports = module.create_run(
+        runs_root=tmp_path,
+        guild_id=123,
+        category_id=456,
+        category_name=None,
+        parent_channel_id=None,
+        channel_prefix="zeth-canary",
+        ttl_minutes=90,
+        mode="windows_prod_canary",
+        test_api=test_api,
+        target_api=target_api,
+        admin_api=admin_api,
+    )
+
+    assert exports["TEST_DISCORD_TARGET_BOT_ID"] == "2222"
+    lease = DiscordE2ELease.from_topic(manifest["channel"]["topic"])
+    assert lease is not None
+    assert lease.target_bot_id == 2222
+
+
+def test_resolve_target_token_prefers_runtime_token_for_windows_prod_canary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_module()
+    monkeypatch.setenv("DISCORD_E2E_MODE", "windows_prod_canary")
+    monkeypatch.setenv("DISCORD_TOKEN", "prod-token")
+    monkeypatch.setenv("DISCORD_TOKEN_TEST", "test-token")
+
+    assert module._resolve_target_token() == "prod-token"
+
+
+def test_resolve_target_token_prefers_test_token_for_local_required(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_module()
+    monkeypatch.setenv("DISCORD_E2E_MODE", "local_required")
+    monkeypatch.setenv("DISCORD_TOKEN", "prod-token")
+    monkeypatch.setenv("DISCORD_TOKEN_TEST", "test-token")
+
+    assert module._resolve_target_token() == "test-token"
+
+def test_resolve_admin_token_prefers_explicit_admin_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _load_module()
+    monkeypatch.setenv("DISCORD_E2E_ADMIN_TOKEN", "admin-token")
+    monkeypatch.setenv("DISCORD_TOKEN", "prod-token")
+    monkeypatch.setenv("TEST_DISCORD_BOT_TOKEN", "synthetic-token")
+
+    assert module._resolve_admin_token() == "admin-token"
+
+
+def test_resolve_admin_token_falls_back_to_runtime_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _load_module()
+    monkeypatch.delenv("DISCORD_E2E_ADMIN_TOKEN", raising=False)
+    monkeypatch.setenv("DISCORD_TOKEN", "prod-token")
+    monkeypatch.setenv("TEST_DISCORD_BOT_TOKEN", "synthetic-token")
+
+    assert module._resolve_admin_token() == "prod-token"
 
 def test_cleanup_run_replays_cleanup_prompts_and_deletes_channel(tmp_path: Path) -> None:
     module = _load_module()

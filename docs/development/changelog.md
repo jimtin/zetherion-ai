@@ -23,6 +23,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the missing Discord E2E and Windows Discord canary environment variables to `.env.example` and the configuration reference so post-merge `Documentation Contracts` no longer fail on env-doc parity drift.
 - Hardened the local deterministic gates so docs changes now run the full documentation contract suite, including `mkdocs build --strict`, before push.
 
+### Fixed - Windows Discord canary repo-venv bootstrap and Bash path detection (2026-03-08)
+- Impacted capability IDs:
+  - `ci.weekly.independent_verification`
+  - `ci.e2e.discord_isolation`
+- Impacted workflow scenario IDs:
+  - `e2e.windows_discord_canary`
+- Hardened `scripts/windows/discord-canary.py` to normalize a CRLF Windows `.env` into the canary bash-env staging area and rewrite the normalized wrapper copy to source that LF-safe file, so Git Bash no longer fails before the Discord E2E wrapper starts.
+- Updated `scripts/run-required-discord-e2e.sh` and `scripts/local-required-e2e-receipt.sh` to recognize Windows-style repo virtualenv paths under `.venv/Scripts` and `venv/Scripts` when invoked from Git Bash on the Windows host.
+- Updated `scripts/windows/discord-canary-runner.ps1` to provision and reuse a repo-local `.venv` with the required dependencies before launching the canary, removing the fallback to an unprepared machine-global Python install.
+- Updated `src/zetherion_ai/discord/bot.py` so active leased Discord E2E messages and interactions can bypass the normal bot-author ignore gate and allowlist checks while expired or unleased bot traffic still fails closed.
+- Hardened `tests/integration/test_discord_e2e.py` with console-safe logging so the Windows canary test client no longer crashes on cp1252-only consoles before the suite can exercise the live bot.
+
 ### Fixed - Trust storage schema bootstrap concurrency in container startup (2026-03-08)
 - Serialized canonical trust schema creation with a PostgreSQL advisory transaction lock so concurrent service startup cannot race while creating `control_plane.trust_*` tables.
 - Added unit coverage for schema-specific advisory lock selection and trust-storage bootstrap sequencing so this startup failure is caught locally before the full containerized gate.

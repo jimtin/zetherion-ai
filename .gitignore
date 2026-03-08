@@ -85,6 +85,8 @@ wiki/
 site/
 
 # Local CI debug artifacts
+.artifacts/
+artifacts/
 tmp/ci-debug/
 scripts/collect-ci-failure-logs.sh
 artifacts/testing/hang-diagnostics/

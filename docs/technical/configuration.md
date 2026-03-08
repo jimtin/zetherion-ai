@@ -298,7 +298,6 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `DISCORD_E2E_ALLOWED_AUTHOR_IDS` | unset | Comma-separated Discord user IDs allowed to drive isolated synthetic E2E runs |
 | `DISCORD_E2E_GUILD_ID` | unset | Allowlisted guild ID for isolated Discord E2E runs |
 | `DISCORD_E2E_CATEGORY_ID` | unset | Allowlisted category ID for isolated Discord E2E channels |
-| `DISCORD_E2E_PARENT_CHANNEL_ID` | unset | Allowlisted parent channel ID for isolated Discord E2E threads |
 | `DISCORD_E2E_CHANNEL_PREFIX` | `zeth-e2e` | Required name prefix for isolated Discord E2E channels |
 | `DISCORD_E2E_PROVIDER` | `groq` | Provider used by required Discord E2E runs (`groq` or `local`) |
 | `WINDOWS_DISCORD_CANARY_INTERVAL_MINUTES` | `360` | Scheduled Discord production canary cadence on the Windows host |
@@ -307,12 +306,11 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `WINDOWS_DISCORD_CANARY_PROVIDER` | inherits `DISCORD_E2E_PROVIDER` | Provider used by the Windows Discord canary (`groq` or `local`) |
 | `WINDOWS_DISCORD_CANARY_TEST_BOT_TOKEN` | inherits `TEST_DISCORD_BOT_TOKEN` | Synthetic Discord test principal token used to drive the canary conversation |
 | `WINDOWS_DISCORD_CANARY_TARGET_TOKEN` | inherits `DISCORD_TOKEN` | Production bot token targeted by the Windows canary wrapper |
-| `WINDOWS_DISCORD_CANARY_TARGET_BOT_ID` | inherits `TEST_DISCORD_TARGET_BOT_ID` | Optional explicit production bot user id for target-lease enforcement |
-| `WINDOWS_DISCORD_CANARY_GUILD_ID` | inherits `TEST_DISCORD_GUILD_ID` | Guild used for isolated Windows canary channels |
-| `WINDOWS_DISCORD_CANARY_PARENT_CHANNEL_ID` | inherits `TEST_DISCORD_E2E_PARENT_CHANNEL_ID` | Optional parent channel for isolated canary threads/channels |
-| `WINDOWS_DISCORD_CANARY_CATEGORY_ID` | inherits `TEST_DISCORD_E2E_CATEGORY_ID` | Optional dedicated canary category id |
+| `WINDOWS_DISCORD_CANARY_TARGET_BOT_ID` | unset | Optional explicit production bot user id for target-lease enforcement |
+| `WINDOWS_DISCORD_CANARY_GUILD_ID` | inherits `DISCORD_E2E_GUILD_ID`, then `TEST_DISCORD_GUILD_ID` | Guild used for isolated Windows canary channels |
+| `WINDOWS_DISCORD_CANARY_CATEGORY_ID` | inherits `DISCORD_E2E_CATEGORY_ID`, then `TEST_DISCORD_E2E_CATEGORY_ID` | Optional dedicated canary category id |
 | `WINDOWS_DISCORD_CANARY_CATEGORY_NAME` | inherits `TEST_DISCORD_E2E_CATEGORY_NAME` | Optional category name used if the category id is not pre-provisioned |
-| `WINDOWS_DISCORD_CANARY_CHANNEL_PREFIX` | `zeth-canary` | Prefix for isolated Windows canary channels |
+| `WINDOWS_DISCORD_CANARY_CHANNEL_PREFIX` | inherits `DISCORD_E2E_CHANNEL_PREFIX`, then `TEST_DISCORD_E2E_CHANNEL_PREFIX`, else `zeth-e2e` | Prefix for isolated Windows canary channels; if overridden it must match the production bot runtime scope |
 | `WINDOWS_DISCORD_CANARY_TTL_MINUTES` | `60` | Lease/channel TTL for Windows canary runs before janitor cleanup |
 | `WINDOWS_DISCORD_CANARY_ALLOWED_AUTHOR_IDS` | inherits `DISCORD_E2E_ALLOWED_AUTHOR_IDS` | Synthetic author allowlist for narrow rate-limit bypass during canary runs |
 | `DISCORD_DM_NOTIFY_ENABLED` | legacy | Legacy alias fallback for announcement enablement (kept for compatibility) |
