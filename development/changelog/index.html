@@ -1632,6 +1632,28 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#fixed-trust-storage-schema-bootstrap-concurrency-in-container-startup-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed - Trust storage schema bootstrap concurrency in container startup (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed-windows-shell-wrapper-line-endings-for-canary-runs-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed - Windows shell wrapper line endings for canary runs (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#fixed-windows-discord-canary-wrapper-path-on-host-2026-03-08" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2918,6 +2940,28 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#fixed-trust-storage-schema-bootstrap-concurrency-in-container-startup-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed - Trust storage schema bootstrap concurrency in container startup (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed-windows-shell-wrapper-line-endings-for-canary-runs-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed - Windows shell wrapper line endings for canary runs (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#fixed-windows-discord-canary-wrapper-path-on-host-2026-03-08" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4063,6 +4107,16 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 </blockquote>
 <hr />
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="fixed-trust-storage-schema-bootstrap-concurrency-in-container-startup-2026-03-08">Fixed - Trust storage schema bootstrap concurrency in container startup (2026-03-08)<a class="headerlink" href="#fixed-trust-storage-schema-bootstrap-concurrency-in-container-startup-2026-03-08" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Serialized canonical trust schema creation with a PostgreSQL advisory transaction lock so concurrent service startup cannot race while creating <code>control_plane.trust_*</code> tables.</li>
+<li>Added unit coverage for schema-specific advisory lock selection and trust-storage bootstrap sequencing so this startup failure is caught locally before the full containerized gate.</li>
+</ul>
+<h3 id="fixed-windows-shell-wrapper-line-endings-for-canary-runs-2026-03-08">Fixed - Windows shell wrapper line endings for canary runs (2026-03-08)<a class="headerlink" href="#fixed-windows-shell-wrapper-line-endings-for-canary-runs-2026-03-08" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Added <code>.gitattributes</code> to force <code>*.sh</code> files to check out with LF endings so Git Bash on Windows does not choke on carriage returns in the Discord E2E wrapper.</li>
+<li>Hardened <code>scripts/windows/discord-canary.py</code> to stage an LF-normalized copy of the Discord E2E wrapper under the deploy root before invoking Bash, so the canary remains runnable even if an existing Windows checkout still has CRLF shell scripts.</li>
+</ul>
 <h3 id="fixed-windows-discord-canary-wrapper-path-on-host-2026-03-08">Fixed - Windows Discord canary wrapper path on host (2026-03-08)<a class="headerlink" href="#fixed-windows-discord-canary-wrapper-path-on-host-2026-03-08" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Switched the Windows canary launcher to invoke <code>scripts/run-required-discord-e2e.sh</code> relative to the deploy root instead of passing a raw <code>C:\...</code> path into Git Bash, which was being mangled into an invalid shell path on the Windows host.</li>
