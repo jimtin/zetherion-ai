@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - Segment 1 owner conversational guardrails and routing repair (2026-03-08)
+
+- Impacted capability IDs:
+  - `CAP-ZAI-OWNER-CONVERSATIONAL-RUNTIME`
+- Impacted workflow scenario IDs:
+  - `SCN-ZAI-DISCORD-ROUTER-REPAIR`
+  - `SCN-ZAI-DISCORD-CONVERSATIONAL-FOLLOWUP`
+- Added an owner-only routing guardrail pass in `src/zetherion_ai/agent/core.py` so low-confidence `dev_watcher` and `memory_recall` classifications that look like ordinary follow-up conversation now fall back to normal conversational handling instead of specialist skill defaults.
+- Added per-turn `routing_trace` persistence for owner conversation messages and a repair explanation path for follow-up prompts such as "what happened with that response?" so the bot can explain the previous misroute in plain language.
+- Added owner-conversation regression coverage for the live misroute pattern, including the Bev-recording follow-up case and repair-turn storage/trace assertions.
+
 ### Changed - PR metadata policy enforcement for agent handoff (2026-03-08)
 
 - Added `scripts/check_pr_metadata.py` plus unit coverage so the required `Pipeline Contract` job now rejects pull requests that do not use a `codex/` head branch or that leave capability IDs, workflow scenario IDs, validation evidence, or receipt checklist items as placeholders.
