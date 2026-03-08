@@ -120,6 +120,31 @@ function Require-SecretValue {
     return $value
 }
 
+function Get-OptionalSecretValue {
+    param(
+        [object]$Secrets,
+        [string]$Name,
+        [string]$Default = ""
+    )
+
+    $property = $Secrets.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return $Default
+    }
+
+    $value = $property.Value
+    if ($null -eq $value) {
+        return $Default
+    }
+
+    $text = [string]$value
+    if (-not $text) {
+        return $Default
+    }
+
+    return $text
+}
+
 function Ensure-QueueEntry {
     param(
         [string]$Path,
@@ -143,7 +168,10 @@ function Ensure-QueueEntry {
 
     $existing = $pending | Where-Object { [string]$_.sha -eq $Sha } | Select-Object -First 1
     if ($existing) {
-        $attempts = [int]($existing.attempts ?? 0)
+        $attempts = 0
+        if ($null -ne $existing.attempts -and [string]$existing.attempts -ne "") {
+            $attempts = [int]$existing.attempts
+        }
         $existing.attempts = $attempts + 1
         $existing.last_error = $Reason
         $existing.updated_at = [DateTime]::UtcNow.ToString("o")
@@ -316,8 +344,8 @@ try {
 
     $env:BLOG_MODEL_PRIMARY = $primaryModel
     $env:BLOG_MODEL_SECONDARY = $secondaryModel
-    $env:BLOG_PUBLISH_ENABLED = [string]($secrets.BLOG_PUBLISH_ENABLED ?? "true")
-    $env:RELEASE_AUTO_INCREMENT_ENABLED = [string]($secrets.RELEASE_AUTO_INCREMENT_ENABLED ?? "true")
+    $env:BLOG_PUBLISH_ENABLED = Get-OptionalSecretValue -Secrets $secrets -Name "BLOG_PUBLISH_ENABLED" -Default "true"
+    $env:RELEASE_AUTO_INCREMENT_ENABLED = Get-OptionalSecretValue -Secrets $secrets -Name "RELEASE_AUTO_INCREMENT_ENABLED" -Default "true"
 
     $resolvedRepo = $Repo
     if (-not $resolvedRepo) {

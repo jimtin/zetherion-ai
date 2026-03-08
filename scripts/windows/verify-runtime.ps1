@@ -154,6 +154,28 @@ function Test-Truthy {
     return @("1", "true", "yes", "on") -contains $normalized
 }
 
+function Get-ComposeServiceField {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Service,
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [string]$Default = ""
+    )
+
+    $property = $Service.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return $Default
+    }
+
+    $value = $property.Value
+    if ($null -eq $value) {
+        return $Default
+    }
+
+    return [string]$value
+}
+
 try {
     if (-not (Test-Path $DeployPath)) {
         throw "Deploy path not found: $DeployPath"
@@ -194,13 +216,21 @@ try {
 
         $monitoredServices = @(
             $services | Where-Object {
-                $serviceName = [string]($_.Service ?? "")
-                $containerName = [string]($_.Name ?? "")
+                $serviceName = Get-ComposeServiceField -Service $_ -Name "Service"
+                $containerName = Get-ComposeServiceField -Service $_ -Name "Name"
                 -not ($optionalServices.Contains($serviceName) -or $optionalServices.Contains($containerName))
             }
         )
         $details.optional_services_skipped = @($optionalServices)
-        $details.monitored_services = @($monitoredServices | ForEach-Object { [string]($_.Service ?? $_.Name) })
+        $details.monitored_services = @(
+            $monitoredServices | ForEach-Object {
+                $serviceName = Get-ComposeServiceField -Service $_ -Name "Service"
+                if ($serviceName) {
+                    return $serviceName
+                }
+                return (Get-ComposeServiceField -Service $_ -Name "Name")
+            }
+        )
 
         $badServices = @(
             $monitoredServices | Where-Object {
@@ -208,7 +238,13 @@ try {
             }
         )
         $details.unhealthy_services = @(
-            $badServices | ForEach-Object { [string]($_.Service ?? $_.Name) }
+            $badServices | ForEach-Object {
+                $serviceName = Get-ComposeServiceField -Service $_ -Name "Service"
+                if ($serviceName) {
+                    return $serviceName
+                }
+                return (Get-ComposeServiceField -Service $_ -Name "Name")
+            }
         )
 
         if ($monitoredServices.Count -gt 0 -and $badServices.Count -eq 0) {

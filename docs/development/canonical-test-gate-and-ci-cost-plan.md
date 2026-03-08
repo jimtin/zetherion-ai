@@ -86,6 +86,7 @@ The preflight is driven by the source-controlled manifest at `.ci/local_gate_man
 - targeted Qdrant/data-plane regression tests
 - targeted replay-store regression tests
 - targeted receipt/workflow-support regression suites for receipt validation, local gate enforcement, and CI failure-attribution changes
+- Windows host compatibility guards for PowerShell scripts that must run under `powershell.exe` as well as `pwsh`
 - targeted Windows deploy-preflight regression suites for deployment-receipt validation and optional-service guard changes
 
 ## Current GitHub Proof and Cost Contract
