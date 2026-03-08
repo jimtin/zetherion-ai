@@ -82,7 +82,9 @@
     ".github/pull_request_template.md",
     "AGENTS.md",
     "docs/development/ci-cd.md",
-    "docs/development/ci-hardening-baseline.md"
+    "docs/development/ci-hardening-baseline.md",
+    "scripts/check_pr_metadata.py",
+    "tests/unit/test_check_pr_metadata.py"
   ],
   "requirements": {
     "endpoint-doc-bundle": {
@@ -128,13 +130,14 @@
     },
     "ci-failure-attribution-regression-suite": {
       "kind": "pytest",
-      "description": "Run the targeted CI failure-attribution, pipeline-contract, local-gate-enforcement, and cost-observability regression suite.",
+      "description": "Run the targeted CI failure-attribution, PR-metadata policy, pipeline-contract, local-gate-enforcement, and cost-observability regression suite.",
       "pytest_targets": [
         "tests/unit/test_ci_failure_attribution.py",
         "tests/unit/test_require_local_gate_update.py",
         "tests/unit/test_check_pipeline_contract.py",
         "tests/unit/test_ci_cost_report.py",
-        "tests/unit/test_ci_cache_hygiene.py"
+        "tests/unit/test_ci_cache_hygiene.py",
+        "tests/unit/test_check_pr_metadata.py"
       ]
     },
     "deploy-preflight-regression-suite": {
@@ -288,7 +291,9 @@
         ".github/pull_request_template.md",
         "AGENTS.md",
         "docs/development/ci-cd.md",
-        "docs/development/ci-hardening-baseline.md"
+        "docs/development/ci-hardening-baseline.md",
+        "scripts/check_pr_metadata.py",
+        "tests/unit/test_check_pr_metadata.py"
       ],
       "requirements": [
         "ci-receipt-regression-suite",

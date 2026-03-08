@@ -76,6 +76,10 @@ def validate_workflow_contracts(repo_root: Path) -> list[str]:
         errors.append("CI workflow must publish the CI Cost Report job.")
     if "scripts/ci_cost_report.py run" not in ci_text:
         errors.append("CI workflow must generate a per-run CI cost report artifact.")
+    if 'scripts/check_pr_metadata.py --event-path "$GITHUB_EVENT_PATH"' not in ci_text:
+        errors.append(
+            "CI workflow must validate pull-request metadata in the " "pipeline-contract job."
+        )
 
     codeql_text = (repo_root / ".github/workflows/codeql.yml").read_text(encoding="utf-8")
     if re.search(r"(?m)^  push:\s*$", codeql_text):
