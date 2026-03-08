@@ -91,6 +91,9 @@ class FakeDiscordAPI:
 @pytest.fixture(autouse=True)
 def _clear_e2e_author_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DISCORD_E2E_ALLOWED_AUTHOR_IDS", "1111")
+    monkeypatch.delenv("TEST_DISCORD_TARGET_BOT_ID", raising=False)
+    monkeypatch.delenv("TEST_DISCORD_CHANNEL_ID", raising=False)
+    monkeypatch.delenv("DISCORD_E2E_MODE", raising=False)
 
 
 def test_create_run_creates_channel_and_exports(
