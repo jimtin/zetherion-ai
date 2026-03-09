@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from zetherion_ai.announcements.storage import (
+    _SCHEMA,
     AnnouncementEventInput,
     AnnouncementPreferencePatch,
     AnnouncementRecipient,
@@ -64,6 +65,28 @@ async def test_initialize_creates_schema(repository, mock_pool):
     assert "CREATE TABLE IF NOT EXISTS announcement_user_preferences" in schema_sql
     assert "CREATE TABLE IF NOT EXISTS announcement_digest_state" in schema_sql
     assert "CREATE TABLE IF NOT EXISTS announcement_suppression_state" in schema_sql
+
+
+def test_schema_migrates_legacy_announcement_tables_before_recipient_indexes():
+    alter_events = _SCHEMA.index("ALTER TABLE announcement_events")
+    backfill_suppression = _SCHEMA.index("UPDATE announcement_suppression_state")
+    recipient_index = _SCHEMA.index(
+        "CREATE INDEX IF NOT EXISTS idx_announcement_events_recipient_fingerprint_bucket"
+    )
+    suppression_lookup_drop = _SCHEMA.index(
+        "DROP INDEX IF EXISTS idx_announcement_suppression_lookup;"
+    )
+    suppression_unique = _SCHEMA.index(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_announcement_suppression_recipient_fingerprint"
+    )
+
+    assert alter_events < recipient_index
+    assert backfill_suppression < suppression_lookup_drop
+    assert suppression_lookup_drop < suppression_unique
+    assert (
+        "pg_get_constraintdef(oid) LIKE '%(source, category, target_user_id, fingerprint)%'"
+        in _SCHEMA
+    )
 
 
 def test_storage_helper_functions_cover_edge_cases(now):

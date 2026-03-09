@@ -302,6 +302,40 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = "Stop"
 
+          function Get-OptionalBool {
+            param(
+              [object]$Object,
+              [string]$PropertyName
+            )
+
+            if ($null -eq $Object) {
+              return $false
+            }
+            if ($Object.PSObject.Properties.Name -contains $PropertyName) {
+              return [bool]$Object.$PropertyName
+            }
+            return $false
+          }
+
+          function Get-OptionalString {
+            param(
+              [object]$Object,
+              [string]$PropertyName,
+              [string]$DefaultValue
+            )
+
+            if ($null -eq $Object) {
+              return $DefaultValue
+            }
+            if ($Object.PSObject.Properties.Name -contains $PropertyName) {
+              $value = [string]$Object.$PropertyName
+              if ($value) {
+                return $value
+              }
+            }
+            return $DefaultValue
+          }
+
           $verifyResultPath = Join-Path $PWD "verify-result.json"
           if (Test-Path $verifyResultPath) {
             $verify = Get-Content $verifyResultPath -Raw | ConvertFrom-Json
@@ -310,11 +344,26 @@ jobs:
               checks = [pscustomobject]@{
                 qdrant_dimensions_aligned = $false
                 containers_healthy = $false
+                auxiliary_services_healthy = $false
                 bot_startup_markers = $false
                 postgres_model_keys = $false
                 fallback_probe = $false
               }
+              details = [pscustomobject]@{
+                core_status = "failed"
+                aux_status = "unknown"
+              }
             }
+          }
+          $verifyChecks = if ($verify.PSObject.Properties.Name -contains "checks") {
+            $verify.checks
+          } else {
+            [pscustomobject]@{}
+          }
+          $verifyDetails = if ($verify.PSObject.Properties.Name -contains "details") {
+            $verify.details
+          } else {
+            [pscustomobject]@{}
           }
 
           $qdrantAligned = "${{ steps.qdrant_migration.outputs.qdrant_dimensions_aligned }}" -eq "True"
@@ -342,8 +391,8 @@ jobs:
             }
           }
 
-          $coreStatus = if ($verify.details -and $verify.details.core_status) { [string]$verify.details.core_status } else { "failed" }
-          $auxStatus = if ($verify.details -and $verify.details.aux_status) { [string]$verify.details.aux_status } else { "unknown" }
+          $coreStatus = Get-OptionalString -Object $verifyDetails -PropertyName "core_status" -DefaultValue "failed"
+          $auxStatus = Get-OptionalString -Object $verifyDetails -PropertyName "aux_status" -DefaultValue "unknown"
 
           $receipt = [ordered]@{
             target_sha = "${{ steps.target.outputs.target_sha }}"
@@ -355,11 +404,11 @@ jobs:
             aux_status = $auxStatus
             checks = [ordered]@{
               qdrant_dimensions_aligned = [bool]$qdrantAligned
-              containers_healthy = [bool]$verify.checks.containers_healthy
-              auxiliary_services_healthy = [bool]$verify.checks.auxiliary_services_healthy
-              bot_startup_markers = [bool]$verify.checks.bot_startup_markers
-              postgres_model_keys = [bool]$verify.checks.postgres_model_keys
-              fallback_probe = [bool]$verify.checks.fallback_probe
+              containers_healthy = Get-OptionalBool -Object $verifyChecks -PropertyName "containers_healthy"
+              auxiliary_services_healthy = Get-OptionalBool -Object $verifyChecks -PropertyName "auxiliary_services_healthy"
+              bot_startup_markers = Get-OptionalBool -Object $verifyChecks -PropertyName "bot_startup_markers"
+              postgres_model_keys = Get-OptionalBool -Object $verifyChecks -PropertyName "postgres_model_keys"
+              fallback_probe = Get-OptionalBool -Object $verifyChecks -PropertyName "fallback_probe"
               recovery_tasks_registered = [bool]$resilienceChecks.recovery_tasks_registered
               promotions_task_registered = [bool]$resilienceChecks.promotions_task_registered
               runner_service_persistent = [bool]$resilienceChecks.runner_service_persistent

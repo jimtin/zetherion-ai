@@ -188,8 +188,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_announcement_events_source_idempotency
 
 CREATE INDEX IF NOT EXISTS idx_announcement_events_target_fingerprint_bucket
     ON announcement_events (target_user_id, fingerprint, category, dedupe_bucket);
-CREATE INDEX IF NOT EXISTS idx_announcement_events_recipient_fingerprint_bucket
-    ON announcement_events (recipient_key, fingerprint, category, dedupe_bucket);
 CREATE INDEX IF NOT EXISTS idx_announcement_events_created
     ON announcement_events (created_at DESC);
 
@@ -244,19 +242,8 @@ CREATE TABLE IF NOT EXISTS announcement_suppression_state (
     last_notified_at TIMESTAMPTZ,
     next_allowed_at TIMESTAMPTZ,
     resolved_at TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(source, category, recipient_key, fingerprint)
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
-CREATE INDEX IF NOT EXISTS idx_announcement_suppression_lookup
-    ON announcement_suppression_state (
-        source,
-        category,
-        recipient_key,
-        fingerprint,
-        state,
-        updated_at DESC
-    );
 
 ALTER TABLE announcement_events
     ADD COLUMN IF NOT EXISTS recipient_key TEXT NOT NULL DEFAULT '';
@@ -295,6 +282,43 @@ SET recipient_key = CASE
     ELSE 'legacy:suppression:' || id::text
 END
 WHERE btrim(recipient_key) = '';
+
+CREATE INDEX IF NOT EXISTS idx_announcement_events_recipient_fingerprint_bucket
+    ON announcement_events (recipient_key, fingerprint, category, dedupe_bucket);
+
+DROP INDEX IF EXISTS idx_announcement_suppression_lookup;
+
+DO $$
+DECLARE
+    legacy_constraint_name TEXT;
+BEGIN
+    SELECT conname
+    INTO legacy_constraint_name
+    FROM pg_constraint
+    WHERE conrelid = 'announcement_suppression_state'::regclass
+      AND contype = 'u'
+      AND pg_get_constraintdef(oid) LIKE '%(source, category, target_user_id, fingerprint)%';
+
+    IF legacy_constraint_name IS NOT NULL THEN
+        EXECUTE format(
+            'ALTER TABLE announcement_suppression_state DROP CONSTRAINT %I',
+            legacy_constraint_name
+        );
+    END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_announcement_suppression_recipient_fingerprint
+    ON announcement_suppression_state (source, category, recipient_key, fingerprint);
+
+CREATE INDEX IF NOT EXISTS idx_announcement_suppression_lookup
+    ON announcement_suppression_state (
+        source,
+        category,
+        recipient_key,
+        fingerprint,
+        state,
+        updated_at DESC
+    );
 """
 
 

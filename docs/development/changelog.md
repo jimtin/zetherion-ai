@@ -25,6 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added registry-ready delivery adapters in `src/zetherion_ai/announcements/webhook_adapter.py` and `src/zetherion_ai/announcements/email_adapter.py`, and wired the existing Discord runtime plus internal skills API/client parsing to accept either legacy `target_user_id` payloads or structured `recipient` objects.
 - Added regression coverage for structured recipients, registry-based dispatch selection, webhook/email adapter behavior, webhook-targeted internal announcement ingestion, and bot/client compatibility with the new recipient payload shape.
 
+### Fixed - Segment 5 Windows acceptance hardening (2026-03-10)
+
+- Impacted capability IDs:
+  - `CAP-ZAI-NOTIFICATION-CORE-GENERALIZATION`
+- Impacted workflow scenario IDs:
+  - `SCN-ZAI-INTERNAL-ANNOUNCEMENT-COMPAT`
+  - `SCN-ZAI-RECIPIENT-ABSTRACTION`
+- Reordered the announcement repository schema bootstrap in `src/zetherion_ai/announcements/storage.py` so upgraded Windows hosts with the legacy announcement tables add and backfill `recipient_key` columns before creating recipient-based indexes, and now replace the old suppression uniqueness on `target_user_id` with the new recipient-key uniqueness needed by Segment 5.
+- Hardened `.github/workflows/deploy-windows.yml` so deployment receipts still build when deploy or verify never produced `verify-result.json`, preserving rollback diagnostics instead of masking the primary Windows failure behind a secondary receipt crash.
+- Added regression coverage and deploy-contract assertions to keep both the legacy-schema migration ordering and the deploy-receipt fallback behavior from regressing.
+
 ### Added - Segment 4 sandbox control-plane isolation (2026-03-09)
 
 - Impacted capability IDs:

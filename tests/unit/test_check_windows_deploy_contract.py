@@ -47,6 +47,12 @@ def test_collect_violations_accepts_complete_contract(tmp_path: Path) -> None:
         "\n".join(
             [
                 'WINDOWS_REQUIRE_HEALTHY_AUXILIARY_SERVICES: "false"',
+                "function Get-OptionalBool",
+                "function Get-OptionalString",
+                "details = [pscustomobject]@{",
+                "auxiliary_services_healthy = $false",
+                'core_status = "failed"',
+                'aux_status = "unknown"',
                 '"auxiliary_services_healthy=$($checks.auxiliary_services_healthy)"',
                 '"core_status=$($details.core_status)"',
                 '"aux_status=$($details.aux_status)"',
