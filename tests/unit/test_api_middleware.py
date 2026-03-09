@@ -230,9 +230,15 @@ class TestAuthMiddleware:
         )
         app = self._make_app(tenant_manager=tm)
         async with TestClient(TestServer(app)) as client:
-            session_resp = await client.post("/api/v1/sessions", headers={"X-API-Key": "sk_test_valid"})
+            session_resp = await client.post(
+                "/api/v1/sessions",
+                headers={"X-API-Key": "sk_test_valid"},
+            )
             assert session_resp.status == 200
-            test_resp = await client.get("/api/v1/test/profiles", headers={"X-API-Key": "sk_test_valid"})
+            test_resp = await client.get(
+                "/api/v1/test/profiles",
+                headers={"X-API-Key": "sk_test_valid"},
+            )
             assert test_resp.status == 200
 
     @pytest.mark.asyncio

@@ -141,8 +141,14 @@ def _build_app(
     app.router.add_delete("/api/v1/test/profiles/{profile_id}", handle_delete_test_profile)
     app.router.add_get("/api/v1/test/profiles/{profile_id}/rules", handle_list_test_rules)
     app.router.add_post("/api/v1/test/profiles/{profile_id}/rules", handle_create_test_rule)
-    app.router.add_patch("/api/v1/test/profiles/{profile_id}/rules/{rule_id}", handle_patch_test_rule)
-    app.router.add_delete("/api/v1/test/profiles/{profile_id}/rules/{rule_id}", handle_delete_test_rule)
+    app.router.add_patch(
+        "/api/v1/test/profiles/{profile_id}/rules/{rule_id}",
+        handle_patch_test_rule,
+    )
+    app.router.add_delete(
+        "/api/v1/test/profiles/{profile_id}/rules/{rule_id}",
+        handle_delete_test_rule,
+    )
     app.router.add_post("/api/v1/chat", handle_chat)
     app.router.add_post("/api/v1/chat/stream", handle_chat_stream)
     app.router.add_get("/api/v1/chat/history", handle_chat_history)
