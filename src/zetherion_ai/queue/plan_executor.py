@@ -44,6 +44,7 @@ class PlanContinuationExecutor:
         if not tenant_id or not plan_id:
             raise ValueError("plan_continuation payload requires tenant_id and plan_id")
 
+        execution_mode = self._execution_mode(payload=payload)
         worker_id = f"{self._worker_id_prefix}-{uuid4().hex[:10]}"
         lease_token = uuid4().hex
         plan_claimed = False
@@ -66,6 +67,7 @@ class PlanContinuationExecutor:
                     "noop": "lease_not_acquired",
                 }
             plan_claimed = True
+            execution_mode = self._execution_mode(payload=payload, plan=plan)
 
             claim = await self._tenant_admin_manager.claim_next_execution_step(
                 tenant_id=tenant_id,
@@ -79,11 +81,12 @@ class PlanContinuationExecutor:
                     tenant_id=tenant_id,
                     plan_id=plan_id,
                 )
-                await self._maybe_enqueue_reconciled_review_item(
-                    tenant_id=tenant_id,
-                    plan_id=plan_id,
-                    plan=reconciled or plan,
-                )
+                if execution_mode != "test":
+                    await self._maybe_enqueue_reconciled_review_item(
+                        tenant_id=tenant_id,
+                        plan_id=plan_id,
+                        plan=reconciled or plan,
+                    )
                 return {
                     "accepted": True,
                     "tenant_id": tenant_id,
@@ -99,9 +102,25 @@ class PlanContinuationExecutor:
 
             claimed_step = step_data
             claimed_retry = retry_data
+            execution_mode = self._execution_mode(
+                payload=payload,
+                plan=plan,
+                step=claimed_step,
+            )
             step_id = str(claimed_step["step_id"])
             retry_id = str(claimed_retry["retry_id"])
             execution_target = self._execution_target_for_step(claimed_step)
+
+            if execution_mode == "test":
+                return await self._complete_test_step(
+                    tenant_id=tenant_id,
+                    plan_id=plan_id,
+                    plan=plan,
+                    step=claimed_step,
+                    retry=claimed_retry,
+                    worker_id=worker_id,
+                    execution_target=execution_target,
+                )
 
             if execution_target != "windows_local":
                 dispatch = await self._tenant_admin_manager.dispatch_execution_step_to_worker(
@@ -124,6 +143,7 @@ class PlanContinuationExecutor:
                         "step_index": claimed_step.get("step_index"),
                         "attempt_number": claimed_retry.get("attempt_number"),
                     },
+                    execution_mode=execution_mode,
                 )
                 monitor_at = datetime.now(UTC) + timedelta(seconds=self._stale_step_seconds)
                 await self._tenant_admin_manager.schedule_execution_continuation(
@@ -132,6 +152,7 @@ class PlanContinuationExecutor:
                     scheduled_for=monitor_at,
                     reason="worker_dispatch_monitor",
                     requested_by=worker_id,
+                    execution_mode=execution_mode,
                 )
                 return {
                     "accepted": True,
@@ -159,6 +180,7 @@ class PlanContinuationExecutor:
                     "step_index": claimed_step.get("step_index"),
                     "attempt_number": claimed_retry.get("attempt_number"),
                 },
+                execution_mode=execution_mode,
             )
 
             response_text = await self._prompt_agent(
@@ -177,6 +199,7 @@ class PlanContinuationExecutor:
                     "response_text": response_text,
                     "generated_at": datetime.now().isoformat(),
                 },
+                execution_mode=execution_mode,
             )
 
             completion = await self._tenant_admin_manager.complete_execution_step(
@@ -194,10 +217,12 @@ class PlanContinuationExecutor:
                     scheduled_for=completion["next_run_at"],
                     reason="step_completed",
                     requested_by=worker_id,
+                    execution_mode=execution_mode,
                 )
             if (
                 not completion.get("has_more")
                 and str(completion["plan"].get("status") or "") == "completed"
+                and execution_mode != "test"
             ):
                 await self._maybe_enqueue_plan_completion_summary(
                     tenant_id=tenant_id,
@@ -247,6 +272,7 @@ class PlanContinuationExecutor:
                         "failure_detail": str(exc),
                         "retry_scheduled": bool(failure.get("retry_scheduled")),
                     },
+                    execution_mode=execution_mode,
                 )
                 if failure.get("retry_scheduled") and failure.get("next_run_at") is not None:
                     await self._tenant_admin_manager.schedule_execution_continuation(
@@ -255,8 +281,9 @@ class PlanContinuationExecutor:
                         scheduled_for=failure["next_run_at"],
                         reason="step_retry_scheduled",
                         requested_by=worker_id,
+                        execution_mode=execution_mode,
                     )
-                else:
+                elif execution_mode != "test":
                     await self._maybe_enqueue_execution_failure(
                         tenant_id=tenant_id,
                         plan_id=plan_id,
@@ -443,6 +470,146 @@ class PlanContinuationExecutor:
         )
         return str(response or "").strip() or "Agent returned empty output."
 
+    async def _complete_test_step(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+        plan: dict[str, Any],
+        step: dict[str, Any],
+        retry: dict[str, Any],
+        worker_id: str,
+        execution_target: str,
+    ) -> dict[str, Any]:
+        step_id = str(step["step_id"])
+        retry_id = str(retry["retry_id"])
+        prompt_text = str(step.get("prompt_text") or "").strip()
+        if prompt_text:
+            await self._tenant_admin_manager.record_execution_artifact(
+                tenant_id=tenant_id,
+                plan_id=plan_id,
+                step_id=step_id,
+                retry_id=retry_id,
+                artifact_type="step_prompt",
+                artifact_json={
+                    "prompt_text": prompt_text,
+                    "step_index": step.get("step_index"),
+                    "attempt_number": retry.get("attempt_number"),
+                    "simulated": True,
+                },
+                execution_mode="test",
+            )
+
+        receipt = self._build_test_step_receipt(
+            tenant_id=tenant_id,
+            plan_id=plan_id,
+            step=step,
+            retry=retry,
+            execution_target=execution_target,
+        )
+        await self._tenant_admin_manager.record_execution_artifact(
+            tenant_id=tenant_id,
+            plan_id=plan_id,
+            step_id=step_id,
+            retry_id=retry_id,
+            artifact_type="step_simulated",
+            artifact_ref=str(receipt.get("worker_artifact_scope") or "") or None,
+            artifact_json=receipt,
+            execution_mode="test",
+        )
+
+        completion = await self._tenant_admin_manager.complete_execution_step(
+            tenant_id=tenant_id,
+            plan_id=plan_id,
+            step_id=step_id,
+            retry_id=retry_id,
+            worker_id=worker_id,
+            output_json=receipt,
+        )
+        if completion.get("has_more") and completion.get("next_run_at") is not None:
+            await self._tenant_admin_manager.schedule_execution_continuation(
+                tenant_id=tenant_id,
+                plan_id=plan_id,
+                scheduled_for=completion["next_run_at"],
+                reason="step_simulated",
+                requested_by=worker_id,
+                execution_mode="test",
+            )
+        return {
+            "accepted": True,
+            "tenant_id": tenant_id,
+            "plan_id": plan_id,
+            "step_id": step_id,
+            "status": str((completion.get("plan") or {}).get("status") or "running"),
+            "has_more": bool(completion.get("has_more")),
+            "simulated": True,
+            "execution_mode": "test",
+            "execution_target": execution_target,
+            "receipt": receipt,
+        }
+
+    def _build_test_step_receipt(
+        self,
+        *,
+        tenant_id: str,
+        plan_id: str,
+        step: dict[str, Any],
+        retry: dict[str, Any],
+        execution_target: str,
+    ) -> dict[str, Any]:
+        step_id = str(step.get("step_id") or "").strip()
+        retry_id = str(retry.get("retry_id") or "").strip()
+        metadata_raw = step.get("metadata")
+        metadata = dict(metadata_raw) if isinstance(metadata_raw, dict) else {}
+        payload_raw = metadata.get("payload")
+        payload = dict(payload_raw) if isinstance(payload_raw, dict) else {}
+        runner = (
+            str(metadata.get("runner") or payload.get("runner") or "sandbox_simulated").strip()
+            or "sandbox_simulated"
+        )
+        action = str(metadata.get("action") or "worker.noop").strip() or "worker.noop"
+        worker_artifact_scope = self._test_worker_artifact_scope(
+            tenant_id=tenant_id,
+            plan_id=plan_id,
+            step_id=step_id,
+            retry_id=retry_id,
+        )
+        receipt: dict[str, Any] = {
+            "execution_mode": "test",
+            "simulated": True,
+            "simulation_type": (
+                "worker_dispatch" if execution_target != "windows_local" else "windows_local"
+            ),
+            "execution_target": execution_target,
+            "step_index": step.get("step_index"),
+            "attempt_number": retry.get("attempt_number"),
+            "action": action,
+            "runner": runner,
+            "worker_artifact_scope": worker_artifact_scope,
+            "message": (
+                "Test-mode execution completed without claiming live worker capacity, "
+                "running local commands, or performing external mutations."
+            ),
+        }
+        if execution_target != "windows_local":
+            receipt["worker_job"] = {
+                "job_id": f"sim-job-{retry_id[:12]}",
+                "status": "simulated",
+                "claimed": False,
+            }
+        command_raw = payload.get("command")
+        if isinstance(command_raw, list) and command_raw:
+            receipt["command_receipt"] = {
+                "command": [str(item) for item in command_raw],
+                "stdout": "[test-mode] command execution skipped",
+                "stderr": "",
+                "exit_code": 0,
+            }
+        repo_root = str(payload.get("repo_root") or "").strip()
+        if repo_root:
+            receipt["repo_root"] = repo_root
+        return receipt
+
     @staticmethod
     def _categorize_failure(exc: Exception) -> str:
         text = str(exc).lower()
@@ -464,3 +631,28 @@ class PlanContinuationExecutor:
         if raw.startswith("worker:") and raw[7:].strip():
             return raw
         return "windows_local"
+
+    @staticmethod
+    def _test_worker_artifact_scope(
+        *,
+        tenant_id: str,
+        plan_id: str,
+        step_id: str,
+        retry_id: str,
+    ) -> str:
+        return f"worker_artifact:test:{tenant_id}:{plan_id}:{step_id}:{retry_id}"
+
+    @staticmethod
+    def _execution_mode(
+        *,
+        payload: dict[str, Any] | None = None,
+        plan: dict[str, Any] | None = None,
+        step: dict[str, Any] | None = None,
+    ) -> str:
+        for source in (step, plan, payload):
+            if not isinstance(source, dict):
+                continue
+            value = str(source.get("execution_mode") or "").strip().lower()
+            if value in {"live", "test"}:
+                return value
+        return "live"

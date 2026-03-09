@@ -317,6 +317,62 @@ async def test_worker_guardrail_violation_returns_structured_error(tmp_path: Pat
 
 
 @pytest.mark.asyncio
+async def test_worker_test_mode_job_is_simulated_without_running_codex(tmp_path: Path) -> None:
+    tenant_id = "11111111-1111-1111-1111-111111111111"
+    node_id = "worker-laptop-1"
+    outside_repo = tmp_path / "outside"
+    outside_repo.mkdir(parents=True, exist_ok=True)
+
+    bridge = _FakeWorkerBridge(
+        tenant_id=tenant_id,
+        node_id=node_id,
+        bootstrap_secret="bootstrap-secret",
+        jobs=[
+            {
+                "job_id": "job-test-1",
+                "execution_mode": "test",
+                "action": "repo.patch",
+                "runner": "codex",
+                "required_capabilities": ["repo.patch"],
+                "payload": {
+                    "repo_root": str(outside_repo),
+                    "command": ["git", "status"],
+                },
+            }
+        ],
+    )
+
+    server = TestServer(bridge.create_app())
+    await server.start_server()
+    try:
+        config = _base_config(
+            tmp_path=tmp_path,
+            base_url=str(server.make_url("")).rstrip("/"),
+            tenant_id=tenant_id,
+            node_id=node_id,
+        )
+        config.worker_runner = "codex"
+        config.worker_allowed_actions = ["repo.patch"]
+        config.worker_allowed_repo_roots = [str(tmp_path / "allowed-only")]
+        (tmp_path / "allowed-only").mkdir(parents=True, exist_ok=True)
+
+        runtime = WorkerRuntime(config)
+        try:
+            outcome = await runtime.run_once()
+        finally:
+            await runtime.close()
+    finally:
+        await server.close()
+
+    assert outcome.claimed_job is True
+    assert outcome.job_id == "job-test-1"
+    assert outcome.status == "succeeded"
+    assert bridge.result_payloads[0]["status"] == "succeeded"
+    assert bridge.result_payloads[0]["output"]["simulated"] is True
+    assert bridge.result_payloads[0]["output"]["execution_mode"] == "test"
+
+
+@pytest.mark.asyncio
 async def test_worker_delegation_guardrail_requires_matching_scope(tmp_path: Path) -> None:
     tenant_id = "11111111-1111-1111-1111-111111111111"
     node_id = "worker-laptop-1"

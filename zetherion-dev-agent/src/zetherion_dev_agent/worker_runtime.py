@@ -163,6 +163,7 @@ class WorkerJob:
     """Canonical claimed job shape for local runner dispatch."""
 
     job_id: str
+    execution_mode: str
     action: str
     runner: str
     payload: dict[str, Any]
@@ -174,6 +175,7 @@ class WorkerJob:
         job_id = str(payload.get("job_id") or payload.get("id") or "").strip()
         if not job_id:
             raise ValueError("claimed job is missing job_id")
+        execution_mode = str(payload.get("execution_mode") or "live").strip().lower() or "live"
         action = str(payload.get("action") or payload.get("action_name") or "worker.noop").strip()
         runner = str(payload.get("runner") or payload.get("kind") or "noop").strip().lower()
         raw_payload = payload.get("payload")
@@ -188,6 +190,7 @@ class WorkerJob:
         required_capabilities = tuple(_parse_string_list(payload.get("required_capabilities")))
         return cls(
             job_id=job_id,
+            execution_mode=execution_mode,
             action=action,
             runner=runner,
             payload=raw_payload,
@@ -829,6 +832,7 @@ class WorkerRuntime:
             "job_claimed",
             {
                 "job_id": job.job_id,
+                "execution_mode": job.execution_mode,
                 "action": job.action,
                 "runner": job.runner,
                 "required_capabilities": list(job.required_capabilities),
@@ -846,6 +850,28 @@ class WorkerRuntime:
         )
 
         try:
+            if job.execution_mode == "test":
+                logger.append(
+                    "job_simulated",
+                    {
+                        "job_id": job.job_id,
+                        "execution_mode": job.execution_mode,
+                    },
+                )
+                return WorkerRunResult(
+                    status="succeeded",
+                    output={
+                        "runner": "sandbox_simulated_worker",
+                        "job_id": job.job_id,
+                        "execution_mode": job.execution_mode,
+                        "action": job.action,
+                        "simulated": True,
+                        "message": (
+                            "Test-mode worker job was acknowledged locally without "
+                            "running any live command or external mutation."
+                        ),
+                    },
+                )
             self._enforce_action(job.action)
             self._enforce_worker_delegation_access(job)
             runner = self._resolve_runner(job.runner)

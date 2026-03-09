@@ -2669,6 +2669,7 @@ class SkillsServer:
                 steps=data.get("steps"),
                 actor=actor,
                 metadata=metadata,
+                execution_mode=str(data.get("execution_mode") or "live").strip() or "live",
                 max_step_attempts=(
                     self._parse_int(data.get("max_step_attempts"), "max_step_attempts")
                     if data.get("max_step_attempts") is not None
@@ -3223,6 +3224,7 @@ class SkillsServer:
                     "plan_id": str(claimed_job.get("plan_id") or ""),
                     "step_id": str(claimed_job.get("step_id") or ""),
                     "retry_id": str(claimed_job.get("retry_id") or ""),
+                    "execution_mode": str(claimed_job.get("execution_mode") or "live"),
                     "execution_target": str(claimed_job.get("execution_target") or ""),
                     "action": str(claimed_job.get("action") or "worker.noop"),
                     "runner": str(payload_json.get("runner") or "noop"),

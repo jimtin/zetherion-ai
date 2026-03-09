@@ -706,6 +706,7 @@ class TestSkillsWorkerControlAPI:
                 "plan_id": "plan-1",
                 "step_id": "step-1",
                 "retry_id": "retry-1",
+                "execution_mode": "live",
                 "execution_target": "any_worker",
                 "action": "worker.noop",
                 "required_capabilities": ["repo.patch"],
@@ -747,6 +748,7 @@ class TestSkillsWorkerControlAPI:
             assert response.status == 200
             payload = await response.json()
             assert payload["job"]["job_id"] == "job-123"
+            assert payload["job"]["execution_mode"] == "live"
             assert payload["job"]["runner"] == "noop"
             assert payload["job"]["payload"]["worker_artifacts"][0]["content"]["text"] == "Run task"
 

@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Segment 4 sandbox control-plane isolation (2026-03-09)
+
+- Impacted capability IDs:
+  - `CAP-ZAI-SANDBOX-CONTROL-PLANE-ISOLATION`
+- Impacted workflow scenario IDs:
+  - `SCN-ZAI-TESTKEY-WORKER-SAFE-EXECUTION`
+  - `SCN-ZAI-TESTKEY-COMMAND-SIMULATION`
+- Extended `src/zetherion_ai/admin/tenant_admin_manager.py` so tenant execution plans, steps, retries, artifacts, queued continuations, and worker jobs all carry `execution_mode`, and test-mode worker artifact scopes now use a dedicated `worker_artifact:test:...` namespace instead of sharing the live scope.
+- Updated `src/zetherion_ai/queue/plan_executor.py` so `execution_mode=test` plans complete with deterministic simulated receipts instead of dispatching live workers, prompting the live agent, or emitting owner review summaries.
+- Updated `src/zetherion_ai/skills/server.py` plus `zetherion-dev-agent/src/zetherion_dev_agent/worker_runtime.py` so internal plan creation can declare test mode, worker claim payloads surface the mode explicitly, live worker claims ignore test-mode jobs, and the dev-agent short-circuits any stray test job into a local simulation instead of running Codex commands.
+- Added regression coverage for control-plane execution-mode persistence, sandbox queue payload tagging, test-mode plan execution simulation, live-worker claim filtering, worker claim payload serialization, and dev-agent test-job short-circuiting.
+
 ### Added - Segment 3 tenant sandbox runtime and test-mode isolation (2026-03-09)
 
 - Impacted capability IDs:

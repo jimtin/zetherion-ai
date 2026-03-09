@@ -125,6 +125,28 @@ The manifest captures the current state of:
   - records tagged test analytics rows but suppresses tenant-derived writes such
     as recommendations, funnel updates, CRM interactions, and feedback mutation
 
+### Segment 4 sandbox control-plane isolation additions
+
+- `src/zetherion_ai/admin/tenant_admin_manager.py`
+  - tenant execution plans, steps, retries, artifacts, and worker jobs now
+    persist `execution_mode`, so test-mode control-plane execution remains
+    explicitly tagged from plan creation through worker-job inspection
+  - `plan_continuation` queue payloads now carry `execution_mode`, and
+    test-mode worker artifact scopes use `worker_artifact:test:...` instead of
+    the live `worker_artifact:...` namespace
+  - live worker claims now exclude `execution_mode=test` jobs, preventing
+    sandbox requests from consuming real worker leases or node capacity
+- `src/zetherion_ai/queue/plan_executor.py`
+  - test-mode execution plans now synthesize deterministic receipts for both
+    `windows_local` and worker-targeted steps, and they skip live agent prompts,
+    live worker dispatch, and owner review-summary enqueue paths
+- `src/zetherion_ai/skills/server.py`
+  - internal execution-plan creation now accepts `execution_mode`, and worker
+    claim responses surface that mode explicitly to downstream runtimes
+- `zetherion-dev-agent/src/zetherion_dev_agent/worker_runtime.py`
+  - defensive last-resort short-circuit for any stray test-mode claimed job,
+    returning a simulated success receipt instead of executing Codex commands
+
 ## Migration Rules Set by This Baseline
 
 - New isolation work must extend the manifest instead of silently bypassing it.
@@ -143,3 +165,8 @@ The manifest captures the current state of:
   inside `tenant_raw` plus `control_plane`, and must exclude those tagged rows
   from `tenant_derived`/`owner_portfolio` pipelines unless a later segment
   explicitly documents that crossover.
+- Test-mode control-plane execution additions must keep queued continuations,
+  execution artifacts, and worker-facing receipts tagged `execution_mode=test`,
+  must avoid live worker claims and owner review notifications, and must use
+  the dedicated `worker_artifact:test:...` scope when a worker-style artifact
+  reference is needed.
