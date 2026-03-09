@@ -13,6 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Segment 6 tenant notification API (2026-03-10)
+
+- Impacted capability IDs:
+  - `CAP-ZAI-CLIENT-NOTIFICATIONS`
+- Impacted workflow scenario IDs:
+  - `SCN-ZAI-CLIENT-NOTIFY-WEBHOOK`
+  - `SCN-ZAI-CLIENT-NOTIFY-EMAIL`
+  - `SCN-ZAI-CHANNEL-DISCOVERY`
+- Added tenant notification subscription storage plus API-key routes in `src/zetherion_ai/api/tenant.py`, `src/zetherion_ai/api/routes/notifications.py`, and `src/zetherion_ai/api/server.py` for channel discovery, subscription CRUD, and tenant event publishing under `/api/v1/notifications/*`.
+- Added `src/zetherion_ai/api/notification_service.py` so published tenant events fan out through the existing announcement policy and persistence core, with tenant-scoped templating, subscription matching, and per-subscription event receipts.
+- Added `src/zetherion_ai/announcements/channels.py` plus registry metadata in `src/zetherion_ai/announcements/dispatcher.py`, and wired `src/zetherion_ai/discord/bot.py` to register webhook/email adapters from the shared registry so new public channels and bot-side delivery stay aligned.
+- Added regression coverage for notification route handlers, public API HTTP notification flows, server route wiring, and test-key rejection on the live-only notification surface; updated the upstream public API docs/OpenAPI bundle and the isolation inventory for the new tenant notification paths.
+
 ### Added - Segment 5 announcement-core recipient generalization (2026-03-09)
 
 - Impacted capability IDs:

@@ -18,6 +18,10 @@ import pytest_asyncio
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
+from zetherion_ai.announcements.dispatcher import (
+    AnnouncementChannelDefinition,
+    AnnouncementChannelRegistry,
+)
 from zetherion_ai.api.auth import create_session_token, generate_api_key, validate_session_token
 from zetherion_ai.api.middleware import (
     RateLimiter,
@@ -25,8 +29,17 @@ from zetherion_ai.api.middleware import (
     create_cors_middleware,
     create_rate_limit_middleware,
 )
+from zetherion_ai.api.notification_service import TenantNotificationService
 from zetherion_ai.api.routes.chat import handle_chat, handle_chat_history, handle_chat_stream
 from zetherion_ai.api.routes.health import handle_health
+from zetherion_ai.api.routes.notifications import (
+    handle_create_notification_subscription,
+    handle_delete_notification_subscription,
+    handle_list_notification_channels,
+    handle_list_notification_subscriptions,
+    handle_patch_notification_subscription,
+    handle_publish_notification_event,
+)
 from zetherion_ai.api.routes.sessions import (
     handle_create_session,
     handle_delete_session,
@@ -127,6 +140,42 @@ def _build_app(
     app["jwt_secret"] = JWT_SECRET
     if inference_broker is not None:
         app["inference_broker"] = inference_broker
+    app["tenant_admin_manager"] = AsyncMock()
+    app["tenant_admin_manager"].list_email_accounts = AsyncMock(return_value=[])
+
+    registry = AnnouncementChannelRegistry()
+    registry.register(
+        "webhook",
+        AsyncMock(),
+        definition=AnnouncementChannelDefinition(
+            channel="webhook",
+            display_name="Webhook",
+            description="POST notifications to a webhook endpoint.",
+            public_enabled=True,
+            config_fields=("webhook_url",),
+        ),
+    )
+    registry.register(
+        "email",
+        AsyncMock(),
+        definition=AnnouncementChannelDefinition(
+            channel="email",
+            display_name="Email",
+            description="Send notifications by email.",
+            public_enabled=True,
+            config_fields=("email", "account_id"),
+        ),
+    )
+    app["announcement_repository"] = AsyncMock()
+    app["announcement_policy_engine"] = AsyncMock()
+    app["announcement_channel_registry"] = registry
+    app["tenant_notification_service"] = TenantNotificationService(
+        tenant_manager=tenant_manager,
+        announcement_repository=app["announcement_repository"],
+        announcement_policy_engine=app["announcement_policy_engine"],
+        channel_registry=registry,
+        tenant_admin_manager=app["tenant_admin_manager"],
+    )
 
     # Routes
     app.router.add_get("/api/v1/health", handle_health)
@@ -152,6 +201,24 @@ def _build_app(
     app.router.add_post("/api/v1/chat", handle_chat)
     app.router.add_post("/api/v1/chat/stream", handle_chat_stream)
     app.router.add_get("/api/v1/chat/history", handle_chat_history)
+    app.router.add_get("/api/v1/notifications/channels", handle_list_notification_channels)
+    app.router.add_post("/api/v1/notifications/events", handle_publish_notification_event)
+    app.router.add_get(
+        "/api/v1/notifications/subscriptions",
+        handle_list_notification_subscriptions,
+    )
+    app.router.add_post(
+        "/api/v1/notifications/subscriptions",
+        handle_create_notification_subscription,
+    )
+    app.router.add_patch(
+        "/api/v1/notifications/subscriptions/{subscription_id}",
+        handle_patch_notification_subscription,
+    )
+    app.router.add_delete(
+        "/api/v1/notifications/subscriptions/{subscription_id}",
+        handle_delete_notification_subscription,
+    )
 
     return app
 
@@ -184,6 +251,12 @@ async def api_client():
     tm.create_test_rule = AsyncMock()
     tm.update_test_rule = AsyncMock(return_value=None)
     tm.delete_test_rule = AsyncMock(return_value=False)
+    tm.list_notification_subscriptions = AsyncMock(return_value=[])
+    tm.create_notification_subscription = AsyncMock()
+    tm.get_notification_subscription = AsyncMock(return_value=None)
+    tm.update_notification_subscription = AsyncMock(return_value=None)
+    tm.delete_notification_subscription = AsyncMock(return_value=False)
+    tm.match_notification_subscriptions = AsyncMock(return_value=[])
 
     app = _build_app(tm)
     async with TestClient(TestServer(app)) as client:
@@ -224,6 +297,90 @@ async def test_create_session(api_client):
     assert "session_token" in data
     assert data["session_token"].startswith("zt_sess_")
     assert data["execution_mode"] == "live"
+
+
+@pytest.mark.integration
+async def test_list_notification_channels(api_client):
+    """GET /api/v1/notifications/channels returns public channel registry data."""
+    client, _, api_key = api_client
+    client.app["tenant_admin_manager"].list_email_accounts.return_value = [
+        {
+            "account_id": "acct-1",
+            "email_address": "ops@example.com",
+            "status": "connected",
+        }
+    ]
+
+    resp = await client.get("/api/v1/notifications/channels", headers={"X-API-Key": api_key})
+
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["count"] == 2
+    channels = {item["channel_id"]: item for item in data["channels"]}
+    assert channels["webhook"]["status"] == "available"
+    assert channels["email"]["status"] == "available"
+
+
+@pytest.mark.integration
+async def test_publish_notification_event(api_client):
+    """POST /api/v1/notifications/events fans out to matched subscriptions."""
+    client, tm, api_key = api_client
+    tm.match_notification_subscriptions = AsyncMock(
+        return_value=[
+            {
+                "subscription_id": "sub-1",
+                "tenant_id": TENANT_ID,
+                "source_app": "checkout",
+                "event_types": ["order.failed"],
+                "channel_id": "webhook",
+                "channel_config": {"webhook_url": "https://example.com/hook"},
+                "template": {},
+                "status": "active",
+            }
+        ]
+    )
+    client.app["announcement_policy_engine"].evaluate_event = AsyncMock(
+        return_value=type(
+            "Decision",
+            (),
+            {
+                "status": "scheduled",
+                "delivery_mode": "immediate",
+                "severity": None,
+                "scheduled_for": datetime(2026, 3, 10, 12, 0, tzinfo=UTC),
+                "reason_code": "recipient_channel_immediate_default",
+            },
+        )()
+    )
+    client.app["announcement_repository"].create_event = AsyncMock(
+        return_value=type(
+            "Receipt",
+            (),
+            {
+                "status": "accepted",
+                "event_id": "evt-1",
+                "reason_code": "accepted_new",
+            },
+        )()
+    )
+    client.app["announcement_repository"].create_delivery = AsyncMock()
+
+    resp = await client.post(
+        "/api/v1/notifications/events",
+        headers={"X-API-Key": api_key},
+        json={
+            "source_app": "checkout",
+            "event_type": "order.failed",
+            "title": "Payment failed",
+            "body": "Card declined",
+            "payload": {"order_id": "ord-1"},
+        },
+    )
+
+    assert resp.status == 202
+    data = await resp.json()
+    assert data["matched_subscriptions"] == 1
+    assert data["deliveries"][0]["receipt"]["event_id"] == "evt-1"
 
 
 @pytest.mark.integration
