@@ -36,8 +36,10 @@ from zetherion_ai.announcements.policy import AnnouncementPolicyDecision, Announ
 from zetherion_ai.announcements.storage import (
     AnnouncementEventInput,
     AnnouncementPreferencePatch,
+    AnnouncementRecipient,
     AnnouncementRepository,
     AnnouncementUserPreferences,
+    resolve_announcement_recipient,
 )
 from zetherion_ai.automerge.orchestrator import (
     AutomergeExecutionRequest,
@@ -1144,6 +1146,7 @@ class SkillsServer:
         if not body:
             raise ValueError("Missing body")
 
+        target_user_id = 0
         target_user_raw = payload.get("target_user_id")
         if isinstance(target_user_raw, bool):
             raise ValueError("Invalid target_user_id")
@@ -1154,9 +1157,59 @@ class SkillsServer:
                 target_user_id = int(target_user_raw.strip())
             except ValueError as exc:
                 raise ValueError("Invalid target_user_id") from exc
-        else:
-            raise ValueError("Invalid target_user_id")
-        if target_user_id <= 0:
+
+        recipient_payload = payload.get("recipient")
+        recipient: AnnouncementRecipient | None = None
+        if recipient_payload is not None:
+            if not isinstance(recipient_payload, dict):
+                raise ValueError("Invalid recipient")
+            recipient_channel = (
+                str(recipient_payload.get("channel") or payload.get("channel") or "discord_dm")
+                .strip()
+                .lower()
+                or "discord_dm"
+            )
+            recipient_target_user_id_raw = recipient_payload.get("target_user_id", target_user_id)
+            recipient_target_user_id = 0
+            if isinstance(recipient_target_user_id_raw, bool):
+                raise ValueError("Invalid recipient target_user_id")
+            if isinstance(recipient_target_user_id_raw, int):
+                recipient_target_user_id = recipient_target_user_id_raw
+            elif (
+                isinstance(recipient_target_user_id_raw, str)
+                and recipient_target_user_id_raw.strip()
+            ):
+                try:
+                    recipient_target_user_id = int(recipient_target_user_id_raw.strip())
+                except ValueError as exc:
+                    raise ValueError("Invalid recipient target_user_id") from exc
+            recipient = AnnouncementRecipient(
+                channel=recipient_channel,
+                routing_key=str(recipient_payload.get("routing_key") or "").strip(),
+                target_user_id=(recipient_target_user_id if recipient_target_user_id > 0 else None),
+                webhook_url=(
+                    str(recipient_payload.get("webhook_url")).strip()
+                    if recipient_payload.get("webhook_url")
+                    else None
+                ),
+                email=(
+                    str(recipient_payload.get("email")).strip().lower()
+                    if recipient_payload.get("email")
+                    else None
+                ),
+                display_name=(
+                    str(recipient_payload.get("display_name")).strip()
+                    if recipient_payload.get("display_name")
+                    else None
+                ),
+                metadata=(
+                    recipient_payload.get("metadata")
+                    if isinstance(recipient_payload.get("metadata"), dict)
+                    else {}
+                ),
+            )
+
+        if recipient is None and target_user_id <= 0:
             raise ValueError("Invalid target_user_id")
 
         severity = payload.get("severity") or "normal"
@@ -1180,10 +1233,11 @@ class SkillsServer:
             source=source,
             category=category,
             severity=str(severity),
-            tenant_id=str(payload.get("tenant_id")).strip() if payload.get("tenant_id") else None,
-            target_user_id=target_user_id,
             title=title,
             body=body,
+            target_user_id=target_user_id,
+            tenant_id=str(payload.get("tenant_id")).strip() if payload.get("tenant_id") else None,
+            recipient=recipient,
             payload=payload_json,
             fingerprint=(
                 str(payload.get("fingerprint")).strip() if payload.get("fingerprint") else None
@@ -1203,6 +1257,10 @@ class SkillsServer:
     ) -> dict[str, Any]:
         repository, policy_engine = self._announcement_dependencies()
         event = self._parse_announcement_event(payload)
+        recipient = resolve_announcement_recipient(
+            event,
+            default_channel=str(payload.get("channel") or "discord_dm"),
+        )
         decision: AnnouncementPolicyDecision = await policy_engine.evaluate_event(
             event,
             personal_profile=payload.get("personal_profile")
@@ -1224,7 +1282,7 @@ class SkillsServer:
         reason_code = persisted.reason_code or decision.reason_code
         if persisted.status != "deduped":
             if decision.status == "scheduled" and decision.delivery_mode in {"immediate", "digest"}:
-                channel = str(payload.get("channel") or "discord_dm").strip() or "discord_dm"
+                channel = str(recipient.channel).strip() or "discord_dm"
                 when = decision.scheduled_for or datetime.now(UTC)
                 await repository.create_delivery(
                     event_id=persisted.event_id,

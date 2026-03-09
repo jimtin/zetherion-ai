@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Segment 5 announcement-core recipient generalization (2026-03-09)
+
+- Impacted capability IDs:
+  - `CAP-ZAI-NOTIFICATION-CORE-GENERALIZATION`
+- Impacted workflow scenario IDs:
+  - `SCN-ZAI-INTERNAL-ANNOUNCEMENT-COMPAT`
+  - `SCN-ZAI-RECIPIENT-ABSTRACTION`
+- Generalized the announcement domain in `src/zetherion_ai/announcements/storage.py` so events and suppression state now persist a canonical `recipient_key` plus structured `recipient_json`, while keeping legacy `target_user_id` flows backward compatible for owner Discord DM delivery.
+- Updated `src/zetherion_ai/announcements/policy.py` and `src/zetherion_ai/announcements/dispatcher.py` so owner-targeted Discord events still respect user preferences, while non-user recipients route through a registry-driven channel abstraction instead of the old single-adapter, `target_user_id`-only path.
+- Added registry-ready delivery adapters in `src/zetherion_ai/announcements/webhook_adapter.py` and `src/zetherion_ai/announcements/email_adapter.py`, and wired the existing Discord runtime plus internal skills API/client parsing to accept either legacy `target_user_id` payloads or structured `recipient` objects.
+- Added regression coverage for structured recipients, registry-based dispatch selection, webhook/email adapter behavior, webhook-targeted internal announcement ingestion, and bot/client compatibility with the new recipient payload shape.
+
 ### Added - Segment 4 sandbox control-plane isolation (2026-03-09)
 
 - Impacted capability IDs:

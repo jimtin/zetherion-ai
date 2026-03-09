@@ -276,6 +276,32 @@ Internal announcement producers should emit events via the announcement API.
 
 Emit one announcement event and receive an ingestion receipt.
 
+Request notes:
+
+- Legacy owner path: send `target_user_id` plus optional `channel=discord_dm`.
+- Generalized path: send a structured `recipient` object instead of `target_user_id`.
+- Supported internal recipient channels are `discord_dm`, `webhook`, and `email`.
+
+Structured recipient shape:
+
+```json
+{
+  "recipient": {
+    "channel": "webhook",
+    "webhook_url": "https://example.com/hooks/tenant-a",
+    "routing_key": "optional-stable-key",
+    "display_name": "optional label",
+    "metadata": {
+      "subscription_id": "sub-1"
+    }
+  }
+}
+```
+
+Compatibility rule:
+
+- Owner Discord DM producers may keep using `target_user_id`; the skills server normalizes that into the new recipient model internally.
+
 ### POST /announcements/events/batch
 
 Emit multiple announcement events in one request (for spool replay or bulk ingest).

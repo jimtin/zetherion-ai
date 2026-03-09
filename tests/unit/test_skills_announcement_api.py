@@ -201,6 +201,67 @@ async def test_announcement_emit_event_accepts_string_target_user_id(
 
 
 @pytest.mark.asyncio
+async def test_announcement_emit_event_accepts_structured_recipient(
+    mock_registry: SkillRegistry,
+) -> None:
+    repository = MagicMock()
+    policy = MagicMock()
+    policy.evaluate_event = AsyncMock(
+        return_value=AnnouncementPolicyDecision(
+            status="scheduled",
+            delivery_mode="immediate",
+            severity=AnnouncementSeverity.NORMAL,
+            scheduled_for=datetime(2026, 3, 6, 10, 0, tzinfo=UTC),
+            reason_code="recipient_channel_immediate_default",
+            suppression_id=12,
+        )
+    )
+    repository.create_event = AsyncMock(
+        return_value=AnnouncementReceipt(
+            status="accepted",
+            event_id="evt-webhook",
+            reason_code="accepted_new",
+        )
+    )
+    repository.create_delivery = AsyncMock(return_value=None)
+
+    server = SkillsServer(
+        registry=mock_registry,
+        api_secret="skills-secret",
+        announcement_repository=repository,
+        announcement_policy_engine=policy,
+    )
+    app = server.create_app()
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/announcements/events",
+            headers=_headers(),
+            json={
+                "source": "tenant_app",
+                "category": "build.completed",
+                "title": "Build completed",
+                "body": "Webhook subscriber should receive this event.",
+                "recipient": {
+                    "channel": "webhook",
+                    "webhook_url": "https://example.com/hooks/tenant-a",
+                    "metadata": {"subscription_id": "sub-1"},
+                },
+            },
+        )
+        assert response.status == 200
+        payload = await response.json()
+        assert payload["receipt"]["event_id"] == "evt-webhook"
+        assert payload["decision"]["delivery_mode"] == "immediate"
+
+    create_event_call = repository.create_event.await_args
+    assert create_event_call is not None
+    assert create_event_call.args[0].recipient is not None
+    assert create_event_call.args[0].recipient.channel == "webhook"
+    assert repository.create_delivery.await_args.kwargs["channel"] == "webhook"
+
+
+@pytest.mark.asyncio
 async def test_announcement_emit_event_rejects_boolean_target_user_id(
     mock_registry: SkillRegistry,
 ) -> None:

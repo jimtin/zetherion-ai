@@ -22,7 +22,10 @@ from zetherion_ai.agent.core import Agent
 from zetherion_ai.agent.inference import ProviderIssueAlert
 from zetherion_ai.announcements import AnnouncementRepository
 from zetherion_ai.announcements.discord_adapter import DiscordDMChannelAdapter
-from zetherion_ai.announcements.dispatcher import AnnouncementDispatcher
+from zetherion_ai.announcements.dispatcher import (
+    AnnouncementChannelRegistry,
+    AnnouncementDispatcher,
+)
 from zetherion_ai.config import get_dynamic, get_dynamic_for_tenant, get_secret, get_settings
 from zetherion_ai.constants import KEEP_WARM_INTERVAL_SECONDS, MAX_DISCORD_MESSAGE_LENGTH
 from zetherion_ai.discord.e2e_lease import DiscordE2ELease
@@ -384,11 +387,12 @@ class ZetherionAIBot(discord.Client):
                         25,
                     ),
                 )
-                adapter = DiscordDMChannelAdapter(self)
+                registry = AnnouncementChannelRegistry()
+                registry.register("discord_dm", DiscordDMChannelAdapter(self))
                 self._announcement_repository = repository
                 self._announcement_dispatcher = AnnouncementDispatcher(
                     repository,
-                    adapter,
+                    registry,
                     poll_interval_seconds=poll_interval,
                     batch_size=batch_size,
                 )
@@ -2656,20 +2660,24 @@ class ZetherionAIBot(discord.Client):
             )
             return False
 
-        target_user_id_raw = event.get("target_user_id")
-        if isinstance(target_user_id_raw, bool):
-            return False
-        if isinstance(target_user_id_raw, int):
-            target_user_id = target_user_id_raw
-        elif isinstance(target_user_id_raw, str):
-            try:
-                target_user_id = int(target_user_id_raw.strip())
-            except ValueError:
+        recipient_payload = event.get("recipient")
+        recipient = recipient_payload if isinstance(recipient_payload, dict) else None
+        target_user_id: int | None = None
+        if recipient is None:
+            target_user_id_raw = event.get("target_user_id")
+            if isinstance(target_user_id_raw, bool):
                 return False
-        else:
-            return False
-        if target_user_id <= 0:
-            return False
+            if isinstance(target_user_id_raw, int):
+                target_user_id = target_user_id_raw
+            elif isinstance(target_user_id_raw, str):
+                try:
+                    target_user_id = int(target_user_id_raw.strip())
+                except ValueError:
+                    return False
+            else:
+                return False
+            if (target_user_id or 0) <= 0:
+                return False
 
         payload = event.get("payload")
         payload_json = payload if isinstance(payload, dict) else {}
@@ -2684,6 +2692,7 @@ class ZetherionAIBot(discord.Client):
                 category=category,
                 severity=str(event.get("severity") or "normal"),
                 target_user_id=target_user_id,
+                recipient=recipient,
                 title=title,
                 body=body,
                 tenant_id=str(event.get("tenant_id")).strip() if event.get("tenant_id") else None,

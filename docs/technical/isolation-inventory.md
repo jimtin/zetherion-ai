@@ -118,6 +118,28 @@ The manifest captures the current state of:
   - now distinguishes `sk_live_...` from `sk_test_...`, restricts test keys to
     `/api/v1/sessions` plus `/api/v1/test/*`, and propagates `execution_mode`
     from API key or session token into downstream request handling
+
+### Segment 5 announcement-core generalization additions
+
+- `src/zetherion_ai/announcements/storage.py`
+  - announcement events and suppression rows now persist `recipient_key` plus
+    structured `recipient_json` in the `control_plane` domain, so future
+    webhook/email delivery can coexist with legacy owner Discord DM targets
+    without overloading `target_user_id`
+- `src/zetherion_ai/announcements/dispatcher.py`
+  - dispatch is now registry-driven by delivery channel rather than a single
+    hard-wired adapter, while existing owner Discord DM delivery remains the
+    default registered path in the bot runtime
+- `src/zetherion_ai/announcements/policy.py`
+  - owner Discord recipients still use per-user preferences and quiet-hours
+    logic, while non-user recipients stay inside the announcement control plane
+    and default to immediate routing instead of borrowing owner-personal
+    preference state
+- `src/zetherion_ai/skills/server.py`
+  - internal announcement ingestion now accepts either legacy `target_user_id`
+    or a structured `recipient` object, keeping owner flows backward compatible
+    while enabling later tenant-scoped webhook/email work without new trust
+    boundary exceptions
 - `src/zetherion_ai/api/routes/chat.py`
   - uses `execution_mode=test` to route chat and stream through the sandbox
     runtime while keeping assistant messages inside `tenant_raw`

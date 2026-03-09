@@ -454,11 +454,12 @@ class SkillsClient:
         *,
         source: str,
         category: str,
-        target_user_id: int | str,
+        target_user_id: int | str | None = None,
         title: str,
         body: str,
         severity: str = "normal",
         tenant_id: str | None = None,
+        recipient: dict[str, Any] | None = None,
         payload: dict[str, Any] | None = None,
         fingerprint: str | None = None,
         idempotency_key: str | None = None,
@@ -472,7 +473,6 @@ class SkillsClient:
             "source": source,
             "category": category,
             "severity": severity,
-            "target_user_id": target_user_id,
             "title": title,
             "body": body,
             "payload": payload or {},
@@ -480,6 +480,10 @@ class SkillsClient:
             "dedupe_window_minutes": dedupe_window_minutes,
             "state": state,
         }
+        if target_user_id is not None:
+            request_payload["target_user_id"] = target_user_id
+        if recipient:
+            request_payload["recipient"] = recipient
         if tenant_id:
             request_payload["tenant_id"] = tenant_id
         if fingerprint:

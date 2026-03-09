@@ -36,16 +36,30 @@ class AnnouncementSeverity(Enum):
 
 
 @dataclass
+class AnnouncementRecipient:
+    """Canonical announcement recipient description."""
+
+    channel: str
+    routing_key: str
+    target_user_id: int | None = None
+    webhook_url: str | None = None
+    email: str | None = None
+    display_name: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class AnnouncementEventInput:
     """Input payload for announcement event persistence."""
 
     source: str
     category: str
     severity: AnnouncementSeverity | str
-    target_user_id: int
     title: str
     body: str
+    target_user_id: int = 0
     tenant_id: str | None = None
+    recipient: AnnouncementRecipient | None = None
     payload: dict[str, Any] = field(default_factory=dict)
     fingerprint: str | None = None
     idempotency_key: str | None = None
@@ -61,10 +75,11 @@ class AnnouncementEvent:
     source: str
     category: str
     severity: AnnouncementSeverity
-    tenant_id: str | None
-    target_user_id: int
     title: str
     body: str
+    tenant_id: str | None
+    target_user_id: int = 0
+    recipient: AnnouncementRecipient | None = None
     payload: dict[str, Any] = field(default_factory=dict)
     fingerprint: str | None = None
     idempotency_key: str | None = None
@@ -134,6 +149,7 @@ class AnnouncementSuppressionState:
     source: str
     category: str
     target_user_id: int
+    recipient_key: str
     fingerprint: str
     state: str
     occurrence_count: int
@@ -153,6 +169,8 @@ CREATE TABLE IF NOT EXISTS announcement_events (
     severity TEXT NOT NULL DEFAULT 'normal',
     tenant_id TEXT,
     target_user_id BIGINT NOT NULL,
+    recipient_key TEXT NOT NULL DEFAULT '',
+    recipient_json JSONB NOT NULL DEFAULT '{}'::jsonb,
     title TEXT NOT NULL,
     body TEXT NOT NULL,
     payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -170,6 +188,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_announcement_events_source_idempotency
 
 CREATE INDEX IF NOT EXISTS idx_announcement_events_target_fingerprint_bucket
     ON announcement_events (target_user_id, fingerprint, category, dedupe_bucket);
+CREATE INDEX IF NOT EXISTS idx_announcement_events_recipient_fingerprint_bucket
+    ON announcement_events (recipient_key, fingerprint, category, dedupe_bucket);
 CREATE INDEX IF NOT EXISTS idx_announcement_events_created
     ON announcement_events (created_at DESC);
 
@@ -215,6 +235,7 @@ CREATE TABLE IF NOT EXISTS announcement_suppression_state (
     source TEXT NOT NULL,
     category TEXT NOT NULL,
     target_user_id BIGINT NOT NULL,
+    recipient_key TEXT NOT NULL DEFAULT '',
     fingerprint TEXT NOT NULL,
     state TEXT NOT NULL DEFAULT 'active',
     occurrence_count INTEGER NOT NULL DEFAULT 1,
@@ -224,18 +245,56 @@ CREATE TABLE IF NOT EXISTS announcement_suppression_state (
     next_allowed_at TIMESTAMPTZ,
     resolved_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(source, category, target_user_id, fingerprint)
+    UNIQUE(source, category, recipient_key, fingerprint)
 );
 
 CREATE INDEX IF NOT EXISTS idx_announcement_suppression_lookup
     ON announcement_suppression_state (
         source,
         category,
-        target_user_id,
+        recipient_key,
         fingerprint,
         state,
         updated_at DESC
     );
+
+ALTER TABLE announcement_events
+    ADD COLUMN IF NOT EXISTS recipient_key TEXT NOT NULL DEFAULT '';
+ALTER TABLE announcement_events
+    ADD COLUMN IF NOT EXISTS recipient_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE announcement_suppression_state
+    ADD COLUMN IF NOT EXISTS recipient_key TEXT NOT NULL DEFAULT '';
+
+UPDATE announcement_events
+SET recipient_key = CASE
+    WHEN btrim(recipient_key) <> '' THEN recipient_key
+    WHEN target_user_id > 0 THEN 'discord_dm:user:' || target_user_id::text
+    ELSE 'legacy:event:' || event_id
+END
+WHERE btrim(recipient_key) = '';
+
+UPDATE announcement_events
+SET recipient_json = CASE
+    WHEN recipient_json <> '{}'::jsonb THEN recipient_json
+    WHEN target_user_id > 0 THEN jsonb_build_object(
+        'channel', 'discord_dm',
+        'routing_key', recipient_key,
+        'target_user_id', target_user_id
+    )
+    ELSE jsonb_build_object(
+        'channel', 'unknown',
+        'routing_key', recipient_key
+    )
+END
+WHERE recipient_json = '{}'::jsonb;
+
+UPDATE announcement_suppression_state
+SET recipient_key = CASE
+    WHEN btrim(recipient_key) <> '' THEN recipient_key
+    WHEN target_user_id > 0 THEN 'discord_dm:user:' || target_user_id::text
+    ELSE 'legacy:suppression:' || id::text
+END
+WHERE btrim(recipient_key) = '';
 """
 
 
@@ -284,6 +343,126 @@ def _dedupe_bucket(occurred_at: datetime, window_minutes: int) -> str:
     return str(bucket)
 
 
+def _normalize_channel(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    return normalized or "discord_dm"
+
+
+def _json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return {str(key): item for key, item in value.items()}
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(parsed, dict):
+            return {str(key): item for key, item in parsed.items()}
+    return {}
+
+
+def _announcement_recipient_key(
+    *,
+    channel: str,
+    target_user_id: int | None = None,
+    webhook_url: str | None = None,
+    email: str | None = None,
+) -> str:
+    normalized_channel = _normalize_channel(channel)
+    if normalized_channel == "discord_dm" and (target_user_id or 0) > 0:
+        return f"discord_dm:user:{int(target_user_id or 0)}"
+    if normalized_channel == "webhook" and webhook_url:
+        return f"webhook:url:{webhook_url.strip()}"
+    if normalized_channel == "email" and email:
+        return f"email:address:{email.strip().lower()}"
+    return f"{normalized_channel}:unknown"
+
+
+def _recipient_to_json(recipient: AnnouncementRecipient | None) -> dict[str, Any]:
+    if recipient is None:
+        return {}
+    payload = {
+        "channel": _normalize_channel(recipient.channel),
+        "routing_key": str(recipient.routing_key).strip(),
+        "metadata": recipient.metadata or {},
+    }
+    if recipient.target_user_id is not None:
+        payload["target_user_id"] = int(recipient.target_user_id)
+    if recipient.webhook_url:
+        payload["webhook_url"] = str(recipient.webhook_url).strip()
+    if recipient.email:
+        payload["email"] = str(recipient.email).strip().lower()
+    if recipient.display_name:
+        payload["display_name"] = str(recipient.display_name).strip()
+    return payload
+
+
+def _recipient_from_json(value: Any) -> AnnouncementRecipient | None:
+    payload = _json_object(value)
+    if not payload:
+        return None
+    channel = _normalize_channel(payload.get("channel"))
+    target_user_id_raw = payload.get("target_user_id")
+    target_user_id: int | None = None
+    if isinstance(target_user_id_raw, bool):
+        target_user_id = None
+    elif isinstance(target_user_id_raw, int):
+        target_user_id = target_user_id_raw
+    elif isinstance(target_user_id_raw, str) and target_user_id_raw.strip():
+        try:
+            target_user_id = int(target_user_id_raw.strip())
+        except ValueError:
+            target_user_id = None
+    webhook_url = str(payload.get("webhook_url") or "").strip() or None
+    email = str(payload.get("email") or "").strip().lower() or None
+    routing_key = str(payload.get("routing_key") or "").strip() or _announcement_recipient_key(
+        channel=channel,
+        target_user_id=target_user_id,
+        webhook_url=webhook_url,
+        email=email,
+    )
+    metadata = payload.get("metadata")
+    return AnnouncementRecipient(
+        channel=channel,
+        routing_key=routing_key,
+        target_user_id=target_user_id if (target_user_id or 0) > 0 else None,
+        webhook_url=webhook_url,
+        email=email,
+        display_name=str(payload.get("display_name") or "").strip() or None,
+        metadata=metadata if isinstance(metadata, dict) else {},
+    )
+
+
+def resolve_announcement_recipient(
+    event: AnnouncementEventInput | AnnouncementEvent,
+    *,
+    default_channel: str = "discord_dm",
+) -> AnnouncementRecipient:
+    if event.recipient is not None:
+        recipient = _recipient_from_json(_recipient_to_json(event.recipient))
+        if recipient is not None:
+            if recipient.channel == "discord_dm" and int(recipient.target_user_id or 0) <= 0:
+                raise ValueError("Announcement discord recipient requires target_user_id")
+            if recipient.channel == "webhook" and not recipient.webhook_url:
+                raise ValueError("Announcement webhook recipient requires webhook_url")
+            if recipient.channel == "email" and not recipient.email:
+                raise ValueError("Announcement email recipient requires email")
+            return recipient
+    target_user_id = int(getattr(event, "target_user_id", 0) or 0)
+    if target_user_id > 0:
+        channel = default_channel or "discord_dm"
+        return AnnouncementRecipient(
+            channel=channel,
+            routing_key=_announcement_recipient_key(
+                channel=channel,
+                target_user_id=target_user_id,
+            ),
+            target_user_id=target_user_id,
+            metadata={},
+        )
+    raise ValueError("Announcement event must include a recipient")
+
+
 class AnnouncementRepository:
     """Persistence interface for unified announcement events and deliveries."""
 
@@ -313,9 +492,12 @@ class AnnouncementRepository:
         fingerprint = str(event.fingerprint or "").strip() or None
         idempotency_key = str(event.idempotency_key or "").strip() or None
         severity = AnnouncementSeverity.coerce(event.severity).value
+        recipient = resolve_announcement_recipient(event)
+        recipient_key = recipient.routing_key
+        target_user_id = int(recipient.target_user_id or 0)
         dedupe_bucket = (
             _dedupe_bucket(occurred_at, dedupe_window_minutes)
-            if fingerprint and event.target_user_id > 0
+            if fingerprint and recipient_key
             else None
         )
 
@@ -330,6 +512,8 @@ class AnnouncementRepository:
                         severity,
                         tenant_id,
                         target_user_id,
+                        recipient_key,
+                        recipient_json,
                         title,
                         body,
                         payload_json,
@@ -340,8 +524,8 @@ class AnnouncementRepository:
                         state
                     )
                     VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb,
-                        $10, $11, $12, $13, $14
+                        $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11::jsonb,
+                        $12, $13, $14, $15, $16
                     )
                     ON CONFLICT (source, idempotency_key)
                     WHERE idempotency_key IS NOT NULL AND btrim(idempotency_key) <> ''
@@ -353,7 +537,9 @@ class AnnouncementRepository:
                     category,
                     severity,
                     event.tenant_id,
-                    event.target_user_id,
+                    target_user_id,
+                    recipient_key,
+                    _as_json_text(_recipient_to_json(recipient)),
                     title,
                     body,
                     _as_json_text(event.payload),
@@ -392,14 +578,14 @@ class AnnouncementRepository:
                     """
                     SELECT event_id
                     FROM announcement_events
-                    WHERE target_user_id = $1
+                    WHERE recipient_key = $1
                       AND fingerprint = $2
                       AND category = $3
                       AND dedupe_bucket = $4
                     ORDER BY created_at DESC
                     LIMIT 1
                     """,
-                    event.target_user_id,
+                    recipient_key,
                     fingerprint,
                     category,
                     dedupe_bucket,
@@ -421,6 +607,8 @@ class AnnouncementRepository:
                     severity,
                     tenant_id,
                     target_user_id,
+                    recipient_key,
+                    recipient_json,
                     title,
                     body,
                     payload_json,
@@ -430,14 +618,19 @@ class AnnouncementRepository:
                     occurred_at,
                     state
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14)
+                VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11::jsonb,
+                    $12, $13, $14, $15, $16
+                )
                 """,
                 event_id,
                 source,
                 category,
                 severity,
                 event.tenant_id,
-                event.target_user_id,
+                target_user_id,
+                recipient_key,
+                _as_json_text(_recipient_to_json(recipient)),
                 title,
                 body,
                 _as_json_text(event.payload),
@@ -774,7 +967,8 @@ class AnnouncementRepository:
     async def count_recent_events(
         self,
         *,
-        target_user_id: int,
+        target_user_id: int = 0,
+        recipient_key: str | None = None,
         since: datetime,
         severities: list[str] | None = None,
         categories: list[str] | None = None,
@@ -782,16 +976,21 @@ class AnnouncementRepository:
         pool = self._require_pool()
         severity_filter = [str(item).strip() for item in severities or [] if str(item).strip()]
         category_filter = [str(item).strip() for item in categories or [] if str(item).strip()]
+        normalized_recipient_key = str(recipient_key or "").strip() or None
         async with pool.acquire() as conn:
             count = await conn.fetchval(
                 """
                 SELECT COUNT(*)::int AS event_count
                 FROM announcement_events
-                WHERE target_user_id = $1
-                  AND occurred_at >= $2
-                  AND ($3::text[] IS NULL OR severity = ANY($3::text[]))
-                  AND ($4::text[] IS NULL OR category = ANY($4::text[]))
+                WHERE (
+                    ($1::text IS NOT NULL AND recipient_key = $1)
+                    OR ($1::text IS NULL AND target_user_id = $2)
+                )
+                  AND occurred_at >= $3
+                  AND ($4::text[] IS NULL OR severity = ANY($4::text[]))
+                  AND ($5::text[] IS NULL OR category = ANY($5::text[]))
                 """,
+                normalized_recipient_key,
                 target_user_id,
                 since,
                 severity_filter or None,
@@ -812,6 +1011,8 @@ class AnnouncementRepository:
                     severity,
                     tenant_id,
                     target_user_id,
+                    recipient_key,
+                    recipient_json,
                     title,
                     body,
                     payload_json,
@@ -884,9 +1085,18 @@ class AnnouncementRepository:
         source: str,
         category: str,
         target_user_id: int,
+        recipient_key: str | None = None,
         fingerprint: str,
     ) -> AnnouncementSuppressionState | None:
         pool = self._require_pool()
+        normalized_recipient_key = (
+            str(recipient_key).strip()
+            if recipient_key is not None and str(recipient_key).strip()
+            else _announcement_recipient_key(
+                channel="discord_dm",
+                target_user_id=target_user_id,
+            )
+        )
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
@@ -895,6 +1105,7 @@ class AnnouncementRepository:
                     source,
                     category,
                     target_user_id,
+                    recipient_key,
                     fingerprint,
                     state,
                     occurrence_count,
@@ -907,13 +1118,13 @@ class AnnouncementRepository:
                 FROM announcement_suppression_state
                 WHERE source = $1
                   AND category = $2
-                  AND target_user_id = $3
+                  AND recipient_key = $3
                   AND fingerprint = $4
                 LIMIT 1
                 """,
                 source,
                 category,
-                target_user_id,
+                normalized_recipient_key,
                 fingerprint,
             )
         if row is None:
@@ -926,11 +1137,20 @@ class AnnouncementRepository:
         source: str,
         category: str,
         target_user_id: int,
+        recipient_key: str | None = None,
         fingerprint: str,
         seen_at: datetime | None = None,
     ) -> AnnouncementSuppressionState:
         pool = self._require_pool()
         observed_at = seen_at or datetime.now(UTC)
+        normalized_recipient_key = (
+            str(recipient_key).strip()
+            if recipient_key is not None and str(recipient_key).strip()
+            else _announcement_recipient_key(
+                channel="discord_dm",
+                target_user_id=target_user_id,
+            )
+        )
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
@@ -938,14 +1158,15 @@ class AnnouncementRepository:
                     source,
                     category,
                     target_user_id,
+                    recipient_key,
                     fingerprint,
                     state,
                     first_seen,
                     last_seen,
                     updated_at
                 )
-                VALUES ($1, $2, $3, $4, 'active', $5, $5, NOW())
-                ON CONFLICT (source, category, target_user_id, fingerprint)
+                VALUES ($1, $2, $3, $4, $5, 'active', $6, $6, NOW())
+                ON CONFLICT (source, category, recipient_key, fingerprint)
                 DO UPDATE SET
                     state = 'active',
                     last_seen = EXCLUDED.last_seen,
@@ -956,6 +1177,7 @@ class AnnouncementRepository:
                     source,
                     category,
                     target_user_id,
+                    recipient_key,
                     fingerprint,
                     state,
                     occurrence_count,
@@ -969,6 +1191,7 @@ class AnnouncementRepository:
                 source,
                 category,
                 target_user_id,
+                normalized_recipient_key,
                 fingerprint,
                 observed_at,
             )
@@ -997,6 +1220,7 @@ class AnnouncementRepository:
                     source,
                     category,
                     target_user_id,
+                    recipient_key,
                     fingerprint,
                     state,
                     occurrence_count,
@@ -1036,6 +1260,7 @@ class AnnouncementRepository:
                     source,
                     category,
                     target_user_id,
+                    recipient_key,
                     fingerprint,
                     state,
                     occurrence_count,
@@ -1124,15 +1349,29 @@ class AnnouncementRepository:
             except json.JSONDecodeError:
                 payload_raw = {}
         payload = payload_raw if isinstance(payload_raw, dict) else {}
+        recipient = _recipient_from_json(row.get("recipient_json"))
+        target_user_id = int(row["target_user_id"] or 0)
+        if recipient is None and target_user_id > 0:
+            recipient = AnnouncementRecipient(
+                channel="discord_dm",
+                routing_key=str(row.get("recipient_key") or "").strip()
+                or _announcement_recipient_key(
+                    channel="discord_dm",
+                    target_user_id=target_user_id,
+                ),
+                target_user_id=target_user_id,
+                metadata={},
+            )
         return AnnouncementEvent(
             event_id=str(row["event_id"]),
             source=str(row["source"]),
             category=str(row["category"]),
             severity=AnnouncementSeverity.coerce(row.get("severity", "normal")),
-            tenant_id=str(row["tenant_id"]).strip() if row["tenant_id"] is not None else None,
-            target_user_id=int(row["target_user_id"]),
             title=str(row["title"]),
             body=str(row["body"]),
+            tenant_id=str(row["tenant_id"]).strip() if row["tenant_id"] is not None else None,
+            target_user_id=target_user_id,
+            recipient=recipient,
             payload=payload,
             fingerprint=str(row["fingerprint"]).strip() if row["fingerprint"] is not None else None,
             idempotency_key=(
@@ -1150,6 +1389,7 @@ class AnnouncementRepository:
             source=str(row["source"]),
             category=str(row["category"]),
             target_user_id=int(row["target_user_id"]),
+            recipient_key=str(row.get("recipient_key") or "").strip(),
             fingerprint=str(row["fingerprint"]),
             state=str(row["state"]),
             occurrence_count=int(row["occurrence_count"] or 0),
