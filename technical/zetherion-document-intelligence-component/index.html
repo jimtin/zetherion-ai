@@ -1178,10 +1178,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#maintenance-note-2026-03-05" class="md-nav__link">
+  <a href="#maintenance-note-2026-03-09" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Maintenance Note (2026-03-05)
+        Maintenance Note (2026-03-09)
       
     </span>
   </a>
@@ -1922,10 +1922,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#maintenance-note-2026-03-05" class="md-nav__link">
+  <a href="#maintenance-note-2026-03-09" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Maintenance Note (2026-03-05)
+        Maintenance Note (2026-03-09)
       
     </span>
   </a>
@@ -2069,8 +2069,13 @@ It is implementation-level documentation for backend and operations teams.</p>
 <p>Public exposure rule:
 - External clients must not call Zetherion <code>/api/v1</code> directly.
 - CGS <code>/service/ai/v1</code> is the only supported public API for this capability.</p>
-<h2 id="maintenance-note-2026-03-05">Maintenance Note (2026-03-05)<a class="headerlink" href="#maintenance-note-2026-03-05" title="Permanent link">&para;</a></h2>
+<h2 id="maintenance-note-2026-03-09">Maintenance Note (2026-03-09)<a class="headerlink" href="#maintenance-note-2026-03-09" title="Permanent link">&para;</a></h2>
 <ul>
+<li>Upstream tenant sandbox support now adds <code>sk_test_...</code> API keys plus <code>/api/v1/test/*</code> profile/rule management for chat simulation.</li>
+<li>Test-mode sessions, messages, and analytics rows are tagged <code>execution_mode=test</code> and are excluded from CRM extraction, funnel, and recommendation persistence in this segment.</li>
+<li>Document intelligence routes remain live-only API-key routes in Segment 3. <code>sk_test_...</code> keys do not access <code>/api/v1/documents*</code>, <code>/api/v1/rag/query</code>, or model-catalog routes.</li>
+<li>Upstream tenant conversation routes still support tenant-scoped <code>memory_subject_id</code> and rolling <code>conversation_summary</code> metadata for <code>/api/v1/sessions</code> and <code>/api/v1/chat*</code>.</li>
+<li>Those conversation changes stay in <code>tenant_raw</code> and do not alter document intelligence route contracts, storage partitions, or retrieval authorization.</li>
 <li>Segment 2 data-plane isolation foundation added scoped object-storage prefixes,
   additive PostgreSQL isolation schemas, and owner-vs-tenant Qdrant/encryption
   routing beneath document intelligence storage surfaces.</li>
@@ -2231,6 +2236,7 @@ It is implementation-level documentation for backend and operations teams.</p>
 <li>Document rows are always tenant-filtered.</li>
 <li>Vector operations are always tenant-filtered.</li>
 <li>Raw object keys are tenant-partitioned.</li>
+<li>Segment 3 test-mode keys are intentionally blocked from document and retrieval routes.</li>
 <li>No tenant API key or session token is exposed to browsers.</li>
 </ul>
 <h2 id="operations-and-support">Operations and Support<a class="headerlink" href="#operations-and-support" title="Permanent link">&para;</a></h2>

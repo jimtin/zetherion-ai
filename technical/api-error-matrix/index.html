@@ -1223,10 +1223,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#maintenance-note-2026-03-05" class="md-nav__link">
+  <a href="#maintenance-note-2026-03-09" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Maintenance Note (2026-03-05)
+        Maintenance Note (2026-03-09)
       
     </span>
   </a>
@@ -1282,6 +1282,17 @@
     <span class="md-ellipsis">
       
         Messaging Endpoint Specifics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sandbox-and-test-mode-endpoint-specifics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandbox and Test-Mode Endpoint Specifics
       
     </span>
   </a>
@@ -1845,10 +1856,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#maintenance-note-2026-03-05" class="md-nav__link">
+  <a href="#maintenance-note-2026-03-09" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Maintenance Note (2026-03-05)
+        Maintenance Note (2026-03-09)
       
     </span>
   </a>
@@ -1910,6 +1921,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#sandbox-and-test-mode-endpoint-specifics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sandbox and Test-Mode Endpoint Specifics
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1935,8 +1957,16 @@
 <p>Exposure rule:
 - External clients consume CGS gateway errors only.
 - <code>/api/v1</code> errors are upstream/internal and surfaced through CGS mappings.</p>
-<h2 id="maintenance-note-2026-03-05">Maintenance Note (2026-03-05)<a class="headerlink" href="#maintenance-note-2026-03-05" title="Permanent link">&para;</a></h2>
+<h2 id="maintenance-note-2026-03-09">Maintenance Note (2026-03-09)<a class="headerlink" href="#maintenance-note-2026-03-09" title="Permanent link">&para;</a></h2>
 <ul>
+<li>Segment 3 adds sandbox-specific validation and authorization outcomes to the upstream <code>/api/v1</code> surface:</li>
+<li><code>400</code> when <code>test_profile_id</code> is supplied on <code>POST /api/v1/sessions</code> with a live API key</li>
+<li><code>403</code> when <code>sk_test_...</code> is used on unsupported API-key routes</li>
+<li><code>404</code> when sandbox profile or rule identifiers do not exist for the authenticated tenant</li>
+<li>configured sandbox preview/chat errors can intentionally return structured simulated status/body pairs</li>
+<li>Test-mode chat and analytics keep the same JSON/SSE envelopes as live mode; their isolation changes affect persistence side effects, not the success shape.</li>
+<li>Tenant conversational runtime still accepts optional <code>memory_subject_id</code> on <code>POST /api/v1/sessions</code> and returns <code>conversation_summary</code> metadata on session reads; these additions do not introduce new top-level error envelopes.</li>
+<li>Tenant chat summary/memory persistence still runs after the assistant response and is best-effort; user-visible live <code>/api/v1/chat*</code> error semantics remain unchanged.</li>
 <li>Segment 2 data-plane isolation foundation added internal owner-vs-tenant
   storage and encryption routing; error envelopes and status mappings for
   <code>/api/v1</code> and <code>/service/ai/v1</code> are unchanged by this segment.</li>
@@ -1969,7 +1999,7 @@
 <td>Tenant/session forbidden/inactive</td>
 <td><code>403</code></td>
 <td><code>{"error":"..."}</code></td>
-<td>Tenant isolation/security rule</td>
+<td>Tenant isolation/security rule, including unsupported <code>sk_test_...</code> route access and test-mode recommendation feedback</td>
 </tr>
 <tr>
 <td>Unknown resource</td>
@@ -1981,7 +2011,7 @@
 <td>Validation failures</td>
 <td><code>400</code></td>
 <td><code>{"error":"..."}</code></td>
-<td>Invalid JSON/body/query/path payload</td>
+<td>Invalid JSON/body/query/path payload, including malformed <code>memory_subject_id</code>, sandbox preview payloads, or <code>test_profile_id</code> on live session creation</td>
 </tr>
 <tr>
 <td>Messaging trust-policy deny/approval-required</td>
@@ -2277,6 +2307,81 @@
 </tr>
 </tbody>
 </table>
+<h2 id="sandbox-and-test-mode-endpoint-specifics">Sandbox and Test-Mode Endpoint Specifics<a class="headerlink" href="#sandbox-and-test-mode-endpoint-specifics" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Failure Case</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST /api/v1/sessions</code></td>
+<td><code>test_profile_id</code> supplied with <code>sk_live_...</code></td>
+<td><code>400</code></td>
+</tr>
+<tr>
+<td><code>POST /api/v1/sessions</code></td>
+<td><code>test_profile_id</code> does not exist for the tenant</td>
+<td><code>404</code></td>
+</tr>
+<tr>
+<td>Any API-key route outside <code>POST /api/v1/sessions</code> or <code>/api/v1/test/*</code></td>
+<td>Authenticated with <code>sk_test_...</code></td>
+<td><code>403</code></td>
+</tr>
+<tr>
+<td><code>GET|PATCH|DELETE /api/v1/test/profiles/{profile_id}</code></td>
+<td>Unknown profile</td>
+<td><code>404</code></td>
+</tr>
+<tr>
+<td><code>POST /api/v1/test/profiles</code></td>
+<td>Missing <code>name</code></td>
+<td><code>400</code></td>
+</tr>
+<tr>
+<td><code>GET|POST /api/v1/test/profiles/{profile_id}/rules</code></td>
+<td>Unknown profile</td>
+<td><code>404</code></td>
+</tr>
+<tr>
+<td><code>POST /api/v1/test/profiles/{profile_id}/rules</code></td>
+<td>Missing <code>route_pattern</code></td>
+<td><code>400</code></td>
+</tr>
+<tr>
+<td><code>POST|PATCH /api/v1/test/profiles/{profile_id}/rules*</code></td>
+<td><code>match</code> or <code>response</code> is not an object</td>
+<td><code>400</code></td>
+</tr>
+<tr>
+<td><code>PATCH|DELETE /api/v1/test/profiles/{profile_id}/rules/{rule_id}</code></td>
+<td>Unknown rule</td>
+<td><code>404</code></td>
+</tr>
+<tr>
+<td><code>POST /api/v1/test/profiles/{profile_id}/preview</code></td>
+<td><code>body</code>/<code>session</code> not an object or <code>history</code> not an array</td>
+<td><code>400</code></td>
+</tr>
+<tr>
+<td><code>POST /api/v1/chat</code> or <code>POST /api/v1/chat/stream</code> in test mode</td>
+<td>Matching sandbox rule returns <code>response.error</code></td>
+<td>configured status + configured JSON body</td>
+</tr>
+<tr>
+<td><code>POST /api/v1/analytics/recommendations/{recommendation_id}/feedback</code> in test mode</td>
+<td>Any call</td>
+<td><code>403</code></td>
+</tr>
+</tbody>
+</table>
+<p>Non-error sandbox behavior:
+- <code>GET /api/v1/analytics/recommendations</code> in test mode returns <code>200</code> with an empty list.
+- <code>POST /api/v1/analytics/sessions/end</code> in test mode returns <code>200</code> with <code>execution_mode="test"</code> but does not persist derived recommendations or funnel updates.</p>
 
 
 

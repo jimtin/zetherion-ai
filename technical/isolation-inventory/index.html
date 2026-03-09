@@ -981,6 +981,50 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#segment-2-tenant-conversation-additions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Segment 2 tenant conversation additions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#segment-3-tenant-sandbox-additions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Segment 3 tenant sandbox additions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#segment-5-announcement-core-generalization-additions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Segment 5 announcement-core generalization additions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#segment-4-sandbox-control-plane-isolation-additions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Segment 4 sandbox control-plane isolation additions
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1928,6 +1972,50 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#segment-2-tenant-conversation-additions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Segment 2 tenant conversation additions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#segment-3-tenant-sandbox-additions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Segment 3 tenant sandbox additions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#segment-5-announcement-core-generalization-additions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Segment 5 announcement-core generalization additions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#segment-4-sandbox-control-plane-isolation-additions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Segment 4 sandbox control-plane isolation additions
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2010,12 +2098,21 @@ modules are tracked until their planned cutover segments land.</p>
 <li>tenant chat, document, messaging, and execution data in
     <code>src/zetherion_ai/api/tenant.py</code> and
     <code>src/zetherion_ai/admin/tenant_admin_manager.py</code></li>
+<li>tenant session recall state now includes <code>chat_sessions.memory_subject_id</code>,
+    <code>chat_sessions.conversation_summary</code>, and <code>tenant_subject_memories</code>, all of
+    which remain tenant-local and are not shared with owner-personal runtime paths</li>
+<li>tenant chat, message, web-session, and web-event rows now carry
+    <code>execution_mode</code> so sandbox traffic remains explicitly tagged inside the
+    tenant runtime instead of silently mixing with live flows</li>
 <li><code>control_plane</code></li>
 <li>CGS tenant mappings, audits, request logs, queueing, rollout, and
     announcement dispatch</li>
 <li>CGS tenant mappings now carry first-class <code>isolation_stage</code> and
     provisioning reconciliation metadata for staged client upgrades</li>
 <li>Canonical trust persistence now lives in <code>src/zetherion_ai/trust/storage.py</code> under the control-plane schema, covering trust policies, grants, scorecards, feedback, and decision audit rows for staged backfill</li>
+<li>tenant API-key registry plus sandbox profile/rule configuration in
+    <code>src/zetherion_ai/api/tenant.py</code> now provide a control-plane layer for
+    tenant test-mode setup without crossing into owner-personal storage</li>
 </ul>
 <h3 id="domains-that-are-not-isolated-yet">Domains that are not isolated yet<a class="headerlink" href="#domains-that-are-not-isolated-yet" title="Permanent link">&para;</a></h3>
 <ul>
@@ -2044,6 +2141,82 @@ modules are tracked until their planned cutover segments land.</p>
 <li>prompt and routing surfaces that still depend on implicit caller discipline
     instead of fail-closed scope labels</li>
 </ul>
+<h3 id="segment-2-tenant-conversation-additions">Segment 2 tenant conversation additions<a class="headerlink" href="#segment-2-tenant-conversation-additions" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>src/zetherion_ai/api/conversation_runtime.py</code></li>
+<li>tenant-only prompt context assembler for <code>/api/v1/chat*</code>; reads and writes
+    <code>tenant_raw</code> session summaries plus durable subject memories</li>
+<li><code>src/zetherion_ai/skills/client_chat.py</code></li>
+<li>now accepts tenant-scoped context notes from the public API runtime and
+    wraps them in <code>tenant_raw</code> scope labels before inference</li>
+<li><code>src/zetherion_ai/api/routes/sessions.py</code></li>
+<li>now derives <code>memory_subject_id</code> from explicit client input or
+    <code>external_user_id</code>; the identifier remains tenant-local metadata rather
+    than an auth or cross-domain join key</li>
+</ul>
+<h3 id="segment-3-tenant-sandbox-additions">Segment 3 tenant sandbox additions<a class="headerlink" href="#segment-3-tenant-sandbox-additions" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>src/zetherion_ai/api/test_runtime.py</code></li>
+<li>deterministic sandbox responder for tenant test-mode chat and stream
+    requests; synthesizes replies from tenant-owned sandbox profiles/rules and
+    built-in presets without calling live providers</li>
+<li><code>src/zetherion_ai/api/routes/test_mode.py</code></li>
+<li>tenant-scoped sandbox profile, rule, and preview routes under <code>/api/v1/test/*</code></li>
+<li><code>src/zetherion_ai/api/middleware.py</code></li>
+<li>now distinguishes <code>sk_live_...</code> from <code>sk_test_...</code>, restricts test keys to
+    <code>/api/v1/sessions</code> plus <code>/api/v1/test/*</code>, and propagates <code>execution_mode</code>
+    from API key or session token into downstream request handling</li>
+</ul>
+<h3 id="segment-5-announcement-core-generalization-additions">Segment 5 announcement-core generalization additions<a class="headerlink" href="#segment-5-announcement-core-generalization-additions" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>src/zetherion_ai/announcements/storage.py</code></li>
+<li>announcement events and suppression rows now persist <code>recipient_key</code> plus
+    structured <code>recipient_json</code> in the <code>control_plane</code> domain, so future
+    webhook/email delivery can coexist with legacy owner Discord DM targets
+    without overloading <code>target_user_id</code></li>
+<li><code>src/zetherion_ai/announcements/dispatcher.py</code></li>
+<li>dispatch is now registry-driven by delivery channel rather than a single
+    hard-wired adapter, while existing owner Discord DM delivery remains the
+    default registered path in the bot runtime</li>
+<li><code>src/zetherion_ai/announcements/policy.py</code></li>
+<li>owner Discord recipients still use per-user preferences and quiet-hours
+    logic, while non-user recipients stay inside the announcement control plane
+    and default to immediate routing instead of borrowing owner-personal
+    preference state</li>
+<li><code>src/zetherion_ai/skills/server.py</code></li>
+<li>internal announcement ingestion now accepts either legacy <code>target_user_id</code>
+    or a structured <code>recipient</code> object, keeping owner flows backward compatible
+    while enabling later tenant-scoped webhook/email work without new trust
+    boundary exceptions</li>
+<li><code>src/zetherion_ai/api/routes/chat.py</code></li>
+<li>uses <code>execution_mode=test</code> to route chat and stream through the sandbox
+    runtime while keeping assistant messages inside <code>tenant_raw</code></li>
+<li><code>src/zetherion_ai/api/routes/analytics.py</code></li>
+<li>records tagged test analytics rows but suppresses tenant-derived writes such
+    as recommendations, funnel updates, CRM interactions, and feedback mutation</li>
+</ul>
+<h3 id="segment-4-sandbox-control-plane-isolation-additions">Segment 4 sandbox control-plane isolation additions<a class="headerlink" href="#segment-4-sandbox-control-plane-isolation-additions" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>src/zetherion_ai/admin/tenant_admin_manager.py</code></li>
+<li>tenant execution plans, steps, retries, artifacts, and worker jobs now
+    persist <code>execution_mode</code>, so test-mode control-plane execution remains
+    explicitly tagged from plan creation through worker-job inspection</li>
+<li><code>plan_continuation</code> queue payloads now carry <code>execution_mode</code>, and
+    test-mode worker artifact scopes use <code>worker_artifact:test:...</code> instead of
+    the live <code>worker_artifact:...</code> namespace</li>
+<li>live worker claims now exclude <code>execution_mode=test</code> jobs, preventing
+    sandbox requests from consuming real worker leases or node capacity</li>
+<li><code>src/zetherion_ai/queue/plan_executor.py</code></li>
+<li>test-mode execution plans now synthesize deterministic receipts for both
+    <code>windows_local</code> and worker-targeted steps, and they skip live agent prompts,
+    live worker dispatch, and owner review-summary enqueue paths</li>
+<li><code>src/zetherion_ai/skills/server.py</code></li>
+<li>internal execution-plan creation now accepts <code>execution_mode</code>, and worker
+    claim responses surface that mode explicitly to downstream runtimes</li>
+<li><code>zetherion-dev-agent/src/zetherion_dev_agent/worker_runtime.py</code></li>
+<li>defensive last-resort short-circuit for any stray test-mode claimed job,
+    returning a simulated success receipt instead of executing Codex commands</li>
+</ul>
 <h2 id="migration-rules-set-by-this-baseline">Migration Rules Set by This Baseline<a class="headerlink" href="#migration-rules-set-by-this-baseline" title="Permanent link">&para;</a></h2>
 <ul>
 <li>New isolation work must extend the manifest instead of silently bypassing it.</li>
@@ -2056,7 +2229,17 @@ modules are tracked until their planned cutover segments land.</p>
 <li>CGS tenant migration now writes <code>cgs_ai_tenant_migration_receipts</code> in the control-plane domain and owner-safe tenant health snapshots into the <code>owner_portfolio</code> schema; later segments must preserve that split during cutover.</li>
 <li>Prompt isolation now starts in <code>src/zetherion_ai/trust/scope.py</code>; current
   integrations cover owner agent prompts, tenant chat prompts, email routing
-  prompts, docs knowledge prompts, and tenant document QA prompts.</li>
+  prompts, docs knowledge prompts, tenant document QA prompts, and the tenant
+  public-chat conversation context path.</li>
+<li>Test-mode tenant runtime additions must keep sandbox rows and controls tagged
+  inside <code>tenant_raw</code> plus <code>control_plane</code>, and must exclude those tagged rows
+  from <code>tenant_derived</code>/<code>owner_portfolio</code> pipelines unless a later segment
+  explicitly documents that crossover.</li>
+<li>Test-mode control-plane execution additions must keep queued continuations,
+  execution artifacts, and worker-facing receipts tagged <code>execution_mode=test</code>,
+  must avoid live worker claims and owner review notifications, and must use
+  the dedicated <code>worker_artifact:test:...</code> scope when a worker-style artifact
+  reference is needed.</li>
 </ul>
 
 

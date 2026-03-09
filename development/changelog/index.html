@@ -1632,6 +1632,61 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#added-segment-5-announcement-core-recipient-generalization-2026-03-09" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 5 announcement-core recipient generalization (2026-03-09)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-segment-4-sandbox-control-plane-isolation-2026-03-09" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 4 sandbox control-plane isolation (2026-03-09)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-segment-3-tenant-sandbox-runtime-and-test-mode-isolation-2026-03-09" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 3 tenant sandbox runtime and test-mode isolation (2026-03-09)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-segment-2-tenant-conversational-runtime-and-tenant-scoped-memory-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 2 tenant conversational runtime and tenant-scoped memory (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed-segment-1-owner-conversational-guardrails-and-routing-repair-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed - Segment 1 owner conversational guardrails and routing repair (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#changed-pr-metadata-policy-enforcement-for-agent-handoff-2026-03-08" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3006,6 +3061,61 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#added-segment-5-announcement-core-recipient-generalization-2026-03-09" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 5 announcement-core recipient generalization (2026-03-09)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-segment-4-sandbox-control-plane-isolation-2026-03-09" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 4 sandbox control-plane isolation (2026-03-09)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-segment-3-tenant-sandbox-runtime-and-test-mode-isolation-2026-03-09" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 3 tenant sandbox runtime and test-mode isolation (2026-03-09)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added-segment-2-tenant-conversational-runtime-and-tenant-scoped-memory-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 2 tenant conversational runtime and tenant-scoped memory (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed-segment-1-owner-conversational-guardrails-and-routing-repair-2026-03-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed - Segment 1 owner conversational guardrails and routing repair (2026-03-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#changed-pr-metadata-policy-enforcement-for-agent-handoff-2026-03-08" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4239,6 +4349,67 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 </blockquote>
 <hr />
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="added-segment-5-announcement-core-recipient-generalization-2026-03-09">Added - Segment 5 announcement-core recipient generalization (2026-03-09)<a class="headerlink" href="#added-segment-5-announcement-core-recipient-generalization-2026-03-09" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>CAP-ZAI-NOTIFICATION-CORE-GENERALIZATION</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>SCN-ZAI-INTERNAL-ANNOUNCEMENT-COMPAT</code></li>
+<li><code>SCN-ZAI-RECIPIENT-ABSTRACTION</code></li>
+<li>Generalized the announcement domain in <code>src/zetherion_ai/announcements/storage.py</code> so events and suppression state now persist a canonical <code>recipient_key</code> plus structured <code>recipient_json</code>, while keeping legacy <code>target_user_id</code> flows backward compatible for owner Discord DM delivery.</li>
+<li>Updated <code>src/zetherion_ai/announcements/policy.py</code> and <code>src/zetherion_ai/announcements/dispatcher.py</code> so owner-targeted Discord events still respect user preferences, while non-user recipients route through a registry-driven channel abstraction instead of the old single-adapter, <code>target_user_id</code>-only path.</li>
+<li>Added registry-ready delivery adapters in <code>src/zetherion_ai/announcements/webhook_adapter.py</code> and <code>src/zetherion_ai/announcements/email_adapter.py</code>, and wired the existing Discord runtime plus internal skills API/client parsing to accept either legacy <code>target_user_id</code> payloads or structured <code>recipient</code> objects.</li>
+<li>Added regression coverage for structured recipients, registry-based dispatch selection, webhook/email adapter behavior, webhook-targeted internal announcement ingestion, and bot/client compatibility with the new recipient payload shape.</li>
+</ul>
+<h3 id="added-segment-4-sandbox-control-plane-isolation-2026-03-09">Added - Segment 4 sandbox control-plane isolation (2026-03-09)<a class="headerlink" href="#added-segment-4-sandbox-control-plane-isolation-2026-03-09" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>CAP-ZAI-SANDBOX-CONTROL-PLANE-ISOLATION</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>SCN-ZAI-TESTKEY-WORKER-SAFE-EXECUTION</code></li>
+<li><code>SCN-ZAI-TESTKEY-COMMAND-SIMULATION</code></li>
+<li>Extended <code>src/zetherion_ai/admin/tenant_admin_manager.py</code> so tenant execution plans, steps, retries, artifacts, queued continuations, and worker jobs all carry <code>execution_mode</code>, and test-mode worker artifact scopes now use a dedicated <code>worker_artifact:test:...</code> namespace instead of sharing the live scope.</li>
+<li>Updated <code>src/zetherion_ai/queue/plan_executor.py</code> so <code>execution_mode=test</code> plans complete with deterministic simulated receipts instead of dispatching live workers, prompting the live agent, or emitting owner review summaries.</li>
+<li>Updated <code>src/zetherion_ai/skills/server.py</code> plus <code>zetherion-dev-agent/src/zetherion_dev_agent/worker_runtime.py</code> so internal plan creation can declare test mode, worker claim payloads surface the mode explicitly, live worker claims ignore test-mode jobs, and the dev-agent short-circuits any stray test job into a local simulation instead of running Codex commands.</li>
+<li>Added regression coverage for control-plane execution-mode persistence, sandbox queue payload tagging, test-mode plan execution simulation, live-worker claim filtering, worker claim payload serialization, and dev-agent test-job short-circuiting.</li>
+</ul>
+<h3 id="added-segment-3-tenant-sandbox-runtime-and-test-mode-isolation-2026-03-09">Added - Segment 3 tenant sandbox runtime and test-mode isolation (2026-03-09)<a class="headerlink" href="#added-segment-3-tenant-sandbox-runtime-and-test-mode-isolation-2026-03-09" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>CAP-ZAI-TENANT-SANDBOX-RUNTIME</code></li>
+<li><code>CAP-ZAI-TENANT-SANDBOX-OVERRIDES</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>SCN-ZAI-TESTKEY-AGENTIC-CHAT</code></li>
+<li><code>SCN-ZAI-TESTKEY-STREAM</code></li>
+<li><code>SCN-ZAI-TESTKEY-RULE-PREVIEW</code></li>
+<li>Added tenant API-key registry support in <code>src/zetherion_ai/api/tenant.py</code>, including concurrent <code>sk_live_...</code> plus <code>sk_test_...</code> keys, sandbox profile/rule storage, and <code>execution_mode</code> tagging on sessions, chat messages, web sessions, and analytics events.</li>
+<li>Added deterministic sandbox management and runtime surfaces in <code>src/zetherion_ai/api/routes/test_mode.py</code> and <code>src/zetherion_ai/api/test_runtime.py</code>, with profile/rule CRUD, preview, preset-based fallback replies, and simulated SSE streaming that preserves the live chat wire format.</li>
+<li>Wired <code>src/zetherion_ai/api/routes/sessions.py</code>, <code>src/zetherion_ai/api/middleware.py</code>, <code>src/zetherion_ai/api/routes/chat.py</code>, and <code>src/zetherion_ai/api/routes/analytics.py</code> so test-mode sessions propagate <code>execution_mode=test</code>, bypass live inference, and suppress tenant-derived recommendation/CRM writes by default.</li>
+<li>Added regression coverage for test-key auth, execution-mode session tokens, sandbox route handlers, deterministic chat/stream simulation, tenant API-key registry behavior, and isolation-manifest tracking for the new sandbox surfaces.</li>
+</ul>
+<h3 id="added-segment-2-tenant-conversational-runtime-and-tenant-scoped-memory-2026-03-08">Added - Segment 2 tenant conversational runtime and tenant-scoped memory (2026-03-08)<a class="headerlink" href="#added-segment-2-tenant-conversational-runtime-and-tenant-scoped-memory-2026-03-08" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>CAP-ZAI-TENANT-CONVERSATIONAL-RUNTIME</code></li>
+<li><code>CAP-ZAI-TENANT-CROSS-SESSION-MEMORY</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>SCN-ZAI-API-MULTITURN-RECALL</code></li>
+<li><code>SCN-ZAI-TENANT-CROSS-SESSION-PREFERENCE</code></li>
+<li>Added <code>src/zetherion_ai/api/conversation_runtime.py</code> and wired the public <code>/api/v1/chat</code> plus <code>/api/v1/chat/stream</code> routes through a tenant-scoped context assembler that feeds rolling session summaries and durable subject memories into <code>ClientChatSkill</code> without crossing out of <code>tenant_raw</code>.</li>
+<li>Extended tenant session storage in <code>src/zetherion_ai/api/tenant.py</code> and <code>src/zetherion_ai/api/routes/sessions.py</code> with <code>memory_subject_id</code>, <code>conversation_summary</code>, and <code>tenant_subject_memories</code>, so <code>/api/v1/sessions</code> can pin cross-session memory to a tenant-local subject while preserving existing route shapes.</li>
+<li>Added deterministic regression coverage for tenant memory extraction, context assembly, session persistence, and public API prompt grounding across the session/chat/runtime surfaces.</li>
+</ul>
+<h3 id="fixed-segment-1-owner-conversational-guardrails-and-routing-repair-2026-03-08">Fixed - Segment 1 owner conversational guardrails and routing repair (2026-03-08)<a class="headerlink" href="#fixed-segment-1-owner-conversational-guardrails-and-routing-repair-2026-03-08" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>CAP-ZAI-OWNER-CONVERSATIONAL-RUNTIME</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>SCN-ZAI-DISCORD-ROUTER-REPAIR</code></li>
+<li><code>SCN-ZAI-DISCORD-CONVERSATIONAL-FOLLOWUP</code></li>
+<li>Added an owner-only routing guardrail pass in <code>src/zetherion_ai/agent/core.py</code> so low-confidence <code>dev_watcher</code> and <code>memory_recall</code> classifications that look like ordinary follow-up conversation now fall back to normal conversational handling instead of specialist skill defaults.</li>
+<li>Added per-turn <code>routing_trace</code> persistence for owner conversation messages and a repair explanation path for follow-up prompts such as "what happened with that response?" so the bot can explain the previous misroute in plain language.</li>
+<li>Added owner-conversation regression coverage for the live misroute pattern, including the Bev-recording follow-up case and repair-turn storage/trace assertions.</li>
+</ul>
 <h3 id="changed-pr-metadata-policy-enforcement-for-agent-handoff-2026-03-08">Changed - PR metadata policy enforcement for agent handoff (2026-03-08)<a class="headerlink" href="#changed-pr-metadata-policy-enforcement-for-agent-handoff-2026-03-08" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Added <code>scripts/check_pr_metadata.py</code> plus unit coverage so the required <code>Pipeline Contract</code> job now rejects pull requests that do not use a <code>codex/</code> head branch or that leave capability IDs, workflow scenario IDs, validation evidence, or receipt checklist items as placeholders.</li>
