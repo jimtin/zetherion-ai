@@ -80,6 +80,7 @@ VALID_EXECUTION_STEP_STATUSES = frozenset(
 VALID_EXECUTION_RETRY_OUTCOMES = frozenset(
     {"succeeded", "retryable_failed", "terminal_failed", "cancelled", "interrupted"}
 )
+VALID_EXECUTION_MODES = frozenset({"live", "test"})
 RETRYABLE_EXECUTION_FAILURE_CATEGORIES = frozenset(
     {"timeout", "transient", "dependency", "rate_limit", "interrupted"}
 )
@@ -523,6 +524,7 @@ CREATE TABLE IF NOT EXISTS tenant_execution_plans (
     tenant_id                      UUID         NOT NULL,
     title                          TEXT         NOT NULL,
     goal                           TEXT         NOT NULL,
+    execution_mode                 VARCHAR(16)  NOT NULL DEFAULT 'live',
     status                         VARCHAR(20)  NOT NULL DEFAULT 'queued'
                                    CHECK (
                                        status IN (
@@ -552,12 +554,15 @@ CREATE TABLE IF NOT EXISTS tenant_execution_plans (
 
 CREATE INDEX IF NOT EXISTS idx_tenant_execution_plans_lookup
     ON tenant_execution_plans (tenant_id, status, next_run_at, updated_at DESC);
+ALTER TABLE tenant_execution_plans
+    ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(16) NOT NULL DEFAULT 'live';
 
 CREATE TABLE IF NOT EXISTS tenant_execution_steps (
     step_id               UUID         PRIMARY KEY,
     plan_id               UUID         NOT NULL
                          REFERENCES tenant_execution_plans(plan_id) ON DELETE CASCADE,
     tenant_id             UUID         NOT NULL,
+    execution_mode        VARCHAR(16)  NOT NULL DEFAULT 'live',
     step_index            INT          NOT NULL,
     title                 TEXT         NOT NULL,
     prompt_text           TEXT         NOT NULL,
@@ -597,6 +602,8 @@ CREATE INDEX IF NOT EXISTS idx_tenant_execution_steps_retry
     WHERE status = 'failed';
 
 ALTER TABLE tenant_execution_steps
+    ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(16) NOT NULL DEFAULT 'live';
+ALTER TABLE tenant_execution_steps
     ADD COLUMN IF NOT EXISTS execution_target TEXT NOT NULL DEFAULT 'windows_local';
 ALTER TABLE tenant_execution_steps
     ADD COLUMN IF NOT EXISTS required_capabilities JSONB NOT NULL DEFAULT '[]'::jsonb;
@@ -614,6 +621,7 @@ CREATE TABLE IF NOT EXISTS tenant_execution_step_retries (
                           REFERENCES tenant_execution_plans(plan_id) ON DELETE CASCADE,
     step_id                UUID         NOT NULL
                           REFERENCES tenant_execution_steps(step_id) ON DELETE CASCADE,
+    execution_mode         VARCHAR(16)  NOT NULL DEFAULT 'live',
     attempt_number         INT          NOT NULL,
     worker_id              TEXT,
     lease_token            TEXT,
@@ -638,6 +646,8 @@ CREATE TABLE IF NOT EXISTS tenant_execution_step_retries (
 
 CREATE INDEX IF NOT EXISTS idx_tenant_execution_step_retries_lookup
     ON tenant_execution_step_retries (tenant_id, plan_id, step_id, attempt_number DESC);
+ALTER TABLE tenant_execution_step_retries
+    ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(16) NOT NULL DEFAULT 'live';
 
 CREATE TABLE IF NOT EXISTS tenant_execution_artifacts (
     artifact_id            UUID         PRIMARY KEY,
@@ -648,6 +658,7 @@ CREATE TABLE IF NOT EXISTS tenant_execution_artifacts (
                           REFERENCES tenant_execution_steps(step_id) ON DELETE CASCADE,
     retry_id               UUID
                           REFERENCES tenant_execution_step_retries(retry_id) ON DELETE SET NULL,
+    execution_mode         VARCHAR(16)  NOT NULL DEFAULT 'live',
     artifact_type          VARCHAR(40)  NOT NULL,
     artifact_ref           TEXT,
     artifact_json          JSONB        NOT NULL DEFAULT '{}'::jsonb,
@@ -656,6 +667,8 @@ CREATE TABLE IF NOT EXISTS tenant_execution_artifacts (
 
 CREATE INDEX IF NOT EXISTS idx_tenant_execution_artifacts_lookup
     ON tenant_execution_artifacts (tenant_id, plan_id, created_at DESC);
+ALTER TABLE tenant_execution_artifacts
+    ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(16) NOT NULL DEFAULT 'live';
 
 CREATE TABLE IF NOT EXISTS tenant_execution_transitions (
     transition_id          BIGSERIAL    PRIMARY KEY,
@@ -843,6 +856,7 @@ CREATE TABLE IF NOT EXISTS tenant_worker_jobs (
                           REFERENCES tenant_execution_steps(step_id) ON DELETE CASCADE,
     retry_id               UUID         NOT NULL
                           REFERENCES tenant_execution_step_retries(retry_id) ON DELETE CASCADE,
+    execution_mode         VARCHAR(16)  NOT NULL DEFAULT 'live',
     execution_target       TEXT         NOT NULL,
     target_node_id         TEXT,
     required_capabilities  JSONB        NOT NULL DEFAULT '[]'::jsonb,
@@ -879,6 +893,8 @@ CREATE INDEX IF NOT EXISTS idx_tenant_worker_jobs_node
     ON tenant_worker_jobs (tenant_id, claimed_by_node_id, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tenant_worker_jobs_step
     ON tenant_worker_jobs (tenant_id, plan_id, step_id, created_at DESC);
+ALTER TABLE tenant_worker_jobs
+    ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(16) NOT NULL DEFAULT 'live';
 """
 
 
@@ -4800,6 +4816,14 @@ class TenantAdminManager:
         raise ValueError(f"execution_target must be one of: {allowed}")
 
     @staticmethod
+    def _normalize_execution_mode(raw: Any, *, default: str = "live") -> str:
+        value = str(raw or default).strip().lower()
+        if value not in VALID_EXECUTION_MODES:
+            allowed = ", ".join(sorted(VALID_EXECUTION_MODES))
+            raise ValueError(f"execution_mode must be one of: {allowed}")
+        return value
+
+    @staticmethod
     def _coerce_execution_runtime_seconds(raw: Any) -> int | None:
         if raw is None or raw == "":
             return None
@@ -4884,15 +4908,34 @@ class TenantAdminManager:
         reason: str = "continuation",
         requested_by: str | None = None,
         priority: int = 2,
+        execution_mode: str | None = None,
     ) -> str | None:
         run_at = scheduled_for or datetime.now(UTC)
         if run_at.tzinfo is None:
             run_at = run_at.replace(tzinfo=UTC)
 
+        mode = str(execution_mode or "").strip().lower()
+        if mode:
+            mode = self._normalize_execution_mode(mode, default="live")
+        else:
+            fetched_mode = await self._fetchval(
+                """
+                SELECT execution_mode
+                FROM tenant_execution_plans
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                LIMIT 1
+                """,
+                tenant_id,
+                plan_id,
+            )
+            mode = self._normalize_execution_mode(fetched_mode, default="live")
+
         queue_item_id = str(uuid4())
         payload = {
             "tenant_id": tenant_id,
             "plan_id": plan_id,
+            "execution_mode": mode,
             "reason": str(reason or "continuation"),
             "requested_by": str(requested_by or ""),
             "requested_at": datetime.now(UTC).isoformat(),
@@ -4944,6 +4987,7 @@ class TenantAdminManager:
         max_step_attempts: int = DEFAULT_EXECUTION_MAX_STEP_ATTEMPTS,
         continuation_interval_seconds: int = DEFAULT_EXECUTION_CONTINUATION_INTERVAL_SECONDS,
         start_at: datetime | None = None,
+        execution_mode: str = "live",
     ) -> dict[str, Any]:
         plan_title = str(title or "").strip()
         if not plan_title:
@@ -4952,6 +4996,7 @@ class TenantAdminManager:
         if not plan_goal:
             raise ValueError("Missing non-empty goal")
         normalized_steps = self._coerce_execution_steps(steps)
+        mode = self._normalize_execution_mode(execution_mode, default="live")
         max_attempts = max(1, min(int(max_step_attempts), 10))
         continuation_seconds = max(1, min(int(continuation_interval_seconds), 3600))
         run_at = start_at or datetime.now(UTC)
@@ -4970,6 +5015,7 @@ class TenantAdminManager:
                     tenant_id,
                     title,
                     goal,
+                    execution_mode,
                     status,
                     current_step_index,
                     total_steps,
@@ -4984,20 +5030,22 @@ class TenantAdminManager:
                     $2::uuid,
                     $3,
                     $4,
+                    $5,
                     'queued',
                     0,
-                    $5,
                     $6,
                     $7,
                     $8,
-                    $9::jsonb,
-                    $10,
-                    $10
+                    $9,
+                    $10::jsonb,
+                    $11,
+                    $11
                 )
                 RETURNING plan_id::text AS plan_id,
                           tenant_id::text AS tenant_id,
                           title,
                           goal,
+                          execution_mode,
                           status,
                           current_step_index,
                           total_steps,
@@ -5018,6 +5066,7 @@ class TenantAdminManager:
                 tenant_id,
                 plan_title,
                 plan_goal,
+                mode,
                 len(normalized_steps),
                 max_attempts,
                 continuation_seconds,
@@ -5065,6 +5114,7 @@ class TenantAdminManager:
                         step_id,
                         plan_id,
                         tenant_id,
+                        execution_mode,
                         step_index,
                         title,
                         prompt_text,
@@ -5087,20 +5137,22 @@ class TenantAdminManager:
                         $5,
                         $6,
                         $7,
+                        $8,
                         'pending',
                         0,
-                        $8,
-                        NULL,
                         $9,
-                        $10::jsonb,
-                        $11,
-                        $12::jsonb,
+                        NULL,
+                        $10,
+                        $11::jsonb,
+                        $12,
+                        $13::jsonb,
                         '{}'::jsonb,
-                        $13::jsonb
+                        $14::jsonb
                     )
                     RETURNING step_id::text AS step_id,
                               plan_id::text AS plan_id,
                               tenant_id::text AS tenant_id,
+                              execution_mode,
                               step_index,
                               title,
                               prompt_text,
@@ -5123,6 +5175,7 @@ class TenantAdminManager:
                     step_id,
                     plan_id,
                     tenant_id,
+                    mode,
                     idx,
                     step["title"],
                     step["prompt_text"],
@@ -5174,6 +5227,7 @@ class TenantAdminManager:
             scheduled_for=run_at,
             reason="plan_created",
             requested_by=actor.actor_sub,
+            execution_mode=mode,
         )
 
         await self._write_audit(
@@ -5185,6 +5239,7 @@ class TenantAdminManager:
                 "plan_id": plan_id,
                 "title": plan_title,
                 "goal": plan_goal,
+                "execution_mode": mode,
                 "status": "queued",
                 "steps": len(step_rows),
             },
@@ -5215,6 +5270,7 @@ class TenantAdminManager:
                    tenant_id::text AS tenant_id,
                    title,
                    goal,
+                   execution_mode,
                    status,
                    current_step_index,
                    total_steps,
@@ -5251,6 +5307,7 @@ class TenantAdminManager:
                    tenant_id::text AS tenant_id,
                    title,
                    goal,
+                   execution_mode,
                    status,
                    current_step_index,
                    total_steps,
@@ -5290,6 +5347,7 @@ class TenantAdminManager:
             SELECT step_id::text AS step_id,
                    plan_id::text AS plan_id,
                    tenant_id::text AS tenant_id,
+                   execution_mode,
                    step_index,
                    title,
                    prompt_text,
@@ -5350,6 +5408,7 @@ class TenantAdminManager:
                       tenant_id::text AS tenant_id,
                       title,
                       goal,
+                      execution_mode,
                       status,
                       current_step_index,
                       total_steps,
@@ -5730,6 +5789,7 @@ class TenantAdminManager:
                 RETURNING step_id::text AS step_id,
                           plan_id::text AS plan_id,
                           tenant_id::text AS tenant_id,
+                          execution_mode,
                           step_index,
                           title,
                           prompt_text,
@@ -5766,6 +5826,7 @@ class TenantAdminManager:
                     tenant_id,
                     plan_id,
                     step_id,
+                    execution_mode,
                     attempt_number,
                     worker_id,
                     lease_token,
@@ -5778,13 +5839,15 @@ class TenantAdminManager:
                     $5,
                     $6,
                     $7,
-                    $8::jsonb
+                    $8,
+                    $9::jsonb
                 )
                 """,
                 retry_id,
                 tenant_id,
                 plan_id,
                 step_id,
+                str(step_data.get("execution_mode") or "live"),
                 attempt_number,
                 worker,
                 token,
@@ -6684,6 +6747,10 @@ class TenantAdminManager:
             step.get("execution_target"),
             default="windows_local",
         )
+        execution_mode = self._normalize_execution_mode(
+            step.get("execution_mode"),
+            default="live",
+        )
         if execution_target == "windows_local":
             raise ValueError(
                 "step execution_target is windows_local and cannot be worker dispatched"
@@ -6714,12 +6781,14 @@ class TenantAdminManager:
             plan_id=plan_id,
             step_id=step_id,
             retry_id=retry_id,
+            execution_mode=execution_mode,
         )
         payload_json: dict[str, Any] = {
             "tenant_id": tenant_id,
             "plan_id": plan_id,
             "step_id": step_id,
             "retry_id": retry_id,
+            "execution_mode": execution_mode,
             "step_index": step.get("step_index"),
             "title": step.get("title"),
             "runner": runner,
@@ -6794,6 +6863,7 @@ class TenantAdminManager:
                     plan_id,
                     step_id,
                     retry_id,
+                    execution_mode,
                     execution_target,
                     target_node_id,
                     required_capabilities,
@@ -6810,16 +6880,18 @@ class TenantAdminManager:
                     $5::uuid,
                     $6,
                     $7,
-                    $8::jsonb,
-                    $9,
-                    $10::jsonb,
-                    $11,
-                    $12::jsonb,
+                    $8,
+                    $9::jsonb,
+                    $10,
+                    $11::jsonb,
+                    $12,
+                    $13::jsonb,
                     'queued'
                 )
                 ON CONFLICT (tenant_id, plan_id, step_id, retry_id)
                 DO UPDATE
-                    SET execution_target = EXCLUDED.execution_target,
+                    SET execution_mode = EXCLUDED.execution_mode,
+                        execution_target = EXCLUDED.execution_target,
                         target_node_id = EXCLUDED.target_node_id,
                         required_capabilities = EXCLUDED.required_capabilities,
                         max_runtime_seconds = EXCLUDED.max_runtime_seconds,
@@ -6832,6 +6904,7 @@ class TenantAdminManager:
                           plan_id::text AS plan_id,
                           step_id::text AS step_id,
                           retry_id::text AS retry_id,
+                          execution_mode,
                           execution_target,
                           target_node_id,
                           required_capabilities,
@@ -6855,6 +6928,7 @@ class TenantAdminManager:
                 plan_id,
                 step_id,
                 retry_id,
+                execution_mode,
                 execution_target,
                 target_node_id,
                 json.dumps(required_capabilities),
@@ -6965,6 +7039,7 @@ class TenantAdminManager:
                        plan_id::text AS plan_id,
                        step_id::text AS step_id,
                        retry_id::text AS retry_id,
+                       execution_mode,
                        execution_target,
                        target_node_id,
                        required_capabilities,
@@ -6992,6 +7067,7 @@ class TenantAdminManager:
                             AND lease_expires_at <= now()
                         )
                   )
+                  AND execution_mode = 'live'
                   AND execution_target IN ('any_worker', $2)
                   AND (target_node_id IS NULL OR target_node_id = $3)
                 ORDER BY created_at ASC
@@ -7007,6 +7083,12 @@ class TenantAdminManager:
 
             for candidate_row in candidates:
                 candidate = dict(candidate_row)
+                candidate_mode = self._normalize_execution_mode(
+                    candidate.get("execution_mode"),
+                    default="live",
+                )
+                if candidate_mode != "live":
+                    continue
                 job_required = self._normalize_worker_capabilities(
                     candidate.get("required_capabilities") or []
                 )
@@ -7149,6 +7231,7 @@ class TenantAdminManager:
                               plan_id::text AS plan_id,
                               step_id::text AS step_id,
                               retry_id::text AS retry_id,
+                              execution_mode,
                               execution_target,
                               target_node_id,
                               required_capabilities,
@@ -7282,6 +7365,7 @@ class TenantAdminManager:
                        plan_id::text AS plan_id,
                        step_id::text AS step_id,
                        retry_id::text AS retry_id,
+                       execution_mode,
                        status,
                        claimed_by_node_id
                 FROM tenant_worker_jobs
@@ -7326,6 +7410,7 @@ class TenantAdminManager:
                           plan_id::text AS plan_id,
                           step_id::text AS step_id,
                           retry_id::text AS retry_id,
+                          execution_mode,
                           execution_target,
                           target_node_id,
                           required_capabilities,
@@ -7416,6 +7501,7 @@ class TenantAdminManager:
                     scheduled_for=completion["next_run_at"],
                     reason="worker_result_completed",
                     requested_by=worker_actor,
+                    execution_mode=str(job_row.get("execution_mode") or "live"),
                 )
             return {
                 "accepted": True,
@@ -7451,6 +7537,7 @@ class TenantAdminManager:
                 scheduled_for=failure["next_run_at"],
                 reason="worker_result_retry",
                 requested_by=worker_actor,
+                execution_mode=str(job_row.get("execution_mode") or "live"),
             )
         return {
             "accepted": True,
@@ -7606,10 +7693,26 @@ class TenantAdminManager:
         artifact_type: str,
         artifact_ref: str | None = None,
         artifact_json: dict[str, Any] | None = None,
+        execution_mode: str | None = None,
     ) -> dict[str, Any]:
         artifact_kind = str(artifact_type or "").strip().lower()
         if not artifact_kind:
             raise ValueError("Missing artifact_type")
+        if execution_mode is not None:
+            mode = self._normalize_execution_mode(execution_mode, default="live")
+        else:
+            fetched_mode = await self._fetchval(
+                """
+                SELECT execution_mode
+                FROM tenant_execution_plans
+                WHERE tenant_id = $1::uuid
+                  AND plan_id = $2::uuid
+                LIMIT 1
+                """,
+                tenant_id,
+                plan_id,
+            )
+            mode = self._normalize_execution_mode(fetched_mode, default="live")
         artifact_row = await self._fetchrow(
             """
             INSERT INTO tenant_execution_artifacts (
@@ -7618,6 +7721,7 @@ class TenantAdminManager:
                 plan_id,
                 step_id,
                 retry_id,
+                execution_mode,
                 artifact_type,
                 artifact_ref,
                 artifact_json
@@ -7629,13 +7733,15 @@ class TenantAdminManager:
                 $5::uuid,
                 $6,
                 $7,
-                $8::jsonb
+                $8,
+                $9::jsonb
             )
             RETURNING artifact_id::text AS artifact_id,
                       tenant_id::text AS tenant_id,
                       plan_id::text AS plan_id,
                       step_id::text AS step_id,
                       retry_id::text AS retry_id,
+                      execution_mode,
                       artifact_type,
                       artifact_ref,
                       artifact_json,
@@ -7646,6 +7752,7 @@ class TenantAdminManager:
             plan_id,
             step_id,
             retry_id,
+            mode,
             artifact_kind,
             artifact_ref,
             json.dumps(artifact_json or {}),
@@ -8022,7 +8129,17 @@ class TenantAdminManager:
         return scope
 
     @staticmethod
-    def _worker_artifact_scope(*, tenant_id: str, plan_id: str, step_id: str, retry_id: str) -> str:
+    def _worker_artifact_scope(
+        *,
+        tenant_id: str,
+        plan_id: str,
+        step_id: str,
+        retry_id: str,
+        execution_mode: str = "live",
+    ) -> str:
+        mode = TenantAdminManager._normalize_execution_mode(execution_mode, default="live")
+        if mode == "test":
+            return f"worker_artifact:test:{tenant_id}:{plan_id}:{step_id}:{retry_id}"
         return f"worker_artifact:{tenant_id}:{plan_id}:{step_id}:{retry_id}"
 
     @classmethod
@@ -8964,6 +9081,7 @@ class TenantAdminManager:
                    plan_id::text AS plan_id,
                    step_id::text AS step_id,
                    retry_id::text AS retry_id,
+                   execution_mode,
                    execution_target,
                    target_node_id,
                    required_capabilities,
@@ -9004,6 +9122,7 @@ class TenantAdminManager:
                    plan_id::text AS plan_id,
                    step_id::text AS step_id,
                    retry_id::text AS retry_id,
+                   execution_mode,
                    execution_target,
                    target_node_id,
                    required_capabilities,

@@ -126,6 +126,134 @@ async def test_execute_remote_step_dispatches_worker_job() -> None:
 
 
 @pytest.mark.asyncio
+async def test_execute_test_mode_remote_step_simulates_without_worker_dispatch() -> None:
+    manager = AsyncMock()
+    manager.claim_execution_plan_lease = AsyncMock(
+        return_value={
+            "created_by": "42",
+            "execution_mode": "test",
+            "title": "Night Build",
+            "goal": "Ship safely",
+        }
+    )
+    manager.claim_next_execution_step = AsyncMock(
+        return_value={
+            "step": {
+                "step_id": "11111111-1111-1111-1111-111111111111",
+                "step_index": 0,
+                "title": "Step 1",
+                "prompt_text": "Patch the repo",
+                "execution_mode": "test",
+                "execution_target": "any_worker",
+                "metadata": {
+                    "runner": "codex",
+                    "action": "repo.patch",
+                    "payload": {
+                        "repo_root": "/workspace/repo",
+                        "command": ["git", "status"],
+                    },
+                },
+            },
+            "retry": {
+                "retry_id": "22222222-2222-2222-2222-222222222222",
+                "attempt_number": 1,
+            },
+        }
+    )
+    manager.record_execution_artifact = AsyncMock(return_value={"artifact_id": "a1"})
+    manager.complete_execution_step = AsyncMock(
+        return_value={
+            "plan": {"status": "completed"},
+            "step": {"step_id": "11111111-1111-1111-1111-111111111111"},
+            "has_more": False,
+            "next_run_at": None,
+        }
+    )
+    manager.dispatch_execution_step_to_worker = AsyncMock(return_value={"job_id": "job-1"})
+    manager.schedule_execution_continuation = AsyncMock(return_value="q1")
+    manager.release_execution_plan_lease = AsyncMock(return_value=None)
+
+    review_inbox = AsyncMock()
+    review_inbox.enqueue_overnight_summary = AsyncMock()
+
+    agent = AsyncMock()
+    agent.generate_response = AsyncMock(return_value="Done")
+
+    executor = PlanContinuationExecutor(
+        tenant_admin_manager=manager,
+        agent=agent,
+        review_inbox=review_inbox,
+    )
+    result = await executor.execute(
+        {"tenant_id": "tenant-1", "plan_id": "plan-1", "execution_mode": "test"}
+    )
+
+    assert result["accepted"] is True
+    assert result["simulated"] is True
+    assert result["execution_mode"] == "test"
+    assert result["receipt"]["command_receipt"]["command"] == ["git", "status"]
+    manager.dispatch_execution_step_to_worker.assert_not_awaited()
+    manager.schedule_execution_continuation.assert_not_awaited()
+    manager.complete_execution_step.assert_awaited_once()
+    assert manager.record_execution_artifact.await_count == 2
+    agent.generate_response.assert_not_awaited()
+    review_inbox.enqueue_overnight_summary.assert_not_awaited()
+    manager.release_execution_plan_lease.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_test_mode_local_step_skips_agent_and_schedules_next() -> None:
+    manager = AsyncMock()
+    manager.claim_execution_plan_lease = AsyncMock(
+        return_value={"created_by": "42", "execution_mode": "test"}
+    )
+    manager.claim_next_execution_step = AsyncMock(
+        return_value={
+            "step": {
+                "step_id": "11111111-1111-1111-1111-111111111111",
+                "step_index": 0,
+                "title": "Step 1",
+                "prompt_text": "Draft the summary",
+                "execution_mode": "test",
+                "execution_target": "windows_local",
+                "metadata": {},
+            },
+            "retry": {
+                "retry_id": "22222222-2222-2222-2222-222222222222",
+                "attempt_number": 1,
+            },
+        }
+    )
+    manager.record_execution_artifact = AsyncMock(return_value={"artifact_id": "a1"})
+    manager.complete_execution_step = AsyncMock(
+        return_value={
+            "plan": {"status": "running"},
+            "step": {"step_id": "11111111-1111-1111-1111-111111111111"},
+            "has_more": True,
+            "next_run_at": datetime.now(UTC),
+        }
+    )
+    manager.schedule_execution_continuation = AsyncMock(return_value="q1")
+    manager.release_execution_plan_lease = AsyncMock(return_value=None)
+
+    agent = AsyncMock()
+    agent.generate_response = AsyncMock(return_value="Done")
+
+    executor = PlanContinuationExecutor(tenant_admin_manager=manager, agent=agent)
+    result = await executor.execute({"tenant_id": "tenant-1", "plan_id": "plan-1"})
+
+    assert result["accepted"] is True
+    assert result["simulated"] is True
+    assert result["has_more"] is True
+    manager.complete_execution_step.assert_awaited_once()
+    manager.schedule_execution_continuation.assert_awaited_once()
+    schedule_kwargs = manager.schedule_execution_continuation.await_args.kwargs
+    assert schedule_kwargs["execution_mode"] == "test"
+    agent.generate_response.assert_not_awaited()
+    manager.release_execution_plan_lease.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_execute_failure_marks_retry_and_reschedules() -> None:
     manager = AsyncMock()
     manager.claim_execution_plan_lease = AsyncMock(return_value={"created_by": "42"})

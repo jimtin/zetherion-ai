@@ -1709,6 +1709,7 @@ class TestTenantAdminEndpoints:
                 "title": "Night Build",
                 "goal": "Ship overnight",
                 "steps": ["Design schema", "Implement routes"],
+                "execution_mode": "test",
             },
         )
         assert created.status == 201
@@ -1748,6 +1749,9 @@ class TestTenantAdminEndpoints:
         assert cancelled.status == 200
 
         tenant_admin_manager.create_execution_plan.assert_awaited_once()
+        assert (
+            tenant_admin_manager.create_execution_plan.await_args.kwargs["execution_mode"] == "test"
+        )
         tenant_admin_manager.list_execution_plans.assert_awaited_once()
         tenant_admin_manager.get_execution_plan.assert_awaited_once()
         tenant_admin_manager.list_execution_plan_steps.assert_awaited_once()

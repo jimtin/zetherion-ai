@@ -2252,6 +2252,7 @@ async def test_create_execution_plan_schedules_continuation_and_audit() -> None:
             "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
             "title": "Night Build",
             "goal": "Ship overnight",
+            "execution_mode": "test",
             "status": "queued",
             "current_step_index": 0,
             "total_steps": 2,
@@ -2337,6 +2338,7 @@ async def test_create_execution_plan_persists_step_metadata() -> None:
             "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
             "title": "Night Build",
             "goal": "Ship overnight",
+            "execution_mode": "test",
             "status": "queued",
             "current_step_index": 0,
             "total_steps": 1,
@@ -2357,6 +2359,7 @@ async def test_create_execution_plan_persists_step_metadata() -> None:
             "step_id": step_id,
             "plan_id": plan_id,
             "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "execution_mode": "test",
             "step_index": 0,
             "title": "Step 1",
             "prompt_text": "Execute automerge",
@@ -2380,9 +2383,12 @@ async def test_create_execution_plan_persists_step_metadata() -> None:
         goal="Ship overnight",
         steps=[{"prompt": "Execute automerge", "metadata": {"executor": "automerge"}}],
         actor=_actor(),
+        execution_mode="test",
     )
 
     assert created["steps"][0]["metadata"] == {"executor": "automerge"}
+    assert created["plan"]["execution_mode"] == "test"
+    assert created["steps"][0]["execution_mode"] == "test"
 
 
 @pytest.mark.asyncio
@@ -2567,6 +2573,7 @@ def _execution_plan_row(
     status: str = "queued",
     next_run_at: datetime | None = None,
     current_step_index: int = 0,
+    execution_mode: str = "live",
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
     return {
@@ -2574,6 +2581,7 @@ def _execution_plan_row(
         "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
         "title": "Night Build",
         "goal": "Ship overnight",
+        "execution_mode": execution_mode,
         "status": status,
         "current_step_index": current_step_index,
         "total_steps": 2,
@@ -2601,12 +2609,14 @@ def _execution_step_row(
     prompt_text: str = "Do the next task",
     execution_target: str = "windows_local",
     required_capabilities: list[str] | None = None,
+    execution_mode: str = "live",
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
     return {
         "step_id": "22222222-2222-2222-2222-222222222222",
         "plan_id": "11111111-1111-1111-1111-111111111111",
         "tenant_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "execution_mode": execution_mode,
         "step_index": step_index,
         "title": f"Step {step_index + 1}",
         "prompt_text": prompt_text,
@@ -2636,6 +2646,7 @@ def _worker_job_row(
     claimed_by_node_id: str | None = None,
     action: str = "worker.noop",
     payload_json: dict[str, Any] | None = None,
+    execution_mode: str = "live",
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
     return {
@@ -2644,6 +2655,7 @@ def _worker_job_row(
         "plan_id": "11111111-1111-1111-1111-111111111111",
         "step_id": "22222222-2222-2222-2222-222222222222",
         "retry_id": "33333333-3333-3333-3333-333333333333",
+        "execution_mode": execution_mode,
         "execution_target": execution_target,
         "target_node_id": None,
         "required_capabilities": required_capabilities or ["repo.patch"],
@@ -3040,8 +3052,10 @@ async def test_worker_dispatch_helper_eligibility_and_selection_paths() -> None:
 
 @pytest.mark.asyncio
 async def test_schedule_execution_continuation_success_and_failure_paths() -> None:
-    manager = TenantAdminManager(pool=_FakePool(_FakeConn()))  # type: ignore[arg-type]
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
     manager._execute = AsyncMock(return_value="INSERT 1")  # type: ignore[method-assign]
+    conn.fetchval = AsyncMock(return_value="test")
 
     queued = await manager.schedule_execution_continuation(
         tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
@@ -3054,6 +3068,17 @@ async def test_schedule_execution_continuation_success_and_failure_paths() -> No
     manager._execute.assert_awaited_once()
     execute_args = manager._execute.await_args.args
     assert execute_args[3] == 42
+    assert json.loads(execute_args[4])["execution_mode"] == "test"
+
+    manager._execute.reset_mock()
+    queued_live = await manager.schedule_execution_continuation(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        plan_id="11111111-1111-1111-1111-111111111111",
+        execution_mode="live",
+    )
+    assert queued_live is not None
+    live_args = manager._execute.await_args.args
+    assert json.loads(live_args[4])["execution_mode"] == "live"
 
     manager._execute = AsyncMock(side_effect=RuntimeError("db down"))  # type: ignore[method-assign]
     failed = await manager.schedule_execution_continuation(
@@ -3521,7 +3546,9 @@ async def test_dispatch_execution_step_to_worker_and_claim_paths() -> None:
     assert dispatch["status"] == "queued"
     insert_call = conn.fetchrow.await_args_list[0]
     _, *insert_args = insert_call.args
-    payload_json = json.loads(insert_args[11])
+    payload_json = json.loads(insert_args[-1])
+    assert dispatch["execution_mode"] == "live"
+    assert payload_json["execution_mode"] == "live"
     assert "prompt_text" not in payload_json
     worker_artifacts = payload_json["worker_artifacts"]
     assert len(worker_artifacts) == 1
@@ -3536,7 +3563,9 @@ async def test_dispatch_execution_step_to_worker_and_claim_paths() -> None:
     )
     assert claimed_job is not None
     assert claimed_job["status"] == "running"
+    assert claimed_job["execution_mode"] == "live"
     assert conn.execute.await_count >= 3
+    assert "AND execution_mode = 'live'" in conn.fetch.await_args_list[0].args[0]
 
     with pytest.raises(ValueError, match="windows_local"):
         await manager.dispatch_execution_step_to_worker(
@@ -3669,6 +3698,25 @@ async def test_dispatch_and_claim_worker_job_error_paths() -> None:
 
 
 @pytest.mark.asyncio
+async def test_claim_worker_dispatch_job_skips_test_mode_candidates() -> None:
+    conn = _FakeConn()
+    manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
+    manager._worker_node_meets_dispatch_requirements = AsyncMock(return_value=True)  # type: ignore[method-assign]
+
+    conn.fetchrow.return_value = {"node_id": "node-1"}
+    conn.fetch.return_value = [_worker_job_row(status="queued", execution_mode="test")]
+
+    claimed = await manager.claim_worker_dispatch_job(
+        tenant_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        node_id="node-1",
+        required_capabilities=["repo.patch"],
+    )
+
+    assert claimed is None
+    conn.fetchval.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_dispatch_and_claim_rollout_guard_paths() -> None:
     conn = _FakeConn()
     manager = TenantAdminManager(pool=_FakePool(conn))  # type: ignore[arg-type]
@@ -3717,6 +3765,7 @@ async def test_dispatch_and_claim_rollout_guard_paths() -> None:
 
 def test_worker_delegation_helper_methods() -> None:
     assert TenantAdminManager._normalize_worker_delegation_ttl_seconds("bad") == 3600
+    assert TenantAdminManager._normalize_execution_mode("TEST") == "test"
     assert TenantAdminManager._normalize_worker_delegation_permission("repo.patch") == "repo.patch"
     assert TenantAdminManager._normalize_worker_delegation_permissions(
         ["repo.patch", "repo.patch", "repo.commit"]
@@ -3739,6 +3788,8 @@ def test_worker_delegation_helper_methods() -> None:
         TenantAdminManager._normalize_worker_delegation_scope("worker_artifact:tenant:plan")
     with pytest.raises(ValueError, match="worker artifact scope must start"):
         TenantAdminManager._normalize_worker_artifact_scope("repo:/workspace/repo")
+    with pytest.raises(ValueError, match="execution_mode must be one of"):
+        TenantAdminManager._normalize_execution_mode("preview")
 
     artifacts = TenantAdminManager._build_worker_artifacts(
         artifact_scope="worker_artifact:tenant-a:plan-1:step-1:retry-1",
@@ -3779,6 +3830,16 @@ def test_worker_delegation_helper_methods() -> None:
             retry_id="retry-1",
         )
         == "worker_artifact:tenant-a:plan-1:step-1:retry-1"
+    )
+    assert (
+        TenantAdminManager._worker_artifact_scope(
+            tenant_id="tenant-a",
+            plan_id="plan-1",
+            step_id="step-1",
+            retry_id="retry-1",
+            execution_mode="test",
+        )
+        == "worker_artifact:test:tenant-a:plan-1:step-1:retry-1"
     )
     assert TenantAdminManager._resolve_worker_delegation_scope_for_job(
         action="repo.patch",
