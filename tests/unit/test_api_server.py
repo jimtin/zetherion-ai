@@ -99,6 +99,10 @@ class TestPublicAPIServerCreateApp:
         assert "/api/v1/test/profiles/{profile_id}" in paths
         assert "/api/v1/test/profiles/{profile_id}/rules" in paths
         assert "/api/v1/test/profiles/{profile_id}/preview" in paths
+        assert "/api/v1/notifications/channels" in paths
+        assert "/api/v1/notifications/events" in paths
+        assert "/api/v1/notifications/subscriptions" in paths
+        assert "/api/v1/notifications/subscriptions/{subscription_id}" in paths
 
         document_route_methods = {
             route.method
@@ -203,6 +207,12 @@ class TestRunServer:
             assert kwargs["tenant_admin_manager"] is None
         if "trust_policy_evaluator" in kwargs:
             assert kwargs["trust_policy_evaluator"] is None
+        if "announcement_repository" in kwargs:
+            assert kwargs["announcement_repository"] is None
+        if "announcement_policy_engine" in kwargs:
+            assert kwargs["announcement_policy_engine"] is None
+        if "announcement_channel_registry" in kwargs:
+            assert kwargs["announcement_channel_registry"] is None
         # Newer local API versions pass this through; CI's committed version may not.
         if "inference_broker" in kwargs:
             assert kwargs["inference_broker"] is None

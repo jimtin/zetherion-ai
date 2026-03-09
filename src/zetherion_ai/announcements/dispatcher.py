@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Protocol
 
@@ -27,6 +27,17 @@ class AnnouncementDispatchError(RuntimeError):
     retryable: bool = True
 
 
+@dataclass(frozen=True)
+class AnnouncementChannelDefinition:
+    """Registry metadata for one announcement delivery channel."""
+
+    channel: str
+    display_name: str
+    description: str
+    public_enabled: bool = False
+    config_fields: tuple[str, ...] = field(default_factory=tuple)
+
+
 class AnnouncementChannelAdapter(Protocol):
     """Channel adapter contract for announcement delivery."""
 
@@ -39,18 +50,48 @@ class AnnouncementChannelRegistry:
 
     def __init__(self) -> None:
         self._adapters: dict[str, AnnouncementChannelAdapter] = {}
+        self._definitions: dict[str, AnnouncementChannelDefinition] = {}
 
-    def register(self, channel: str, adapter: AnnouncementChannelAdapter) -> None:
+    def register(
+        self,
+        channel: str,
+        adapter: AnnouncementChannelAdapter,
+        *,
+        definition: AnnouncementChannelDefinition | None = None,
+    ) -> None:
         normalized = str(channel or "").strip().lower()
         if not normalized:
             raise ValueError("Announcement channel name is required")
         self._adapters[normalized] = adapter
+        if definition is not None:
+            self._definitions[normalized] = AnnouncementChannelDefinition(
+                channel=normalized,
+                display_name=definition.display_name,
+                description=definition.description,
+                public_enabled=bool(definition.public_enabled),
+                config_fields=tuple(definition.config_fields),
+            )
+        elif normalized not in self._definitions:
+            self._definitions[normalized] = AnnouncementChannelDefinition(
+                channel=normalized,
+                display_name=normalized.replace("_", " ").title(),
+                description=f"{normalized} delivery channel",
+            )
 
     def get(self, channel: str) -> AnnouncementChannelAdapter | None:
         return self._adapters.get(str(channel or "").strip().lower())
 
     def channels(self) -> list[str]:
         return sorted(self._adapters)
+
+    def get_definition(self, channel: str) -> AnnouncementChannelDefinition | None:
+        return self._definitions.get(str(channel or "").strip().lower())
+
+    def definitions(self, *, public_only: bool = False) -> list[AnnouncementChannelDefinition]:
+        definitions = sorted(self._definitions.values(), key=lambda item: item.channel)
+        if not public_only:
+            return definitions
+        return [item for item in definitions if item.public_enabled]
 
 
 class AnnouncementDispatcher:

@@ -147,6 +147,30 @@ The manifest captures the current state of:
   - records tagged test analytics rows but suppresses tenant-derived writes such
     as recommendations, funnel updates, CRM interactions, and feedback mutation
 
+### Segment 6 tenant notification API additions
+
+- `src/zetherion_ai/api/tenant.py`
+  - persists tenant notification subscriptions in tenant-scoped runtime storage;
+    subscription definitions stay bound to `tenant_id` and never reuse owner
+    Discord preference rows or owner-personal identifiers
+- `src/zetherion_ai/api/notification_service.py`
+  - fans tenant notification events into the existing announcement control-plane
+    core while keeping the source event tenant-scoped and only attaching
+    tenant-local recipient metadata (`tenant_id`, `subscription_id`,
+    optional tenant email account id)
+- `src/zetherion_ai/api/routes/notifications.py`
+  - exposes `/api/v1/notifications/*` as live-key tenant routes only; `sk_test`
+    traffic remains blocked so sandbox traffic cannot contaminate live
+    notification delivery or control-plane event history
+- `src/zetherion_ai/announcements/channels.py`
+  - centralizes webhook/email channel registration so public channel discovery
+    and bot-side dispatch use the same registry definitions; email dispatch uses
+    a tenant-connected Google mailbox and never borrows owner-personal accounts
+- `src/zetherion_ai/discord/bot.py`
+  - announcement dispatch now registers public webhook/email adapters alongside
+    owner Discord DM delivery without changing the owner-personal trust boundary;
+    all cross-channel orchestration state remains in `control_plane`
+
 ### Segment 4 sandbox control-plane isolation additions
 
 - `src/zetherion_ai/admin/tenant_admin_manager.py`

@@ -162,6 +162,7 @@ class TestAuthMiddleware:
         app.router.add_get("/api/v1/tenants", protected)
         app.router.add_post("/api/v1/sessions", protected)
         app.router.add_get("/api/v1/test/profiles", protected)
+        app.router.add_post("/api/v1/notifications/events", protected)
         app.router.add_post("/api/v1/chat", chat)
         app.router.add_post("/api/v1/analytics/events", chat)
         app.router.add_get("/api/v1/analytics/funnel", protected)
@@ -251,6 +252,21 @@ class TestAuthMiddleware:
         app = self._make_app(tenant_manager=tm)
         async with TestClient(TestServer(app)) as client:
             resp = await client.get("/api/v1/tenants", headers={"X-API-Key": "sk_test_valid"})
+            assert resp.status == 403
+
+    @pytest.mark.asyncio
+    async def test_test_api_key_rejected_on_notifications_routes(self):
+        """sk_test_ keys cannot publish tenant notifications on the live API surface."""
+        tm = AsyncMock()
+        tm.authenticate_api_key = AsyncMock(
+            return_value={"tenant_id": "abc-123", "is_active": True, "execution_mode": "test"}
+        )
+        app = self._make_app(tenant_manager=tm)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.post(
+                "/api/v1/notifications/events",
+                headers={"X-API-Key": "sk_test_valid"},
+            )
             assert resp.status == 403
 
     @pytest.mark.asyncio

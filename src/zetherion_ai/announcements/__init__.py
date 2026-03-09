@@ -1,8 +1,13 @@
 """Announcement domain storage and models."""
 
+from zetherion_ai.announcements.channels import (
+    TenantGoogleAnnouncementEmailSender,
+    build_announcement_channel_registry,
+)
 from zetherion_ai.announcements.discord_adapter import DiscordDMChannelAdapter
 from zetherion_ai.announcements.dispatcher import (
     AnnouncementChannelAdapter,
+    AnnouncementChannelDefinition,
     AnnouncementChannelRegistry,
     AnnouncementDispatcher,
     AnnouncementDispatchError,
@@ -33,6 +38,7 @@ __all__ = [
     "AnnouncementEvent",
     "AnnouncementEventInput",
     "AnnouncementChannelAdapter",
+    "AnnouncementChannelDefinition",
     "AnnouncementChannelRegistry",
     "AnnouncementDispatchError",
     "AnnouncementDispatcher",
@@ -49,6 +55,8 @@ __all__ = [
     "AnnouncementSuppressionState",
     "AnnouncementUserPreferences",
     "ResolvedAnnouncementPreferences",
+    "TenantGoogleAnnouncementEmailSender",
     "WebhookChannelAdapter",
+    "build_announcement_channel_registry",
     "resolve_announcement_recipient",
 ]

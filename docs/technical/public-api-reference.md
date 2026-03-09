@@ -11,7 +11,16 @@ plus optional tenant-scoped YouTube endpoints.
 This API is distinct from the internal Skills API (`:8080`) and is not the public
 client contract. External clients must integrate through CGS `/service/ai/v1`.
 
-Maintenance note (2026-03-09):
+Maintenance note (2026-03-10):
+- Segment 6 adds tenant notification routes on top of the shared announcement core:
+  - `GET /api/v1/notifications/channels`
+  - `POST /api/v1/notifications/events`
+  - `GET /api/v1/notifications/subscriptions`
+  - `POST /api/v1/notifications/subscriptions`
+  - `PATCH /api/v1/notifications/subscriptions/{subscription_id}`
+  - `DELETE /api/v1/notifications/subscriptions/{subscription_id}`
+- Notification channels are registry-driven. Webhook delivery is always available; email delivery uses a tenant-connected Google mailbox when configured.
+- `sk_test_...` keys remain intentionally blocked from `/api/v1/notifications/*`.
 - Segment 3 adds tenant sandbox execution to the upstream runtime without changing the live chat wire format.
 - `POST /api/v1/sessions` now accepts optional `test_profile_id`, returns `execution_mode` plus `test_profile_id`, and mints session tokens that carry `execution_mode=live|test`.
 - Tenant API key auth now supports both `sk_live_...` and `sk_test_...`. In this segment, `sk_test_...` keys are intentionally limited to `POST /api/v1/sessions` plus `/api/v1/test/*`.
@@ -56,7 +65,7 @@ Maintenance note (2026-03-09):
 
 The API uses two auth modes:
 
-1. `X-API-Key` for tenant control-plane calls (sessions, sandbox controls, release markers, and YouTube routes)
+1. `X-API-Key` for tenant control-plane calls (sessions, sandbox controls, notifications, release markers, and YouTube routes)
 2. `Authorization: Bearer zt_sess_...` for session-scoped calls (chat and analytics)
 
 ### API Key auth
@@ -414,6 +423,159 @@ Preview rule matching and deterministic output for a hypothetical request withou
     {
       "type": "done",
       "model": "sandbox-simulated"
+    }
+  ]
+}
+```
+
+---
+
+## Notifications (API Key)
+
+Tenant notification routes are live-key only in this segment. `sk_test_...` keys remain
+restricted to `/api/v1/sessions` plus `/api/v1/test/*`.
+
+Webhook delivery is always available. Email delivery is available when the tenant has at
+least one connected Google mailbox; notifications use that mailbox to send outbound email.
+
+### GET /api/v1/notifications/channels
+
+List the public notification channels exposed by the shared announcement registry.
+
+**Headers:** `X-API-Key`
+
+**Response 200:**
+
+```json
+{
+  "channels": [
+    {
+      "channel_id": "webhook",
+      "display_name": "Webhook",
+      "description": "POST a structured notification payload to a tenant webhook endpoint.",
+      "config_fields": ["webhook_url"],
+      "status": "available",
+      "metadata": {}
+    },
+    {
+      "channel_id": "email",
+      "display_name": "Email",
+      "description": "Send a notification email via a tenant-connected Google mailbox.",
+      "config_fields": ["email", "account_id"],
+      "status": "available",
+      "metadata": {
+        "account_ids": ["acct-1"]
+      }
+    }
+  ],
+  "count": 2
+}
+```
+
+### GET /api/v1/notifications/subscriptions
+
+List tenant notification subscriptions.
+
+**Headers:** `X-API-Key`
+
+### POST /api/v1/notifications/subscriptions
+
+Create one tenant notification subscription.
+
+**Headers:** `X-API-Key`
+
+**Request:**
+
+```json
+{
+  "source_app": "checkout",
+  "event_types": ["order.failed"],
+  "channel_id": "webhook",
+  "channel_config": {
+    "webhook_url": "https://example.com/hooks/orders"
+  },
+  "template": {
+    "title": "Checkout alert: {title}",
+    "body": "{body}\n\nPayload: {payload_json}"
+  },
+  "status": "active"
+}
+```
+
+**Response 201:**
+
+```json
+{
+  "subscription_id": "...",
+  "tenant_id": "...",
+  "source_app": "checkout",
+  "event_types": ["order.failed"],
+  "channel_id": "webhook",
+  "channel_config": {
+    "webhook_url": "https://example.com/hooks/orders"
+  },
+  "template": {
+    "title": "Checkout alert: {title}",
+    "body": "{body}\n\nPayload: {payload_json}"
+  },
+  "status": "active",
+  "created_at": "2026-03-10T10:00:00+00:00",
+  "updated_at": "2026-03-10T10:00:00+00:00"
+}
+```
+
+### PATCH /api/v1/notifications/subscriptions/{subscription_id}
+
+Patch one subscription. Channel type is immutable in this segment; patch event types,
+source app, channel config, template, or status.
+
+**Headers:** `X-API-Key`
+
+### DELETE /api/v1/notifications/subscriptions/{subscription_id}
+
+Delete one subscription.
+
+**Headers:** `X-API-Key`
+
+### POST /api/v1/notifications/events
+
+Publish one tenant event and fan it out to all matching subscriptions through the shared
+announcement core.
+
+**Headers:** `X-API-Key`
+
+**Request:**
+
+```json
+{
+  "source_app": "checkout",
+  "event_type": "order.failed",
+  "severity": "high",
+  "title": "Payment failed",
+  "body": "Card charge was declined.",
+  "payload": {
+    "order_id": "ord-1"
+  },
+  "dedupe_key": "order:ord-1",
+  "occurred_at": "2026-03-10T10:01:00+00:00"
+}
+```
+
+**Response 202:**
+
+```json
+{
+  "matched_subscriptions": 1,
+  "deliveries": [
+    {
+      "subscription_id": "sub-1",
+      "channel_id": "webhook",
+      "receipt": {
+        "status": "scheduled",
+        "event_id": "evt-1",
+        "scheduled_for": "2026-03-10T10:01:00+00:00",
+        "reason_code": "recipient_channel_immediate_default"
+      }
     }
   ]
 }

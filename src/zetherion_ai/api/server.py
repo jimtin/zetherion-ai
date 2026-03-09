@@ -55,6 +55,14 @@ from zetherion_ai.api.routes.messaging import (
     handle_list_messaging_messages,
     handle_send_messaging_message,
 )
+from zetherion_ai.api.routes.notifications import (
+    handle_create_notification_subscription,
+    handle_delete_notification_subscription,
+    handle_list_notification_channels,
+    handle_list_notification_subscriptions,
+    handle_patch_notification_subscription,
+    handle_publish_notification_event,
+)
 from zetherion_ai.api.routes.sessions import (
     handle_create_session,
     handle_delete_session,
@@ -101,6 +109,9 @@ class PublicAPIServer:
         document_service: DocumentService | None = None,
         tenant_admin_manager: Any = None,
         trust_policy_evaluator: Any = None,
+        announcement_repository: Any = None,
+        announcement_policy_engine: Any = None,
+        announcement_channel_registry: Any = None,
     ) -> None:
         self._tenant_manager = tenant_manager
         self._jwt_secret = jwt_secret
@@ -117,6 +128,9 @@ class PublicAPIServer:
         self._document_service = document_service
         self._tenant_admin_manager = tenant_admin_manager
         self._trust_policy_evaluator = trust_policy_evaluator
+        self._announcement_repository = announcement_repository
+        self._announcement_policy_engine = announcement_policy_engine
+        self._announcement_channel_registry = announcement_channel_registry
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
         self._rate_limiter = RateLimiter()
@@ -175,6 +189,12 @@ class PublicAPIServer:
             app["tenant_admin_manager"] = self._tenant_admin_manager
         if self._trust_policy_evaluator is not None:
             app["trust_policy_evaluator"] = self._trust_policy_evaluator
+        if self._announcement_repository is not None:
+            app["announcement_repository"] = self._announcement_repository
+        if self._announcement_policy_engine is not None:
+            app["announcement_policy_engine"] = self._announcement_policy_engine
+        if self._announcement_channel_registry is not None:
+            app["announcement_channel_registry"] = self._announcement_channel_registry
 
         # YouTube skill state (accessed by route handlers)
         if self._youtube_storage is not None:
@@ -215,6 +235,26 @@ class PublicAPIServer:
         app.router.add_post("/api/v1/chat", handle_chat)
         app.router.add_post("/api/v1/chat/stream", handle_chat_stream)
         app.router.add_get("/api/v1/chat/history", handle_chat_history)
+
+        # Tenant notifications (API key auth)
+        app.router.add_get("/api/v1/notifications/channels", handle_list_notification_channels)
+        app.router.add_post("/api/v1/notifications/events", handle_publish_notification_event)
+        app.router.add_get(
+            "/api/v1/notifications/subscriptions",
+            handle_list_notification_subscriptions,
+        )
+        app.router.add_post(
+            "/api/v1/notifications/subscriptions",
+            handle_create_notification_subscription,
+        )
+        app.router.add_patch(
+            "/api/v1/notifications/subscriptions/{subscription_id}",
+            handle_patch_notification_subscription,
+        )
+        app.router.add_delete(
+            "/api/v1/notifications/subscriptions/{subscription_id}",
+            handle_delete_notification_subscription,
+        )
 
         # Analytics / app watcher (session token auth)
         app.router.add_post("/api/v1/analytics/events", handle_analytics_events)
@@ -343,6 +383,9 @@ async def run_server(
     document_service: DocumentService | None = None,
     tenant_admin_manager: Any = None,
     trust_policy_evaluator: Any = None,
+    announcement_repository: Any = None,
+    announcement_policy_engine: Any = None,
+    announcement_channel_registry: Any = None,
 ) -> None:
     """Run the public API server (main entry point for Docker container)."""
     server = PublicAPIServer(
@@ -360,6 +403,9 @@ async def run_server(
         document_service=document_service,
         tenant_admin_manager=tenant_admin_manager,
         trust_policy_evaluator=trust_policy_evaluator,
+        announcement_repository=announcement_repository,
+        announcement_policy_engine=announcement_policy_engine,
+        announcement_channel_registry=announcement_channel_registry,
     )
     await server.start()
 
@@ -377,6 +423,8 @@ def main() -> None:
     import os
 
     from zetherion_ai.admin import TenantAdminManager
+    from zetherion_ai.announcements import AnnouncementPolicyEngine, AnnouncementRepository
+    from zetherion_ai.announcements.channels import build_announcement_channel_registry
     from zetherion_ai.config import get_settings, set_tenant_admin_manager
     from zetherion_ai.memory.qdrant import QdrantMemory
     from zetherion_ai.security.domain_keys import build_runtime_encryptors
@@ -409,6 +457,9 @@ def main() -> None:
         tenant_admin_manager: TenantAdminManager | None = None
         trust_policy_evaluator = TrustPolicyEvaluator()
         tenant_encryptor = None
+        announcement_repository = None
+        announcement_policy_engine = None
+        announcement_channel_registry = None
 
         try:
             passphrase_secret = getattr(settings, "encryption_passphrase", None)
@@ -429,6 +480,18 @@ def main() -> None:
                 log.info("public_api_tenant_admin_manager_initialized")
         except Exception as e:
             log.warning("public_api_tenant_admin_manager_init_failed", error=str(e))
+
+        if pool is not None:
+            try:
+                announcement_repository = AnnouncementRepository()
+                await announcement_repository.initialize(pool)
+                announcement_policy_engine = AnnouncementPolicyEngine(announcement_repository)
+                announcement_channel_registry = build_announcement_channel_registry(
+                    tenant_admin_manager=tenant_admin_manager,
+                )
+                log.info("public_api_notifications_initialized")
+            except Exception as e:
+                log.warning("public_api_notifications_init_failed", error=str(e))
 
         api_broker: Any = None
         try:
@@ -514,6 +577,9 @@ def main() -> None:
                 document_service=document_service,
                 tenant_admin_manager=tenant_admin_manager,
                 trust_policy_evaluator=trust_policy_evaluator,
+                announcement_repository=announcement_repository,
+                announcement_policy_engine=announcement_policy_engine,
+                announcement_channel_registry=announcement_channel_registry,
             )
         finally:
             if api_broker is not None:

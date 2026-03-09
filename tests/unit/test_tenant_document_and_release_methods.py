@@ -9,7 +9,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 from zetherion_ai.api.auth import generate_api_key
-from zetherion_ai.api.tenant import TenantManager
+from zetherion_ai.api.tenant import (
+    TenantManager,
+    _clean_json_dict,
+    _clean_string_list,
+    _normalise_notification_status,
+)
 
 
 @pytest.fixture()
@@ -543,6 +548,177 @@ async def test_test_profile_and_rule_mutation_helpers(tenant_manager: TenantMana
 
     deleted_rule = await tenant_manager.delete_test_rule("tenant-1", "profile-1", "rule-1")
     assert deleted_rule is True
+
+
+@pytest.mark.asyncio
+async def test_notification_subscription_helpers_and_matching(
+    tenant_manager: TenantManager,
+) -> None:
+    now = datetime.now(UTC)
+    listed_row = {
+        "subscription_id": "sub-1",
+        "tenant_id": "tenant-1",
+        "source_app": " checkout ",
+        "event_types_json": '["order.failed", "order.failed", "order.refunded"]',
+        "channel_id": "webhook",
+        "channel_config": '{"webhook_url":"https://example.com/hook"}',
+        "template_json": '{"title":"Alert: {title}"}',
+        "status": "paused",
+        "created_at": now,
+        "updated_at": now,
+    }
+    tenant_manager._fetch.return_value = [listed_row]  # type: ignore[attr-defined]
+    listed = await tenant_manager.list_notification_subscriptions("tenant-1")
+    assert listed == [
+        {
+            "subscription_id": "sub-1",
+            "tenant_id": "tenant-1",
+            "source_app": "checkout",
+            "event_types": ["order.failed", "order.refunded"],
+            "channel_id": "webhook",
+            "channel_config": {"webhook_url": "https://example.com/hook"},
+            "template": {"title": "Alert: {title}"},
+            "status": "paused",
+            "created_at": now,
+            "updated_at": now,
+        }
+    ]
+
+    invalid_row = {
+        "subscription_id": "sub-2",
+        "tenant_id": "tenant-1",
+        "source_app": None,
+        "event_types_json": "not-json",
+        "channel_id": "email",
+        "channel_config": "not-json",
+        "template_json": "not-json",
+        "status": "disabled",
+        "created_at": now,
+        "updated_at": now,
+    }
+    parsed_invalid = tenant_manager._notification_subscription_from_row(invalid_row)
+    assert parsed_invalid["event_types"] == []
+    assert parsed_invalid["channel_config"] == {}
+    assert parsed_invalid["template"] == {}
+    assert parsed_invalid["status"] == "active"
+
+    tenant_manager._fetchrow.side_effect = [  # type: ignore[attr-defined]
+        listed_row,
+        {
+            "subscription_id": "sub-3",
+            "tenant_id": "tenant-1",
+            "source_app": "checkout",
+            "event_types_json": ["order.failed"],
+            "channel_id": "email",
+            "channel_config": {"email": "alerts@example.com", "account_id": "acct-1"},
+            "template_json": {"body": "{body}"},
+            "status": "paused",
+            "created_at": now,
+            "updated_at": now,
+        },
+        {
+            "subscription_id": "sub-3",
+            "tenant_id": "tenant-1",
+            "source_app": None,
+            "event_types_json": ["order.refunded"],
+            "channel_id": "email",
+            "channel_config": {"email": "alerts@example.com"},
+            "template_json": {"body": "{body}"},
+            "status": "active",
+            "created_at": now,
+            "updated_at": now,
+        },
+    ]
+
+    fetched = await tenant_manager.get_notification_subscription("tenant-1", "sub-1")
+    assert fetched is not None
+    assert fetched["subscription_id"] == "sub-1"
+
+    created = await tenant_manager.create_notification_subscription(
+        "tenant-1",
+        source_app=" checkout ",
+        event_types=["order.failed", "order.failed"],
+        channel_id="EMAIL",
+        channel_config={"email": "alerts@example.com", "account_id": "acct-1"},
+        template={"body": "{body}"},
+        status="disabled",
+    )
+    assert created["status"] == "paused"
+    create_args = tenant_manager._fetchrow.call_args_list[1].args  # type: ignore[attr-defined]
+    assert create_args[1] == "tenant-1"
+    assert create_args[2] == "checkout"
+    assert json.loads(create_args[3]) == ["order.failed"]
+    assert create_args[4] == "email"
+    assert json.loads(create_args[5]) == {"email": "alerts@example.com", "account_id": "acct-1"}
+    assert create_args[7] == "active"
+
+    updated = await tenant_manager.update_notification_subscription(
+        "tenant-1",
+        "sub-3",
+        source_app="",
+        event_types=["order.refunded", "order.refunded"],
+        channel_config={"email": "alerts@example.com"},
+        template={"body": "{body}"},
+        status="active",
+    )
+    assert updated is not None
+    assert updated["source_app"] is None
+    update_args = tenant_manager._fetchrow.call_args_list[2].args  # type: ignore[attr-defined]
+    assert update_args[1] is None
+    assert json.loads(update_args[2]) == ["order.refunded"]
+    assert update_args[5] == "active"
+
+    tenant_manager.get_notification_subscription = AsyncMock(  # type: ignore[method-assign]
+        return_value={"subscription_id": "sub-noop"}
+    )
+    noop = await tenant_manager.update_notification_subscription("tenant-1", "sub-noop")
+    assert noop == {"subscription_id": "sub-noop"}
+
+    tenant_manager._execute.return_value = "DELETE 1"  # type: ignore[attr-defined]
+    assert await tenant_manager.delete_notification_subscription("tenant-1", "sub-3") is True
+
+    tenant_manager.list_notification_subscriptions = AsyncMock(  # type: ignore[method-assign]
+        return_value=[
+            {
+                "subscription_id": "sub-active",
+                "source_app": "checkout",
+                "event_types": ["order.failed"],
+                "status": "active",
+            },
+            {
+                "subscription_id": "sub-paused",
+                "source_app": "checkout",
+                "event_types": ["order.failed"],
+                "status": "paused",
+            },
+            {
+                "subscription_id": "sub-other-app",
+                "source_app": "billing",
+                "event_types": ["order.failed"],
+                "status": "active",
+            },
+            {
+                "subscription_id": "sub-other-event",
+                "source_app": "checkout",
+                "event_types": ["order.refunded"],
+                "status": "active",
+            },
+        ]
+    )
+    matched = await tenant_manager.match_notification_subscriptions(
+        "tenant-1",
+        source_app="checkout",
+        event_type="order.failed",
+    )
+    assert [item["subscription_id"] for item in matched] == ["sub-active"]
+
+
+def test_notification_subscription_helper_normalizers() -> None:
+    assert _normalise_notification_status("paused") == "paused"
+    assert _normalise_notification_status("disabled") == "active"
+    assert _clean_json_dict({"a": 1}) == {"a": 1}
+    assert _clean_json_dict(None) == {}
+    assert _clean_string_list(["a", "a", " ", 1]) == ["a", "1"]
 
 
 @pytest.mark.asyncio

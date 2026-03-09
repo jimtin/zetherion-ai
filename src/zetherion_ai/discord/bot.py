@@ -20,12 +20,8 @@ from discord import app_commands
 
 from zetherion_ai.agent.core import Agent
 from zetherion_ai.agent.inference import ProviderIssueAlert
-from zetherion_ai.announcements import AnnouncementRepository
-from zetherion_ai.announcements.discord_adapter import DiscordDMChannelAdapter
-from zetherion_ai.announcements.dispatcher import (
-    AnnouncementChannelRegistry,
-    AnnouncementDispatcher,
-)
+from zetherion_ai.announcements import AnnouncementDispatcher, AnnouncementRepository
+from zetherion_ai.announcements.channels import build_announcement_channel_registry
 from zetherion_ai.config import get_dynamic, get_dynamic_for_tenant, get_secret, get_settings
 from zetherion_ai.constants import KEEP_WARM_INTERVAL_SECONDS, MAX_DISCORD_MESSAGE_LENGTH
 from zetherion_ai.discord.e2e_lease import DiscordE2ELease
@@ -387,8 +383,10 @@ class ZetherionAIBot(discord.Client):
                         25,
                     ),
                 )
-                registry = AnnouncementChannelRegistry()
-                registry.register("discord_dm", DiscordDMChannelAdapter(self))
+                registry = build_announcement_channel_registry(
+                    discord_bot=self,
+                    tenant_admin_manager=self._tenant_admin_manager,
+                )
                 self._announcement_repository = repository
                 self._announcement_dispatcher = AnnouncementDispatcher(
                     repository,

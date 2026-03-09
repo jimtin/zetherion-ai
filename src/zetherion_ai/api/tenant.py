@@ -102,6 +102,27 @@ CREATE INDEX IF NOT EXISTS idx_tenant_test_rules_profile
 CREATE INDEX IF NOT EXISTS idx_tenant_test_rules_tenant
     ON tenant_test_rules (tenant_id, profile_id, enabled);
 
+CREATE TABLE IF NOT EXISTS tenant_notification_subscriptions (
+    id               SERIAL       PRIMARY KEY,
+    subscription_id  UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    tenant_id        UUID         NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    source_app       TEXT,
+    event_types_json JSONB        NOT NULL DEFAULT '[]'::jsonb,
+    channel_id       VARCHAR(32)  NOT NULL,
+    channel_config   JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    template_json    JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    status           VARCHAR(16)  NOT NULL DEFAULT 'active',
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_notification_subscriptions_tenant
+    ON tenant_notification_subscriptions (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_notification_subscriptions_lookup
+    ON tenant_notification_subscriptions (tenant_id, status, channel_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_notification_subscriptions_source
+    ON tenant_notification_subscriptions (tenant_id, source_app, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS chat_sessions (
     id              SERIAL       PRIMARY KEY,
     session_id      UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
@@ -510,6 +531,20 @@ def _execution_mode_for_key_kind(key_kind: str | None) -> str:
         if _normalise_key_kind(key_kind) == _TEST_KEY_KIND
         else _LIVE_EXECUTION_MODE
     )
+
+
+def _normalise_notification_status(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in {"active", "paused"} else "active"
+
+
+def _clean_json_dict(value: dict[str, Any] | None) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _clean_string_list(values: list[Any] | None) -> list[str]:
+    cleaned = [str(item).strip() for item in values or [] if str(item).strip()]
+    return list(dict.fromkeys(cleaned))
 
 
 class TenantManager:
@@ -1152,6 +1187,250 @@ class TenantManager:
             rule_id,
         )
         return result == "DELETE 1"
+
+    # ------------------------------------------------------------------
+    # Tenant notification subscriptions
+    # ------------------------------------------------------------------
+
+    async def list_notification_subscriptions(self, tenant_id: str) -> list[dict[str, Any]]:
+        """List tenant notification subscriptions."""
+        rows = await self._fetch(
+            """
+            SELECT
+                subscription_id,
+                tenant_id,
+                source_app,
+                event_types_json,
+                channel_id,
+                channel_config,
+                template_json,
+                status,
+                created_at,
+                updated_at
+            FROM tenant_notification_subscriptions
+            WHERE tenant_id = $1::uuid
+            ORDER BY created_at ASC
+            """,
+            tenant_id,
+        )
+        return [self._notification_subscription_from_row(row) for row in rows]
+
+    async def get_notification_subscription(
+        self,
+        tenant_id: str,
+        subscription_id: str,
+    ) -> dict[str, Any] | None:
+        """Fetch one tenant notification subscription."""
+        row = await self._fetchrow(
+            """
+            SELECT
+                subscription_id,
+                tenant_id,
+                source_app,
+                event_types_json,
+                channel_id,
+                channel_config,
+                template_json,
+                status,
+                created_at,
+                updated_at
+            FROM tenant_notification_subscriptions
+            WHERE tenant_id = $1::uuid
+              AND subscription_id = $2::uuid
+            LIMIT 1
+            """,
+            tenant_id,
+            subscription_id,
+        )
+        return self._notification_subscription_from_row(row) if row else None
+
+    async def create_notification_subscription(
+        self,
+        tenant_id: str,
+        *,
+        source_app: str | None = None,
+        event_types: list[str] | None = None,
+        channel_id: str,
+        channel_config: dict[str, Any] | None = None,
+        template: dict[str, Any] | None = None,
+        status: str = "active",
+    ) -> dict[str, Any]:
+        """Create one tenant notification subscription."""
+        import json
+
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_notification_subscriptions (
+                tenant_id,
+                source_app,
+                event_types_json,
+                channel_id,
+                channel_config,
+                template_json,
+                status
+            )
+            VALUES ($1::uuid, $2, $3::jsonb, $4, $5::jsonb, $6::jsonb, $7)
+            RETURNING
+                subscription_id,
+                tenant_id,
+                source_app,
+                event_types_json,
+                channel_id,
+                channel_config,
+                template_json,
+                status,
+                created_at,
+                updated_at
+            """,
+            tenant_id,
+            (str(source_app).strip() or None) if source_app else None,
+            json.dumps(_clean_string_list(event_types)),
+            str(channel_id).strip().lower(),
+            json.dumps(_clean_json_dict(channel_config)),
+            json.dumps(_clean_json_dict(template)),
+            _normalise_notification_status(status),
+        )
+        return self._notification_subscription_from_row(row)
+
+    async def update_notification_subscription(
+        self,
+        tenant_id: str,
+        subscription_id: str,
+        *,
+        source_app: str | None = None,
+        event_types: list[str] | None = None,
+        channel_config: dict[str, Any] | None = None,
+        template: dict[str, Any] | None = None,
+        status: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Patch one tenant notification subscription."""
+        import json
+
+        sets: list[str] = []
+        args: list[Any] = []
+        idx = 1
+        if source_app is not None:
+            sets.append(f"source_app = ${idx}")
+            args.append(str(source_app).strip() or None)
+            idx += 1
+        if event_types is not None:
+            sets.append(f"event_types_json = ${idx}::jsonb")
+            args.append(json.dumps(_clean_string_list(event_types)))
+            idx += 1
+        if channel_config is not None:
+            sets.append(f"channel_config = ${idx}::jsonb")
+            args.append(json.dumps(_clean_json_dict(channel_config)))
+            idx += 1
+        if template is not None:
+            sets.append(f"template_json = ${idx}::jsonb")
+            args.append(json.dumps(_clean_json_dict(template)))
+            idx += 1
+        if status is not None:
+            sets.append(f"status = ${idx}")
+            args.append(_normalise_notification_status(status))
+            idx += 1
+        if not sets:
+            return await self.get_notification_subscription(tenant_id, subscription_id)
+
+        sets.append("updated_at = now()")
+        args.extend([tenant_id, subscription_id])
+        row = await self._fetchrow(
+            f"""
+            UPDATE tenant_notification_subscriptions
+            SET {", ".join(sets)}
+            WHERE tenant_id = ${idx}::uuid
+              AND subscription_id = ${idx + 1}::uuid
+            RETURNING
+                subscription_id,
+                tenant_id,
+                source_app,
+                event_types_json,
+                channel_id,
+                channel_config,
+                template_json,
+                status,
+                created_at,
+                updated_at
+            """,  # nosec B608
+            *args,
+        )
+        return self._notification_subscription_from_row(row) if row else None
+
+    async def delete_notification_subscription(self, tenant_id: str, subscription_id: str) -> bool:
+        """Delete one tenant notification subscription."""
+        result = await self._execute(
+            """
+            DELETE FROM tenant_notification_subscriptions
+            WHERE tenant_id = $1::uuid
+              AND subscription_id = $2::uuid
+            """,
+            tenant_id,
+            subscription_id,
+        )
+        return result == "DELETE 1"
+
+    async def match_notification_subscriptions(
+        self,
+        tenant_id: str,
+        *,
+        source_app: str | None,
+        event_type: str,
+    ) -> list[dict[str, Any]]:
+        """Return active subscriptions matching a tenant event."""
+        subscriptions = await self.list_notification_subscriptions(tenant_id)
+        event_type_norm = str(event_type).strip()
+        source_app_norm = str(source_app).strip() if source_app else ""
+        matched: list[dict[str, Any]] = []
+        for subscription in subscriptions:
+            if str(subscription.get("status") or "active") != "active":
+                continue
+            subscription_source = str(subscription.get("source_app") or "").strip()
+            if subscription_source and subscription_source != source_app_norm:
+                continue
+            event_types = _clean_string_list(subscription.get("event_types"))
+            if event_types and event_type_norm not in event_types:
+                continue
+            matched.append(subscription)
+        return matched
+
+    @staticmethod
+    def _notification_subscription_from_row(row: Any) -> dict[str, Any]:
+        event_types = row.get("event_types_json", [])
+        if isinstance(event_types, str):
+            try:
+                import json
+
+                event_types = json.loads(event_types)
+            except json.JSONDecodeError:
+                event_types = []
+        channel_config = row.get("channel_config", {})
+        if isinstance(channel_config, str):
+            try:
+                import json
+
+                channel_config = json.loads(channel_config)
+            except json.JSONDecodeError:
+                channel_config = {}
+        template = row.get("template_json", {})
+        if isinstance(template, str):
+            try:
+                import json
+
+                template = json.loads(template)
+            except json.JSONDecodeError:
+                template = {}
+        return {
+            "subscription_id": str(row["subscription_id"]),
+            "tenant_id": str(row["tenant_id"]),
+            "source_app": str(row["source_app"]).strip() if row["source_app"] is not None else None,
+            "event_types": _clean_string_list(event_types if isinstance(event_types, list) else []),
+            "channel_id": str(row["channel_id"]),
+            "channel_config": channel_config if isinstance(channel_config, dict) else {},
+            "template": template if isinstance(template, dict) else {},
+            "status": _normalise_notification_status(row.get("status")),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
 
     # ------------------------------------------------------------------
     # Session management
