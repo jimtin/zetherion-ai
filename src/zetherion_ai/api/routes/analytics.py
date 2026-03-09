@@ -427,7 +427,11 @@ async def handle_session_end(request: web.Request) -> web.Response:
             funnel_rows=funnel,
             release_regression=release,
         )
-        recommendations = await engine.persist_candidates(tenant_id, candidates, source="session_end")
+        recommendations = await engine.persist_candidates(
+            tenant_id,
+            candidates,
+            source="session_end",
+        )
 
         interaction_summary = (
             f"Web behavior summary: stage={summary.get('funnel_stage')}, "

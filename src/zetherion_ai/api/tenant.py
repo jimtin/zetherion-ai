@@ -84,7 +84,8 @@ CREATE TABLE IF NOT EXISTS tenant_test_rules (
     id              SERIAL       PRIMARY KEY,
     rule_id         UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
     tenant_id       UUID         NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
-    profile_id      UUID         NOT NULL REFERENCES tenant_test_profiles(profile_id) ON DELETE CASCADE,
+    profile_id      UUID         NOT NULL REFERENCES tenant_test_profiles(profile_id)
+                                         ON DELETE CASCADE,
     priority        INT          NOT NULL DEFAULT 100,
     method          VARCHAR(10)  NOT NULL DEFAULT 'POST',
     route_pattern   TEXT         NOT NULL,
@@ -504,7 +505,11 @@ def _normalise_key_kind(value: str | None) -> str:
 
 
 def _execution_mode_for_key_kind(key_kind: str | None) -> str:
-    return _TEST_EXECUTION_MODE if _normalise_key_kind(key_kind) == _TEST_KEY_KIND else _LIVE_EXECUTION_MODE
+    return (
+        _TEST_EXECUTION_MODE
+        if _normalise_key_kind(key_kind) == _TEST_KEY_KIND
+        else _LIVE_EXECUTION_MODE
+    )
 
 
 class TenantManager:
@@ -874,7 +879,11 @@ class TenantManager:
         )
         return dict(row) if row else None
 
-    async def resolve_test_profile(self, tenant_id: str, profile_id: str | None = None) -> dict[str, Any] | None:
+    async def resolve_test_profile(
+        self,
+        tenant_id: str,
+        profile_id: str | None = None,
+    ) -> dict[str, Any] | None:
         """Resolve an explicit or default sandbox profile for a tenant."""
         if profile_id:
             return await self.get_test_profile(tenant_id, profile_id)

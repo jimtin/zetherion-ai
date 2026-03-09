@@ -114,7 +114,12 @@ async def analytics_routes_client():
     @web.middleware
     async def inject_context(request: web.Request, handler):
         request["tenant"] = tenant
-        session_mode = str(request.app.get("session_execution_mode", session.get("execution_mode", "live")))
+        session_mode = str(
+            request.app.get(
+                "session_execution_mode",
+                session.get("execution_mode", "live"),
+            )
+        )
         request["session"] = {**session, "execution_mode": session_mode}
         request["execution_mode"] = session_mode
         return await handler(request)
@@ -423,7 +428,10 @@ async def test_handle_session_end_test_mode_skips_derived_side_effects(
         patch("zetherion_ai.api.routes.analytics.AnalyticsAggregator", return_value=aggregator),
         patch("zetherion_ai.api.routes.analytics.RecommendationEngine", return_value=engine),
     ):
-        response = await client.post("/api/v1/analytics/sessions/end", json={"web_session_id": "ws"})
+        response = await client.post(
+            "/api/v1/analytics/sessions/end",
+            json={"web_session_id": "ws"},
+        )
 
     assert response.status == 200
     body = await response.json()

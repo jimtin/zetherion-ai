@@ -196,7 +196,10 @@ class TenantSandboxRuntime:
     ) -> SandboxResolution:
         profile = await self._tenant_manager.resolve_test_profile(tenant_id, profile_id)
         if profile is not None:
-            rules = await self._tenant_manager.list_test_rules(tenant_id, str(profile["profile_id"]))
+            rules = await self._tenant_manager.list_test_rules(
+                tenant_id,
+                str(profile["profile_id"]),
+            )
             for rule in rules:
                 if not bool(rule.get("enabled", True)):
                     continue
@@ -212,7 +215,10 @@ class TenantSandboxRuntime:
                     return SandboxResolution(
                         profile_id=str(profile["profile_id"]),
                         rule_id=str(rule["rule_id"]),
-                        preset_id=_clean((rule.get("response") or {}).get("preset_id")) or "default",
+                        preset_id=(
+                            _clean((rule.get("response") or {}).get("preset_id"))
+                            or "default"
+                        ),
                         latency_ms=max(0, int(rule.get("latency_ms") or 0)),
                         response=dict(rule.get("response") or {}),
                     )
@@ -268,7 +274,11 @@ class TenantSandboxRuntime:
 
         expected_state = _clean(match.get("conversation_state")).lower()
         if expected_state:
-            actual_state = self._conversation_state(session=session, context=context, history=history)
+            actual_state = self._conversation_state(
+                session=session,
+                context=context,
+                history=history,
+            )
             if actual_state != expected_state:
                 return False
 
@@ -464,14 +474,17 @@ class TenantSandboxRuntime:
             ),
             "urgent_support": (
                 "that sounds time-sensitive. "
-                "We'd normally prioritise the immediate safety details, location, and the fastest callback route."
+                "We'd normally prioritise the immediate safety details, location, "
+                "and the fastest callback route."
             ),
             "follow_up": (
-                "the next live-step would usually be to confirm the missing details and keep the thread moving "
+                "the next live-step would usually be to confirm the missing details "
+                "and keep the thread moving "
                 "without re-asking for context you've already given."
             ),
             "default": (
-                "the live assistant would usually respond conversationally, reuse the session context, "
+                "the live assistant would usually respond conversationally, "
+                "reuse the session context, "
                 "and ask one focused follow-up if any important detail is missing."
             ),
         }.get(preset_id, "the live assistant would respond here using the tenant sandbox profile.")
@@ -481,7 +494,7 @@ class TenantSandboxRuntime:
             "It would avoid external providers while keeping the reply shape realistic.",
             "It would keep the conversation moving without touching live integrations.",
         ]
-        digest = hashlib.sha256(f"{preset_id}:{message}".encode("utf-8")).digest()
+        digest = hashlib.sha256(f"{preset_id}:{message}".encode()).digest()
         tail = variants[digest[0] % len(variants)]
 
         content = intro + base
@@ -492,7 +505,11 @@ class TenantSandboxRuntime:
             content = f"{name}, {content[0].lower()}{content[1:]}" if content else name
 
         if style == "brief":
-            sentences = [sentence.strip() for sentence in re.split(r"(?<=[.!?])\s+", content) if sentence.strip()]
+            sentences = [
+                sentence.strip()
+                for sentence in re.split(r"(?<=[.!?])\s+", content)
+                if sentence.strip()
+            ]
             return sentences[0] if sentences else content
         if style == "formal":
             return content.replace("we'd", "we would").replace("that's", "that is")

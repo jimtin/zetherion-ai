@@ -72,7 +72,10 @@ async def handle_create_test_profile(request: web.Request) -> web.Response:
 
 async def handle_get_test_profile(request: web.Request) -> web.Response:
     tenant_manager = request.app["tenant_manager"]
-    profile = await tenant_manager.get_test_profile(_tenant_id(request), request.match_info["profile_id"])
+    profile = await tenant_manager.get_test_profile(
+        _tenant_id(request),
+        request.match_info["profile_id"],
+    )
     if profile is None:
         return web.json_response({"error": "Sandbox profile not found"}, status=404)
     return web.json_response(_serialise(profile))
@@ -178,7 +181,11 @@ async def handle_patch_test_rule(request: web.Request) -> web.Response:
         _tenant_id(request),
         profile_id,
         request.match_info["rule_id"],
-        priority=int(raw["priority"]) if "priority" in raw and raw["priority"] is not None else None,
+        priority=(
+            int(raw["priority"])
+            if "priority" in raw and raw["priority"] is not None
+            else None
+        ),
         method=str(raw["method"]) if "method" in raw and raw["method"] is not None else None,
         route_pattern=(
             str(raw["route_pattern"]).strip()
@@ -189,7 +196,9 @@ async def handle_patch_test_rule(request: web.Request) -> web.Response:
         match=raw.get("match") if "match" in raw else None,
         response=raw.get("response") if "response" in raw else None,
         latency_ms=(
-            int(raw["latency_ms"]) if "latency_ms" in raw and raw["latency_ms"] is not None else None
+            int(raw["latency_ms"])
+            if "latency_ms" in raw and raw["latency_ms"] is not None
+            else None
         ),
     )
     if updated is None:

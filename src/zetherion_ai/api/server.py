@@ -193,7 +193,10 @@ class PublicAPIServer:
         # Sandbox profiles + rules (API key auth)
         app.router.add_get("/api/v1/test/profiles", handle_list_test_profiles)
         app.router.add_post("/api/v1/test/profiles", handle_create_test_profile)
-        app.router.add_post("/api/v1/test/profiles/{profile_id}/preview", handle_preview_test_profile)
+        app.router.add_post(
+            "/api/v1/test/profiles/{profile_id}/preview",
+            handle_preview_test_profile,
+        )
         app.router.add_get("/api/v1/test/profiles/{profile_id}", handle_get_test_profile)
         app.router.add_patch("/api/v1/test/profiles/{profile_id}", handle_patch_test_profile)
         app.router.add_delete("/api/v1/test/profiles/{profile_id}", handle_delete_test_profile)
