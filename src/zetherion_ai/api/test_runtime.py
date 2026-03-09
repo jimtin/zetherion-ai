@@ -216,8 +216,7 @@ class TenantSandboxRuntime:
                         profile_id=str(profile["profile_id"]),
                         rule_id=str(rule["rule_id"]),
                         preset_id=(
-                            _clean((rule.get("response") or {}).get("preset_id"))
-                            or "default"
+                            _clean((rule.get("response") or {}).get("preset_id")) or "default"
                         ),
                         latency_ms=max(0, int(rule.get("latency_ms") or 0)),
                         response=dict(rule.get("response") or {}),

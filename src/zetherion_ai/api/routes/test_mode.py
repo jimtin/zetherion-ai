@@ -182,9 +182,7 @@ async def handle_patch_test_rule(request: web.Request) -> web.Response:
         profile_id,
         request.match_info["rule_id"],
         priority=(
-            int(raw["priority"])
-            if "priority" in raw and raw["priority"] is not None
-            else None
+            int(raw["priority"]) if "priority" in raw and raw["priority"] is not None else None
         ),
         method=str(raw["method"]) if "method" in raw and raw["method"] is not None else None,
         route_pattern=(
