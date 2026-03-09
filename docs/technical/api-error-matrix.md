@@ -6,7 +6,19 @@ Exposure rule:
 - External clients consume CGS gateway errors only.
 - `/api/v1` errors are upstream/internal and surfaced through CGS mappings.
 
-## Maintenance Note (2026-03-09)
+## Maintenance Note (2026-03-10)
+
+- Segment 6 adds upstream tenant notification route outcomes:
+  - `202` accepted for `POST /api/v1/notifications/events`
+  - `201` created for `POST /api/v1/notifications/subscriptions`
+  - `400` for invalid notification JSON, malformed `occurred_at`, invalid
+    subscription `status`, missing `source_app|event_type|title|body`, invalid
+    `event_types`, invalid `channel_config`, or unsupported `channel_id`
+  - `404` when a tenant subscription id does not exist for `PATCH|DELETE`
+  - `403` when `sk_test_...` is used against `/api/v1/notifications/*`
+- Notification events are accepted into the announcement core with tenant-scoped
+  delivery receipts; channel dispatch remains asynchronous and does not change
+  the synchronous route status from `202`.
 
 - Segment 3 adds sandbox-specific validation and authorization outcomes to the upstream `/api/v1` surface:
   - `400` when `test_profile_id` is supplied on `POST /api/v1/sessions` with a live API key
@@ -140,3 +152,21 @@ Retryability rules:
 Non-error sandbox behavior:
 - `GET /api/v1/analytics/recommendations` in test mode returns `200` with an empty list.
 - `POST /api/v1/analytics/sessions/end` in test mode returns `200` with `execution_mode="test"` but does not persist derived recommendations or funnel updates.
+
+## Notification Endpoint Specifics
+
+| Endpoint | Failure Case | Result |
+|---|---|---|
+| `GET /api/v1/notifications/*` or `POST /api/v1/notifications/*` | Missing/invalid tenant API key | `401` |
+| Any `/api/v1/notifications/*` route | Authenticated with `sk_test_...` | `403` |
+| `POST /api/v1/notifications/events` | Missing `source_app`, `event_type`, `title`, or `body` | `400` |
+| `POST /api/v1/notifications/events` | `occurred_at` is not a valid ISO-8601 timestamp | `400` |
+| `POST /api/v1/notifications/events` | Valid tenant event publish | `202` |
+| `POST /api/v1/notifications/subscriptions` | Unsupported `channel_id` | `400` |
+| `POST /api/v1/notifications/subscriptions` | Empty/invalid `event_types` | `400` |
+| `POST /api/v1/notifications/subscriptions` | Missing `channel_config.webhook_url` for webhook | `400` |
+| `POST /api/v1/notifications/subscriptions` | Missing `channel_config.email` for email | `400` |
+| `POST /api/v1/notifications/subscriptions` | Invalid `status` | `400` |
+| `PATCH /api/v1/notifications/subscriptions/{subscription_id}` | Subscription not found | `404` |
+| `PATCH /api/v1/notifications/subscriptions/{subscription_id}` | `event_types` is not a list or `channel_config` is not an object | `400` |
+| `DELETE /api/v1/notifications/subscriptions/{subscription_id}` | Subscription not found | `404` |

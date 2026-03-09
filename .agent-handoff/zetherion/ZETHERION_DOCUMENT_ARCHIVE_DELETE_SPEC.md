@@ -29,7 +29,13 @@ It does not cover external gateway/public API mapping.
 5. `seg5-zeth-archive-worker-guardrails` (completed): archive/purge maintenance worker logic, server lifecycle loop wiring, retrieval exclusion for `archiving|archived|purged`, and regression tests.
 6. Remaining segments continue in strict one-PR-per-segment order for additional hardening only.
 
-## Implementation Status Update (2026-03-09)
+## Implementation Status Update (2026-03-10)
+
+- Segment 6 adds upstream tenant notification APIs under `/api/v1/notifications/*`
+  on top of the generalized announcement core.
+- Those tenant notification routes stay outside the document archive/delete/restore
+  lifecycle, do not modify archive worker behavior, and do not change any route
+  contract defined in this specification.
 
 - Upstream tenant sandbox support now adds `sk_test_...` keys plus `/api/v1/test/*` sandbox profile/rule management for simulated chat runtime validation.
 - Test-mode upstream sessions and analytics are tagged `execution_mode=test` and isolated from tenant-derived outputs by default.
