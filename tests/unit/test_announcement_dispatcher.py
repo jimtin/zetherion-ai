@@ -7,18 +7,23 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, call
 
 import discord
+import httpx
 import pytest
 
 from zetherion_ai.announcements.discord_adapter import DiscordDMChannelAdapter
 from zetherion_ai.announcements.dispatcher import (
+    AnnouncementChannelRegistry,
     AnnouncementDispatcher,
     AnnouncementDispatchError,
 )
+from zetherion_ai.announcements.email_adapter import EmailChannelAdapter
 from zetherion_ai.announcements.storage import (
     AnnouncementDelivery,
     AnnouncementEvent,
+    AnnouncementRecipient,
     AnnouncementSeverity,
 )
+from zetherion_ai.announcements.webhook_adapter import WebhookChannelAdapter
 
 
 def _delivery(*, retry_count: int = 0) -> AnnouncementDelivery:
@@ -56,6 +61,82 @@ def _event(*, target_user_id: int = 42) -> AnnouncementEvent:
         created_at=now,
         state="digest",
     )
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_registry_routes_delivery_by_channel() -> None:
+    repository = MagicMock()
+    repository.claim_due_deliveries = AsyncMock(
+        return_value=[
+            AnnouncementDelivery(
+                delivery_id=2,
+                event_id="evt-2",
+                channel="webhook",
+                scheduled_for=datetime(2026, 3, 6, 10, 0, tzinfo=UTC),
+                sent_at=None,
+                status="processing",
+                error_code=None,
+                error_detail=None,
+                retry_count=0,
+                created_at=datetime(2026, 3, 6, 10, 0, tzinfo=UTC),
+                updated_at=datetime(2026, 3, 6, 10, 0, tzinfo=UTC),
+            )
+        ]
+    )
+    event = _event(target_user_id=0)
+    event.recipient = AnnouncementRecipient(
+        channel="webhook",
+        routing_key="webhook:url:https://example.com/hooks/tenant-a",
+        webhook_url="https://example.com/hooks/tenant-a",
+    )
+    repository.get_event = AsyncMock(return_value=event)
+    repository.mark_delivery_sent = AsyncMock(return_value=True)
+    repository.mark_delivery_failed = AsyncMock(return_value=False)
+
+    webhook_adapter = MagicMock()
+    webhook_adapter.send = AsyncMock(return_value=None)
+    registry = AnnouncementChannelRegistry()
+    registry.register("webhook", webhook_adapter)
+
+    dispatcher = AnnouncementDispatcher(repository, registry)
+    processed = await dispatcher.run_once()
+
+    assert processed == 1
+    webhook_adapter.send.assert_awaited_once_with(event)
+    repository.mark_delivery_sent.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_unknown_channel_marks_terminal_failure() -> None:
+    repository = MagicMock()
+    repository.claim_due_deliveries = AsyncMock(
+        return_value=[
+            AnnouncementDelivery(
+                delivery_id=3,
+                event_id="evt-3",
+                channel="email",
+                scheduled_for=datetime(2026, 3, 6, 10, 0, tzinfo=UTC),
+                sent_at=None,
+                status="processing",
+                error_code=None,
+                error_detail=None,
+                retry_count=0,
+                created_at=datetime(2026, 3, 6, 10, 0, tzinfo=UTC),
+                updated_at=datetime(2026, 3, 6, 10, 0, tzinfo=UTC),
+            )
+        ]
+    )
+    repository.get_event = AsyncMock(return_value=_event(target_user_id=0))
+    repository.mark_delivery_sent = AsyncMock(return_value=False)
+    repository.mark_delivery_failed = AsyncMock(return_value=True)
+
+    dispatcher = AnnouncementDispatcher(repository, AnnouncementChannelRegistry())
+    processed = await dispatcher.run_once()
+
+    assert processed == 1
+    kwargs = repository.mark_delivery_failed.await_args.kwargs
+    assert kwargs["terminal"] is True
+    assert kwargs["error_code"] == "channel_not_registered"
 
 
 @pytest.mark.asyncio
@@ -490,3 +571,78 @@ def test_discord_adapter_format_message_without_timestamp() -> None:
 def test_discord_adapter_retryable_status_predicate() -> None:
     assert DiscordDMChannelAdapter._is_retryable_status(503) is True
     assert DiscordDMChannelAdapter._is_retryable_status(400) is False
+
+
+@pytest.mark.asyncio
+async def test_webhook_adapter_posts_event_payload() -> None:
+    event = _event(target_user_id=0)
+    event.recipient = AnnouncementRecipient(
+        channel="webhook",
+        routing_key="webhook:url:https://example.com/hooks/tenant-a",
+        webhook_url="https://example.com/hooks/tenant-a",
+    )
+    client = AsyncMock()
+    client.post = AsyncMock(return_value=MagicMock(status_code=202, text="accepted"))
+
+    adapter = WebhookChannelAdapter(client=client)
+    await adapter.send(event)
+
+    client.post.assert_awaited_once()
+    assert client.post.await_args.args[0] == "https://example.com/hooks/tenant-a"
+
+
+@pytest.mark.asyncio
+async def test_webhook_adapter_maps_retryable_http_failures() -> None:
+    event = _event(target_user_id=0)
+    event.recipient = AnnouncementRecipient(
+        channel="webhook",
+        routing_key="webhook:url:https://example.com/hooks/tenant-a",
+        webhook_url="https://example.com/hooks/tenant-a",
+    )
+    client = AsyncMock()
+    client.post = AsyncMock(return_value=MagicMock(status_code=503, text="unavailable"))
+
+    adapter = WebhookChannelAdapter(client=client)
+    with pytest.raises(AnnouncementDispatchError) as exc_info:
+        await adapter.send(event)
+
+    assert exc_info.value.code == "webhook_http_503"
+    assert exc_info.value.retryable is True
+
+
+@pytest.mark.asyncio
+async def test_webhook_adapter_maps_transport_errors() -> None:
+    event = _event(target_user_id=0)
+    event.recipient = AnnouncementRecipient(
+        channel="webhook",
+        routing_key="webhook:url:https://example.com/hooks/tenant-a",
+        webhook_url="https://example.com/hooks/tenant-a",
+    )
+    client = AsyncMock()
+    client.post = AsyncMock(side_effect=httpx.ConnectError("offline"))
+
+    adapter = WebhookChannelAdapter(client=client)
+    with pytest.raises(AnnouncementDispatchError) as exc_info:
+        await adapter.send(event)
+
+    assert exc_info.value.code == "webhook_request_error"
+    assert exc_info.value.retryable is True
+
+
+@pytest.mark.asyncio
+async def test_email_adapter_uses_sender() -> None:
+    event = _event(target_user_id=0)
+    event.recipient = AnnouncementRecipient(
+        channel="email",
+        routing_key="email:address:alerts@example.com",
+        email="alerts@example.com",
+    )
+    sender = AsyncMock()
+
+    adapter = EmailChannelAdapter(sender)
+    await adapter.send(event)
+
+    sender.send.assert_awaited_once()
+    kwargs = sender.send.await_args.kwargs
+    assert kwargs["to_address"] == "alerts@example.com"
+    assert kwargs["metadata"]["recipient_key"] == "email:address:alerts@example.com"

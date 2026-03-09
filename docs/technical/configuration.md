@@ -293,7 +293,7 @@ Runtime settings/secrets APIs are exposed by the skills service:
 | `ANNOUNCEMENT_EMIT_ENABLED` | `false` | Windows deploy/promotions announcement emit toggle |
 | `ANNOUNCEMENT_API_URL` | `http://127.0.0.1:8080/announcements/events` | Internal Skills announcement event endpoint used by Windows scripts |
 | `ANNOUNCEMENT_API_SECRET` | unset | Shared secret for `X-API-Secret` when Windows emits internal announcement events |
-| `ANNOUNCEMENT_TARGET_USER_ID` | unset | Announcement recipient user id for Windows deploy/promotions and Discord canary events |
+| `ANNOUNCEMENT_TARGET_USER_ID` | unset | Legacy default Discord DM target user id for Windows deploy/promotions and Discord canary events; structured recipients now travel in the announcement API payload |
 | `DISCORD_E2E_ENABLED` | `false` | Enable the narrow synthetic Discord E2E bypass for isolated test channels |
 | `DISCORD_E2E_ALLOWED_AUTHOR_IDS` | unset | Comma-separated Discord user IDs allowed to drive isolated synthetic E2E runs |
 | `DISCORD_E2E_GUILD_ID` | unset | Allowlisted guild ID for isolated Discord E2E runs |

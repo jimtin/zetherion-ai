@@ -2464,6 +2464,35 @@ class TestBotRuntimeHelpers:
         assert result is True
 
     @pytest.mark.asyncio
+    async def test_emit_announcement_event_accepts_structured_recipient(self, bot):
+        skills_client = AsyncMock()
+        skills_client.emit_announcement_event = AsyncMock(
+            return_value={"ok": True, "receipt": {"status": "scheduled", "event_id": "evt-1"}}
+        )
+        bot._agent = SimpleNamespace(
+            _get_skills_client=AsyncMock(return_value=skills_client),
+        )
+
+        result = await bot.emit_announcement_event(
+            {
+                "source": "tenant_app",
+                "category": "build.completed",
+                "title": "Build completed",
+                "body": "Send to a webhook recipient.",
+                "recipient": {
+                    "channel": "webhook",
+                    "webhook_url": "https://example.com/hooks/tenant-a",
+                },
+            }
+        )
+
+        assert result is True
+        assert skills_client.emit_announcement_event.await_args.kwargs["recipient"] == {
+            "channel": "webhook",
+            "webhook_url": "https://example.com/hooks/tenant-a",
+        }
+
+    @pytest.mark.asyncio
     async def test_emit_announcement_event_returns_false_without_agent(self, bot):
         bot._agent = None
         result = await bot.emit_announcement_event(

@@ -10,6 +10,7 @@ import pytest
 from zetherion_ai.announcements.storage import (
     AnnouncementEventInput,
     AnnouncementPreferencePatch,
+    AnnouncementRecipient,
     AnnouncementRepository,
     AnnouncementSeverity,
     AnnouncementUserPreferences,
@@ -236,6 +237,36 @@ async def test_create_event_accepts_non_idempotent_insert_path(repository, mock_
     assert receipt.status == "accepted"
     assert receipt.reason_code == "accepted_new"
     conn.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_create_event_accepts_webhook_recipient(repository, mock_pool, now):
+    pool, conn = mock_pool
+    repository._pool = pool
+    conn.fetchrow.return_value = None
+
+    receipt = await repository.create_event(
+        AnnouncementEventInput(
+            source="tenant_app",
+            category="build.completed",
+            severity="normal",
+            title="Build completed",
+            body="Webhook recipient should receive this event.",
+            recipient=AnnouncementRecipient(
+                channel="webhook",
+                routing_key="",
+                webhook_url="https://example.com/hooks/tenant-a",
+                metadata={"subscription_id": "sub-1"},
+            ),
+            occurred_at=now,
+        )
+    )
+
+    assert receipt.status == "accepted"
+    args = conn.execute.await_args.args
+    assert args[6] == 0
+    assert args[7] == "webhook:url:https://example.com/hooks/tenant-a"
+    assert '"channel":"webhook"' in args[8]
 
 
 @pytest.mark.asyncio
@@ -484,6 +515,39 @@ def test_event_from_row_handles_invalid_payload_json(repository, now):
     event = repository._event_from_row(row)
 
     assert event.payload == {}
+
+
+def test_event_from_row_preserves_structured_recipient(repository, now):
+    row = {
+        "event_id": "evt-2",
+        "source": "tenant_app",
+        "category": "build.completed",
+        "severity": "normal",
+        "tenant_id": "tenant-1",
+        "target_user_id": 0,
+        "recipient_key": "webhook:url:https://example.com/hooks/tenant-a",
+        "recipient_json": {
+            "channel": "webhook",
+            "routing_key": "webhook:url:https://example.com/hooks/tenant-a",
+            "webhook_url": "https://example.com/hooks/tenant-a",
+            "metadata": {"subscription_id": "sub-1"},
+        },
+        "title": "Title",
+        "body": "Body",
+        "payload_json": {"ok": True},
+        "fingerprint": None,
+        "idempotency_key": None,
+        "occurred_at": now,
+        "created_at": now,
+        "state": "immediate",
+    }
+
+    event = repository._event_from_row(row)
+
+    assert event.recipient is not None
+    assert event.recipient.channel == "webhook"
+    assert event.recipient.webhook_url == "https://example.com/hooks/tenant-a"
+    assert event.recipient.metadata == {"subscription_id": "sub-1"}
 
 
 @pytest.mark.asyncio

@@ -11,6 +11,7 @@ import pytest
 from zetherion_ai.announcements.policy import AnnouncementPolicyEngine
 from zetherion_ai.announcements.storage import (
     AnnouncementEventInput,
+    AnnouncementRecipient,
     AnnouncementSeverity,
 )
 
@@ -178,3 +179,29 @@ async def test_active_suppression_cooldown_defers_event(repository):
     assert decision.reason_code == "suppression_cooldown_active"
     assert decision.scheduled_for == datetime(2026, 3, 6, 11, 0, tzinfo=UTC)
     repository.mark_suppression_notified.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_non_user_recipient_defaults_to_immediate(repository):
+    engine = AnnouncementPolicyEngine(repository, setting_resolver=_settings({}))
+    now = datetime(2026, 3, 6, 10, 0, tzinfo=UTC)
+
+    decision = await engine.evaluate_event(
+        AnnouncementEventInput(
+            source="tenant_app",
+            category="build.completed",
+            severity=AnnouncementSeverity.NORMAL,
+            title="Build completed",
+            body="Webhook destination should be immediate.",
+            recipient=AnnouncementRecipient(
+                channel="webhook",
+                routing_key="webhook:url:https://example.com/hooks/tenant-a",
+                webhook_url="https://example.com/hooks/tenant-a",
+            ),
+        ),
+        now=now,
+    )
+
+    assert decision.delivery_mode == "immediate"
+    assert decision.reason_code == "recipient_channel_immediate_default"
+    repository.get_user_preferences.assert_not_awaited()

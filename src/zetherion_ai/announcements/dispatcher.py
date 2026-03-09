@@ -34,20 +34,43 @@ class AnnouncementChannelAdapter(Protocol):
         """Send a single announcement event."""
 
 
+class AnnouncementChannelRegistry:
+    """Registry of delivery adapters keyed by channel name."""
+
+    def __init__(self) -> None:
+        self._adapters: dict[str, AnnouncementChannelAdapter] = {}
+
+    def register(self, channel: str, adapter: AnnouncementChannelAdapter) -> None:
+        normalized = str(channel or "").strip().lower()
+        if not normalized:
+            raise ValueError("Announcement channel name is required")
+        self._adapters[normalized] = adapter
+
+    def get(self, channel: str) -> AnnouncementChannelAdapter | None:
+        return self._adapters.get(str(channel or "").strip().lower())
+
+    def channels(self) -> list[str]:
+        return sorted(self._adapters)
+
+
 class AnnouncementDispatcher:
     """Poll due deliveries and route them through one adapter path."""
 
     def __init__(
         self,
         repository: AnnouncementRepository,
-        adapter: AnnouncementChannelAdapter,
+        adapter: AnnouncementChannelAdapter | AnnouncementChannelRegistry,
         *,
         poll_interval_seconds: int = 15,
         batch_size: int = 25,
         max_retry_delay_seconds: int = 3600,
     ) -> None:
         self._repository: AnnouncementRepository = repository
-        self._adapter: AnnouncementChannelAdapter = adapter
+        if isinstance(adapter, AnnouncementChannelRegistry):
+            self._registry = adapter
+        else:
+            self._registry = AnnouncementChannelRegistry()
+            self._registry.register("discord_dm", adapter)
         self._poll_interval_seconds: int = max(1, int(poll_interval_seconds))
         self._batch_size: int = max(1, min(500, int(batch_size)))
         self._max_retry_delay_seconds: int = max(30, int(max_retry_delay_seconds))
@@ -120,8 +143,25 @@ class AnnouncementDispatcher:
             )
             return
 
+        adapter = self._registry.get(delivery.channel)
+        if adapter is None:
+            await self._repository.mark_delivery_failed(
+                delivery_id=delivery.delivery_id,
+                error_code="channel_not_registered",
+                error_detail=f"No adapter registered for channel {delivery.channel}",
+                terminal=True,
+                retry_delay_seconds=self._retry_delay_seconds(delivery.retry_count + 1),
+            )
+            log.warning(
+                "announcement_delivery_failed_unknown_channel",
+                delivery_id=delivery.delivery_id,
+                event_id=delivery.event_id,
+                channel=delivery.channel,
+            )
+            return
+
         try:
-            await self._adapter.send(event)
+            await adapter.send(event)
             await self._repository.mark_delivery_sent(
                 delivery_id=delivery.delivery_id,
                 sent_at=datetime.now(UTC),
@@ -131,6 +171,7 @@ class AnnouncementDispatcher:
                 delivery_id=delivery.delivery_id,
                 event_id=delivery.event_id,
                 channel=delivery.channel,
+                recipient_key=(event.recipient.routing_key if event.recipient else None),
                 target_user_id=event.target_user_id,
             )
         except AnnouncementDispatchError as exc:

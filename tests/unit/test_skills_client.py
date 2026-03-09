@@ -539,6 +539,49 @@ class TestSkillsClient:
             )
 
     @pytest.mark.asyncio
+    async def test_emit_announcement_event_supports_structured_recipient(self) -> None:
+        client = SkillsClient()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"ok": True}
+
+        with patch.object(client, "_get_client") as mock_get:
+            mock_http_client = AsyncMock()
+            mock_http_client.post = AsyncMock(return_value=mock_response)
+            mock_get.return_value = mock_http_client
+
+            await client.emit_announcement_event(
+                source="tenant_app",
+                category="build.completed",
+                title="Build completed",
+                body="Send to webhook recipient.",
+                recipient={
+                    "channel": "webhook",
+                    "webhook_url": "https://example.com/hooks/tenant-a",
+                },
+            )
+
+            mock_http_client.post.assert_called_once_with(
+                "/announcements/events",
+                json={
+                    "source": "tenant_app",
+                    "category": "build.completed",
+                    "severity": "normal",
+                    "title": "Build completed",
+                    "body": "Send to webhook recipient.",
+                    "payload": {},
+                    "channel": "discord_dm",
+                    "dedupe_window_minutes": 10,
+                    "state": "accepted",
+                    "recipient": {
+                        "channel": "webhook",
+                        "webhook_url": "https://example.com/hooks/tenant-a",
+                    },
+                },
+            )
+
+    @pytest.mark.asyncio
     async def test_request_admin_json_success_with_json_fallback_to_text(self) -> None:
         """request_admin_json() should return response text when JSON decoding fails."""
         client = SkillsClient(api_secret="skills-secret", actor_signing_secret="actor-secret")

@@ -28,6 +28,7 @@ class DiscordDMChannelAdapter:
         self._max_message_length = max(200, int(max_message_length))
 
     async def send(self, event: AnnouncementEvent) -> None:
+        target_user_id = self._target_user_id(event)
         if not self._bot.is_ready():
             raise AnnouncementDispatchError(
                 code="discord_bot_not_ready",
@@ -35,17 +36,17 @@ class DiscordDMChannelAdapter:
                 retryable=True,
             )
 
-        if event.target_user_id <= 0:
+        if target_user_id <= 0:
             raise AnnouncementDispatchError(
                 code="invalid_target_user_id",
-                detail=f"Invalid target user id: {event.target_user_id}",
+                detail=f"Invalid target user id: {target_user_id}",
                 retryable=False,
             )
 
-        user = self._bot.get_user(event.target_user_id)
+        user = self._bot.get_user(target_user_id)
         if user is None:
             try:
-                user = await self._bot.fetch_user(event.target_user_id)
+                user = await self._bot.fetch_user(target_user_id)
             except discord.NotFound as exc:
                 raise AnnouncementDispatchError(
                     code="discord_user_not_found",
@@ -97,7 +98,7 @@ class DiscordDMChannelAdapter:
         log.debug(
             "announcement_discord_dm_sent",
             event_id=event.event_id,
-            target_user_id=event.target_user_id,
+            target_user_id=target_user_id,
         )
 
     async def _send_long_message(self, user: discord.abc.Messageable, message: str) -> None:
@@ -131,3 +132,9 @@ class DiscordDMChannelAdapter:
     @staticmethod
     def _is_retryable_status(status: int | None) -> bool:
         return status in {429, 500, 502, 503, 504}
+
+    @staticmethod
+    def _target_user_id(event: AnnouncementEvent) -> int:
+        if event.recipient is not None and (event.recipient.target_user_id or 0) > 0:
+            return int(event.recipient.target_user_id or 0)
+        return int(event.target_user_id or 0)

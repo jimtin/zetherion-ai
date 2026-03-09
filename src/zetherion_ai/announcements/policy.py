@@ -12,8 +12,10 @@ from zoneinfo import ZoneInfo
 
 from zetherion_ai.announcements.storage import (
     AnnouncementEventInput,
+    AnnouncementRecipient,
     AnnouncementRepository,
     AnnouncementSeverity,
+    resolve_announcement_recipient,
 )
 from zetherion_ai.config import get_dynamic
 
@@ -84,10 +86,14 @@ class AnnouncementPolicyEngine:
 
         category = str(event.category).strip().lower()
         severity = self._resolve_severity(event, category=category)
-        preferences = await self._resolve_preferences(
-            user_id=event.target_user_id,
-            personal_profile=personal_profile,
-        )
+        recipient = resolve_announcement_recipient(event)
+        if self._recipient_uses_user_preferences(recipient):
+            preferences = await self._resolve_preferences(
+                user_id=int(recipient.target_user_id or 0),
+                personal_profile=personal_profile,
+            )
+        else:
+            preferences = self._default_preferences()
 
         if category in preferences.muted_categories:
             return AnnouncementPolicyDecision(
@@ -103,7 +109,8 @@ class AnnouncementPolicyEngine:
         suppression = await self._repository.upsert_suppression_observation(
             source=str(event.source).strip(),
             category=category,
-            target_user_id=event.target_user_id,
+            target_user_id=int(recipient.target_user_id or 0),
+            recipient_key=recipient.routing_key,
             fingerprint=fingerprint,
             seen_at=current,
         )
@@ -119,23 +126,34 @@ class AnnouncementPolicyEngine:
                 preferences=preferences,
             )
 
-        mode = "digest"
-        reason = "digest_window"
-        if severity is AnnouncementSeverity.CRITICAL:
+        if not self._recipient_uses_user_preferences(recipient):
             mode = "immediate"
-            reason = "critical_immediate"
-        elif category in preferences.immediate_categories:
-            mode = "immediate"
-            reason = "user_immediate_category"
+            reason = "recipient_channel_immediate_default"
+            if severity is AnnouncementSeverity.CRITICAL:
+                reason = "critical_immediate"
+        else:
+            mode = "digest"
+            reason = "digest_window"
+            if severity is AnnouncementSeverity.CRITICAL:
+                mode = "immediate"
+                reason = "critical_immediate"
+            elif category in preferences.immediate_categories:
+                mode = "immediate"
+                reason = "user_immediate_category"
 
-        if mode == "immediate" and severity is not AnnouncementSeverity.CRITICAL:
+        if (
+            mode == "immediate"
+            and severity is not AnnouncementSeverity.CRITICAL
+            and self._recipient_uses_user_preferences(recipient)
+        ):
             is_quiet = self._is_quiet_hours(current=current, preferences=preferences)
             if is_quiet:
                 mode = "digest"
                 reason = "quiet_hours_digest_fallback"
             else:
                 recent = await self._repository.count_recent_events(
-                    target_user_id=event.target_user_id,
+                    target_user_id=int(recipient.target_user_id or 0),
+                    recipient_key=recipient.routing_key,
                     since=current - timedelta(hours=1),
                     categories=preferences.immediate_categories or [category],
                 )
@@ -296,6 +314,24 @@ class AnnouncementPolicyEngine:
             ),
         }
 
+    def _default_preferences(self) -> ResolvedAnnouncementPreferences:
+        global_defaults = self._global_defaults()
+        return ResolvedAnnouncementPreferences(
+            timezone=str(global_defaults["timezone"]),
+            digest_enabled=self._as_bool(global_defaults["digest_enabled"], True),
+            digest_window_local=str(global_defaults["digest_window_local"]),
+            immediate_categories=self._coerce_list(global_defaults["immediate_categories"], []),
+            muted_categories=self._coerce_list(global_defaults["muted_categories"], []),
+            max_immediate_per_hour=max(
+                1,
+                self._as_int(global_defaults["max_immediate_per_hour"], 6),
+            ),
+        )
+
+    @staticmethod
+    def _recipient_uses_user_preferences(recipient: AnnouncementRecipient) -> bool:
+        return recipient.channel == "discord_dm" and int(recipient.target_user_id or 0) > 0
+
     @staticmethod
     def _personal_profile_values(profile: dict[str, Any]) -> dict[str, Any]:
         values: dict[str, Any] = {}
@@ -336,11 +372,12 @@ class AnnouncementPolicyEngine:
         explicit = str(event.fingerprint or "").strip()
         if explicit:
             return explicit
+        recipient = resolve_announcement_recipient(event)
         base = "|".join(
             [
                 str(event.source).strip(),
                 str(event.category).strip().lower(),
-                str(event.target_user_id),
+                recipient.routing_key,
                 str(event.title).strip(),
                 str(event.body).strip(),
             ]
