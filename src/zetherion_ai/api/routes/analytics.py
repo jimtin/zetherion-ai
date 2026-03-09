@@ -112,6 +112,7 @@ async def handle_analytics_events(request: web.Request) -> web.Response:
 
     tenant_id = str(tenant["tenant_id"])
     session_id = str(session["session_id"])
+    execution_mode = str(session.get("execution_mode") or request.get("execution_mode") or "live")
 
     try:
         raw = await request.json()
@@ -137,6 +138,7 @@ async def handle_analytics_events(request: web.Request) -> web.Response:
             tenant_id,
             session_id=session_id,
             external_user_id=payload.external_user_id,
+            execution_mode=execution_mode,
             consent_replay=bool(payload.consent_replay and replay_enabled),
             replay_sampled=sampled,
             metadata=payload.metadata,
@@ -147,6 +149,7 @@ async def handle_analytics_events(request: web.Request) -> web.Response:
             tenant_id,
             web_session_id=event.web_session_id or str(web_session["web_session_id"]),
             session_id=session_id,
+            execution_mode=execution_mode,
             event_type=event.event_type,
             event_name=event.event_name,
             page_url=event.page_url,
@@ -175,6 +178,7 @@ async def handle_replay_chunks(request: web.Request) -> web.Response:
 
     tenant_id = str(tenant["tenant_id"])
     session_id = str(session["session_id"])
+    execution_mode = str(session.get("execution_mode") or request.get("execution_mode") or "live")
 
     try:
         raw = await request.json()
@@ -210,6 +214,7 @@ async def handle_replay_chunks(request: web.Request) -> web.Response:
         web_session = await tenant_manager.ensure_web_session(
             tenant_id,
             session_id=session_id,
+            execution_mode=execution_mode,
             consent_replay=True,
             replay_sampled=True,
             metadata={"created_by": "replay_chunk_ingest"},
@@ -368,6 +373,7 @@ async def handle_session_end(request: web.Request) -> web.Response:
 
     tenant_id = str(tenant["tenant_id"])
     session_id = str(session["session_id"])
+    execution_mode = str(session.get("execution_mode") or request.get("execution_mode") or "live")
 
     try:
         raw = await request.json()
@@ -390,6 +396,7 @@ async def handle_session_end(request: web.Request) -> web.Response:
         web_session = await tenant_manager.ensure_web_session(
             tenant_id,
             session_id=session_id,
+            execution_mode=execution_mode,
             metadata={"created_by": "session_end"},
         )
 
@@ -405,50 +412,55 @@ async def handle_session_end(request: web.Request) -> web.Response:
         tenant_id,
         web_session_id=str(web_session["web_session_id"]),
         session_id=session_id,
+        include_test=execution_mode == "test",
     )
-    funnel = await aggregator.compute_daily_funnel(tenant_id)
-    release = await aggregator.detect_release_regression(tenant_id)
+    recommendations: list[dict[str, Any]] = []
+    release: dict[str, Any] = {"has_release": False, "regression": False}
 
-    engine = RecommendationEngine(tenant_manager)
-    candidates = engine.generate_candidates(
-        session_summary=summary,
-        funnel_rows=funnel,
-        release_regression=release,
-    )
-    recommendations = await engine.persist_candidates(tenant_id, candidates, source="session_end")
+    if execution_mode != "test":
+        funnel = await aggregator.compute_daily_funnel(tenant_id)
+        release = await aggregator.detect_release_regression(tenant_id)
 
-    interaction_summary = (
-        f"Web behavior summary: stage={summary.get('funnel_stage')}, "
-        f"events={summary.get('event_count', 0)}, converted={summary.get('converted', False)}"
-    )
-    await tenant_manager.add_interaction(
-        tenant_id=tenant_id,
-        contact_id=payload.contact_id,
-        session_id=session_id,
-        interaction_type="web_behavior_summary",
-        summary=interaction_summary,
-        entities={
-            "web_behavior_summary": summary,
-            "release_regression": release,
-            "recommendation_count": len(recommendations),
-        },
-        sentiment=None,
-        intent="behavior_summary",
-        outcome="resolved" if summary.get("converted") else "unresolved",
-    )
-
-    if payload.contact_id:
-        await tenant_manager.update_contact_custom_fields(
-            tenant_id,
-            payload.contact_id,
-            {
-                "behavior_segment": {
-                    "funnel_stage": summary.get("funnel_stage"),
-                    "converted": summary.get("converted"),
-                    "updated_at": datetime.now(tz=UTC).isoformat(),
-                }
-            },
+        engine = RecommendationEngine(tenant_manager)
+        candidates = engine.generate_candidates(
+            session_summary=summary,
+            funnel_rows=funnel,
+            release_regression=release,
         )
+        recommendations = await engine.persist_candidates(tenant_id, candidates, source="session_end")
+
+        interaction_summary = (
+            f"Web behavior summary: stage={summary.get('funnel_stage')}, "
+            f"events={summary.get('event_count', 0)}, converted={summary.get('converted', False)}"
+        )
+        await tenant_manager.add_interaction(
+            tenant_id=tenant_id,
+            contact_id=payload.contact_id,
+            session_id=session_id,
+            interaction_type="web_behavior_summary",
+            summary=interaction_summary,
+            entities={
+                "web_behavior_summary": summary,
+                "release_regression": release,
+                "recommendation_count": len(recommendations),
+            },
+            sentiment=None,
+            intent="behavior_summary",
+            outcome="resolved" if summary.get("converted") else "unresolved",
+        )
+
+        if payload.contact_id:
+            await tenant_manager.update_contact_custom_fields(
+                tenant_id,
+                payload.contact_id,
+                {
+                    "behavior_segment": {
+                        "funnel_stage": summary.get("funnel_stage"),
+                        "converted": summary.get("converted"),
+                        "updated_at": datetime.now(tz=UTC).isoformat(),
+                    }
+                },
+            )
 
     return web.json_response(
         {
@@ -456,6 +468,7 @@ async def handle_session_end(request: web.Request) -> web.Response:
             "web_session": _serialise(ended or web_session),
             "summary": summary,
             "recommendations_generated": len(recommendations),
+            "execution_mode": execution_mode,
         }
     )
 
@@ -464,6 +477,7 @@ async def handle_get_recommendations(request: web.Request) -> web.Response:
     """GET /api/v1/analytics/recommendations (session-auth)."""
     tenant = request["tenant"]
     tenant_manager = request.app["tenant_manager"]
+    execution_mode = str(request.get("execution_mode") or "live")
 
     tenant_id = str(tenant["tenant_id"])
     status = request.query.get("status")
@@ -471,6 +485,9 @@ async def handle_get_recommendations(request: web.Request) -> web.Response:
         limit = max(1, min(int(request.query.get("limit", "50")), 200))
     except ValueError:
         limit = 50
+
+    if execution_mode == "test":
+        return web.json_response({"recommendations": [], "count": 0})
 
     rows = await tenant_manager.list_recommendations(tenant_id, status=status, limit=limit)
     return web.json_response(
@@ -511,9 +528,16 @@ async def handle_recommendation_feedback(request: web.Request) -> web.Response:
     """POST /api/v1/analytics/recommendations/{recommendation_id}/feedback."""
     tenant = request["tenant"]
     tenant_manager = request.app["tenant_manager"]
+    execution_mode = str(request.get("execution_mode") or "live")
 
     tenant_id = str(tenant["tenant_id"])
     recommendation_id = request.match_info["recommendation_id"]
+
+    if execution_mode == "test":
+        return web.json_response(
+            {"error": "Recommendation feedback is unavailable in test mode"},
+            status=403,
+        )
 
     try:
         raw = await request.json()

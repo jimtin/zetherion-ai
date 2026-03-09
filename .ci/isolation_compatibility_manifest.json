@@ -1,6 +1,6 @@
 {
   "segment_id": "segment-0-current-state-isolation-inventory",
-  "generated_on": "2026-03-08",
+  "generated_on": "2026-03-09",
   "impacted_capability_ids": [
     "isolation.inventory.current-state-map",
     "trust.domains.canonical-vocabulary",
@@ -100,6 +100,9 @@
       ],
       "tables": [
         "tenants",
+        "tenant_api_keys",
+        "tenant_test_profiles",
+        "tenant_test_rules",
         "chat_sessions",
         "chat_messages",
         "tenant_subject_memories",
@@ -119,7 +122,7 @@
         "tenant_recommendations",
         "tenant_recommendation_feedback"
       ],
-      "migration_note": "Tenant session summaries and subject memories now stay in tenant_raw; release markers and nonces should move under control_plane during later isolation segments."
+      "migration_note": "Tenant session summaries, sandbox-tagged execution rows, and subject memories now stay in tenant_raw, while the tenant API-key registry plus sandbox profile/rule configuration add control-plane setup state; release markers and nonces should move under control_plane during later isolation segments."
     },
     {
       "id": "personal-relational",
@@ -435,6 +438,8 @@
         "src/zetherion_ai/api/middleware.py",
         "src/zetherion_ai/api/routes/sessions.py",
         "src/zetherion_ai/api/routes/chat.py",
+        "src/zetherion_ai/api/routes/analytics.py",
+        "src/zetherion_ai/api/routes/test_mode.py",
         "src/zetherion_ai/api/routes/documents.py",
         "src/zetherion_ai/api/routes/messaging.py",
         "src/zetherion_ai/api/routes/youtube.py"
@@ -444,7 +449,7 @@
         "tenant_derived",
         "control_plane"
       ],
-      "migration_note": "Routes need explicit scope propagation once the scope kernel is introduced."
+      "migration_note": "Routes now propagate execution_mode for live versus sandbox tenant traffic, but they still need broader fail-closed scope propagation once the scope kernel is introduced."
     },
     {
       "id": "cgs-gateway",
@@ -506,6 +511,7 @@
       "id": "domain-prompts",
       "paths": [
         "src/zetherion_ai/api/conversation_runtime.py",
+        "src/zetherion_ai/api/test_runtime.py",
         "src/zetherion_ai/skills/client_chat.py",
         "src/zetherion_ai/skills/gmail/replies.py",
         "src/zetherion_ai/documents/service.py",
@@ -516,7 +522,7 @@
         "tenant_raw",
         "control_plane"
       ],
-      "migration_note": "Tenant public-chat context assembly now stays in tenant_raw, but domain prompt fragments still rely on caller discipline for some cross-domain separation."
+      "migration_note": "Tenant public-chat context assembly and sandbox response synthesis now stay in tenant_raw, but domain prompt fragments still rely on caller discipline for some cross-domain separation."
     }
   ],
   "job_flows": [

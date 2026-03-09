@@ -40,7 +40,7 @@ async def analytics_routes_client():
         "name": "Test Tenant",
         "config": {"analytics": {"replay_enabled": True, "replay_sample_rate": 1.0}},
     }
-    session = {"session_id": "session-1", "tenant_id": "tenant-1"}
+    session = {"session_id": "session-1", "tenant_id": "tenant-1", "execution_mode": "live"}
 
     tenant_manager = AsyncMock()
     tenant_manager.get_web_session = AsyncMock(return_value=None)
@@ -114,7 +114,9 @@ async def analytics_routes_client():
     @web.middleware
     async def inject_context(request: web.Request, handler):
         request["tenant"] = tenant
-        request["session"] = session
+        session_mode = str(request.app.get("session_execution_mode", session.get("execution_mode", "live")))
+        request["session"] = {**session, "execution_mode": session_mode}
+        request["execution_mode"] = session_mode
         return await handler(request)
 
     app = web.Application(middlewares=[inject_context])
@@ -238,6 +240,8 @@ async def test_handle_analytics_events_ingests_batch(analytics_routes_client) ->
     assert payload["ingested"] == 2
     tenant_manager.ensure_web_session.assert_awaited_once()
     assert tenant_manager.add_web_event.await_count == 2
+    assert tenant_manager.ensure_web_session.await_args.kwargs["execution_mode"] == "live"
+    assert tenant_manager.add_web_event.await_args_list[0].kwargs["execution_mode"] == "live"
 
 
 @pytest.mark.asyncio
@@ -392,6 +396,47 @@ async def test_handle_session_end_generates_summary_and_enrichment(analytics_rou
 
 
 @pytest.mark.asyncio
+async def test_handle_session_end_test_mode_skips_derived_side_effects(
+    analytics_routes_client,
+) -> None:
+    client, tenant_manager, _ = analytics_routes_client
+    client.app["session_execution_mode"] = "test"
+
+    aggregator = MagicMock()
+    aggregator.summarize_session = AsyncMock(
+        return_value={
+            "event_count": 2,
+            "funnel_stage": "awareness",
+            "converted": False,
+            "events_by_type": {"page_view": 2},
+            "friction": {"rage_clicks": 0, "dead_clicks": 0, "js_errors": 0, "api_errors": 0},
+        }
+    )
+    aggregator.compute_daily_funnel = AsyncMock(return_value=[])
+    aggregator.detect_release_regression = AsyncMock(return_value={"has_release": False})
+
+    engine = MagicMock()
+    engine.generate_candidates = MagicMock(return_value=[])
+    engine.persist_candidates = AsyncMock(return_value=[])
+
+    with (
+        patch("zetherion_ai.api.routes.analytics.AnalyticsAggregator", return_value=aggregator),
+        patch("zetherion_ai.api.routes.analytics.RecommendationEngine", return_value=engine),
+    ):
+        response = await client.post("/api/v1/analytics/sessions/end", json={"web_session_id": "ws"})
+
+    assert response.status == 200
+    body = await response.json()
+    assert body["execution_mode"] == "test"
+    assert body["recommendations_generated"] == 0
+    aggregator.compute_daily_funnel.assert_not_awaited()
+    aggregator.detect_release_regression.assert_not_awaited()
+    engine.persist_candidates.assert_not_awaited()
+    tenant_manager.add_interaction.assert_not_awaited()
+    tenant_manager.update_contact_custom_fields.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_handle_get_recommendations_returns_rows(analytics_routes_client) -> None:
     client, tenant_manager, _ = analytics_routes_client
     response = await client.get("/api/v1/analytics/recommendations?status=open&limit=20")
@@ -400,6 +445,19 @@ async def test_handle_get_recommendations_returns_rows(analytics_routes_client) 
     assert body["count"] == 1
     assert body["recommendations"][0]["recommendation_id"] == "rec-1"
     tenant_manager.list_recommendations.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_get_recommendations_returns_empty_in_test_mode(
+    analytics_routes_client,
+) -> None:
+    client, tenant_manager, _ = analytics_routes_client
+    client.app["session_execution_mode"] = "test"
+
+    response = await client.get("/api/v1/analytics/recommendations")
+    assert response.status == 200
+    assert await response.json() == {"recommendations": [], "count": 0}
+    tenant_manager.list_recommendations.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -433,6 +491,22 @@ async def test_handle_recommendation_feedback_records_outcome(analytics_routes_c
     assert body["ok"] is True
     assert body["feedback"]["feedback_type"] == "accepted"
     tenant_manager.add_recommendation_feedback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_recommendation_feedback_rejected_in_test_mode(
+    analytics_routes_client,
+) -> None:
+    client, tenant_manager, _ = analytics_routes_client
+    client.app["session_execution_mode"] = "test"
+
+    response = await client.post(
+        "/api/v1/analytics/recommendations/rec-1/feedback",
+        json={"feedback_type": "accepted"},
+    )
+    assert response.status == 403
+    assert await response.json() == {"error": "Recommendation feedback is unavailable in test mode"}
+    tenant_manager.add_recommendation_feedback.assert_not_awaited()
 
 
 @pytest.mark.asyncio

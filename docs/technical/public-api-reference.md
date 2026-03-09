@@ -11,10 +11,24 @@ plus optional tenant-scoped YouTube endpoints.
 This API is distinct from the internal Skills API (`:8080`) and is not the public
 client contract. External clients must integrate through CGS `/service/ai/v1`.
 
-Maintenance note (2026-03-08):
-- Segment 2 tenant conversational runtime now lets `POST /api/v1/sessions` accept an optional `memory_subject_id`, derives it from `external_user_id` when omitted, and returns tenant-local conversation metadata (`memory_subject_id`, `conversation_summary`) on session reads.
-- `POST /api/v1/chat` and `POST /api/v1/chat/stream` now assemble tenant-scoped context from the active session summary plus durable tenant subject memories. That context remains inside `tenant_raw`; no owner-personal memory is shared with the public API runtime.
-- Route auth and wire formats remain unchanged in this segment.
+Maintenance note (2026-03-09):
+- Segment 3 adds tenant sandbox execution to the upstream runtime without changing the live chat wire format.
+- `POST /api/v1/sessions` now accepts optional `test_profile_id`, returns `execution_mode` plus `test_profile_id`, and mints session tokens that carry `execution_mode=live|test`.
+- Tenant API key auth now supports both `sk_live_...` and `sk_test_...`. In this segment, `sk_test_...` keys are intentionally limited to `POST /api/v1/sessions` plus `/api/v1/test/*`.
+- Added deterministic sandbox control routes:
+  - `GET /api/v1/test/profiles`
+  - `POST /api/v1/test/profiles`
+  - `GET /api/v1/test/profiles/{profile_id}`
+  - `PATCH /api/v1/test/profiles/{profile_id}`
+  - `DELETE /api/v1/test/profiles/{profile_id}`
+  - `GET /api/v1/test/profiles/{profile_id}/rules`
+  - `POST /api/v1/test/profiles/{profile_id}/rules`
+  - `PATCH /api/v1/test/profiles/{profile_id}/rules/{rule_id}`
+  - `DELETE /api/v1/test/profiles/{profile_id}/rules/{rule_id}`
+  - `POST /api/v1/test/profiles/{profile_id}/preview`
+- Test-mode session chat and analytics remain tenant-scoped but are tagged `execution_mode=test`; they skip CRM extraction and tenant-derived recommendation/funnel writes by default.
+- Segment 2 tenant conversational runtime still lets `POST /api/v1/sessions` accept an optional `memory_subject_id`, derives it from `external_user_id` when omitted, and returns tenant-local conversation metadata (`memory_subject_id`, `conversation_summary`) on session reads.
+- `POST /api/v1/chat` and `POST /api/v1/chat/stream` still assemble tenant-scoped context from the active session summary plus durable tenant subject memories. That context remains inside `tenant_raw`; no owner-personal memory is shared with the public API runtime.
 - Previous 2026-03-05 data-plane isolation work added owner-vs-tenant Qdrant routing,
   scoped object-storage prefixes, additive PostgreSQL isolation schemas, and
   owner-vs-tenant encryption domains behind the upstream runtime.
@@ -42,7 +56,7 @@ Maintenance note (2026-03-08):
 
 The API uses two auth modes:
 
-1. `X-API-Key` for tenant control-plane calls (sessions, release markers, and YouTube routes)
+1. `X-API-Key` for tenant control-plane calls (sessions, sandbox controls, release markers, and YouTube routes)
 2. `Authorization: Bearer zt_sess_...` for session-scoped calls (chat and analytics)
 
 ### API Key auth
@@ -53,9 +67,18 @@ Provide a tenant API key for non-chat routes:
 X-API-Key: sk_live_...
 ```
 
+Supported key families in this segment:
+
+- `sk_live_...`
+  - full upstream API-key surface
+- `sk_test_...`
+  - only `POST /api/v1/sessions` and `/api/v1/test/*`
+  - intended to create test-mode sessions and manage deterministic sandbox profiles/rules
+
 ### Session token auth
 
 Session tokens are JWTs prefixed with `zt_sess_` and default to 24-hour expiry.
+They now carry `execution_mode`, which must match the stored session mode.
 Use them for:
 
 - `POST /api/v1/chat`
@@ -99,6 +122,7 @@ Create a tenant session and return a session token.
 
 Use `memory_subject_id` when the client already has a stable tenant-local user identifier.
 If it is omitted, the runtime derives it from `external_user_id` when available.
+Use `test_profile_id` only when creating a session with `sk_test_...`; if omitted, the tenant default sandbox profile is used when one exists.
 
 **Headers:** `X-API-Key`
 
@@ -108,6 +132,7 @@ If it is omitted, the runtime derives it from `external_user_id` when available.
 {
   "external_user_id": "user_123",
   "memory_subject_id": "user_123",
+  "test_profile_id": "sandbox-profile-1",
   "metadata": {
     "source": "web"
   }
@@ -122,6 +147,8 @@ If it is omitted, the runtime derives it from `external_user_id` when available.
   "tenant_id": "...",
   "external_user_id": "user_123",
   "memory_subject_id": "user_123",
+  "execution_mode": "test",
+  "test_profile_id": "sandbox-profile-1",
   "conversation_summary": "",
   "created_at": "2026-02-24T18:00:00+00:00",
   "expires_at": "2026-02-25T18:00:00+00:00",
@@ -143,6 +170,8 @@ Get session metadata for the authenticated tenant.
   "tenant_id": "...",
   "external_user_id": "user_123",
   "memory_subject_id": "user_123",
+  "execution_mode": "test",
+  "test_profile_id": "sandbox-profile-1",
   "conversation_summary": "Recent user requests: asked about bathroom pricing",
   "created_at": "2026-02-24T18:00:00+00:00",
   "last_active": "2026-02-24T18:05:00+00:00",
@@ -166,6 +195,232 @@ Delete a session for the authenticated tenant.
 
 ---
 
+## Sandbox Control (API Key)
+
+These routes manage tenant-scoped sandbox profiles and deterministic response rules.
+They are the only new API-key routes available to `sk_test_...` keys in this segment.
+
+Sandbox responses keep the same live chat wire format but never call live providers.
+When no rule matches, the runtime falls back to deterministic built-in presets such as
+`pricing`, `availability`, `booking`, `urgent_support`, `follow_up`, or `default`.
+
+### GET /api/v1/test/profiles
+
+List sandbox profiles for the authenticated tenant.
+
+**Headers:** `X-API-Key`
+
+**Response 200:**
+
+```json
+{
+  "profiles": [
+    {
+      "profile_id": "...",
+      "tenant_id": "...",
+      "name": "Default sandbox",
+      "description": "Primary test profile",
+      "is_default": true,
+      "is_active": true,
+      "created_at": "2026-03-09T00:00:00+00:00",
+      "updated_at": "2026-03-09T00:00:00+00:00"
+    }
+  ],
+  "count": 1
+}
+```
+
+### POST /api/v1/test/profiles
+
+Create one sandbox profile.
+
+**Headers:** `X-API-Key`
+
+**Request:**
+
+```json
+{
+  "name": "Default sandbox",
+  "description": "Primary test profile",
+  "is_default": true
+}
+```
+
+### GET /api/v1/test/profiles/{profile_id}
+
+Fetch one sandbox profile.
+
+**Headers:** `X-API-Key`
+
+### PATCH /api/v1/test/profiles/{profile_id}
+
+Patch one sandbox profile.
+
+**Headers:** `X-API-Key`
+
+Supported fields:
+
+- `name`
+- `description`
+- `is_default`
+- `is_active`
+
+### DELETE /api/v1/test/profiles/{profile_id}
+
+Delete one sandbox profile.
+
+**Headers:** `X-API-Key`
+
+**Response 200:**
+
+```json
+{
+  "ok": true
+}
+```
+
+### GET /api/v1/test/profiles/{profile_id}/rules
+
+List rules for one sandbox profile.
+
+**Headers:** `X-API-Key`
+
+### POST /api/v1/test/profiles/{profile_id}/rules
+
+Create one sandbox rule.
+
+**Headers:** `X-API-Key`
+
+**Request:**
+
+```json
+{
+  "priority": 10,
+  "method": "POST",
+  "route_pattern": "/api/v1/chat*",
+  "enabled": true,
+  "match": {
+    "body_contains": ["pricing"],
+    "metadata_contains": {
+      "channel": "web"
+    },
+    "conversation_state": "ongoing"
+  },
+  "response": {
+    "preset_id": "pricing",
+    "json_body": {
+      "content": "Simulated pricing reply",
+      "model": "sandbox-simulated"
+    }
+  },
+  "latency_ms": 50
+}
+```
+
+Supported `match` keys:
+
+- `body_contains`
+- `metadata_contains`
+- `tool_name`
+- `conversation_state` (`new|returning|ongoing`)
+
+Supported `response` keys:
+
+- `preset_id`
+- `json_body`
+- `sse_events`
+- `error`
+
+### PATCH /api/v1/test/profiles/{profile_id}/rules/{rule_id}
+
+Patch one sandbox rule.
+
+**Headers:** `X-API-Key`
+
+### DELETE /api/v1/test/profiles/{profile_id}/rules/{rule_id}
+
+Delete one sandbox rule.
+
+**Headers:** `X-API-Key`
+
+**Response 200:**
+
+```json
+{
+  "ok": true
+}
+```
+
+### POST /api/v1/test/profiles/{profile_id}/preview
+
+Preview rule matching and deterministic output for a hypothetical request without creating a session or spending inference budget.
+
+**Headers:** `X-API-Key`
+
+**Request:**
+
+```json
+{
+  "route": "/api/v1/chat",
+  "method": "POST",
+  "body": {
+    "message": "Can you help with pricing?",
+    "metadata": {
+      "channel": "web"
+    }
+  },
+  "session": {
+    "memory_subject_id": "visitor-42",
+    "conversation_summary": ""
+  },
+  "history": [
+    {
+      "role": "user",
+      "content": "I need a quote"
+    }
+  ]
+}
+```
+
+**Response 200:**
+
+```json
+{
+  "profile_id": "...",
+  "matched_rule_id": "...",
+  "preset_id": "pricing",
+  "latency_ms": 50,
+  "response": {
+    "preset_id": "pricing",
+    "json_body": {
+      "content": "Simulated pricing reply",
+      "model": "sandbox-simulated"
+    }
+  },
+  "chat_result": {
+    "content": "Simulated pricing reply",
+    "model": "sandbox-simulated",
+    "metadata": {
+      "sandbox_profile_id": "...",
+      "sandbox_rule_id": "...",
+      "sandbox_preset_id": "pricing"
+    }
+  },
+  "stream_events": [
+    {
+      "type": "token",
+      "content": "Simulated pricing reply"
+    },
+    {
+      "type": "done",
+      "model": "sandbox-simulated"
+    }
+  ]
+}
+```
+
+---
+
 ## Chat (Session Token)
 
 ### POST /api/v1/chat
@@ -177,6 +432,7 @@ The runtime now prepends tenant-scoped context from:
 - durable memories linked to the session's `memory_subject_id`
 
 Those context notes remain in `tenant_raw` and are never hydrated from owner-personal memory.
+When the session token carries `execution_mode=test`, chat uses the sandbox runtime instead of live inference but returns the same response shape.
 
 **Headers:** `Authorization: Bearer zt_sess_...`
 
@@ -200,7 +456,7 @@ Those context notes remain in `tenant_raw` and are never hydrated from owner-per
   "role": "assistant",
   "content": "...",
   "created_at": "2026-02-24T18:10:00+00:00",
-  "model": "..."
+  "model": "sandbox-simulated"
 }
 ```
 
@@ -214,6 +470,8 @@ Event payloads:
 
 - `{"type":"token","content":"..."}` repeated
 - `{"type":"done","message_id":"...","model":"..."}` final
+
+In test mode, the final `model` is usually `sandbox-simulated` unless the matching sandbox rule overrides it.
 
 ### GET /api/v1/chat/history
 
@@ -248,6 +506,7 @@ Retrieve conversation history for the authenticated session.
 
 These routes power web behavior analytics and app-watcher recommendation feedback.
 All analytics routes require `Authorization: Bearer zt_sess_...`.
+When the session token is test-mode, analytics rows are still tagged to the tenant/session but are excluded from funnel, recommendation, CRM, and other tenant-derived writes in this segment.
 
 ### POST /api/v1/analytics/events
 
@@ -291,6 +550,12 @@ when object storage is configured.
 
 Close a tracked web session, compute behavior summary, and generate recommendations.
 
+Test-mode behavior:
+
+- still returns a session summary
+- includes `execution_mode: "test"` in the response
+- does not persist recommendations, funnel rows, CRM interactions, or contact custom-field updates
+
 ### GET /api/v1/analytics/recommendations
 
 List recommendation candidates for the current tenant/session context.
@@ -300,9 +565,17 @@ Query params:
 - `status` (optional)
 - `limit` (default `50`, max `200`)
 
+Test-mode behavior:
+
+- returns `{"recommendations":[],"count":0}`
+
 ### POST /api/v1/analytics/recommendations/{recommendation_id}/feedback
 
 Attach feedback to one recommendation.
+
+Test-mode behavior:
+
+- returns `403` because sandbox sessions cannot mutate recommendation feedback state
 
 ### GET /api/v1/analytics/recommendations/tenant
 

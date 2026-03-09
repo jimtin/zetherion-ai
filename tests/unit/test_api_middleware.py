@@ -139,7 +139,12 @@ class TestAuthMiddleware:
 
         async def protected(request: web.Request) -> web.Response:
             tenant = request.get("tenant", {})
-            return web.json_response({"tenant_id": str(tenant.get("tenant_id", ""))})
+            return web.json_response(
+                {
+                    "tenant_id": str(tenant.get("tenant_id", "")),
+                    "execution_mode": str(request.get("execution_mode", "")),
+                }
+            )
 
         async def chat(request: web.Request) -> web.Response:
             tenant = request.get("tenant", {})
@@ -149,11 +154,14 @@ class TestAuthMiddleware:
                     "ok": True,
                     "tenant_id": str(tenant.get("tenant_id", "")),
                     "session_id": str(session.get("session_id", "")),
+                    "execution_mode": str(request.get("execution_mode", "")),
                 }
             )
 
         app.router.add_get("/api/v1/health", health)
         app.router.add_get("/api/v1/tenants", protected)
+        app.router.add_post("/api/v1/sessions", protected)
+        app.router.add_get("/api/v1/test/profiles", protected)
         app.router.add_post("/api/v1/chat", chat)
         app.router.add_post("/api/v1/analytics/events", chat)
         app.router.add_get("/api/v1/analytics/funnel", protected)
@@ -203,7 +211,7 @@ class TestAuthMiddleware:
         """Valid X-API-Key authenticates and attaches tenant."""
         tm = AsyncMock()
         tm.authenticate_api_key = AsyncMock(
-            return_value={"tenant_id": "abc-123", "is_active": True}
+            return_value={"tenant_id": "abc-123", "is_active": True, "execution_mode": "live"}
         )
         app = self._make_app(tenant_manager=tm)
         async with TestClient(TestServer(app)) as client:
@@ -211,6 +219,33 @@ class TestAuthMiddleware:
             assert resp.status == 200
             data = await resp.json()
             assert data["tenant_id"] == "abc-123"
+            assert data["execution_mode"] == "live"
+
+    @pytest.mark.asyncio
+    async def test_test_api_key_allowed_on_sessions_and_test_routes(self):
+        """sk_test_ keys are allowed on the sandbox/session management surface."""
+        tm = AsyncMock()
+        tm.authenticate_api_key = AsyncMock(
+            return_value={"tenant_id": "abc-123", "is_active": True, "execution_mode": "test"}
+        )
+        app = self._make_app(tenant_manager=tm)
+        async with TestClient(TestServer(app)) as client:
+            session_resp = await client.post("/api/v1/sessions", headers={"X-API-Key": "sk_test_valid"})
+            assert session_resp.status == 200
+            test_resp = await client.get("/api/v1/test/profiles", headers={"X-API-Key": "sk_test_valid"})
+            assert test_resp.status == 200
+
+    @pytest.mark.asyncio
+    async def test_test_api_key_rejected_on_live_only_control_routes(self):
+        """sk_test_ keys are blocked from unsupported API-key routes in Segment 3."""
+        tm = AsyncMock()
+        tm.authenticate_api_key = AsyncMock(
+            return_value={"tenant_id": "abc-123", "is_active": True, "execution_mode": "test"}
+        )
+        app = self._make_app(tenant_manager=tm)
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get("/api/v1/tenants", headers={"X-API-Key": "sk_test_valid"})
+            assert resp.status == 403
 
     @pytest.mark.asyncio
     async def test_session_auth_missing_bearer(self):
@@ -345,7 +380,7 @@ class TestAuthMiddleware:
 
         with patch(
             "zetherion_ai.api.middleware.validate_session_token",
-            return_value={"tenant_id": "tenant-a", "session_id": "s1"},
+            return_value={"tenant_id": "tenant-a", "session_id": "s1", "execution_mode": "live"},
         ):
             async with TestClient(TestServer(app)) as client:
                 resp = await client.post(
@@ -377,7 +412,29 @@ class TestAuthMiddleware:
                 data = await resp.json()
                 assert data["tenant_id"] == "tenant-a"
                 assert data["session_id"] == "s1"
+                assert data["execution_mode"] == "live"
         tm.touch_session.assert_awaited_once_with("s1")
+
+    @pytest.mark.asyncio
+    async def test_session_auth_rejects_execution_mode_mismatch(self):
+        """Session token execution mode must match the stored session."""
+        tm = AsyncMock()
+        tm.get_tenant = AsyncMock(return_value={"tenant_id": "tenant-a", "is_active": True})
+        tm.get_session = AsyncMock(
+            return_value={"session_id": "s1", "tenant_id": "tenant-a", "execution_mode": "live"}
+        )
+        app = self._make_app(tenant_manager=tm)
+
+        with patch(
+            "zetherion_ai.api.middleware.validate_session_token",
+            return_value={"tenant_id": "tenant-a", "session_id": "s1", "execution_mode": "test"},
+        ):
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.post(
+                    "/api/v1/chat",
+                    headers={"Authorization": "Bearer valid.token"},
+                )
+                assert resp.status == 401
 
 
 class TestRateLimitMiddleware:

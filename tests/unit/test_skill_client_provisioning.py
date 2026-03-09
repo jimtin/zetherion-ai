@@ -281,7 +281,25 @@ class TestClientRotateKey:
         resp = await skill.safe_handle(req)
         assert resp.success is True
         assert resp.data["api_key"] == "sk_live_new_key_5678"
+        assert resp.data["key_mode"] == "live"
         assert "rotated" in resp.message.lower()
+        skill._tenant_manager.rotate_api_key.assert_awaited_once_with(tid, key_kind="live")
+
+    @pytest.mark.asyncio
+    async def test_issue_test_key_success(self, skill: ClientProvisioningSkill) -> None:
+        await skill.safe_initialize()
+        tid = str(uuid4())
+        skill._tenant_manager.rotate_api_key = AsyncMock(return_value="sk_test_new_key_5678")
+        req = SkillRequest(
+            intent="client_rotate_key",
+            context={"tenant_id": tid, "key_mode": "test"},
+        )
+        resp = await skill.safe_handle(req)
+        assert resp.success is True
+        assert resp.data["api_key"] == "sk_test_new_key_5678"
+        assert resp.data["key_mode"] == "test"
+        assert "test api key issued" in resp.message.lower()
+        skill._tenant_manager.rotate_api_key.assert_awaited_once_with(tid, key_kind="test")
 
     @pytest.mark.asyncio
     async def test_rotate_missing_tenant_id(self, skill: ClientProvisioningSkill) -> None:

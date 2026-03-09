@@ -3,7 +3,7 @@ info:
   title: Zetherion Upstream API
   version: 1.0.0
   description: Internal `/api/v1` upstream contract consumed by the CGS gateway. External clients should use CGS `/service/ai/v1`.
-  x-maintenance-note: "2026-03-08: /api/v1/sessions now accepts optional memory_subject_id, derives a tenant-local subject when omitted, and returns conversation_summary metadata for tenant-scoped conversational recall. /api/v1/chat and /api/v1/chat/stream now assemble prompt context from tenant_raw session summaries plus tenant subject memories without changing auth modes or route paths. 2026-03-06: added internal data-plane isolation foundations (owner/tenant Qdrant routing, scoped object-storage prefixes, additive PostgreSQL isolation schemas, and owner-vs-tenant encryption domains) without changing the upstream /api/v1 route contract. 2026-03-05: added tenant messaging read/send routes plus document archive/delete + restore lifecycle updates."
+  x-maintenance-note: "2026-03-09: added upstream tenant sandbox controls, sk_test_ API-key handling for POST /api/v1/sessions plus /api/v1/test/*, execution_mode tagging on session tokens/sessions/messages/analytics rows, and deterministic test-mode chat/stream behavior that preserves the live wire format while suppressing tenant-derived writes. 2026-03-08: /api/v1/sessions now accepts optional memory_subject_id, derives a tenant-local subject when omitted, and returns conversation_summary metadata for tenant-scoped conversational recall. /api/v1/chat and /api/v1/chat/stream now assemble prompt context from tenant_raw session summaries plus tenant subject memories without changing auth modes or route paths. 2026-03-06: added internal data-plane isolation foundations (owner/tenant Qdrant routing, scoped object-storage prefixes, additive PostgreSQL isolation schemas, and owner-vs-tenant encryption domains) without changing the upstream /api/v1 route contract. 2026-03-05: added tenant messaging read/send routes plus document archive/delete + restore lifecycle updates."
 servers:
   - url: https://{host}
     variables:
@@ -26,7 +26,7 @@ paths:
   /api/v1/sessions:
     post:
       summary: Create tenant chat session
-      description: Create a tenant-scoped session token and optionally bind the session to a stable tenant-local memory subject.
+      description: Create a tenant-scoped session token and optionally bind the session to a stable tenant-local memory subject. When authenticated with sk_test_, the session is created in execution_mode=test and can optionally bind to a sandbox test profile.
       requestBody:
         required: false
         content:
@@ -40,6 +40,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SessionResponse'
+        '400':
+          description: Invalid session payload or test profile requested with a live key
+        '404':
+          description: Sandbox profile not found
   /api/v1/sessions/{session_id}:
     get:
       summary: Get session metadata
@@ -59,6 +63,171 @@ paths:
       responses:
         '200':
           description: Session deleted
+  /api/v1/test/profiles:
+    get:
+      summary: List sandbox profiles
+      responses:
+        '200':
+          description: Sandbox profiles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestProfileListResponse'
+    post:
+      summary: Create sandbox profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestProfileCreateRequest'
+      responses:
+        '201':
+          description: Sandbox profile created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestProfileRecord'
+  /api/v1/test/profiles/{profile_id}:
+    get:
+      summary: Get sandbox profile
+      parameters:
+        - $ref: '#/components/parameters/ProfileId'
+      responses:
+        '200':
+          description: Sandbox profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestProfileRecord'
+        '404':
+          description: Sandbox profile not found
+    patch:
+      summary: Patch sandbox profile
+      parameters:
+        - $ref: '#/components/parameters/ProfileId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestProfilePatchRequest'
+      responses:
+        '200':
+          description: Sandbox profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestProfileRecord'
+        '404':
+          description: Sandbox profile not found
+    delete:
+      summary: Delete sandbox profile
+      parameters:
+        - $ref: '#/components/parameters/ProfileId'
+      responses:
+        '200':
+          description: Sandbox profile deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '404':
+          description: Sandbox profile not found
+  /api/v1/test/profiles/{profile_id}/rules:
+    get:
+      summary: List sandbox rules
+      parameters:
+        - $ref: '#/components/parameters/ProfileId'
+      responses:
+        '200':
+          description: Sandbox rules
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestRuleListResponse'
+        '404':
+          description: Sandbox profile not found
+    post:
+      summary: Create sandbox rule
+      parameters:
+        - $ref: '#/components/parameters/ProfileId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestRuleCreateRequest'
+      responses:
+        '201':
+          description: Sandbox rule created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestRuleRecord'
+        '400':
+          description: Invalid sandbox rule payload
+        '404':
+          description: Sandbox profile not found
+  /api/v1/test/profiles/{profile_id}/preview:
+    post:
+      summary: Preview sandbox profile resolution
+      parameters:
+        - $ref: '#/components/parameters/ProfileId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestProfilePreviewRequest'
+      responses:
+        '200':
+          description: Sandbox preview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestProfilePreviewResponse'
+        '400':
+          description: Invalid preview payload
+        '404':
+          description: Sandbox profile not found
+  /api/v1/test/profiles/{profile_id}/rules/{rule_id}:
+    patch:
+      summary: Patch sandbox rule
+      parameters:
+        - $ref: '#/components/parameters/ProfileId'
+        - $ref: '#/components/parameters/RuleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestRulePatchRequest'
+      responses:
+        '200':
+          description: Sandbox rule updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestRuleRecord'
+        '400':
+          description: Invalid sandbox rule payload
+        '404':
+          description: Sandbox rule not found
+    delete:
+      summary: Delete sandbox rule
+      parameters:
+        - $ref: '#/components/parameters/ProfileId'
+        - $ref: '#/components/parameters/RuleId'
+      responses:
+        '200':
+          description: Sandbox rule deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '404':
+          description: Sandbox rule not found
   /api/v1/chat:
     post:
       summary: Send a chat message
@@ -472,6 +641,18 @@ components:
       schema:
         type: string
         format: uuid
+    ProfileId:
+      name: profile_id
+      in: path
+      required: true
+      schema:
+        type: string
+    RuleId:
+      name: rule_id
+      in: path
+      required: true
+      schema:
+        type: string
     UploadId:
       name: upload_id
       in: path
@@ -495,6 +676,12 @@ components:
         service:
           type: string
       required: [status, service]
+    OkResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+      required: [ok]
     SessionCreateRequest:
       type: object
       properties:
@@ -505,6 +692,10 @@ components:
           type: string
           nullable: true
           description: Stable tenant-local subject key for cross-session conversational memory. When omitted, the runtime derives it from external_user_id when available.
+        test_profile_id:
+          type: string
+          nullable: true
+          description: Optional sandbox profile ID. Only valid when creating the session with a sk_test_ API key.
         metadata:
           type: object
           additionalProperties: true
@@ -523,6 +714,12 @@ components:
         memory_subject_id:
           type: string
           nullable: true
+        execution_mode:
+          type: string
+          enum: [live, test]
+        test_profile_id:
+          type: string
+          nullable: true
         conversation_summary:
           type: string
           description: Rolling tenant-scoped summary of the active conversation.
@@ -534,7 +731,7 @@ components:
           format: date-time
         session_token:
           type: string
-      required: [session_id, tenant_id, conversation_summary, created_at, expires_at, session_token]
+      required: [session_id, tenant_id, execution_mode, conversation_summary, created_at, expires_at, session_token]
     SessionInfo:
       type: object
       properties:
@@ -548,6 +745,12 @@ components:
           type: string
           nullable: true
         memory_subject_id:
+          type: string
+          nullable: true
+        execution_mode:
+          type: string
+          enum: [live, test]
+        test_profile_id:
           type: string
           nullable: true
         conversation_summary:
@@ -565,10 +768,206 @@ components:
       required:
         - session_id
         - tenant_id
+        - execution_mode
         - conversation_summary
         - created_at
         - last_active
         - expires_at
+    TestProfileCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        is_default:
+          type: boolean
+          default: false
+    TestProfilePatchRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        is_default:
+          type: boolean
+        is_active:
+          type: boolean
+    TestProfileRecord:
+      type: object
+      properties:
+        profile_id:
+          type: string
+        tenant_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        is_default:
+          type: boolean
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [profile_id, tenant_id, name, is_default, is_active, created_at, updated_at]
+    TestProfileListResponse:
+      type: object
+      properties:
+        profiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/TestProfileRecord'
+        count:
+          type: integer
+      required: [profiles, count]
+    TestRuleCreateRequest:
+      type: object
+      required: [route_pattern]
+      properties:
+        priority:
+          type: integer
+          default: 100
+        method:
+          type: string
+          default: POST
+        route_pattern:
+          type: string
+        enabled:
+          type: boolean
+          default: true
+        match:
+          type: object
+          additionalProperties: true
+        response:
+          type: object
+          additionalProperties: true
+        latency_ms:
+          type: integer
+          minimum: 0
+          default: 0
+    TestRulePatchRequest:
+      type: object
+      properties:
+        priority:
+          type: integer
+        method:
+          type: string
+        route_pattern:
+          type: string
+        enabled:
+          type: boolean
+        match:
+          type: object
+          additionalProperties: true
+        response:
+          type: object
+          additionalProperties: true
+        latency_ms:
+          type: integer
+          minimum: 0
+    TestRuleRecord:
+      type: object
+      properties:
+        rule_id:
+          type: string
+        tenant_id:
+          type: string
+        profile_id:
+          type: string
+        priority:
+          type: integer
+        method:
+          type: string
+        route_pattern:
+          type: string
+        enabled:
+          type: boolean
+        match:
+          type: object
+          additionalProperties: true
+        response:
+          type: object
+          additionalProperties: true
+        latency_ms:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [rule_id, tenant_id, profile_id, priority, method, route_pattern, enabled, match, response, latency_ms, created_at, updated_at]
+    TestRuleListResponse:
+      type: object
+      properties:
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/TestRuleRecord'
+        count:
+          type: integer
+      required: [rules, count]
+    TestProfilePreviewRequest:
+      type: object
+      properties:
+        route:
+          type: string
+          default: /api/v1/chat
+        method:
+          type: string
+          default: POST
+        body:
+          type: object
+          additionalProperties: true
+        session:
+          type: object
+          additionalProperties: true
+        history:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    TestProfilePreviewResponse:
+      type: object
+      properties:
+        profile_id:
+          type: string
+          nullable: true
+        matched_rule_id:
+          type: string
+          nullable: true
+        preset_id:
+          type: string
+        latency_ms:
+          type: integer
+        response:
+          type: object
+          additionalProperties: true
+        chat_result:
+          type: object
+          nullable: true
+          additionalProperties: true
+        stream_events:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        error:
+          type: object
+          nullable: true
+          additionalProperties: true
+      required: [preset_id, latency_ms, response]
     DocumentUploadCreateRequest:
       type: object
       required: [file_name]

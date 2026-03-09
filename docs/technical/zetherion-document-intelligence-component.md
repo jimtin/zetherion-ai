@@ -9,9 +9,12 @@ Public exposure rule:
 - External clients must not call Zetherion `/api/v1` directly.
 - CGS `/service/ai/v1` is the only supported public API for this capability.
 
-## Maintenance Note (2026-03-08)
+## Maintenance Note (2026-03-09)
 
-- Upstream tenant conversation routes now support tenant-scoped `memory_subject_id` and rolling `conversation_summary` metadata for `/api/v1/sessions` and `/api/v1/chat*`.
+- Upstream tenant sandbox support now adds `sk_test_...` API keys plus `/api/v1/test/*` profile/rule management for chat simulation.
+- Test-mode sessions, messages, and analytics rows are tagged `execution_mode=test` and are excluded from CRM extraction, funnel, and recommendation persistence in this segment.
+- Document intelligence routes remain live-only API-key routes in Segment 3. `sk_test_...` keys do not access `/api/v1/documents*`, `/api/v1/rag/query`, or model-catalog routes.
+- Upstream tenant conversation routes still support tenant-scoped `memory_subject_id` and rolling `conversation_summary` metadata for `/api/v1/sessions` and `/api/v1/chat*`.
 - Those conversation changes stay in `tenant_raw` and do not alter document intelligence route contracts, storage partitions, or retrieval authorization.
 - Segment 2 data-plane isolation foundation added scoped object-storage prefixes,
   additive PostgreSQL isolation schemas, and owner-vs-tenant Qdrant/encryption
@@ -202,6 +205,7 @@ Embeddings default:
 - Document rows are always tenant-filtered.
 - Vector operations are always tenant-filtered.
 - Raw object keys are tenant-partitioned.
+- Segment 3 test-mode keys are intentionally blocked from document and retrieval routes.
 - No tenant API key or session token is exposed to browsers.
 
 ## Operations and Support

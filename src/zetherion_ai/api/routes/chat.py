@@ -16,6 +16,7 @@ from typing import Any
 from aiohttp import web
 
 from zetherion_ai.api.conversation_runtime import TenantConversationRuntime
+from zetherion_ai.api.test_runtime import SandboxSimulationError, TenantSandboxRuntime
 from zetherion_ai.logging import get_logger
 from zetherion_ai.skills.base import SkillRequest
 from zetherion_ai.skills.client_chat import ClientChatSkill
@@ -61,6 +62,16 @@ def _get_conversation_runtime(request: web.Request) -> TenantConversationRuntime
         return runtime
     runtime = TenantConversationRuntime(tenant_manager=request.app["tenant_manager"])
     request.app["tenant_conversation_runtime"] = runtime
+    return runtime
+
+
+def _get_sandbox_runtime(request: web.Request) -> TenantSandboxRuntime:
+    """Get or lazily create the tenant sandbox runtime."""
+    runtime = request.app.get("tenant_sandbox_runtime")
+    if isinstance(runtime, TenantSandboxRuntime):
+        return runtime
+    runtime = TenantSandboxRuntime(tenant_manager=request.app["tenant_manager"])
+    request.app["tenant_sandbox_runtime"] = runtime
     return runtime
 
 
@@ -138,6 +149,7 @@ async def handle_chat(request: web.Request) -> web.Response:
 
     tenant_id = str(tenant["tenant_id"])
     session_id = str(session["session_id"])
+    execution_mode = str(session.get("execution_mode") or request.get("execution_mode") or "live")
 
     # Parse request body
     try:
@@ -156,13 +168,12 @@ async def handle_chat(request: web.Request) -> web.Response:
     await tenant_manager.add_message(
         session_id=session_id,
         tenant_id=tenant_id,
+        execution_mode=execution_mode,
         role="user",
         content=message,
         metadata=data.get("metadata"),
     )
 
-    # Generate AI response via ClientChatSkill (includes L1a detection)
-    chat_skill = _get_chat_skill(request)
     conversation_runtime = _get_conversation_runtime(request)
     history: list[dict[str, Any]] = []
     try:
@@ -176,26 +187,49 @@ async def handle_chat(request: web.Request) -> web.Response:
             session=session,
             history=_format_messages_for_llm(history[:-1]),
         )
-
-        result = await chat_skill.generate_response(
-            tenant=tenant,
-            message=message,
-            history=context.history,
-            context_notes=context.context_notes,
-        )
-        assistant_content = result.content
-        model_used = result.model
+        if execution_mode == "test":
+            result = await _get_sandbox_runtime(request).simulate_chat(
+                tenant_id=tenant_id,
+                profile_id=(
+                    str(session.get("test_profile_id"))
+                    if session.get("test_profile_id") is not None
+                    else None
+                ),
+                body={"message": message, "metadata": data.get("metadata") or {}},
+                session=session,
+                context=context,
+                history=context.history,
+            )
+            assistant_content = result.content
+            model_used = result.model
+            assistant_metadata = result.metadata
+        else:
+            chat_skill = _get_chat_skill(request)
+            result = await chat_skill.generate_response(
+                tenant=tenant,
+                message=message,
+                history=context.history,
+                context_notes=context.context_notes,
+            )
+            assistant_content = result.content
+            model_used = result.model
+            assistant_metadata = None
+    except SandboxSimulationError as exc:
+        return web.json_response(exc.body, status=exc.status)
     except Exception:
         log.exception("chat_inference_failed", tenant_id=tenant_id, session_id=session_id)
         assistant_content = "I'm sorry, I encountered an error. Please try again."
         model_used = None
+        assistant_metadata = None
 
     # Store the assistant's response
     assistant_msg = await tenant_manager.add_message(
         session_id=session_id,
         tenant_id=tenant_id,
+        execution_mode=execution_mode,
         role="assistant",
         content=assistant_content,
+        metadata=assistant_metadata,
     )
     try:
         await conversation_runtime.record_turn(
@@ -217,15 +251,16 @@ async def handle_chat(request: web.Request) -> web.Response:
         response["model"] = model_used
 
     # Async post-response extraction for tenant CRM (L1b).
-    _schedule_background(
-        _dispatch_message_extraction(
-            request,
-            tenant_id=tenant_id,
-            session_id=session_id,
-            message=message,
-        ),
-        label="tenant_intelligence_extract",
-    )
+    if execution_mode != "test":
+        _schedule_background(
+            _dispatch_message_extraction(
+                request,
+                tenant_id=tenant_id,
+                session_id=session_id,
+                message=message,
+            ),
+            label="tenant_intelligence_extract",
+        )
 
     return web.json_response(response, status=200)
 
@@ -286,6 +321,7 @@ async def handle_chat_stream(request: web.Request) -> web.StreamResponse:
 
     tenant_id = str(tenant["tenant_id"])
     session_id = str(session["session_id"])
+    execution_mode = str(session.get("execution_mode") or request.get("execution_mode") or "live")
 
     # Parse request body
     try:
@@ -304,50 +340,55 @@ async def handle_chat_stream(request: web.Request) -> web.StreamResponse:
     await tenant_manager.add_message(
         session_id=session_id,
         tenant_id=tenant_id,
+        execution_mode=execution_mode,
         role="user",
         content=message,
         metadata=data.get("metadata"),
     )
 
-    # Prepare SSE response
-    response = web.StreamResponse(
-        status=200,
-        headers={
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-    await response.prepare(request)
-
     assistant_content = ""
     model_used = None
     history: list[dict[str, Any]] = []
+    assistant_metadata: dict[str, Any] | None = None
 
-    chat_skill = _get_chat_skill(request)
     conversation_runtime = _get_conversation_runtime(request)
     broker = request.app.get("inference_broker")
+    stream_events: list[dict[str, Any]] = []
 
-    if broker is None:
-        # No LLM configured — send placeholder as a single token + done
-        assistant_content = "Chat is not configured. Please contact the administrator."
-        event = json.dumps({"type": "token", "content": assistant_content})
-        await response.write(f"data: {event}\n\n".encode())
-    else:
-        try:
-            history = await tenant_manager.get_messages(
-                session_id=session_id,
+    try:
+        history = await tenant_manager.get_messages(
+            session_id=session_id,
+            tenant_id=tenant_id,
+            limit=_CONTEXT_WINDOW,
+        )
+        context = await conversation_runtime.build_context(
+            tenant_id=tenant_id,
+            session=session,
+            history=_format_messages_for_llm(history[:-1]),
+        )
+
+        if execution_mode == "test":
+            chat_result, stream_events = await _get_sandbox_runtime(request).simulate_stream(
                 tenant_id=tenant_id,
-                limit=_CONTEXT_WINDOW,
-            )
-            context = await conversation_runtime.build_context(
-                tenant_id=tenant_id,
+                profile_id=(
+                    str(session.get("test_profile_id"))
+                    if session.get("test_profile_id") is not None
+                    else None
+                ),
+                body={"message": message, "metadata": data.get("metadata") or {}},
                 session=session,
-                history=_format_messages_for_llm(history[:-1]),
+                context=context,
+                history=context.history,
             )
-
-            signals, stream = await chat_skill.generate_stream(
+            assistant_content = chat_result.content
+            model_used = chat_result.model
+            assistant_metadata = chat_result.metadata
+        elif broker is None:
+            assistant_content = "Chat is not configured. Please contact the administrator."
+            stream_events = [{"type": "token", "content": assistant_content}]
+        else:
+            chat_skill = _get_chat_skill(request)
+            _, stream = await chat_skill.generate_stream(
                 tenant=tenant,
                 message=message,
                 history=context.history,
@@ -359,21 +400,42 @@ async def handle_chat_stream(request: web.Request) -> web.StreamResponse:
                     model_used = chunk.model
                 else:
                     assistant_content += chunk.content
-                    event = json.dumps({"type": "token", "content": chunk.content})
-                    await response.write(f"data: {event}\n\n".encode())
-        except Exception:
-            log.exception("chat_stream_failed", tenant_id=tenant_id, session_id=session_id)
-            if not assistant_content:
-                assistant_content = "I'm sorry, I encountered an error. Please try again."
-                event = json.dumps({"type": "token", "content": assistant_content})
-                await response.write(f"data: {event}\n\n".encode())
+                    stream_events.append({"type": "token", "content": chunk.content})
+    except SandboxSimulationError as exc:
+        return web.json_response(exc.body, status=exc.status)
+    except Exception:
+        log.exception("chat_stream_failed", tenant_id=tenant_id, session_id=session_id)
+        if not assistant_content:
+            assistant_content = "I'm sorry, I encountered an error. Please try again."
+            stream_events = [{"type": "token", "content": assistant_content}]
+
+    # Prepare SSE response after sandbox/live resolution so simulated errors can return JSON.
+    response = web.StreamResponse(
+        status=200,
+        headers={
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+    await response.prepare(request)
+
+    for event_payload in stream_events:
+        if str(event_payload.get("type") or "") == "done":
+            if not model_used:
+                model_used = str(event_payload.get("model") or "") or None
+            continue
+        await response.write(f"data: {json.dumps(event_payload)}\n\n".encode())
 
     # Store the assistant's full response
     assistant_msg = await tenant_manager.add_message(
         session_id=session_id,
         tenant_id=tenant_id,
+        execution_mode=execution_mode,
         role="assistant",
         content=assistant_content,
+        metadata=assistant_metadata,
     )
     try:
         await conversation_runtime.record_turn(
@@ -400,15 +462,16 @@ async def handle_chat_stream(request: web.Request) -> web.StreamResponse:
     await response.write(f"data: {json.dumps(done_payload)}\n\n".encode())
 
     # Async post-response extraction for tenant CRM (L1b).
-    _schedule_background(
-        _dispatch_message_extraction(
-            request,
-            tenant_id=tenant_id,
-            session_id=session_id,
-            message=message,
-        ),
-        label="tenant_intelligence_extract_stream",
-    )
+    if execution_mode != "test":
+        _schedule_background(
+            _dispatch_message_extraction(
+                request,
+                tenant_id=tenant_id,
+                session_id=session_id,
+                message=message,
+            ),
+            label="tenant_intelligence_extract_stream",
+        )
 
     await response.write_eof()
     return response

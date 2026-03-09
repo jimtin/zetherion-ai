@@ -62,6 +62,7 @@ def create_session_token(
     session_id: str,
     secret: str,
     *,
+    execution_mode: str = "live",
     expiry_seconds: int = _DEFAULT_EXPIRY_SECONDS,
 ) -> str:
     """Create a signed JWT session token.
@@ -79,6 +80,7 @@ def create_session_token(
     payload = {
         "tenant_id": tenant_id,
         "session_id": session_id,
+        "execution_mode": execution_mode,
         "iat": now,
         "exp": now + expiry_seconds,
     }

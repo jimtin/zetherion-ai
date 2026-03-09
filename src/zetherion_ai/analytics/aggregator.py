@@ -22,12 +22,14 @@ class AnalyticsAggregator:
         *,
         web_session_id: str | None = None,
         session_id: str | None = None,
+        include_test: bool = False,
     ) -> dict[str, Any]:
         """Build a behavior summary for one web/chat session."""
         events = await self._tenant_manager.get_web_events(
             tenant_id,
             web_session_id=web_session_id,
             session_id=session_id,
+            include_test=include_test,
             limit=1000,
         )
         by_type = Counter(e.get("event_type", "unknown") for e in events)
@@ -80,12 +82,17 @@ class AnalyticsAggregator:
         *,
         metric_date: date | None = None,
         funnel_name: str = "primary",
+        include_test: bool = False,
     ) -> list[dict[str, Any]]:
         """Compute and upsert a daily funnel for one tenant."""
         metric_date = metric_date or datetime.now(tz=UTC).date()
         next_day = metric_date + timedelta(days=1)
 
-        events = await self._tenant_manager.get_web_events(tenant_id, limit=10000)
+        events = await self._tenant_manager.get_web_events(
+            tenant_id,
+            include_test=include_test,
+            limit=10000,
+        )
         day_events = [
             e
             for e in events

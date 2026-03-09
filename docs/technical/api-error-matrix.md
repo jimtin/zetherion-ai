@@ -6,10 +6,16 @@ Exposure rule:
 - External clients consume CGS gateway errors only.
 - `/api/v1` errors are upstream/internal and surfaced through CGS mappings.
 
-## Maintenance Note (2026-03-08)
+## Maintenance Note (2026-03-09)
 
-- Tenant conversational runtime now accepts optional `memory_subject_id` on `POST /api/v1/sessions` and returns `conversation_summary` metadata on session reads; these additions do not introduce new error envelopes or auth failure classes.
-- Tenant chat summary/memory persistence runs after the assistant response and is best-effort; user-visible `/api/v1/chat*` error semantics remain unchanged in this segment.
+- Segment 3 adds sandbox-specific validation and authorization outcomes to the upstream `/api/v1` surface:
+  - `400` when `test_profile_id` is supplied on `POST /api/v1/sessions` with a live API key
+  - `403` when `sk_test_...` is used on unsupported API-key routes
+  - `404` when sandbox profile or rule identifiers do not exist for the authenticated tenant
+  - configured sandbox preview/chat errors can intentionally return structured simulated status/body pairs
+- Test-mode chat and analytics keep the same JSON/SSE envelopes as live mode; their isolation changes affect persistence side effects, not the success shape.
+- Tenant conversational runtime still accepts optional `memory_subject_id` on `POST /api/v1/sessions` and returns `conversation_summary` metadata on session reads; these additions do not introduce new top-level error envelopes.
+- Tenant chat summary/memory persistence still runs after the assistant response and is best-effort; user-visible live `/api/v1/chat*` error semantics remain unchanged.
 - Segment 2 data-plane isolation foundation added internal owner-vs-tenant
   storage and encryption routing; error envelopes and status mappings for
   `/api/v1` and `/service/ai/v1` are unchanged by this segment.
@@ -26,9 +32,9 @@ Exposure rule:
 | Route Group | Status | Error Shape | Notes |
 |---|---|---|---|
 | Auth failures (`X-API-Key`, `Authorization`) | `401` | `{"error":"..."}` | Missing/invalid key or session token |
-| Tenant/session forbidden/inactive | `403` | `{"error":"..."}` | Tenant isolation/security rule |
+| Tenant/session forbidden/inactive | `403` | `{"error":"..."}` | Tenant isolation/security rule, including unsupported `sk_test_...` route access and test-mode recommendation feedback |
 | Unknown resource | `404` | `{"error":"..."}` | Missing session/document/replay chunk |
-| Validation failures | `400` | `{"error":"..."}` | Invalid JSON/body/query/path payload, including malformed `memory_subject_id`/session-create payloads |
+| Validation failures | `400` | `{"error":"..."}` | Invalid JSON/body/query/path payload, including malformed `memory_subject_id`, sandbox preview payloads, or `test_profile_id` on live session creation |
 | Messaging trust-policy deny/approval-required | `403`/`409` | `{"error":"...","code":"AI_*"}` | Trust tier, allowlist, or approval policy gates |
 | Oversized document uploads | `413` | `{"error":"Upload too large ..."}` | Max upload limit in route guard |
 | Upstream dependencies unavailable | `503` | `{"error":"..."}` | Inference service/object storage unavailable |
@@ -113,3 +119,24 @@ Retryability rules:
 | `POST /api/v1/messaging/messages/{chat_id}/send` | Approval required by policy | `409` + `AI_APPROVAL_REQUIRED` |
 | `POST /api/v1/messaging/messages/{chat_id}/send` | Chat not allowlisted | `403` + `AI_MESSAGING_CHAT_NOT_ALLOWLISTED` |
 | `POST /service/ai/v1/internal/admin/tenants/{tenant_id}/messaging/messages/{chat_id}/send` | High-risk send without approved ticket | `409` + `AI_APPROVAL_REQUIRED` |
+
+## Sandbox and Test-Mode Endpoint Specifics
+
+| Endpoint | Failure Case | Result |
+|---|---|---|
+| `POST /api/v1/sessions` | `test_profile_id` supplied with `sk_live_...` | `400` |
+| `POST /api/v1/sessions` | `test_profile_id` does not exist for the tenant | `404` |
+| Any API-key route outside `POST /api/v1/sessions` or `/api/v1/test/*` | Authenticated with `sk_test_...` | `403` |
+| `GET|PATCH|DELETE /api/v1/test/profiles/{profile_id}` | Unknown profile | `404` |
+| `POST /api/v1/test/profiles` | Missing `name` | `400` |
+| `GET|POST /api/v1/test/profiles/{profile_id}/rules` | Unknown profile | `404` |
+| `POST /api/v1/test/profiles/{profile_id}/rules` | Missing `route_pattern` | `400` |
+| `POST|PATCH /api/v1/test/profiles/{profile_id}/rules*` | `match` or `response` is not an object | `400` |
+| `PATCH|DELETE /api/v1/test/profiles/{profile_id}/rules/{rule_id}` | Unknown rule | `404` |
+| `POST /api/v1/test/profiles/{profile_id}/preview` | `body`/`session` not an object or `history` not an array | `400` |
+| `POST /api/v1/chat` or `POST /api/v1/chat/stream` in test mode | Matching sandbox rule returns `response.error` | configured status + configured JSON body |
+| `POST /api/v1/analytics/recommendations/{recommendation_id}/feedback` in test mode | Any call | `403` |
+
+Non-error sandbox behavior:
+- `GET /api/v1/analytics/recommendations` in test mode returns `200` with an empty list.
+- `POST /api/v1/analytics/sessions/end` in test mode returns `200` with `execution_mode="test"` but does not persist derived recommendations or funnel updates.

@@ -30,6 +30,8 @@ async def sessions_routes_client():
             "tenant_id": uuid4(),
             "external_user_id": "user-1",
             "memory_subject_id": "subject-1",
+            "execution_mode": "live",
+            "test_profile_id": None,
             "conversation_summary": "",
             "created_at": datetime.now(tz=UTC),
             "metadata": {"source": "tests"},
@@ -41,6 +43,7 @@ async def sessions_routes_client():
     @web.middleware
     async def inject_context(request: web.Request, handler):
         request["tenant"] = tenant
+        request["execution_mode"] = str(request.app.get("execution_mode", "live"))
         return await handler(request)
 
     app = web.Application(middlewares=[inject_context])
@@ -92,11 +95,14 @@ async def test_handle_create_session_with_payload(sessions_routes_client) -> Non
     body = await response.json()
     assert body["external_user_id"] == "user-1"
     assert body["memory_subject_id"] == "subject-1"
+    assert body["execution_mode"] == "live"
     assert isinstance(body["session_token"], str)
     tenant_manager.create_session.assert_awaited_once_with(
         tenant_id="tenant-1",
         external_user_id="external-1",
         memory_subject_id="external-1",
+        execution_mode="live",
+        test_profile_id=None,
         metadata={"plan": "pro"},
     )
 
@@ -120,6 +126,8 @@ async def test_handle_create_session_with_explicit_memory_subject_id(
         tenant_id="tenant-1",
         external_user_id="external-1",
         memory_subject_id="subject-99",
+        execution_mode="live",
+        test_profile_id=None,
         metadata={"plan": "pro"},
     )
 
@@ -140,8 +148,83 @@ async def test_handle_create_session_with_invalid_json_defaults_empty_body(
         tenant_id="tenant-1",
         external_user_id=None,
         memory_subject_id=None,
+        execution_mode="live",
+        test_profile_id=None,
         metadata={},
     )
+
+
+@pytest.mark.asyncio
+async def test_handle_create_session_rejects_test_profile_with_live_key(
+    sessions_routes_client,
+) -> None:
+    client, tenant_manager = sessions_routes_client
+
+    response = await client.post(
+        "/api/v1/sessions",
+        json={"external_user_id": "external-1", "test_profile_id": "profile-1"},
+    )
+
+    assert response.status == 400
+    assert await response.json() == {"error": "test_profile_id requires a test-mode API key"}
+    tenant_manager.create_session.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_handle_create_session_test_mode_resolves_profile(sessions_routes_client) -> None:
+    client, tenant_manager = sessions_routes_client
+    client.app["execution_mode"] = "test"
+    tenant_manager.resolve_test_profile = AsyncMock(
+        return_value={"profile_id": "profile-9", "tenant_id": "tenant-1"}
+    )
+    tenant_manager.create_session.return_value = {
+        "session_id": uuid4(),
+        "tenant_id": uuid4(),
+        "external_user_id": "user-1",
+        "memory_subject_id": "subject-1",
+        "execution_mode": "test",
+        "test_profile_id": "profile-9",
+        "conversation_summary": "",
+        "created_at": datetime.now(tz=UTC),
+        "metadata": {},
+    }
+
+    response = await client.post(
+        "/api/v1/sessions",
+        json={"external_user_id": "external-1", "test_profile_id": "profile-9"},
+    )
+
+    assert response.status == 201
+    body = await response.json()
+    assert body["execution_mode"] == "test"
+    assert body["test_profile_id"] == "profile-9"
+    tenant_manager.resolve_test_profile.assert_awaited_once_with("tenant-1", "profile-9")
+    tenant_manager.create_session.assert_awaited_once_with(
+        tenant_id="tenant-1",
+        external_user_id="external-1",
+        memory_subject_id="external-1",
+        execution_mode="test",
+        test_profile_id="profile-9",
+        metadata={},
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_create_session_test_mode_unknown_profile_returns_404(
+    sessions_routes_client,
+) -> None:
+    client, tenant_manager = sessions_routes_client
+    client.app["execution_mode"] = "test"
+    tenant_manager.resolve_test_profile = AsyncMock(return_value=None)
+
+    response = await client.post(
+        "/api/v1/sessions",
+        json={"external_user_id": "external-1", "test_profile_id": "profile-missing"},
+    )
+
+    assert response.status == 404
+    assert await response.json() == {"error": "Sandbox profile not found"}
+    tenant_manager.create_session.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -175,6 +258,8 @@ async def test_handle_get_session_success(sessions_routes_client) -> None:
         "session_id": "session-1",
         "tenant_id": "tenant-1",
         "memory_subject_id": "subject-1",
+        "execution_mode": "test",
+        "test_profile_id": "profile-1",
         "conversation_summary": "Recent user requests: asked about pricing",
         "created_at": now,
     }
@@ -185,8 +270,25 @@ async def test_handle_get_session_success(sessions_routes_client) -> None:
     assert body["session_id"] == "session-1"
     assert body["tenant_id"] == "tenant-1"
     assert body["memory_subject_id"] == "subject-1"
+    assert body["execution_mode"] == "test"
+    assert body["test_profile_id"] == "profile-1"
     assert body["conversation_summary"] == "Recent user requests: asked about pricing"
     assert body["created_at"] == now.isoformat()
+
+
+@pytest.mark.asyncio
+async def test_handle_get_session_test_key_hides_live_sessions(sessions_routes_client) -> None:
+    client, tenant_manager = sessions_routes_client
+    client.app["execution_mode"] = "test"
+    tenant_manager.get_session.return_value = {
+        "session_id": "session-1",
+        "tenant_id": "tenant-1",
+        "execution_mode": "live",
+    }
+
+    response = await client.get("/api/v1/sessions/session-1")
+    assert response.status == 404
+    assert await response.json() == {"error": "Session not found"}
 
 
 @pytest.mark.asyncio
@@ -211,3 +313,19 @@ async def test_handle_delete_session_success(sessions_routes_client) -> None:
     response = await client.delete("/api/v1/sessions/session-1")
     assert response.status == 200
     assert await response.json() == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_handle_delete_session_test_key_hides_live_sessions(sessions_routes_client) -> None:
+    client, tenant_manager = sessions_routes_client
+    client.app["execution_mode"] = "test"
+    tenant_manager.get_session.return_value = {
+        "session_id": "session-1",
+        "tenant_id": "tenant-1",
+        "execution_mode": "live",
+    }
+
+    response = await client.delete("/api/v1/sessions/session-1")
+    assert response.status == 404
+    assert await response.json() == {"error": "Session not found"}
+    tenant_manager.delete_session.assert_not_awaited()

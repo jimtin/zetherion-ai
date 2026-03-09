@@ -222,6 +222,7 @@ class ClientProvisioningSkill(Skill):
     async def _handle_rotate_key(self, request: SkillRequest) -> SkillResponse:
         ctx = request.context
         tenant_id: str = ctx.get("tenant_id", "")
+        key_mode = str(ctx.get("key_mode", "live")).strip().lower() or "live"
 
         if not tenant_id:
             return SkillResponse.error_response(
@@ -230,7 +231,7 @@ class ClientProvisioningSkill(Skill):
             )
 
         assert self._tenant_manager is not None
-        new_key = await self._tenant_manager.rotate_api_key(tenant_id)
+        new_key = await self._tenant_manager.rotate_api_key(tenant_id, key_kind=key_mode)
 
         if new_key is None:
             return SkillResponse.error_response(
@@ -240,15 +241,24 @@ class ClientProvisioningSkill(Skill):
 
         log.info("client_key_rotated", tenant_id=tenant_id)
 
-        return SkillResponse(
-            request_id=request.id,
-            success=True,
-            message=(
+        if key_mode == "test":
+            message = (
+                f"Test API key issued for `{tenant_id}`.\n"
+                f"- New API Key: `{new_key}`\n"
+                f"  (store this key securely — test keys are shown once and remain non-billable)"
+            )
+        else:
+            message = (
                 f"API key rotated for `{tenant_id}`.\n"
                 f"- New API Key: `{new_key}`\n"
                 f"  (store this key securely — the old key is now invalid)"
-            ),
-            data={"tenant_id": tenant_id, "api_key": new_key},
+            )
+
+        return SkillResponse(
+            request_id=request.id,
+            success=True,
+            message=message,
+            data={"tenant_id": tenant_id, "api_key": new_key, "key_mode": key_mode},
         )
 
     async def _handle_list(self, request: SkillRequest) -> SkillResponse:

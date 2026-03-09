@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Segment 3 tenant sandbox runtime and test-mode isolation (2026-03-09)
+
+- Impacted capability IDs:
+  - `CAP-ZAI-TENANT-SANDBOX-RUNTIME`
+  - `CAP-ZAI-TENANT-SANDBOX-OVERRIDES`
+- Impacted workflow scenario IDs:
+  - `SCN-ZAI-TESTKEY-AGENTIC-CHAT`
+  - `SCN-ZAI-TESTKEY-STREAM`
+  - `SCN-ZAI-TESTKEY-RULE-PREVIEW`
+- Added tenant API-key registry support in `src/zetherion_ai/api/tenant.py`, including concurrent `sk_live_...` plus `sk_test_...` keys, sandbox profile/rule storage, and `execution_mode` tagging on sessions, chat messages, web sessions, and analytics events.
+- Added deterministic sandbox management and runtime surfaces in `src/zetherion_ai/api/routes/test_mode.py` and `src/zetherion_ai/api/test_runtime.py`, with profile/rule CRUD, preview, preset-based fallback replies, and simulated SSE streaming that preserves the live chat wire format.
+- Wired `src/zetherion_ai/api/routes/sessions.py`, `src/zetherion_ai/api/middleware.py`, `src/zetherion_ai/api/routes/chat.py`, and `src/zetherion_ai/api/routes/analytics.py` so test-mode sessions propagate `execution_mode=test`, bypass live inference, and suppress tenant-derived recommendation/CRM writes by default.
+- Added regression coverage for test-key auth, execution-mode session tokens, sandbox route handlers, deterministic chat/stream simulation, tenant API-key registry behavior, and isolation-manifest tracking for the new sandbox surfaces.
+
 ### Added - Segment 2 tenant conversational runtime and tenant-scoped memory (2026-03-08)
 
 - Impacted capability IDs:
