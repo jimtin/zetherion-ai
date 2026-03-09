@@ -78,7 +78,12 @@ async def test_mode_client():
             "route_pattern": "/api/v1/chat",
             "enabled": True,
             "match": {"body_contains": ["price"]},
-            "response": {"json_body": {"content": "Simulated pricing reply", "model": "sandbox-simulated"}},
+            "response": {
+                "json_body": {
+                    "content": "Simulated pricing reply",
+                    "model": "sandbox-simulated",
+                }
+            },
             "latency_ms": 0,
             "created_at": now,
             "updated_at": now,
@@ -94,7 +99,12 @@ async def test_mode_client():
             "route_pattern": "/api/v1/chat",
             "enabled": True,
             "match": {"body_contains": ["price"]},
-            "response": {"json_body": {"content": "Updated pricing reply", "model": "sandbox-simulated"}},
+            "response": {
+                "json_body": {
+                    "content": "Updated pricing reply",
+                    "model": "sandbox-simulated",
+                }
+            },
             "latency_ms": 0,
             "created_at": now,
             "updated_at": now,
@@ -129,8 +139,14 @@ async def test_mode_client():
     app.router.add_delete("/api/v1/test/profiles/{profile_id}", handle_delete_test_profile)
     app.router.add_get("/api/v1/test/profiles/{profile_id}/rules", handle_list_test_rules)
     app.router.add_post("/api/v1/test/profiles/{profile_id}/rules", handle_create_test_rule)
-    app.router.add_patch("/api/v1/test/profiles/{profile_id}/rules/{rule_id}", handle_patch_test_rule)
-    app.router.add_delete("/api/v1/test/profiles/{profile_id}/rules/{rule_id}", handle_delete_test_rule)
+    app.router.add_patch(
+        "/api/v1/test/profiles/{profile_id}/rules/{rule_id}",
+        handle_patch_test_rule,
+    )
+    app.router.add_delete(
+        "/api/v1/test/profiles/{profile_id}/rules/{rule_id}",
+        handle_delete_test_rule,
+    )
     app.router.add_post("/api/v1/test/profiles/{profile_id}/preview", handle_preview_test_profile)
 
     async with TestClient(TestServer(app)) as client:

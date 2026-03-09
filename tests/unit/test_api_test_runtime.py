@@ -45,7 +45,11 @@ async def test_preview_returns_follow_up_fallback_with_subject_style() -> None:
             session_summary="Asked about pricing earlier",
             subject_memories=[
                 TenantSubjectMemory(category="identity", memory_key="name", value="Ava"),
-                TenantSubjectMemory(category="preference", memory_key="response_style", value="brief"),
+                TenantSubjectMemory(
+                    category="preference",
+                    memory_key="response_style",
+                    value="brief",
+                ),
             ],
         ),
         history=[],
