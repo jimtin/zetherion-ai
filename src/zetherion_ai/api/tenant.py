@@ -41,12 +41,74 @@ CREATE INDEX IF NOT EXISTS idx_tenants_api_key_prefix
 CREATE INDEX IF NOT EXISTS idx_tenants_tenant_id
     ON tenants (tenant_id);
 
+CREATE TABLE IF NOT EXISTS tenant_api_keys (
+    id              SERIAL       PRIMARY KEY,
+    api_key_id      UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    tenant_id       UUID         NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    key_kind        VARCHAR(16)  NOT NULL DEFAULT 'live',
+    label           TEXT,
+    api_key_hash    TEXT         NOT NULL,
+    api_key_prefix  VARCHAR(12)  NOT NULL,
+    is_active       BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    last_used_at    TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_api_keys_tenant
+    ON tenant_api_keys (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tenant_api_keys_prefix
+    ON tenant_api_keys (api_key_prefix);
+CREATE INDEX IF NOT EXISTS idx_tenant_api_keys_kind
+    ON tenant_api_keys (tenant_id, key_kind, is_active);
+
+CREATE TABLE IF NOT EXISTS tenant_test_profiles (
+    id              SERIAL       PRIMARY KEY,
+    profile_id      UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    tenant_id       UUID         NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    name            TEXT         NOT NULL,
+    description     TEXT,
+    is_default      BOOLEAN      NOT NULL DEFAULT FALSE,
+    is_active       BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_test_profiles_tenant
+    ON tenant_test_profiles (tenant_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_test_profiles_default
+    ON tenant_test_profiles (tenant_id)
+    WHERE is_default = TRUE AND is_active = TRUE;
+
+CREATE TABLE IF NOT EXISTS tenant_test_rules (
+    id              SERIAL       PRIMARY KEY,
+    rule_id         UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    tenant_id       UUID         NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    profile_id      UUID         NOT NULL REFERENCES tenant_test_profiles(profile_id) ON DELETE CASCADE,
+    priority        INT          NOT NULL DEFAULT 100,
+    method          VARCHAR(10)  NOT NULL DEFAULT 'POST',
+    route_pattern   TEXT         NOT NULL,
+    enabled         BOOLEAN      NOT NULL DEFAULT TRUE,
+    match           JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    response        JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    latency_ms      INT          NOT NULL DEFAULT 0,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_test_rules_profile
+    ON tenant_test_rules (profile_id, priority ASC, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_tenant_test_rules_tenant
+    ON tenant_test_rules (tenant_id, profile_id, enabled);
+
 CREATE TABLE IF NOT EXISTS chat_sessions (
     id              SERIAL       PRIMARY KEY,
     session_id      UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
     tenant_id       UUID         NOT NULL REFERENCES tenants(tenant_id),
     external_user_id TEXT,
     memory_subject_id TEXT,
+    execution_mode  VARCHAR(16)  NOT NULL DEFAULT 'live',
+    test_profile_id UUID,
     metadata        JSONB        DEFAULT '{}'::jsonb,
     conversation_summary TEXT    NOT NULL DEFAULT '',
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -58,6 +120,10 @@ ALTER TABLE chat_sessions
     ADD COLUMN IF NOT EXISTS memory_subject_id TEXT;
 ALTER TABLE chat_sessions
     ADD COLUMN IF NOT EXISTS conversation_summary TEXT NOT NULL DEFAULT '';
+ALTER TABLE chat_sessions
+    ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(16) NOT NULL DEFAULT 'live';
+ALTER TABLE chat_sessions
+    ADD COLUMN IF NOT EXISTS test_profile_id UUID;
 
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_tenant_id
     ON chat_sessions (tenant_id);
@@ -68,22 +134,30 @@ CREATE INDEX IF NOT EXISTS idx_chat_sessions_expires
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_memory_subject
     ON chat_sessions (tenant_id, memory_subject_id)
     WHERE memory_subject_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_execution_mode
+    ON chat_sessions (tenant_id, execution_mode, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS chat_messages (
     id              SERIAL       PRIMARY KEY,
     message_id      UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid(),
     session_id      UUID         NOT NULL REFERENCES chat_sessions(session_id) ON DELETE CASCADE,
     tenant_id       UUID         NOT NULL,
+    execution_mode  VARCHAR(16)  NOT NULL DEFAULT 'live',
     role            VARCHAR(20)  NOT NULL,  -- 'user' or 'assistant'
     content         TEXT         NOT NULL,
     metadata        JSONB        DEFAULT '{}'::jsonb,
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
+ALTER TABLE chat_messages
+    ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(16) NOT NULL DEFAULT 'live';
+
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session
     ON chat_messages (session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_tenant
     ON chat_messages (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_execution_mode
+    ON chat_messages (tenant_id, execution_mode, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS tenant_subject_memories (
     id               SERIAL       PRIMARY KEY,
@@ -164,6 +238,7 @@ CREATE TABLE IF NOT EXISTS tenant_web_sessions (
     tenant_id        UUID         NOT NULL REFERENCES tenants(tenant_id),
     session_id       UUID         REFERENCES chat_sessions(session_id) ON DELETE SET NULL,
     external_user_id TEXT,
+    execution_mode   VARCHAR(16)  NOT NULL DEFAULT 'live',
     consent_replay   BOOLEAN      NOT NULL DEFAULT FALSE,
     replay_sampled   BOOLEAN      NOT NULL DEFAULT FALSE,
     started_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -173,10 +248,15 @@ CREATE TABLE IF NOT EXISTS tenant_web_sessions (
     updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
+ALTER TABLE tenant_web_sessions
+    ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(16) NOT NULL DEFAULT 'live';
+
 CREATE INDEX IF NOT EXISTS idx_tenant_web_sessions_tenant
     ON tenant_web_sessions (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tenant_web_sessions_chat
     ON tenant_web_sessions (session_id, created_at DESC) WHERE session_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tenant_web_sessions_execution_mode
+    ON tenant_web_sessions (tenant_id, execution_mode, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS tenant_web_events (
     id               SERIAL       PRIMARY KEY,
@@ -184,6 +264,7 @@ CREATE TABLE IF NOT EXISTS tenant_web_events (
     tenant_id        UUID         NOT NULL REFERENCES tenants(tenant_id),
     web_session_id   UUID         REFERENCES tenant_web_sessions(web_session_id) ON DELETE CASCADE,
     session_id       UUID         REFERENCES chat_sessions(session_id) ON DELETE SET NULL,
+    execution_mode   VARCHAR(16)  NOT NULL DEFAULT 'live',
     event_type       VARCHAR(64)  NOT NULL,
     event_name       TEXT         DEFAULT '',
     page_url         TEXT,
@@ -193,10 +274,15 @@ CREATE TABLE IF NOT EXISTS tenant_web_events (
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
+ALTER TABLE tenant_web_events
+    ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(16) NOT NULL DEFAULT 'live';
+
 CREATE INDEX IF NOT EXISTS idx_tenant_web_events_tenant
     ON tenant_web_events (tenant_id, occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tenant_web_events_session
     ON tenant_web_events (web_session_id, occurred_at DESC) WHERE web_session_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tenant_web_events_execution_mode
+    ON tenant_web_events (tenant_id, execution_mode, occurred_at DESC);
 
 CREATE TABLE IF NOT EXISTS tenant_replay_chunks (
     id               SERIAL       PRIMARY KEY,
@@ -407,6 +493,19 @@ CREATE INDEX IF NOT EXISTS idx_tenant_recommendation_feedback_recommendation
     ON tenant_recommendation_feedback (recommendation_id, created_at DESC);
 """
 
+_LIVE_KEY_KIND = "live"
+_TEST_KEY_KIND = "test"
+_LIVE_EXECUTION_MODE = "live"
+_TEST_EXECUTION_MODE = "test"
+
+
+def _normalise_key_kind(value: str | None) -> str:
+    return _TEST_KEY_KIND if str(value or "").strip().lower() == _TEST_KEY_KIND else _LIVE_KEY_KIND
+
+
+def _execution_mode_for_key_kind(key_kind: str | None) -> str:
+    return _TEST_EXECUTION_MODE if _normalise_key_kind(key_kind) == _TEST_KEY_KIND else _LIVE_EXECUTION_MODE
+
 
 class TenantManager:
     """Manage API tenants with PostgreSQL-backed storage.
@@ -484,6 +583,23 @@ class TenantManager:
             key_hash,
             key_prefix,
             json.dumps(config or {}),
+        )
+        await self._execute(
+            """
+            INSERT INTO tenant_api_keys (
+                tenant_id,
+                key_kind,
+                label,
+                api_key_hash,
+                api_key_prefix
+            )
+            VALUES ($1::uuid, $2, $3, $4, $5)
+            """,
+            str(row["tenant_id"]),
+            _LIVE_KEY_KIND,
+            "primary",
+            key_hash,
+            key_prefix,
         )
 
         await self._audit("tenant_created", tenant_id=str(row["tenant_id"]))
@@ -589,29 +705,77 @@ class TenantManager:
             return True
         return False
 
-    async def rotate_api_key(self, tenant_id: str) -> str | None:
-        """Generate a new API key for a tenant, invalidating the old one.
+    async def issue_api_key(
+        self,
+        tenant_id: str,
+        *,
+        key_kind: str = _TEST_KEY_KIND,
+        label: str | None = None,
+    ) -> str | None:
+        """Issue a new live or test API key for a tenant."""
+        kind = _normalise_key_kind(key_kind)
+        tenant = await self.get_tenant(tenant_id)
+        if tenant is None or not tenant.get("is_active", False):
+            return None
 
-        Returns:
-            The new plaintext API key, or None if tenant not found.
-        """
-        full_key, key_prefix, key_hash = generate_api_key()
-
-        result = await self._execute(
+        full_key, key_prefix, key_hash = generate_api_key(test=kind == _TEST_KEY_KIND)
+        if kind == _LIVE_KEY_KIND:
+            result = await self._execute(
+                """
+                UPDATE tenants
+                SET api_key_hash = $1, api_key_prefix = $2, updated_at = now()
+                WHERE tenant_id = $3::uuid AND is_active = TRUE
+                """,
+                key_hash,
+                key_prefix,
+                tenant_id,
+            )
+            if result != "UPDATE 1":
+                return None
+            await self._execute(
+                """
+                UPDATE tenant_api_keys
+                SET is_active = FALSE,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND key_kind = $2
+                  AND is_active = TRUE
+                """,
+                tenant_id,
+                _LIVE_KEY_KIND,
+            )
+        await self._execute(
             """
-            UPDATE tenants
-            SET api_key_hash = $1, api_key_prefix = $2, updated_at = now()
-            WHERE tenant_id = $3::uuid AND is_active = TRUE
+            INSERT INTO tenant_api_keys (
+                tenant_id,
+                key_kind,
+                label,
+                api_key_hash,
+                api_key_prefix
+            )
+            VALUES ($1::uuid, $2, $3, $4, $5)
             """,
+            tenant_id,
+            kind,
+            label,
             key_hash,
             key_prefix,
-            tenant_id,
         )
-        if result == "UPDATE 1":
-            await self._audit("api_key_rotated", tenant_id=tenant_id)
-            log.info("api_key_rotated", tenant_id=tenant_id)
-            return full_key
-        return None
+        await self._audit(
+            "api_key_issued" if kind == _TEST_KEY_KIND else "api_key_rotated",
+            tenant_id=tenant_id,
+            details={"key_kind": kind},
+        )
+        log.info("api_key_issued", tenant_id=tenant_id, key_kind=kind)
+        return full_key
+
+    async def rotate_api_key(self, tenant_id: str, *, key_kind: str = _LIVE_KEY_KIND) -> str | None:
+        """Issue a new key for a tenant.
+
+        Live-key rotation replaces the current live key. Test-key issuance keeps
+        existing live credentials intact while creating an additional test key.
+        """
+        return await self.issue_api_key(tenant_id, key_kind=key_kind)
 
     # ------------------------------------------------------------------
     # API key lookup & validation
@@ -626,6 +790,38 @@ class TenantManager:
         key_prefix = provided_key[:12]
         rows = await self._fetch(
             """
+            SELECT t.tenant_id, t.name, t.domain, t.is_active, t.rate_limit_rpm,
+                   t.config, k.api_key_id, k.key_kind, k.label, k.api_key_hash,
+                   t.created_at, t.updated_at
+            FROM tenant_api_keys k
+            JOIN tenants t ON t.tenant_id = k.tenant_id
+            WHERE k.api_key_prefix = $1
+              AND k.is_active = TRUE
+              AND t.is_active = TRUE
+            ORDER BY k.created_at DESC
+            """,
+            key_prefix,
+        )
+
+        for row in rows:
+            if verify_api_key(provided_key, row["api_key_hash"]):
+                result = dict(row)
+                await self._execute(
+                    """
+                    UPDATE tenant_api_keys
+                    SET last_used_at = now(),
+                        updated_at = now()
+                    WHERE api_key_id = $1::uuid
+                    """,
+                    str(result["api_key_id"]),
+                )
+                del result["api_key_hash"]
+                result["api_key_kind"] = str(result.pop("key_kind"))
+                result["execution_mode"] = _execution_mode_for_key_kind(result["api_key_kind"])
+                return result
+
+        legacy_rows = await self._fetch(
+            """
             SELECT tenant_id, name, domain, is_active, rate_limit_rpm,
                    config, api_key_hash, created_at, updated_at
             FROM tenants
@@ -634,13 +830,319 @@ class TenantManager:
             key_prefix,
         )
 
-        for row in rows:
+        for row in legacy_rows:
             if verify_api_key(provided_key, row["api_key_hash"]):
                 result = dict(row)
                 del result["api_key_hash"]
+                result["api_key_kind"] = _LIVE_KEY_KIND
+                result["execution_mode"] = _LIVE_EXECUTION_MODE
                 return result
 
         return None
+
+    # ------------------------------------------------------------------
+    # Sandbox profile management
+    # ------------------------------------------------------------------
+
+    async def list_test_profiles(self, tenant_id: str) -> list[dict[str, Any]]:
+        """List active sandbox profiles for a tenant."""
+        rows = await self._fetch(
+            """
+            SELECT profile_id, tenant_id, name, description, is_default, is_active,
+                   created_at, updated_at
+            FROM tenant_test_profiles
+            WHERE tenant_id = $1::uuid
+            ORDER BY is_default DESC, created_at ASC
+            """,
+            tenant_id,
+        )
+        return [dict(row) for row in rows]
+
+    async def get_test_profile(self, tenant_id: str, profile_id: str) -> dict[str, Any] | None:
+        """Fetch one sandbox profile."""
+        row = await self._fetchrow(
+            """
+            SELECT profile_id, tenant_id, name, description, is_default, is_active,
+                   created_at, updated_at
+            FROM tenant_test_profiles
+            WHERE tenant_id = $1::uuid
+              AND profile_id = $2::uuid
+            LIMIT 1
+            """,
+            tenant_id,
+            profile_id,
+        )
+        return dict(row) if row else None
+
+    async def resolve_test_profile(self, tenant_id: str, profile_id: str | None = None) -> dict[str, Any] | None:
+        """Resolve an explicit or default sandbox profile for a tenant."""
+        if profile_id:
+            return await self.get_test_profile(tenant_id, profile_id)
+        row = await self._fetchrow(
+            """
+            SELECT profile_id, tenant_id, name, description, is_default, is_active,
+                   created_at, updated_at
+            FROM tenant_test_profiles
+            WHERE tenant_id = $1::uuid
+              AND is_active = TRUE
+              AND is_default = TRUE
+            ORDER BY updated_at DESC, created_at DESC
+            LIMIT 1
+            """,
+            tenant_id,
+        )
+        return dict(row) if row else None
+
+    async def create_test_profile(
+        self,
+        tenant_id: str,
+        *,
+        name: str,
+        description: str | None = None,
+        is_default: bool = False,
+    ) -> dict[str, Any]:
+        """Create a sandbox profile."""
+        if is_default:
+            await self._execute(
+                """
+                UPDATE tenant_test_profiles
+                SET is_default = FALSE,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                """,
+                tenant_id,
+            )
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_test_profiles (tenant_id, name, description, is_default)
+            VALUES ($1::uuid, $2, $3, $4)
+            RETURNING profile_id, tenant_id, name, description, is_default, is_active,
+                      created_at, updated_at
+            """,
+            tenant_id,
+            name,
+            description,
+            is_default,
+        )
+        return dict(row)
+
+    async def update_test_profile(
+        self,
+        tenant_id: str,
+        profile_id: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        is_default: bool | None = None,
+        is_active: bool | None = None,
+    ) -> dict[str, Any] | None:
+        """Patch one sandbox profile."""
+        if is_default is True:
+            await self._execute(
+                """
+                UPDATE tenant_test_profiles
+                SET is_default = FALSE,
+                    updated_at = now()
+                WHERE tenant_id = $1::uuid
+                  AND profile_id <> $2::uuid
+                """,
+                tenant_id,
+                profile_id,
+            )
+
+        sets: list[str] = []
+        args: list[Any] = []
+        idx = 1
+        if name is not None:
+            sets.append(f"name = ${idx}")
+            args.append(name)
+            idx += 1
+        if description is not None:
+            sets.append(f"description = ${idx}")
+            args.append(description)
+            idx += 1
+        if is_default is not None:
+            sets.append(f"is_default = ${idx}")
+            args.append(is_default)
+            idx += 1
+        if is_active is not None:
+            sets.append(f"is_active = ${idx}")
+            args.append(is_active)
+            idx += 1
+        if not sets:
+            return await self.get_test_profile(tenant_id, profile_id)
+
+        sets.append("updated_at = now()")
+        args.extend([tenant_id, profile_id])
+        row = await self._fetchrow(
+            f"""
+            UPDATE tenant_test_profiles
+            SET {", ".join(sets)}
+            WHERE tenant_id = ${idx}::uuid
+              AND profile_id = ${idx + 1}::uuid
+            RETURNING profile_id, tenant_id, name, description, is_default, is_active,
+                      created_at, updated_at
+            """,  # nosec B608
+            *args,
+        )
+        return dict(row) if row else None
+
+    async def delete_test_profile(self, tenant_id: str, profile_id: str) -> bool:
+        """Delete one sandbox profile."""
+        result = await self._execute(
+            """
+            DELETE FROM tenant_test_profiles
+            WHERE tenant_id = $1::uuid
+              AND profile_id = $2::uuid
+            """,
+            tenant_id,
+            profile_id,
+        )
+        return result == "DELETE 1"
+
+    async def list_test_rules(self, tenant_id: str, profile_id: str) -> list[dict[str, Any]]:
+        """List sandbox rules for one profile."""
+        rows = await self._fetch(
+            """
+            SELECT rule_id, tenant_id, profile_id, priority, method, route_pattern,
+                   enabled, match, response, latency_ms, created_at, updated_at
+            FROM tenant_test_rules
+            WHERE tenant_id = $1::uuid
+              AND profile_id = $2::uuid
+            ORDER BY priority ASC, created_at ASC
+            """,
+            tenant_id,
+            profile_id,
+        )
+        return [dict(row) for row in rows]
+
+    async def create_test_rule(
+        self,
+        tenant_id: str,
+        profile_id: str,
+        *,
+        priority: int = 100,
+        method: str = "POST",
+        route_pattern: str,
+        enabled: bool = True,
+        match: dict[str, Any] | None = None,
+        response: dict[str, Any] | None = None,
+        latency_ms: int = 0,
+    ) -> dict[str, Any]:
+        """Create one sandbox rule."""
+        import json as _json
+
+        row = await self._fetchrow(
+            """
+            INSERT INTO tenant_test_rules (
+                tenant_id,
+                profile_id,
+                priority,
+                method,
+                route_pattern,
+                enabled,
+                match,
+                response,
+                latency_ms
+            )
+            VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9)
+            RETURNING rule_id, tenant_id, profile_id, priority, method, route_pattern,
+                      enabled, match, response, latency_ms, created_at, updated_at
+            """,
+            tenant_id,
+            profile_id,
+            priority,
+            method.upper().strip() or "POST",
+            route_pattern,
+            enabled,
+            _json.dumps(match or {}),
+            _json.dumps(response or {}),
+            max(0, latency_ms),
+        )
+        return dict(row)
+
+    async def update_test_rule(
+        self,
+        tenant_id: str,
+        profile_id: str,
+        rule_id: str,
+        *,
+        priority: int | None = None,
+        method: str | None = None,
+        route_pattern: str | None = None,
+        enabled: bool | None = None,
+        match: dict[str, Any] | None = None,
+        response: dict[str, Any] | None = None,
+        latency_ms: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Patch one sandbox rule."""
+        import json as _json
+
+        sets: list[str] = []
+        args: list[Any] = []
+        idx = 1
+        if priority is not None:
+            sets.append(f"priority = ${idx}")
+            args.append(priority)
+            idx += 1
+        if method is not None:
+            sets.append(f"method = ${idx}")
+            args.append(method.upper().strip() or "POST")
+            idx += 1
+        if route_pattern is not None:
+            sets.append(f"route_pattern = ${idx}")
+            args.append(route_pattern)
+            idx += 1
+        if enabled is not None:
+            sets.append(f"enabled = ${idx}")
+            args.append(enabled)
+            idx += 1
+        if match is not None:
+            sets.append(f"match = ${idx}::jsonb")
+            args.append(_json.dumps(match))
+            idx += 1
+        if response is not None:
+            sets.append(f"response = ${idx}::jsonb")
+            args.append(_json.dumps(response))
+            idx += 1
+        if latency_ms is not None:
+            sets.append(f"latency_ms = ${idx}")
+            args.append(max(0, latency_ms))
+            idx += 1
+        if not sets:
+            rows = await self.list_test_rules(tenant_id, profile_id)
+            return next((row for row in rows if str(row["rule_id"]) == str(rule_id)), None)
+
+        sets.append("updated_at = now()")
+        args.extend([tenant_id, profile_id, rule_id])
+        row = await self._fetchrow(
+            f"""
+            UPDATE tenant_test_rules
+            SET {", ".join(sets)}
+            WHERE tenant_id = ${idx}::uuid
+              AND profile_id = ${idx + 1}::uuid
+              AND rule_id = ${idx + 2}::uuid
+            RETURNING rule_id, tenant_id, profile_id, priority, method, route_pattern,
+                      enabled, match, response, latency_ms, created_at, updated_at
+            """,  # nosec B608
+            *args,
+        )
+        return dict(row) if row else None
+
+    async def delete_test_rule(self, tenant_id: str, profile_id: str, rule_id: str) -> bool:
+        """Delete one sandbox rule."""
+        result = await self._execute(
+            """
+            DELETE FROM tenant_test_rules
+            WHERE tenant_id = $1::uuid
+              AND profile_id = $2::uuid
+              AND rule_id = $3::uuid
+            """,
+            tenant_id,
+            profile_id,
+            rule_id,
+        )
+        return result == "DELETE 1"
 
     # ------------------------------------------------------------------
     # Session management
@@ -651,6 +1153,8 @@ class TenantManager:
         tenant_id: str,
         external_user_id: str | None = None,
         memory_subject_id: str | None = None,
+        execution_mode: str = _LIVE_EXECUTION_MODE,
+        test_profile_id: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create a new chat session for a tenant.
@@ -666,15 +1170,20 @@ class TenantManager:
                 tenant_id,
                 external_user_id,
                 memory_subject_id,
+                execution_mode,
+                test_profile_id,
                 metadata
             )
-            VALUES ($1::uuid, $2, $3, $4::jsonb)
+            VALUES ($1::uuid, $2, $3, $4, $5::uuid, $6::jsonb)
             RETURNING session_id, tenant_id, external_user_id, memory_subject_id,
-                      conversation_summary, created_at, last_active, expires_at
+                      execution_mode, test_profile_id, conversation_summary,
+                      created_at, last_active, expires_at
             """,
             tenant_id,
             external_user_id,
             memory_subject_id,
+            execution_mode,
+            test_profile_id,
             json.dumps(metadata or {}),
         )
 
@@ -690,7 +1199,8 @@ class TenantManager:
         row = await self._fetchrow(
             """
             SELECT session_id, tenant_id, external_user_id, memory_subject_id,
-                   conversation_summary, created_at, last_active, expires_at
+                   execution_mode, test_profile_id, conversation_summary,
+                   created_at, last_active, expires_at
             FROM chat_sessions
             WHERE session_id = $1::uuid AND expires_at > now()
             """,
@@ -745,6 +1255,7 @@ class TenantManager:
         self,
         session_id: str,
         tenant_id: str,
+        execution_mode: str,
         role: str,
         content: str,
         metadata: dict[str, Any] | None = None,
@@ -765,12 +1276,21 @@ class TenantManager:
 
         row = await self._fetchrow(
             """
-            INSERT INTO chat_messages (session_id, tenant_id, role, content, metadata)
-            VALUES ($1::uuid, $2::uuid, $3, $4, $5::jsonb)
-            RETURNING message_id, session_id, tenant_id, role, content, created_at
+            INSERT INTO chat_messages (
+                session_id,
+                tenant_id,
+                execution_mode,
+                role,
+                content,
+                metadata
+            )
+            VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::jsonb)
+            RETURNING message_id, session_id, tenant_id, execution_mode,
+                      role, content, created_at
             """,
             session_id,
             tenant_id,
+            execution_mode,
             role,
             content,
             json.dumps(metadata or {}),
@@ -799,7 +1319,7 @@ class TenantManager:
         if before_id:
             rows = await self._fetch(
                 """
-                SELECT message_id, session_id, role, content, metadata, created_at
+                SELECT message_id, session_id, execution_mode, role, content, metadata, created_at
                 FROM chat_messages
                 WHERE session_id = $1::uuid AND tenant_id = $2::uuid
                   AND created_at < (
@@ -816,7 +1336,7 @@ class TenantManager:
         else:
             rows = await self._fetch(
                 """
-                SELECT message_id, session_id, role, content, metadata, created_at
+                SELECT message_id, session_id, execution_mode, role, content, metadata, created_at
                 FROM chat_messages
                 WHERE session_id = $1::uuid AND tenant_id = $2::uuid
                 ORDER BY created_at DESC
@@ -1122,6 +1642,7 @@ class TenantManager:
         *,
         session_id: str | None = None,
         external_user_id: str | None = None,
+        execution_mode: str = _LIVE_EXECUTION_MODE,
         consent_replay: bool = False,
         replay_sampled: bool = False,
         metadata: dict[str, Any] | None = None,
@@ -1134,7 +1655,8 @@ class TenantManager:
             existing = await self._fetchrow(
                 """
                 SELECT web_session_id, tenant_id, session_id, external_user_id,
-                       consent_replay, replay_sampled, started_at, ended_at, metadata
+                       execution_mode, consent_replay, replay_sampled, started_at,
+                       ended_at, metadata
                 FROM tenant_web_sessions
                 WHERE tenant_id = $1::uuid
                   AND session_id = $2::uuid
@@ -1151,14 +1673,24 @@ class TenantManager:
         row = await self._fetchrow(
             """
             INSERT INTO tenant_web_sessions
-                (tenant_id, session_id, external_user_id, consent_replay, replay_sampled, metadata)
-            VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::jsonb)
+                (
+                    tenant_id,
+                    session_id,
+                    external_user_id,
+                    execution_mode,
+                    consent_replay,
+                    replay_sampled,
+                    metadata
+                )
+            VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7::jsonb)
             RETURNING web_session_id, tenant_id, session_id, external_user_id,
-                      consent_replay, replay_sampled, started_at, ended_at, metadata
+                      execution_mode, consent_replay, replay_sampled,
+                      started_at, ended_at, metadata
             """,
             tenant_id,
             session_id,
             external_user_id,
+            execution_mode,
             consent_replay,
             replay_sampled,
             _json.dumps(metadata or {}),
@@ -1174,7 +1706,8 @@ class TenantManager:
         row = await self._fetchrow(
             """
             SELECT web_session_id, tenant_id, session_id, external_user_id,
-                   consent_replay, replay_sampled, started_at, ended_at, metadata
+                   execution_mode, consent_replay, replay_sampled, started_at,
+                   ended_at, metadata
             FROM tenant_web_sessions
             WHERE tenant_id = $1::uuid AND web_session_id = $2::uuid
             """,
@@ -1202,7 +1735,8 @@ class TenantManager:
                 updated_at = now()
             WHERE tenant_id = $1::uuid AND web_session_id = $2::uuid
             RETURNING web_session_id, tenant_id, session_id, external_user_id,
-                      consent_replay, replay_sampled, started_at, ended_at, metadata
+                      execution_mode, consent_replay, replay_sampled,
+                      started_at, ended_at, metadata
             """,
             tenant_id,
             web_session_id,
@@ -1217,6 +1751,7 @@ class TenantManager:
         *,
         web_session_id: str | None,
         session_id: str | None,
+        execution_mode: str = _LIVE_EXECUTION_MODE,
         event_type: str,
         event_name: str = "",
         page_url: str | None = None,
@@ -1230,15 +1765,37 @@ class TenantManager:
         row = await self._fetchrow(
             """
             INSERT INTO tenant_web_events
-                (tenant_id, web_session_id, session_id, event_type, event_name, page_url,
-                 element_selector, properties, occurred_at)
-            VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::jsonb, COALESCE($9, now()))
-            RETURNING event_id, tenant_id, web_session_id, session_id, event_type,
-                      event_name, page_url, element_selector, properties, occurred_at
+                (
+                    tenant_id,
+                    web_session_id,
+                    session_id,
+                    execution_mode,
+                    event_type,
+                    event_name,
+                    page_url,
+                    element_selector,
+                    properties,
+                    occurred_at
+                )
+            VALUES (
+                $1::uuid,
+                $2::uuid,
+                $3::uuid,
+                $4,
+                $5,
+                $6,
+                $7,
+                $8,
+                $9::jsonb,
+                COALESCE($10, now())
+            )
+            RETURNING event_id, tenant_id, web_session_id, session_id, execution_mode,
+                      event_type, event_name, page_url, element_selector, properties, occurred_at
             """,
             tenant_id,
             web_session_id,
             session_id,
+            execution_mode,
             event_type,
             event_name,
             page_url,
@@ -1254,47 +1811,52 @@ class TenantManager:
         *,
         web_session_id: str | None = None,
         session_id: str | None = None,
+        include_test: bool = False,
         limit: int = 200,
     ) -> list[dict[str, Any]]:
         """Fetch recent web events, optionally scoped by session."""
+        execution_filter = "" if include_test else " AND execution_mode = 'live'"
         if web_session_id:
             rows = await self._fetch(
-                """
-                SELECT event_id, tenant_id, web_session_id, session_id, event_type,
+                f"""
+                SELECT event_id, tenant_id, web_session_id, session_id, execution_mode, event_type,
                        event_name, page_url, element_selector, properties, occurred_at
                 FROM tenant_web_events
                 WHERE tenant_id = $1::uuid AND web_session_id = $2::uuid
+                {execution_filter}
                 ORDER BY occurred_at ASC
                 LIMIT $3
-                """,
+                """,  # nosec B608
                 tenant_id,
                 web_session_id,
                 limit,
             )
         elif session_id:
             rows = await self._fetch(
-                """
-                SELECT event_id, tenant_id, web_session_id, session_id, event_type,
+                f"""
+                SELECT event_id, tenant_id, web_session_id, session_id, execution_mode, event_type,
                        event_name, page_url, element_selector, properties, occurred_at
                 FROM tenant_web_events
                 WHERE tenant_id = $1::uuid AND session_id = $2::uuid
+                {execution_filter}
                 ORDER BY occurred_at ASC
                 LIMIT $3
-                """,
+                """,  # nosec B608
                 tenant_id,
                 session_id,
                 limit,
             )
         else:
             rows = await self._fetch(
-                """
-                SELECT event_id, tenant_id, web_session_id, session_id, event_type,
+                f"""
+                SELECT event_id, tenant_id, web_session_id, session_id, execution_mode, event_type,
                        event_name, page_url, element_selector, properties, occurred_at
                 FROM tenant_web_events
                 WHERE tenant_id = $1::uuid
+                {execution_filter}
                 ORDER BY occurred_at DESC
                 LIMIT $2
-                """,
+                """,  # nosec B608
                 tenant_id,
                 limit,
             )
@@ -2233,6 +2795,32 @@ class TenantManager:
         try:
             async with self._pool.acquire() as conn:  # type: ignore[union-attr]
                 await conn.execute(_SCHEMA_SQL)
+                await conn.execute(
+                    """
+                    INSERT INTO tenant_api_keys (
+                        tenant_id,
+                        key_kind,
+                        label,
+                        api_key_hash,
+                        api_key_prefix,
+                        is_active
+                    )
+                    SELECT t.tenant_id,
+                           'live',
+                           'primary',
+                           t.api_key_hash,
+                           t.api_key_prefix,
+                           t.is_active
+                    FROM tenants t
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM tenant_api_keys k
+                        WHERE k.tenant_id = t.tenant_id
+                          AND k.key_kind = 'live'
+                          AND k.api_key_hash = t.api_key_hash
+                    )
+                    """
+                )
             log.info("tenant_schema_ensured")
         except asyncpg.UniqueViolationError:
             # Another process already created the schema concurrently — safe to proceed.

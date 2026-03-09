@@ -53,12 +53,18 @@ The manifest captures the current state of:
   - tenant session recall state now includes `chat_sessions.memory_subject_id`,
     `chat_sessions.conversation_summary`, and `tenant_subject_memories`, all of
     which remain tenant-local and are not shared with owner-personal runtime paths
+  - tenant chat, message, web-session, and web-event rows now carry
+    `execution_mode` so sandbox traffic remains explicitly tagged inside the
+    tenant runtime instead of silently mixing with live flows
 - `control_plane`
   - CGS tenant mappings, audits, request logs, queueing, rollout, and
     announcement dispatch
   - CGS tenant mappings now carry first-class `isolation_stage` and
     provisioning reconciliation metadata for staged client upgrades
   - Canonical trust persistence now lives in `src/zetherion_ai/trust/storage.py` under the control-plane schema, covering trust policies, grants, scorecards, feedback, and decision audit rows for staged backfill
+  - tenant API-key registry plus sandbox profile/rule configuration in
+    `src/zetherion_ai/api/tenant.py` now provide a control-plane layer for
+    tenant test-mode setup without crossing into owner-personal storage
 
 ### Domains that are not isolated yet
 
@@ -100,6 +106,25 @@ The manifest captures the current state of:
     `external_user_id`; the identifier remains tenant-local metadata rather
     than an auth or cross-domain join key
 
+### Segment 3 tenant sandbox additions
+
+- `src/zetherion_ai/api/test_runtime.py`
+  - deterministic sandbox responder for tenant test-mode chat and stream
+    requests; synthesizes replies from tenant-owned sandbox profiles/rules and
+    built-in presets without calling live providers
+- `src/zetherion_ai/api/routes/test_mode.py`
+  - tenant-scoped sandbox profile, rule, and preview routes under `/api/v1/test/*`
+- `src/zetherion_ai/api/middleware.py`
+  - now distinguishes `sk_live_...` from `sk_test_...`, restricts test keys to
+    `/api/v1/sessions` plus `/api/v1/test/*`, and propagates `execution_mode`
+    from API key or session token into downstream request handling
+- `src/zetherion_ai/api/routes/chat.py`
+  - uses `execution_mode=test` to route chat and stream through the sandbox
+    runtime while keeping assistant messages inside `tenant_raw`
+- `src/zetherion_ai/api/routes/analytics.py`
+  - records tagged test analytics rows but suppresses tenant-derived writes such
+    as recommendations, funnel updates, CRM interactions, and feedback mutation
+
 ## Migration Rules Set by This Baseline
 
 - New isolation work must extend the manifest instead of silently bypassing it.
@@ -114,3 +139,7 @@ The manifest captures the current state of:
   integrations cover owner agent prompts, tenant chat prompts, email routing
   prompts, docs knowledge prompts, tenant document QA prompts, and the tenant
   public-chat conversation context path.
+- Test-mode tenant runtime additions must keep sandbox rows and controls tagged
+  inside `tenant_raw` plus `control_plane`, and must exclude those tagged rows
+  from `tenant_derived`/`owner_portfolio` pipelines unless a later segment
+  explicitly documents that crossover.

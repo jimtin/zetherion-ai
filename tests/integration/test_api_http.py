@@ -18,7 +18,7 @@ import pytest_asyncio
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
-from zetherion_ai.api.auth import create_session_token, generate_api_key
+from zetherion_ai.api.auth import create_session_token, generate_api_key, validate_session_token
 from zetherion_ai.api.middleware import (
     RateLimiter,
     create_auth_middleware,
@@ -31,6 +31,18 @@ from zetherion_ai.api.routes.sessions import (
     handle_create_session,
     handle_delete_session,
     handle_get_session,
+)
+from zetherion_ai.api.routes.test_mode import (
+    handle_create_test_profile,
+    handle_create_test_rule,
+    handle_delete_test_profile,
+    handle_delete_test_rule,
+    handle_get_test_profile,
+    handle_list_test_profiles,
+    handle_list_test_rules,
+    handle_patch_test_profile,
+    handle_patch_test_rule,
+    handle_preview_test_profile,
 )
 
 # ---------------------------------------------------------------------------
@@ -65,6 +77,8 @@ def _make_session(
         "tenant_id": tenant_id,
         "external_user_id": None,
         "memory_subject_id": None,
+        "execution_mode": "live",
+        "test_profile_id": None,
         "conversation_summary": "",
         "created_at": now,
         "last_active": now,
@@ -119,6 +133,16 @@ def _build_app(
     app.router.add_post("/api/v1/sessions", handle_create_session)
     app.router.add_get("/api/v1/sessions/{session_id}", handle_get_session)
     app.router.add_delete("/api/v1/sessions/{session_id}", handle_delete_session)
+    app.router.add_get("/api/v1/test/profiles", handle_list_test_profiles)
+    app.router.add_post("/api/v1/test/profiles", handle_create_test_profile)
+    app.router.add_post("/api/v1/test/profiles/{profile_id}/preview", handle_preview_test_profile)
+    app.router.add_get("/api/v1/test/profiles/{profile_id}", handle_get_test_profile)
+    app.router.add_patch("/api/v1/test/profiles/{profile_id}", handle_patch_test_profile)
+    app.router.add_delete("/api/v1/test/profiles/{profile_id}", handle_delete_test_profile)
+    app.router.add_get("/api/v1/test/profiles/{profile_id}/rules", handle_list_test_rules)
+    app.router.add_post("/api/v1/test/profiles/{profile_id}/rules", handle_create_test_rule)
+    app.router.add_patch("/api/v1/test/profiles/{profile_id}/rules/{rule_id}", handle_patch_test_rule)
+    app.router.add_delete("/api/v1/test/profiles/{profile_id}/rules/{rule_id}", handle_delete_test_rule)
     app.router.add_post("/api/v1/chat", handle_chat)
     app.router.add_post("/api/v1/chat/stream", handle_chat_stream)
     app.router.add_get("/api/v1/chat/history", handle_chat_history)
@@ -144,6 +168,16 @@ async def api_client():
     tm.list_subject_memories = AsyncMock(return_value=[])
     tm.upsert_subject_memory = AsyncMock()
     tm.persist_session_context = AsyncMock()
+    tm.list_test_profiles = AsyncMock(return_value=[])
+    tm.create_test_profile = AsyncMock()
+    tm.get_test_profile = AsyncMock(return_value=None)
+    tm.update_test_profile = AsyncMock(return_value=None)
+    tm.delete_test_profile = AsyncMock(return_value=False)
+    tm.resolve_test_profile = AsyncMock(return_value=None)
+    tm.list_test_rules = AsyncMock(return_value=[])
+    tm.create_test_rule = AsyncMock()
+    tm.update_test_rule = AsyncMock(return_value=None)
+    tm.delete_test_rule = AsyncMock(return_value=False)
 
     app = _build_app(tm)
     async with TestClient(TestServer(app)) as client:
@@ -183,6 +217,7 @@ async def test_create_session(api_client):
     data = await resp.json()
     assert "session_token" in data
     assert data["session_token"].startswith("zt_sess_")
+    assert data["execution_mode"] == "live"
 
 
 @pytest.mark.integration
@@ -210,6 +245,43 @@ async def test_create_session_derives_memory_subject_id(api_client):
         tenant_id=TENANT_ID,
         external_user_id="visitor-42",
         memory_subject_id="visitor-42",
+        execution_mode="live",
+        test_profile_id=None,
+        metadata={},
+    )
+
+
+@pytest.mark.integration
+async def test_create_session_with_test_key_sets_test_execution_mode(api_client):
+    """POST /api/v1/sessions with sk_test_ creates a test-mode session token."""
+    client, tm, _ = api_client
+    test_key, _, _ = generate_api_key(test=True)
+    tm.authenticate_api_key = AsyncMock(return_value=_make_tenant() | {"execution_mode": "test"})
+    tm.create_session = AsyncMock(
+        return_value=_make_session()
+        | {
+            "execution_mode": "test",
+            "test_profile_id": None,
+        }
+    )
+
+    resp = await client.post(
+        "/api/v1/sessions",
+        json={"external_user_id": "visitor-42"},
+        headers={"X-API-Key": test_key},
+    )
+
+    assert resp.status == 201
+    data = await resp.json()
+    assert data["execution_mode"] == "test"
+    payload = validate_session_token(data["session_token"], JWT_SECRET)
+    assert payload["execution_mode"] == "test"
+    tm.create_session.assert_awaited_once_with(
+        tenant_id=TENANT_ID,
+        external_user_id="visitor-42",
+        memory_subject_id="visitor-42",
+        execution_mode="test",
+        test_profile_id=None,
         metadata={},
     )
 
@@ -396,6 +468,8 @@ async def chat_client():
     tm.list_subject_memories = AsyncMock(return_value=[])
     tm.upsert_subject_memory = AsyncMock()
     tm.persist_session_context = AsyncMock()
+    tm.resolve_test_profile = AsyncMock(return_value=None)
+    tm.list_test_rules = AsyncMock(return_value=[])
 
     broker.infer = AsyncMock(return_value=_FakeInferenceResult())
     broker.infer_stream = _fake_infer_stream
@@ -516,6 +590,31 @@ async def test_chat_no_broker_fallback(chat_client):
     assert resp.status == 200
     data = await resp.json()
     assert "not configured" in data["content"]
+
+
+@pytest.mark.integration
+async def test_chat_test_mode_uses_sandbox_runtime(chat_client):
+    """POST /api/v1/chat with a test-mode session bypasses live inference."""
+    client, tm, broker, _ = chat_client
+    tm.get_session = AsyncMock(
+        return_value=_make_session()
+        | {
+            "execution_mode": "test",
+            "test_profile_id": None,
+        }
+    )
+    test_token = create_session_token(TENANT_ID, SESSION_ID, JWT_SECRET, execution_mode="test")
+
+    resp = await client.post(
+        "/api/v1/chat",
+        json={"message": "Can I get a price estimate?"},
+        headers={"Authorization": f"Bearer {test_token}"},
+    )
+    assert resp.status == 200
+    data = await resp.json()
+    assert data["model"] == "sandbox-simulated"
+    assert "pricing" in data["content"].lower()
+    broker.infer.assert_not_awaited()
 
 
 @pytest.mark.integration
@@ -655,6 +754,35 @@ async def test_chat_stream_no_broker_fallback(chat_client):
     assert len(token_events) == 1
     assert "not configured" in token_events[0]["content"]
     assert len(done_events) == 1
+
+
+@pytest.mark.integration
+async def test_chat_stream_test_mode_uses_sandbox_runtime(chat_client):
+    """POST /api/v1/chat/stream with a test-mode session emits sandbox SSE events."""
+    client, tm, broker, _ = chat_client
+    tm.get_session = AsyncMock(
+        return_value=_make_session()
+        | {
+            "execution_mode": "test",
+            "test_profile_id": None,
+        }
+    )
+    test_token = create_session_token(TENANT_ID, SESSION_ID, JWT_SECRET, execution_mode="test")
+
+    resp = await client.post(
+        "/api/v1/chat/stream",
+        json={"message": "When are you available?"},
+        headers={"Authorization": f"Bearer {test_token}"},
+    )
+    assert resp.status == 200
+
+    body = await resp.read()
+    events = _parse_sse(body)
+    token_events = [e for e in events if e["type"] == "token"]
+    done_events = [e for e in events if e["type"] == "done"]
+    assert token_events
+    assert done_events[0]["model"] == "sandbox-simulated"
+    assert broker.infer.await_count == 0
 
 
 @pytest.mark.integration

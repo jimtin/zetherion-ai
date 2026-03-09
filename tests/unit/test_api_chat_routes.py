@@ -49,6 +49,8 @@ async def chat_routes_client():
         "session_id": "session-1",
         "tenant_id": "tenant-1",
         "memory_subject_id": "subject-1",
+        "execution_mode": "live",
+        "test_profile_id": None,
         "conversation_summary": "",
     }
 
@@ -69,6 +71,8 @@ async def chat_routes_client():
     tenant_manager.list_subject_memories = AsyncMock(return_value=[])
     tenant_manager.upsert_subject_memory = AsyncMock()
     tenant_manager.persist_session_context = AsyncMock()
+    tenant_manager.resolve_test_profile = AsyncMock(return_value=None)
+    tenant_manager.list_test_rules = AsyncMock(return_value=[])
 
     @web.middleware
     async def inject_context(request: web.Request, handler):
@@ -285,6 +289,27 @@ async def test_handle_chat_inference_error_returns_safe_fallback(chat_routes_cli
 
 
 @pytest.mark.asyncio
+async def test_handle_chat_test_mode_uses_sandbox_runtime(chat_routes_client) -> None:
+    """Test-mode chat bypasses live inference and uses the sandbox runtime."""
+    client, tenant_manager, _, session = chat_routes_client
+    session["execution_mode"] = "test"
+    session["test_profile_id"] = "profile-1"
+
+    response = await client.post("/api/v1/chat", json={"message": "Can you give me a price?"})
+
+    assert response.status == 200
+    body = await response.json()
+    assert body["role"] == "assistant"
+    assert body["model"] == "sandbox-simulated"
+    assert "pricing" in body["content"].lower()
+
+    user_call = tenant_manager.add_message.call_args_list[0].kwargs
+    assistant_call = tenant_manager.add_message.call_args_list[1].kwargs
+    assert user_call["execution_mode"] == "test"
+    assert assistant_call["execution_mode"] == "test"
+
+
+@pytest.mark.asyncio
 async def test_handle_chat_history_enforces_limit_cap_and_before(chat_routes_client) -> None:
     """History endpoint caps limit at 100 and passes before cursor."""
     client, tenant_manager, _, _ = chat_routes_client
@@ -385,6 +410,26 @@ async def test_handle_chat_stream_success(chat_routes_client) -> None:
     assert assistant_call["role"] == "assistant"
     assert assistant_call["content"] == "Hello there"
     tenant_manager.persist_session_context.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_chat_stream_test_mode_uses_sandbox_runtime(chat_routes_client) -> None:
+    """Test-mode streaming uses sandbox events and stores tagged messages."""
+    client, tenant_manager, _, session = chat_routes_client
+    session["execution_mode"] = "test"
+    session["test_profile_id"] = "profile-1"
+
+    response = await client.post("/api/v1/chat/stream", json={"message": "When are you available?"})
+    assert response.status == 200
+
+    events = _parse_sse_events(await response.read())
+    token_events = [event for event in events if event["type"] == "token"]
+    done_event = [event for event in events if event["type"] == "done"][0]
+
+    assert token_events
+    assert done_event["model"] == "sandbox-simulated"
+    assistant_call = tenant_manager.add_message.call_args_list[1].kwargs
+    assert assistant_call["execution_mode"] == "test"
 
 
 @pytest.mark.asyncio

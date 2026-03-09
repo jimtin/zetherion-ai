@@ -29,9 +29,12 @@ It does not cover external gateway/public API mapping.
 5. `seg5-zeth-archive-worker-guardrails` (completed): archive/purge maintenance worker logic, server lifecycle loop wiring, retrieval exclusion for `archiving|archived|purged`, and regression tests.
 6. Remaining segments continue in strict one-PR-per-segment order for additional hardening only.
 
-## Implementation Status Update (2026-03-08)
+## Implementation Status Update (2026-03-09)
 
-- Upstream tenant session/chat routes now persist tenant-local `memory_subject_id`, rolling `conversation_summary`, and durable `tenant_subject_memories` for public API conversational recall.
+- Upstream tenant sandbox support now adds `sk_test_...` keys plus `/api/v1/test/*` sandbox profile/rule management for simulated chat runtime validation.
+- Test-mode upstream sessions and analytics are tagged `execution_mode=test` and isolated from tenant-derived outputs by default.
+- Document archive/delete/restore routes remain live API-key routes in this segment; `sk_test_...` keys do not access document lifecycle endpoints.
+- Upstream tenant session/chat routes still persist tenant-local `memory_subject_id`, rolling `conversation_summary`, and durable `tenant_subject_memories` for public API conversational recall.
 - That conversational runtime work stays in `tenant_raw` and does not change the document archive/delete/restore contract defined in this specification.
 - Segment 2 data-plane isolation foundation added owner-vs-tenant storage-plane
   routing, object-storage domain prefixes, additive PostgreSQL isolation schema

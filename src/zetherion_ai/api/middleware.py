@@ -32,6 +32,11 @@ _SESSION_AUTH_EXACT_PATHS = frozenset(
     }
 )
 
+_TEST_API_KEY_ALLOWED_PREFIXES = (
+    "/api/v1/sessions",
+    "/api/v1/test",
+)
+
 
 def _requires_session_auth(path: str) -> bool:
     """Return True when route requires Bearer session auth."""
@@ -40,6 +45,11 @@ def _requires_session_auth(path: str) -> bool:
     if path.startswith("/api/v1/analytics/replay/chunks/"):
         return True
     return path.startswith("/api/v1/analytics/recommendations/") and path.endswith("/feedback")
+
+
+def _test_api_key_path_allowed(path: str) -> bool:
+    """Return True when the path is allowed for sk_test_ API keys."""
+    return any(path.startswith(prefix) for prefix in _TEST_API_KEY_ALLOWED_PREFIXES)
 
 
 def create_cors_middleware(allowed_origins: list[str] | None = None) -> Any:
@@ -127,8 +137,17 @@ def create_auth_middleware(jwt_secret: str) -> Any:
             if str(session["tenant_id"]) != str(tenant["tenant_id"]):
                 return web.json_response({"error": "Session does not belong to tenant"}, status=403)
 
+            token_mode = str(payload.get("execution_mode") or "live")
+            session_mode = str(session.get("execution_mode") or "live")
+            if token_mode != session_mode:
+                return web.json_response(
+                    {"error": "Session execution mode mismatch"},
+                    status=401,
+                )
+
             request["tenant"] = tenant
             request["session"] = session
+            request["execution_mode"] = session_mode
 
             # Update session activity
             await tenant_manager.touch_session(payload["session_id"])
@@ -144,7 +163,20 @@ def create_auth_middleware(jwt_secret: str) -> Any:
         if tenant is None:
             return web.json_response({"error": "Invalid API key"}, status=401)
 
+        execution_mode = str(tenant.get("execution_mode") or "live")
+        if execution_mode == "test" and not _test_api_key_path_allowed(path):
+            return web.json_response(
+                {
+                    "error": (
+                        "Test API keys are only supported for /api/v1/sessions and "
+                        "/api/v1/test/* in this segment"
+                    )
+                },
+                status=403,
+            )
+
         request["tenant"] = tenant
+        request["execution_mode"] = execution_mode
         return await handler(request)  # type: ignore[no-any-return]
 
     return auth_middleware

@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from zetherion_ai.api.auth import generate_api_key
 from zetherion_ai.api.tenant import TenantManager
 
 
@@ -230,6 +231,8 @@ async def test_session_context_and_subject_memory_methods(tenant_manager: Tenant
             "tenant_id": "tenant-1",
             "external_user_id": "visitor-1",
             "memory_subject_id": "subject-1",
+            "execution_mode": "test",
+            "test_profile_id": "profile-1",
             "conversation_summary": "",
             "created_at": now,
             "last_active": now,
@@ -267,12 +270,18 @@ async def test_session_context_and_subject_memory_methods(tenant_manager: Tenant
         "tenant-1",
         external_user_id="visitor-1",
         memory_subject_id="subject-1",
+        execution_mode="test",
+        test_profile_id="profile-1",
         metadata={"source": "widget"},
     )
     assert session["memory_subject_id"] == "subject-1"
+    assert session["execution_mode"] == "test"
+    assert session["test_profile_id"] == "profile-1"
     create_sql_args = tenant_manager._fetchrow.call_args_list[0].args  # type: ignore[attr-defined]
     assert "memory_subject_id" in create_sql_args[0]
-    assert json.loads(create_sql_args[4]) == {"source": "widget"}
+    assert create_sql_args[4] == "test"
+    assert create_sql_args[5] == "profile-1"
+    assert json.loads(create_sql_args[6]) == {"source": "widget"}
 
     await tenant_manager.persist_session_context(
         session_id="session-1",
@@ -313,6 +322,250 @@ async def test_session_context_and_subject_memory_methods(tenant_manager: Tenant
             "updated_at": now,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_api_key_registry_and_test_profile_methods(tenant_manager: TenantManager) -> None:
+    now = datetime.now(UTC)
+    live_key, live_prefix, live_hash = generate_api_key()
+    tenant_manager._fetch.side_effect = [  # type: ignore[attr-defined]
+        [
+            {
+                "tenant_id": "tenant-1",
+                "name": "Tenant",
+                "domain": "example.com",
+                "is_active": True,
+                "rate_limit_rpm": 60,
+                "config": {},
+                "api_key_id": "key-1",
+                "key_kind": "live",
+                "label": "primary",
+                "api_key_hash": live_hash,
+                "created_at": now,
+                "updated_at": now,
+            }
+        ],
+        [],
+    ]
+    tenant_manager.get_tenant = AsyncMock(  # type: ignore[method-assign]
+        return_value={"tenant_id": "tenant-1", "is_active": True}
+    )
+    tenant_manager._fetchrow.side_effect = [  # type: ignore[attr-defined]
+        {
+            "profile_id": "profile-1",
+            "tenant_id": "tenant-1",
+            "name": "Sandbox",
+            "description": "Primary",
+            "is_default": True,
+            "is_active": True,
+            "created_at": now,
+            "updated_at": now,
+        },
+        {
+            "rule_id": "rule-1",
+            "tenant_id": "tenant-1",
+            "profile_id": "profile-1",
+            "priority": 10,
+            "method": "POST",
+            "route_pattern": "/api/v1/chat",
+            "enabled": True,
+            "match": {"body_contains": ["price"]},
+            "response": {"json_body": {"content": "Sandbox"}},
+            "latency_ms": 0,
+            "created_at": now,
+            "updated_at": now,
+        },
+    ]
+
+    auth = await tenant_manager.authenticate_api_key(live_key)
+    assert auth is not None
+    assert auth["execution_mode"] == "live"
+    assert auth["api_key_kind"] == "live"
+
+    test_key = await tenant_manager.issue_api_key("tenant-1", key_kind="test")
+    assert test_key is not None
+    assert test_key.startswith("sk_test_")
+
+    profile = await tenant_manager.create_test_profile(
+        "tenant-1",
+        name="Sandbox",
+        description="Primary",
+        is_default=True,
+    )
+    assert profile["profile_id"] == "profile-1"
+
+    rule = await tenant_manager.create_test_rule(
+        "tenant-1",
+        "profile-1",
+        priority=10,
+        method="POST",
+        route_pattern="/api/v1/chat",
+        match={"body_contains": ["price"]},
+        response={"json_body": {"content": "Sandbox"}},
+    )
+    assert rule["rule_id"] == "rule-1"
+
+
+@pytest.mark.asyncio
+async def test_test_profile_and_rule_mutation_helpers(tenant_manager: TenantManager) -> None:
+    now = datetime.now(UTC)
+    tenant_manager._fetch.return_value = [  # type: ignore[attr-defined]
+        {
+            "profile_id": "profile-1",
+            "tenant_id": "tenant-1",
+            "name": "Sandbox",
+            "description": "Primary",
+            "is_default": True,
+            "is_active": True,
+            "created_at": now,
+            "updated_at": now,
+        }
+    ]
+    tenant_manager._fetchrow.side_effect = [  # type: ignore[attr-defined]
+        {
+            "profile_id": "profile-1",
+            "tenant_id": "tenant-1",
+            "name": "Sandbox",
+            "description": "Primary",
+            "is_default": True,
+            "is_active": True,
+            "created_at": now,
+            "updated_at": now,
+        },
+        {
+            "profile_id": "profile-1",
+            "tenant_id": "tenant-1",
+            "name": "Sandbox",
+            "description": "Primary",
+            "is_default": True,
+            "is_active": True,
+            "created_at": now,
+            "updated_at": now,
+        },
+        {
+            "profile_id": "profile-1",
+            "tenant_id": "tenant-1",
+            "name": "Sandbox updated",
+            "description": "Updated",
+            "is_default": False,
+            "is_active": True,
+            "created_at": now,
+            "updated_at": now,
+        },
+        {
+            "profile_id": "profile-1",
+            "tenant_id": "tenant-1",
+            "name": "Sandbox default",
+            "description": "Updated",
+            "is_default": True,
+            "is_active": False,
+            "created_at": now,
+            "updated_at": now,
+        },
+        {
+            "rule_id": "rule-1",
+            "tenant_id": "tenant-1",
+            "profile_id": "profile-1",
+            "priority": 5,
+            "method": "POST",
+            "route_pattern": "/api/v1/chat*",
+            "enabled": True,
+            "match": {"body_contains": ["price"]},
+            "response": {"json_body": {"content": "ok"}},
+            "latency_ms": 25,
+            "created_at": now,
+            "updated_at": now,
+        },
+    ]
+    tenant_manager._execute.side_effect = [None, "DELETE 1", "DELETE 1"]  # type: ignore[attr-defined]
+
+    profiles = await tenant_manager.list_test_profiles("tenant-1")
+    assert profiles[0]["profile_id"] == "profile-1"
+
+    fetched = await tenant_manager.get_test_profile("tenant-1", "profile-1")
+    assert fetched["name"] == "Sandbox"
+
+    explicit = await tenant_manager.resolve_test_profile("tenant-1", "profile-1")
+    assert explicit["profile_id"] == "profile-1"
+
+    updated = await tenant_manager.update_test_profile(
+        "tenant-1",
+        "profile-1",
+        name="Sandbox updated",
+        description="Updated",
+    )
+    assert updated["name"] == "Sandbox updated"
+
+    updated_default = await tenant_manager.update_test_profile(
+        "tenant-1",
+        "profile-1",
+        is_default=True,
+        is_active=False,
+    )
+    assert updated_default["is_default"] is True
+    assert updated_default["is_active"] is False
+
+    deleted = await tenant_manager.delete_test_profile("tenant-1", "profile-1")
+    assert deleted is True
+
+    tenant_manager._fetch.return_value = [  # type: ignore[attr-defined]
+        {
+            "rule_id": "rule-1",
+            "tenant_id": "tenant-1",
+            "profile_id": "profile-1",
+            "priority": 10,
+            "method": "POST",
+            "route_pattern": "/api/v1/chat",
+            "enabled": True,
+            "match": {"body_contains": ["price"]},
+            "response": {"json_body": {"content": "Sandbox"}},
+            "latency_ms": 0,
+            "created_at": now,
+            "updated_at": now,
+        }
+    ]
+    rules = await tenant_manager.list_test_rules("tenant-1", "profile-1")
+    assert rules[0]["rule_id"] == "rule-1"
+    updated_rule = await tenant_manager.update_test_rule(
+        "tenant-1",
+        "profile-1",
+        "rule-1",
+        priority=5,
+        method="post",
+        route_pattern="/api/v1/chat*",
+        enabled=True,
+        match={"body_contains": ["price"]},
+        response={"json_body": {"content": "ok"}},
+        latency_ms=25,
+    )
+    assert updated_rule["priority"] == 5
+    assert updated_rule["route_pattern"] == "/api/v1/chat*"
+
+    deleted_rule = await tenant_manager.delete_test_rule("tenant-1", "profile-1", "rule-1")
+    assert deleted_rule is True
+
+
+@pytest.mark.asyncio
+async def test_get_web_events_filters_test_rows_by_default(tenant_manager: TenantManager) -> None:
+    tenant_manager._fetch.return_value = [{"event_id": "evt-1"}]  # type: ignore[attr-defined]
+
+    rows = await tenant_manager.get_web_events("tenant-1", session_id="session-1", limit=5)
+    assert rows == [{"event_id": "evt-1"}]
+    filtered_sql = tenant_manager._fetch.call_args.args[0]  # type: ignore[attr-defined]
+    assert "execution_mode = 'live'" in filtered_sql
+
+    tenant_manager._fetch.reset_mock()  # type: ignore[attr-defined]
+    tenant_manager._fetch.return_value = [{"event_id": "evt-2"}]  # type: ignore[attr-defined]
+
+    include_test_rows = await tenant_manager.get_web_events(
+        "tenant-1",
+        session_id="session-1",
+        include_test=True,
+        limit=5,
+    )
+    assert include_test_rows == [{"event_id": "evt-2"}]
+    include_test_sql = tenant_manager._fetch.call_args.args[0]  # type: ignore[attr-defined]
+    assert "execution_mode = 'live'" not in include_test_sql
 
 
 @pytest.mark.asyncio

@@ -95,6 +95,10 @@ class TestPublicAPIServerCreateApp:
         assert "/api/v1/documents/{document_id}/restore" in paths
         assert "/api/v1/rag/query" in paths
         assert "/api/v1/models/providers" in paths
+        assert "/api/v1/test/profiles" in paths
+        assert "/api/v1/test/profiles/{profile_id}" in paths
+        assert "/api/v1/test/profiles/{profile_id}/rules" in paths
+        assert "/api/v1/test/profiles/{profile_id}/preview" in paths
 
         document_route_methods = {
             route.method

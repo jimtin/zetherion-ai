@@ -60,6 +60,18 @@ from zetherion_ai.api.routes.sessions import (
     handle_delete_session,
     handle_get_session,
 )
+from zetherion_ai.api.routes.test_mode import (
+    handle_create_test_profile,
+    handle_create_test_rule,
+    handle_delete_test_profile,
+    handle_delete_test_rule,
+    handle_get_test_profile,
+    handle_list_test_profiles,
+    handle_list_test_rules,
+    handle_patch_test_profile,
+    handle_patch_test_rule,
+    handle_preview_test_profile,
+)
 from zetherion_ai.api.routes.youtube import register_youtube_routes
 from zetherion_ai.api.tenant import TenantManager
 from zetherion_ai.documents.service import DocumentService
@@ -177,6 +189,24 @@ class PublicAPIServer:
         app.router.add_post("/api/v1/sessions", handle_create_session)
         app.router.add_get("/api/v1/sessions/{session_id}", handle_get_session)
         app.router.add_delete("/api/v1/sessions/{session_id}", handle_delete_session)
+
+        # Sandbox profiles + rules (API key auth)
+        app.router.add_get("/api/v1/test/profiles", handle_list_test_profiles)
+        app.router.add_post("/api/v1/test/profiles", handle_create_test_profile)
+        app.router.add_post("/api/v1/test/profiles/{profile_id}/preview", handle_preview_test_profile)
+        app.router.add_get("/api/v1/test/profiles/{profile_id}", handle_get_test_profile)
+        app.router.add_patch("/api/v1/test/profiles/{profile_id}", handle_patch_test_profile)
+        app.router.add_delete("/api/v1/test/profiles/{profile_id}", handle_delete_test_profile)
+        app.router.add_get("/api/v1/test/profiles/{profile_id}/rules", handle_list_test_rules)
+        app.router.add_post("/api/v1/test/profiles/{profile_id}/rules", handle_create_test_rule)
+        app.router.add_patch(
+            "/api/v1/test/profiles/{profile_id}/rules/{rule_id}",
+            handle_patch_test_rule,
+        )
+        app.router.add_delete(
+            "/api/v1/test/profiles/{profile_id}/rules/{rule_id}",
+            handle_delete_test_rule,
+        )
 
         # Chat (session token auth)
         app.router.add_post("/api/v1/chat", handle_chat)

@@ -80,6 +80,18 @@ class TestSessionTokens:
         payload = validate_session_token(token, self.JWT_SECRET)
         assert payload["tenant_id"] == "tid-1"
         assert payload["session_id"] == "sid-1"
+        assert payload["execution_mode"] == "live"
+
+    def test_custom_execution_mode(self):
+        """Session token carries the requested execution mode."""
+        token = create_session_token(
+            "tid-1",
+            "sid-1",
+            self.JWT_SECRET,
+            execution_mode="test",
+        )
+        payload = validate_session_token(token, self.JWT_SECRET)
+        assert payload["execution_mode"] == "test"
 
     def test_token_contains_exp_and_iat(self):
         """Token payload includes standard iat and exp claims."""

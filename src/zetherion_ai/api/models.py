@@ -50,6 +50,7 @@ class SessionCreate(BaseModel):
 
     external_user_id: str | None = Field(default=None, max_length=500)
     memory_subject_id: str | None = Field(default=None, max_length=500)
+    test_profile_id: str | None = Field(default=None, max_length=64)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -60,6 +61,8 @@ class SessionResponse(BaseModel):
     tenant_id: str
     external_user_id: str | None
     memory_subject_id: str | None = None
+    execution_mode: str = "live"
+    test_profile_id: str | None = None
     conversation_summary: str = ""
     session_token: str
     created_at: datetime
@@ -73,6 +76,8 @@ class SessionInfo(BaseModel):
     tenant_id: str
     external_user_id: str | None
     memory_subject_id: str | None = None
+    execution_mode: str = "live"
+    test_profile_id: str | None = None
     conversation_summary: str = ""
     created_at: datetime
     last_active: datetime
