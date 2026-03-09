@@ -6,7 +6,21 @@ Authoritative exposure rule:
 - External clients authenticate only against CGS `/service/ai/v1`.
 - Zetherion `/api/v1` auth is internal upstream auth between CGS and Zetherion.
 
-## Maintenance Note (2026-03-09)
+## Maintenance Note (2026-03-10)
+
+- Segment 6 adds upstream tenant notification routes:
+  - `GET /api/v1/notifications/channels`
+  - `POST /api/v1/notifications/events`
+  - `GET|POST /api/v1/notifications/subscriptions`
+  - `PATCH|DELETE /api/v1/notifications/subscriptions/{subscription_id}`
+- Notification routes authenticate with tenant `X-API-Key` only and stay in the
+  tenant live-key surface for this segment.
+- `sk_test_...` keys remain intentionally blocked from `/api/v1/notifications/*`;
+  sandbox clients can validate notification payload construction locally but do
+  not publish or mutate notification subscriptions through test keys in this segment.
+- Notification subscriptions and event publishing are tenant-scoped upstream
+  APIs; they do not use session bearer auth and do not cross into owner-personal
+  trust domains.
 
 - Public upstream tenant auth now supports two API-key families:
   - `sk_live_...` for the normal upstream API-key surface
@@ -41,6 +55,7 @@ Authoritative exposure rule:
 | Sessions (`/sessions`) | API key | `X-API-Key` | tenant resolved from API key; `sk_test_...` allowed |
 | Sandbox controls (`/test/*`) | API key | `X-API-Key` | tenant resolved from API key; `sk_test_...` and `sk_live_...` allowed |
 | Chat + analytics session routes | session bearer | `Authorization: Bearer zt_sess_...` | tenant/session resolved from token claims plus stored `execution_mode` match |
+| Notifications (`/notifications/*`) | API key | `X-API-Key` | tenant resolved from API key; live keys only in Segment 6 |
 | CRM reads + release markers | API key | `X-API-Key` | tenant resolved from API key |
 | Messaging chats/messages/send | API key + trust policy | `X-API-Key` | tenant resolved from API key + trust-policy allowlist/tier checks |
 | Documents + RAG + model catalog | API key | `X-API-Key` | tenant resolved from API key |
@@ -51,6 +66,7 @@ Notes:
 - `memory_subject_id` is tenant-local session metadata, not an additional auth claim or scope boundary.
 - `test_profile_id` is tenant-local sandbox session metadata, not a scope or tenant join key.
 - `sk_test_...` keys are intentionally blocked from API-key routes outside `/api/v1/sessions` and `/api/v1/test/*` in this segment.
+- Notification routes require tenant live API-key auth and do not accept session bearer tokens or `sk_test_...` keys in this segment.
 - Document routes do not accept session bearer tokens; they require tenant API key auth.
 
 ## CGS Gateway (`/service/ai/v1`, public)

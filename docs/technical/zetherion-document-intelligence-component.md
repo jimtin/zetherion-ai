@@ -9,7 +9,13 @@ Public exposure rule:
 - External clients must not call Zetherion `/api/v1` directly.
 - CGS `/service/ai/v1` is the only supported public API for this capability.
 
-## Maintenance Note (2026-03-09)
+## Maintenance Note (2026-03-10)
+
+- Segment 6 adds upstream tenant notification routes under `/api/v1/notifications/*`
+  backed by the generalized announcement core.
+- Those notification routes stay in tenant live API-key auth, remain outside the
+  document ingestion/retrieval surface, and do not change document intelligence
+  contracts, object storage layout, Qdrant collection design, or retrieval authorization.
 
 - Upstream tenant sandbox support now adds `sk_test_...` API keys plus `/api/v1/test/*` profile/rule management for chat simulation.
 - Test-mode sessions, messages, and analytics rows are tagged `execution_mode=test` and are excluded from CRM extraction, funnel, and recommendation persistence in this segment.
