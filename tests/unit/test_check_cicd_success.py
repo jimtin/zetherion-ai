@@ -169,9 +169,7 @@ def test_main_associated_pr_ci_fallback_validates_deploy_receipt(tmp_path: Path)
                 "url": "https://example.invalid/deploy/9002",
             },
         ],
-        "check_runs": {
-            "check_runs": []
-        },
+        "check_runs": {"check_runs": []},
         "pulls": [
             {
                 "number": 150,
