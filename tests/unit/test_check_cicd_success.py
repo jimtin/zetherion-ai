@@ -143,6 +143,79 @@ def test_main_check_run_fallback_validates_deploy_receipt(tmp_path: Path) -> Non
     assert "Deployment success verified:" in result.stdout
 
 
+def test_main_associated_pr_ci_fallback_validates_deploy_receipt(tmp_path: Path) -> None:
+    target_sha = "c" * 40
+    pr_head_sha = "d" * 40
+    fixtures = {
+        "run_list": [
+            {
+                "databaseId": 7001,
+                "workflowName": "CI/CD Pipeline",
+                "headSha": pr_head_sha,
+                "headBranch": "codex/fix-main-ci-proof-fallback",
+                "status": "completed",
+                "conclusion": "success",
+                "createdAt": "2026-03-10T00:00:00Z",
+                "url": "https://example.invalid/ci/7001",
+            },
+            {
+                "databaseId": 9002,
+                "workflowName": "Deploy Windows",
+                "headSha": target_sha,
+                "headBranch": "main",
+                "status": "completed",
+                "conclusion": "success",
+                "createdAt": "2026-03-10T00:05:00Z",
+                "url": "https://example.invalid/deploy/9002",
+            },
+        ],
+        "check_runs": {
+            "check_runs": []
+        },
+        "pulls": [
+            {
+                "number": 150,
+                "merged_at": "2026-03-10T00:04:00Z",
+                "merge_commit_sha": target_sha,
+                "head": {
+                    "sha": pr_head_sha,
+                    "ref": "codex/fix-main-ci-proof-fallback",
+                },
+            }
+        ],
+        "download_artifacts": {
+            "9002": {
+                "deployment-receipt": {
+                    "deployment-receipt.json": {
+                        "status": "success",
+                        "target_sha": target_sha,
+                        "deployed_sha": target_sha,
+                        "core_status": "healthy",
+                        "aux_status": "healthy",
+                        "checks": {
+                            "containers_healthy": True,
+                            "auxiliary_services_healthy": True,
+                            "bot_startup_markers": True,
+                            "postgres_model_keys": True,
+                            "fallback_probe": True,
+                            "recovery_tasks_registered": True,
+                            "runner_service_persistent": True,
+                            "docker_service_persistent": True,
+                        },
+                    }
+                }
+            }
+        },
+    }
+
+    result = _run_script(tmp_path, fixtures, "--sha", target_sha, "--ref", "main")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "CI success verified: source=associated-pr-ci" in result.stdout
+    assert "run_id=7001" in result.stdout
+    assert "Deployment success verified:" in result.stdout
+
+
 def test_pending_main_check_runs_fail_with_pending_diagnostic(tmp_path: Path) -> None:
     target_sha = "b" * 40
     fixtures = {
