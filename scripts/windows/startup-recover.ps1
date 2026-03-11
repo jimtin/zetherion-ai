@@ -17,6 +17,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "docker-runtime.ps1")
 
 function Ensure-ParentDir {
     param([string]$Path)
@@ -74,17 +75,18 @@ function Wait-ForNetwork {
 function Wait-ForDocker {
     param([int]$TimeoutSeconds, [ref]$ActionsTaken)
 
-    $dockerService = Get-Service -Name "com.docker.service" -ErrorAction SilentlyContinue
-    if ($dockerService -and $dockerService.Status -ne "Running") {
-        Start-Service -Name "com.docker.service"
-        $ActionsTaken.Value += "started_docker_service"
+    $dockerStatus = Get-ZetherionDockerRuntimeStatus
+    if (-not $dockerStatus.active) {
+        & wsl.exe -d (Get-ZetherionWslDistribution) -- bash -lc "systemctl start docker"
+        if ($LASTEXITCODE -eq 0) {
+            $ActionsTaken.Value += "started_wsl_docker_service"
+        }
     }
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
         try {
-            docker info *> $null
-            if ($LASTEXITCODE -eq 0) {
+            if (Test-ZetherionDockerAvailable) {
                 return $true
             }
         }

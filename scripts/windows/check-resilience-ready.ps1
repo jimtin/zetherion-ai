@@ -15,6 +15,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "docker-runtime.ps1")
 
 function Ensure-ParentDir {
     param([string]$Path)
@@ -195,17 +196,20 @@ try {
         $checks.runner_service_persistent = $false
     }
 
-    $dockerService = Get-Service -Name "com.docker.service" -ErrorAction SilentlyContinue
-    if ($dockerService) {
+    $dockerRuntime = Get-ZetherionDockerRuntimeStatus
+    if ($dockerRuntime) {
         $details.docker_service = [ordered]@{
-            name = $dockerService.Name
-            status = $dockerService.Status.ToString()
-            start_type = $dockerService.StartType.ToString()
+            name = "wsl:docker.service"
+            status = if ($dockerRuntime.active) { "Running" } else { "Stopped" }
+            start_type = if ($dockerRuntime.enabled) { "Automatic" } else { "Disabled" }
+            backend = [string]$dockerRuntime.backend
+            distribution = [string]$dockerRuntime.distribution
+            reachable = [bool]$dockerRuntime.available
         }
     }
     else {
         $details.docker_service = [ordered]@{
-            name = "com.docker.service"
+            name = "wsl:docker.service"
             status = "missing"
             start_type = "missing"
         }
@@ -222,12 +226,15 @@ try {
     }
 
     $details.network_service_in_docker_users = [bool]($dockerUsers -contains "NT AUTHORITY\NETWORK SERVICE")
+    if ($dockerRuntime.backend -eq "wsl") {
+        $details.network_service_in_docker_users = $true
+    }
 
     $checks.docker_service_persistent = [bool](
-        $dockerService `
-        -and $dockerService.StartType.ToString() -ne "Disabled" `
-        -and $dockerService.Status.ToString() -eq "Running" `
-        -and $details.network_service_in_docker_users
+        $dockerRuntime `
+        -and [bool]$dockerRuntime.enabled `
+        -and [bool]$dockerRuntime.active `
+        -and [bool]$dockerRuntime.available
     )
 
     $allowServiceFallback = $false
