@@ -24,13 +24,16 @@ def _storage() -> MagicMock:
     storage.get_agent_bootstrap_manifest = AsyncMock()
     storage.get_agent_principal = AsyncMock(return_value=None)
     storage.upsert_agent_principal = AsyncMock()
+    storage.create_agent_session = AsyncMock(
+        return_value={"session_id": "sess-1", "principal_id": "codex-1"}
+    )
     storage.list_agent_app_profiles = AsyncMock(return_value=[])
     storage.get_agent_app_profile = AsyncMock(return_value=None)
     storage.upsert_agent_app_profile = AsyncMock()
     storage.get_agent_knowledge_pack = AsyncMock(return_value=None)
     storage.upsert_agent_knowledge_pack = AsyncMock()
     storage.list_external_access_grants = AsyncMock(return_value=[])
-    storage.record_agent_audit_event = AsyncMock()
+    storage.record_agent_audit_event = AsyncMock(return_value={"audit_id": "audit-1"})
     storage.get_repo_profile = AsyncMock()
     storage.create_workspace_bundle = AsyncMock()
     storage.mark_workspace_bundle_downloaded = AsyncMock()
@@ -44,6 +47,20 @@ def _storage() -> MagicMock:
     storage.get_external_service_connector_with_secret = AsyncMock(return_value=None)
     storage.replace_external_access_grants = AsyncMock(return_value=[])
     storage.list_agent_audit_events = AsyncMock(return_value=[])
+    storage.create_agent_interaction = AsyncMock(return_value={"interaction_id": "interaction-1"})
+    storage.create_agent_action = AsyncMock(return_value={"action_record_id": "action-1"})
+    storage.create_agent_outcome = AsyncMock(return_value={"outcome_id": "outcome-1"})
+    storage.record_agent_gap_event = AsyncMock(
+        return_value={"gap_id": "gap-1", "occurrence_count": 1}
+    )
+    storage.list_agent_gap_events = AsyncMock(return_value=[])
+    storage.get_agent_gap_event = AsyncMock(return_value=None)
+    storage.update_agent_gap_event = AsyncMock(return_value=None)
+    storage.create_agent_service_request = AsyncMock(
+        return_value={"request_id": "service-1", "status": "executed"}
+    )
+    storage.list_secret_refs = AsyncMock(return_value=[])
+    storage.list_agent_session_interactions = AsyncMock(return_value=[])
     return storage
 
 
@@ -256,6 +273,108 @@ async def test_publish_candidate_submit_stores_diff_without_github_write_access(
     candidate_payload = storage.create_publish_candidate.await_args.kwargs["candidate"]
     assert candidate_payload["candidate_type"] == "text/x-diff"
     assert candidate_payload["github_governance"]["agent_push_enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_test_plan_compile_records_gap_for_missing_playwright() -> None:
+    storage = _storage()
+    storage.get_agent_app_profile.return_value = _app_profile()
+    storage.list_agent_app_profiles.return_value = [_app_profile()]
+    storage.list_external_access_grants.return_value = [
+        {
+            "resource_type": "app",
+            "resource_id": "catalyst-group-solutions",
+            "active": True,
+        }
+    ]
+    storage.get_repo_profile.return_value = {
+        "repo_id": "catalyst-group-solutions",
+        "default_branch": "main",
+        "local_fast_lanes": [],
+        "windows_full_lanes": [],
+        "mandatory_static_gates": [],
+        "shard_templates": [],
+    }
+    storage.get_agent_knowledge_pack.return_value = {
+        "app_id": "catalyst-group-solutions",
+        "pack": {
+            "capability_registry": {
+                "supported_tooling": ["jest", "eslint"],
+            },
+            "env_contract": {"required_secret_refs": []},
+        },
+    }
+    skill = AgentBootstrapSkill(storage=storage)
+    skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+
+    response = await skill.handle(
+        SkillRequest(
+            intent="agent_test_plan_compile",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "codex-1",
+                "app_id": "catalyst-group-solutions",
+                "required_tooling": ["playwright"],
+            },
+        )
+    )
+
+    assert response.success is False
+    storage.record_agent_gap_event.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_service_request_submit_executes_brokered_stripe_action() -> None:
+    storage = _storage()
+    app_profile = _app_profile()
+    app_profile["profile"]["service_connector_map"]["stripe"] = {
+        "connector_id": "stripe-primary",
+        "read_access": ["account_metadata"],
+        "write_access": ["product_ensure"],
+        "broker_only": True,
+    }
+    storage.get_agent_app_profile.return_value = app_profile
+    storage.list_agent_app_profiles.return_value = [app_profile]
+    storage.list_external_access_grants.return_value = [
+        {
+            "resource_type": "app",
+            "resource_id": "catalyst-group-solutions",
+            "active": True,
+        }
+    ]
+    storage.get_external_service_connector_with_secret.return_value = {
+        "connector_id": "stripe-primary",
+        "service_kind": "stripe",
+        "active": True,
+        "secret_value": "sk_test_123",
+    }
+    skill = AgentBootstrapSkill(storage=storage)
+    skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+    skill._execute_stripe_service_action = AsyncMock(  # type: ignore[method-assign]
+        return_value={"status": "executed", "product": {"id": "prod_123"}}
+    )
+
+    response = await skill.handle(
+        SkillRequest(
+            intent="agent_service_request_submit",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "codex-1",
+                "app_id": "catalyst-group-solutions",
+                "service_kind": "stripe",
+                "action_id": "product.ensure",
+                "input": {"name": "Gold"},
+            },
+        )
+    )
+
+    assert response.success is True
+    assert response.data["request"]["request_id"] == "service-1"
+    storage.create_agent_service_request.assert_awaited_once()
 
 
 @pytest.mark.asyncio

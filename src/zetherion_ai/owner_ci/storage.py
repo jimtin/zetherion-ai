@@ -497,6 +497,169 @@ CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_agent_audit_events (
 
 CREATE INDEX IF NOT EXISTS idx_owner_ci_agent_audit_events_owner_created
     ON "{validated}".owner_ci_agent_audit_events (owner_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_agent_sessions (
+    owner_id            TEXT         NOT NULL,
+    session_id          TEXT         NOT NULL,
+    principal_id        TEXT         NOT NULL,
+    app_id              TEXT,
+    session_status      TEXT         NOT NULL DEFAULT 'active',
+    metadata_json       JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    last_activity_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, session_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_agent_sessions_owner_principal
+    ON "{validated}".owner_ci_agent_sessions (
+        owner_id,
+        principal_id,
+        updated_at DESC
+    );
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_agent_interactions (
+    owner_id               TEXT         NOT NULL,
+    interaction_id         TEXT         NOT NULL,
+    session_id             TEXT,
+    principal_id           TEXT,
+    app_id                 TEXT,
+    repo_id                TEXT,
+    route_path_value       TEXT,
+    intent_value           TEXT         NOT NULL,
+    request_text_value     TEXT,
+    request_json           JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    normalized_intent_json JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    related_run_id         TEXT,
+    related_candidate_id   TEXT,
+    related_service_request_id TEXT,
+    audit_id               TEXT,
+    created_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, interaction_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_agent_interactions_owner_session
+    ON "{validated}".owner_ci_agent_interactions (
+        owner_id,
+        session_id,
+        created_at DESC
+    );
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_agent_interactions_owner_app
+    ON "{validated}".owner_ci_agent_interactions (
+        owner_id,
+        app_id,
+        created_at DESC
+    );
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_agent_actions (
+    owner_id            TEXT         NOT NULL,
+    action_record_id    TEXT         NOT NULL,
+    interaction_id      TEXT         NOT NULL,
+    principal_id        TEXT,
+    app_id              TEXT,
+    action_value        TEXT         NOT NULL,
+    status              TEXT         NOT NULL DEFAULT 'pending',
+    payload_json        JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, action_record_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_agent_actions_owner_interaction
+    ON "{validated}".owner_ci_agent_actions (
+        owner_id,
+        interaction_id,
+        created_at DESC
+    );
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_agent_outcomes (
+    owner_id            TEXT         NOT NULL,
+    outcome_id          TEXT         NOT NULL,
+    interaction_id      TEXT         NOT NULL,
+    action_record_id    TEXT,
+    status              TEXT         NOT NULL,
+    summary_value       TEXT         NOT NULL,
+    payload_json        JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, outcome_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_agent_outcomes_owner_interaction
+    ON "{validated}".owner_ci_agent_outcomes (
+        owner_id,
+        interaction_id,
+        created_at DESC
+    );
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_agent_gap_events (
+    owner_id            TEXT         NOT NULL,
+    gap_id              TEXT         NOT NULL,
+    dedupe_key          TEXT         NOT NULL,
+    session_id          TEXT,
+    principal_id        TEXT,
+    app_id              TEXT,
+    repo_id             TEXT,
+    run_id              TEXT,
+    gap_type            TEXT         NOT NULL,
+    severity            TEXT         NOT NULL DEFAULT 'medium',
+    blocker             BOOLEAN      NOT NULL DEFAULT FALSE,
+    detected_from       TEXT         NOT NULL,
+    required_capability TEXT,
+    observed_request_json JSONB      NOT NULL DEFAULT '{{}}'::jsonb,
+    suggested_fix_value TEXT,
+    status              TEXT         NOT NULL DEFAULT 'open',
+    metadata_json       JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    first_seen_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    last_seen_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    occurrence_count    INT          NOT NULL DEFAULT 1,
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, gap_id),
+    UNIQUE (owner_id, dedupe_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_agent_gap_events_owner_open
+    ON "{validated}".owner_ci_agent_gap_events (
+        owner_id,
+        status,
+        blocker,
+        last_seen_at DESC
+    );
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_agent_gap_events_owner_app
+    ON "{validated}".owner_ci_agent_gap_events (
+        owner_id,
+        app_id,
+        last_seen_at DESC
+    );
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_agent_service_requests (
+    owner_id            TEXT         NOT NULL,
+    request_id          TEXT         NOT NULL,
+    principal_id        TEXT,
+    app_id              TEXT         NOT NULL,
+    service_kind        TEXT         NOT NULL,
+    action_id           TEXT         NOT NULL,
+    target_ref          TEXT,
+    tenant_id           TEXT,
+    change_reason_value TEXT,
+    request_json        JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    status              TEXT         NOT NULL DEFAULT 'submitted',
+    approved            BOOLEAN      NOT NULL DEFAULT FALSE,
+    result_json         JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    audit_id            TEXT,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    executed_at         TIMESTAMPTZ,
+    PRIMARY KEY (owner_id, request_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_agent_service_requests_owner_app
+    ON "{validated}".owner_ci_agent_service_requests (
+        owner_id,
+        app_id,
+        created_at DESC
+    );
 """
 
 
@@ -862,6 +1025,139 @@ class OwnerCiStorage:
             "decision": str(row["decision_value"]),
             "audit": dict(row["audit_json"] or {}),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+        }
+
+    def _agent_session_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "session_id": str(row["session_id"]),
+            "principal_id": str(row["principal_id"]),
+            "app_id": str(row["app_id"]) if row.get("app_id") else None,
+            "status": str(row["session_status"]),
+            "metadata": dict(row["metadata_json"] or {}),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+            "last_activity_at": (
+                row["last_activity_at"].isoformat() if row.get("last_activity_at") else None
+            ),
+        }
+
+    def _agent_interaction_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "interaction_id": str(row["interaction_id"]),
+            "session_id": str(row["session_id"]) if row.get("session_id") else None,
+            "principal_id": str(row["principal_id"]) if row.get("principal_id") else None,
+            "app_id": str(row["app_id"]) if row.get("app_id") else None,
+            "repo_id": str(row["repo_id"]) if row.get("repo_id") else None,
+            "route_path": (
+                self._decrypt_text(str(row["route_path_value"]))
+                if row.get("route_path_value")
+                else None
+            ),
+            "intent": self._decrypt_text(str(row["intent_value"])) or "",
+            "request_text": (
+                self._decrypt_text(str(row["request_text_value"]))
+                if row.get("request_text_value")
+                else None
+            ),
+            "request": dict(row["request_json"] or {}),
+            "normalized_intent": dict(row["normalized_intent_json"] or {}),
+            "related_run_id": str(row["related_run_id"]) if row.get("related_run_id") else None,
+            "related_candidate_id": (
+                str(row["related_candidate_id"]) if row.get("related_candidate_id") else None
+            ),
+            "related_service_request_id": (
+                str(row["related_service_request_id"])
+                if row.get("related_service_request_id")
+                else None
+            ),
+            "audit_id": str(row["audit_id"]) if row.get("audit_id") else None,
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+        }
+
+    def _agent_action_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "action_record_id": str(row["action_record_id"]),
+            "interaction_id": str(row["interaction_id"]),
+            "principal_id": str(row["principal_id"]) if row.get("principal_id") else None,
+            "app_id": str(row["app_id"]) if row.get("app_id") else None,
+            "action": self._decrypt_text(str(row["action_value"])) or "",
+            "status": str(row["status"]),
+            "payload": dict(row["payload_json"] or {}),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        }
+
+    def _agent_outcome_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "outcome_id": str(row["outcome_id"]),
+            "interaction_id": str(row["interaction_id"]),
+            "action_record_id": (
+                str(row["action_record_id"]) if row.get("action_record_id") else None
+            ),
+            "status": str(row["status"]),
+            "summary": self._decrypt_text(str(row["summary_value"])) or "",
+            "payload": dict(row["payload_json"] or {}),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+        }
+
+    def _agent_gap_event_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "gap_id": str(row["gap_id"]),
+            "dedupe_key": str(row["dedupe_key"]),
+            "session_id": str(row["session_id"]) if row.get("session_id") else None,
+            "principal_id": str(row["principal_id"]) if row.get("principal_id") else None,
+            "app_id": str(row["app_id"]) if row.get("app_id") else None,
+            "repo_id": str(row["repo_id"]) if row.get("repo_id") else None,
+            "run_id": str(row["run_id"]) if row.get("run_id") else None,
+            "gap_type": str(row["gap_type"]),
+            "severity": str(row["severity"]),
+            "blocker": bool(row["blocker"]),
+            "detected_from": str(row["detected_from"]),
+            "required_capability": (
+                str(row["required_capability"]) if row.get("required_capability") else None
+            ),
+            "observed_request": dict(row["observed_request_json"] or {}),
+            "suggested_fix": (
+                self._decrypt_text(str(row["suggested_fix_value"]))
+                if row.get("suggested_fix_value")
+                else None
+            ),
+            "status": str(row["status"]),
+            "metadata": dict(row["metadata_json"] or {}),
+            "first_seen_at": row["first_seen_at"].isoformat() if row.get("first_seen_at") else None,
+            "last_seen_at": row["last_seen_at"].isoformat() if row.get("last_seen_at") else None,
+            "occurrence_count": int(row["occurrence_count"]),
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        }
+
+    def _agent_service_request_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "request_id": str(row["request_id"]),
+            "principal_id": str(row["principal_id"]) if row.get("principal_id") else None,
+            "app_id": str(row["app_id"]),
+            "service_kind": str(row["service_kind"]),
+            "action_id": str(row["action_id"]),
+            "target_ref": str(row["target_ref"]) if row.get("target_ref") else None,
+            "tenant_id": str(row["tenant_id"]) if row.get("tenant_id") else None,
+            "change_reason": (
+                self._decrypt_text(str(row["change_reason_value"]))
+                if row.get("change_reason_value")
+                else None
+            ),
+            "request": dict(row["request_json"] or {}),
+            "status": str(row["status"]),
+            "approved": bool(row["approved"]),
+            "result": dict(row["result_json"] or {}),
+            "audit_id": str(row["audit_id"]) if row.get("audit_id") else None,
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+            "executed_at": row["executed_at"].isoformat() if row.get("executed_at") else None,
         }
 
     async def list_repo_profiles(self, owner_id: str) -> list[dict[str, Any]]:
@@ -2251,6 +2547,7 @@ class OwnerCiStorage:
     async def get_reporting_summary(self, owner_id: str) -> dict[str, Any]:
         repos = await self.list_repo_profiles(owner_id)
         runs = await self.list_runs(owner_id, limit=200)
+        gaps = await self.list_agent_gap_events(owner_id, unresolved_only=True, limit=500)
         by_repo: dict[str, dict[str, Any]] = {}
         for repo in repos:
             repo_id = str(repo["repo_id"])
@@ -2263,6 +2560,8 @@ class OwnerCiStorage:
                 "run_count": 0,
                 "failed_runs": 0,
                 "ready_to_merge_runs": 0,
+                "open_gaps": 0,
+                "blocker_gaps": 0,
             }
         for run in runs:
             repo_id = str(run.get("repo_id") or "")
@@ -2277,6 +2576,8 @@ class OwnerCiStorage:
                     "run_count": 0,
                     "failed_runs": 0,
                     "ready_to_merge_runs": 0,
+                    "open_gaps": 0,
+                    "blocker_gaps": 0,
                 },
             )
             summary["run_count"] += 1
@@ -2284,10 +2585,39 @@ class OwnerCiStorage:
                 summary["failed_runs"] += 1
             if run.get("status") == "ready_to_merge":
                 summary["ready_to_merge_runs"] += 1
+        for gap in gaps:
+            repo_id = str(gap.get("repo_id") or "")
+            if not repo_id:
+                continue
+            summary = by_repo.setdefault(
+                repo_id,
+                {
+                    "repo_id": repo_id,
+                    "display_name": repo_id,
+                    "active": True,
+                    "stack_kind": "unknown",
+                    "platform_canary": False,
+                    "run_count": 0,
+                    "failed_runs": 0,
+                    "ready_to_merge_runs": 0,
+                    "open_gaps": 0,
+                    "blocker_gaps": 0,
+                },
+            )
+            summary["open_gaps"] += 1
+            if bool(gap.get("blocker")):
+                summary["blocker_gaps"] += 1
         return {
             "owner_id": owner_id,
             "repos": list(by_repo.values()),
             "run_count": len(runs),
+            "gaps": {
+                "open_total": len(gaps),
+                "blocker_total": sum(1 for gap in gaps if bool(gap.get("blocker"))),
+                "recurring_total": sum(
+                    1 for gap in gaps if int(gap.get("occurrence_count") or 0) > 1
+                ),
+            },
         }
 
     async def store_agent_bootstrap_manifest(
@@ -3295,6 +3625,538 @@ class OwnerCiStorage:
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(query, *params)
         return [self._agent_audit_event_from_row(dict(row)) for row in rows]
+
+    async def create_agent_session(
+        self,
+        owner_id: str,
+        *,
+        principal_id: str,
+        app_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        status: str = "active",
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_agent_sessions'
+        next_session_id = session_id or uuid4().hex
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    session_id,
+                    principal_id,
+                    app_id,
+                    session_status,
+                    metadata_json,
+                    created_at,
+                    updated_at,
+                    last_activity_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6::jsonb, now(), now(), now()
+                )
+                ON CONFLICT (owner_id, session_id) DO UPDATE SET
+                    principal_id = EXCLUDED.principal_id,
+                    app_id = EXCLUDED.app_id,
+                    session_status = EXCLUDED.session_status,
+                    metadata_json = EXCLUDED.metadata_json,
+                    updated_at = now(),
+                    last_activity_at = now()
+                RETURNING *
+                """,
+                owner_id,
+                next_session_id,
+                principal_id,
+                app_id,
+                status,
+                json.dumps(dict(metadata or {})),
+            )
+        if row is None:
+            raise RuntimeError("Create agent session returned no row")
+        return self._agent_session_from_row(dict(row))
+
+    async def get_agent_session(
+        self,
+        owner_id: str,
+        session_id: str,
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_agent_sessions'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND session_id = $2
+                 LIMIT 1
+                """,
+                owner_id,
+                session_id,
+            )
+        return self._agent_session_from_row(dict(row)) if row is not None else None
+
+    async def touch_agent_session(self, owner_id: str, session_id: str) -> None:
+        table = f'"{self._schema}".owner_ci_agent_sessions'
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                f"""
+                UPDATE {table}
+                   SET updated_at = now(),
+                       last_activity_at = now()
+                 WHERE owner_id = $1
+                   AND session_id = $2
+                """,
+                owner_id,
+                session_id,
+            )
+
+    async def create_agent_interaction(
+        self,
+        owner_id: str,
+        *,
+        session_id: str | None,
+        principal_id: str | None,
+        app_id: str | None,
+        repo_id: str | None,
+        route_path: str | None,
+        intent: str,
+        request_text: str | None,
+        request_payload: dict[str, Any] | None,
+        normalized_intent: dict[str, Any] | None = None,
+        related_run_id: str | None = None,
+        related_candidate_id: str | None = None,
+        related_service_request_id: str | None = None,
+        audit_id: str | None = None,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_agent_interactions'
+        interaction_id = uuid4().hex
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    interaction_id,
+                    session_id,
+                    principal_id,
+                    app_id,
+                    repo_id,
+                    route_path_value,
+                    intent_value,
+                    request_text_value,
+                    request_json,
+                    normalized_intent_json,
+                    related_run_id,
+                    related_candidate_id,
+                    related_service_request_id,
+                    audit_id,
+                    created_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9,
+                    $10::jsonb, $11::jsonb, $12, $13, $14, $15, now()
+                )
+                RETURNING *
+                """,
+                owner_id,
+                interaction_id,
+                session_id,
+                principal_id,
+                app_id,
+                repo_id,
+                self._encrypt_text(route_path) if route_path else None,
+                self._encrypt_text(intent),
+                self._encrypt_text(request_text) if request_text else None,
+                json.dumps(dict(request_payload or {})),
+                json.dumps(dict(normalized_intent or {})),
+                related_run_id,
+                related_candidate_id,
+                related_service_request_id,
+                audit_id,
+            )
+        if row is None:
+            raise RuntimeError("Create agent interaction returned no row")
+        if session_id:
+            await self.touch_agent_session(owner_id, session_id)
+        return self._agent_interaction_from_row(dict(row))
+
+    async def list_agent_session_interactions(
+        self,
+        owner_id: str,
+        session_id: str,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        table = f'"{self._schema}".owner_ci_agent_interactions'
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND session_id = $2
+                 ORDER BY created_at DESC
+                 LIMIT $3
+                """,
+                owner_id,
+                session_id,
+                max(1, limit),
+            )
+        return [self._agent_interaction_from_row(dict(row)) for row in rows]
+
+    async def create_agent_action(
+        self,
+        owner_id: str,
+        *,
+        interaction_id: str,
+        principal_id: str | None,
+        app_id: str | None,
+        action: str,
+        status: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_agent_actions'
+        action_record_id = uuid4().hex
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    action_record_id,
+                    interaction_id,
+                    principal_id,
+                    app_id,
+                    action_value,
+                    status,
+                    payload_json,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8::jsonb, now(), now()
+                )
+                RETURNING *
+                """,
+                owner_id,
+                action_record_id,
+                interaction_id,
+                principal_id,
+                app_id,
+                self._encrypt_text(action),
+                status,
+                json.dumps(dict(payload or {})),
+            )
+        if row is None:
+            raise RuntimeError("Create agent action returned no row")
+        return self._agent_action_from_row(dict(row))
+
+    async def create_agent_outcome(
+        self,
+        owner_id: str,
+        *,
+        interaction_id: str,
+        action_record_id: str | None,
+        status: str,
+        summary: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_agent_outcomes'
+        outcome_id = uuid4().hex
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    outcome_id,
+                    interaction_id,
+                    action_record_id,
+                    status,
+                    summary_value,
+                    payload_json,
+                    created_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7::jsonb, now()
+                )
+                RETURNING *
+                """,
+                owner_id,
+                outcome_id,
+                interaction_id,
+                action_record_id,
+                status,
+                self._encrypt_text(summary),
+                json.dumps(dict(payload or {})),
+            )
+        if row is None:
+            raise RuntimeError("Create agent outcome returned no row")
+        return self._agent_outcome_from_row(dict(row))
+
+    async def record_agent_gap_event(
+        self,
+        owner_id: str,
+        *,
+        dedupe_key: str,
+        session_id: str | None,
+        principal_id: str | None,
+        app_id: str | None,
+        repo_id: str | None,
+        run_id: str | None,
+        gap_type: str,
+        severity: str,
+        blocker: bool,
+        detected_from: str,
+        required_capability: str | None,
+        observed_request: dict[str, Any] | None,
+        suggested_fix: str | None,
+        metadata: dict[str, Any] | None = None,
+        status: str = "open",
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_agent_gap_events'
+        gap_id = uuid4().hex
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    gap_id,
+                    dedupe_key,
+                    session_id,
+                    principal_id,
+                    app_id,
+                    repo_id,
+                    run_id,
+                    gap_type,
+                    severity,
+                    blocker,
+                    detected_from,
+                    required_capability,
+                    observed_request_json,
+                    suggested_fix_value,
+                    status,
+                    metadata_json,
+                    first_seen_at,
+                    last_seen_at,
+                    occurrence_count,
+                    updated_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                    $14::jsonb, $15, $16, $17::jsonb, now(), now(), 1, now()
+                )
+                ON CONFLICT (owner_id, dedupe_key) DO UPDATE SET
+                    session_id = COALESCE(EXCLUDED.session_id, {table}.session_id),
+                    principal_id = COALESCE(EXCLUDED.principal_id, {table}.principal_id),
+                    app_id = COALESCE(EXCLUDED.app_id, {table}.app_id),
+                    repo_id = COALESCE(EXCLUDED.repo_id, {table}.repo_id),
+                    run_id = COALESCE(EXCLUDED.run_id, {table}.run_id),
+                    severity = EXCLUDED.severity,
+                    blocker = EXCLUDED.blocker,
+                    detected_from = EXCLUDED.detected_from,
+                    required_capability = EXCLUDED.required_capability,
+                    observed_request_json = EXCLUDED.observed_request_json,
+                    suggested_fix_value = EXCLUDED.suggested_fix_value,
+                    metadata_json = EXCLUDED.metadata_json,
+                    last_seen_at = now(),
+                    occurrence_count = {table}.occurrence_count + 1,
+                    updated_at = now()
+                RETURNING *
+                """,
+                owner_id,
+                gap_id,
+                dedupe_key,
+                session_id,
+                principal_id,
+                app_id,
+                repo_id,
+                run_id,
+                gap_type,
+                severity,
+                blocker,
+                detected_from,
+                required_capability,
+                json.dumps(dict(observed_request or {})),
+                self._encrypt_text(suggested_fix) if suggested_fix else None,
+                status,
+                json.dumps(dict(metadata or {})),
+            )
+        if row is None:
+            raise RuntimeError("Record agent gap event returned no row")
+        return self._agent_gap_event_from_row(dict(row))
+
+    async def list_agent_gap_events(
+        self,
+        owner_id: str,
+        *,
+        session_id: str | None = None,
+        principal_id: str | None = None,
+        app_id: str | None = None,
+        repo_id: str | None = None,
+        status: str | None = None,
+        blocker_only: bool = False,
+        unresolved_only: bool = False,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        table = f'"{self._schema}".owner_ci_agent_gap_events'
+        query = f"""
+            SELECT *
+              FROM {table}
+             WHERE owner_id = $1
+        """
+        params: list[Any] = [owner_id]
+        if session_id:
+            params.append(session_id)
+            query += f" AND session_id = ${len(params)}"
+        if principal_id:
+            params.append(principal_id)
+            query += f" AND principal_id = ${len(params)}"
+        if app_id:
+            params.append(app_id)
+            query += f" AND app_id = ${len(params)}"
+        if repo_id:
+            params.append(repo_id)
+            query += f" AND repo_id = ${len(params)}"
+        if status:
+            params.append(status)
+            query += f" AND status = ${len(params)}"
+        elif unresolved_only:
+            query += " AND status <> 'resolved'"
+        if blocker_only:
+            query += " AND blocker = TRUE"
+        params.append(max(1, limit))
+        query += f" ORDER BY blocker DESC, last_seen_at DESC LIMIT ${len(params)}"
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+        return [self._agent_gap_event_from_row(dict(row)) for row in rows]
+
+    async def get_agent_gap_event(
+        self,
+        owner_id: str,
+        gap_id: str,
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_agent_gap_events'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND gap_id = $2
+                 LIMIT 1
+                """,
+                owner_id,
+                gap_id,
+            )
+        return self._agent_gap_event_from_row(dict(row)) if row is not None else None
+
+    async def update_agent_gap_event(
+        self,
+        owner_id: str,
+        *,
+        gap_id: str,
+        status: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_agent_gap_events'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                UPDATE {table}
+                   SET status = $3,
+                       metadata_json = $4::jsonb,
+                       updated_at = now()
+                 WHERE owner_id = $1
+                   AND gap_id = $2
+                RETURNING *
+                """,
+                owner_id,
+                gap_id,
+                status,
+                json.dumps(dict(metadata or {})),
+            )
+        return self._agent_gap_event_from_row(dict(row)) if row is not None else None
+
+    async def create_agent_service_request(
+        self,
+        owner_id: str,
+        *,
+        principal_id: str | None,
+        app_id: str,
+        service_kind: str,
+        action_id: str,
+        target_ref: str | None,
+        tenant_id: str | None,
+        change_reason: str | None,
+        request_payload: dict[str, Any],
+        status: str,
+        approved: bool,
+        result: dict[str, Any] | None = None,
+        audit_id: str | None = None,
+        executed: bool = False,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_agent_service_requests'
+        request_id = uuid4().hex
+        executed_at = datetime.now(UTC) if executed else None
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    request_id,
+                    principal_id,
+                    app_id,
+                    service_kind,
+                    action_id,
+                    target_ref,
+                    tenant_id,
+                    change_reason_value,
+                    request_json,
+                    status,
+                    approved,
+                    result_json,
+                    audit_id,
+                    created_at,
+                    updated_at,
+                    executed_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb,
+                    $11, $12, $13::jsonb, $14, now(), now(), $15
+                )
+                RETURNING *
+                """,
+                owner_id,
+                request_id,
+                principal_id,
+                app_id,
+                service_kind,
+                action_id,
+                target_ref,
+                tenant_id,
+                self._encrypt_text(change_reason) if change_reason else None,
+                json.dumps(dict(request_payload)),
+                status,
+                approved,
+                json.dumps(dict(result or {})),
+                audit_id,
+                executed_at,
+            )
+        if row is None:
+            raise RuntimeError("Create agent service request returned no row")
+        return self._agent_service_request_from_row(dict(row))
+
+    async def list_secret_refs(
+        self,
+        owner_id: str,
+        *,
+        active_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        table = f'"{self._schema}".owner_ci_secret_refs'
+        query = f"""
+            SELECT *
+              FROM {table}
+             WHERE owner_id = $1
+        """
+        params: list[Any] = [owner_id]
+        if active_only:
+            query += " AND active = TRUE"
+        query += " ORDER BY updated_at DESC, secret_ref_id ASC"
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+        return [self._secret_ref_from_row(dict(row)) for row in rows]
 
     async def _store_worker_observability(
         self,

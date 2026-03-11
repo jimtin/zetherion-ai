@@ -6,6 +6,7 @@ import asyncio
 import base64
 import hashlib
 import io
+import json
 import os
 import re
 import shutil
@@ -22,6 +23,7 @@ from zetherion_ai.skills.ci_controller import CiControllerSkill
 from zetherion_ai.skills.clerk.client import ClerkMetadataClient, ClerkMetadataError
 from zetherion_ai.skills.github.client import GitHubAPIError, GitHubClient, GitHubValidationError
 from zetherion_ai.skills.permissions import Permission, PermissionSet
+from zetherion_ai.skills.stripe.client import StripeAPIError, StripeClient
 from zetherion_ai.skills.vercel.client import VercelClient
 
 log = get_logger("zetherion_ai.skills.agent_bootstrap")
@@ -44,6 +46,7 @@ _REPO_ID_SANITIZE_RE = re.compile(r"[^a-z0-9]+")
 _GITHUB_CONNECTOR_ID = "github-primary"
 _VERCEL_CONNECTOR_ID = "vercel-primary"
 _CLERK_CONNECTOR_ID = "clerk-primary"
+_STRIPE_CONNECTOR_ID = "stripe-primary"
 
 _SERVICE_VIEW_CAPABILITIES: dict[str, dict[str, str]] = {
     "github": {
@@ -63,9 +66,51 @@ _SERVICE_VIEW_CAPABILITIES: dict[str, dict[str, str]] = {
         "jwks": "jwks_metadata",
         "openid": "issuer_metadata",
     },
+    "stripe": {
+        "overview": "account_metadata",
+        "products": "product_metadata",
+        "prices": "price_metadata",
+        "customers": "customer_metadata",
+        "subscriptions": "subscription_metadata",
+        "invoices": "invoice_metadata",
+        "webhook_health": "webhook_metadata",
+    },
     "discord": {
         "overview": "channel_metadata",
     },
+}
+
+_SERVICE_ACTION_CAPABILITIES: dict[str, dict[str, str]] = {
+    "stripe": {
+        "product.ensure": "product_ensure",
+        "price.ensure": "price_ensure",
+        "customer.link": "customer_link",
+        "subscription.link": "subscription_link",
+        "subscription.update_price": "subscription_update_price",
+        "meter.config.ensure": "meter_config_ensure",
+    }
+}
+
+_SENSITIVE_KEY_PARTS = {
+    "authorization",
+    "password",
+    "secret",
+    "token",
+    "webhook_secret",
+}
+_SENSITIVE_KEY_EXACT = {
+    "api_key",
+    "secret_value",
+    "patch_bundle_base64",
+    "diff_text",
+}
+_SAFE_KEY_EXACT = {
+    "grant_key",
+    "connector_id",
+    "principal_id",
+    "public_key",
+    "publishable_key_hint",
+    "key_prefix",
 }
 
 
@@ -336,6 +381,22 @@ def _default_service_connector_map(repo_id: str) -> dict[str, Any]:
             "write_access": [],
             "broker_only": True,
         }
+    if repo_id == "catalyst-group-solutions":
+        mapping["stripe"] = {
+            "connector_id": "stripe-primary",
+            "service_kind": "stripe",
+            "read_access": [
+                "account_metadata",
+                "product_metadata",
+                "price_metadata",
+                "customer_metadata",
+                "subscription_metadata",
+                "invoice_metadata",
+                "webhook_metadata",
+            ],
+            "write_access": list(_SERVICE_ACTION_CAPABILITIES.get("stripe", {}).values()),
+            "broker_only": True,
+        }
     if repo_id == "zetherion-ai":
         mapping["discord"] = {
             "connector_id": "discord-primary",
@@ -463,6 +524,48 @@ def _default_command_catalog(repo: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _default_service_operations(repo_id: str) -> dict[str, Any]:
+    operations: dict[str, Any] = {}
+    for service_kind, views in _SERVICE_VIEW_CAPABILITIES.items():
+        if service_kind == "discord" and repo_id != "zetherion-ai":
+            continue
+        if service_kind == "stripe" and repo_id != "catalyst-group-solutions":
+            continue
+        if service_kind in {"vercel", "clerk"} and repo_id not in {
+            "catalyst-group-solutions",
+            "zetherion-ai",
+        }:
+            continue
+        operations[service_kind] = {
+            "views": sorted(views.keys()),
+            "actions": sorted(_SERVICE_ACTION_CAPABILITIES.get(service_kind, {}).keys()),
+        }
+    return operations
+
+
+def _default_capability_registry(repo: dict[str, Any]) -> dict[str, Any]:
+    repo_id = str(repo["repo_id"])
+    supported_tooling = sorted(
+        {
+            "docker" if str(repo.get("windows_execution_mode") or "") == "docker_only" else "",
+            "ruff" if repo_id == "zetherion-ai" else "",
+            "pytest" if repo_id == "zetherion-ai" else "",
+            "jest" if repo_id == "catalyst-group-solutions" else "",
+            "eslint" if repo_id == "catalyst-group-solutions" else "",
+            "discord_e2e" if repo_id == "zetherion-ai" else "",
+        }
+        - {""}
+    )
+    return {
+        "supported_tooling": supported_tooling,
+        "mock_profiles": [entry["profile_id"] for entry in _default_mock_profiles(repo_id)],
+        "required_connectors": sorted(_default_service_connector_map(repo_id).keys()),
+        "required_secret_refs": [],
+        "service_actions": _default_service_operations(repo_id),
+        "required_docs": list((repo.get("agent_bootstrap_profile") or {}).get("docs_slugs") or []),
+    }
+
+
 def _normalize_limit(value: Any, *, default: int = 10, maximum: int = 20) -> int:
     try:
         parsed = int(value)
@@ -500,6 +603,57 @@ def _derive_clerk_jwks_url(metadata: dict[str, Any]) -> str | None:
     return None
 
 
+def _normalize_route_path(value: Any) -> str | None:
+    path = str(value or "").strip()
+    return path or None
+
+
+def _normalize_session_id(value: Any) -> str | None:
+    session_id = str(value or "").strip()
+    return session_id or None
+
+
+def _is_sensitive_key(key: str) -> bool:
+    lowered = key.lower()
+    if lowered in _SAFE_KEY_EXACT:
+        return False
+    if lowered in _SENSITIVE_KEY_EXACT:
+        return True
+    return any(part in lowered for part in _SENSITIVE_KEY_PARTS)
+
+
+def _redact_payload(value: Any) -> Any:
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for key, item in value.items():
+            key_str = str(key)
+            if _is_sensitive_key(key_str):
+                redacted[key_str] = "***redacted***"
+            else:
+                redacted[key_str] = _redact_payload(item)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_payload(item) for item in value]
+    if isinstance(value, tuple):
+        return [_redact_payload(item) for item in value]
+    if isinstance(value, str) and len(value) > 4000:
+        return f"{value[:4000]}…"
+    return value
+
+
+def _compact_text_payload(payload: dict[str, Any]) -> str | None:
+    for key in ("question", "prompt", "summary", "intent_summary", "query", "focus"):
+        value = str(payload.get(key) or "").strip()
+        if value:
+            return value[:1000]
+    return None
+
+
+def _stable_gap_key(parts: list[str | None]) -> str:
+    normalized = "||".join(str(part or "").strip().lower() for part in parts)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 class AgentBootstrapSkill(Skill):
     """Store broker state for downstream Codex agents and expose machine-readable app knowledge."""
 
@@ -523,10 +677,13 @@ class AgentBootstrapSkill(Skill):
                 "agent_docs_list",
                 "agent_docs_get",
                 "agent_session_create",
+                "agent_session_interactions_list",
+                "agent_session_gaps_list",
                 "agent_apps_list",
                 "agent_app_manifest_get",
                 "agent_app_services_list",
                 "agent_service_read",
+                "agent_service_request_submit",
                 "agent_repo_discover",
                 "agent_repo_enroll",
                 "agent_workspace_bundle_create",
@@ -545,6 +702,11 @@ class AgentBootstrapSkill(Skill):
                 "agent_app_list",
                 "agent_knowledge_pack_upsert",
                 "agent_audit_list",
+                "agent_secret_ref_upsert",
+                "agent_secret_ref_list",
+                "agent_gap_list",
+                "agent_gap_get",
+                "agent_gap_update",
             ],
         )
 
@@ -564,10 +726,13 @@ class AgentBootstrapSkill(Skill):
             "agent_docs_list": self._handle_docs_list,
             "agent_docs_get": self._handle_docs_get,
             "agent_session_create": self._handle_session_create,
+            "agent_session_interactions_list": self._handle_session_interactions_list,
+            "agent_session_gaps_list": self._handle_session_gaps_list,
             "agent_apps_list": self._handle_apps_list,
             "agent_app_manifest_get": self._handle_app_manifest_get,
             "agent_app_services_list": self._handle_app_services_list,
             "agent_service_read": self._handle_service_read,
+            "agent_service_request_submit": self._handle_service_request_submit,
             "agent_repo_discover": self._handle_repo_discover,
             "agent_repo_enroll": self._handle_repo_enroll,
             "agent_workspace_bundle_create": self._handle_workspace_bundle_create,
@@ -586,6 +751,11 @@ class AgentBootstrapSkill(Skill):
             "agent_app_list": self._handle_app_list,
             "agent_knowledge_pack_upsert": self._handle_knowledge_pack_upsert,
             "agent_audit_list": self._handle_audit_list,
+            "agent_secret_ref_upsert": self._handle_secret_ref_upsert,
+            "agent_secret_ref_list": self._handle_secret_ref_list,
+            "agent_gap_list": self._handle_gap_list,
+            "agent_gap_get": self._handle_gap_get,
+            "agent_gap_update": self._handle_gap_update,
         }
         handler = handlers.get(request.intent)
         if handler is None:
@@ -594,9 +764,24 @@ class AgentBootstrapSkill(Skill):
                 f"Unknown agent bootstrap intent: {request.intent}",
             )
         try:
-            return await handler(request, owner_id, public_base_url)
+            response = await handler(request, owner_id, public_base_url)
         except ValueError as exc:
+            await self._record_interaction_outcome(
+                request,
+                owner_id=owner_id,
+                public_base_url=public_base_url,
+                success=False,
+                error_message=str(exc),
+            )
             return SkillResponse.error_response(request.id, str(exc))
+        await self._record_interaction_outcome(
+            request,
+            owner_id=owner_id,
+            public_base_url=public_base_url,
+            success=True,
+            response=response,
+        )
+        return response
 
     async def _handle_client_bootstrap(
         self,
@@ -702,6 +887,23 @@ class AgentBootstrapSkill(Skill):
         app_id = str(request.context.get("app_id") or "").strip() or None
         docs_manifest = await self._storage.get_agent_docs_manifest(owner_id, slug)
         if docs_manifest is None:
+            if app_id:
+                await self._record_gap(
+                    owner_id=owner_id,
+                    principal_id=str(request.context.get("principal_id") or "").strip() or None,
+                    session_id=_normalize_session_id(request.context.get("session_id")),
+                    app_id=app_id,
+                    repo_id=None,
+                    gap_type="missing_docs",
+                    severity="medium",
+                    blocker=False,
+                    detected_from="docs_get",
+                    required_capability=slug,
+                    observed_request={"slug": slug},
+                    suggested_fix=f"Add docs manifest `{slug}` to the app docs bundle.",
+                    metadata={},
+                    run_id=None,
+                )
             return SkillResponse.error_response(request.id, f"Docs manifest `{slug}` not found")
         if app_id:
             app_profile = await self._require_app_access(
@@ -752,8 +954,24 @@ class AgentBootstrapSkill(Skill):
         else:
             principal = existing
         apps = await self._list_accessible_apps(owner_id, principal_id)
+        session = await self._storage.create_agent_session(
+            owner_id,
+            principal_id=principal_id,
+            metadata={
+                "public_base_url": public_base_url or None,
+                "allowed_scopes": list(request.context.get("allowed_scopes") or []),
+                "subject": str(request.context.get("subject") or request.user_id or ""),
+            },
+            app_id=(
+                str((request.context.get("app_ids") or [None])[0] or "").strip() or None
+                if isinstance(request.context.get("app_ids"), list)
+                else None
+            ),
+            session_id=_normalize_session_id(request.context.get("session_id")),
+        )
         bundle = {
             "owner_id": owner_id,
+            "session_id": session["session_id"],
             "principal": principal,
             "accessible_apps": apps,
             "routes": {
@@ -764,8 +982,11 @@ class AgentBootstrapSkill(Skill):
                 "publish_candidates": "/service/ai/v1/agent/apps/:appId/publish-candidates",
                 "services": "/service/ai/v1/agent/apps/:appId/services",
                 "service_read": "/service/ai/v1/agent/apps/:appId/services/:serviceKind",
+                "service_requests": "/service/ai/v1/agent/apps/:appId/service-requests",
                 "logs": "/service/ai/v1/agent/runs/:runId/logs",
                 "resources": "/service/ai/v1/agent/runs/:runId/resources",
+                "session_interactions": "/service/ai/v1/agent/sessions/:sessionId/interactions",
+                "session_gaps": "/service/ai/v1/agent/sessions/:sessionId/gaps",
             },
             "public_base_url": public_base_url or None,
             "bootstrap_model": "broker_only",
@@ -789,6 +1010,47 @@ class AgentBootstrapSkill(Skill):
             request_id=request.id,
             message=f"Prepared session bundle for `{principal_id}`.",
             data={"session": bundle},
+        )
+
+    async def _handle_session_interactions_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        session_id = str(request.context.get("session_id") or "").strip()
+        if not session_id:
+            return SkillResponse.error_response(request.id, "session_id is required")
+        interactions = await self._storage.list_agent_session_interactions(
+            owner_id,
+            session_id,
+            limit=int(request.context.get("limit") or 100),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(interactions)} interactions.",
+            data={"interactions": interactions},
+        )
+
+    async def _handle_session_gaps_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        session_id = str(request.context.get("session_id") or "").strip()
+        if not session_id:
+            return SkillResponse.error_response(request.id, "session_id is required")
+        gaps = await self._storage.list_agent_gap_events(
+            owner_id,
+            session_id=session_id,
+            unresolved_only=bool(request.context.get("unresolved_only", False)),
+            limit=int(request.context.get("limit") or 100),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(gaps)} gaps.",
+            data={"gaps": gaps},
         )
 
     async def _handle_apps_list(
@@ -825,17 +1087,34 @@ class AgentBootstrapSkill(Skill):
         knowledge_pack = await self._storage.get_agent_knowledge_pack(owner_id, app_id)
         if knowledge_pack is None:
             return SkillResponse.error_response(request.id, f"Knowledge pack `{app_id}` not found")
+        repo_id = (
+            str(((app_profile.get("profile") or {}).get("repo_ids") or [None])[0] or "").strip()
+            or None
+        )
+        gaps = await self._storage.list_agent_gap_events(
+            owner_id,
+            app_id=app_id,
+            repo_id=repo_id,
+            unresolved_only=True,
+            limit=200,
+        )
         docs = []
         for slug in list((app_profile.get("profile") or {}).get("docs_slugs") or []):
             manifest = await self._storage.get_agent_docs_manifest(owner_id, str(slug))
             if manifest is not None:
                 docs.append(manifest)
+        pack = dict(knowledge_pack.get("pack") or {})
+        pack["known_gaps_summary"] = {
+            "open_total": len(gaps),
+            "blocker_total": sum(1 for gap in gaps if bool(gap.get("blocker"))),
+            "recent_gap_ids": [str(gap.get("gap_id") or "") for gap in gaps[:5]],
+        }
         return SkillResponse(
             request_id=request.id,
             message=f"Loaded app manifest for `{app_id}`.",
             data={
                 "app": app_profile,
-                "knowledge_pack": knowledge_pack,
+                "knowledge_pack": {**knowledge_pack, "pack": pack},
                 "docs": docs,
                 "services": self._list_app_services(app_profile),
             },
@@ -897,6 +1176,41 @@ class AgentBootstrapSkill(Skill):
             request_id=request.id,
             message=f"Loaded {service_kind} broker view `{view}` for `{app_id}`.",
             data=data,
+        )
+
+    async def _handle_service_request_submit(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        service_kind = str(request.context.get("service_kind") or "").strip().lower()
+        action_id = str(request.context.get("action_id") or "").strip()
+        if not app_id or not service_kind or not action_id:
+            return SkillResponse.error_response(
+                request.id,
+                "app_id, service_kind, and action_id are required",
+            )
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        app_profile = await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+        )
+        result = await self._execute_service_action(
+            owner_id=owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            app_profile=app_profile,
+            service_kind=service_kind,
+            action_id=action_id,
+            request_context=request.context,
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Processed {service_kind} service action `{action_id}` for `{app_id}`.",
+            data=result,
         )
 
     async def _handle_repo_discover(
@@ -1111,6 +1425,21 @@ class AgentBootstrapSkill(Skill):
             request.context.get("git_ref") or repo.get("default_branch") or "main"
         ).strip()
         mode = str(request.context.get("mode") or "fast").strip().lower()
+        knowledge_pack = await self._storage.get_agent_knowledge_pack(owner_id, app_id)
+        gaps = await self._detect_test_plan_gaps(
+            owner_id=owner_id,
+            principal_id=principal_id,
+            session_id=_normalize_session_id(request.context.get("session_id")),
+            app_id=app_id,
+            repo_id=repo_id,
+            knowledge_pack=dict((knowledge_pack or {}).get("pack") or {}),
+            request_context=request.context,
+        )
+        if gaps:
+            missing = ", ".join(
+                sorted({str(gap.get("required_capability") or gap.get("gap_type")) for gap in gaps})
+            )
+            raise ValueError("Test plan compile blocked by unresolved capability gaps: " + missing)
         controller = CiControllerSkill(storage=self._storage)
         compiled = controller._compile_run_plan(repo=repo, mode=mode, git_ref=git_ref)
         plan = {
@@ -1130,6 +1459,9 @@ class AgentBootstrapSkill(Skill):
                 "app_id": app_id,
                 "principal_id": principal_id,
                 "prefer_mock_mode": bool(request.context.get("prefer_mock_mode", False)),
+                "capability_registry": dict(
+                    (knowledge_pack or {}).get("pack", {}).get("capability_registry") or {}
+                ),
             },
         )
         await self._storage.record_agent_audit_event(
@@ -1495,6 +1827,114 @@ class AgentBootstrapSkill(Skill):
             data={"events": events},
         )
 
+    async def _handle_secret_ref_upsert(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        secret_ref_id = str(request.context.get("secret_ref_id") or "").strip()
+        purpose = str(request.context.get("purpose") or "").strip()
+        if not secret_ref_id or not purpose:
+            return SkillResponse.error_response(
+                request.id, "secret_ref_id and purpose are required"
+            )
+        secret_ref = await self._storage.upsert_secret_ref(
+            owner_id,
+            secret_ref_id=secret_ref_id,
+            purpose=purpose,
+            secret_value=str(request.context.get("secret_value") or "").strip() or None,
+            connector_id=str(request.context.get("connector_id") or "").strip() or None,
+            metadata=dict(request.context.get("metadata") or {}),
+            active=bool(request.context.get("active", True)),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Upserted secret ref `{secret_ref_id}`.",
+            data={"secret_ref": secret_ref},
+        )
+
+    async def _handle_secret_ref_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        secret_refs = await self._storage.list_secret_refs(
+            owner_id,
+            active_only=bool(request.context.get("active_only", False)),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(secret_refs)} secret refs.",
+            data={"secret_refs": secret_refs},
+        )
+
+    async def _handle_gap_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        gaps = await self._storage.list_agent_gap_events(
+            owner_id,
+            session_id=str(request.context.get("session_id") or "").strip() or None,
+            principal_id=str(request.context.get("principal_id") or "").strip() or None,
+            app_id=str(request.context.get("app_id") or "").strip() or None,
+            repo_id=str(request.context.get("repo_id") or "").strip() or None,
+            status=str(request.context.get("status") or "").strip() or None,
+            blocker_only=bool(request.context.get("blocker_only", False)),
+            unresolved_only=bool(request.context.get("unresolved_only", False)),
+            limit=int(request.context.get("limit") or 100),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(gaps)} gaps.",
+            data={"gaps": gaps},
+        )
+
+    async def _handle_gap_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        gap_id = str(request.context.get("gap_id") or "").strip()
+        if not gap_id:
+            return SkillResponse.error_response(request.id, "gap_id is required")
+        gap = await self._storage.get_agent_gap_event(owner_id, gap_id)
+        if gap is None:
+            return SkillResponse.error_response(request.id, f"Gap `{gap_id}` not found")
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded gap `{gap_id}`.",
+            data={"gap": gap},
+        )
+
+    async def _handle_gap_update(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        gap_id = str(request.context.get("gap_id") or "").strip()
+        status = str(request.context.get("status") or "").strip()
+        if not gap_id or not status:
+            return SkillResponse.error_response(request.id, "gap_id and status are required")
+        gap = await self._storage.update_agent_gap_event(
+            owner_id,
+            gap_id=gap_id,
+            status=status,
+            metadata=dict(request.context.get("metadata") or {}),
+        )
+        if gap is None:
+            return SkillResponse.error_response(request.id, f"Gap `{gap_id}` not found")
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Updated gap `{gap_id}`.",
+            data={"gap": gap},
+        )
+
     async def _ensure_default_docs(self, owner_id: str, public_base_url: str) -> None:
         for doc in _DEFAULT_DOCS:
             manifest = _doc_manifest(doc, public_base_url)
@@ -1529,6 +1969,280 @@ class AgentBootstrapSkill(Skill):
                     current=True,
                 )
 
+    async def _record_interaction_outcome(
+        self,
+        request: SkillRequest,
+        *,
+        owner_id: str,
+        public_base_url: str,
+        success: bool,
+        response: SkillResponse | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        session_id = _normalize_session_id(request.context.get("session_id"))
+        app_id = str(request.context.get("app_id") or "").strip() or None
+        repo_id = str(request.context.get("repo_id") or "").strip() or None
+        if app_id and not repo_id:
+            app_profile = await self._storage.get_agent_app_profile(owner_id, app_id)
+            repo_id = (
+                str(
+                    ((app_profile or {}).get("profile") or {}).get("repo_ids", [None])[0] or ""
+                ).strip()
+                or None
+            )
+        request_payload = _redact_payload(dict(request.context or {}))
+        route_path = _normalize_route_path(request.context.get("route_path"))
+        interaction = await self._storage.create_agent_interaction(
+            owner_id,
+            session_id=session_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            repo_id=repo_id,
+            route_path=route_path,
+            intent=request.intent,
+            request_text=_compact_text_payload(request_payload)
+            or (request.intent if request.intent else None),
+            request_payload=request_payload,
+            normalized_intent={
+                "intent": request.intent,
+                "public_base_url": public_base_url or None,
+            },
+            related_run_id=(
+                str(
+                    (response.data or {}).get("run", {}).get("run_id")
+                    or request.context.get("run_id")
+                    or ""
+                ).strip()
+                or None
+                if response is not None
+                else (str(request.context.get("run_id") or "").strip() or None)
+            ),
+            related_candidate_id=(
+                str((response.data or {}).get("candidate", {}).get("candidate_id") or "").strip()
+                or None
+                if response is not None
+                else None
+            ),
+            related_service_request_id=(
+                str((response.data or {}).get("request", {}).get("request_id") or "").strip()
+                or None
+                if response is not None
+                else None
+            ),
+            audit_id=None,
+        )
+        action = await self._storage.create_agent_action(
+            owner_id,
+            interaction_id=interaction["interaction_id"],
+            principal_id=principal_id,
+            app_id=app_id,
+            action=request.intent,
+            status="succeeded" if success else "failed",
+            payload={
+                "route_path": route_path,
+                "request_id": request.id,
+            },
+        )
+        summary = (
+            str(response.message or "").strip()
+            if success and response is not None
+            else (error_message or "Request failed")
+        )
+        await self._storage.create_agent_outcome(
+            owner_id,
+            interaction_id=interaction["interaction_id"],
+            action_record_id=action["action_record_id"],
+            status="success" if success else "error",
+            summary=summary,
+            payload=_redact_payload(
+                dict((response.data or {}) if response is not None else {"error": error_message})
+            ),
+        )
+
+    async def _record_gap(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        session_id: str | None,
+        app_id: str | None,
+        repo_id: str | None,
+        gap_type: str,
+        severity: str,
+        blocker: bool,
+        detected_from: str,
+        required_capability: str | None,
+        observed_request: dict[str, Any],
+        suggested_fix: str | None,
+        metadata: dict[str, Any],
+        run_id: str | None,
+    ) -> dict[str, Any]:
+        return await self._storage.record_agent_gap_event(
+            owner_id,
+            dedupe_key=_stable_gap_key(
+                [
+                    gap_type,
+                    app_id,
+                    repo_id,
+                    detected_from,
+                    required_capability,
+                    json.dumps(_redact_payload(observed_request), sort_keys=True),
+                ]
+            ),
+            session_id=session_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            repo_id=repo_id,
+            run_id=run_id,
+            gap_type=gap_type,
+            severity=severity,
+            blocker=blocker,
+            detected_from=detected_from,
+            required_capability=required_capability,
+            observed_request=_redact_payload(observed_request),
+            suggested_fix=suggested_fix,
+            metadata=metadata,
+        )
+
+    async def _record_missing_secret_ref_gaps(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        session_id: str | None,
+        app_id: str,
+        repo_id: str,
+        required_secret_refs: list[str],
+        reason: str,
+    ) -> list[dict[str, Any]]:
+        known_refs = {
+            str(entry.get("secret_ref_id") or "")
+            for entry in await self._storage.list_secret_refs(owner_id, active_only=True)
+        }
+        missing = [
+            secret_ref for secret_ref in required_secret_refs if secret_ref not in known_refs
+        ]
+        gaps: list[dict[str, Any]] = []
+        for secret_ref in missing:
+            gaps.append(
+                await self._record_gap(
+                    owner_id=owner_id,
+                    principal_id=principal_id,
+                    session_id=session_id,
+                    app_id=app_id,
+                    repo_id=repo_id,
+                    gap_type="missing_secret_ref",
+                    severity="high",
+                    blocker=True,
+                    detected_from=reason,
+                    required_capability=secret_ref,
+                    observed_request={"secret_ref_id": secret_ref},
+                    suggested_fix=f"Provision secret ref `{secret_ref}` before running this flow.",
+                    metadata={},
+                    run_id=None,
+                )
+            )
+        return gaps
+
+    async def _detect_test_plan_gaps(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        session_id: str | None,
+        app_id: str,
+        repo_id: str,
+        knowledge_pack: dict[str, Any],
+        request_context: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        gaps: list[dict[str, Any]] = []
+        capability_registry = dict(knowledge_pack.get("capability_registry") or {})
+        supported_tooling = {
+            str(item).strip().lower()
+            for item in list(capability_registry.get("supported_tooling") or [])
+            if str(item).strip()
+        }
+        required_tooling = {
+            str(item).strip().lower()
+            for item in list(request_context.get("required_tooling") or [])
+            if str(item).strip()
+        }
+        focus = str(request_context.get("focus") or "").strip().lower()
+        changed_files = {
+            str(item).strip().lower()
+            for item in list(request_context.get("changed_files") or [])
+            if str(item).strip()
+        }
+        if "playwright" in focus or any("playwright" in item for item in changed_files):
+            required_tooling.add("playwright")
+        for tool in sorted(required_tooling):
+            if tool in supported_tooling:
+                continue
+            gaps.append(
+                await self._record_gap(
+                    owner_id=owner_id,
+                    principal_id=principal_id,
+                    session_id=session_id,
+                    app_id=app_id,
+                    repo_id=repo_id,
+                    gap_type="missing_tooling",
+                    severity="high",
+                    blocker=True,
+                    detected_from="test_plan_compile",
+                    required_capability=tool,
+                    observed_request={
+                        "focus": focus or None,
+                        "required_tooling": sorted(required_tooling),
+                        "changed_files": sorted(changed_files),
+                    },
+                    suggested_fix=(
+                        f"Add `{tool}` to the capability registry and test harness manifest."
+                    ),
+                    metadata={},
+                    run_id=None,
+                )
+            )
+            gaps.append(
+                await self._record_gap(
+                    owner_id=owner_id,
+                    principal_id=principal_id,
+                    session_id=session_id,
+                    app_id=app_id,
+                    repo_id=repo_id,
+                    gap_type="missing_test_harness",
+                    severity="high",
+                    blocker=True,
+                    detected_from="test_plan_compile",
+                    required_capability=tool,
+                    observed_request={"focus": focus or None},
+                    suggested_fix=(
+                        f"Create a `{tool}` harness and register it in the app knowledge pack."
+                    ),
+                    metadata={},
+                    run_id=None,
+                )
+            )
+        required_secret_refs = [
+            str(item).strip()
+            for item in list(
+                (knowledge_pack.get("env_contract") or {}).get("required_secret_refs") or []
+            )
+            if str(item).strip()
+        ]
+        gaps.extend(
+            await self._record_missing_secret_ref_gaps(
+                owner_id=owner_id,
+                principal_id=principal_id,
+                session_id=session_id,
+                app_id=app_id,
+                repo_id=repo_id,
+                required_secret_refs=required_secret_refs,
+                reason="test_plan_compile",
+            )
+        )
+        return gaps
+
     def _default_app_profile(self, repo: dict[str, Any], public_base_url: str) -> dict[str, Any]:
         repo_id = str(repo["repo_id"])
         bootstrap_profile = dict(repo.get("agent_bootstrap_profile") or {})
@@ -1548,8 +2262,19 @@ class AgentBootstrapSkill(Skill):
             "test_profile_id": f"{repo_id}:default",
             "mock_profile_ids": [entry["profile_id"] for entry in _default_mock_profiles(repo_id)],
             "env_contract_id": str(repo.get("secrets_profile") or "") or None,
+            "secrets_profile_id": str(repo.get("secrets_profile") or "") or None,
+            "required_secret_refs": [],
+            "mock_default": True,
+            "live_runtime_requirements": [],
             "required_scopes": list(bootstrap_profile.get("required_scopes") or ["cgs:agent"]),
             "service_connector_map": _default_service_connector_map(repo_id),
+            "service_operations": _default_service_operations(repo_id),
+            "capability_registry": _default_capability_registry(repo),
+            "known_gaps_summary": {
+                "open_total": 0,
+                "blocker_total": 0,
+                "recurring_total": 0,
+            },
             "workspace_manifest": workspace_manifest,
             "github_governance": dict(workspace_manifest.get("github_governance") or {}),
             "runtime_routes": {
@@ -1606,6 +2331,7 @@ class AgentBootstrapSkill(Skill):
                 "secrets_profile": str(repo.get("secrets_profile") or "") or None,
                 "windows_execution_mode": str(repo.get("windows_execution_mode") or "command"),
                 "service_connectors": _default_service_connector_map(repo_id),
+                "required_secret_refs": [],
             },
             "command_catalog": _default_command_catalog(repo),
             "observability_contract": {
@@ -1624,6 +2350,13 @@ class AgentBootstrapSkill(Skill):
                 "required_receipts": list(repo.get("certification_requirements") or []),
             },
             "service_connector_map": _default_service_connector_map(repo_id),
+            "service_operations": _default_service_operations(repo_id),
+            "capability_registry": _default_capability_registry(repo),
+            "known_gaps_summary": {
+                "open_total": 0,
+                "blocker_total": 0,
+                "recurring_total": 0,
+            },
             "github_governance": dict(workspace_manifest.get("github_governance") or {}),
         }
 
@@ -1654,9 +2387,17 @@ class AgentBootstrapSkill(Skill):
                             {"overview": "metadata"},
                         ).keys()
                     ),
+                    "available_actions": sorted(
+                        _SERVICE_ACTION_CAPABILITIES.get(service_kind, {}).keys()
+                    ),
                     "routes": {
                         "catalog": routes["catalog"],
                         "read": routes["service"].replace(":serviceKind", service_kind),
+                        "actions": (
+                            f"/service/ai/v1/agent/apps/{repo_id}/service-requests"
+                            if not base_url
+                            else f"{base_url}/service/ai/v1/agent/apps/{repo_id}/service-requests"
+                        ),
                     },
                 }
             )
@@ -1680,6 +2421,7 @@ class AgentBootstrapSkill(Skill):
             **connector,
             "service_kind": service_kind,
             "available_views": sorted(allowed_views.keys()),
+            "available_actions": sorted(_SERVICE_ACTION_CAPABILITIES.get(service_kind, {}).keys()),
         }
 
     async def _require_connector(
@@ -1716,53 +2458,94 @@ class AgentBootstrapSkill(Skill):
         public_base_url: str,
         request_context: dict[str, Any],
     ) -> dict[str, Any]:
-        connector = self._service_connector_for(app_profile, service_kind=service_kind)
-        capability_map = _SERVICE_VIEW_CAPABILITIES.get(service_kind, {"overview": "metadata"})
-        if view not in capability_map:
-            raise ValueError(f"Unsupported `{service_kind}` broker view `{view}`")
-        allowed_ops = {
-            str(entry).strip()
-            for entry in list(connector.get("read_access") or [])
-            if str(entry).strip()
-        }
-        required_capability = capability_map[view]
-        if allowed_ops and required_capability not in allowed_ops:
-            raise ValueError(
-                f"Connector `{connector.get('connector_id')}` does not allow "
-                f"`{service_kind}` view `{view}`"
-            )
-        if service_kind == "github":
-            payload = await self._read_github_service_view(
+        try:
+            connector = self._service_connector_for(app_profile, service_kind=service_kind)
+            capability_map = _SERVICE_VIEW_CAPABILITIES.get(service_kind, {"overview": "metadata"})
+            if view not in capability_map:
+                raise ValueError(f"Unsupported `{service_kind}` broker view `{view}`")
+            allowed_ops = {
+                str(entry).strip()
+                for entry in list(connector.get("read_access") or [])
+                if str(entry).strip()
+            }
+            required_capability = capability_map[view]
+            if allowed_ops and required_capability not in allowed_ops:
+                raise ValueError(
+                    f"Connector `{connector.get('connector_id')}` does not allow "
+                    f"`{service_kind}` view `{view}`"
+                )
+            if service_kind == "github":
+                payload = await self._read_github_service_view(
+                    owner_id=owner_id,
+                    app_profile=app_profile,
+                    connector_id=str(connector.get("connector_id") or _GITHUB_CONNECTOR_ID),
+                    view=view,
+                    request_context=request_context,
+                )
+            elif service_kind == "vercel":
+                payload = await self._read_vercel_service_view(
+                    owner_id=owner_id,
+                    app_profile=app_profile,
+                    connector_id=str(connector.get("connector_id") or _VERCEL_CONNECTOR_ID),
+                    view=view,
+                    request_context=request_context,
+                )
+            elif service_kind == "clerk":
+                payload = await self._read_clerk_service_view(
+                    owner_id=owner_id,
+                    app_profile=app_profile,
+                    connector_id=str(connector.get("connector_id") or _CLERK_CONNECTOR_ID),
+                    view=view,
+                    request_context=request_context,
+                )
+            elif service_kind == "stripe":
+                payload = await self._read_stripe_service_view(
+                    owner_id=owner_id,
+                    app_profile=app_profile,
+                    connector_id=str(connector.get("connector_id") or _STRIPE_CONNECTOR_ID),
+                    view=view,
+                    request_context=request_context,
+                )
+            else:
+                payload = await self._read_generic_service_view(
+                    owner_id=owner_id,
+                    app_profile=app_profile,
+                    connector_id=str(connector.get("connector_id") or "").strip(),
+                    service_kind=service_kind,
+                    view=view,
+                )
+        except ValueError as exc:
+            await self._record_gap(
                 owner_id=owner_id,
-                app_profile=app_profile,
-                connector_id=str(connector.get("connector_id") or _GITHUB_CONNECTOR_ID),
-                view=view,
-                request_context=request_context,
+                principal_id=principal_id,
+                session_id=_normalize_session_id(request_context.get("session_id")),
+                app_id=app_id,
+                repo_id=(
+                    str(
+                        ((app_profile.get("profile") or {}).get("repo_ids") or [None])[0] or ""
+                    ).strip()
+                    or None
+                ),
+                gap_type="missing_connector"
+                if "connector" in str(exc).lower()
+                else "unsupported_service_action",
+                severity="high",
+                blocker=True,
+                detected_from="service_read",
+                required_capability=f"{service_kind}:{view}",
+                observed_request={
+                    "service_kind": service_kind,
+                    "view": view,
+                },
+                suggested_fix=(
+                    f"Configure the `{service_kind}` connector and grant `{view}` access."
+                    if "connector" in str(exc).lower()
+                    else f"Extend the `{service_kind}` broker to support `{view}`."
+                ),
+                metadata={"error": str(exc)},
+                run_id=None,
             )
-        elif service_kind == "vercel":
-            payload = await self._read_vercel_service_view(
-                owner_id=owner_id,
-                app_profile=app_profile,
-                connector_id=str(connector.get("connector_id") or _VERCEL_CONNECTOR_ID),
-                view=view,
-                request_context=request_context,
-            )
-        elif service_kind == "clerk":
-            payload = await self._read_clerk_service_view(
-                owner_id=owner_id,
-                app_profile=app_profile,
-                connector_id=str(connector.get("connector_id") or _CLERK_CONNECTOR_ID),
-                view=view,
-                request_context=request_context,
-            )
-        else:
-            payload = await self._read_generic_service_view(
-                owner_id=owner_id,
-                app_profile=app_profile,
-                connector_id=str(connector.get("connector_id") or "").strip(),
-                service_kind=service_kind,
-                view=view,
-            )
+            raise
         await self._storage.record_agent_audit_event(
             owner_id,
             principal_id=principal_id,
@@ -2128,6 +2911,282 @@ class AgentBootstrapSkill(Skill):
                 }
             raise ValueError(f"Unsupported Clerk broker view `{view}`")
         except ClerkMetadataError as exc:
+            raise ValueError(str(exc)) from exc
+        finally:
+            await client.close()
+
+    async def _read_stripe_service_view(
+        self,
+        *,
+        owner_id: str,
+        app_profile: dict[str, Any],
+        connector_id: str,
+        view: str,
+        request_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        connector = await self._require_connector(
+            owner_id,
+            connector_id=connector_id,
+            service_kind="stripe",
+        )
+        metadata = dict(connector.get("metadata") or {})
+        limit = _normalize_limit(request_context.get("limit"), default=10, maximum=20)
+        client = StripeClient(token=str(connector["secret_value"]))
+        try:
+            if view == "overview":
+                account = await client.get_account()
+                products = await client.list_products(limit=min(limit, 5))
+                subscriptions = await client.list_subscriptions(limit=min(limit, 5))
+                invoices = await client.list_invoices(limit=min(limit, 5))
+                return {
+                    "service_kind": "stripe",
+                    "view": view,
+                    "account": account,
+                    "products": products,
+                    "subscriptions": subscriptions,
+                    "invoices": invoices,
+                    "metadata": metadata,
+                }
+            if view == "products":
+                return {
+                    "service_kind": "stripe",
+                    "view": view,
+                    "products": await client.list_products(limit=limit),
+                }
+            if view == "prices":
+                return {
+                    "service_kind": "stripe",
+                    "view": view,
+                    "prices": await client.list_prices(
+                        limit=limit,
+                        product_id=str(request_context.get("product_id") or "").strip() or None,
+                    ),
+                }
+            if view == "customers":
+                return {
+                    "service_kind": "stripe",
+                    "view": view,
+                    "customers": await client.list_customers(
+                        limit=limit,
+                        email=str(request_context.get("email") or "").strip() or None,
+                    ),
+                }
+            if view == "subscriptions":
+                return {
+                    "service_kind": "stripe",
+                    "view": view,
+                    "subscriptions": await client.list_subscriptions(
+                        limit=limit,
+                        customer_id=(str(request_context.get("customer_id") or "").strip() or None),
+                    ),
+                }
+            if view == "invoices":
+                return {
+                    "service_kind": "stripe",
+                    "view": view,
+                    "invoices": await client.list_invoices(
+                        limit=limit,
+                        customer_id=(str(request_context.get("customer_id") or "").strip() or None),
+                    ),
+                }
+            if view == "webhook_health":
+                return {
+                    "service_kind": "stripe",
+                    "view": view,
+                    "webhook_endpoints": await client.list_webhook_endpoints(limit=limit),
+                    "metadata": metadata,
+                }
+            raise ValueError(f"Unsupported Stripe broker view `{view}`")
+        except StripeAPIError as exc:
+            raise ValueError(str(exc)) from exc
+        finally:
+            await client.close()
+
+    async def _execute_service_action(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        app_id: str,
+        app_profile: dict[str, Any],
+        service_kind: str,
+        action_id: str,
+        request_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        repo_id = (
+            str(((app_profile.get("profile") or {}).get("repo_ids") or [None])[0] or "").strip()
+            or None
+        )
+        try:
+            connector = self._service_connector_for(app_profile, service_kind=service_kind)
+            allowed_actions = {
+                str(entry).strip()
+                for entry in list(connector.get("write_access") or [])
+                if str(entry).strip()
+            }
+            capability = _SERVICE_ACTION_CAPABILITIES.get(service_kind, {}).get(action_id)
+            if capability is None:
+                raise ValueError(f"Unsupported `{service_kind}` service action `{action_id}`")
+            if allowed_actions and capability not in allowed_actions:
+                raise ValueError(
+                    f"Connector `{connector.get('connector_id')}` does not allow "
+                    f"`{service_kind}` action `{action_id}`"
+                )
+            input_payload = (
+                dict(request_context.get("input") or {})
+                if isinstance(request_context.get("input"), dict)
+                else {}
+            )
+            if service_kind != "stripe":
+                raise ValueError(f"Service action `{service_kind}:{action_id}` is not implemented")
+            execution = await self._execute_stripe_service_action(
+                owner_id=owner_id,
+                connector_id=str(connector.get("connector_id") or _STRIPE_CONNECTOR_ID),
+                action_id=action_id,
+                input_payload=input_payload,
+            )
+        except ValueError as exc:
+            await self._record_gap(
+                owner_id=owner_id,
+                principal_id=principal_id,
+                session_id=_normalize_session_id(request_context.get("session_id")),
+                app_id=app_id,
+                repo_id=repo_id,
+                gap_type="unsupported_service_action"
+                if "action" in str(exc).lower()
+                else "missing_connector",
+                severity="high",
+                blocker=True,
+                detected_from="service_request_validation",
+                required_capability=f"{service_kind}:{action_id}",
+                observed_request={"service_kind": service_kind, "action_id": action_id},
+                suggested_fix=(
+                    "Check the "
+                    f"`{service_kind}` connector and service action registry for "
+                    f"`{action_id}`."
+                ),
+                metadata={"error": str(exc)},
+                run_id=None,
+            )
+            raise
+        audit = await self._storage.record_agent_audit_event(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            service_kind=service_kind,
+            resource=str(connector.get("connector_id") or service_kind),
+            action=f"service.request.{action_id}",
+            decision="allowed",
+            audit={
+                "service_kind": service_kind,
+                "action_id": action_id,
+                "status": execution.get("status"),
+            },
+        )
+        service_request = await self._storage.create_agent_service_request(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            service_kind=service_kind,
+            action_id=action_id,
+            target_ref=str(request_context.get("target_ref") or "").strip() or None,
+            tenant_id=str(request_context.get("tenant_id") or "").strip() or None,
+            change_reason=str(request_context.get("change_reason") or "").strip() or None,
+            request_payload=input_payload,
+            status=str(execution.get("status") or "executed"),
+            approved=True,
+            result=execution,
+            audit_id=str(audit.get("audit_id") or ""),
+            executed=True,
+        )
+        return {
+            "request": service_request,
+            "result": execution,
+            "audit": audit,
+        }
+
+    async def _execute_stripe_service_action(
+        self,
+        *,
+        owner_id: str,
+        connector_id: str,
+        action_id: str,
+        input_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        connector = await self._require_connector(
+            owner_id,
+            connector_id=connector_id,
+            service_kind="stripe",
+        )
+        client = StripeClient(token=str(connector["secret_value"]))
+        try:
+            if action_id == "product.ensure":
+                product = await client.ensure_product(
+                    name=str(input_payload.get("name") or "").strip(),
+                    product_id=str(input_payload.get("product_id") or "").strip() or None,
+                    lookup_key=str(input_payload.get("lookup_key") or "").strip() or None,
+                    metadata=(
+                        dict(input_payload.get("metadata") or {})
+                        if isinstance(input_payload.get("metadata"), dict)
+                        else {}
+                    ),
+                    description=str(input_payload.get("description") or "").strip() or None,
+                )
+                return {"status": "executed", "product": product}
+            if action_id == "price.ensure":
+                price = await client.ensure_price(
+                    product_id=str(input_payload.get("product_id") or "").strip(),
+                    currency=str(input_payload.get("currency") or "usd").strip() or "usd",
+                    unit_amount=int(input_payload.get("unit_amount") or 0),
+                    recurring_interval=(
+                        str(input_payload.get("recurring_interval") or "").strip() or None
+                    ),
+                    lookup_key=str(input_payload.get("lookup_key") or "").strip() or None,
+                )
+                return {"status": "executed", "price": price}
+            if action_id == "customer.link":
+                customer = await client.link_customer(
+                    customer_id=str(input_payload.get("customer_id") or "").strip() or None,
+                    email=str(input_payload.get("email") or "").strip() or None,
+                    name=str(input_payload.get("name") or "").strip() or None,
+                    metadata=(
+                        dict(input_payload.get("metadata") or {})
+                        if isinstance(input_payload.get("metadata"), dict)
+                        else {}
+                    ),
+                )
+                return {"status": "executed", "customer": customer}
+            if action_id == "subscription.link":
+                subscription = await client.link_subscription(
+                    subscription_id=(
+                        str(input_payload.get("subscription_id") or "").strip() or None
+                    ),
+                    customer_id=str(input_payload.get("customer_id") or "").strip() or None,
+                    price_id=str(input_payload.get("price_id") or "").strip() or None,
+                )
+                return {"status": "executed", "subscription": subscription}
+            if action_id == "subscription.update_price":
+                subscription = await client.update_subscription_price(
+                    subscription_id=str(input_payload.get("subscription_id") or "").strip(),
+                    price_id=str(input_payload.get("price_id") or "").strip(),
+                )
+                return {"status": "executed", "subscription": subscription}
+            if action_id == "meter.config.ensure":
+                meter = await client.ensure_meter(
+                    event_name=str(input_payload.get("event_name") or "").strip(),
+                    display_name=str(input_payload.get("display_name") or "").strip() or None,
+                    customer_mapping_key=(
+                        str(input_payload.get("customer_mapping_key") or "").strip() or None
+                    ),
+                    metadata=(
+                        dict(input_payload.get("metadata") or {})
+                        if isinstance(input_payload.get("metadata"), dict)
+                        else {}
+                    ),
+                )
+                return {"status": "executed", "meter": meter}
+            raise ValueError(f"Unsupported Stripe action `{action_id}`")
+        except StripeAPIError as exc:
             raise ValueError(str(exc)) from exc
         finally:
             await client.close()
