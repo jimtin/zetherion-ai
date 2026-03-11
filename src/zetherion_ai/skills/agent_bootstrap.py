@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import hashlib
 import io
 import json
@@ -24,7 +25,7 @@ from zetherion_ai.skills.clerk.client import ClerkMetadataClient, ClerkMetadataE
 from zetherion_ai.skills.github.client import GitHubAPIError, GitHubClient, GitHubValidationError
 from zetherion_ai.skills.permissions import Permission, PermissionSet
 from zetherion_ai.skills.stripe.client import StripeAPIError, StripeClient
-from zetherion_ai.skills.vercel.client import VercelClient
+from zetherion_ai.skills.vercel.client import VercelAPIError, VercelClient
 
 log = get_logger("zetherion_ai.skills.agent_bootstrap")
 
@@ -113,6 +114,8 @@ _SAFE_KEY_EXACT = {
     "key_prefix",
 }
 
+_TERMINAL_OPERATION_STATUSES = {"succeeded", "resolved", "failed", "error"}
+
 
 def _slugify_repo_id(value: str) -> str:
     normalized = _REPO_ID_SANITIZE_RE.sub("-", value.strip().lower()).strip("-")
@@ -130,6 +133,13 @@ def _split_github_repo(value: str) -> tuple[str, str]:
 def _safe_branch_suffix(value: str) -> str:
     normalized = _REPO_ID_SANITIZE_RE.sub("-", value.strip().lower()).strip("-")
     return normalized or "managed-change"
+
+
+def _system_safe_principal_id(value: str | None) -> str | None:
+    principal_id = str(value or "").strip() or None
+    if principal_id and principal_id.startswith("system:"):
+        return None
+    return principal_id
 
 
 _DEFAULT_DOCS = [
@@ -586,6 +596,67 @@ def _service_routes_for(repo_id: str, *, base_url: str) -> dict[str, str]:
     }
 
 
+def _operation_routes(*, base_url: str, app_id: str | None = None) -> dict[str, str]:
+    prefix = f"{base_url}/service/ai/v1/agent" if base_url else "/service/ai/v1/agent"
+    routes = {
+        "operation": f"{prefix}/operations/:operationId",
+        "evidence": f"{prefix}/operations/:operationId/evidence",
+        "logs": f"{prefix}/operations/:operationId/logs",
+        "incidents": f"{prefix}/operations/:operationId/incidents",
+    }
+    if app_id:
+        routes["resolve"] = f"{prefix}/apps/{app_id}/operations/resolve"
+    return routes
+
+
+def _default_service_adapter_capabilities() -> dict[str, dict[str, Any]]:
+    return {
+        "github": {
+            "readable_refs": [
+                "publish_candidate_id",
+                "git_sha",
+                "branch",
+                "pr_number",
+                "github_run_id",
+                "github_delivery_id",
+            ],
+            "available_evidence_types": ["summary", "events", "logs", "artifacts"],
+            "redaction_rules": ["truncate_long_logs", "redact_tokens"],
+            "correlation_strategy": "publish_candidate_or_git_refs",
+            "ingestion_modes": ["webhook", "poll"],
+            "retention": {"raw_logs_days": 7, "summary_days": 30},
+            "known_unsupported": [],
+        },
+        "vercel": {
+            "readable_refs": ["git_sha", "branch", "vercel_deployment_id", "vercel_event_id"],
+            "available_evidence_types": ["summary", "events", "logs"],
+            "redaction_rules": ["redact_env_values"],
+            "correlation_strategy": "deployment_meta_and_git_refs",
+            "ingestion_modes": ["webhook", "poll"],
+            "retention": {"raw_logs_days": 7, "summary_days": 30},
+            "known_unsupported": ["deployment_artifacts"],
+        },
+        "clerk": {
+            "readable_refs": ["clerk_instance_ref", "issuer", "jwks_url", "clerk_event_id"],
+            "available_evidence_types": ["summary", "events", "logs"],
+            "redaction_rules": ["redact_keys"],
+            "correlation_strategy": "app_connector_metadata",
+            "ingestion_modes": ["webhook", "poll"],
+            "retention": {"raw_logs_days": 7, "summary_days": 30},
+            "known_unsupported": ["provider_side_request_logs"],
+        },
+        "stripe": {
+            "readable_refs": ["stripe_event_id", "customer_id", "subscription_id"],
+            "available_evidence_types": ["summary", "events"],
+            "redaction_rules": ["redact_pii"],
+            "correlation_strategy": "billing_object_refs",
+            "ingestion_modes": ["webhook", "poll"],
+            "retention": {"raw_logs_days": 7, "summary_days": 30},
+            "known_unsupported": ["provider_side_execution_logs"],
+        },
+    }
+
+
 def _pick_fields(payload: dict[str, Any], fields: list[str]) -> dict[str, Any]:
     return {field: payload.get(field) for field in fields if field in payload}
 
@@ -684,6 +755,14 @@ class AgentBootstrapSkill(Skill):
                 "agent_app_services_list",
                 "agent_service_read",
                 "agent_service_request_submit",
+                "agent_operation_resolve",
+                "agent_operation_event_ingest",
+                "agent_operation_poll",
+                "agent_operation_list",
+                "agent_operation_get",
+                "agent_operation_evidence_list",
+                "agent_operation_logs",
+                "agent_operation_incidents_list",
                 "agent_repo_discover",
                 "agent_repo_enroll",
                 "agent_workspace_bundle_create",
@@ -717,8 +796,22 @@ class AgentBootstrapSkill(Skill):
     async def handle(self, request: SkillRequest) -> SkillResponse:
         owner_id = _normalize_owner_id(request)
         public_base_url = str(request.context.get("public_base_url") or "").strip()
+        explicit_owner_id = str(request.context.get("owner_id") or "").strip()
+        if not explicit_owner_id and request.intent in {
+            "agent_operation_event_ingest",
+            "agent_operation_poll",
+        }:
+            inferred_owner_id = await self._infer_owner_id(request.context)
+            if inferred_owner_id:
+                owner_id = inferred_owner_id
+            elif request.intent == "agent_operation_event_ingest":
+                return SkillResponse.error_response(
+                    request.id,
+                    "owner_id or an enrolled app_id is required for system operation ingestion",
+                )
         await self._ensure_default_docs(owner_id, public_base_url)
         await self._ensure_default_apps(owner_id, public_base_url)
+        await self._ensure_default_service_capabilities(owner_id)
 
         handlers = {
             "agent_client_bootstrap": self._handle_client_bootstrap,
@@ -733,6 +826,14 @@ class AgentBootstrapSkill(Skill):
             "agent_app_services_list": self._handle_app_services_list,
             "agent_service_read": self._handle_service_read,
             "agent_service_request_submit": self._handle_service_request_submit,
+            "agent_operation_resolve": self._handle_operation_resolve,
+            "agent_operation_event_ingest": self._handle_operation_event_ingest,
+            "agent_operation_poll": self._handle_operation_poll,
+            "agent_operation_list": self._handle_operation_list,
+            "agent_operation_get": self._handle_operation_get,
+            "agent_operation_evidence_list": self._handle_operation_evidence_list,
+            "agent_operation_logs": self._handle_operation_logs,
+            "agent_operation_incidents_list": self._handle_operation_incidents_list,
             "agent_repo_discover": self._handle_repo_discover,
             "agent_repo_enroll": self._handle_repo_enroll,
             "agent_workspace_bundle_create": self._handle_workspace_bundle_create,
@@ -980,6 +1081,12 @@ class AgentBootstrapSkill(Skill):
                 "workspace_bundle_get": "/service/ai/v1/agent/workspace-bundles/:bundleId",
                 "test_plan_compile": "/service/ai/v1/agent/apps/:appId/test-plans/compile",
                 "publish_candidates": "/service/ai/v1/agent/apps/:appId/publish-candidates",
+                "operations": "/service/ai/v1/agent/operations",
+                "operation": "/service/ai/v1/agent/operations/:operationId",
+                "operation_evidence": "/service/ai/v1/agent/operations/:operationId/evidence",
+                "operation_logs": "/service/ai/v1/agent/operations/:operationId/logs",
+                "operation_incidents": "/service/ai/v1/agent/operations/:operationId/incidents",
+                "operation_resolve": "/service/ai/v1/agent/apps/:appId/operations/resolve",
                 "services": "/service/ai/v1/agent/apps/:appId/services",
                 "service_read": "/service/ai/v1/agent/apps/:appId/services/:serviceKind",
                 "service_requests": "/service/ai/v1/agent/apps/:appId/service-requests",
@@ -1211,6 +1318,389 @@ class AgentBootstrapSkill(Skill):
             request_id=request.id,
             message=f"Processed {service_kind} service action `{action_id}` for `{app_id}`.",
             data=result,
+        )
+
+    async def _handle_operation_resolve(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        if not app_id:
+            return SkillResponse.error_response(request.id, "app_id is required")
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        app_profile = await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+        )
+        operation_refs = self._extract_operation_refs(request.context)
+        if not operation_refs:
+            return SkillResponse.error_response(
+                request.id,
+                "At least one operation reference is required",
+            )
+        repo_id = str(
+            request.context.get("repo_id")
+            or ((app_profile.get("profile") or {}).get("repo_ids") or [None])[0]
+            or ""
+        ).strip()
+        operation = await self._find_or_create_operation(
+            owner_id=owner_id,
+            app_id=app_id,
+            repo_id=repo_id,
+            refs=operation_refs,
+            request_context=request.context,
+        )
+        await self._refresh_operation(
+            owner_id=owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            app_profile=app_profile,
+            operation=operation,
+            request_context=request.context,
+            public_base_url=public_base_url,
+        )
+        hydrated = await self._storage.get_operation_hydrated(owner_id, operation["operation_id"])
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Resolved operation `{operation['operation_id']}` for `{app_id}`.",
+            data={"operation": hydrated},
+        )
+
+    async def _handle_operation_event_ingest(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        service_kind = str(request.context.get("service_kind") or "").strip().lower()
+        if not app_id or not service_kind:
+            return SkillResponse.error_response(
+                request.id,
+                "app_id and service_kind are required",
+            )
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        app_profile = await self._require_app_access(
+            owner_id,
+            principal_id=_system_safe_principal_id(principal_id),
+            app_id=app_id,
+        )
+        repo_id = str(
+            request.context.get("repo_id")
+            or ((app_profile.get("profile") or {}).get("repo_ids") or [None])[0]
+            or ""
+        ).strip()
+        event_payload = self._normalize_event_payload(request.context.get("event_payload"))
+        operation_refs = {
+            **self._extract_operation_refs(request.context),
+            **self._extract_operation_refs_from_event(service_kind, event_payload),
+        }
+        if not operation_refs:
+            gap = await self._record_gap(
+                owner_id=owner_id,
+                principal_id=principal_id,
+                session_id=_normalize_session_id(request.context.get("session_id")),
+                app_id=app_id,
+                repo_id=repo_id,
+                gap_type="missing_provider_correlation",
+                severity="high",
+                blocker=False,
+                detected_from="operation_event_ingest",
+                required_capability=f"{service_kind}:correlation_refs",
+                observed_request={
+                    "service_kind": service_kind,
+                    "event_payload": _redact_payload(event_payload),
+                },
+                suggested_fix=(
+                    "Provide a correlation ref such as git_sha, github_run_id, "
+                    "vercel_deployment_id, stripe_event_id, or run_id."
+                ),
+                metadata={"source": request.context.get("source") or "provider_event"},
+                run_id=str(request.context.get("run_id") or "").strip() or None,
+            )
+            return SkillResponse(
+                request_id=request.id,
+                message=f"Recorded orphaned {service_kind} event gap.",
+                data={"gap": gap},
+            )
+        operation = await self._find_or_create_operation(
+            owner_id=owner_id,
+            app_id=app_id,
+            repo_id=repo_id,
+            refs=operation_refs,
+            request_context={
+                **dict(request.context),
+                **operation_refs,
+                "operation_kind": str(request.context.get("operation_kind") or "provider_event"),
+            },
+        )
+        await self._record_operation_event_ingest(
+            owner_id=owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            repo_id=repo_id,
+            operation_id=str(operation["operation_id"]),
+            service_kind=service_kind,
+            refs=operation_refs,
+            event_payload=event_payload,
+            request_context=request.context,
+        )
+        await self._refresh_operation(
+            owner_id=owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            app_profile=app_profile,
+            operation=operation,
+            request_context={
+                **dict(request.context),
+                **operation_refs,
+                "service_kind": service_kind,
+            },
+            public_base_url=public_base_url,
+        )
+        hydrated = await self._storage.get_operation_hydrated(owner_id, operation["operation_id"])
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Ingested {service_kind} event for `{app_id}`.",
+            data={"operation": hydrated},
+        )
+
+    async def _handle_operation_poll(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        public_base_url: str,
+    ) -> SkillResponse:
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        app_id = str(request.context.get("app_id") or "").strip() or None
+        service_kind = str(request.context.get("service_kind") or "").strip().lower() or None
+        operation_id = str(request.context.get("operation_id") or "").strip() or None
+        limit = _normalize_limit(request.context.get("limit"), default=10, maximum=50)
+        operations: list[dict[str, Any]] = []
+        if operation_id:
+            operation = await self._storage.get_managed_operation(owner_id, operation_id)
+            if operation is None:
+                return SkillResponse.error_response(
+                    request.id,
+                    f"Operation `{operation_id}` not found",
+                )
+            operations = [operation]
+        else:
+            operations = await self._storage.list_managed_operations(
+                owner_id,
+                app_id=app_id,
+                service_kind=service_kind,
+                status=str(request.context.get("status") or "").strip() or "active",
+                limit=limit,
+            )
+        refreshed: list[dict[str, Any]] = []
+        for operation in operations:
+            target_app_id = str(operation.get("app_id") or "")
+            app_profile = await self._require_app_access(
+                owner_id,
+                principal_id=_system_safe_principal_id(principal_id),
+                app_id=target_app_id,
+            )
+            await self._refresh_operation(
+                owner_id=owner_id,
+                principal_id=principal_id,
+                app_id=target_app_id,
+                app_profile=app_profile,
+                operation=operation,
+                request_context={
+                    **dict(request.context),
+                    "app_id": target_app_id,
+                    "operation_id": str(operation.get("operation_id") or ""),
+                    "service_kind": service_kind,
+                    "source": request.context.get("source") or "poll",
+                },
+                public_base_url=public_base_url,
+            )
+            hydrated = await self._storage.get_operation_hydrated(
+                owner_id,
+                str(operation["operation_id"]),
+            )
+            if hydrated is not None:
+                refreshed.append(hydrated)
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Refreshed {len(refreshed)} operations.",
+            data={"operations": refreshed},
+        )
+
+    async def _handle_operation_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        requested_app_id = str(request.context.get("app_id") or "").strip() or None
+        requested_repo_id = str(request.context.get("repo_id") or "").strip() or None
+        operations = await self._storage.list_managed_operations(
+            owner_id,
+            app_id=requested_app_id,
+            repo_id=requested_repo_id,
+            service_kind=str(request.context.get("service_kind") or "").strip() or None,
+            status=str(request.context.get("status") or "").strip() or None,
+            limit=int(request.context.get("limit") or 50),
+        )
+        if principal_id:
+            accessible = {
+                str(app["app_id"])
+                for app in await self._list_accessible_apps(owner_id, principal_id)
+            }
+            operations = [
+                operation
+                for operation in operations
+                if str(operation.get("app_id") or "") in accessible
+            ]
+        payload: list[dict[str, Any]] = []
+        for operation in operations:
+            incidents = await self._storage.list_operation_incidents(
+                owner_id,
+                str(operation["operation_id"]),
+                unresolved_only=False,
+                limit=5,
+            )
+            refs = await self._storage.list_operation_refs(
+                owner_id,
+                str(operation["operation_id"]),
+            )
+            payload.append(
+                {
+                    **operation,
+                    "refs": refs,
+                    "top_incident": incidents[0] if incidents else None,
+                    "incident_count": len(incidents),
+                }
+            )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(payload)} operations.",
+            data={"operations": payload},
+        )
+
+    async def _handle_operation_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        operation_id = str(request.context.get("operation_id") or "").strip()
+        if not operation_id:
+            return SkillResponse.error_response(request.id, "operation_id is required")
+        operation = await self._storage.get_operation_hydrated(owner_id, operation_id)
+        if operation is None:
+            return SkillResponse.error_response(request.id, f"Operation `{operation_id}` not found")
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        if principal_id:
+            await self._require_app_access(
+                owner_id,
+                principal_id=principal_id,
+                app_id=str(operation.get("app_id") or ""),
+            )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded operation `{operation_id}`.",
+            data={"operation": operation},
+        )
+
+    async def _handle_operation_evidence_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        operation_id = str(request.context.get("operation_id") or "").strip()
+        if not operation_id:
+            return SkillResponse.error_response(request.id, "operation_id is required")
+        operation = await self._storage.get_managed_operation(owner_id, operation_id)
+        if operation is None:
+            return SkillResponse.error_response(request.id, f"Operation `{operation_id}` not found")
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        if principal_id:
+            await self._require_app_access(
+                owner_id,
+                principal_id=principal_id,
+                app_id=str(operation.get("app_id") or ""),
+            )
+        evidence = await self._storage.list_operation_evidence(
+            owner_id,
+            operation_id,
+            service_kind=str(request.context.get("service_kind") or "").strip() or None,
+            evidence_type=str(request.context.get("evidence_type") or "").strip() or None,
+            limit=int(request.context.get("limit") or 200),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(evidence)} evidence items.",
+            data={"evidence": evidence},
+        )
+
+    async def _handle_operation_logs(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        operation_id = str(request.context.get("operation_id") or "").strip()
+        if not operation_id:
+            return SkillResponse.error_response(request.id, "operation_id is required")
+        operation = await self._storage.get_managed_operation(owner_id, operation_id)
+        if operation is None:
+            return SkillResponse.error_response(request.id, f"Operation `{operation_id}` not found")
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        if principal_id:
+            await self._require_app_access(
+                owner_id,
+                principal_id=principal_id,
+                app_id=str(operation.get("app_id") or ""),
+            )
+        logs = await self._storage.get_operation_log_chunks(
+            owner_id,
+            operation_id,
+            query_text=str(request.context.get("query") or "").strip() or None,
+            limit=int(request.context.get("limit") or 200),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(logs)} operation log chunks.",
+            data={"logs": logs},
+        )
+
+    async def _handle_operation_incidents_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        operation_id = str(request.context.get("operation_id") or "").strip()
+        if not operation_id:
+            return SkillResponse.error_response(request.id, "operation_id is required")
+        operation = await self._storage.get_managed_operation(owner_id, operation_id)
+        if operation is None:
+            return SkillResponse.error_response(request.id, f"Operation `{operation_id}` not found")
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        if principal_id:
+            await self._require_app_access(
+                owner_id,
+                principal_id=principal_id,
+                app_id=str(operation.get("app_id") or ""),
+            )
+        incidents = await self._storage.list_operation_incidents(
+            owner_id,
+            operation_id,
+            unresolved_only=bool(request.context.get("unresolved_only", False)),
+            limit=int(request.context.get("limit") or 200),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(incidents)} incidents.",
+            data={"incidents": incidents},
         )
 
     async def _handle_repo_discover(
@@ -1484,7 +1974,7 @@ class AgentBootstrapSkill(Skill):
         self,
         request: SkillRequest,
         owner_id: str,
-        _public_base_url: str,
+        public_base_url: str,
     ) -> SkillResponse:
         app_id = str(request.context.get("app_id") or "").strip()
         if not app_id:
@@ -1531,6 +2021,42 @@ class AgentBootstrapSkill(Skill):
                 "status": "submitted",
             },
         )
+        operation = await self._find_or_create_operation(
+            owner_id=owner_id,
+            app_id=app_id,
+            repo_id=repo_id,
+            refs={
+                "publish_candidate_id": str(candidate["candidate_id"]),
+                "git_sha": base_sha,
+                **(
+                    {
+                        "branch": str(request.context.get("target_branch") or "").strip(),
+                    }
+                    if str(request.context.get("target_branch") or "").strip()
+                    else {}
+                ),
+            },
+            request_context={
+                **dict(request.context or {}),
+                "operation_kind": "publish_candidate",
+            },
+        )
+        await self._storage.update_managed_operation(
+            owner_id,
+            operation_id=str(operation["operation_id"]),
+            lifecycle_stage="publish_candidate_submitted",
+            status="active",
+            summary={
+                "publish_candidate_id": str(candidate["candidate_id"]),
+                "base_sha": base_sha,
+                "target_branch": str(request.context.get("target_branch") or "").strip() or None,
+                "operation_routes": _operation_routes(base_url=public_base_url, app_id=app_id),
+            },
+            metadata={
+                **dict(operation.get("metadata") or {}),
+                "source": "publish_candidate_submit",
+            },
+        )
         await self._storage.record_agent_audit_event(
             owner_id,
             principal_id=principal_id,
@@ -1544,7 +2070,13 @@ class AgentBootstrapSkill(Skill):
         return SkillResponse(
             request_id=request.id,
             message=f"Stored publish candidate `{candidate['candidate_id']}`.",
-            data={"candidate": candidate},
+            data={
+                "candidate": candidate,
+                "operation": await self._storage.get_operation_hydrated(
+                    owner_id,
+                    str(operation["operation_id"]),
+                ),
+            },
         )
 
     async def _handle_publish_candidate_apply(
@@ -1969,6 +2501,14 @@ class AgentBootstrapSkill(Skill):
                     current=True,
                 )
 
+    async def _ensure_default_service_capabilities(self, owner_id: str) -> None:
+        for service_kind, manifest in _default_service_adapter_capabilities().items():
+            await self._storage.upsert_service_adapter_capability(
+                owner_id,
+                service_kind=service_kind,
+                manifest=manifest,
+            )
+
     async def _record_interaction_outcome(
         self,
         request: SkillRequest,
@@ -2145,6 +2685,1528 @@ class AgentBootstrapSkill(Skill):
             )
         return gaps
 
+    async def _infer_owner_id(self, request_context: dict[str, Any]) -> str | None:
+        app_id = str(request_context.get("app_id") or "").strip()
+        if app_id:
+            app_profile = await self._storage.find_agent_app_profile(app_id)
+            owner_id = str((app_profile or {}).get("owner_id") or "").strip()
+            if owner_id:
+                return owner_id
+        return None
+
+    def _extract_operation_refs(self, request_context: dict[str, Any]) -> dict[str, str]:
+        refs: dict[str, str] = {}
+        candidates = {
+            "publish_candidate_id": request_context.get("publish_candidate_id"),
+            "git_sha": request_context.get("git_sha") or request_context.get("sha"),
+            "branch": request_context.get("branch"),
+            "pr_number": request_context.get("pr_number"),
+            "github_run_id": request_context.get("github_run_id"),
+            "vercel_deployment_id": request_context.get("vercel_deployment_id"),
+            "clerk_instance_ref": request_context.get("clerk_instance_ref"),
+            "issuer": request_context.get("issuer"),
+            "jwks_url": request_context.get("jwks_url"),
+            "stripe_event_id": request_context.get("stripe_event_id"),
+            "clerk_event_id": request_context.get("clerk_event_id"),
+            "github_delivery_id": request_context.get("github_delivery_id"),
+            "vercel_event_id": request_context.get("vercel_event_id"),
+            "customer_id": request_context.get("customer_id"),
+            "subscription_id": request_context.get("subscription_id"),
+            "run_id": request_context.get("run_id"),
+        }
+        for key, raw_value in candidates.items():
+            value = str(raw_value or "").strip()
+            if value:
+                refs[key] = value
+        base_sha = str(request_context.get("base_sha") or "").strip()
+        if base_sha and "git_sha" not in refs:
+            refs["git_sha"] = base_sha
+        return refs
+
+    def _normalize_event_payload(self, value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return dict(value)
+        if isinstance(value, str):
+            with contextlib.suppress(json.JSONDecodeError):
+                parsed = json.loads(value)
+                if isinstance(parsed, dict):
+                    return dict(parsed)
+        return {}
+
+    def _extract_operation_refs_from_event(
+        self,
+        service_kind: str,
+        event_payload: dict[str, Any],
+    ) -> dict[str, str]:
+        refs: dict[str, str] = {}
+        if service_kind == "github":
+            workflow_run = dict(event_payload.get("workflow_run") or {})
+            pull_request = dict(event_payload.get("pull_request") or {})
+            check_run = dict(event_payload.get("check_run") or {})
+            check_suite = dict(event_payload.get("check_suite") or {})
+            repository = dict(event_payload.get("repository") or {})
+            head = dict(pull_request.get("head") or {})
+            if workflow_run.get("id"):
+                refs["github_run_id"] = str(workflow_run.get("id"))
+            if event_payload.get("delivery_id"):
+                refs["github_delivery_id"] = str(event_payload.get("delivery_id"))
+            if workflow_run.get("head_sha"):
+                refs["git_sha"] = str(workflow_run.get("head_sha"))
+            elif head.get("sha"):
+                refs["git_sha"] = str(head.get("sha"))
+            elif check_run.get("head_sha"):
+                refs["git_sha"] = str(check_run.get("head_sha"))
+            elif check_suite.get("head_sha"):
+                refs["git_sha"] = str(check_suite.get("head_sha"))
+            elif event_payload.get("after"):
+                refs["git_sha"] = str(event_payload.get("after"))
+            branch = (
+                str(workflow_run.get("head_branch") or "").strip()
+                or str(head.get("ref") or "").strip()
+                or str(check_suite.get("head_branch") or "").strip()
+                or str(event_payload.get("ref") or "").removeprefix("refs/heads/").strip()
+            )
+            if branch:
+                refs["branch"] = branch
+            pr_number = pull_request.get("number") or (
+                (workflow_run.get("pull_requests") or [{}])[0] or {}
+            ).get("number")
+            if pr_number:
+                refs["pr_number"] = str(pr_number)
+            if repository.get("full_name"):
+                refs.setdefault("repo_full_name", str(repository.get("full_name")))
+        elif service_kind == "vercel":
+            payload = dict(event_payload.get("payload") or {})
+            deployment = dict(event_payload.get("deployment") or {})
+            meta = dict(payload.get("meta") or deployment.get("meta") or {})
+            deployment_id = (
+                str(event_payload.get("deployment_id") or "").strip()
+                or str(payload.get("id") or "").strip()
+                or str(deployment.get("id") or "").strip()
+            )
+            if deployment_id:
+                refs["vercel_deployment_id"] = deployment_id
+            event_id = str(event_payload.get("id") or "").strip()
+            if event_id:
+                refs["vercel_event_id"] = event_id
+            git_sha = (
+                str(meta.get("githubCommitSha") or "").strip()
+                or str(meta.get("githubCommitRefSha") or "").strip()
+                or str(meta.get("gitCommitSha") or "").strip()
+            )
+            if git_sha:
+                refs["git_sha"] = git_sha
+            branch = (
+                str(meta.get("githubCommitRef") or "").strip()
+                or str(meta.get("gitCommitRef") or "").strip()
+                or str(payload.get("target") or "").strip()
+            )
+            if branch:
+                refs["branch"] = branch
+        elif service_kind == "clerk":
+            data = dict(event_payload.get("data") or {})
+            if event_payload.get("id"):
+                refs["clerk_event_id"] = str(event_payload.get("id"))
+            if data.get("id"):
+                refs["clerk_instance_ref"] = str(data.get("id"))
+        elif service_kind == "stripe":
+            data = dict(event_payload.get("data") or {})
+            obj = dict(data.get("object") or {})
+            if event_payload.get("id"):
+                refs["stripe_event_id"] = str(event_payload.get("id"))
+            if obj.get("customer"):
+                refs["customer_id"] = str(obj.get("customer"))
+            subscription_id = obj.get("subscription") or obj.get("id")
+            if subscription_id and str(event_payload.get("type") or "").startswith(
+                "customer.subscription."
+            ):
+                refs["subscription_id"] = str(subscription_id)
+        return {key: value for key, value in refs.items() if str(value).strip()}
+
+    async def _record_operation_event_ingest(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        app_id: str,
+        repo_id: str,
+        operation_id: str,
+        service_kind: str,
+        refs: dict[str, str],
+        event_payload: dict[str, Any],
+        request_context: dict[str, Any],
+    ) -> None:
+        delivery_id = (
+            str(request_context.get("delivery_id") or "").strip()
+            or refs.get("github_delivery_id")
+            or refs.get("vercel_event_id")
+            or refs.get("clerk_event_id")
+            or refs.get("stripe_event_id")
+            or ""
+        )
+        event_type = (
+            str(request_context.get("event_type") or "").strip()
+            or str(event_payload.get("type") or "").strip()
+            or str(request_context.get("action") or "").strip()
+            or f"{service_kind}.event"
+        )
+        for ref_kind, ref_value in refs.items():
+            await self._storage.upsert_operation_ref(
+                owner_id,
+                operation_id=operation_id,
+                service_kind=self._service_kind_for_operation_ref(ref_kind) or service_kind,
+                ref_kind=ref_kind,
+                ref_value=ref_value,
+                metadata={
+                    "source": request_context.get("source") or "provider_event",
+                    "event_type": event_type,
+                },
+            )
+        summary_payload = {
+            "event_type": event_type,
+            "delivery_id": delivery_id or None,
+            "source": request_context.get("source") or "provider_event",
+            "refs": refs,
+        }
+        summary_evidence = await self._storage.record_operation_evidence(
+            owner_id,
+            operation_id=operation_id,
+            service_kind=service_kind,
+            evidence_type="events",
+            title=f"{service_kind} event {event_type}",
+            payload={
+                "summary": summary_payload,
+                "event": _redact_payload(event_payload),
+            },
+            log_text=self._render_event_log_lines(service_kind, event_type, event_payload),
+            metadata={
+                "delivery_id": delivery_id or None,
+                "event_type": event_type,
+            },
+            dedupe_key=":".join(
+                part
+                for part in [
+                    service_kind,
+                    "event",
+                    delivery_id or None,
+                    event_type or None,
+                    refs.get("github_run_id"),
+                    refs.get("vercel_deployment_id"),
+                    refs.get("stripe_event_id"),
+                ]
+                if part
+            ),
+        )
+        incident = self._incident_from_provider_event(
+            service_kind=service_kind,
+            event_type=event_type,
+            event_payload=event_payload,
+        )
+        if incident is not None:
+            await self._storage.record_operation_incident(
+                owner_id,
+                operation_id=operation_id,
+                service_kind=service_kind,
+                incident_type=str(incident["incident_type"]),
+                severity=str(incident["severity"]),
+                blocking=bool(incident["blocking"]),
+                root_cause_summary=str(incident["root_cause_summary"]),
+                recommended_fix=str(incident["recommended_fix"]),
+                evidence_refs=[str(summary_evidence["evidence_id"])],
+                metadata=dict(incident.get("metadata") or {}),
+            )
+        await self._storage.record_agent_audit_event(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            service_kind=service_kind,
+            resource=str(operation_id),
+            action="operation_event_ingest",
+            decision="accepted",
+            audit={
+                "event_type": event_type,
+                "delivery_id": delivery_id or None,
+                "repo_id": repo_id,
+                "refs": refs,
+            },
+        )
+
+    def _render_event_log_lines(
+        self,
+        service_kind: str,
+        event_type: str,
+        event_payload: dict[str, Any],
+    ) -> str:
+        lines = [f"{service_kind}:{event_type}"]
+        if service_kind == "github":
+            workflow_run = dict(event_payload.get("workflow_run") or {})
+            check_run = dict(event_payload.get("check_run") or {})
+            pull_request = dict(event_payload.get("pull_request") or {})
+            lines.extend(
+                [
+                    str(workflow_run.get("name") or "").strip(),
+                    str(workflow_run.get("conclusion") or workflow_run.get("status") or "").strip(),
+                    str(check_run.get("name") or "").strip(),
+                    str(check_run.get("conclusion") or check_run.get("status") or "").strip(),
+                    str(pull_request.get("title") or "").strip(),
+                ]
+            )
+        elif service_kind == "vercel":
+            payload = dict(event_payload.get("payload") or {})
+            lines.extend(
+                [
+                    str(payload.get("name") or event_payload.get("name") or "").strip(),
+                    str(payload.get("target") or "").strip(),
+                    str(payload.get("readyState") or payload.get("state") or "").strip(),
+                ]
+            )
+        elif service_kind == "clerk":
+            data = dict(event_payload.get("data") or {})
+            lines.extend(
+                [
+                    str(data.get("id") or "").strip(),
+                    str(
+                        (data.get("email_addresses") or [{}])[0].get("email_address") or ""
+                    ).strip(),
+                ]
+            )
+        elif service_kind == "stripe":
+            data = dict(event_payload.get("data") or {})
+            obj = dict(data.get("object") or {})
+            lines.extend(
+                [
+                    str(obj.get("id") or "").strip(),
+                    str(obj.get("customer") or "").strip(),
+                    str(obj.get("status") or "").strip(),
+                ]
+            )
+        return "\n".join(line for line in lines if line)
+
+    def _incident_from_provider_event(
+        self,
+        *,
+        service_kind: str,
+        event_type: str,
+        event_payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if service_kind == "github":
+            workflow_run = dict(event_payload.get("workflow_run") or {})
+            conclusion = str(workflow_run.get("conclusion") or "").strip().lower()
+            if conclusion in {"failure", "cancelled", "timed_out", "action_required"}:
+                return {
+                    "incident_type": "workflow_failed",
+                    "severity": "high",
+                    "blocking": True,
+                    "root_cause_summary": (
+                        f"GitHub workflow run failed with conclusion `{conclusion}`."
+                    ),
+                    "recommended_fix": (
+                        "Inspect the failing GitHub run, review the attached logs, "
+                        "and rerun after applying the fix."
+                    ),
+                    "metadata": {"workflow_run": workflow_run},
+                }
+        if service_kind == "vercel":
+            payload = dict(event_payload.get("payload") or {})
+            state = (
+                str(
+                    payload.get("readyState")
+                    or payload.get("state")
+                    or event_payload.get("state")
+                    or ""
+                )
+                .strip()
+                .lower()
+            )
+            if state in {"error", "failed", "canceled"}:
+                return {
+                    "incident_type": "deployment_failed",
+                    "severity": "high",
+                    "blocking": True,
+                    "root_cause_summary": (f"Vercel deployment failed with state `{state}`."),
+                    "recommended_fix": (
+                        "Inspect the deployment logs and retry the build after "
+                        "fixing the failing step."
+                    ),
+                    "metadata": {"payload": payload},
+                }
+        if service_kind == "stripe":
+            pending = int(event_payload.get("pending_webhooks") or 0)
+            if pending > 0:
+                return {
+                    "incident_type": "webhook_pending",
+                    "severity": "medium",
+                    "blocking": False,
+                    "root_cause_summary": (
+                        "Stripe reported pending webhook deliveries for the event."
+                    ),
+                    "recommended_fix": (
+                        "Inspect the Stripe webhook destination and replay the "
+                        "event after fixing the receiver."
+                    ),
+                    "metadata": {"pending_webhooks": pending},
+                }
+        if service_kind == "clerk" and event_type.endswith(".failed"):
+            return {
+                "incident_type": "auth_failed",
+                "severity": "high",
+                "blocking": True,
+                "root_cause_summary": "Clerk emitted a failed auth or user management event.",
+                "recommended_fix": (
+                    "Inspect the linked application auth diagnostics and Clerk "
+                    "configuration for the failing event."
+                ),
+                "metadata": {"event_type": event_type},
+            }
+        return None
+
+    def _service_kind_for_operation_ref(self, ref_kind: str) -> str | None:
+        if ref_kind in {"publish_candidate_id", "git_sha", "branch", "pr_number", "github_run_id"}:
+            return "github"
+        if ref_kind in {"github_delivery_id"}:
+            return "github"
+        if ref_kind in {"vercel_deployment_id"}:
+            return "vercel"
+        if ref_kind in {"vercel_event_id"}:
+            return "vercel"
+        if ref_kind in {"clerk_instance_ref", "issuer", "jwks_url", "clerk_event_id"}:
+            return "clerk"
+        if ref_kind in {"stripe_event_id", "customer_id", "subscription_id"}:
+            return "stripe"
+        return None
+
+    async def _find_or_create_operation(
+        self,
+        *,
+        owner_id: str,
+        app_id: str,
+        repo_id: str,
+        refs: dict[str, str],
+        request_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        for ref_kind in (
+            "publish_candidate_id",
+            "github_run_id",
+            "github_delivery_id",
+            "vercel_deployment_id",
+            "vercel_event_id",
+            "git_sha",
+            "pr_number",
+            "branch",
+            "clerk_event_id",
+            "stripe_event_id",
+            "customer_id",
+            "subscription_id",
+        ):
+            ref_value = refs.get(ref_kind)
+            if not ref_value:
+                continue
+            existing = await self._storage.find_managed_operation_by_ref(
+                owner_id,
+                ref_kind=ref_kind,
+                ref_value=ref_value,
+                app_id=app_id,
+            )
+            if existing is not None:
+                return existing
+        correlation_key = _stable_gap_key(
+            [app_id, *[f"{key}:{value}" for key, value in sorted(refs.items())]]
+        )
+        operation_kind = str(request_context.get("operation_kind") or "").strip() or (
+            "publish_candidate" if refs.get("publish_candidate_id") else "service_evidence"
+        )
+        operation = await self._storage.create_managed_operation(
+            owner_id,
+            app_id=app_id,
+            repo_id=repo_id,
+            operation_kind=operation_kind,
+            lifecycle_stage="resolving",
+            status="active",
+            correlation_key=correlation_key,
+            summary={"requested_refs": refs},
+            metadata={"source": "agent_operation_resolve"},
+        )
+        for ref_kind, ref_value in refs.items():
+            await self._storage.upsert_operation_ref(
+                owner_id,
+                operation_id=str(operation["operation_id"]),
+                service_kind=self._service_kind_for_operation_ref(ref_kind),
+                ref_kind=ref_kind,
+                ref_value=ref_value,
+                metadata={"source": "request"},
+            )
+        return operation
+
+    async def _refresh_operation(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        app_id: str,
+        app_profile: dict[str, Any],
+        operation: dict[str, Any],
+        request_context: dict[str, Any],
+        public_base_url: str,
+    ) -> None:
+        operation_refs = await self._storage.list_operation_refs(
+            owner_id,
+            str(operation["operation_id"]),
+        )
+        refs = {
+            str(entry.get("ref_kind") or ""): str(entry.get("ref_value") or "")
+            for entry in operation_refs
+            if str(entry.get("ref_kind") or "").strip()
+            and str(entry.get("ref_value") or "").strip()
+        }
+        requested_services = {
+            str(value).strip().lower()
+            for value in [
+                request_context.get("service_kind"),
+                *(
+                    (request_context.get("service_kinds") or [])
+                    if isinstance(request_context.get("service_kinds"), list)
+                    else []
+                ),
+            ]
+            if str(value or "").strip()
+        }
+        services_to_refresh: set[str] = {
+            inferred_service_kind
+            for inferred_service_kind in (
+                self._service_kind_for_operation_ref(ref_kind) for ref_kind in refs
+            )
+            if inferred_service_kind is not None
+        }
+        services_to_refresh.update(requested_services)
+        declared_services = {
+            str(key).strip().lower()
+            for key in dict((app_profile.get("profile") or {}).get("service_connector_map") or {})
+            if str(key).strip()
+        }
+        services_to_refresh = {
+            service_kind
+            for service_kind in services_to_refresh
+            if service_kind
+            and (
+                service_kind in declared_services
+                or service_kind in {"github", "vercel", "clerk", "stripe"}
+            )
+        }
+        runtime_result: dict[str, Any] | None = None
+        if refs.get("run_id"):
+            runtime_result = await self._collect_ci_runtime_operation_evidence(
+                owner_id=owner_id,
+                principal_id=principal_id,
+                app_id=app_id,
+                app_profile=app_profile,
+                operation_id=str(operation["operation_id"]),
+                run_id=str(refs["run_id"]),
+                request_context=request_context,
+            )
+        if not services_to_refresh and not runtime_result:
+            await self._record_gap(
+                owner_id=owner_id,
+                principal_id=principal_id,
+                session_id=_normalize_session_id(request_context.get("session_id")),
+                app_id=app_id,
+                repo_id=str(operation.get("repo_id") or ""),
+                gap_type="workspace_contract_gap",
+                severity="high",
+                blocker=True,
+                detected_from="operation_resolve",
+                required_capability="operation_correlation",
+                observed_request={"refs": refs},
+                suggested_fix=(
+                    "Provide a supported operation reference such as git_sha, "
+                    "github_run_id, or vercel_deployment_id."
+                ),
+                metadata={},
+                run_id=str(request_context.get("run_id") or "").strip() or None,
+            )
+            return
+        summaries: dict[str, Any] = {}
+        statuses: list[str] = []
+        stages: list[str] = []
+        if runtime_result:
+            summaries["ci_runtime"] = runtime_result.get("summary")
+            statuses.append(str(runtime_result.get("status") or "active"))
+            stages.append(str(runtime_result.get("lifecycle_stage") or "ci_runtime"))
+        for service_kind in sorted(services_to_refresh):
+            capability = await self._storage.get_service_adapter_capability(owner_id, service_kind)
+            if capability is None:
+                await self._record_gap(
+                    owner_id=owner_id,
+                    principal_id=principal_id,
+                    session_id=_normalize_session_id(request_context.get("session_id")),
+                    app_id=app_id,
+                    repo_id=str(operation.get("repo_id") or ""),
+                    gap_type="missing_connector",
+                    severity="high",
+                    blocker=True,
+                    detected_from="operation_resolve",
+                    required_capability=f"{service_kind}:adapter",
+                    observed_request={"service_kind": service_kind},
+                    suggested_fix=(
+                        f"Register a `{service_kind}` service adapter " "capability manifest."
+                    ),
+                    metadata={},
+                    run_id=str(request_context.get("run_id") or "").strip() or None,
+                )
+                continue
+            adapter_result = await self._collect_service_operation_evidence(
+                owner_id=owner_id,
+                principal_id=principal_id,
+                app_id=app_id,
+                app_profile=app_profile,
+                operation_id=str(operation["operation_id"]),
+                service_kind=service_kind,
+                refs=refs,
+                request_context=request_context,
+                public_base_url=public_base_url,
+            )
+            if not adapter_result:
+                continue
+            summaries[service_kind] = adapter_result.get("summary")
+            statuses.append(str(adapter_result.get("status") or "active"))
+            stages.append(str(adapter_result.get("lifecycle_stage") or service_kind))
+        final_status = "active"
+        if any(status in {"failed", "error"} for status in statuses):
+            final_status = "failed"
+        elif statuses and all(status in {"succeeded", "resolved"} for status in statuses):
+            final_status = "succeeded"
+        lifecycle_stage = stages[-1] if stages else "resolved"
+        await self._storage.update_managed_operation(
+            owner_id,
+            operation_id=str(operation["operation_id"]),
+            lifecycle_stage=lifecycle_stage,
+            status=final_status,
+            summary={
+                **dict(operation.get("summary") or {}),
+                "resolved_refs": refs,
+                "services": summaries,
+            },
+            metadata={
+                **dict(operation.get("metadata") or {}),
+                "public_base_url": public_base_url or None,
+            },
+        )
+
+    async def _collect_ci_runtime_operation_evidence(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        app_id: str,
+        app_profile: dict[str, Any],
+        operation_id: str,
+        run_id: str,
+        request_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        run = await self._storage.get_run(owner_id, run_id)
+        if run is None:
+            await self._record_gap(
+                owner_id=owner_id,
+                principal_id=principal_id,
+                session_id=_normalize_session_id(request_context.get("session_id")),
+                app_id=app_id,
+                repo_id=str(
+                    ((app_profile.get("profile") or {}).get("repo_ids") or [None])[0] or ""
+                ),
+                gap_type="missing_provider_correlation",
+                severity="medium",
+                blocker=False,
+                detected_from="operation_resolve",
+                required_capability="ci_runtime:run",
+                observed_request={"run_id": run_id},
+                suggested_fix=(
+                    "Attach a valid CI run id so runtime and container evidence "
+                    "can be correlated."
+                ),
+                metadata={},
+                run_id=run_id,
+            )
+            return {}
+        events = await self._storage.get_run_events(owner_id, run_id, limit=100)
+        logs = await self._storage.get_run_log_chunks(owner_id, run_id, limit=200)
+        debug_bundle = await self._storage.get_run_debug_bundle(owner_id, run_id)
+        summary = {
+            "run": run,
+            "event_count": len(events),
+            "log_count": len(logs),
+            "debug_bundle": {
+                "bundle_id": str(debug_bundle.get("bundle_id") or "") if debug_bundle else None,
+                "shard_id": str(debug_bundle.get("shard_id") or "") if debug_bundle else None,
+                "cleanup_receipt": (
+                    dict((debug_bundle.get("bundle") or {}).get("cleanup_receipt") or {})
+                    if debug_bundle
+                    else {}
+                ),
+                "container_receipts": (
+                    list((debug_bundle.get("bundle") or {}).get("container_receipts") or [])
+                    if debug_bundle
+                    else []
+                ),
+                "compose_state": (
+                    dict((debug_bundle.get("bundle") or {}).get("compose_state") or {})
+                    if debug_bundle
+                    else {}
+                ),
+            },
+        }
+        summary_evidence = await self._storage.record_operation_evidence(
+            owner_id,
+            operation_id=operation_id,
+            service_kind="ci_runtime",
+            evidence_type="summary",
+            title="CI runtime summary",
+            payload=summary,
+            metadata={"run_id": run_id},
+        )
+        if events:
+            await self._storage.record_operation_evidence(
+                owner_id,
+                operation_id=operation_id,
+                service_kind="ci_runtime",
+                evidence_type="events",
+                title="CI lifecycle events",
+                payload={"events": events},
+                metadata={"run_id": run_id},
+            )
+        if logs:
+            await self._storage.record_operation_evidence(
+                owner_id,
+                operation_id=operation_id,
+                service_kind="ci_runtime",
+                evidence_type="logs",
+                title="CI and container logs",
+                payload={"entries": logs[:50], "stream": "ci_runtime"},
+                log_text="\n".join(
+                    str(entry.get("message") or "")
+                    for entry in logs[:200]
+                    if str(entry.get("message") or "").strip()
+                ),
+                metadata={"run_id": run_id},
+            )
+        if debug_bundle:
+            await self._storage.record_operation_evidence(
+                owner_id,
+                operation_id=operation_id,
+                service_kind="ci_runtime",
+                evidence_type="artifacts",
+                title="CI runtime debug bundle",
+                payload=dict(debug_bundle.get("bundle") or {}),
+                metadata={"run_id": run_id, "bundle_id": str(debug_bundle.get("bundle_id") or "")},
+            )
+        if not logs and not debug_bundle:
+            await self._record_gap(
+                owner_id=owner_id,
+                principal_id=principal_id,
+                session_id=_normalize_session_id(request_context.get("session_id")),
+                app_id=app_id,
+                repo_id=str(run.get("repo_id") or ""),
+                gap_type="missing_tooling",
+                severity="medium",
+                blocker=False,
+                detected_from="operation_logs",
+                required_capability="ci_runtime:container_logs",
+                observed_request={"run_id": run_id},
+                suggested_fix=(
+                    "Ensure CI shards persist stdout/stderr, Docker container "
+                    "logs, and debug bundles for failed runs."
+                ),
+                metadata={},
+                run_id=run_id,
+            )
+        run_status = str(run.get("status") or "").strip().lower()
+        status = "active"
+        if run_status in {"failed", "promotion_blocked", "cancelled"}:
+            status = "failed"
+            first_message = next(
+                (
+                    str(entry.get("message") or "").strip()
+                    for entry in logs
+                    if str(entry.get("message") or "").strip()
+                ),
+                "",
+            )
+            await self._storage.record_operation_incident(
+                owner_id,
+                operation_id=operation_id,
+                service_kind="ci_runtime",
+                incident_type="ci_runtime_failed",
+                severity="high",
+                blocking=True,
+                root_cause_summary=first_message
+                or f"CI runtime failed with status `{run_status}`.",
+                recommended_fix=(
+                    "Inspect the CI/container logs and debug bundle, then rerun "
+                    "the failing shard after applying the fix."
+                ),
+                evidence_refs=[str(summary_evidence["evidence_id"])],
+                metadata={"run_id": run_id, "status": run_status},
+            )
+        elif run_status in {"ready_to_merge", "merged", "succeeded", "completed"}:
+            status = "succeeded"
+        return {
+            "summary": summary,
+            "status": status,
+            "lifecycle_stage": "ci_runtime",
+        }
+
+    async def _collect_service_operation_evidence(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        app_id: str,
+        app_profile: dict[str, Any],
+        operation_id: str,
+        service_kind: str,
+        refs: dict[str, str],
+        request_context: dict[str, Any],
+        public_base_url: str,
+    ) -> dict[str, Any]:
+        if service_kind == "github":
+            return await self._collect_github_operation_evidence(
+                owner_id=owner_id,
+                principal_id=principal_id,
+                app_id=app_id,
+                app_profile=app_profile,
+                operation_id=operation_id,
+                refs=refs,
+                request_context=request_context,
+            )
+        if service_kind == "vercel":
+            return await self._collect_vercel_operation_evidence(
+                owner_id=owner_id,
+                principal_id=principal_id,
+                app_id=app_id,
+                app_profile=app_profile,
+                operation_id=operation_id,
+                refs=refs,
+                request_context=request_context,
+            )
+        if service_kind == "clerk":
+            return await self._collect_clerk_operation_evidence(
+                owner_id=owner_id,
+                principal_id=principal_id,
+                app_id=app_id,
+                app_profile=app_profile,
+                operation_id=operation_id,
+                refs=refs,
+                request_context=request_context,
+            )
+        if service_kind == "stripe":
+            return await self._collect_stripe_operation_evidence(
+                owner_id=owner_id,
+                principal_id=principal_id,
+                app_id=app_id,
+                app_profile=app_profile,
+                operation_id=operation_id,
+                refs=refs,
+                request_context=request_context,
+            )
+        await self._record_gap(
+            owner_id=owner_id,
+            principal_id=principal_id,
+            session_id=_normalize_session_id(request_context.get("session_id")),
+            app_id=app_id,
+            repo_id=str(((app_profile.get("profile") or {}).get("repo_ids") or [None])[0] or ""),
+            gap_type="unsupported_service_action",
+            severity="medium",
+            blocker=False,
+            detected_from="operation_resolve",
+            required_capability=f"{service_kind}:adapter",
+            observed_request={"service_kind": service_kind},
+            suggested_fix=f"Implement the `{service_kind}` operation adapter.",
+            metadata={},
+            run_id=str(request_context.get("run_id") or "").strip() or None,
+        )
+        return {}
+
+    async def _collect_github_operation_evidence(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        app_id: str,
+        app_profile: dict[str, Any],
+        operation_id: str,
+        refs: dict[str, str],
+        request_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        connector = self._service_connector_for(app_profile, service_kind="github")
+        github_repo = str(
+            ((app_profile.get("profile") or {}).get("github_repos") or [None])[0] or ""
+        ).strip()
+        if not github_repo:
+            return {}
+        repo_owner, repo_name = _split_github_repo(github_repo)
+        client = GitHubClient(
+            token=str(
+                (
+                    await self._require_github_connector(
+                        owner_id,
+                        str(connector.get("connector_id") or _GITHUB_CONNECTOR_ID),
+                    )
+                )["secret_value"]
+            )
+        )
+        try:
+            repository = await client.get_repository(repo_owner, repo_name)
+            branch = refs.get("branch") or str(repository.default_branch or "").strip() or None
+            git_sha = refs.get("git_sha")
+            pr_number = int(refs["pr_number"]) if refs.get("pr_number", "").isdigit() else None
+            run_id = int(refs["github_run_id"]) if refs.get("github_run_id", "").isdigit() else None
+            pr: dict[str, Any] | None = None
+            if pr_number is not None:
+                pr = (await client.get_pull_request(repo_owner, repo_name, pr_number)).to_dict()
+                head_ref = ((pr.get("head") or {}) if isinstance(pr, dict) else {}).get("ref")
+                if head_ref and not branch:
+                    branch = str(head_ref)
+            workflow_run_payload: dict[str, Any] | None = None
+            workflow_runs = await client.list_workflow_runs(
+                repo_owner,
+                repo_name,
+                branch=branch,
+                per_page=20,
+                page=1,
+            )
+            if run_id is not None:
+                workflow_run_payload = await client.get_workflow_run(repo_owner, repo_name, run_id)
+            elif git_sha:
+                matched = next(
+                    (
+                        run
+                        for run in workflow_runs
+                        if str(run.head_sha or "").startswith(git_sha[:7])
+                    ),
+                    None,
+                )
+                if matched is not None:
+                    workflow_run_payload = await client.get_workflow_run(
+                        repo_owner,
+                        repo_name,
+                        int(matched.id),
+                    )
+            elif workflow_runs:
+                workflow_run_payload = await client.get_workflow_run(
+                    repo_owner,
+                    repo_name,
+                    int(workflow_runs[0].id),
+                )
+            jobs: list[dict[str, Any]] = []
+            logs_payload: dict[str, Any] = {}
+            artifacts: list[dict[str, Any]] = []
+            if workflow_run_payload is not None:
+                run_id = int(workflow_run_payload.get("id") or 0)
+                jobs = await client.list_workflow_jobs(repo_owner, repo_name, run_id, per_page=100)
+                artifacts = await client.list_workflow_run_artifacts(
+                    repo_owner,
+                    repo_name,
+                    run_id,
+                    per_page=100,
+                )
+                try:
+                    logs_payload = await client.download_workflow_run_logs(
+                        repo_owner,
+                        repo_name,
+                        run_id,
+                    )
+                except GitHubAPIError as exc:
+                    await self._record_gap(
+                        owner_id=owner_id,
+                        principal_id=principal_id,
+                        session_id=_normalize_session_id(request_context.get("session_id")),
+                        app_id=app_id,
+                        repo_id=str(
+                            ((app_profile.get("profile") or {}).get("repo_ids") or [None])[0] or ""
+                        ),
+                        gap_type="missing_tooling",
+                        severity="medium",
+                        blocker=False,
+                        detected_from="operation_logs",
+                        required_capability="github:logs",
+                        observed_request={"github_run_id": run_id},
+                        suggested_fix=(
+                            "Grant GitHub log download access or extend the "
+                            "adapter to decode workflow logs."
+                        ),
+                        metadata={"error": str(exc)},
+                        run_id=str(request_context.get("run_id") or "").strip() or None,
+                    )
+            if workflow_run_payload is not None:
+                await self._storage.upsert_operation_ref(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="github",
+                    ref_kind="github_run_id",
+                    ref_value=str(workflow_run_payload.get("id") or ""),
+                    metadata={"source": "github"},
+                )
+            if branch:
+                await self._storage.upsert_operation_ref(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="github",
+                    ref_kind="branch",
+                    ref_value=branch,
+                    metadata={"source": "github"},
+                )
+            if git_sha:
+                await self._storage.upsert_operation_ref(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="github",
+                    ref_kind="git_sha",
+                    ref_value=git_sha,
+                    metadata={"source": "github"},
+                )
+            if pr_number is not None:
+                await self._storage.upsert_operation_ref(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="github",
+                    ref_kind="pr_number",
+                    ref_value=str(pr_number),
+                    metadata={"source": "github"},
+                )
+            summary = {
+                "repository": repository.to_dict(),
+                "pull_request": pr,
+                "workflow_run": workflow_run_payload,
+                "job_count": len(jobs),
+                "artifact_count": len(artifacts),
+            }
+            summary_evidence = await self._storage.record_operation_evidence(
+                owner_id,
+                operation_id=operation_id,
+                service_kind="github",
+                evidence_type="summary",
+                title="GitHub workflow summary",
+                payload=summary,
+                metadata={"service_kind": "github"},
+            )
+            await self._storage.record_operation_evidence(
+                owner_id,
+                operation_id=operation_id,
+                service_kind="github",
+                evidence_type="events",
+                title="GitHub workflow jobs",
+                payload={"jobs": jobs},
+                metadata={"service_kind": "github"},
+            )
+            if artifacts:
+                await self._storage.record_operation_evidence(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="github",
+                    evidence_type="artifacts",
+                    title="GitHub workflow artifacts",
+                    payload={"artifacts": artifacts},
+                    metadata={"service_kind": "github"},
+                )
+            if logs_payload.get("combined_text"):
+                await self._storage.record_operation_evidence(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="github",
+                    evidence_type="logs",
+                    title="GitHub workflow logs",
+                    payload={"entries": logs_payload.get("entries", []), "stream": "github"},
+                    log_text=str(logs_payload.get("combined_text") or ""),
+                    metadata={
+                        "service_kind": "github",
+                        "truncated": bool(logs_payload.get("truncated")),
+                    },
+                )
+            status = "active"
+            lifecycle_stage = "github"
+            if workflow_run_payload is not None:
+                conclusion = str(workflow_run_payload.get("conclusion") or "").strip().lower()
+                run_status = str(workflow_run_payload.get("status") or "").strip().lower()
+                if conclusion in {"failure", "cancelled", "timed_out", "action_required"}:
+                    status = "failed"
+                    failed_jobs = [
+                        job
+                        for job in jobs
+                        if str(job.get("conclusion") or "").strip().lower()
+                        in {"failure", "cancelled", "timed_out"}
+                    ]
+                    root_cause = (
+                        "GitHub Actions run "
+                        f"{workflow_run_payload.get('name') or workflow_run_payload.get('id')} "
+                        "failed."
+                    )
+                    if failed_jobs:
+                        first_job = failed_jobs[0]
+                        root_cause += (
+                            f" First failing job: {first_job.get('name') or first_job.get('id')}."
+                        )
+                    await self._storage.record_operation_incident(
+                        owner_id,
+                        operation_id=operation_id,
+                        service_kind="github",
+                        incident_type="workflow_failed",
+                        severity="high",
+                        blocking=True,
+                        root_cause_summary=root_cause,
+                        recommended_fix=(
+                            "Inspect the failing GitHub job and rerun after " "applying the fix."
+                        ),
+                        evidence_refs=[str(summary_evidence["evidence_id"])],
+                        metadata={"workflow_run": workflow_run_payload, "jobs": failed_jobs[:5]},
+                    )
+                elif run_status == "completed":
+                    status = "succeeded"
+            return {
+                "summary": summary,
+                "status": status,
+                "lifecycle_stage": lifecycle_stage,
+            }
+        finally:
+            await client.close()
+
+    async def _collect_vercel_operation_evidence(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        app_id: str,
+        app_profile: dict[str, Any],
+        operation_id: str,
+        refs: dict[str, str],
+        request_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        connector_ref = self._service_connector_for(app_profile, service_kind="vercel")
+        connector = await self._require_connector(
+            owner_id,
+            connector_id=str(connector_ref.get("connector_id") or _VERCEL_CONNECTOR_ID),
+            service_kind="vercel",
+        )
+        metadata = dict(connector.get("metadata") or {})
+        team_id = (
+            str(request_context.get("team_id") or metadata.get("team_id") or "").strip() or None
+        )
+        project_ref = (
+            str(request_context.get("project_ref") or "").strip()
+            or str(metadata.get("project_name") or "").strip()
+            or str(metadata.get("project_id") or "").strip()
+            or str(app_id)
+        )
+        client = VercelClient(token=str(connector["secret_value"]))
+        try:
+            project = await client.get_project(project_ref, team_id=team_id)
+            deployment_id = refs.get("vercel_deployment_id")
+            deployment: dict[str, Any] | None = None
+            deployments = await client.list_deployments(
+                project_id=str(project.get("id") or "").strip() or None,
+                project_name=str(project.get("name") or project_ref),
+                team_id=team_id,
+                limit=20,
+            )
+            if deployment_id:
+                deployment = await client.get_deployment(deployment_id, team_id=team_id)
+            else:
+                git_sha = refs.get("git_sha")
+                branch = refs.get("branch")
+                for candidate in deployments:
+                    meta = dict(candidate.get("meta") or {})
+                    candidate_sha = str(
+                        meta.get("githubCommitSha")
+                        or meta.get("githubCommitRefSha")
+                        or meta.get("gitCommitSha")
+                        or ""
+                    ).strip()
+                    candidate_branch = str(
+                        meta.get("githubCommitRef")
+                        or meta.get("gitCommitRef")
+                        or candidate.get("target")
+                        or ""
+                    ).strip()
+                    if git_sha and candidate_sha and candidate_sha.startswith(git_sha[:7]):
+                        deployment = candidate
+                        break
+                    if branch and candidate_branch == branch:
+                        deployment = candidate
+                        break
+                if deployment is None and deployments:
+                    deployment = deployments[0]
+            domains = await client.list_domains(
+                str(project.get("name") or project_ref), team_id=team_id
+            )
+            events: list[dict[str, Any]] = []
+            log_text = ""
+            if deployment and deployment.get("uid"):
+                try:
+                    events = await client.get_deployment_events(
+                        str(deployment.get("uid") or ""),
+                        team_id=team_id,
+                        limit=100,
+                    )
+                    lines: list[str] = []
+                    for event in events:
+                        rendered = (
+                            str(event.get("text") or "").strip()
+                            or str((event.get("payload") or {}).get("text") or "").strip()
+                            or str(event.get("name") or "").strip()
+                        )
+                        if rendered:
+                            lines.append(rendered)
+                    log_text = "\n".join(lines[:200])
+                except VercelAPIError as exc:
+                    await self._record_gap(
+                        owner_id=owner_id,
+                        principal_id=principal_id,
+                        session_id=_normalize_session_id(request_context.get("session_id")),
+                        app_id=app_id,
+                        repo_id=str(
+                            ((app_profile.get("profile") or {}).get("repo_ids") or [None])[0] or ""
+                        ),
+                        gap_type="missing_tooling",
+                        severity="medium",
+                        blocker=False,
+                        detected_from="operation_logs",
+                        required_capability="vercel:logs",
+                        observed_request={"vercel_deployment_id": deployment.get("uid")},
+                        suggested_fix=(
+                            "Extend the Vercel adapter to load deployment "
+                            "event logs for this project."
+                        ),
+                        metadata={"error": str(exc)},
+                        run_id=str(request_context.get("run_id") or "").strip() or None,
+                    )
+            if deployment and deployment.get("uid"):
+                await self._storage.upsert_operation_ref(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="vercel",
+                    ref_kind="vercel_deployment_id",
+                    ref_value=str(deployment.get("uid") or ""),
+                    metadata={"source": "vercel"},
+                )
+            summary = {
+                "project": _pick_fields(
+                    project,
+                    ["id", "name", "framework", "updatedAt", "latestDeployments", "link"],
+                ),
+                "deployment": deployment,
+                "domains": domains,
+            }
+            summary_evidence = await self._storage.record_operation_evidence(
+                owner_id,
+                operation_id=operation_id,
+                service_kind="vercel",
+                evidence_type="summary",
+                title="Vercel deployment summary",
+                payload=summary,
+                metadata={"service_kind": "vercel"},
+            )
+            if events:
+                await self._storage.record_operation_evidence(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="vercel",
+                    evidence_type="events",
+                    title="Vercel deployment events",
+                    payload={"events": events},
+                    metadata={"service_kind": "vercel"},
+                )
+            if log_text:
+                await self._storage.record_operation_evidence(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="vercel",
+                    evidence_type="logs",
+                    title="Vercel deployment logs",
+                    payload={"stream": "vercel", "events": events[:20]},
+                    log_text=log_text,
+                    metadata={"service_kind": "vercel"},
+                )
+            status = "active"
+            state_value = (
+                str((deployment or {}).get("readyState") or (deployment or {}).get("state") or "")
+                .strip()
+                .lower()
+            )
+            if state_value in {"error", "failed", "canceled"}:
+                status = "failed"
+                await self._storage.record_operation_incident(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="vercel",
+                    incident_type="deployment_failed",
+                    severity="high",
+                    blocking=True,
+                    root_cause_summary=f"Vercel deployment failed with state `{state_value}`.",
+                    recommended_fix="Inspect the deployment logs and failing build step in Vercel.",
+                    evidence_refs=[str(summary_evidence["evidence_id"])],
+                    metadata={"deployment": deployment},
+                )
+            elif state_value in {"ready", "succeeded"}:
+                status = "succeeded"
+            return {
+                "summary": summary,
+                "status": status,
+                "lifecycle_stage": "vercel",
+            }
+        finally:
+            await client.close()
+
+    async def _collect_clerk_operation_evidence(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        app_id: str,
+        app_profile: dict[str, Any],
+        operation_id: str,
+        refs: dict[str, str],
+        request_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        connector_ref = self._service_connector_for(app_profile, service_kind="clerk")
+        connector = await self._require_connector(
+            owner_id,
+            connector_id=str(connector_ref.get("connector_id") or _CLERK_CONNECTOR_ID),
+            service_kind="clerk",
+            require_secret=False,
+        )
+        metadata = dict(connector.get("metadata") or {})
+        issuer = refs.get("issuer") or str(metadata.get("issuer") or "").strip() or None
+        jwks_url = refs.get("jwks_url") or _derive_clerk_jwks_url(metadata)
+        instance_summary = {
+            "issuer": issuer,
+            "jwks_url": jwks_url,
+            "frontend_api_url": str(metadata.get("frontend_api_url") or "").strip() or None,
+            "instance_name": str(metadata.get("instance_name") or "").strip() or None,
+        }
+        client = ClerkMetadataClient()
+        try:
+            payload: dict[str, Any] = {"instance": instance_summary}
+            if issuer:
+                with contextlib.suppress(ClerkMetadataError):
+                    payload["openid_configuration"] = await client.get_openid_configuration(issuer)
+            if jwks_url:
+                with contextlib.suppress(ClerkMetadataError):
+                    payload["jwks"] = await client.get_jwks(jwks_url)
+            app_diagnostics: list[dict[str, Any]] = []
+            run_id = str(request_context.get("run_id") or refs.get("run_id") or "").strip()
+            if run_id:
+                app_diagnostics.extend(
+                    await self._storage.get_run_log_chunks(
+                        owner_id,
+                        run_id,
+                        query_text="clerk",
+                        limit=50,
+                    )
+                )
+                app_diagnostics.extend(
+                    await self._storage.get_run_log_chunks(
+                        owner_id,
+                        run_id,
+                        query_text="auth",
+                        limit=50,
+                    )
+                )
+            if not app_diagnostics:
+                await self._record_gap(
+                    owner_id=owner_id,
+                    principal_id=principal_id,
+                    session_id=_normalize_session_id(request_context.get("session_id")),
+                    app_id=app_id,
+                    repo_id=str(
+                        ((app_profile.get("profile") or {}).get("repo_ids") or [None])[0] or ""
+                    ),
+                    gap_type="missing_docs",
+                    severity="medium",
+                    blocker=False,
+                    detected_from="operation_resolve",
+                    required_capability="clerk:app_diagnostics",
+                    observed_request={"run_id": run_id or None},
+                    suggested_fix=(
+                        "Attach a CI run id or add dedicated Clerk auth "
+                        "diagnostics to the app knowledge pack."
+                    ),
+                    metadata={},
+                    run_id=run_id or None,
+                )
+            summary = {**payload, "app_diagnostics": app_diagnostics[:20]}
+            summary_evidence = await self._storage.record_operation_evidence(
+                owner_id,
+                operation_id=operation_id,
+                service_kind="clerk",
+                evidence_type="summary",
+                title="Clerk auth summary",
+                payload=summary,
+                metadata={"service_kind": "clerk"},
+            )
+            if app_diagnostics:
+                diagnostic_text = "\n".join(
+                    str(entry.get("message") or "") for entry in app_diagnostics[:50]
+                )
+                await self._storage.record_operation_evidence(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="clerk",
+                    evidence_type="logs",
+                    title="Application auth diagnostics",
+                    payload={"stream": "app", "entries": app_diagnostics[:20]},
+                    log_text=diagnostic_text,
+                    metadata={"service_kind": "clerk"},
+                )
+            status = (
+                "succeeded"
+                if payload.get("openid_configuration") or payload.get("jwks")
+                else "active"
+            )
+            if run_id and any(
+                "error" in str(entry.get("message") or "").lower() for entry in app_diagnostics
+            ):
+                status = "failed"
+                await self._storage.record_operation_incident(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="clerk",
+                    incident_type="auth_failed",
+                    severity="high",
+                    blocking=True,
+                    root_cause_summary=(
+                        "Application auth diagnostics indicate a Clerk-related " "failure."
+                    ),
+                    recommended_fix=(
+                        "Inspect the auth logs and Clerk issuer/JWKS "
+                        "configuration for the failing app."
+                    ),
+                    evidence_refs=[str(summary_evidence["evidence_id"])],
+                    metadata={"run_id": run_id},
+                )
+            return {
+                "summary": summary,
+                "status": status,
+                "lifecycle_stage": "clerk",
+            }
+        finally:
+            await client.close()
+
+    async def _collect_stripe_operation_evidence(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        app_id: str,
+        app_profile: dict[str, Any],
+        operation_id: str,
+        refs: dict[str, str],
+        request_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        connector_ref = self._service_connector_for(app_profile, service_kind="stripe")
+        connector = await self._require_connector(
+            owner_id,
+            connector_id=str(connector_ref.get("connector_id") or _STRIPE_CONNECTOR_ID),
+            service_kind="stripe",
+        )
+        client = StripeClient(token=str(connector["secret_value"]))
+        try:
+            account = await client.get_account()
+            event_id = refs.get("stripe_event_id")
+            customer_id = refs.get("customer_id")
+            subscription_id = refs.get("subscription_id")
+            event = await client.get_event(event_id) if event_id else None
+            customer = await client.get_customer(customer_id) if customer_id else None
+            subscription = (
+                await client.get_subscription(subscription_id) if subscription_id else None
+            )
+            if event_id:
+                await self._storage.upsert_operation_ref(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="stripe",
+                    ref_kind="stripe_event_id",
+                    ref_value=event_id,
+                    metadata={"source": "stripe"},
+                )
+            summary = {
+                "account": account,
+                "event": event,
+                "customer": customer,
+                "subscription": subscription,
+            }
+            summary_evidence = await self._storage.record_operation_evidence(
+                owner_id,
+                operation_id=operation_id,
+                service_kind="stripe",
+                evidence_type="summary",
+                title="Stripe billing summary",
+                payload=summary,
+                metadata={"service_kind": "stripe"},
+            )
+            event_lines = []
+            if isinstance(event, dict):
+                event_lines.append(str(event.get("type") or "stripe.event"))
+                event_lines.append(
+                    str(((event.get("data") or {}).get("object") or {}).get("id") or "")
+                )
+            if event_lines:
+                await self._storage.record_operation_evidence(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="stripe",
+                    evidence_type="events",
+                    title="Stripe event details",
+                    payload={"event": event},
+                    log_text="\n".join(line for line in event_lines if line),
+                    metadata={"service_kind": "stripe"},
+                )
+            status = "active"
+            if isinstance(event, dict) and int(event.get("pending_webhooks") or 0) > 0:
+                status = "failed"
+                await self._storage.record_operation_incident(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="stripe",
+                    incident_type="webhook_pending",
+                    severity="medium",
+                    blocking=False,
+                    root_cause_summary="Stripe event still has pending webhook deliveries.",
+                    recommended_fix=(
+                        "Inspect the webhook destination and replay the event "
+                        "after fixing the receiver."
+                    ),
+                    evidence_refs=[str(summary_evidence["evidence_id"])],
+                    metadata={"event_id": event.get("id")},
+                )
+            elif event or customer or subscription:
+                status = "succeeded"
+            else:
+                await self._record_gap(
+                    owner_id=owner_id,
+                    principal_id=principal_id,
+                    session_id=_normalize_session_id(request_context.get("session_id")),
+                    app_id=app_id,
+                    repo_id=str(
+                        ((app_profile.get("profile") or {}).get("repo_ids") or [None])[0] or ""
+                    ),
+                    gap_type="missing_connector",
+                    severity="medium",
+                    blocker=False,
+                    detected_from="operation_resolve",
+                    required_capability="stripe:event_or_object_ref",
+                    observed_request={"refs": refs},
+                    suggested_fix=(
+                        "Provide a Stripe event, customer, or subscription "
+                        "reference to collect billing evidence."
+                    ),
+                    metadata={},
+                    run_id=str(request_context.get("run_id") or "").strip() or None,
+                )
+            return {
+                "summary": summary,
+                "status": status,
+                "lifecycle_stage": "stripe",
+            }
+        finally:
+            await client.close()
+
     async def _detect_test_plan_gaps(
         self,
         *,
@@ -2294,6 +4356,7 @@ class AgentBootstrapSkill(Skill):
                 )
                 if base_url
                 else f"/service/ai/v1/agent/apps/{repo_id}/publish-candidates",
+                "operations": _operation_routes(base_url=base_url, app_id=repo_id),
                 "services": _service_routes_for(repo_id, base_url=base_url)["catalog"],
                 "service_read": _service_routes_for(repo_id, base_url=base_url)["service"],
             },
@@ -2335,8 +4398,10 @@ class AgentBootstrapSkill(Skill):
             },
             "command_catalog": _default_command_catalog(repo),
             "observability_contract": {
-                "logs": "/service/ai/v1/agent/runs/:runId/logs",
-                "resources": "/service/ai/v1/agent/runs/:runId/resources",
+                "preferred_debugging_path": "resolve -> operation -> evidence",
+                "operation_routes": _operation_routes(base_url="", app_id=repo_id),
+                "run_logs": "/service/ai/v1/agent/runs/:runId/logs",
+                "run_resources": "/service/ai/v1/agent/runs/:runId/resources",
                 "admin_dashboard": "/admin/ai",
                 "owner_dashboard": "/dashboard/ai",
             },
@@ -3827,6 +5892,25 @@ class AgentBootstrapSkill(Skill):
                 f"zetherion/{_safe_branch_suffix(str(candidate['app_id']))}/"
                 f"{_safe_branch_suffix(candidate_id[:12])}"
             )
+        operation = await self._storage.find_managed_operation_by_ref(
+            owner_id,
+            ref_kind="publish_candidate_id",
+            ref_value=candidate_id,
+            app_id=str(candidate["app_id"]),
+        )
+        if operation is None:
+            operation = await self._find_or_create_operation(
+                owner_id=owner_id,
+                app_id=str(candidate["app_id"]),
+                repo_id=str(candidate["repo_id"]),
+                refs={
+                    "publish_candidate_id": candidate_id,
+                    "git_sha": str(candidate["base_sha"]),
+                    "branch": branch_name,
+                },
+                request_context={"operation_kind": "publish_candidate"},
+            )
+        operation_id = str(operation["operation_id"])
         review: dict[str, Any] = {
             "status": "applying",
             "started_at": datetime.now(UTC).isoformat(),
@@ -3838,6 +5922,30 @@ class AgentBootstrapSkill(Skill):
             candidate_id=candidate_id,
             status="applying",
             review=review,
+        )
+        await self._storage.update_managed_operation(
+            owner_id,
+            operation_id=operation_id,
+            lifecycle_stage="github_apply",
+            status="active",
+            summary={
+                **dict(operation.get("summary") or {}),
+                "publish_candidate_id": candidate_id,
+                "branch": branch_name,
+                "base_branch": base_branch,
+            },
+            metadata={
+                **dict(operation.get("metadata") or {}),
+                "candidate_id": candidate_id,
+            },
+        )
+        await self._storage.upsert_operation_ref(
+            owner_id,
+            operation_id=operation_id,
+            service_kind="github",
+            ref_kind="branch",
+            ref_value=branch_name,
+            metadata={"source": "publish_candidate_apply"},
         )
 
         temp_dir = tempfile.TemporaryDirectory(prefix="zetherion-publish-")
@@ -3910,6 +6018,46 @@ class AgentBootstrapSkill(Skill):
             validation = await self._run_fast_validation_lanes(repo=repo, workspace=workspace)
             review["validation"] = validation
             if validation.get("status") == "failed":
+                validation_evidence = await self._storage.record_operation_evidence(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="github",
+                    evidence_type="summary",
+                    title="Publish candidate validation failure",
+                    payload={"validation": validation, "candidate_id": candidate_id},
+                    metadata={"stage": "fast_validation"},
+                )
+                await self._storage.record_operation_incident(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="github",
+                    incident_type="publish_candidate_validation_failed",
+                    severity="high",
+                    blocking=True,
+                    root_cause_summary=(
+                        "Fast validation failed before the candidate could be " "pushed."
+                    ),
+                    recommended_fix=(
+                        "Review the validation receipts and fix the failing "
+                        "fast gates before retrying."
+                    ),
+                    evidence_refs=[str(validation_evidence["evidence_id"])],
+                    metadata={"validation": validation},
+                )
+                await self._storage.update_managed_operation(
+                    owner_id,
+                    operation_id=operation_id,
+                    lifecycle_stage="validation_failed",
+                    status="failed",
+                    summary={
+                        **dict(operation.get("summary") or {}),
+                        "validation": validation,
+                    },
+                    metadata={
+                        **dict(operation.get("metadata") or {}),
+                        "candidate_id": candidate_id,
+                    },
+                )
                 review["status"] = "failed_validation"
                 review["completed_at"] = datetime.now(UTC).isoformat()
                 await self._storage.update_publish_candidate_review(
@@ -3945,6 +6093,11 @@ class AgentBootstrapSkill(Skill):
                 ["git", "-C", str(workspace), "commit", "-m", commit_message],
                 env=git_env,
             )
+            head_sha_result = await self._run_command(
+                ["git", "-C", str(workspace), "rev-parse", "HEAD"],
+                env=git_env,
+            )
+            head_sha = str(head_sha_result.get("stdout") or "").strip() or None
             await self._run_command(
                 [
                     "git",
@@ -3982,6 +6135,59 @@ class AgentBootstrapSkill(Skill):
                     "pr": pr.to_dict(),
                 }
             )
+            pr_number = str(pr.to_dict().get("number") or "").strip() or None
+            if pr_number:
+                await self._storage.upsert_operation_ref(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="github",
+                    ref_kind="pr_number",
+                    ref_value=pr_number,
+                    metadata={"source": "publish_candidate_apply"},
+                )
+            if head_sha:
+                await self._storage.upsert_operation_ref(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="github",
+                    ref_kind="git_sha",
+                    ref_value=head_sha,
+                    metadata={"source": "publish_candidate_apply"},
+                )
+            apply_evidence = await self._storage.record_operation_evidence(
+                owner_id,
+                operation_id=operation_id,
+                service_kind="github",
+                evidence_type="summary",
+                title="Publish candidate applied to GitHub",
+                payload={
+                    "candidate_id": candidate_id,
+                    "branch": branch_name,
+                    "base_branch": base_branch,
+                    "validation": validation,
+                    "pull_request": pr.to_dict(),
+                    "head_sha": head_sha,
+                },
+                metadata={"stage": "github_pr_open"},
+            )
+            await self._storage.update_managed_operation(
+                owner_id,
+                operation_id=operation_id,
+                lifecycle_stage="github_pr_open",
+                status="succeeded",
+                summary={
+                    **dict(operation.get("summary") or {}),
+                    "validation": validation,
+                    "branch": branch_name,
+                    "pull_request": pr.to_dict(),
+                    "head_sha": head_sha,
+                },
+                metadata={
+                    **dict(operation.get("metadata") or {}),
+                    "latest_evidence_id": str(apply_evidence["evidence_id"]),
+                    "candidate_id": candidate_id,
+                },
+            )
             updated_candidate = await self._storage.update_publish_candidate_review(
                 owner_id,
                 candidate_id=candidate_id,
@@ -4007,6 +6213,45 @@ class AgentBootstrapSkill(Skill):
                 "pull_request": pr.to_dict(),
             }
         except Exception as exc:
+            failure_evidence = await self._storage.record_operation_evidence(
+                owner_id,
+                operation_id=operation_id,
+                service_kind="github",
+                evidence_type="summary",
+                title="Publish candidate apply failure",
+                payload={"candidate_id": candidate_id, "error": str(exc)},
+                metadata={"stage": "apply_failed"},
+            )
+            await self._storage.record_operation_incident(
+                owner_id,
+                operation_id=operation_id,
+                service_kind="github",
+                incident_type="publish_candidate_apply_failed",
+                severity="high",
+                blocking=True,
+                root_cause_summary=f"Applying the publish candidate to GitHub failed: {exc}",
+                recommended_fix=(
+                    "Inspect the apply error and retry after fixing the "
+                    "controlled workspace or GitHub write step."
+                ),
+                evidence_refs=[str(failure_evidence["evidence_id"])],
+                metadata={"candidate_id": candidate_id},
+            )
+            await self._storage.update_managed_operation(
+                owner_id,
+                operation_id=operation_id,
+                lifecycle_stage="apply_failed",
+                status="failed",
+                summary={
+                    **dict(operation.get("summary") or {}),
+                    "error": str(exc),
+                    "branch": branch_name,
+                },
+                metadata={
+                    **dict(operation.get("metadata") or {}),
+                    "candidate_id": candidate_id,
+                },
+            )
             review.update(
                 {
                     "status": "failed",

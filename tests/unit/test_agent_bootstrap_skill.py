@@ -6,6 +6,7 @@ import base64
 import io
 import tarfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -29,9 +30,11 @@ def _storage() -> MagicMock:
     )
     storage.list_agent_app_profiles = AsyncMock(return_value=[])
     storage.get_agent_app_profile = AsyncMock(return_value=None)
+    storage.find_agent_app_profile = AsyncMock(return_value=None)
     storage.upsert_agent_app_profile = AsyncMock()
     storage.get_agent_knowledge_pack = AsyncMock(return_value=None)
     storage.upsert_agent_knowledge_pack = AsyncMock()
+    storage.upsert_service_adapter_capability = AsyncMock()
     storage.list_external_access_grants = AsyncMock(return_value=[])
     storage.record_agent_audit_event = AsyncMock(return_value={"audit_id": "audit-1"})
     storage.get_repo_profile = AsyncMock()
@@ -61,10 +64,37 @@ def _storage() -> MagicMock:
     )
     storage.list_secret_refs = AsyncMock(return_value=[])
     storage.list_agent_session_interactions = AsyncMock(return_value=[])
+    storage.find_managed_operation_by_ref = AsyncMock(return_value=None)
+    storage.create_managed_operation = AsyncMock(
+        return_value={
+            "operation_id": "op-1",
+            "app_id": "catalyst-group-solutions",
+            "repo_id": "catalyst-group-solutions",
+            "summary": {},
+            "metadata": {},
+        }
+    )
+    storage.update_managed_operation = AsyncMock()
+    storage.upsert_operation_ref = AsyncMock()
+    storage.get_operation_hydrated = AsyncMock(
+        return_value={"operation_id": "op-1", "refs": [], "incidents": [], "evidence": []}
+    )
+    storage.get_managed_operation = AsyncMock(return_value=None)
+    storage.list_managed_operations = AsyncMock(return_value=[])
+    storage.list_operation_evidence = AsyncMock(return_value=[])
+    storage.get_operation_log_chunks = AsyncMock(return_value=[])
+    storage.list_operation_incidents = AsyncMock(return_value=[])
+    storage.list_operation_refs = AsyncMock(return_value=[])
+    storage.record_operation_evidence = AsyncMock(return_value={"evidence_id": "evidence-1"})
+    storage.record_operation_incident = AsyncMock(return_value={"incident_id": "incident-1"})
+    storage.get_run = AsyncMock(return_value=None)
+    storage.get_run_events = AsyncMock(return_value=[])
+    storage.get_run_log_chunks = AsyncMock(return_value=[])
+    storage.get_run_debug_bundle = AsyncMock(return_value=None)
     return storage
 
 
-def _app_profile(app_id: str = "catalyst-group-solutions") -> dict[str, object]:
+def _app_profile(app_id: str = "catalyst-group-solutions") -> dict[str, Any]:
     return {
         "app_id": app_id,
         "profile": {
@@ -273,6 +303,96 @@ async def test_publish_candidate_submit_stores_diff_without_github_write_access(
     candidate_payload = storage.create_publish_candidate.await_args.kwargs["candidate"]
     assert candidate_payload["candidate_type"] == "text/x-diff"
     assert candidate_payload["github_governance"]["agent_push_enabled"] is False
+    assert response.data["operation"]["operation_id"] == "op-1"
+
+
+@pytest.mark.asyncio
+async def test_operation_resolve_creates_and_refreshes_operation() -> None:
+    storage = _storage()
+    storage.get_agent_app_profile.return_value = _app_profile()
+    storage.list_agent_app_profiles.return_value = [_app_profile()]
+    storage.list_external_access_grants.return_value = [
+        {
+            "resource_type": "app",
+            "resource_id": "catalyst-group-solutions",
+            "active": True,
+        }
+    ]
+    storage.get_operation_hydrated.return_value = {
+        "operation_id": "op-1",
+        "app_id": "catalyst-group-solutions",
+        "repo_id": "catalyst-group-solutions",
+        "refs": [{"ref_kind": "git_sha", "ref_value": "abc1234"}],
+    }
+    skill = AgentBootstrapSkill(storage=storage)
+    skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+    skill._refresh_operation = AsyncMock()  # type: ignore[method-assign]
+
+    response = await skill.handle(
+        SkillRequest(
+            intent="agent_operation_resolve",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "codex-1",
+                "app_id": "catalyst-group-solutions",
+                "git_sha": "abc1234",
+            },
+        )
+    )
+
+    assert response.success is True
+    assert response.data["operation"]["operation_id"] == "op-1"
+    skill._refresh_operation.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_operation_event_ingest_records_provider_event_and_refreshes() -> None:
+    storage = _storage()
+    storage.get_agent_app_profile.return_value = _app_profile()
+    storage.list_agent_app_profiles.return_value = [_app_profile()]
+    storage.get_operation_hydrated.return_value = {
+        "operation_id": "op-1",
+        "app_id": "catalyst-group-solutions",
+        "repo_id": "catalyst-group-solutions",
+        "refs": [{"ref_kind": "github_run_id", "ref_value": "12345"}],
+        "evidence": [{"evidence_id": "evidence-1"}],
+        "incidents": [],
+    }
+    skill = AgentBootstrapSkill(storage=storage)
+    skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+    skill._refresh_operation = AsyncMock()  # type: ignore[method-assign]
+
+    response = await skill.handle(
+        SkillRequest(
+            intent="agent_operation_event_ingest",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "system:webhook:github",
+                "app_id": "catalyst-group-solutions",
+                "service_kind": "github",
+                "event_type": "workflow_run",
+                "delivery_id": "delivery-1",
+                "event_payload": {
+                    "workflow_run": {
+                        "id": 12345,
+                        "head_sha": "abc1234def5678",
+                        "head_branch": "main",
+                        "conclusion": "failure",
+                    }
+                },
+            },
+        )
+    )
+
+    assert response.success is True
+    assert response.data["operation"]["operation_id"] == "op-1"
+    storage.record_operation_evidence.assert_awaited()
+    storage.record_operation_incident.assert_awaited()
+    skill._refresh_operation.assert_awaited_once()
 
 
 @pytest.mark.asyncio
