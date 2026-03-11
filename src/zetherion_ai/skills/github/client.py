@@ -170,22 +170,52 @@ class GitHubClient:
             GitHubValidationError: Validation error.
             GitHubAPIError: Other API errors.
         """
-        client = await self._get_client()
+        response = await self._send(
+            method=method,
+            path=path,
+            params=params,
+            json=json,
+        )
 
+        # Handle empty responses
+        if response.status_code == 204:
+            return {}
+
+        try:
+            result: dict[str, Any] | list[dict[str, Any]] = response.json()
+            return result
+        except Exception:
+            return {}
+
+    async def _send(
+        self,
+        *,
+        method: str,
+        path: str,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        follow_redirects: bool = False,
+    ) -> httpx.Response:
+        client = await self._get_client()
         try:
             response = await client.request(
                 method=method,
                 url=path,
                 params=params,
                 json=json,
+                headers=headers,
+                follow_redirects=follow_redirects,
             )
         except httpx.RequestError as e:
             log.error("github_request_failed", path=path, error=str(e))
             raise GitHubAPIError(f"Request failed: {e}") from e
 
         self._update_rate_limit(response.headers)
+        self._raise_for_status(response)
+        return response
 
-        # Handle error responses
+    def _raise_for_status(self, response: httpx.Response) -> None:
         if response.status_code == 401:
             raise GitHubAuthError("Authentication failed", status_code=401)
 
@@ -222,16 +252,6 @@ class GitHubClient:
                 status_code=response.status_code,
                 response=error_data,
             )
-
-        # Handle empty responses
-        if response.status_code == 204:
-            return {}
-
-        try:
-            result: dict[str, Any] | list[dict[str, Any]] = response.json()
-            return result
-        except Exception:
-            return {}
 
     # ========== Authentication ==========
 
@@ -420,6 +440,92 @@ class GitHubClient:
         if isinstance(data, list):
             return [Repository.from_api(r) for r in data]
         return []
+
+    async def list_installation_repositories(
+        self,
+        per_page: int = DEFAULT_PER_PAGE,
+        page: int = 1,
+    ) -> list[Repository]:
+        """List repositories for a GitHub App installation token."""
+        data = await self._request(
+            "GET",
+            "/installation/repositories",
+            params={"per_page": per_page, "page": page},
+        )
+        if isinstance(data, dict):
+            repositories = data.get("repositories")
+            if isinstance(repositories, list):
+                return [Repository.from_api(r) for r in repositories if isinstance(r, dict)]
+        return []
+
+    async def get_repository_archive(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        ref: str | None = None,
+        archive_format: str = "tarball",
+    ) -> bytes:
+        """Download a repository archive for one ref."""
+        archive_kind = archive_format.strip().lower() or "tarball"
+        if archive_kind not in {"tarball", "zipball"}:
+            raise ValueError("archive_format must be `tarball` or `zipball`")
+        suffix = f"/{ref.strip()}" if ref and ref.strip() else ""
+        response = await self._send(
+            method="GET",
+            path=f"/repos/{owner}/{repo}/{archive_kind}{suffix}",
+            headers={"Accept": "application/vnd.github+json"},
+            follow_redirects=True,
+        )
+        return response.content
+
+    async def get_branch_protection(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        branch: str,
+    ) -> dict[str, Any] | None:
+        """Get branch protection when configured."""
+        branch_name = str(branch or "").strip()
+        if not branch_name:
+            raise ValueError("branch is required")
+        try:
+            data = await self._request(
+                "GET",
+                f"/repos/{owner}/{repo}/branches/{branch_name}/protection",
+            )
+        except GitHubNotFoundError:
+            return None
+        if isinstance(data, dict):
+            return data
+        raise GitHubAPIError("Unexpected response format")
+
+    async def update_branch_protection(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        branch: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Set branch protection for one branch."""
+        branch_name = str(branch or "").strip()
+        if not branch_name:
+            raise ValueError("branch is required")
+        data = await self._request(
+            "PUT",
+            f"/repos/{owner}/{repo}/branches/{branch_name}/protection",
+            json=payload,
+        )
+        if isinstance(data, dict):
+            log.info(
+                "branch_protection_updated",
+                repo=f"{owner}/{repo}",
+                branch=branch_name,
+            )
+            return data
+        raise GitHubAPIError("Unexpected response format")
 
     # ========== Issues ==========
 

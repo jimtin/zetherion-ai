@@ -333,6 +333,170 @@ CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_agent_setup_receipts (
     created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
     PRIMARY KEY (owner_id, receipt_id)
 );
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_agent_principals (
+    owner_id            TEXT         NOT NULL,
+    principal_id        TEXT         NOT NULL,
+    display_name_value  TEXT         NOT NULL,
+    principal_type      TEXT         NOT NULL DEFAULT 'codex',
+    allowed_scopes_json JSONB        NOT NULL DEFAULT '[]'::jsonb,
+    metadata_json       JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    active              BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, principal_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_agent_principals_owner_active
+    ON "{validated}".owner_ci_agent_principals (owner_id, active, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_external_service_connectors (
+    owner_id            TEXT         NOT NULL,
+    connector_id        TEXT         NOT NULL,
+    service_kind        TEXT         NOT NULL,
+    display_name_value  TEXT         NOT NULL,
+    auth_kind           TEXT         NOT NULL,
+    secret_value        TEXT,
+    policy_json         JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    metadata_json       JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    active              BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, connector_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_external_service_connectors_owner_service
+    ON "{validated}".owner_ci_external_service_connectors (
+        owner_id,
+        service_kind,
+        active,
+        updated_at DESC
+    );
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_external_access_grants (
+    owner_id            TEXT         NOT NULL,
+    principal_id        TEXT         NOT NULL,
+    grant_key           TEXT         NOT NULL,
+    resource_type       TEXT         NOT NULL,
+    resource_id         TEXT         NOT NULL,
+    capabilities_json   JSONB        NOT NULL DEFAULT '[]'::jsonb,
+    metadata_json       JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    active              BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, principal_id, grant_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_external_access_grants_owner_principal
+    ON "{validated}".owner_ci_external_access_grants (
+        owner_id,
+        principal_id,
+        active,
+        updated_at DESC
+    );
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_agent_app_profiles (
+    owner_id            TEXT         NOT NULL,
+    app_id              TEXT         NOT NULL,
+    display_name_value  TEXT         NOT NULL,
+    profile_json        JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    active              BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, app_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_agent_app_profiles_owner_active
+    ON "{validated}".owner_ci_agent_app_profiles (owner_id, active, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_agent_knowledge_packs (
+    owner_id            TEXT         NOT NULL,
+    app_id              TEXT         NOT NULL,
+    version_value       TEXT         NOT NULL,
+    pack_json           JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    current_version     BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, app_id, version_value)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_agent_knowledge_packs_owner_app
+    ON "{validated}".owner_ci_agent_knowledge_packs (
+        owner_id,
+        app_id,
+        current_version,
+        updated_at DESC
+    );
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_workspace_bundles (
+    owner_id            TEXT         NOT NULL,
+    bundle_id           TEXT         NOT NULL,
+    principal_id        TEXT         NOT NULL,
+    app_id              TEXT         NOT NULL,
+    repo_id             TEXT         NOT NULL,
+    git_ref             TEXT         NOT NULL,
+    resolved_ref        TEXT,
+    bundle_json         JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    expires_at          TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    downloaded_at       TIMESTAMPTZ,
+    PRIMARY KEY (owner_id, bundle_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_workspace_bundles_owner_app
+    ON "{validated}".owner_ci_workspace_bundles (owner_id, app_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_publish_candidates (
+    owner_id            TEXT         NOT NULL,
+    candidate_id        TEXT         NOT NULL,
+    principal_id        TEXT         NOT NULL,
+    app_id              TEXT         NOT NULL,
+    repo_id             TEXT         NOT NULL,
+    base_sha            TEXT         NOT NULL,
+    status              TEXT         NOT NULL DEFAULT 'submitted',
+    candidate_json      JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    review_json         JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, candidate_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_publish_candidates_owner_app
+    ON "{validated}".owner_ci_publish_candidates (owner_id, app_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_secret_refs (
+    owner_id            TEXT         NOT NULL,
+    secret_ref_id       TEXT         NOT NULL,
+    connector_id        TEXT,
+    purpose_value       TEXT         NOT NULL,
+    secret_value        TEXT,
+    metadata_json       JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    active              BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, secret_ref_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_secret_refs_owner_active
+    ON "{validated}".owner_ci_secret_refs (owner_id, active, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_agent_audit_events (
+    owner_id            TEXT         NOT NULL,
+    audit_id            TEXT         NOT NULL,
+    principal_id        TEXT,
+    app_id              TEXT,
+    service_kind        TEXT,
+    resource_value      TEXT,
+    action_value        TEXT         NOT NULL,
+    decision_value      TEXT         NOT NULL,
+    audit_json          JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, audit_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_agent_audit_events_owner_created
+    ON "{validated}".owner_ci_agent_audit_events (owner_id, created_at DESC);
 """
 
 
@@ -571,6 +735,133 @@ class OwnerCiStorage:
             "bundle": dict(row["bundle_json"] or {}),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        }
+
+    def _agent_principal_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "principal_id": str(row["principal_id"]),
+            "display_name": self._decrypt_text(str(row["display_name_value"])) or "",
+            "principal_type": str(row["principal_type"]),
+            "allowed_scopes": list(row["allowed_scopes_json"] or []),
+            "metadata": dict(row["metadata_json"] or {}),
+            "active": bool(row["active"]),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        }
+
+    def _external_connector_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        metadata = dict(row["metadata_json"] or {})
+        return {
+            "owner_id": str(row["owner_id"]),
+            "connector_id": str(row["connector_id"]),
+            "service_kind": str(row["service_kind"]),
+            "display_name": self._decrypt_text(str(row["display_name_value"])) or "",
+            "auth_kind": str(row["auth_kind"]),
+            "policy": dict(row["policy_json"] or {}),
+            "metadata": metadata,
+            "active": bool(row["active"]),
+            "has_secret": bool(row.get("secret_value")),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        }
+
+    def _external_access_grant_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "principal_id": str(row["principal_id"]),
+            "grant_key": str(row["grant_key"]),
+            "resource_type": str(row["resource_type"]),
+            "resource_id": str(row["resource_id"]),
+            "capabilities": list(row["capabilities_json"] or []),
+            "metadata": dict(row["metadata_json"] or {}),
+            "active": bool(row["active"]),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        }
+
+    def _agent_app_profile_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        profile = dict(row["profile_json"] or {})
+        return {
+            "owner_id": str(row["owner_id"]),
+            "app_id": str(row["app_id"]),
+            "display_name": self._decrypt_text(str(row["display_name_value"])) or "",
+            "profile": profile,
+            "active": bool(row["active"]),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        }
+
+    def _agent_knowledge_pack_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "app_id": str(row["app_id"]),
+            "version": str(row["version_value"]),
+            "pack": dict(row["pack_json"] or {}),
+            "current": bool(row["current_version"]),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        }
+
+    def _workspace_bundle_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        bundle = dict(row["bundle_json"] or {})
+        return {
+            "owner_id": str(row["owner_id"]),
+            "bundle_id": str(row["bundle_id"]),
+            "principal_id": str(row["principal_id"]),
+            "app_id": str(row["app_id"]),
+            "repo_id": str(row["repo_id"]),
+            "git_ref": str(row["git_ref"]),
+            "resolved_ref": str(row["resolved_ref"]) if row.get("resolved_ref") else None,
+            "bundle": bundle,
+            "expires_at": row["expires_at"].isoformat() if row.get("expires_at") else None,
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+            "downloaded_at": row["downloaded_at"].isoformat() if row.get("downloaded_at") else None,
+        }
+
+    def _publish_candidate_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "candidate_id": str(row["candidate_id"]),
+            "principal_id": str(row["principal_id"]),
+            "app_id": str(row["app_id"]),
+            "repo_id": str(row["repo_id"]),
+            "base_sha": str(row["base_sha"]),
+            "status": str(row["status"]),
+            "candidate": dict(row["candidate_json"] or {}),
+            "review": dict(row["review_json"] or {}),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        }
+
+    def _secret_ref_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "secret_ref_id": str(row["secret_ref_id"]),
+            "connector_id": str(row["connector_id"]) if row.get("connector_id") else None,
+            "purpose": self._decrypt_text(str(row["purpose_value"])) or "",
+            "metadata": dict(row["metadata_json"] or {}),
+            "active": bool(row["active"]),
+            "has_secret": bool(row.get("secret_value")),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        }
+
+    def _agent_audit_event_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "audit_id": str(row["audit_id"]),
+            "principal_id": str(row["principal_id"]) if row.get("principal_id") else None,
+            "app_id": str(row["app_id"]) if row.get("app_id") else None,
+            "service_kind": str(row["service_kind"]) if row.get("service_kind") else None,
+            "resource": self._decrypt_text(str(row["resource_value"]))
+            if row.get("resource_value")
+            else None,
+            "action": self._decrypt_text(str(row["action_value"])) or "",
+            "decision": str(row["decision_value"]),
+            "audit": dict(row["audit_json"] or {}),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         }
 
     async def list_repo_profiles(self, owner_id: str) -> list[dict[str, Any]]:
@@ -2176,6 +2467,834 @@ class OwnerCiStorage:
             "manifest": dict(row["manifest_json"] or {}),
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         }
+
+    async def upsert_agent_principal(
+        self,
+        owner_id: str,
+        *,
+        principal_id: str,
+        display_name: str,
+        principal_type: str = "codex",
+        allowed_scopes: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+        active: bool = True,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_agent_principals'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    principal_id,
+                    display_name_value,
+                    principal_type,
+                    allowed_scopes_json,
+                    metadata_json,
+                    active,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, now(), now()
+                )
+                ON CONFLICT (owner_id, principal_id) DO UPDATE SET
+                    display_name_value = EXCLUDED.display_name_value,
+                    principal_type = EXCLUDED.principal_type,
+                    allowed_scopes_json = EXCLUDED.allowed_scopes_json,
+                    metadata_json = EXCLUDED.metadata_json,
+                    active = EXCLUDED.active,
+                    updated_at = now()
+                RETURNING *
+                """,
+                owner_id,
+                principal_id,
+                self._encrypt_text(display_name.strip() or principal_id),
+                principal_type.strip() or "codex",
+                json.dumps(list(allowed_scopes or [])),
+                json.dumps(dict(metadata or {})),
+                active,
+            )
+        if row is None:
+            raise RuntimeError("Upsert agent principal returned no row")
+        return self._agent_principal_from_row(dict(row))
+
+    async def get_agent_principal(self, owner_id: str, principal_id: str) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_agent_principals'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND principal_id = $2
+                 LIMIT 1
+                """,
+                owner_id,
+                principal_id,
+            )
+        return self._agent_principal_from_row(dict(row)) if row is not None else None
+
+    async def list_agent_principals(self, owner_id: str) -> list[dict[str, Any]]:
+        table = f'"{self._schema}".owner_ci_agent_principals'
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                 ORDER BY updated_at DESC, principal_id ASC
+                """,
+                owner_id,
+            )
+        return [self._agent_principal_from_row(dict(row)) for row in rows]
+
+    async def upsert_external_service_connector(
+        self,
+        owner_id: str,
+        *,
+        connector_id: str,
+        service_kind: str,
+        display_name: str,
+        auth_kind: str,
+        secret_value: str | None = None,
+        policy: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+        active: bool = True,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_external_service_connectors'
+        metadata_payload = dict(metadata or {})
+        if secret_value is not None:
+            metadata_payload["rotated_at"] = datetime.now(UTC).isoformat()
+        async with self._pool.acquire() as conn:
+            if secret_value is None:
+                row = await conn.fetchrow(
+                    f"""
+                    INSERT INTO {table} (
+                        owner_id,
+                        connector_id,
+                        service_kind,
+                        display_name_value,
+                        auth_kind,
+                        policy_json,
+                        metadata_json,
+                        active,
+                        created_at,
+                        updated_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, now(), now()
+                    )
+                    ON CONFLICT (owner_id, connector_id) DO UPDATE SET
+                        service_kind = EXCLUDED.service_kind,
+                        display_name_value = EXCLUDED.display_name_value,
+                        auth_kind = EXCLUDED.auth_kind,
+                        policy_json = EXCLUDED.policy_json,
+                        metadata_json = EXCLUDED.metadata_json,
+                        active = EXCLUDED.active,
+                        updated_at = now()
+                    RETURNING *
+                    """,
+                    owner_id,
+                    connector_id,
+                    service_kind,
+                    self._encrypt_text(display_name.strip() or connector_id),
+                    auth_kind,
+                    json.dumps(dict(policy or {})),
+                    json.dumps(metadata_payload),
+                    active,
+                )
+            else:
+                row = await conn.fetchrow(
+                    f"""
+                    INSERT INTO {table} (
+                        owner_id,
+                        connector_id,
+                        service_kind,
+                        display_name_value,
+                        auth_kind,
+                        secret_value,
+                        policy_json,
+                        metadata_json,
+                        active,
+                        created_at,
+                        updated_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, now(), now()
+                    )
+                    ON CONFLICT (owner_id, connector_id) DO UPDATE SET
+                        service_kind = EXCLUDED.service_kind,
+                        display_name_value = EXCLUDED.display_name_value,
+                        auth_kind = EXCLUDED.auth_kind,
+                        secret_value = EXCLUDED.secret_value,
+                        policy_json = EXCLUDED.policy_json,
+                        metadata_json = EXCLUDED.metadata_json,
+                        active = EXCLUDED.active,
+                        updated_at = now()
+                    RETURNING *
+                    """,
+                    owner_id,
+                    connector_id,
+                    service_kind,
+                    self._encrypt_text(display_name.strip() or connector_id),
+                    auth_kind,
+                    self._encrypt_text(secret_value),
+                    json.dumps(dict(policy or {})),
+                    json.dumps(metadata_payload),
+                    active,
+                )
+        if row is None:
+            raise RuntimeError("Upsert external service connector returned no row")
+        return self._external_connector_from_row(dict(row))
+
+    async def get_external_service_connector(
+        self,
+        owner_id: str,
+        connector_id: str,
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_external_service_connectors'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND connector_id = $2
+                 LIMIT 1
+                """,
+                owner_id,
+                connector_id,
+            )
+        return self._external_connector_from_row(dict(row)) if row is not None else None
+
+    async def get_external_service_connector_with_secret(
+        self,
+        owner_id: str,
+        connector_id: str,
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_external_service_connectors'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND connector_id = $2
+                 LIMIT 1
+                """,
+                owner_id,
+                connector_id,
+            )
+        if row is None:
+            return None
+        connector = self._external_connector_from_row(dict(row))
+        connector["secret_value"] = (
+            self._decrypt_text(str(row["secret_value"])) if row.get("secret_value") else None
+        )
+        return connector
+
+    async def list_external_service_connectors(
+        self,
+        owner_id: str,
+        *,
+        service_kind: str | None = None,
+    ) -> list[dict[str, Any]]:
+        table = f'"{self._schema}".owner_ci_external_service_connectors'
+        query = f"""
+            SELECT *
+              FROM {table}
+             WHERE owner_id = $1
+        """
+        params: list[Any] = [owner_id]
+        if service_kind:
+            query += " AND service_kind = $2"
+            params.append(service_kind)
+        query += " ORDER BY updated_at DESC, connector_id ASC"
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+        return [self._external_connector_from_row(dict(row)) for row in rows]
+
+    async def replace_external_access_grants(
+        self,
+        owner_id: str,
+        *,
+        principal_id: str,
+        grants: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        table = f'"{self._schema}".owner_ci_external_access_grants'
+        async with self._pool.acquire() as conn, conn.transaction():
+            await conn.execute(
+                f"""
+                DELETE FROM {table}
+                 WHERE owner_id = $1
+                   AND principal_id = $2
+                """,
+                owner_id,
+                principal_id,
+            )
+            stored_rows = []
+            for raw_grant in grants:
+                resource_type = str(raw_grant.get("resource_type") or "").strip()
+                resource_id = str(raw_grant.get("resource_id") or "").strip()
+                if not resource_type or not resource_id:
+                    continue
+                grant_key = str(raw_grant.get("grant_key") or uuid4().hex)
+                row = await conn.fetchrow(
+                    f"""
+                    INSERT INTO {table} (
+                        owner_id,
+                        principal_id,
+                        grant_key,
+                        resource_type,
+                        resource_id,
+                        capabilities_json,
+                        metadata_json,
+                        active,
+                        created_at,
+                        updated_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, now(), now()
+                    )
+                    RETURNING *
+                    """,
+                    owner_id,
+                    principal_id,
+                    grant_key,
+                    resource_type,
+                    resource_id,
+                    json.dumps(list(raw_grant.get("capabilities") or [])),
+                    json.dumps(dict(raw_grant.get("metadata") or {})),
+                    bool(raw_grant.get("active", True)),
+                )
+                if row is not None:
+                    stored_rows.append(self._external_access_grant_from_row(dict(row)))
+        return stored_rows
+
+    async def list_external_access_grants(
+        self,
+        owner_id: str,
+        *,
+        principal_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        table = f'"{self._schema}".owner_ci_external_access_grants'
+        query = f"""
+            SELECT *
+              FROM {table}
+             WHERE owner_id = $1
+        """
+        params: list[Any] = [owner_id]
+        if principal_id:
+            query += " AND principal_id = $2"
+            params.append(principal_id)
+        query += " ORDER BY updated_at DESC, grant_key ASC"
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+        return [self._external_access_grant_from_row(dict(row)) for row in rows]
+
+    async def upsert_agent_app_profile(
+        self,
+        owner_id: str,
+        *,
+        app_id: str,
+        display_name: str,
+        profile: dict[str, Any],
+        active: bool = True,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_agent_app_profiles'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    app_id,
+                    display_name_value,
+                    profile_json,
+                    active,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    $1, $2, $3, $4::jsonb, $5, now(), now()
+                )
+                ON CONFLICT (owner_id, app_id) DO UPDATE SET
+                    display_name_value = EXCLUDED.display_name_value,
+                    profile_json = EXCLUDED.profile_json,
+                    active = EXCLUDED.active,
+                    updated_at = now()
+                RETURNING *
+                """,
+                owner_id,
+                app_id,
+                self._encrypt_text(display_name.strip() or app_id),
+                json.dumps(profile),
+                active,
+            )
+        if row is None:
+            raise RuntimeError("Upsert agent app profile returned no row")
+        return self._agent_app_profile_from_row(dict(row))
+
+    async def get_agent_app_profile(self, owner_id: str, app_id: str) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_agent_app_profiles'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND app_id = $2
+                 LIMIT 1
+                """,
+                owner_id,
+                app_id,
+            )
+        return self._agent_app_profile_from_row(dict(row)) if row is not None else None
+
+    async def list_agent_app_profiles(self, owner_id: str) -> list[dict[str, Any]]:
+        table = f'"{self._schema}".owner_ci_agent_app_profiles'
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                 ORDER BY updated_at DESC, app_id ASC
+                """,
+                owner_id,
+            )
+        return [self._agent_app_profile_from_row(dict(row)) for row in rows]
+
+    async def upsert_agent_knowledge_pack(
+        self,
+        owner_id: str,
+        *,
+        app_id: str,
+        version: str,
+        pack: dict[str, Any],
+        current: bool = True,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_agent_knowledge_packs'
+        async with self._pool.acquire() as conn, conn.transaction():
+            if current:
+                await conn.execute(
+                    f"""
+                    UPDATE {table}
+                       SET current_version = FALSE,
+                           updated_at = now()
+                     WHERE owner_id = $1
+                       AND app_id = $2
+                    """,
+                    owner_id,
+                    app_id,
+                )
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    app_id,
+                    version_value,
+                    pack_json,
+                    current_version,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    $1, $2, $3, $4::jsonb, $5, now(), now()
+                )
+                ON CONFLICT (owner_id, app_id, version_value) DO UPDATE SET
+                    pack_json = EXCLUDED.pack_json,
+                    current_version = EXCLUDED.current_version,
+                    updated_at = now()
+                RETURNING *
+                """,
+                owner_id,
+                app_id,
+                version,
+                json.dumps(pack),
+                current,
+            )
+        if row is None:
+            raise RuntimeError("Upsert agent knowledge pack returned no row")
+        return self._agent_knowledge_pack_from_row(dict(row))
+
+    async def get_agent_knowledge_pack(
+        self,
+        owner_id: str,
+        app_id: str,
+        *,
+        version: str | None = None,
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_agent_knowledge_packs'
+        query = f"""
+            SELECT *
+              FROM {table}
+             WHERE owner_id = $1
+               AND app_id = $2
+        """
+        params: list[Any] = [owner_id, app_id]
+        if version:
+            query += " AND version_value = $3"
+            params.append(version)
+        else:
+            query += " AND current_version = TRUE"
+        query += " ORDER BY updated_at DESC LIMIT 1"
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(query, *params)
+        return self._agent_knowledge_pack_from_row(dict(row)) if row is not None else None
+
+    async def create_workspace_bundle(
+        self,
+        owner_id: str,
+        *,
+        principal_id: str,
+        app_id: str,
+        repo_id: str,
+        git_ref: str,
+        bundle: dict[str, Any],
+        resolved_ref: str | None = None,
+        expires_at: datetime | None = None,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_workspace_bundles'
+        bundle_id = str(bundle.get("bundle_id") or uuid4().hex)
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    bundle_id,
+                    principal_id,
+                    app_id,
+                    repo_id,
+                    git_ref,
+                    resolved_ref,
+                    bundle_json,
+                    expires_at,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, now(), now()
+                )
+                RETURNING *
+                """,
+                owner_id,
+                bundle_id,
+                principal_id,
+                app_id,
+                repo_id,
+                git_ref,
+                resolved_ref,
+                json.dumps({**bundle, "bundle_id": bundle_id}),
+                expires_at,
+            )
+        if row is None:
+            raise RuntimeError("Create workspace bundle returned no row")
+        return self._workspace_bundle_from_row(dict(row))
+
+    async def get_workspace_bundle(
+        self,
+        owner_id: str,
+        bundle_id: str,
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_workspace_bundles'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND bundle_id = $2
+                 LIMIT 1
+                """,
+                owner_id,
+                bundle_id,
+            )
+        return self._workspace_bundle_from_row(dict(row)) if row is not None else None
+
+    async def mark_workspace_bundle_downloaded(self, owner_id: str, bundle_id: str) -> None:
+        table = f'"{self._schema}".owner_ci_workspace_bundles'
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                f"""
+                UPDATE {table}
+                   SET downloaded_at = now(),
+                       updated_at = now()
+                 WHERE owner_id = $1
+                   AND bundle_id = $2
+                """,
+                owner_id,
+                bundle_id,
+            )
+
+    async def create_publish_candidate(
+        self,
+        owner_id: str,
+        *,
+        principal_id: str,
+        app_id: str,
+        repo_id: str,
+        base_sha: str,
+        candidate: dict[str, Any],
+        status: str = "submitted",
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_publish_candidates'
+        candidate_id = str(candidate.get("candidate_id") or uuid4().hex)
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    candidate_id,
+                    principal_id,
+                    app_id,
+                    repo_id,
+                    base_sha,
+                    status,
+                    candidate_json,
+                    review_json,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, now(), now()
+                )
+                RETURNING *
+                """,
+                owner_id,
+                candidate_id,
+                principal_id,
+                app_id,
+                repo_id,
+                base_sha,
+                status,
+                json.dumps({**candidate, "candidate_id": candidate_id}),
+                json.dumps(dict(candidate.get("review") or {})),
+            )
+        if row is None:
+            raise RuntimeError("Create publish candidate returned no row")
+        return self._publish_candidate_from_row(dict(row))
+
+    async def get_publish_candidate(
+        self,
+        owner_id: str,
+        candidate_id: str,
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_publish_candidates'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND candidate_id = $2
+                 LIMIT 1
+                """,
+                owner_id,
+                candidate_id,
+            )
+        return self._publish_candidate_from_row(dict(row)) if row is not None else None
+
+    async def list_publish_candidates(
+        self,
+        owner_id: str,
+        *,
+        app_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        table = f'"{self._schema}".owner_ci_publish_candidates'
+        query = f"""
+            SELECT *
+              FROM {table}
+             WHERE owner_id = $1
+        """
+        params: list[Any] = [owner_id]
+        if app_id:
+            query += " AND app_id = $2"
+            params.append(app_id)
+            query += " ORDER BY created_at DESC LIMIT $3"
+            params.append(limit)
+        else:
+            query += " ORDER BY created_at DESC LIMIT $2"
+            params.append(limit)
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+        return [self._publish_candidate_from_row(dict(row)) for row in rows]
+
+    async def update_publish_candidate_review(
+        self,
+        owner_id: str,
+        *,
+        candidate_id: str,
+        status: str,
+        review: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_publish_candidates'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                UPDATE {table}
+                   SET status = $3,
+                       review_json = $4::jsonb,
+                       updated_at = now()
+                 WHERE owner_id = $1
+                   AND candidate_id = $2
+                RETURNING *
+                """,
+                owner_id,
+                candidate_id,
+                status,
+                json.dumps(review),
+            )
+        return self._publish_candidate_from_row(dict(row)) if row is not None else None
+
+    async def upsert_secret_ref(
+        self,
+        owner_id: str,
+        *,
+        secret_ref_id: str,
+        purpose: str,
+        secret_value: str | None = None,
+        connector_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        active: bool = True,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_secret_refs'
+        metadata_payload = dict(metadata or {})
+        async with self._pool.acquire() as conn:
+            if secret_value is None:
+                row = await conn.fetchrow(
+                    f"""
+                    INSERT INTO {table} (
+                        owner_id,
+                        secret_ref_id,
+                        connector_id,
+                        purpose_value,
+                        metadata_json,
+                        active,
+                        created_at,
+                        updated_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5::jsonb, $6, now(), now()
+                    )
+                    ON CONFLICT (owner_id, secret_ref_id) DO UPDATE SET
+                        connector_id = EXCLUDED.connector_id,
+                        purpose_value = EXCLUDED.purpose_value,
+                        metadata_json = EXCLUDED.metadata_json,
+                        active = EXCLUDED.active,
+                        updated_at = now()
+                    RETURNING *
+                    """,
+                    owner_id,
+                    secret_ref_id,
+                    connector_id,
+                    self._encrypt_text(purpose),
+                    json.dumps(metadata_payload),
+                    active,
+                )
+            else:
+                row = await conn.fetchrow(
+                    f"""
+                    INSERT INTO {table} (
+                        owner_id,
+                        secret_ref_id,
+                        connector_id,
+                        purpose_value,
+                        secret_value,
+                        metadata_json,
+                        active,
+                        created_at,
+                        updated_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6::jsonb, $7, now(), now()
+                    )
+                    ON CONFLICT (owner_id, secret_ref_id) DO UPDATE SET
+                        connector_id = EXCLUDED.connector_id,
+                        purpose_value = EXCLUDED.purpose_value,
+                        secret_value = EXCLUDED.secret_value,
+                        metadata_json = EXCLUDED.metadata_json,
+                        active = EXCLUDED.active,
+                        updated_at = now()
+                    RETURNING *
+                    """,
+                    owner_id,
+                    secret_ref_id,
+                    connector_id,
+                    self._encrypt_text(purpose),
+                    self._encrypt_text(secret_value),
+                    json.dumps(metadata_payload),
+                    active,
+                )
+        if row is None:
+            raise RuntimeError("Upsert secret ref returned no row")
+        return self._secret_ref_from_row(dict(row))
+
+    async def record_agent_audit_event(
+        self,
+        owner_id: str,
+        *,
+        principal_id: str | None,
+        app_id: str | None,
+        service_kind: str | None,
+        resource: str | None,
+        action: str,
+        decision: str,
+        audit: dict[str, Any],
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_agent_audit_events'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    audit_id,
+                    principal_id,
+                    app_id,
+                    service_kind,
+                    resource_value,
+                    action_value,
+                    decision_value,
+                    audit_json,
+                    created_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, now()
+                )
+                RETURNING *
+                """,
+                owner_id,
+                uuid4().hex,
+                principal_id,
+                app_id,
+                service_kind,
+                self._encrypt_text(resource) if resource else None,
+                self._encrypt_text(action),
+                decision,
+                json.dumps(audit),
+            )
+        if row is None:
+            raise RuntimeError("Record agent audit event returned no row")
+        return self._agent_audit_event_from_row(dict(row))
+
+    async def list_agent_audit_events(
+        self,
+        owner_id: str,
+        *,
+        principal_id: str | None = None,
+        app_id: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        table = f'"{self._schema}".owner_ci_agent_audit_events'
+        query = f"""
+            SELECT *
+              FROM {table}
+             WHERE owner_id = $1
+        """
+        params: list[Any] = [owner_id]
+        placeholder = 2
+        if principal_id:
+            query += f" AND principal_id = ${placeholder}"
+            params.append(principal_id)
+            placeholder += 1
+        if app_id:
+            query += f" AND app_id = ${placeholder}"
+            params.append(app_id)
+            placeholder += 1
+        query += f" ORDER BY created_at DESC LIMIT ${placeholder}"
+        params.append(limit)
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+        return [self._agent_audit_event_from_row(dict(row)) for row in rows]
 
     async def _store_worker_observability(
         self,
