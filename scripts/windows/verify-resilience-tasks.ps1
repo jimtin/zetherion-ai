@@ -25,14 +25,19 @@ function Ensure-ParentDir {
     }
 }
 
-function Is-SystemPrincipal {
+function Is-ServiceAccountPrincipal {
     param([string]$UserId)
 
     if (-not $UserId) {
         return $false
     }
 
-    return $UserId -eq "SYSTEM" -or $UserId -eq "NT AUTHORITY\SYSTEM"
+    return $UserId -in @(
+        "SYSTEM",
+        "NT AUTHORITY\SYSTEM",
+        "NETWORK SERVICE",
+        "NT AUTHORITY\NETWORK SERVICE"
+    )
 }
 
 function Task-ActionContains {
@@ -149,7 +154,7 @@ function Get-TaskVerification {
     $triggerFacts = Get-TriggerFacts -Task $task
     $enabled = [bool]$task.Settings.Enabled
     $principalUser = [string]$task.Principal.UserId
-    $systemPrincipal = Is-SystemPrincipal -UserId $principalUser
+    $systemPrincipal = Is-ServiceAccountPrincipal -UserId $principalUser
     $actionMatches = Task-ActionContains -Task $task -Needle $ScriptNeedle
 
     $failures = @()
@@ -203,28 +208,28 @@ $result = [ordered]@{
             startup = [ordered]@{
                 task_name = $StartupTaskName
                 script = "startup-recover.ps1"
-                principal = "SYSTEM"
+                principal = "NT AUTHORITY\\NETWORK SERVICE"
                 requires_startup_trigger = $true
                 requires_repetition_trigger = $false
             }
             watchdog = [ordered]@{
                 task_name = $WatchdogTaskName
                 script = "runtime-watchdog.ps1"
-                principal = "SYSTEM"
+                principal = "NT AUTHORITY\\NETWORK SERVICE"
                 requires_startup_trigger = $false
                 requires_repetition_trigger = $true
             }
             promotions = [ordered]@{
                 task_name = $PromotionsTaskName
                 script = "promotions-watch.ps1"
-                principal = "SYSTEM"
+                principal = "NT AUTHORITY\\NETWORK SERVICE"
                 requires_startup_trigger = $true
                 requires_repetition_trigger = $true
             }
             canary = [ordered]@{
                 task_name = $CanaryTaskName
                 script = "discord-canary-runner.ps1"
-                principal = "SYSTEM"
+                principal = "NT AUTHORITY\\NETWORK SERVICE"
                 requires_startup_trigger = $true
                 requires_repetition_trigger = $true
             }

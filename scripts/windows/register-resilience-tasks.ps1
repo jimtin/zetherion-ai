@@ -99,7 +99,7 @@ function Get-RecoveryTaskRecord {
     $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     if ($task) {
         $enabled = [bool]$task.Settings.Enabled
-        $systemPrincipal = Is-SystemPrincipal -UserId $task.Principal.UserId
+        $systemPrincipal = Is-ServiceAccountPrincipal -UserId $task.Principal.UserId
         $actionMatches = Task-ActionContains -Task $task -Needle $ScriptNeedle
         return [ordered]@{
             exists = $true
@@ -147,14 +147,19 @@ function Get-RecoveryTaskRecord {
     }
 }
 
-function Is-SystemPrincipal {
+function Is-ServiceAccountPrincipal {
     param([string]$UserId)
 
     if (-not $UserId) {
         return $false
     }
 
-    return $UserId -eq "SYSTEM" -or $UserId -eq "NT AUTHORITY\SYSTEM"
+    return $UserId -in @(
+        "SYSTEM",
+        "NT AUTHORITY\SYSTEM",
+        "NETWORK SERVICE",
+        "NT AUTHORITY\NETWORK SERVICE"
+    )
 }
 
 function Get-RegistrationActor {
@@ -329,7 +334,7 @@ try {
     } else {
         $registrationAccessDenied = $false
         try {
-            $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+            $principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\NETWORK SERVICE" -LogonType ServiceAccount -RunLevel Highest
 
             $startupAction = New-ScheduledTaskAction `
                 -Execute "pwsh.exe" `

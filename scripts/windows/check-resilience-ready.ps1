@@ -25,12 +25,17 @@ function Ensure-ParentDir {
     }
 }
 
-function Is-SystemPrincipal {
+function Is-ServiceAccountPrincipal {
     param([string]$UserId)
     if (-not $UserId) {
         return $false
     }
-    return $UserId -eq "SYSTEM" -or $UserId -eq "NT AUTHORITY\SYSTEM"
+    return $UserId -in @(
+        "SYSTEM",
+        "NT AUTHORITY\SYSTEM",
+        "NETWORK SERVICE",
+        "NT AUTHORITY\NETWORK SERVICE"
+    )
 }
 
 function Task-ActionContains {
@@ -85,7 +90,7 @@ function Test-RecoveryTask {
 
     if ($task) {
         $enabled = [bool]$task.Settings.Enabled
-        $systemPrincipal = Is-SystemPrincipal -UserId $task.Principal.UserId
+        $systemPrincipal = Is-ServiceAccountPrincipal -UserId $task.Principal.UserId
         $actionMatches = Task-ActionContains -Task $task -Needle $ScriptNeedle
 
         $record = [ordered]@{
