@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - Post-merge main CI proof fallback for deployment verification (2026-03-10)
+
+- Impacted capability IDs:
+  - `CAP-ZAI-MAIN-DEPLOY-VERIFICATION`
+- Impacted workflow scenario IDs:
+  - `SCN-ZAI-MAIN-MERGE-CI-PROOF`
+- Updated `scripts/check-cicd-success.sh` so post-merge verification on `main` now accepts a successful associated-PR `CI/CD Pipeline` run as valid CI proof when the merge commit itself only carries deploy-side check runs.
+- Added regression coverage in `tests/unit/test_check_cicd_success.py` for the exact merge shape seen on PR `#150`: successful PR CI on the head commit, successful `Deploy Windows` on the merge commit, and no `CI Gate` check-runs attached directly to `main`.
+
 ### Added - Segment 6 tenant notification API (2026-03-10)
 
 - Impacted capability IDs:

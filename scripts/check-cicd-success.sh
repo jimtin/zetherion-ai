@@ -228,6 +228,23 @@ summarize_associated_pr_ci() {
   echo "associated_pr=#${pr_number} head_sha=${pr_head_sha} head_ref=${pr_head_ref}${pr_ci_state:+ ${pr_ci_state}}"
 }
 
+find_associated_pr_ci_run_id() {
+  local target_sha="$1"
+  local ci_runs_json="$2"
+  local prs_json
+  local pr_head_sha
+
+  prs_json="$(fetch_associated_prs_json "$target_sha" 2>/dev/null || printf '[]')"
+  pr_head_sha="$(jq -r --arg sha "$target_sha" 'map(select(.merged_at != null and .merge_commit_sha == $sha)) | sort_by(.merged_at) | reverse | .[0].head.sha // empty' <<<"$prs_json")"
+
+  if [[ -z "$pr_head_sha" ]]; then
+    echo ""
+    return 0
+  fi
+
+  find_successful_run_id "$ci_runs_json" "$pr_head_sha" "$pr_head_sha"
+}
+
 validate_deploy_receipt() {
   local deploy_run_id="$1"
   local target_sha="$2"
@@ -314,8 +331,20 @@ while :; do
       CI_OK="true"
       CI_SOURCE="check-runs"
     elif [[ "$CI_OK" != "true" ]]; then
-      CI_PENDING_REASON="$(summarize_required_check_runs "$CHECK_RUNS_JSON")"
       CI_ASSOCIATED_PR_SUMMARY="$(summarize_associated_pr_ci "$TARGET_SHA" "$CI_RUNS_JSON")"
+      ASSOCIATED_PR_CI_RUN_ID="$(find_associated_pr_ci_run_id "$TARGET_SHA" "$CI_RUNS_JSON")"
+      if [[ -n "$ASSOCIATED_PR_CI_RUN_ID" ]]; then
+        CI_OK="true"
+        CI_SOURCE="associated-pr-ci"
+        CI_RUN_ID="$ASSOCIATED_PR_CI_RUN_ID"
+      fi
+    fi
+
+    if [[ "$CI_OK" != "true" ]]; then
+      if [[ -z "$CI_ASSOCIATED_PR_SUMMARY" ]]; then
+        CI_ASSOCIATED_PR_SUMMARY="$(summarize_associated_pr_ci "$TARGET_SHA" "$CI_RUNS_JSON")"
+      fi
+      CI_PENDING_REASON="$(summarize_required_check_runs "$CHECK_RUNS_JSON")"
       if [[ "$(required_check_runs_pending "$CHECK_RUNS_JSON")" == "true" ]]; then
         CI_PENDING="true"
       elif [[ -n "$CI_ASSOCIATED_PR_SUMMARY" ]]; then
