@@ -152,6 +152,38 @@ function Collect-DeployDiagnostics {
     }
 }
 
+function Remove-DeployContextNoise {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepositoryPath
+    )
+
+    $pathsToRemove = @(
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".coverage",
+        "coverage.xml",
+        "htmlcov",
+        ".tox",
+        ".nox",
+        "pytestdebug.log"
+    )
+
+    foreach ($relativePath in $pathsToRemove) {
+        $fullPath = Join-Path $RepositoryPath $relativePath
+        if (-not (Test-Path $fullPath)) {
+            continue
+        }
+
+        Remove-Item -Path $fullPath -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    foreach ($coveragePath in Get-ChildItem -Path $RepositoryPath -Filter ".coverage*" -Force -ErrorAction SilentlyContinue) {
+        Remove-Item -Path $coveragePath.FullName -Force -Recurse -ErrorAction SilentlyContinue
+    }
+}
+
 function Get-EnvValueFromFile {
     param(
         [Parameter(Mandatory = $true)]
@@ -386,6 +418,9 @@ try {
         Invoke-Git @("fetch", "--prune", "--force", "origin")
         Invoke-Git @("fetch", "--depth=1", "--force", "origin", $TargetSha)
         Invoke-Git @("checkout", "--detach", "--force", $TargetSha)
+        # WSL-backed Docker builds can choke on Windows dev caches even when they are not part
+        # of the intended image context, so scrub known ephemeral artifacts before compose runs.
+        Remove-DeployContextNoise -RepositoryPath $DeployPath
         $bootstrappedKeys = @(Ensure-RequiredRuntimeEnv -RepositoryPath $DeployPath)
         if ($bootstrappedKeys.Count -gt 0) {
             Write-Output "Bootstrapped runtime env keys: $($bootstrappedKeys -join ', ')"
