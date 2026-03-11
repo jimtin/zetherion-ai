@@ -60,7 +60,7 @@ function Get-ZetherionDockerRuntimeStatus {
     & wsl.exe -d $distro -- bash -lc "docker info >/dev/null 2>&1"
     $available = ($LASTEXITCODE -eq 0)
 
-    return [ordered]@{
+    return [pscustomobject]@{
         backend = "wsl"
         distribution = $distro
         enabled = [bool]$enabled
