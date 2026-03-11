@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.4">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.5">
     
     
       
@@ -1008,6 +1008,17 @@
     <span class="md-ellipsis">
       
         Segment 5 announcement-core generalization additions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#segment-6-tenant-notification-api-additions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Segment 6 tenant notification API additions
       
     </span>
   </a>
@@ -2006,6 +2017,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#segment-6-tenant-notification-api-additions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Segment 6 tenant notification API additions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#segment-4-sandbox-control-plane-isolation-additions" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2194,6 +2216,30 @@ modules are tracked until their planned cutover segments land.</p>
 <li><code>src/zetherion_ai/api/routes/analytics.py</code></li>
 <li>records tagged test analytics rows but suppresses tenant-derived writes such
     as recommendations, funnel updates, CRM interactions, and feedback mutation</li>
+</ul>
+<h3 id="segment-6-tenant-notification-api-additions">Segment 6 tenant notification API additions<a class="headerlink" href="#segment-6-tenant-notification-api-additions" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>src/zetherion_ai/api/tenant.py</code></li>
+<li>persists tenant notification subscriptions in tenant-scoped runtime storage;
+    subscription definitions stay bound to <code>tenant_id</code> and never reuse owner
+    Discord preference rows or owner-personal identifiers</li>
+<li><code>src/zetherion_ai/api/notification_service.py</code></li>
+<li>fans tenant notification events into the existing announcement control-plane
+    core while keeping the source event tenant-scoped and only attaching
+    tenant-local recipient metadata (<code>tenant_id</code>, <code>subscription_id</code>,
+    optional tenant email account id)</li>
+<li><code>src/zetherion_ai/api/routes/notifications.py</code></li>
+<li>exposes <code>/api/v1/notifications/*</code> as live-key tenant routes only; <code>sk_test</code>
+    traffic remains blocked so sandbox traffic cannot contaminate live
+    notification delivery or control-plane event history</li>
+<li><code>src/zetherion_ai/announcements/channels.py</code></li>
+<li>centralizes webhook/email channel registration so public channel discovery
+    and bot-side dispatch use the same registry definitions; email dispatch uses
+    a tenant-connected Google mailbox and never borrows owner-personal accounts</li>
+<li><code>src/zetherion_ai/discord/bot.py</code></li>
+<li>announcement dispatch now registers public webhook/email adapters alongside
+    owner Discord DM delivery without changing the owner-personal trust boundary;
+    all cross-channel orchestration state remains in <code>control_plane</code></li>
 </ul>
 <h3 id="segment-4-sandbox-control-plane-isolation-additions">Segment 4 sandbox control-plane isolation additions<a class="headerlink" href="#segment-4-sandbox-control-plane-isolation-additions" title="Permanent link">&para;</a></h3>
 <ul>

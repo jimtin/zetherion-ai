@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.4">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.5">
     
     
       
@@ -1632,10 +1632,32 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#added-segment-6-tenant-notification-api-2026-03-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 6 tenant notification API (2026-03-10)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added-segment-5-announcement-core-recipient-generalization-2026-03-09" class="md-nav__link">
     <span class="md-ellipsis">
       
         Added - Segment 5 announcement-core recipient generalization (2026-03-09)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed-segment-5-windows-acceptance-hardening-2026-03-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed - Segment 5 Windows acceptance hardening (2026-03-10)
       
     </span>
   </a>
@@ -3061,10 +3083,32 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#added-segment-6-tenant-notification-api-2026-03-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added - Segment 6 tenant notification API (2026-03-10)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#added-segment-5-announcement-core-recipient-generalization-2026-03-09" class="md-nav__link">
     <span class="md-ellipsis">
       
         Added - Segment 5 announcement-core recipient generalization (2026-03-09)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed-segment-5-windows-acceptance-hardening-2026-03-10" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed - Segment 5 Windows acceptance hardening (2026-03-10)
       
     </span>
   </a>
@@ -4349,6 +4393,19 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 </blockquote>
 <hr />
 <h2 id="unreleased">[Unreleased]<a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
+<h3 id="added-segment-6-tenant-notification-api-2026-03-10">Added - Segment 6 tenant notification API (2026-03-10)<a class="headerlink" href="#added-segment-6-tenant-notification-api-2026-03-10" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>CAP-ZAI-CLIENT-NOTIFICATIONS</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>SCN-ZAI-CLIENT-NOTIFY-WEBHOOK</code></li>
+<li><code>SCN-ZAI-CLIENT-NOTIFY-EMAIL</code></li>
+<li><code>SCN-ZAI-CHANNEL-DISCOVERY</code></li>
+<li>Added tenant notification subscription storage plus API-key routes in <code>src/zetherion_ai/api/tenant.py</code>, <code>src/zetherion_ai/api/routes/notifications.py</code>, and <code>src/zetherion_ai/api/server.py</code> for channel discovery, subscription CRUD, and tenant event publishing under <code>/api/v1/notifications/*</code>.</li>
+<li>Added <code>src/zetherion_ai/api/notification_service.py</code> so published tenant events fan out through the existing announcement policy and persistence core, with tenant-scoped templating, subscription matching, and per-subscription event receipts.</li>
+<li>Added <code>src/zetherion_ai/announcements/channels.py</code> plus registry metadata in <code>src/zetherion_ai/announcements/dispatcher.py</code>, and wired <code>src/zetherion_ai/discord/bot.py</code> to register webhook/email adapters from the shared registry so new public channels and bot-side delivery stay aligned.</li>
+<li>Added regression coverage for notification route handlers, public API HTTP notification flows, server route wiring, and test-key rejection on the live-only notification surface; updated the upstream public API docs/OpenAPI bundle and the isolation inventory for the new tenant notification paths.</li>
+</ul>
 <h3 id="added-segment-5-announcement-core-recipient-generalization-2026-03-09">Added - Segment 5 announcement-core recipient generalization (2026-03-09)<a class="headerlink" href="#added-segment-5-announcement-core-recipient-generalization-2026-03-09" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Impacted capability IDs:</li>
@@ -4360,6 +4417,17 @@ overall coverage must remain <code>&gt;=90%</code>.</p>
 <li>Updated <code>src/zetherion_ai/announcements/policy.py</code> and <code>src/zetherion_ai/announcements/dispatcher.py</code> so owner-targeted Discord events still respect user preferences, while non-user recipients route through a registry-driven channel abstraction instead of the old single-adapter, <code>target_user_id</code>-only path.</li>
 <li>Added registry-ready delivery adapters in <code>src/zetherion_ai/announcements/webhook_adapter.py</code> and <code>src/zetherion_ai/announcements/email_adapter.py</code>, and wired the existing Discord runtime plus internal skills API/client parsing to accept either legacy <code>target_user_id</code> payloads or structured <code>recipient</code> objects.</li>
 <li>Added regression coverage for structured recipients, registry-based dispatch selection, webhook/email adapter behavior, webhook-targeted internal announcement ingestion, and bot/client compatibility with the new recipient payload shape.</li>
+</ul>
+<h3 id="fixed-segment-5-windows-acceptance-hardening-2026-03-10">Fixed - Segment 5 Windows acceptance hardening (2026-03-10)<a class="headerlink" href="#fixed-segment-5-windows-acceptance-hardening-2026-03-10" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Impacted capability IDs:</li>
+<li><code>CAP-ZAI-NOTIFICATION-CORE-GENERALIZATION</code></li>
+<li>Impacted workflow scenario IDs:</li>
+<li><code>SCN-ZAI-INTERNAL-ANNOUNCEMENT-COMPAT</code></li>
+<li><code>SCN-ZAI-RECIPIENT-ABSTRACTION</code></li>
+<li>Reordered the announcement repository schema bootstrap in <code>src/zetherion_ai/announcements/storage.py</code> so upgraded Windows hosts with the legacy announcement tables add and backfill <code>recipient_key</code> columns before creating recipient-based indexes, and now replace the old suppression uniqueness on <code>target_user_id</code> with the new recipient-key uniqueness needed by Segment 5.</li>
+<li>Hardened <code>.github/workflows/deploy-windows.yml</code> so deployment receipts still build when deploy or verify never produced <code>verify-result.json</code>, preserving rollback diagnostics instead of masking the primary Windows failure behind a secondary receipt crash.</li>
+<li>Added regression coverage and deploy-contract assertions to keep both the legacy-schema migration ordering and the deploy-receipt fallback behavior from regressing.</li>
 </ul>
 <h3 id="added-segment-4-sandbox-control-plane-isolation-2026-03-09">Added - Segment 4 sandbox control-plane isolation (2026-03-09)<a class="headerlink" href="#added-segment-4-sandbox-control-plane-isolation-2026-03-09" title="Permanent link">&para;</a></h3>
 <ul>

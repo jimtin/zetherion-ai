@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.4">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.5">
     
     
       
@@ -1482,6 +1482,72 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#get-ownerciworkerv1health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /owner/ci/worker/v1/health
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-ownerciworkerv1bootstrap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /owner/ci/worker/v1/bootstrap
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-ownerciworkerv1nodesregister" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /owner/ci/worker/v1/nodes/register
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-ownerciworkerv1nodesnode_idheartbeat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /owner/ci/worker/v1/nodes/{node_id}/heartbeat
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-ownerciworkerv1nodesnode_idjobsclaim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /owner/ci/worker/v1/nodes/{node_id}/jobs/claim
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-ownerciworkerv1nodesnode_idjobsjob_idresult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /owner/ci/worker/v1/nodes/{node_id}/jobs/{job_id}/result
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2925,6 +2991,72 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#get-ownerciworkerv1health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GET /owner/ci/worker/v1/health
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-ownerciworkerv1bootstrap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /owner/ci/worker/v1/bootstrap
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-ownerciworkerv1nodesregister" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /owner/ci/worker/v1/nodes/register
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-ownerciworkerv1nodesnode_idheartbeat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /owner/ci/worker/v1/nodes/{node_id}/heartbeat
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-ownerciworkerv1nodesnode_idjobsclaim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /owner/ci/worker/v1/nodes/{node_id}/jobs/claim
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-ownerciworkerv1nodesnode_idjobsjob_idresult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POST /owner/ci/worker/v1/nodes/{node_id}/jobs/{job_id}/result
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3605,6 +3737,25 @@ authenticated with worker session credentials (not <code>X-API-Secret</code>).</
 </ul>
 <h3 id="post-workerv1nodesnode_idjobsjob_idresult">POST /worker/v1/nodes/{node_id}/jobs/{job_id}/result<a class="headerlink" href="#post-workerv1nodesnode_idjobsjob_idresult" title="Permanent link">&para;</a></h3>
 <p>Submit terminal status and artifacts for a claimed worker job.</p>
+<h3 id="get-ownerciworkerv1health">GET /owner/ci/worker/v1/health<a class="headerlink" href="#get-ownerciworkerv1health" title="Permanent link">&para;</a></h3>
+<p>Owner-scoped CI worker bridge health probe.</p>
+<h3 id="post-ownerciworkerv1bootstrap">POST /owner/ci/worker/v1/bootstrap<a class="headerlink" href="#post-ownerciworkerv1bootstrap" title="Permanent link">&para;</a></h3>
+<p>Bootstrap an owner-scoped worker node session.</p>
+<ul>
+<li>Requires <code>X-Worker-Bootstrap-Secret</code>.</li>
+<li>Requires <code>scope_id</code> in the request body.</li>
+</ul>
+<h3 id="post-ownerciworkerv1nodesregister">POST /owner/ci/worker/v1/nodes/register<a class="headerlink" href="#post-ownerciworkerv1nodesregister" title="Permanent link">&para;</a></h3>
+<p>Complete owner-scoped worker registration and optionally rotate credentials.</p>
+<h3 id="post-ownerciworkerv1nodesnode_idheartbeat">POST /owner/ci/worker/v1/nodes/{node_id}/heartbeat<a class="headerlink" href="#post-ownerciworkerv1nodesnode_idheartbeat" title="Permanent link">&para;</a></h3>
+<p>Submit node heartbeat for owner-scoped CI execution.</p>
+<h3 id="post-ownerciworkerv1nodesnode_idjobsclaim">POST /owner/ci/worker/v1/nodes/{node_id}/jobs/claim<a class="headerlink" href="#post-ownerciworkerv1nodesnode_idjobsclaim" title="Permanent link">&para;</a></h3>
+<p>Claim the next owner-scoped CI shard job for the requesting node.</p>
+<h3 id="post-ownerciworkerv1nodesnode_idjobsjob_idresult">POST /owner/ci/worker/v1/nodes/{node_id}/jobs/{job_id}/result<a class="headerlink" href="#post-ownerciworkerv1nodesnode_idjobsjob_idresult" title="Permanent link">&para;</a></h3>
+<p>Submit owner-scoped CI shard results.</p>
+<ul>
+<li>Relay replays are accepted with <code>X-API-Secret</code> plus <code>X-CI-Relay-Replay: 1</code>.</li>
+</ul>
 <hr />
 <h2 id="tenant-admin-worker-operator-api">Tenant Admin Worker Operator API<a class="headerlink" href="#tenant-admin-worker-operator-api" title="Permanent link">&para;</a></h2>
 <p>Tenant-admin worker control routes are available for trusted internal callers

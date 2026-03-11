@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.4">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.5">
     
     
       
@@ -1195,10 +1195,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#maintenance-note-2026-03-09" class="md-nav__link">
+  <a href="#maintenance-note-2026-03-10" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Maintenance Note (2026-03-09)
+        Maintenance Note (2026-03-10)
       
     </span>
   </a>
@@ -1834,10 +1834,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#maintenance-note-2026-03-09" class="md-nav__link">
+  <a href="#maintenance-note-2026-03-10" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Maintenance Note (2026-03-09)
+        Maintenance Note (2026-03-10)
       
     </span>
   </a>
@@ -1913,9 +1913,26 @@
 <p>Authoritative exposure rule:
 - External clients authenticate only against CGS <code>/service/ai/v1</code>.
 - Zetherion <code>/api/v1</code> auth is internal upstream auth between CGS and Zetherion.</p>
-<h2 id="maintenance-note-2026-03-09">Maintenance Note (2026-03-09)<a class="headerlink" href="#maintenance-note-2026-03-09" title="Permanent link">&para;</a></h2>
+<h2 id="maintenance-note-2026-03-10">Maintenance Note (2026-03-10)<a class="headerlink" href="#maintenance-note-2026-03-10" title="Permanent link">&para;</a></h2>
 <ul>
-<li>Public upstream tenant auth now supports two API-key families:</li>
+<li>Segment 6 adds upstream tenant notification routes:</li>
+<li><code>GET /api/v1/notifications/channels</code></li>
+<li><code>POST /api/v1/notifications/events</code></li>
+<li><code>GET|POST /api/v1/notifications/subscriptions</code></li>
+<li><code>PATCH|DELETE /api/v1/notifications/subscriptions/{subscription_id}</code></li>
+<li>Notification routes authenticate with tenant <code>X-API-Key</code> only and stay in the
+  tenant live-key surface for this segment.</li>
+<li><code>sk_test_...</code> keys remain intentionally blocked from <code>/api/v1/notifications/*</code>;
+  sandbox clients can validate notification payload construction locally but do
+  not publish or mutate notification subscriptions through test keys in this segment.</li>
+<li>
+<p>Notification subscriptions and event publishing are tenant-scoped upstream
+  APIs; they do not use session bearer auth and do not cross into owner-personal
+  trust domains.</p>
+</li>
+<li>
+<p>Public upstream tenant auth now supports two API-key families:</p>
+</li>
 <li><code>sk_live_...</code> for the normal upstream API-key surface</li>
 <li><code>sk_test_...</code> for <code>POST /api/v1/sessions</code> plus <code>/api/v1/test/*</code> only in Segment 3</li>
 <li><code>POST /api/v1/sessions</code> now accepts optional <code>test_profile_id</code> and returns session metadata tagged with <code>execution_mode</code>.</li>
@@ -1976,6 +1993,12 @@
 <td>tenant/session resolved from token claims plus stored <code>execution_mode</code> match</td>
 </tr>
 <tr>
+<td>Notifications (<code>/notifications/*</code>)</td>
+<td>API key</td>
+<td><code>X-API-Key</code></td>
+<td>tenant resolved from API key; live keys only in Segment 6</td>
+</tr>
+<tr>
 <td>CRM reads + release markers</td>
 <td>API key</td>
 <td><code>X-API-Key</code></td>
@@ -2001,6 +2024,7 @@
 - <code>memory_subject_id</code> is tenant-local session metadata, not an additional auth claim or scope boundary.
 - <code>test_profile_id</code> is tenant-local sandbox session metadata, not a scope or tenant join key.
 - <code>sk_test_...</code> keys are intentionally blocked from API-key routes outside <code>/api/v1/sessions</code> and <code>/api/v1/test/*</code> in this segment.
+- Notification routes require tenant live API-key auth and do not accept session bearer tokens or <code>sk_test_...</code> keys in this segment.
 - Document routes do not accept session bearer tokens; they require tenant API key auth.</p>
 <h2 id="cgs-gateway-serviceaiv1-public">CGS Gateway (<code>/service/ai/v1</code>, public)<a class="headerlink" href="#cgs-gateway-serviceaiv1-public" title="Permanent link">&para;</a></h2>
 <table>

@@ -3,7 +3,7 @@ info:
   title: Zetherion Upstream API
   version: 1.0.0
   description: Internal `/api/v1` upstream contract consumed by the CGS gateway. External clients should use CGS `/service/ai/v1`.
-  x-maintenance-note: "2026-03-09: added upstream tenant sandbox controls, sk_test_ API-key handling for POST /api/v1/sessions plus /api/v1/test/*, execution_mode tagging on session tokens/sessions/messages/analytics rows, and deterministic test-mode chat/stream behavior that preserves the live wire format while suppressing tenant-derived writes. 2026-03-08: /api/v1/sessions now accepts optional memory_subject_id, derives a tenant-local subject when omitted, and returns conversation_summary metadata for tenant-scoped conversational recall. /api/v1/chat and /api/v1/chat/stream now assemble prompt context from tenant_raw session summaries plus tenant subject memories without changing auth modes or route paths. 2026-03-06: added internal data-plane isolation foundations (owner/tenant Qdrant routing, scoped object-storage prefixes, additive PostgreSQL isolation schemas, and owner-vs-tenant encryption domains) without changing the upstream /api/v1 route contract. 2026-03-05: added tenant messaging read/send routes plus document archive/delete + restore lifecycle updates."
+  x-maintenance-note: "2026-03-10: added upstream tenant notification routes for channel discovery, subscription CRUD, and event publishing on top of the shared announcement core. Email notifications use a tenant-connected Google mailbox when present; webhook delivery remains always available. sk_test_ keys are still restricted away from /api/v1/notifications/*. 2026-03-09: added upstream tenant sandbox controls, sk_test_ API-key handling for POST /api/v1/sessions plus /api/v1/test/*, execution_mode tagging on session tokens/sessions/messages/analytics rows, and deterministic test-mode chat/stream behavior that preserves the live wire format while suppressing tenant-derived writes. 2026-03-08: /api/v1/sessions now accepts optional memory_subject_id, derives a tenant-local subject when omitted, and returns conversation_summary metadata for tenant-scoped conversational recall. /api/v1/chat and /api/v1/chat/stream now assemble prompt context from tenant_raw session summaries plus tenant subject memories without changing auth modes or route paths. 2026-03-06: added internal data-plane isolation foundations (owner/tenant Qdrant routing, scoped object-storage prefixes, additive PostgreSQL isolation schemas, and owner-vs-tenant encryption domains) without changing the upstream /api/v1 route contract. 2026-03-05: added tenant messaging read/send routes plus document archive/delete + restore lifecycle updates."
 servers:
   - url: https://{host}
     variables:
@@ -228,6 +228,98 @@ paths:
                 $ref: '#/components/schemas/OkResponse'
         '404':
           description: Sandbox rule not found
+  /api/v1/notifications/channels:
+    get:
+      summary: List tenant notification channels
+      description: Live-key route. Returns the public channels exposed by the shared announcement registry for this tenant.
+      responses:
+        '200':
+          description: Notification channel list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationChannelListResponse'
+  /api/v1/notifications/events:
+    post:
+      summary: Publish tenant notification event
+      description: Live-key route. Publishes one tenant-scoped event and fans it out to all matching subscriptions through the shared announcement core.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationEventRequest'
+      responses:
+        '202':
+          description: Notification event accepted for fan-out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPublishResponse'
+        '400':
+          description: Invalid notification event payload
+  /api/v1/notifications/subscriptions:
+    get:
+      summary: List tenant notification subscriptions
+      responses:
+        '200':
+          description: Notification subscriptions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationSubscriptionListResponse'
+    post:
+      summary: Create tenant notification subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationSubscriptionCreateRequest'
+      responses:
+        '201':
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationSubscriptionRecord'
+        '400':
+          description: Invalid subscription payload
+  /api/v1/notifications/subscriptions/{subscription_id}:
+    patch:
+      summary: Patch tenant notification subscription
+      parameters:
+        - $ref: '#/components/parameters/SubscriptionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationSubscriptionPatchRequest'
+      responses:
+        '200':
+          description: Subscription updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationSubscriptionRecord'
+        '400':
+          description: Invalid subscription payload
+        '404':
+          description: Subscription not found
+    delete:
+      summary: Delete tenant notification subscription
+      parameters:
+        - $ref: '#/components/parameters/SubscriptionId'
+      responses:
+        '200':
+          description: Subscription deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '404':
+          description: Subscription not found
   /api/v1/chat:
     post:
       summary: Send a chat message
@@ -653,6 +745,12 @@ components:
       required: true
       schema:
         type: string
+    SubscriptionId:
+      name: subscription_id
+      in: path
+      required: true
+      schema:
+        type: string
     UploadId:
       name: upload_id
       in: path
@@ -968,6 +1066,201 @@ components:
           nullable: true
           additionalProperties: true
       required: [preset_id, latency_ms, response]
+    NotificationChannel:
+      type: object
+      properties:
+        channel_id:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        config_fields:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [available, unconfigured]
+        metadata:
+          type: object
+          additionalProperties: true
+      required: [channel_id, display_name, description, config_fields, status, metadata]
+    NotificationChannelListResponse:
+      type: object
+      properties:
+        channels:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationChannel'
+        count:
+          type: integer
+      required: [channels, count]
+    NotificationSubscriptionChannelConfig:
+      type: object
+      additionalProperties: true
+      description: Webhook subscriptions require `webhook_url`; email subscriptions require `email` and optionally `account_id`.
+    NotificationTemplate:
+      type: object
+      properties:
+        title:
+          type: string
+          nullable: true
+        body:
+          type: string
+          nullable: true
+    NotificationSubscriptionCreateRequest:
+      type: object
+      required: [event_types, channel_id, channel_config]
+      properties:
+        source_app:
+          type: string
+          nullable: true
+        event_types:
+          type: array
+          items:
+            type: string
+        channel_id:
+          type: string
+          enum: [webhook, email]
+        channel_config:
+          $ref: '#/components/schemas/NotificationSubscriptionChannelConfig'
+        template:
+          $ref: '#/components/schemas/NotificationTemplate'
+        status:
+          type: string
+          enum: [active, paused]
+          default: active
+    NotificationSubscriptionPatchRequest:
+      type: object
+      properties:
+        source_app:
+          type: string
+          nullable: true
+        event_types:
+          type: array
+          items:
+            type: string
+        channel_config:
+          $ref: '#/components/schemas/NotificationSubscriptionChannelConfig'
+        template:
+          $ref: '#/components/schemas/NotificationTemplate'
+        status:
+          type: string
+          enum: [active, paused]
+    NotificationSubscriptionRecord:
+      type: object
+      properties:
+        subscription_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        source_app:
+          type: string
+          nullable: true
+        event_types:
+          type: array
+          items:
+            type: string
+        channel_id:
+          type: string
+          enum: [webhook, email]
+        channel_config:
+          $ref: '#/components/schemas/NotificationSubscriptionChannelConfig'
+        template:
+          $ref: '#/components/schemas/NotificationTemplate'
+        status:
+          type: string
+          enum: [active, paused]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - subscription_id
+        - tenant_id
+        - event_types
+        - channel_id
+        - channel_config
+        - template
+        - status
+        - created_at
+        - updated_at
+    NotificationSubscriptionListResponse:
+      type: object
+      properties:
+        subscriptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationSubscriptionRecord'
+        count:
+          type: integer
+      required: [subscriptions, count]
+    NotificationEventRequest:
+      type: object
+      required: [source_app, event_type, title, body]
+      properties:
+        source_app:
+          type: string
+        event_type:
+          type: string
+        severity:
+          type: string
+          enum: [normal, high, critical]
+          default: normal
+        title:
+          type: string
+        body:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        dedupe_key:
+          type: string
+          nullable: true
+        occurred_at:
+          type: string
+          format: date-time
+          nullable: true
+    NotificationDeliveryReceipt:
+      type: object
+      properties:
+        status:
+          type: string
+        event_id:
+          type: string
+        scheduled_for:
+          type: string
+          format: date-time
+          nullable: true
+        reason_code:
+          type: string
+          nullable: true
+      required: [status, event_id]
+    NotificationDeliveryResult:
+      type: object
+      properties:
+        subscription_id:
+          type: string
+        channel_id:
+          type: string
+        receipt:
+          $ref: '#/components/schemas/NotificationDeliveryReceipt'
+      required: [subscription_id, channel_id, receipt]
+    NotificationPublishResponse:
+      type: object
+      properties:
+        matched_subscriptions:
+          type: integer
+        deliveries:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationDeliveryResult'
+      required: [matched_subscriptions, deliveries]
     DocumentUploadCreateRequest:
       type: object
       required: [file_name]
