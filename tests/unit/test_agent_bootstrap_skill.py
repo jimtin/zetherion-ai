@@ -53,6 +53,14 @@ def _app_profile(app_id: str = "catalyst-group-solutions") -> dict[str, object]:
         "profile": {
             "repo_ids": [app_id],
             "docs_slugs": ["cgs-ai-api-quickstart"],
+            "service_connector_map": {
+                "github": {
+                    "connector_id": "github-primary",
+                    "read_access": ["branch_metadata", "diff_compare", "pr_metadata"],
+                    "write_access": [],
+                    "broker_only": True,
+                }
+            },
             "github_governance": {
                 "write_principal": "zetherion",
                 "agent_push_enabled": False,
@@ -143,6 +151,41 @@ async def test_agent_app_manifest_get_includes_pack_and_docs() -> None:
         "catalyst-group-solutions"
     )
     assert response.data["docs"][0]["slug"] == "cgs-ai-api-quickstart"
+    assert response.data["services"][0]["service_kind"] == "github"
+
+
+@pytest.mark.asyncio
+async def test_agent_app_services_list_returns_catalog() -> None:
+    storage = _storage()
+    storage.get_agent_app_profile.return_value = _app_profile()
+    storage.list_agent_app_profiles.return_value = [_app_profile()]
+    storage.list_external_access_grants.return_value = [
+        {
+            "resource_type": "app",
+            "resource_id": "catalyst-group-solutions",
+            "active": True,
+        }
+    ]
+    skill = AgentBootstrapSkill(storage=storage)
+    skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+
+    response = await skill.handle(
+        SkillRequest(
+            intent="agent_app_services_list",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "codex-1",
+                "app_id": "catalyst-group-solutions",
+                "public_base_url": "https://cgs.example.com",
+            },
+        )
+    )
+
+    assert response.success is True
+    assert response.data["services"][0]["service_kind"] == "github"
+    assert response.data["services"][0]["routes"]["read"].endswith("/services/github")
 
 
 def test_build_workspace_bundle_embeds_inline_archive(tmp_path: Path) -> None:
@@ -213,6 +256,45 @@ async def test_publish_candidate_submit_stores_diff_without_github_write_access(
     candidate_payload = storage.create_publish_candidate.await_args.kwargs["candidate"]
     assert candidate_payload["candidate_type"] == "text/x-diff"
     assert candidate_payload["github_governance"]["agent_push_enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_service_read_delegates_to_service_broker() -> None:
+    storage = _storage()
+    storage.get_agent_app_profile.return_value = _app_profile()
+    storage.list_agent_app_profiles.return_value = [_app_profile()]
+    storage.list_external_access_grants.return_value = [
+        {
+            "resource_type": "app",
+            "resource_id": "catalyst-group-solutions",
+            "active": True,
+        }
+    ]
+    skill = AgentBootstrapSkill(storage=storage)
+    skill._ensure_default_docs = AsyncMock()  # type: ignore[method-assign]
+    skill._ensure_default_apps = AsyncMock()  # type: ignore[method-assign]
+    skill._read_service_view = AsyncMock(  # type: ignore[method-assign]
+        return_value={"service_kind": "github", "view": "overview"}
+    )
+
+    response = await skill.handle(
+        SkillRequest(
+            intent="agent_service_read",
+            user_id="owner-1",
+            context={
+                "owner_id": "owner-1",
+                "principal_id": "codex-1",
+                "app_id": "catalyst-group-solutions",
+                "service_kind": "github",
+                "view": "overview",
+                "public_base_url": "https://cgs.example.com",
+            },
+        )
+    )
+
+    assert response.success is True
+    assert response.data["service_kind"] == "github"
+    skill._read_service_view.assert_awaited_once()
 
 
 @pytest.mark.asyncio

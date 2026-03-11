@@ -479,6 +479,27 @@ class GitHubClient:
         )
         return response.content
 
+    async def compare_commits(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        base: str,
+        head: str,
+    ) -> dict[str, Any]:
+        """Compare two refs and return the raw comparison payload."""
+        base_ref = str(base or "").strip()
+        head_ref = str(head or "").strip()
+        if not base_ref or not head_ref:
+            raise ValueError("base and head are required")
+        data = await self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/compare/{base_ref}...{head_ref}",
+        )
+        if isinstance(data, dict):
+            return data
+        raise GitHubAPIError("Unexpected response format")
+
     async def get_branch_protection(
         self,
         owner: str,

@@ -19,8 +19,10 @@ from zetherion_ai.logging import get_logger
 from zetherion_ai.owner_ci import OwnerCiStorage, default_repo_profile, default_repo_profiles
 from zetherion_ai.skills.base import Skill, SkillMetadata, SkillRequest, SkillResponse
 from zetherion_ai.skills.ci_controller import CiControllerSkill
+from zetherion_ai.skills.clerk.client import ClerkMetadataClient, ClerkMetadataError
 from zetherion_ai.skills.github.client import GitHubAPIError, GitHubClient, GitHubValidationError
 from zetherion_ai.skills.permissions import Permission, PermissionSet
+from zetherion_ai.skills.vercel.client import VercelClient
 
 log = get_logger("zetherion_ai.skills.agent_bootstrap")
 
@@ -40,6 +42,31 @@ _EXCLUDED_DIR_NAMES = {
 _HEX_SHA_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
 _REPO_ID_SANITIZE_RE = re.compile(r"[^a-z0-9]+")
 _GITHUB_CONNECTOR_ID = "github-primary"
+_VERCEL_CONNECTOR_ID = "vercel-primary"
+_CLERK_CONNECTOR_ID = "clerk-primary"
+
+_SERVICE_VIEW_CAPABILITIES: dict[str, dict[str, str]] = {
+    "github": {
+        "overview": "branch_metadata",
+        "compare": "diff_compare",
+        "pulls": "pr_metadata",
+        "workflows": "workflow_status",
+    },
+    "vercel": {
+        "overview": "project_metadata",
+        "deployments": "deployment_status",
+        "domains": "domain_metadata",
+        "envs": "env_names",
+    },
+    "clerk": {
+        "overview": "instance_metadata",
+        "jwks": "jwks_metadata",
+        "openid": "issuer_metadata",
+    },
+    "discord": {
+        "overview": "channel_metadata",
+    },
+}
 
 
 def _slugify_repo_id(value: str) -> str:
@@ -436,6 +463,43 @@ def _default_command_catalog(repo: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _normalize_limit(value: Any, *, default: int = 10, maximum: int = 20) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(1, min(parsed, maximum))
+
+
+def _service_routes_for(repo_id: str, *, base_url: str) -> dict[str, str]:
+    prefix = f"{base_url}/service/ai/v1/agent/apps/{repo_id}/services" if base_url else ""
+    return {
+        "catalog": f"{prefix}" if prefix else f"/service/ai/v1/agent/apps/{repo_id}/services",
+        "service": (
+            f"{prefix}/:serviceKind"
+            if prefix
+            else f"/service/ai/v1/agent/apps/{repo_id}/services/:serviceKind"
+        ),
+    }
+
+
+def _pick_fields(payload: dict[str, Any], fields: list[str]) -> dict[str, Any]:
+    return {field: payload.get(field) for field in fields if field in payload}
+
+
+def _derive_clerk_jwks_url(metadata: dict[str, Any]) -> str | None:
+    explicit = str(metadata.get("jwks_url") or "").strip()
+    if explicit:
+        return explicit
+    issuer = str(metadata.get("issuer") or "").strip().rstrip("/")
+    if issuer:
+        return f"{issuer}/.well-known/jwks.json"
+    frontend_api_url = str(metadata.get("frontend_api_url") or "").strip().rstrip("/")
+    if frontend_api_url:
+        return f"{frontend_api_url}/.well-known/jwks.json"
+    return None
+
+
 class AgentBootstrapSkill(Skill):
     """Store broker state for downstream Codex agents and expose machine-readable app knowledge."""
 
@@ -461,6 +525,8 @@ class AgentBootstrapSkill(Skill):
                 "agent_session_create",
                 "agent_apps_list",
                 "agent_app_manifest_get",
+                "agent_app_services_list",
+                "agent_service_read",
                 "agent_repo_discover",
                 "agent_repo_enroll",
                 "agent_workspace_bundle_create",
@@ -500,6 +566,8 @@ class AgentBootstrapSkill(Skill):
             "agent_session_create": self._handle_session_create,
             "agent_apps_list": self._handle_apps_list,
             "agent_app_manifest_get": self._handle_app_manifest_get,
+            "agent_app_services_list": self._handle_app_services_list,
+            "agent_service_read": self._handle_service_read,
             "agent_repo_discover": self._handle_repo_discover,
             "agent_repo_enroll": self._handle_repo_enroll,
             "agent_workspace_bundle_create": self._handle_workspace_bundle_create,
@@ -694,6 +762,8 @@ class AgentBootstrapSkill(Skill):
                 "workspace_bundle_get": "/service/ai/v1/agent/workspace-bundles/:bundleId",
                 "test_plan_compile": "/service/ai/v1/agent/apps/:appId/test-plans/compile",
                 "publish_candidates": "/service/ai/v1/agent/apps/:appId/publish-candidates",
+                "services": "/service/ai/v1/agent/apps/:appId/services",
+                "service_read": "/service/ai/v1/agent/apps/:appId/services/:serviceKind",
                 "logs": "/service/ai/v1/agent/runs/:runId/logs",
                 "resources": "/service/ai/v1/agent/runs/:runId/resources",
             },
@@ -767,7 +837,66 @@ class AgentBootstrapSkill(Skill):
                 "app": app_profile,
                 "knowledge_pack": knowledge_pack,
                 "docs": docs,
+                "services": self._list_app_services(app_profile),
             },
+        )
+
+    async def _handle_app_services_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        if not app_id:
+            return SkillResponse.error_response(request.id, "app_id is required")
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        app_profile = await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+        )
+        services = self._list_app_services(app_profile, public_base_url=public_base_url)
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(services)} brokered services for `{app_id}`.",
+            data={"services": services},
+        )
+
+    async def _handle_service_read(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        service_kind = str(request.context.get("service_kind") or "").strip().lower()
+        if not app_id or not service_kind:
+            return SkillResponse.error_response(
+                request.id,
+                "app_id and service_kind are required",
+            )
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        app_profile = await self._require_app_access(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+        )
+        view = str(request.context.get("view") or "overview").strip().lower() or "overview"
+        data = await self._read_service_view(
+            owner_id=owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            app_profile=app_profile,
+            service_kind=service_kind,
+            view=view,
+            public_base_url=public_base_url,
+            request_context=request.context,
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {service_kind} broker view `{view}` for `{app_id}`.",
+            data=data,
         )
 
     async def _handle_repo_discover(
@@ -1440,6 +1569,8 @@ class AgentBootstrapSkill(Skill):
                 )
                 if base_url
                 else f"/service/ai/v1/agent/apps/{repo_id}/publish-candidates",
+                "services": _service_routes_for(repo_id, base_url=base_url)["catalog"],
+                "service_read": _service_routes_for(repo_id, base_url=base_url)["service"],
             },
         }
 
@@ -1494,6 +1625,538 @@ class AgentBootstrapSkill(Skill):
             },
             "service_connector_map": _default_service_connector_map(repo_id),
             "github_governance": dict(workspace_manifest.get("github_governance") or {}),
+        }
+
+    def _list_app_services(
+        self,
+        app_profile: dict[str, Any],
+        *,
+        public_base_url: str = "",
+    ) -> list[dict[str, Any]]:
+        profile = dict(app_profile.get("profile") or {})
+        service_map = dict(profile.get("service_connector_map") or {})
+        repo_id = str(app_profile.get("app_id") or "")
+        base_url = public_base_url.rstrip("/")
+        routes = _service_routes_for(repo_id, base_url=base_url)
+        services: list[dict[str, Any]] = []
+        for service_kind, raw_connector in sorted(service_map.items()):
+            connector = dict(raw_connector or {})
+            services.append(
+                {
+                    "service_kind": service_kind,
+                    "connector_id": str(connector.get("connector_id") or "").strip() or None,
+                    "broker_only": bool(connector.get("broker_only", True)),
+                    "read_access": list(connector.get("read_access") or []),
+                    "write_access": list(connector.get("write_access") or []),
+                    "available_views": sorted(
+                        _SERVICE_VIEW_CAPABILITIES.get(
+                            service_kind,
+                            {"overview": "metadata"},
+                        ).keys()
+                    ),
+                    "routes": {
+                        "catalog": routes["catalog"],
+                        "read": routes["service"].replace(":serviceKind", service_kind),
+                    },
+                }
+            )
+        return services
+
+    def _service_connector_for(
+        self,
+        app_profile: dict[str, Any],
+        *,
+        service_kind: str,
+    ) -> dict[str, Any]:
+        profile = dict(app_profile.get("profile") or {})
+        service_map = dict(profile.get("service_connector_map") or {})
+        connector = dict(service_map.get(service_kind) or {})
+        if not connector:
+            raise ValueError(
+                f"App `{app_profile.get('app_id')}` does not declare a `{service_kind}` connector"
+            )
+        allowed_views = _SERVICE_VIEW_CAPABILITIES.get(service_kind, {"overview": "metadata"})
+        return {
+            **connector,
+            "service_kind": service_kind,
+            "available_views": sorted(allowed_views.keys()),
+        }
+
+    async def _require_connector(
+        self,
+        owner_id: str,
+        *,
+        connector_id: str,
+        service_kind: str,
+        require_secret: bool = True,
+    ) -> dict[str, Any]:
+        connector = await self._storage.get_external_service_connector_with_secret(
+            owner_id,
+            connector_id,
+        )
+        if connector is None:
+            raise ValueError(f"Connector `{connector_id}` not found")
+        if str(connector.get("service_kind") or "").strip() != service_kind:
+            raise ValueError(f"Connector `{connector_id}` is not a `{service_kind}` connector")
+        if not bool(connector.get("active", True)):
+            raise ValueError(f"Connector `{connector_id}` is inactive")
+        if require_secret and not str(connector.get("secret_value") or "").strip():
+            raise ValueError(f"Connector `{connector_id}` has no secret configured")
+        return connector
+
+    async def _read_service_view(
+        self,
+        *,
+        owner_id: str,
+        principal_id: str | None,
+        app_id: str,
+        app_profile: dict[str, Any],
+        service_kind: str,
+        view: str,
+        public_base_url: str,
+        request_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        connector = self._service_connector_for(app_profile, service_kind=service_kind)
+        capability_map = _SERVICE_VIEW_CAPABILITIES.get(service_kind, {"overview": "metadata"})
+        if view not in capability_map:
+            raise ValueError(f"Unsupported `{service_kind}` broker view `{view}`")
+        allowed_ops = {
+            str(entry).strip()
+            for entry in list(connector.get("read_access") or [])
+            if str(entry).strip()
+        }
+        required_capability = capability_map[view]
+        if allowed_ops and required_capability not in allowed_ops:
+            raise ValueError(
+                f"Connector `{connector.get('connector_id')}` does not allow "
+                f"`{service_kind}` view `{view}`"
+            )
+        if service_kind == "github":
+            payload = await self._read_github_service_view(
+                owner_id=owner_id,
+                app_profile=app_profile,
+                connector_id=str(connector.get("connector_id") or _GITHUB_CONNECTOR_ID),
+                view=view,
+                request_context=request_context,
+            )
+        elif service_kind == "vercel":
+            payload = await self._read_vercel_service_view(
+                owner_id=owner_id,
+                app_profile=app_profile,
+                connector_id=str(connector.get("connector_id") or _VERCEL_CONNECTOR_ID),
+                view=view,
+                request_context=request_context,
+            )
+        elif service_kind == "clerk":
+            payload = await self._read_clerk_service_view(
+                owner_id=owner_id,
+                app_profile=app_profile,
+                connector_id=str(connector.get("connector_id") or _CLERK_CONNECTOR_ID),
+                view=view,
+                request_context=request_context,
+            )
+        else:
+            payload = await self._read_generic_service_view(
+                owner_id=owner_id,
+                app_profile=app_profile,
+                connector_id=str(connector.get("connector_id") or "").strip(),
+                service_kind=service_kind,
+                view=view,
+            )
+        await self._storage.record_agent_audit_event(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            service_kind=service_kind,
+            resource=str(connector.get("connector_id") or service_kind),
+            action=f"service.read.{view}",
+            decision="allowed",
+            audit={
+                "service_kind": service_kind,
+                "view": view,
+                "public_base_url": public_base_url or None,
+            },
+        )
+        return payload
+
+    async def _read_github_service_view(
+        self,
+        *,
+        owner_id: str,
+        app_profile: dict[str, Any],
+        connector_id: str,
+        view: str,
+        request_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        connector = await self._require_github_connector(owner_id, connector_id)
+        profile = dict(app_profile.get("profile") or {})
+        github_repo = str((profile.get("github_repos") or [None])[0] or "").strip()
+        if not github_repo:
+            raise ValueError(
+                f"App `{app_profile.get('app_id')}` does not declare a GitHub repository"
+            )
+        repo_owner, repo_name = _split_github_repo(github_repo)
+        limit = _normalize_limit(request_context.get("limit"), default=10, maximum=20)
+        client = GitHubClient(token=str(connector["secret_value"]))
+        try:
+            repository = await client.get_repository(repo_owner, repo_name)
+            if view == "overview":
+                branch = str(
+                    request_context.get("branch")
+                    or repository.default_branch
+                    or ((profile.get("default_branches") or [None])[0] or "")
+                ).strip()
+                protection = (
+                    await client.get_branch_protection(repo_owner, repo_name, branch=branch)
+                    if branch
+                    else None
+                )
+                pull_requests = await client.list_pull_requests(
+                    repo_owner,
+                    repo_name,
+                    state=str(request_context.get("state") or "open").strip() or "open",
+                    base=branch or None,
+                    per_page=min(limit, 10),
+                    page=1,
+                )
+                workflow_runs = await client.list_workflow_runs(
+                    repo_owner,
+                    repo_name,
+                    branch=branch or None,
+                    per_page=min(limit, 10),
+                    page=1,
+                )
+                return {
+                    "service_kind": "github",
+                    "view": view,
+                    "repository": repository.to_dict(),
+                    "default_branch": repository.default_branch,
+                    "branch_protection": protection,
+                    "pull_requests": [pull_request.to_dict() for pull_request in pull_requests],
+                    "workflow_runs": [run.to_dict() for run in workflow_runs],
+                    "github_governance": dict(profile.get("github_governance") or {}),
+                    "connector": {
+                        "connector_id": str(connector.get("connector_id") or connector_id),
+                        "auth_kind": str(connector.get("auth_kind") or ""),
+                    },
+                }
+            if view == "compare":
+                base_ref = str(request_context.get("base") or "").strip()
+                head_ref = str(request_context.get("head") or "").strip()
+                if not base_ref or not head_ref:
+                    raise ValueError("base and head are required for GitHub compare")
+                comparison = await client.compare_commits(
+                    repo_owner,
+                    repo_name,
+                    base=base_ref,
+                    head=head_ref,
+                )
+                return {
+                    "service_kind": "github",
+                    "view": view,
+                    "repository": repository.to_dict(),
+                    "comparison": comparison,
+                }
+            if view == "pulls":
+                pull_requests = await client.list_pull_requests(
+                    repo_owner,
+                    repo_name,
+                    state=str(request_context.get("state") or "open").strip() or "open",
+                    base=str(request_context.get("base") or "").strip() or None,
+                    head=str(request_context.get("head") or "").strip() or None,
+                    per_page=limit,
+                    page=1,
+                )
+                return {
+                    "service_kind": "github",
+                    "view": view,
+                    "repository": repository.to_dict(),
+                    "pull_requests": [pull_request.to_dict() for pull_request in pull_requests],
+                }
+            if view == "workflows":
+                workflow_runs = await client.list_workflow_runs(
+                    repo_owner,
+                    repo_name,
+                    branch=str(request_context.get("branch") or "").strip() or None,
+                    event=str(request_context.get("event") or "").strip() or None,
+                    status=str(request_context.get("status") or "").strip() or None,
+                    per_page=limit,
+                    page=1,
+                )
+                return {
+                    "service_kind": "github",
+                    "view": view,
+                    "repository": repository.to_dict(),
+                    "workflow_runs": [run.to_dict() for run in workflow_runs],
+                }
+            raise ValueError(f"Unsupported GitHub broker view `{view}`")
+        finally:
+            await client.close()
+
+    async def _read_vercel_service_view(
+        self,
+        *,
+        owner_id: str,
+        app_profile: dict[str, Any],
+        connector_id: str,
+        view: str,
+        request_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        connector = await self._require_connector(
+            owner_id,
+            connector_id=connector_id,
+            service_kind="vercel",
+        )
+        metadata = dict(connector.get("metadata") or {})
+        project_ref = (
+            str(request_context.get("project_ref") or "").strip()
+            or str(metadata.get("project_name") or "").strip()
+            or str(metadata.get("project_id") or "").strip()
+            or str(app_profile.get("app_id") or "").strip()
+        )
+        if not project_ref:
+            raise ValueError("project_ref is required for Vercel broker access")
+        team_id = (
+            str(request_context.get("team_id") or metadata.get("team_id") or "").strip() or None
+        )
+        limit = _normalize_limit(request_context.get("limit"), default=10, maximum=20)
+        client = VercelClient(token=str(connector["secret_value"]))
+        try:
+            project = await client.get_project(project_ref, team_id=team_id)
+            project_summary = _pick_fields(
+                project,
+                [
+                    "id",
+                    "name",
+                    "framework",
+                    "accountId",
+                    "createdAt",
+                    "updatedAt",
+                    "latestDeployments",
+                    "link",
+                    "targets",
+                ],
+            )
+            if view == "overview":
+                deployments = await client.list_deployments(
+                    project_id=str(project.get("id") or "").strip() or None,
+                    project_name=str(project.get("name") or project_ref),
+                    team_id=team_id,
+                    limit=min(limit, 10),
+                )
+                domains = await client.list_domains(project_ref, team_id=team_id)
+                return {
+                    "service_kind": "vercel",
+                    "view": view,
+                    "project": project_summary,
+                    "deployments": [
+                        _pick_fields(
+                            item,
+                            [
+                                "uid",
+                                "name",
+                                "url",
+                                "createdAt",
+                                "readyState",
+                                "state",
+                                "target",
+                                "creator",
+                                "meta",
+                            ],
+                        )
+                        for item in deployments
+                    ],
+                    "domains": [
+                        _pick_fields(
+                            item,
+                            [
+                                "name",
+                                "apexName",
+                                "projectId",
+                                "redirect",
+                                "redirectStatusCode",
+                                "gitBranch",
+                                "updatedAt",
+                                "verified",
+                            ],
+                        )
+                        for item in domains
+                    ],
+                }
+            if view == "deployments":
+                deployments = await client.list_deployments(
+                    project_id=str(project.get("id") or "").strip() or None,
+                    project_name=str(project.get("name") or project_ref),
+                    team_id=team_id,
+                    limit=limit,
+                )
+                return {
+                    "service_kind": "vercel",
+                    "view": view,
+                    "project": project_summary,
+                    "deployments": [
+                        _pick_fields(
+                            item,
+                            [
+                                "uid",
+                                "name",
+                                "url",
+                                "createdAt",
+                                "readyState",
+                                "state",
+                                "target",
+                                "creator",
+                                "meta",
+                            ],
+                        )
+                        for item in deployments
+                    ],
+                }
+            if view == "domains":
+                domains = await client.list_domains(project_ref, team_id=team_id)
+                return {
+                    "service_kind": "vercel",
+                    "view": view,
+                    "project": project_summary,
+                    "domains": [
+                        _pick_fields(
+                            item,
+                            [
+                                "name",
+                                "apexName",
+                                "projectId",
+                                "redirect",
+                                "redirectStatusCode",
+                                "gitBranch",
+                                "updatedAt",
+                                "verified",
+                            ],
+                        )
+                        for item in domains
+                    ],
+                }
+            if view == "envs":
+                envs = await client.list_env_vars(project_ref, team_id=team_id)
+                return {
+                    "service_kind": "vercel",
+                    "view": view,
+                    "project": project_summary,
+                    "envs": [
+                        _pick_fields(
+                            item,
+                            [
+                                "id",
+                                "key",
+                                "type",
+                                "target",
+                                "configurationId",
+                                "createdAt",
+                                "updatedAt",
+                                "gitBranch",
+                                "customEnvironmentIds",
+                            ],
+                        )
+                        for item in envs
+                    ],
+                }
+            raise ValueError(f"Unsupported Vercel broker view `{view}`")
+        finally:
+            await client.close()
+
+    async def _read_clerk_service_view(
+        self,
+        *,
+        owner_id: str,
+        app_profile: dict[str, Any],
+        connector_id: str,
+        view: str,
+        request_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        connector = await self._require_connector(
+            owner_id,
+            connector_id=connector_id,
+            service_kind="clerk",
+            require_secret=False,
+        )
+        metadata = dict(connector.get("metadata") or {})
+        issuer = (
+            str(request_context.get("issuer") or "").strip()
+            or str(metadata.get("issuer") or "").strip()
+        )
+        frontend_api_url = (
+            str(request_context.get("frontend_api_url") or "").strip()
+            or str(metadata.get("frontend_api_url") or "").strip()
+        )
+        jwks_url = (
+            str(request_context.get("jwks_url") or "").strip()
+            or _derive_clerk_jwks_url(metadata)
+            or ""
+        )
+        summary = {
+            "issuer": issuer or None,
+            "frontend_api_url": frontend_api_url or None,
+            "jwks_url": jwks_url or None,
+            "instance_name": str(metadata.get("instance_name") or "").strip() or None,
+            "publishable_key_hint": str(metadata.get("publishable_key_hint") or "").strip() or None,
+        }
+        if view == "overview":
+            return {
+                "service_kind": "clerk",
+                "view": view,
+                "instance": summary,
+                "app_id": str(app_profile.get("app_id") or ""),
+            }
+        client = ClerkMetadataClient()
+        try:
+            if view == "jwks":
+                if not jwks_url:
+                    raise ValueError("jwks_url is required for Clerk JWKS metadata")
+                return {
+                    "service_kind": "clerk",
+                    "view": view,
+                    "instance": summary,
+                    "jwks": await client.get_jwks(jwks_url),
+                }
+            if view == "openid":
+                if not issuer:
+                    raise ValueError("issuer is required for Clerk OpenID metadata")
+                return {
+                    "service_kind": "clerk",
+                    "view": view,
+                    "instance": summary,
+                    "openid_configuration": await client.get_openid_configuration(issuer),
+                }
+            raise ValueError(f"Unsupported Clerk broker view `{view}`")
+        except ClerkMetadataError as exc:
+            raise ValueError(str(exc)) from exc
+        finally:
+            await client.close()
+
+    async def _read_generic_service_view(
+        self,
+        *,
+        owner_id: str,
+        app_profile: dict[str, Any],
+        connector_id: str,
+        service_kind: str,
+        view: str,
+    ) -> dict[str, Any]:
+        connector = await self._require_connector(
+            owner_id,
+            connector_id=connector_id,
+            service_kind=service_kind,
+            require_secret=False,
+        )
+        return {
+            "service_kind": service_kind,
+            "view": view,
+            "connector": {
+                "connector_id": str(connector.get("connector_id") or connector_id),
+                "service_kind": service_kind,
+                "metadata": dict(connector.get("metadata") or {}),
+                "policy": dict(connector.get("policy") or {}),
+            },
+            "app_id": str(app_profile.get("app_id") or ""),
         }
 
     async def _resolve_repo_profile(self, owner_id: str, repo_id: str) -> dict[str, Any]:
@@ -1687,19 +2350,11 @@ class AgentBootstrapSkill(Skill):
         owner_id: str,
         connector_id: str | None = None,
     ) -> dict[str, Any]:
-        connector = await self._storage.get_external_service_connector_with_secret(
+        return await self._require_connector(
             owner_id,
-            connector_id or _GITHUB_CONNECTOR_ID,
+            connector_id=connector_id or _GITHUB_CONNECTOR_ID,
+            service_kind="github",
         )
-        if connector is None:
-            raise ValueError(f"GitHub connector `{connector_id or _GITHUB_CONNECTOR_ID}` not found")
-        if str(connector.get("service_kind") or "").strip() != "github":
-            raise ValueError(f"Connector `{connector['connector_id']}` is not a GitHub connector")
-        if not bool(connector.get("active", True)):
-            raise ValueError(f"Connector `{connector['connector_id']}` is inactive")
-        if not str(connector.get("secret_value") or "").strip():
-            raise ValueError(f"Connector `{connector['connector_id']}` has no secret configured")
-        return connector
 
     async def _discover_github_repositories(
         self,
@@ -2505,7 +3160,21 @@ class AgentBootstrapSkill(Skill):
     def _extract_tar_safely(self, archive: tarfile.TarFile, destination: Path) -> None:
         root = destination.resolve()
         for member in archive.getmembers():
+            if member.issym() or member.islnk():
+                raise ValueError(f"Archive member uses an unsupported link: {member.name}")
             member_path = (root / member.name).resolve()
             if member_path != root and root not in member_path.parents:
                 raise ValueError(f"Archive member escapes destination: {member.name}")
-        archive.extractall(path=root)
+            if member.isdir():
+                member_path.mkdir(parents=True, exist_ok=True)
+                continue
+            if not member.isfile():
+                raise ValueError(f"Archive member type is not supported: {member.name}")
+            member_path.parent.mkdir(parents=True, exist_ok=True)
+            extracted = archive.extractfile(member)
+            if extracted is None:
+                raise ValueError(f"Archive member could not be read: {member.name}")
+            with extracted, member_path.open("wb") as destination_file:
+                shutil.copyfileobj(extracted, destination_file)
+            if member.mode:
+                member_path.chmod(member.mode)
