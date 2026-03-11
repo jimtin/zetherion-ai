@@ -114,15 +114,15 @@ writeback to GitHub remains publish-candidate only.
 
 ## Windows Provisioning
 
-Two PowerShell scripts are provided under [scripts/windows](/Users/jameshinton/Development/zetherion-ai/scripts/windows):
+Two PowerShell scripts are provided under `scripts/windows`:
 
-- [install-ci-worker.ps1](/Users/jameshinton/Development/zetherion-ai/scripts/windows/install-ci-worker.ps1)
+- `install-ci-worker.ps1`
   - clones a dedicated checkout into `C:\ZetherionCI\agent-src`
   - creates a dedicated virtualenv in `C:\ZetherionCI\agent-runtime`
   - installs `zetherion-dev-agent` from that checkout
   - writes `%USERPROFILE%\.zetherion-dev-agent\config.toml`
   - registers the startup task `ZetherionOwnerCiWorker`
-- [verify-ci-worker-connectivity.ps1](/Users/jameshinton/Development/zetherion-ai/scripts/windows/verify-ci-worker-connectivity.ps1)
+- `verify-ci-worker-connectivity.ps1`
   - validates direct endpoint reachability
   - validates relay reachability when configured
   - optionally runs `zetherion-dev-agent worker --once`
