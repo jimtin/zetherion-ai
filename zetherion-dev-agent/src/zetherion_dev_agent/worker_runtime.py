@@ -8,6 +8,7 @@ import hmac
 import json
 import os
 import secrets
+import shutil
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -135,6 +136,7 @@ class WorkerGuardrails:
     """Local enforcement limits for worker job execution."""
 
     allowed_repo_roots: tuple[Path, ...]
+    denied_repo_roots: tuple[Path, ...]
     allowed_actions: tuple[str, ...]
     allowed_commands: tuple[str, ...]
     max_runtime_seconds: int
@@ -146,10 +148,14 @@ class WorkerGuardrails:
         roots = tuple(
             Path(path).expanduser().resolve() for path in config.worker_allowed_repo_roots
         )
+        denied_roots = tuple(
+            Path(path).expanduser().resolve() for path in config.worker_denied_repo_roots
+        )
         actions = tuple(item.strip() for item in config.worker_allowed_actions if item.strip())
         commands = tuple(item.strip() for item in config.worker_allowed_commands if item.strip())
         return cls(
             allowed_repo_roots=roots,
+            denied_repo_roots=denied_roots,
             allowed_actions=actions,
             allowed_commands=commands,
             max_runtime_seconds=max(5, int(config.worker_max_runtime_seconds)),
@@ -164,10 +170,14 @@ class WorkerJob:
 
     job_id: str
     execution_mode: str
+    run_id: str | None
+    shard_id: str | None
+    execution_target: str
     action: str
     runner: str
     payload: dict[str, Any]
     required_capabilities: tuple[str, ...]
+    artifact_contract: dict[str, Any]
     delegation_access: dict[str, Any] | None = None
 
     @classmethod
@@ -191,10 +201,14 @@ class WorkerJob:
         return cls(
             job_id=job_id,
             execution_mode=execution_mode,
+            run_id=str(payload.get("run_id") or "").strip() or None,
+            shard_id=str(payload.get("shard_id") or "").strip() or None,
+            execution_target=str(payload.get("execution_target") or "").strip() or "unknown",
             action=action,
             runner=runner,
             payload=raw_payload,
             required_capabilities=required_capabilities,
+            artifact_contract=dict(payload.get("artifact_contract") or {}),
             delegation_access=delegation_access,
         )
 
@@ -206,6 +220,12 @@ class WorkerRunResult:
     status: str
     output: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
+    events: list[dict[str, Any]] = field(default_factory=list)
+    log_chunks: list[dict[str, Any]] = field(default_factory=list)
+    resource_samples: list[dict[str, Any]] = field(default_factory=list)
+    debug_bundle: dict[str, Any] | None = None
+    cleanup_receipt: dict[str, Any] | None = None
+    container_receipts: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -309,6 +329,15 @@ class CodexRunner:
                 message=f"repo_root is outside allowlisted roots: {repo_root}",
                 details={"repo_root": str(repo_root), "job_id": job.job_id},
             )
+        if any(
+            repo_root == denied_root or denied_root in repo_root.parents
+            for denied_root in guardrails.denied_repo_roots
+        ):
+            raise GuardrailError(
+                code="WORKER_GUARDRAIL_REPO_DENIED",
+                message=f"repo_root is explicitly denied: {repo_root}",
+                details={"repo_root": str(repo_root), "job_id": job.job_id},
+            )
 
         env: dict[str, str] = {}
         if isinstance(env_raw, dict):
@@ -322,13 +351,7 @@ class CodexRunner:
         process_env.update(env)
 
         preexec_fn: Any | None = None
-        if guardrails.max_memory_mb > 0:
-            if os.name == "nt":
-                raise GuardrailError(
-                    code="WORKER_GUARDRAIL_MEMORY_CAP_UNSUPPORTED",
-                    message="Memory caps are not supported on this platform",
-                    details={"job_id": job.job_id, "platform": os.name},
-                )
+        if guardrails.max_memory_mb > 0 and os.name != "nt":
             try:
                 import resource
             except ImportError as exc:  # pragma: no cover - depends on platform
@@ -415,6 +438,232 @@ class CodexRunner:
         )
 
 
+class DockerRunner:
+    """Docker-only runner for isolated Windows CI shards."""
+
+    name = "docker_runner"
+
+    async def run(self, job: WorkerJob, guardrails: WorkerGuardrails) -> WorkerRunResult:
+        payload = job.payload
+        container_spec = dict(payload.get("container_spec") or {})
+        if not container_spec:
+            raise GuardrailError(
+                code="WORKER_GUARDRAIL_CONTAINER_SPEC_MISSING",
+                message="Docker runner requires container_spec",
+                details={"job_id": job.job_id},
+            )
+
+        workspace_root_raw = str(
+            payload.get("workspace_root") or payload.get("repo_root") or ""
+        ).strip()
+        if not workspace_root_raw:
+            raise GuardrailError(
+                code="WORKER_GUARDRAIL_REPO_ROOT_MISSING",
+                message="Docker job is missing workspace_root",
+                details={"job_id": job.job_id},
+            )
+        workspace_root = Path(workspace_root_raw).expanduser().resolve()
+        if not workspace_root.exists() or not workspace_root.is_dir():
+            raise GuardrailError(
+                code="WORKER_GUARDRAIL_REPO_ROOT_INVALID",
+                message=f"workspace_root does not exist: {workspace_root}",
+                details={"workspace_root": str(workspace_root), "job_id": job.job_id},
+            )
+        if not guardrails.allowed_repo_roots or not any(
+            workspace_root == allowed_root or allowed_root in workspace_root.parents
+            for allowed_root in guardrails.allowed_repo_roots
+        ):
+            raise GuardrailError(
+                code="WORKER_GUARDRAIL_REPO_NOT_ALLOWED",
+                message=f"workspace_root is outside allowlisted roots: {workspace_root}",
+                details={"workspace_root": str(workspace_root), "job_id": job.job_id},
+            )
+        if any(
+            workspace_root == denied_root or denied_root in workspace_root.parents
+            for denied_root in guardrails.denied_repo_roots
+        ):
+            raise GuardrailError(
+                code="WORKER_GUARDRAIL_REPO_DENIED",
+                message=f"workspace_root is explicitly denied: {workspace_root}",
+                details={"workspace_root": str(workspace_root), "job_id": job.job_id},
+            )
+        if guardrails.allowed_commands and "docker" not in guardrails.allowed_commands:
+            raise GuardrailError(
+                code="WORKER_GUARDRAIL_COMMAND_NOT_ALLOWED",
+                message="docker is not allowlisted for this worker",
+                details={"job_id": job.job_id},
+            )
+
+        image = str(container_spec.get("image") or "").strip()
+        if not image:
+            raise GuardrailError(
+                code="WORKER_GUARDRAIL_CONTAINER_IMAGE_MISSING",
+                message="container_spec.image is required",
+                details={"job_id": job.job_id},
+            )
+        command_raw = container_spec.get("command") or payload.get("command") or []
+        if not isinstance(command_raw, list) or not command_raw:
+            raise GuardrailError(
+                code="WORKER_GUARDRAIL_COMMAND_MISSING",
+                message="Docker job command must be a non-empty array",
+                details={"job_id": job.job_id},
+            )
+        command = [str(item).strip() for item in command_raw if str(item).strip()]
+        if not command:
+            raise GuardrailError(
+                code="WORKER_GUARDRAIL_COMMAND_EMPTY",
+                message="Docker job command cannot be empty",
+                details={"job_id": job.job_id},
+            )
+
+        mounts_raw = container_spec.get("mounts")
+        mounts: list[dict[str, Any]] = []
+        if isinstance(mounts_raw, list):
+            mounts = [dict(item) for item in mounts_raw if isinstance(item, dict)]
+        if not mounts:
+            mounts = [{"source": str(workspace_root), "target": "/workspace", "read_only": False}]
+
+        docker_command = ["docker", "run", "--rm"]
+        cleanup_labels = dict(payload.get("cleanup_labels") or {})
+        for key, value in cleanup_labels.items():
+            label_key = str(key).strip()
+            if not label_key:
+                continue
+            docker_command.extend(["--label", f"{label_key}={value}"])
+
+        for mount in mounts:
+            source = str(mount.get("source") or "").strip()
+            target = str(mount.get("target") or "").strip()
+            if not source or not target:
+                continue
+            docker_command.extend(["-v", f"{source}:{target}"])
+
+        env_payload = {}
+        if isinstance(container_spec.get("env"), dict):
+            env_payload.update(dict(container_spec.get("env") or {}))
+        if isinstance(payload.get("env"), dict):
+            env_payload.update(dict(payload.get("env") or {}))
+        for key, value in env_payload.items():
+            env_key = str(key).strip()
+            if not env_key:
+                continue
+            docker_command.extend(["-e", f"{env_key}={value}"])
+
+        workdir = str(container_spec.get("workdir") or "/workspace").strip() or "/workspace"
+        docker_command.extend(["-w", workdir, image, *command])
+        started_at = time.monotonic()
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *docker_command,
+                cwd=str(workspace_root),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError as exc:
+            raise GuardrailError(
+                code="WORKER_GUARDRAIL_COMMAND_NOT_FOUND",
+                message="docker is not installed on the worker",
+                details={"job_id": job.job_id},
+            ) from exc
+
+        try:
+            stdout_raw, stderr_raw = await asyncio.wait_for(
+                process.communicate(),
+                timeout=max(1, guardrails.max_runtime_seconds),
+            )
+        except TimeoutError as exc:
+            process.kill()
+            _ = await process.communicate()
+            raise GuardrailError(
+                code="WORKER_GUARDRAIL_RUNTIME_EXCEEDED",
+                message="Docker job runtime exceeded max_runtime_seconds",
+                details={"job_id": job.job_id, "limit_seconds": guardrails.max_runtime_seconds},
+            ) from exc
+
+        elapsed_ms = int((time.monotonic() - started_at) * 1000)
+        stdout = stdout_raw.decode("utf-8", errors="replace")
+        stderr = stderr_raw.decode("utf-8", errors="replace")
+        captured_size = len(stdout.encode("utf-8")) + len(stderr.encode("utf-8"))
+        if captured_size > guardrails.max_artifact_bytes:
+            raise GuardrailError(
+                code="WORKER_GUARDRAIL_ARTIFACT_TOO_LARGE",
+                message="Docker output exceeds artifact byte limit",
+                details={
+                    "job_id": job.job_id,
+                    "artifact_bytes": captured_size,
+                    "max_artifact_bytes": guardrails.max_artifact_bytes,
+                },
+            )
+
+        disk = shutil.disk_usage(str(workspace_root))
+        resource_sample = {
+            "memory_mb": 0.0,
+            "disk_used_bytes": max(0, int(disk.total - disk.free)),
+            "disk_free_bytes": int(disk.free),
+            "container_count": 1,
+            "elapsed_ms": elapsed_ms,
+        }
+        output = {
+            "runner": self.name,
+            "job_id": job.job_id,
+            "command": command,
+            "docker_command": docker_command,
+            "repo_root": str(workspace_root),
+            "execution_target": job.execution_target,
+            "exit_code": int(process.returncode or 0),
+            "elapsed_ms": elapsed_ms,
+            "stdout": stdout,
+            "stderr": stderr,
+        }
+        result = WorkerRunResult(
+            status="succeeded" if int(process.returncode or 0) == 0 else "failed",
+            output=output,
+            error=(
+                None
+                if int(process.returncode or 0) == 0
+                else {
+                    "code": "WORKER_RUNNER_EXIT_NON_ZERO",
+                    "message": f"Docker command exited with status {process.returncode}",
+                }
+            ),
+            events=[
+                {
+                    "event_type": "docker.run.completed",
+                    "level": "info" if int(process.returncode or 0) == 0 else "error",
+                    "payload": {
+                        "image": image,
+                        "elapsed_ms": elapsed_ms,
+                        "exit_code": int(process.returncode or 0),
+                    },
+                }
+            ],
+            log_chunks=[
+                {"stream": "stdout", "message": stdout, "metadata": {"runner": self.name}}
+                for _ in [0]
+                if stdout
+            ]
+            + [
+                {"stream": "stderr", "message": stderr, "metadata": {"runner": self.name}}
+                for _ in [0]
+                if stderr
+            ],
+            resource_samples=[resource_sample],
+            debug_bundle={
+                "reproduce_command": docker_command,
+                "cleanup_labels": cleanup_labels,
+                "artifact_contract": job.artifact_contract,
+            },
+            cleanup_receipt={"status": "requested", "docker_only": True},
+            container_receipts=[
+                {
+                    "image": image,
+                    "project": str(payload.get("compose_project") or ""),
+                }
+            ],
+        )
+        return result
+
+
 class TamperEvidentJobLog:
     """Append-only hash-chained execution log for one worker job."""
 
@@ -457,15 +706,27 @@ class WorkerApiClient:
     """Signed worker bridge API client for control-plane calls."""
 
     def __init__(
-        self, *, base_url: str, tenant_id: str, node_id: str, timeout_seconds: int = 30
+        self,
+        *,
+        base_url: str,
+        scope_id: str,
+        node_id: str,
+        timeout_seconds: int = 30,
+        scope_field_name: str = "tenant_id",
+        extra_headers: dict[str, str] | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
-        self._tenant_id = tenant_id
+        self._scope_id = scope_id
         self._node_id = node_id
+        self._scope_field_name = scope_field_name
+        self._extra_headers = dict(extra_headers or {})
         self._client = httpx.AsyncClient(timeout=float(max(5, timeout_seconds)))
 
     async def close(self) -> None:
         await self._client.aclose()
+
+    def _identity_payload(self) -> dict[str, str]:
+        return {self._scope_field_name: self._scope_id}
 
     async def bootstrap(
         self,
@@ -476,7 +737,7 @@ class WorkerApiClient:
         metadata: dict[str, Any] | None = None,
     ) -> WorkerSession:
         payload: dict[str, Any] = {
-            "tenant_id": self._tenant_id,
+            **self._identity_payload(),
             "node_id": self._node_id,
             "capabilities": capabilities,
         }
@@ -486,7 +747,10 @@ class WorkerApiClient:
             payload["metadata"] = metadata
         response = await self._client.post(
             f"{self._base_url}/bootstrap",
-            headers={"X-Worker-Bootstrap-Secret": bootstrap_secret},
+            headers={
+                "X-Worker-Bootstrap-Secret": bootstrap_secret,
+                **self._extra_headers,
+            },
             json=payload,
         )
         data = self._decode_response(response)
@@ -505,7 +769,7 @@ class WorkerApiClient:
         rotate_credentials: bool = True,
     ) -> WorkerSession:
         payload: dict[str, Any] = {
-            "tenant_id": self._tenant_id,
+            **self._identity_payload(),
             "node_id": self._node_id,
             "capabilities": capabilities,
             "rotate_credentials": bool(rotate_credentials),
@@ -535,7 +799,7 @@ class WorkerApiClient:
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "tenant_id": self._tenant_id,
+            **self._identity_payload(),
             "node_id": self._node_id,
             "health_status": "healthy",
         }
@@ -555,7 +819,7 @@ class WorkerApiClient:
         poll_after_seconds: int,
     ) -> dict[str, Any]:
         payload = {
-            "tenant_id": self._tenant_id,
+            **self._identity_payload(),
             "required_capabilities": required_capabilities,
             "poll_after_seconds": max(5, int(poll_after_seconds)),
         }
@@ -589,7 +853,7 @@ class WorkerApiClient:
         timestamp = str(int(time.time()))
         nonce = secrets.token_hex(16)
         canonical = (
-            f"{self._tenant_id}.{self._node_id}.{session.session_id}.{timestamp}.{nonce}.{raw_body}"
+            f"{self._scope_id}.{self._node_id}.{session.session_id}.{timestamp}.{nonce}.{raw_body}"
         )
         signature = hmac.new(
             session.signing_secret.encode("utf-8"),
@@ -605,6 +869,7 @@ class WorkerApiClient:
                 "X-Worker-Nonce": nonce,
                 "X-Worker-Signature": signature,
                 "Content-Type": "application/json",
+                **self._extra_headers,
             },
             content=raw_body.encode("utf-8"),
         )
@@ -649,6 +914,8 @@ class WorkerRuntime:
             "codex": CodexRunner(),
             "codex_runner": CodexRunner(),
             "command": CodexRunner(),
+            "docker": DockerRunner(),
+            "docker_runner": DockerRunner(),
         }
         self._default_runner = str(config.worker_runner or "noop").strip().lower() or "noop"
         self._logs_dir = Path(config.worker_log_dir).expanduser()
@@ -657,20 +924,46 @@ class WorkerRuntime:
         base_url = str(config.worker_base_url).strip()
         if not base_url:
             base_url = "http://127.0.0.1:8000/worker/v1"
-        tenant_id = str(config.worker_tenant_id).strip()
-        if not tenant_id:
-            raise WorkerRuntimeError("worker_tenant_id is required for worker mode")
+        self._scope_id = str(config.worker_scope_id or config.worker_tenant_id).strip()
+        if not self._scope_id:
+            raise WorkerRuntimeError(
+                "worker_scope_id or worker_tenant_id is required for worker mode"
+            )
         node_id = str(config.worker_node_id).strip()
         if not node_id:
             raise WorkerRuntimeError("worker_node_id is required for worker mode")
-        self._api = api_client or WorkerApiClient(
+        scope_field_name = (
+            "scope_id"
+            if str(config.worker_control_plane or "tenant").strip().lower() == "owner_ci"
+            else "tenant_id"
+        )
+        self._direct_api = api_client or WorkerApiClient(
             base_url=base_url,
-            tenant_id=tenant_id,
+            scope_id=self._scope_id,
             node_id=node_id,
+            scope_field_name=scope_field_name,
+        )
+        relay_base_url = str(config.worker_relay_base_url).strip()
+        relay_headers = {}
+        relay_secret = str(config.worker_relay_secret).strip()
+        if relay_secret:
+            relay_headers["X-CI-Relay-Secret"] = relay_secret
+        self._relay_api = (
+            WorkerApiClient(
+                base_url=relay_base_url,
+                scope_id=self._scope_id,
+                node_id=node_id,
+                scope_field_name=scope_field_name,
+                extra_headers=relay_headers,
+            )
+            if relay_base_url
+            else None
         )
 
     async def close(self) -> None:
-        await self._api.close()
+        await self._direct_api.close()
+        if self._relay_api is not None:
+            await self._relay_api.close()
         self._store.close()
 
     async def run_forever(self) -> None:
@@ -686,6 +979,7 @@ class WorkerRuntime:
 
     async def run_once(self) -> WorkerCycleOutcome:
         session = await self._ensure_session()
+        await self._flush_pending_results(session)
         await self._recover_inflight(session)
         await self._heartbeat_once(session)
         claim_response = await self._claim_once(session)
@@ -714,6 +1008,7 @@ class WorkerRuntime:
         interval = max(10, int(self._config.worker_heartbeat_interval_seconds))
         while True:
             session = await self._ensure_session()
+            await self._flush_pending_results(session)
             await self._heartbeat_once(session)
             await asyncio.sleep(interval)
 
@@ -733,18 +1028,9 @@ class WorkerRuntime:
                 "worker_bootstrap_secret is required when no cached worker session exists"
             )
         capabilities = list(self._config.worker_capabilities)
-        session = await self._api.bootstrap(
+        registered = await self._bootstrap_and_register(
             bootstrap_secret=bootstrap_secret,
-            node_name=self._config.worker_node_name or None,
             capabilities=capabilities,
-            metadata={"source": "dev-agent-worker"},
-        )
-        registered = await self._api.register(
-            session=session,
-            node_name=self._config.worker_node_name or None,
-            capabilities=capabilities,
-            metadata={"source": "dev-agent-worker"},
-            rotate_credentials=True,
         )
         self._save_session(registered)
         self._session = registered
@@ -776,7 +1062,7 @@ class WorkerRuntime:
             },
         )
         recovery_payload = {
-            "tenant_id": self._config.worker_tenant_id,
+            **self._scope_payload(),
             "status": "failed",
             "required_capabilities": required_capabilities,
             "error": {
@@ -787,30 +1073,38 @@ class WorkerRuntime:
                 "recovered_at": _utc_now_iso(),
             },
         }
-        try:
-            await self._api.submit_result(session=session, job_id=job_id, payload=recovery_payload)
-            logger.append(
-                "recovery_result_submitted",
-                {"job_id": job_id, "status": "failed", "code": RESTART_RECOVERY_ERROR_CODE},
-            )
-            self._store.set_meta(INFLIGHT_META_KEY, "")
-        except WorkerApiError:
-            logger.append("recovery_result_failed", {"job_id": job_id})
+        _ = await self._deliver_result_payload(
+            session=session,
+            job_id=job_id,
+            payload=recovery_payload,
+            logger=logger,
+        )
+        self._store.set_meta(INFLIGHT_META_KEY, "")
 
     async def _heartbeat_once(self, session: WorkerSession) -> None:
         try:
-            await self._api.heartbeat(
+            await self._direct_api.heartbeat(
                 session=session,
                 metadata={"runner": self._default_runner},
             )
+            return
         except WorkerApiError as exc:
             if exc.status_code in {401, 403}:
                 self._clear_session()
-            raise
+                raise
+            if self._relay_api is None:
+                raise
+        except httpx.HTTPError:
+            if self._relay_api is None:
+                raise
+        await self._relay_api.heartbeat(
+            session=session,
+            metadata={"runner": self._default_runner, "transport": "relay"},
+        )
 
     async def _claim_once(self, session: WorkerSession) -> dict[str, Any]:
         try:
-            return await self._api.claim_job(
+            return await self._direct_api.claim_job(
                 session=session,
                 required_capabilities=list(self._config.worker_claim_required_capabilities),
                 poll_after_seconds=self._poll_after_seconds,
@@ -819,12 +1113,21 @@ class WorkerRuntime:
             if exc.status_code in {401, 403}:
                 self._clear_session()
                 refreshed = await self._ensure_session()
-                return await self._api.claim_job(
+                return await self._direct_api.claim_job(
                     session=refreshed,
                     required_capabilities=list(self._config.worker_claim_required_capabilities),
                     poll_after_seconds=self._poll_after_seconds,
                 )
-            raise
+            if self._relay_api is None:
+                raise
+        except httpx.HTTPError:
+            if self._relay_api is None:
+                raise
+        return await self._relay_api.claim_job(
+            session=session,
+            required_capabilities=list(self._config.worker_claim_required_capabilities),
+            poll_after_seconds=self._poll_after_seconds,
+        )
 
     async def _execute_job(self, job: WorkerJob) -> WorkerRunResult:
         logger = self._job_logger(job.job_id)
@@ -833,6 +1136,7 @@ class WorkerRuntime:
             {
                 "job_id": job.job_id,
                 "execution_mode": job.execution_mode,
+                "execution_target": job.execution_target,
                 "action": job.action,
                 "runner": job.runner,
                 "required_capabilities": list(job.required_capabilities),
@@ -856,6 +1160,7 @@ class WorkerRuntime:
                     {
                         "job_id": job.job_id,
                         "execution_mode": job.execution_mode,
+                        "execution_target": job.execution_target,
                     },
                 )
                 return WorkerRunResult(
@@ -864,6 +1169,7 @@ class WorkerRuntime:
                         "runner": "sandbox_simulated_worker",
                         "job_id": job.job_id,
                         "execution_mode": job.execution_mode,
+                        "execution_target": job.execution_target,
                         "action": job.action,
                         "simulated": True,
                         "message": (
@@ -880,6 +1186,7 @@ class WorkerRuntime:
                 {
                     "job_id": job.job_id,
                     "runner": runner.name,
+                    "execution_target": job.execution_target,
                 },
             )
             result = await runner.run(job, self._guardrails)
@@ -921,28 +1228,28 @@ class WorkerRuntime:
 
     async def _submit_result(self, *, job: WorkerJob, result: WorkerRunResult) -> None:
         session = await self._ensure_session()
+        log_chunks = result.log_chunks or self._read_job_log_chunks(job.job_id)
         payload: dict[str, Any] = {
-            "tenant_id": self._config.worker_tenant_id,
+            **self._scope_payload(),
             "status": result.status,
             "required_capabilities": list(job.required_capabilities),
             "output": result.output,
             "error": result.error,
+            "events": result.events,
+            "log_chunks": log_chunks,
+            "resource_samples": result.resource_samples,
+            "debug_bundle": result.debug_bundle,
+            "cleanup_receipt": result.cleanup_receipt,
+            "container_receipts": result.container_receipts,
         }
         payload = self._bounded_result_payload(payload)
         logger = self._job_logger(job.job_id)
         try:
-            await self._api.submit_result(
+            _ = await self._deliver_result_payload(
                 session=session,
                 job_id=job.job_id,
                 payload=payload,
-            )
-            logger.append(
-                "result_submitted",
-                {
-                    "job_id": job.job_id,
-                    "status": str(payload.get("status") or ""),
-                    "error_code": ((payload.get("error") or {}) or {}).get("code"),
-                },
+                logger=logger,
             )
         finally:
             self._store.set_meta(INFLIGHT_META_KEY, "")
@@ -952,7 +1259,7 @@ class WorkerRuntime:
         if len(encoded) <= self._guardrails.max_artifact_bytes:
             return payload
         bounded = {
-            "tenant_id": self._config.worker_tenant_id,
+            **self._scope_payload(),
             "status": "failed",
             "error": {
                 "code": "WORKER_GUARDRAIL_ARTIFACT_TOO_LARGE",
@@ -971,7 +1278,7 @@ class WorkerRuntime:
         if len(fallback) <= self._guardrails.max_artifact_bytes:
             return bounded
         return {
-            "tenant_id": self._config.worker_tenant_id,
+            **self._scope_payload(),
             "status": "failed",
             "error": {
                 "code": "WORKER_GUARDRAIL_ARTIFACT_TOO_LARGE",
@@ -1078,6 +1385,18 @@ class WorkerRuntime:
         filename = f"{_sanitize_for_filename(job_id)}.jsonl"
         return TamperEvidentJobLog(self._logs_dir / filename)
 
+    def _read_job_log_chunks(self, job_id: str) -> list[dict[str, Any]]:
+        path = self._logs_dir / f"{_sanitize_for_filename(job_id)}.jsonl"
+        if not path.exists():
+            return []
+        lines = path.read_text(encoding="utf-8").splitlines()[-50:]
+        chunks: list[dict[str, Any]] = []
+        for line in lines:
+            if not line.strip():
+                continue
+            chunks.append({"stream": "system", "message": line, "metadata": {"source": "job_log"}})
+        return chunks
+
     def _load_session(self) -> WorkerSession | None:
         raw = self._store.get_meta(SESSION_META_KEY)
         if raw is None:
@@ -1100,3 +1419,130 @@ class WorkerRuntime:
     def _clear_session(self) -> None:
         self._session = None
         self._store.set_meta(SESSION_META_KEY, "")
+
+    def _scope_payload(self) -> dict[str, str]:
+        key = (
+            "scope_id"
+            if str(self._config.worker_control_plane or "tenant").strip().lower() == "owner_ci"
+            else "tenant_id"
+        )
+        return {key: self._scope_id}
+
+    async def _bootstrap_and_register(
+        self,
+        *,
+        bootstrap_secret: str,
+        capabilities: list[str],
+    ) -> WorkerSession:
+        errors: list[str] = []
+        clients = [("direct", self._direct_api)]
+        if self._relay_api is not None:
+            clients.append(("relay", self._relay_api))
+        for label, client in clients:
+            try:
+                session = await client.bootstrap(
+                    bootstrap_secret=bootstrap_secret,
+                    node_name=self._config.worker_node_name or None,
+                    capabilities=capabilities,
+                    metadata={"source": "dev-agent-worker", "transport": label},
+                )
+                return await client.register(
+                    session=session,
+                    node_name=self._config.worker_node_name or None,
+                    capabilities=capabilities,
+                    metadata={"source": "dev-agent-worker", "transport": label},
+                    rotate_credentials=True,
+                )
+            except (WorkerApiError, httpx.HTTPError) as exc:
+                errors.append(f"{label}: {exc}")
+        raise WorkerRuntimeError(
+            "Failed to bootstrap/register worker session: " + "; ".join(errors)
+        )
+
+    async def _deliver_result_payload(
+        self,
+        *,
+        session: WorkerSession,
+        job_id: str,
+        payload: dict[str, Any],
+        logger: TamperEvidentJobLog,
+    ) -> bool:
+        try:
+            await self._direct_api.submit_result(session=session, job_id=job_id, payload=payload)
+            logger.append(
+                "result_submitted",
+                {
+                    "job_id": job_id,
+                    "status": str(payload.get("status") or ""),
+                    "transport": "direct",
+                    "error_code": ((payload.get("error") or {}) or {}).get("code"),
+                },
+            )
+            return True
+        except WorkerApiError as exc:
+            if exc.status_code in {401, 403}:
+                self._clear_session()
+            logger.append(
+                "result_submit_failed",
+                {"job_id": job_id, "transport": "direct", "error": str(exc)},
+            )
+        except httpx.HTTPError as exc:
+            logger.append(
+                "result_submit_failed",
+                {"job_id": job_id, "transport": "direct", "error": str(exc)},
+            )
+
+        if self._relay_api is not None:
+            try:
+                await self._relay_api.submit_result(session=session, job_id=job_id, payload=payload)
+                logger.append(
+                    "result_submitted",
+                    {
+                        "job_id": job_id,
+                        "status": str(payload.get("status") or ""),
+                        "transport": "relay",
+                        "error_code": ((payload.get("error") or {}) or {}).get("code"),
+                    },
+                )
+                return True
+            except (WorkerApiError, httpx.HTTPError) as exc:
+                logger.append(
+                    "result_submit_failed",
+                    {"job_id": job_id, "transport": "relay", "error": str(exc)},
+                )
+
+        self._store.enqueue_worker_result(job_id=job_id, payload=payload)
+        logger.append(
+            "result_spooled",
+            {
+                "job_id": job_id,
+                "status": str(payload.get("status") or ""),
+            },
+        )
+        return False
+
+    async def _flush_pending_results(self, session: WorkerSession) -> None:
+        retry_delay_seconds = max(30, self._poll_after_seconds)
+        for row in self._store.list_pending_worker_results(limit=25):
+            logger = self._job_logger(str(row["job_id"]))
+            try:
+                submitted = await self._deliver_result_payload(
+                    session=session,
+                    job_id=str(row["job_id"]),
+                    payload=dict(row["payload"]),
+                    logger=logger,
+                )
+                if submitted:
+                    self._store.mark_worker_result_sent(int(row["id"]))
+                else:
+                    self._store.mark_worker_result_failed(
+                        int(row["id"]),
+                        "worker result remained offline",
+                        _utc_now() + timedelta(seconds=retry_delay_seconds),
+                    )
+            except Exception as exc:  # pragma: no cover - defensive fallback
+                self._store.mark_worker_result_failed(
+                    int(row["id"]),
+                    str(exc),
+                    _utc_now() + timedelta(seconds=retry_delay_seconds),
+                )

@@ -73,23 +73,51 @@ class AgentConfig:
     bootstrap_secret: str = ""
     bootstrap_require_once: bool = True
     worker_base_url: str = "http://127.0.0.1:8000/worker/v1"
+    worker_relay_base_url: str = ""
+    worker_relay_secret: str = ""
+    worker_control_plane: str = "tenant"
+    worker_scope_id: str = ""
     worker_tenant_id: str = ""
     worker_node_id: str = ""
     worker_node_name: str = ""
     worker_bootstrap_secret: str = ""
     worker_capabilities: list[str] = field(
-        default_factory=lambda: ["repo.patch", "repo.commit", "repo.pr.open"]
+        default_factory=lambda: ["ci.test.run", "repo.patch", "repo.commit", "repo.pr.open"]
     )
-    worker_claim_required_capabilities: list[str] = field(default_factory=lambda: ["repo.patch"])
+    worker_claim_required_capabilities: list[str] = field(default_factory=lambda: ["ci.test.run"])
     worker_poll_after_seconds: int = 15
     worker_heartbeat_interval_seconds: int = 30
     worker_runner: str = "noop"
     worker_allowed_repo_roots: list[str] = field(default_factory=list)
+    worker_denied_repo_roots: list[str] = field(default_factory=lambda: [r"C:\ZetherionAI"])
     worker_allowed_actions: list[str] = field(
-        default_factory=lambda: ["worker.noop", "repo.patch", "repo.commit", "repo.pr.open"]
+        default_factory=lambda: [
+            "worker.noop",
+            "ci.test.run",
+            "repo.patch",
+            "repo.commit",
+            "repo.pr.open",
+        ]
     )
     worker_allowed_commands: list[str] = field(
-        default_factory=lambda: ["git", "python", "python3", "pytest", "ruff", "bash", "sh"]
+        default_factory=lambda: [
+            "git",
+            "python",
+            "python3",
+            "pytest",
+            "ruff",
+            "bash",
+            "sh",
+            "node",
+            "yarn",
+            "npm",
+            "npx",
+            "gitleaks",
+            "docker",
+            "docker-compose",
+            "pwsh",
+            "powershell",
+        ]
     )
     worker_max_runtime_seconds: int = 600
     worker_max_memory_mb: int = 512
@@ -124,29 +152,51 @@ class AgentConfig:
             bootstrap_secret=data.get("bootstrap_secret", ""),
             bootstrap_require_once=data.get("bootstrap_require_once", True),
             worker_base_url=data.get("worker_base_url", "http://127.0.0.1:8000/worker/v1"),
+            worker_relay_base_url=data.get("worker_relay_base_url", ""),
+            worker_relay_secret=data.get("worker_relay_secret", ""),
+            worker_control_plane=data.get("worker_control_plane", "tenant"),
+            worker_scope_id=data.get("worker_scope_id", ""),
             worker_tenant_id=data.get("worker_tenant_id", ""),
             worker_node_id=data.get("worker_node_id", ""),
             worker_node_name=data.get("worker_node_name", ""),
             worker_bootstrap_secret=data.get("worker_bootstrap_secret", ""),
             worker_capabilities=data.get(
                 "worker_capabilities",
-                ["repo.patch", "repo.commit", "repo.pr.open"],
+                ["ci.test.run", "repo.patch", "repo.commit", "repo.pr.open"],
             ),
             worker_claim_required_capabilities=data.get(
                 "worker_claim_required_capabilities",
-                ["repo.patch"],
+                ["ci.test.run"],
             ),
             worker_poll_after_seconds=data.get("worker_poll_after_seconds", 15),
             worker_heartbeat_interval_seconds=data.get("worker_heartbeat_interval_seconds", 30),
             worker_runner=data.get("worker_runner", "noop"),
             worker_allowed_repo_roots=data.get("worker_allowed_repo_roots", []),
+            worker_denied_repo_roots=data.get("worker_denied_repo_roots", [r"C:\ZetherionAI"]),
             worker_allowed_actions=data.get(
                 "worker_allowed_actions",
-                ["worker.noop", "repo.patch", "repo.commit", "repo.pr.open"],
+                ["worker.noop", "ci.test.run", "repo.patch", "repo.commit", "repo.pr.open"],
             ),
             worker_allowed_commands=data.get(
                 "worker_allowed_commands",
-                ["git", "python", "python3", "pytest", "ruff", "bash", "sh"],
+                [
+                    "git",
+                    "python",
+                    "python3",
+                    "pytest",
+                    "ruff",
+                    "bash",
+                    "sh",
+                    "node",
+                    "yarn",
+                    "npm",
+                    "npx",
+                    "gitleaks",
+                    "docker",
+                    "docker-compose",
+                    "pwsh",
+                    "powershell",
+                ],
             ),
             worker_max_runtime_seconds=data.get("worker_max_runtime_seconds", 600),
             worker_max_memory_mb=data.get("worker_max_memory_mb", 512),
@@ -186,6 +236,19 @@ class AgentConfig:
             "DEV_AGENT_BOOTSTRAP_REQUIRE_ONCE", cfg.bootstrap_require_once
         )
         cfg.worker_base_url = os.environ.get("DEV_AGENT_WORKER_BASE_URL", cfg.worker_base_url)
+        cfg.worker_relay_base_url = os.environ.get(
+            "DEV_AGENT_WORKER_RELAY_BASE_URL",
+            cfg.worker_relay_base_url,
+        )
+        cfg.worker_relay_secret = os.environ.get(
+            "DEV_AGENT_WORKER_RELAY_SECRET",
+            cfg.worker_relay_secret,
+        )
+        cfg.worker_control_plane = os.environ.get(
+            "DEV_AGENT_WORKER_CONTROL_PLANE",
+            cfg.worker_control_plane,
+        )
+        cfg.worker_scope_id = os.environ.get("DEV_AGENT_WORKER_SCOPE_ID", cfg.worker_scope_id)
         cfg.worker_tenant_id = os.environ.get("DEV_AGENT_WORKER_TENANT_ID", cfg.worker_tenant_id)
         cfg.worker_node_id = os.environ.get("DEV_AGENT_WORKER_NODE_ID", cfg.worker_node_id)
         cfg.worker_node_name = os.environ.get("DEV_AGENT_WORKER_NODE_NAME", cfg.worker_node_name)
@@ -212,6 +275,10 @@ class AgentConfig:
         cfg.worker_allowed_repo_roots = _env_list(
             "DEV_AGENT_WORKER_ALLOWED_REPO_ROOTS",
             cfg.worker_allowed_repo_roots,
+        )
+        cfg.worker_denied_repo_roots = _env_list(
+            "DEV_AGENT_WORKER_DENIED_REPO_ROOTS",
+            cfg.worker_denied_repo_roots,
         )
         cfg.worker_allowed_actions = _env_list(
             "DEV_AGENT_WORKER_ALLOWED_ACTIONS",
@@ -260,6 +327,10 @@ class AgentConfig:
             f'bootstrap_secret = "{self.bootstrap_secret}"',
             f"bootstrap_require_once = {'true' if self.bootstrap_require_once else 'false'}",
             f'worker_base_url = "{self.worker_base_url}"',
+            f'worker_relay_base_url = "{self.worker_relay_base_url}"',
+            f'worker_relay_secret = "{self.worker_relay_secret}"',
+            f'worker_control_plane = "{self.worker_control_plane}"',
+            f'worker_scope_id = "{self.worker_scope_id}"',
             f'worker_tenant_id = "{self.worker_tenant_id}"',
             f'worker_node_id = "{self.worker_node_id}"',
             f'worker_node_name = "{self.worker_node_name}"',
@@ -270,6 +341,7 @@ class AgentConfig:
             ("worker_heartbeat_interval_seconds = " f"{self.worker_heartbeat_interval_seconds}"),
             f'worker_runner = "{self.worker_runner}"',
             f"worker_allowed_repo_roots = {self.worker_allowed_repo_roots!r}",
+            f"worker_denied_repo_roots = {self.worker_denied_repo_roots!r}",
             f"worker_allowed_actions = {self.worker_allowed_actions!r}",
             f"worker_allowed_commands = {self.worker_allowed_commands!r}",
             f"worker_max_runtime_seconds = {self.worker_max_runtime_seconds}",

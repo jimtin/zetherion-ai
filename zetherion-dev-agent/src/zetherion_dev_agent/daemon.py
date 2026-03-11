@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -360,9 +361,7 @@ class DevAutopilotDaemon:
             {
                 "ok": True,
                 "api_token": self._config.api_token,
-                "api_base_url": (
-                    f"http://{self._config.api_host}:{int(self._config.api_port)}/v1"
-                ),
+                "api_base_url": (f"http://{self._config.api_host}:{int(self._config.api_port)}/v1"),
                 "bootstrap_completed_at": completed_at,
             }
         )
@@ -617,8 +616,6 @@ class DevAutopilotDaemon:
             return
         for queue in list(self._subscribers):
             if queue.full():
-                try:
+                with suppress(asyncio.QueueEmpty):
                     _ = queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    pass
             queue.put_nowait(event)

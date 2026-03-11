@@ -98,14 +98,22 @@ def status() -> None:
     )
     click.echo(f"Autopilot API:     http://{config.api_host}:{config.api_port}/v1")
     click.echo("\nWorker mode:")
+    click.echo(f"  Control plane:   {config.worker_control_plane}")
     click.echo(f"  Base URL:        {config.worker_base_url}")
-    click.echo(f"  Tenant ID:       {config.worker_tenant_id or 'NOT SET'}")
+    click.echo(f"  Relay URL:       {config.worker_relay_base_url or 'disabled'}")
+    click.echo(
+        "  Scope ID:        " f"{config.worker_scope_id or config.worker_tenant_id or 'NOT SET'}"
+    )
     click.echo(f"  Node ID:         {config.worker_node_id or 'NOT SET'}")
     click.echo(f"  Runner:          {config.worker_runner}")
     allowlist_display = (
         ", ".join(config.worker_allowed_repo_roots) if config.worker_allowed_repo_roots else "none"
     )
     click.echo(f"  Repo allowlist:  {allowlist_display}")
+    denylist_display = (
+        ", ".join(config.worker_denied_repo_roots) if config.worker_denied_repo_roots else "none"
+    )
+    click.echo(f"  Repo denylist:   {denylist_display}")
 
 
 @main.command()  # type: ignore[misc]
@@ -150,7 +158,7 @@ def daemon(once: bool, dry_run_cleanup: bool, verbose: bool) -> None:
 @click.option("--once", is_flag=True, help="Claim and process at most one job")  # type: ignore[misc]
 @click.option(  # type: ignore[misc]
     "--runner",
-    type=click.Choice(["noop", "codex"]),
+    type=click.Choice(["noop", "codex", "command"]),
     default="",
     help="Override configured worker runner for this invocation",
 )
@@ -181,7 +189,7 @@ def worker_command(once: bool, runner: str) -> None:
 
     click.echo(
         "Worker mode active: "
-        f"tenant={config.worker_tenant_id or '<unset>'}, "
+        f"scope={config.worker_scope_id or config.worker_tenant_id or '<unset>'}, "
         f"node={config.worker_node_id or '<unset>'}, "
         f"runner={config.worker_runner}"
     )

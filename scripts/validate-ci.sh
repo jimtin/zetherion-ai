@@ -80,7 +80,7 @@ echo ""
 echo "--- Security Scanning ---"
 run_check "Bandit" "bandit -r src/ -c pyproject.toml -q" "false" "bandit"
 run_check "Semgrep" "semgrep scan --config auto --quiet src/" "true" "semgrep"
-run_check "Gitleaks" "gitleaks detect --source . --no-git -q 2>/dev/null || true" "false" "gitleaks"
+run_check "Gitleaks" "gitleaks detect --source . --no-git --redact >/dev/null" "false" "gitleaks"
 
 # Dependencies
 echo ""

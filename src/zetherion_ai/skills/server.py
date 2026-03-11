@@ -48,6 +48,7 @@ from zetherion_ai.automerge.orchestrator import (
     AutomergeOrchestrator,
 )
 from zetherion_ai.logging import get_logger
+from zetherion_ai.owner_ci import OwnerCiStorage
 from zetherion_ai.routing.models import DestinationType
 from zetherion_ai.security.trust_policy import TrustPolicyEvaluator
 from zetherion_ai.skills.base import SkillRequest
@@ -286,6 +287,7 @@ class SkillsServer:
         settings_manager: Any | None = None,
         secrets_manager: Any | None = None,
         tenant_admin_manager: TenantAdminManager | None = None,
+        owner_ci_storage: OwnerCiStorage | None = None,
         announcement_repository: AnnouncementRepository | None = None,
         announcement_policy_engine: AnnouncementPolicyEngine | None = None,
         oauth_handlers: dict[str, OAuthCallbackHandler] | None = None,
@@ -310,6 +312,7 @@ class SkillsServer:
         self._settings_manager = settings_manager
         self._secrets_manager = secrets_manager
         self._tenant_admin_manager = tenant_admin_manager
+        self._owner_ci_storage = owner_ci_storage
         self._announcement_repository = announcement_repository
         self._announcement_policy_engine = (
             announcement_policy_engine
@@ -333,6 +336,10 @@ class SkillsServer:
         self._worker_nonce_ttl = timedelta(minutes=10)
         self._worker_max_skew = timedelta(minutes=5)
         self._worker_bootstrap_secret = os.environ.get("WORKER_BRIDGE_BOOTSTRAP_SECRET", "").strip()
+        self._owner_ci_worker_bootstrap_secret = os.environ.get(
+            "OWNER_CI_WORKER_BOOTSTRAP_SECRET",
+            self._worker_bootstrap_secret,
+        ).strip()
         self._worker_announcement_cache: dict[str, datetime] = {}
         try:
             throttle_seconds_raw = int(
@@ -431,7 +438,7 @@ class SkillsServer:
 
     @staticmethod
     def _is_worker_api_path(path: str) -> bool:
-        return path.startswith("/worker/v1/")
+        return path.startswith("/worker/v1/") or path.startswith("/owner/ci/worker/v1/")
 
     @staticmethod
     def _is_tenant_admin_path(path: str) -> bool:
@@ -639,6 +646,94 @@ class SkillsServer:
 
         await self._tenant_admin_manager.touch_worker_session(
             tenant_id=tenant_id,
+            node_id=node_id,
+            session_id=session_id,
+        )
+
+        session["session_id"] = session_id
+        session["request_nonce"] = nonce
+        session["request_timestamp"] = timestamp
+        return session
+
+    def _resolve_owner_ci_worker_bootstrap_secret(self, scope_id: str) -> str:
+        _ = scope_id
+        return self._owner_ci_worker_bootstrap_secret
+
+    async def _verify_owner_ci_worker_signature(
+        self,
+        *,
+        request: web.Request,
+        scope_id: str,
+        node_id: str,
+        raw_body: str,
+    ) -> dict[str, Any]:
+        if self._owner_ci_storage is None:
+            raise ValueError("Owner CI storage is not configured")
+
+        session_id = request.headers.get("X-Worker-Session-Id", "").strip()
+        timestamp = request.headers.get("X-Worker-Timestamp", "").strip()
+        nonce = request.headers.get("X-Worker-Nonce", "").strip()
+        provided_signature = request.headers.get("X-Worker-Signature", "").strip().lower()
+        if not session_id or not timestamp or not nonce or not provided_signature:
+            raise ValueError("Missing worker signature headers")
+
+        token = self._resolve_worker_auth_token(request)
+        if not token:
+            raise ValueError("Missing worker bearer token")
+
+        try:
+            timestamp_int = int(timestamp)
+        except ValueError as exc:
+            raise ValueError("Invalid X-Worker-Timestamp header") from exc
+
+        now = datetime.now(UTC)
+        signed_at = datetime.fromtimestamp(timestamp_int, tz=UTC)
+        skew = now - signed_at
+        if skew > self._worker_max_skew or skew < -self._worker_max_skew:
+            raise ValueError("Expired worker signature timestamp")
+
+        session = await self._owner_ci_storage.get_worker_session_auth(
+            scope_id=scope_id,
+            node_id=node_id,
+            session_id=session_id,
+        )
+        if session is None:
+            raise ValueError("Worker session not found")
+
+        revoked_at = session.get("revoked_at")
+        if revoked_at is not None:
+            raise ValueError("Worker session is revoked")
+        expires_at = session.get("expires_at")
+        if isinstance(expires_at, datetime) and expires_at <= now:
+            raise ValueError("Worker session is expired")
+
+        expected_token_hash = str(session.get("token_hash") or "").strip().lower()
+        if not expected_token_hash:
+            raise ValueError("Worker session token hash is unavailable")
+        provided_token_hash = self._hash_worker_token(token)
+        if not hmac.compare_digest(provided_token_hash, expected_token_hash):
+            raise ValueError("Invalid worker token")
+
+        signing_secret = str(session.get("signing_secret") or "").strip()
+        if not signing_secret:
+            raise ValueError("Worker signing secret is unavailable")
+        canonical = f"{scope_id}.{node_id}.{session_id}.{timestamp}.{nonce}.{raw_body}"
+        expected_signature = hmac.new(
+            signing_secret.encode("utf-8"),
+            canonical.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(provided_signature, expected_signature):
+            raise ValueError("Invalid worker signature")
+
+        self._prune_worker_nonce_cache(now)
+        nonce_key = f"{scope_id}:{node_id}:{session_id}:{nonce}"
+        if nonce_key in self._worker_nonce_cache:
+            raise RuntimeError("Worker nonce replay detected")
+        self._worker_nonce_cache[nonce_key] = now + self._worker_nonce_ttl
+
+        await self._owner_ci_storage.touch_worker_session(
+            scope_id=scope_id,
             node_id=node_id,
             session_id=session_id,
         )
@@ -4288,6 +4383,405 @@ class SkillsServer:
         """Bridge-only alias under tenant-admin route family."""
         return await self._handle_signed_bridge_messaging_ingest(request)
 
+    async def handle_owner_ci_worker_health(self, _request: web.Request) -> web.Response:
+        return web.json_response({"status": "ok", "surface": "owner-ci-worker-bridge"})
+
+    async def handle_owner_ci_worker_bootstrap(self, request: web.Request) -> web.Response:
+        if self._owner_ci_storage is None:
+            return web.json_response({"error": "Owner CI storage is not configured"}, status=501)
+
+        try:
+            raw_body = await request.text()
+        except Exception:
+            raw_body = ""
+        payload = _extract_json_object(raw_body)
+        if not payload:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        scope_id = str(payload.get("scope_id") or payload.get("tenant_id") or "").strip()
+        if not scope_id:
+            return web.json_response({"error": "Missing scope_id"}, status=400)
+        node_id = str(payload.get("node_id") or uuid4().hex).strip()
+        if not node_id:
+            return web.json_response({"error": "Missing node_id"}, status=400)
+
+        expected_bootstrap_secret = self._resolve_owner_ci_worker_bootstrap_secret(scope_id)
+        provided_bootstrap_secret = request.headers.get("X-Worker-Bootstrap-Secret", "").strip()
+        if not (
+            expected_bootstrap_secret
+            and hmac.compare_digest(provided_bootstrap_secret, expected_bootstrap_secret)
+        ):
+            return web.json_response({"error": "Invalid worker bootstrap secret"}, status=401)
+
+        try:
+            capabilities = self._parse_string_list(payload.get("capabilities"), "capabilities")
+            node_name = str(payload.get("node_name") or payload.get("label") or "").strip() or None
+            metadata = payload.get("metadata")
+            if metadata is not None and not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object when provided")
+            created = await self._owner_ci_storage.bootstrap_worker_node_session(
+                scope_id=scope_id,
+                node_id=node_id,
+                node_name=node_name,
+                capabilities=capabilities,
+                metadata=metadata if isinstance(metadata, dict) else None,
+                session_ttl_seconds=self._worker_session_ttl_seconds,
+            )
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception("owner_ci_worker_bootstrap_failed", scope_id=scope_id, node_id=node_id)
+            return web.json_response({"error": "Failed to bootstrap worker node"}, status=502)
+
+        node = await self._owner_ci_storage.get_worker_node(scope_id, node_id)
+        return web.json_response(
+            {
+                "ok": True,
+                "scope_id": scope_id,
+                "node": _serialise_record(node or {}),
+                "capabilities": capabilities,
+                "session": created,
+            },
+            status=201,
+        )
+
+    async def handle_owner_ci_worker_register_node(self, request: web.Request) -> web.Response:
+        if self._owner_ci_storage is None:
+            return web.json_response({"error": "Owner CI storage is not configured"}, status=501)
+
+        try:
+            raw_body = await request.text()
+        except Exception:
+            raw_body = ""
+        payload = _extract_json_object(raw_body)
+        if not payload:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        scope_id = str(payload.get("scope_id") or payload.get("tenant_id") or "").strip()
+        node_id = str(payload.get("node_id") or "").strip()
+        if not scope_id or not node_id:
+            return web.json_response({"error": "Missing scope_id or node_id"}, status=400)
+
+        try:
+            session_ctx = await self._verify_owner_ci_worker_signature(
+                request=request,
+                scope_id=scope_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+            capabilities: list[str] | None = None
+            if "capabilities" in payload:
+                capabilities = self._parse_string_list(payload.get("capabilities"), "capabilities")
+            metadata = payload.get("metadata")
+            if metadata is not None and not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object when provided")
+            node_name = str(payload.get("node_name") or payload.get("label") or "").strip() or None
+            node = await self._owner_ci_storage.register_worker_node(
+                scope_id=scope_id,
+                node_id=node_id,
+                node_name=node_name,
+                capabilities=capabilities or [],
+                metadata=metadata if isinstance(metadata, dict) else None,
+            )
+            rotate_credentials = self._parse_bool(
+                payload.get("rotate_credentials"),
+                "rotate_credentials",
+                default=True,
+            )
+            session_payload: dict[str, Any] = {
+                "session_id": str(session_ctx.get("session_id") or ""),
+            }
+            if rotate_credentials:
+                session_payload.update(
+                    await self._owner_ci_storage.rotate_worker_session_credentials(
+                        scope_id=scope_id,
+                        node_id=node_id,
+                        session_id=str(session_ctx.get("session_id") or ""),
+                        session_ttl_seconds=self._worker_session_ttl_seconds,
+                    )
+                )
+        except RuntimeError as exc:
+            return web.json_response({"error": str(exc)}, status=409)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception("owner_ci_worker_register_failed", scope_id=scope_id, node_id=node_id)
+            return web.json_response({"error": "Failed to register worker node"}, status=502)
+
+        return web.json_response(
+            {
+                "ok": True,
+                "scope_id": scope_id,
+                "node": _serialise_record(node),
+                "session": session_payload,
+            }
+        )
+
+    async def handle_owner_ci_worker_node_heartbeat(self, request: web.Request) -> web.Response:
+        if self._owner_ci_storage is None:
+            return web.json_response({"error": "Owner CI storage is not configured"}, status=501)
+        node_id = str(request.match_info["node_id"]).strip()
+        if not node_id:
+            return web.json_response({"error": "Missing node_id"}, status=400)
+
+        try:
+            raw_body = await request.text()
+        except Exception:
+            raw_body = ""
+        payload = _extract_json_object(raw_body)
+        if not payload:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+        scope_id = str(payload.get("scope_id") or payload.get("tenant_id") or "").strip()
+        if not scope_id:
+            return web.json_response({"error": "Missing scope_id"}, status=400)
+        body_node = str(payload.get("node_id") or "").strip()
+        if body_node and body_node != node_id:
+            return web.json_response({"error": "node_id does not match route"}, status=400)
+
+        try:
+            await self._verify_owner_ci_worker_signature(
+                request=request,
+                scope_id=scope_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+            metadata = payload.get("metadata")
+            if metadata is not None and not isinstance(metadata, dict):
+                raise ValueError("metadata must be an object when provided")
+            health_status = str(payload.get("health_status") or "healthy").strip() or "healthy"
+            node = await self._owner_ci_storage.heartbeat_worker_node(
+                scope_id=scope_id,
+                node_id=node_id,
+                health_status=health_status,
+                metadata=metadata if isinstance(metadata, dict) else None,
+            )
+        except RuntimeError as exc:
+            return web.json_response({"error": str(exc)}, status=409)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception("owner_ci_worker_heartbeat_failed", scope_id=scope_id, node_id=node_id)
+            return web.json_response({"error": "Failed to process heartbeat"}, status=502)
+
+        return web.json_response({"ok": True, "node": _serialise_record(node)})
+
+    async def handle_owner_ci_worker_claim_job(self, request: web.Request) -> web.Response:
+        if self._owner_ci_storage is None:
+            return web.json_response({"error": "Owner CI storage is not configured"}, status=501)
+        node_id = str(request.match_info["node_id"]).strip()
+        if not node_id:
+            return web.json_response({"error": "Missing node_id"}, status=400)
+
+        try:
+            raw_body = await request.text()
+        except Exception:
+            raw_body = ""
+        payload = _extract_json_object(raw_body)
+        if not payload:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+        scope_id = str(payload.get("scope_id") or payload.get("tenant_id") or "").strip()
+        if not scope_id:
+            return web.json_response({"error": "Missing scope_id"}, status=400)
+
+        try:
+            session_ctx = await self._verify_owner_ci_worker_signature(
+                request=request,
+                scope_id=scope_id,
+                node_id=node_id,
+                raw_body=raw_body,
+            )
+            required_capabilities = self._parse_string_list(
+                payload.get("required_capabilities"),
+                "required_capabilities",
+            )
+            claimed_job = await self._owner_ci_storage.claim_worker_job(
+                scope_id=scope_id,
+                node_id=node_id,
+                required_capabilities=required_capabilities,
+                session_id=str(session_ctx.get("session_id") or ""),
+            )
+            claimed_job_payload: dict[str, Any] | None = None
+            if claimed_job is not None:
+                raw_payload = claimed_job.get("payload_json")
+                payload_json = raw_payload if isinstance(raw_payload, dict) else {}
+                claimed_job_payload = {
+                    "job_id": str(claimed_job.get("job_id") or ""),
+                    "run_id": str(claimed_job.get("run_id") or ""),
+                    "shard_id": str(claimed_job.get("shard_id") or ""),
+                    "execution_mode": str(payload_json.get("execution_mode") or "live"),
+                    "execution_target": str(claimed_job.get("execution_target") or ""),
+                    "action": str(claimed_job.get("action") or "ci.test.run"),
+                    "runner": str(
+                        claimed_job.get("runner") or payload_json.get("runner") or "command"
+                    ),
+                    "required_capabilities": list(claimed_job.get("required_capabilities") or []),
+                    "artifact_contract": dict(claimed_job.get("artifact_contract") or {}),
+                    "payload": payload_json,
+                }
+            poll_after_seconds = max(
+                5,
+                min(
+                    self._parse_int(payload.get("poll_after_seconds", 15), "poll_after_seconds"),
+                    120,
+                ),
+            )
+        except RuntimeError as exc:
+            return web.json_response({"error": str(exc)}, status=409)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception("owner_ci_worker_job_claim_failed", scope_id=scope_id, node_id=node_id)
+            return web.json_response({"error": "Failed to claim worker job"}, status=502)
+
+        return web.json_response(
+            {
+                "ok": True,
+                "scope_id": scope_id,
+                "node_id": node_id,
+                "job": claimed_job_payload,
+                "reason": "claimed" if claimed_job_payload else "no_jobs_available",
+                "poll_after_seconds": poll_after_seconds,
+            }
+        )
+
+    async def handle_owner_ci_worker_submit_job_result(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        if self._owner_ci_storage is None:
+            return web.json_response({"error": "Owner CI storage is not configured"}, status=501)
+        node_id = str(request.match_info["node_id"]).strip()
+        job_id = str(request.match_info["job_id"]).strip()
+        if not node_id or not job_id:
+            return web.json_response({"error": "Missing node_id or job_id"}, status=400)
+
+        try:
+            raw_body = await request.text()
+        except Exception:
+            raw_body = ""
+        payload = _extract_json_object(raw_body)
+        if not payload:
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+        scope_id = str(payload.get("scope_id") or payload.get("tenant_id") or "").strip()
+        if not scope_id:
+            return web.json_response({"error": "Missing scope_id"}, status=400)
+
+        try:
+            relay_replay = request.headers.get("X-CI-Relay-Replay", "").strip() == "1"
+            if relay_replay:
+                if not self._check_auth(request):
+                    return web.json_response({"error": "Unauthorized relay replay"}, status=401)
+            else:
+                await self._verify_owner_ci_worker_signature(
+                    request=request,
+                    scope_id=scope_id,
+                    node_id=node_id,
+                    raw_body=raw_body,
+                )
+            raw_output = payload.get("output")
+            raw_error = payload.get("error")
+            if raw_output is not None and not isinstance(raw_output, dict):
+                raise ValueError("output must be an object when provided")
+            if raw_error is not None and not isinstance(raw_error, dict):
+                raise ValueError("error must be an object when provided")
+            raw_events = payload.get("events")
+            raw_log_chunks = payload.get("log_chunks")
+            raw_resource_samples = payload.get("resource_samples")
+            raw_debug_bundle = payload.get("debug_bundle")
+            raw_cleanup_receipt = payload.get("cleanup_receipt")
+            raw_container_receipts = payload.get("container_receipts")
+            if raw_events is not None and not isinstance(raw_events, list):
+                raise ValueError("events must be an array when provided")
+            if raw_log_chunks is not None and not isinstance(raw_log_chunks, list):
+                raise ValueError("log_chunks must be an array when provided")
+            if raw_resource_samples is not None and not isinstance(raw_resource_samples, list):
+                raise ValueError("resource_samples must be an array when provided")
+            if raw_debug_bundle is not None and not isinstance(raw_debug_bundle, dict):
+                raise ValueError("debug_bundle must be an object when provided")
+            if raw_cleanup_receipt is not None and not isinstance(raw_cleanup_receipt, dict):
+                raise ValueError("cleanup_receipt must be an object when provided")
+            submit_outcome = await self._owner_ci_storage.submit_worker_job_result(
+                scope_id=scope_id,
+                node_id=node_id,
+                job_id=job_id,
+                payload={
+                    "status": str(payload.get("status") or "failed").strip().lower(),
+                    "output": {
+                        **(raw_output if isinstance(raw_output, dict) else {}),
+                        **(
+                            {"events": raw_events}
+                            if isinstance(raw_events, list) and raw_events
+                            else {}
+                        ),
+                        **(
+                            {"log_chunks": raw_log_chunks}
+                            if isinstance(raw_log_chunks, list) and raw_log_chunks
+                            else {}
+                        ),
+                        **(
+                            {"resource_samples": raw_resource_samples}
+                            if isinstance(raw_resource_samples, list) and raw_resource_samples
+                            else {}
+                        ),
+                        **(
+                            {"debug_bundle": raw_debug_bundle}
+                            if isinstance(raw_debug_bundle, dict) and raw_debug_bundle
+                            else {}
+                        ),
+                        **(
+                            {"cleanup_receipt": raw_cleanup_receipt}
+                            if isinstance(raw_cleanup_receipt, dict) and raw_cleanup_receipt
+                            else {}
+                        ),
+                        **(
+                            {"container_receipts": raw_container_receipts}
+                            if isinstance(raw_container_receipts, list) and raw_container_receipts
+                            else {}
+                        ),
+                    },
+                    "error": raw_error if isinstance(raw_error, dict) else {},
+                    "idempotency_key": str(payload.get("idempotency_key") or "").strip() or None,
+                },
+            )
+        except RuntimeError as exc:
+            message = str(exc)
+            if "replay" in message.lower():
+                return web.json_response(
+                    {
+                        "ok": True,
+                        "scope_id": scope_id,
+                        "node_id": node_id,
+                        "job_id": job_id,
+                        "accepted": True,
+                        "idempotent": True,
+                    },
+                    status=202,
+                )
+            return web.json_response({"error": str(exc)}, status=409)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        except Exception:
+            log.exception(
+                "owner_ci_worker_job_result_failed",
+                scope_id=scope_id,
+                node_id=node_id,
+                job_id=job_id,
+            )
+            return web.json_response({"error": "Failed to accept worker result"}, status=502)
+
+        return web.json_response(
+            {
+                "ok": True,
+                "scope_id": scope_id,
+                "node_id": node_id,
+                "job_id": job_id,
+                "accepted": True,
+                "idempotent": bool(submit_outcome.get("idempotent")),
+                "status": "completed",
+            },
+            status=202,
+        )
+
     # ------------------------------------------------------------------
     # Application factory
     # ------------------------------------------------------------------
@@ -4330,6 +4824,27 @@ class SkillsServer:
         app.router.add_post(
             "/worker/v1/nodes/{node_id}/jobs/{job_id}/result",
             self.handle_worker_submit_job_result,
+        )
+        app.router.add_get("/owner/ci/worker/v1/health", self.handle_owner_ci_worker_health)
+        app.router.add_post(
+            "/owner/ci/worker/v1/bootstrap",
+            self.handle_owner_ci_worker_bootstrap,
+        )
+        app.router.add_post(
+            "/owner/ci/worker/v1/nodes/register",
+            self.handle_owner_ci_worker_register_node,
+        )
+        app.router.add_post(
+            "/owner/ci/worker/v1/nodes/{node_id}/heartbeat",
+            self.handle_owner_ci_worker_node_heartbeat,
+        )
+        app.router.add_post(
+            "/owner/ci/worker/v1/nodes/{node_id}/jobs/claim",
+            self.handle_owner_ci_worker_claim_job,
+        )
+        app.router.add_post(
+            "/owner/ci/worker/v1/nodes/{node_id}/jobs/{job_id}/result",
+            self.handle_owner_ci_worker_submit_job_result,
         )
         app.router.add_post("/announcements/events", self.handle_announcement_emit_event)
         app.router.add_post("/announcements/events/batch", self.handle_announcement_emit_batch)
@@ -4654,6 +5169,7 @@ async def run_server(  # pragma: no cover — starts infinite loop
     settings_manager: Any | None = None,
     secrets_manager: Any | None = None,
     tenant_admin_manager: TenantAdminManager | None = None,
+    owner_ci_storage: OwnerCiStorage | None = None,
     announcement_repository: AnnouncementRepository | None = None,
     announcement_policy_engine: AnnouncementPolicyEngine | None = None,
     oauth_handlers: dict[str, OAuthCallbackHandler] | None = None,
@@ -4678,6 +5194,7 @@ async def run_server(  # pragma: no cover — starts infinite loop
         settings_manager=settings_manager,
         secrets_manager=secrets_manager,
         tenant_admin_manager=tenant_admin_manager,
+        owner_ci_storage=owner_ci_storage,
         announcement_repository=announcement_repository,
         announcement_policy_engine=announcement_policy_engine,
         oauth_handlers=oauth_handlers,
@@ -4846,6 +5363,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
         runtime_settings_manager = None
         runtime_secrets_manager = None
         tenant_admin_manager = None
+        owner_ci_storage = None
         announcement_repository = None
         announcement_policy_engine = None
         encryptor = None
@@ -4869,6 +5387,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
 
             from zetherion_ai.admin import TenantAdminManager
             from zetherion_ai.discord.user_manager import _SCHEMA_SQL
+            from zetherion_ai.owner_ci import ensure_owner_ci_schema
             from zetherion_ai.personal.operational_storage import (
                 ensure_owner_personal_intelligence_schema,
             )
@@ -4907,6 +5426,11 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             encryptors = build_runtime_encryptors(settings)
             tenant_encryptor = encryptors.tenant_data
             encryptor = tenant_encryptor
+            owner_ci_storage = await ensure_owner_ci_schema(
+                runtime_db_pool,
+                schema=settings.postgres_owner_personal_schema,
+                encryptor=encryptors.owner_personal,
+            )
 
             runtime_secrets_manager = SecretsManager(encryptor=tenant_encryptor)
             await runtime_secrets_manager.initialize(runtime_db_pool)
@@ -4961,6 +5485,16 @@ def main() -> None:  # pragma: no cover — CLI entry-point
             )
             await tenant_admin_manager.initialize()
             set_tenant_admin_manager(tenant_admin_manager)
+            if owner_ci_storage is not None:
+                from zetherion_ai.skills.agent_bootstrap import AgentBootstrapSkill
+                from zetherion_ai.skills.ci_controller import CiControllerSkill
+                from zetherion_ai.skills.ci_observer import CiObserverSkill
+                from zetherion_ai.skills.pr_reviewer import PrReviewerSkill
+
+                registry.register(AgentBootstrapSkill(storage=owner_ci_storage))
+                registry.register(CiControllerSkill(storage=owner_ci_storage))
+                registry.register(CiObserverSkill(storage=owner_ci_storage))
+                registry.register(PrReviewerSkill(storage=owner_ci_storage))
         if settings.work_router_enabled and settings.postgres_dsn:
             import asyncpg
 
@@ -5186,6 +5720,7 @@ def main() -> None:  # pragma: no cover — CLI entry-point
                 settings_manager=runtime_settings_manager,
                 secrets_manager=runtime_secrets_manager,
                 tenant_admin_manager=tenant_admin_manager,
+                owner_ci_storage=owner_ci_storage,
                 announcement_repository=announcement_repository,
                 announcement_policy_engine=announcement_policy_engine,
                 oauth_handlers=oauth_handlers,
