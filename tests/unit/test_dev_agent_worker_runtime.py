@@ -37,6 +37,10 @@ class _FakeWorkerBridge:
         node_id: str,
         bootstrap_secret: str,
         jobs: list[dict[str, Any] | None],
+        base_path: str = "/worker/v1",
+        scope_field_name: str = "tenant_id",
+        scope_id: str | None = None,
+        required_headers: dict[str, str] | None = None,
         session_id: str = "session-1",
         bootstrap_token: str = "bootstrap-token",
         bootstrap_signing_secret: str = "bootstrap-signing",
@@ -47,6 +51,12 @@ class _FakeWorkerBridge:
         self.node_id = node_id
         self.bootstrap_secret = bootstrap_secret
         self.jobs = list(jobs)
+        self.base_path = base_path.rstrip("/")
+        self.scope_field_name = scope_field_name
+        self.scope_id = scope_id or tenant_id
+        self.required_headers = {
+            key.lower(): value for key, value in dict(required_headers or {}).items()
+        }
         self.session_id = session_id
         self.bootstrap_token = bootstrap_token
         self.bootstrap_signing_secret = bootstrap_signing_secret
@@ -58,26 +68,27 @@ class _FakeWorkerBridge:
 
     def create_app(self) -> web.Application:
         app = web.Application()
-        app.router.add_post("/worker/v1/bootstrap", self.handle_bootstrap)
-        app.router.add_post("/worker/v1/nodes/register", self.handle_register)
+        app.router.add_post(f"{self.base_path}/bootstrap", self.handle_bootstrap)
+        app.router.add_post(f"{self.base_path}/nodes/register", self.handle_register)
         app.router.add_post(
-            f"/worker/v1/nodes/{self.node_id}/heartbeat",
+            f"{self.base_path}/nodes/{self.node_id}/heartbeat",
             self.handle_heartbeat,
         )
         app.router.add_post(
-            f"/worker/v1/nodes/{self.node_id}/jobs/claim",
+            f"{self.base_path}/nodes/{self.node_id}/jobs/claim",
             self.handle_claim,
         )
         app.router.add_post(
-            f"/worker/v1/nodes/{self.node_id}/jobs/{{job_id}}/result",
+            f"{self.base_path}/nodes/{self.node_id}/jobs/{{job_id}}/result",
             self.handle_result,
         )
         return app
 
     async def handle_bootstrap(self, request: web.Request) -> web.Response:
         assert request.headers.get("X-Worker-Bootstrap-Secret") == self.bootstrap_secret
+        self._assert_required_headers(request)
         payload = await request.json()
-        assert payload["tenant_id"] == self.tenant_id
+        assert payload[self.scope_field_name] == self.scope_id
         assert payload["node_id"] == self.node_id
         return web.json_response(
             {
@@ -94,8 +105,9 @@ class _FakeWorkerBridge:
     async def handle_register(self, request: web.Request) -> web.Response:
         raw = await request.text()
         payload = json.loads(raw)
-        assert payload["tenant_id"] == self.tenant_id
+        assert payload[self.scope_field_name] == self.scope_id
         assert payload["node_id"] == self.node_id
+        self._assert_required_headers(request)
         self._assert_signed(
             request=request,
             raw_body=raw,
@@ -115,6 +127,7 @@ class _FakeWorkerBridge:
 
     async def handle_heartbeat(self, request: web.Request) -> web.Response:
         raw = await request.text()
+        self._assert_required_headers(request)
         self._assert_signed(
             request=request,
             raw_body=raw,
@@ -127,7 +140,8 @@ class _FakeWorkerBridge:
     async def handle_claim(self, request: web.Request) -> web.Response:
         raw = await request.text()
         payload = json.loads(raw)
-        assert payload["tenant_id"] == self.tenant_id
+        assert payload[self.scope_field_name] == self.scope_id
+        self._assert_required_headers(request)
         self._assert_signed(
             request=request,
             raw_body=raw,
@@ -139,7 +153,7 @@ class _FakeWorkerBridge:
         return web.json_response(
             {
                 "ok": True,
-                "tenant_id": self.tenant_id,
+                self.scope_field_name: self.scope_id,
                 "node_id": self.node_id,
                 "job": job,
                 "poll_after_seconds": 5,
@@ -149,6 +163,7 @@ class _FakeWorkerBridge:
     async def handle_result(self, request: web.Request) -> web.Response:
         raw = await request.text()
         payload = json.loads(raw)
+        self._assert_required_headers(request)
         self._assert_signed(
             request=request,
             raw_body=raw,
@@ -157,6 +172,10 @@ class _FakeWorkerBridge:
         )
         self.result_payloads.append(payload)
         return web.json_response({"ok": True, "accepted": True}, status=202)
+
+    def _assert_required_headers(self, request: web.Request) -> None:
+        for name, value in self.required_headers.items():
+            assert request.headers.get(name) == value
 
     def _assert_signed(
         self,
@@ -174,7 +193,7 @@ class _FakeWorkerBridge:
         assert session_id == self.session_id
         assert timestamp
         assert nonce
-        canonical = f"{self.tenant_id}.{self.node_id}.{session_id}.{timestamp}.{nonce}.{raw_body}"
+        canonical = f"{self.scope_id}.{self.node_id}.{session_id}.{timestamp}.{nonce}.{raw_body}"
         expected_signature = hmac.new(
             signing_secret.encode("utf-8"),
             canonical.encode("utf-8"),
@@ -501,3 +520,65 @@ async def test_worker_restart_recovery_submits_failure_and_resumes_claim(tmp_pat
         assert verify_store.get_meta(INFLIGHT_META_KEY) in {"", None}
     finally:
         verify_store.close()
+
+
+@pytest.mark.asyncio
+async def test_worker_owner_ci_relay_fallback_uses_scope_id_and_relay_secret(
+    tmp_path: Path,
+) -> None:
+    scope_id = "owner:operator-1:repo:zetherion-ai"
+    node_id = "worker-laptop-1"
+    relay_secret = "relay-secret"
+    bridge = _FakeWorkerBridge(
+        tenant_id=scope_id,
+        scope_id=scope_id,
+        scope_field_name="scope_id",
+        base_path="/owner/ci/worker/v1",
+        node_id=node_id,
+        bootstrap_secret="bootstrap-secret",
+        required_headers={"x-ci-relay-secret": relay_secret},
+        jobs=[
+            {
+                "job_id": "job-owner-ci-1",
+                "action": "ci.test.run",
+                "runner": "noop",
+                "required_capabilities": ["ci.test.run"],
+                "payload": {"message": "relay"},
+            }
+        ],
+    )
+
+    server = TestServer(bridge.create_app())
+    await server.start_server()
+    try:
+        config = _base_config(
+            tmp_path=tmp_path,
+            base_url="http://127.0.0.1:9",
+            tenant_id=scope_id,
+            node_id=node_id,
+        )
+        config.worker_base_url = "http://127.0.0.1:9/owner/ci/worker/v1"
+        config.worker_relay_base_url = f"{str(server.make_url('')).rstrip('/')}/owner/ci/worker/v1"
+        config.worker_relay_secret = relay_secret
+        config.worker_control_plane = "owner_ci"
+        config.worker_scope_id = scope_id
+        config.worker_tenant_id = ""
+        config.worker_capabilities = ["ci.test.run"]
+        config.worker_claim_required_capabilities = ["ci.test.run"]
+        config.worker_allowed_actions = ["worker.noop", "ci.test.run"]
+
+        runtime = WorkerRuntime(config)
+        try:
+            outcome = await runtime.run_once()
+        finally:
+            await runtime.close()
+    finally:
+        await server.close()
+
+    assert outcome.claimed_job is True
+    assert outcome.job_id == "job-owner-ci-1"
+    assert outcome.status == "succeeded"
+    assert bridge.claim_count == 1
+    assert bridge.heartbeat_count >= 1
+    assert bridge.result_payloads[0]["scope_id"] == scope_id
+    assert bridge.result_payloads[0]["status"] == "succeeded"

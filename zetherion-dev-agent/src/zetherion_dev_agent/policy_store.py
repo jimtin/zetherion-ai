@@ -87,6 +87,21 @@ class PolicyStore:
                 value        TEXT NOT NULL,
                 updated_at   TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS pending_worker_results (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id          TEXT NOT NULL UNIQUE,
+                payload_json    TEXT NOT NULL,
+                relay_mode      TEXT NOT NULL DEFAULT 'direct_then_relay',
+                status          TEXT NOT NULL DEFAULT 'pending'
+                               CHECK(status IN ('pending','sent','failed')),
+                attempt_count   INTEGER NOT NULL DEFAULT 0,
+                last_attempt_at TEXT,
+                next_attempt_at TEXT,
+                sent_at         TEXT,
+                error_message   TEXT,
+                created_at      TEXT NOT NULL
+            );
             """
         )
         self._conn.commit()
@@ -366,5 +381,123 @@ class PolicyStore:
                 updated_at = excluded.updated_at
             """,
             (key, value, self._now_iso()),
+        )
+        self._conn.commit()
+
+    # ------------------------------------------------------------------
+    # Pending worker result spool
+    # ------------------------------------------------------------------
+
+    def enqueue_worker_result(
+        self,
+        *,
+        job_id: str,
+        payload: dict[str, Any],
+        relay_mode: str = "direct_then_relay",
+    ) -> None:
+        now = self._now_iso()
+        self._conn.execute(
+            """
+            INSERT INTO pending_worker_results (
+                job_id,
+                payload_json,
+                relay_mode,
+                status,
+                attempt_count,
+                last_attempt_at,
+                next_attempt_at,
+                sent_at,
+                error_message,
+                created_at
+            ) VALUES (?, ?, ?, 'pending', 0, NULL, NULL, NULL, NULL, ?)
+            ON CONFLICT(job_id) DO UPDATE SET
+                payload_json = excluded.payload_json,
+                relay_mode = excluded.relay_mode,
+                status = 'pending',
+                error_message = NULL
+            """,
+            (job_id, json.dumps(payload), relay_mode, now),
+        )
+        self._conn.commit()
+
+    def list_pending_worker_results(self, limit: int = 50) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT *
+            FROM pending_worker_results
+            WHERE status = 'pending'
+              AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (self._now_iso(), max(1, limit)),
+        ).fetchall()
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            payload: dict[str, Any] = {}
+            try:
+                parsed = json.loads(str(row["payload_json"] or "{}"))
+                if isinstance(parsed, dict):
+                    payload = parsed
+            except json.JSONDecodeError:
+                payload = {}
+            results.append(
+                {
+                    "id": int(row["id"]),
+                    "job_id": str(row["job_id"]),
+                    "payload": payload,
+                    "relay_mode": str(row["relay_mode"]),
+                    "attempt_count": int(row["attempt_count"]),
+                    "status": str(row["status"]),
+                    "error_message": str(row["error_message"]) if row["error_message"] else None,
+                }
+            )
+        return results
+
+    def mark_worker_result_sent(self, row_id: int) -> None:
+        now = self._now_iso()
+        self._conn.execute(
+            """
+            UPDATE pending_worker_results
+            SET status = 'sent',
+                sent_at = ?,
+                last_attempt_at = ?,
+                attempt_count = attempt_count + 1,
+                error_message = NULL
+            WHERE id = ?
+            """,
+            (now, now, row_id),
+        )
+        self._conn.commit()
+
+    def mark_worker_result_failed(
+        self,
+        row_id: int,
+        error_message: str,
+        retry_at: datetime,
+    ) -> None:
+        current = self._conn.execute(
+            "SELECT attempt_count FROM pending_worker_results WHERE id = ? LIMIT 1",
+            (row_id,),
+        ).fetchone()
+        next_attempt_count = int(current["attempt_count"] or 0) + 1 if current else 1
+        status = "failed" if next_attempt_count >= 10 else "pending"
+        self._conn.execute(
+            """
+            UPDATE pending_worker_results
+            SET status = ?,
+                error_message = ?,
+                last_attempt_at = ?,
+                next_attempt_at = ?,
+                attempt_count = attempt_count + 1
+            WHERE id = ?
+            """,
+            (
+                status,
+                error_message,
+                self._now_iso(),
+                retry_at.astimezone(UTC).isoformat(),
+                row_id,
+            ),
         )
         self._conn.commit()

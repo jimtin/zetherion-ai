@@ -366,6 +366,35 @@ Claim next eligible worker job based on capability policy.
 
 Submit terminal status and artifacts for a claimed worker job.
 
+### GET /owner/ci/worker/v1/health
+
+Owner-scoped CI worker bridge health probe.
+
+### POST /owner/ci/worker/v1/bootstrap
+
+Bootstrap an owner-scoped worker node session.
+
+- Requires `X-Worker-Bootstrap-Secret`.
+- Requires `scope_id` in the request body.
+
+### POST /owner/ci/worker/v1/nodes/register
+
+Complete owner-scoped worker registration and optionally rotate credentials.
+
+### POST /owner/ci/worker/v1/nodes/{node_id}/heartbeat
+
+Submit node heartbeat for owner-scoped CI execution.
+
+### POST /owner/ci/worker/v1/nodes/{node_id}/jobs/claim
+
+Claim the next owner-scoped CI shard job for the requesting node.
+
+### POST /owner/ci/worker/v1/nodes/{node_id}/jobs/{job_id}/result
+
+Submit owner-scoped CI shard results.
+
+- Relay replays are accepted with `X-API-Secret` plus `X-CI-Relay-Replay: 1`.
+
 ---
 
 ## Tenant Admin Worker Operator API
