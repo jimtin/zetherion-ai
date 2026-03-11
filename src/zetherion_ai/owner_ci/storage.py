@@ -660,6 +660,119 @@ CREATE INDEX IF NOT EXISTS idx_owner_ci_agent_service_requests_owner_app
         app_id,
         created_at DESC
     );
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_service_adapter_capabilities (
+    owner_id            TEXT         NOT NULL,
+    service_kind        TEXT         NOT NULL,
+    manifest_json       JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, service_kind)
+);
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_managed_operations (
+    owner_id            TEXT         NOT NULL,
+    operation_id        TEXT         NOT NULL,
+    app_id              TEXT         NOT NULL,
+    repo_id             TEXT         NOT NULL,
+    operation_kind      TEXT         NOT NULL DEFAULT 'managed_operation',
+    lifecycle_stage     TEXT         NOT NULL DEFAULT 'pending',
+    status              TEXT         NOT NULL DEFAULT 'active',
+    correlation_key     TEXT,
+    summary_json        JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    metadata_json       JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    last_observed_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, operation_id),
+    UNIQUE (owner_id, correlation_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_managed_operations_owner_repo
+    ON "{validated}".owner_ci_managed_operations (
+        owner_id,
+        repo_id,
+        updated_at DESC
+    );
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_operation_refs (
+    owner_id            TEXT         NOT NULL,
+    ref_id              TEXT         NOT NULL,
+    operation_id        TEXT         NOT NULL,
+    service_kind        TEXT,
+    ref_kind            TEXT         NOT NULL,
+    ref_value           TEXT         NOT NULL,
+    dedupe_key          TEXT         NOT NULL,
+    metadata_json       JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, ref_id),
+    UNIQUE (owner_id, operation_id, dedupe_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_operation_refs_owner_ref
+    ON "{validated}".owner_ci_operation_refs (
+        owner_id,
+        ref_kind,
+        ref_value,
+        updated_at DESC
+    );
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_operation_evidence (
+    owner_id            TEXT         NOT NULL,
+    evidence_id         TEXT         NOT NULL,
+    operation_id        TEXT         NOT NULL,
+    service_kind        TEXT         NOT NULL,
+    evidence_type       TEXT         NOT NULL,
+    title_value         TEXT         NOT NULL,
+    state               TEXT         NOT NULL DEFAULT 'ready',
+    dedupe_key          TEXT         NOT NULL,
+    payload_json        JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    log_text_value      TEXT,
+    metadata_json       JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_id, evidence_id),
+    UNIQUE (owner_id, operation_id, dedupe_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_operation_evidence_owner_operation
+    ON "{validated}".owner_ci_operation_evidence (
+        owner_id,
+        operation_id,
+        updated_at DESC
+    );
+
+CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_operation_incidents (
+    owner_id                 TEXT         NOT NULL,
+    incident_id              TEXT         NOT NULL,
+    operation_id             TEXT         NOT NULL,
+    service_kind             TEXT         NOT NULL,
+    incident_type            TEXT         NOT NULL,
+    severity                 TEXT         NOT NULL DEFAULT 'medium',
+    blocking                 BOOLEAN      NOT NULL DEFAULT FALSE,
+    dedupe_key               TEXT         NOT NULL,
+    status                   TEXT         NOT NULL DEFAULT 'open',
+    root_cause_summary_value TEXT         NOT NULL,
+    recommended_fix_value    TEXT,
+    evidence_refs_json       JSONB        NOT NULL DEFAULT '[]'::jsonb,
+    metadata_json            JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
+    created_at               TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    last_seen_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    occurrence_count         INT          NOT NULL DEFAULT 1,
+    PRIMARY KEY (owner_id, incident_id),
+    UNIQUE (owner_id, operation_id, dedupe_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_owner_ci_operation_incidents_owner_operation
+    ON "{validated}".owner_ci_operation_incidents (
+        owner_id,
+        operation_id,
+        status,
+        blocking,
+        last_seen_at DESC
+    );
 """
 
 
@@ -1158,6 +1271,96 @@ class OwnerCiStorage:
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
             "executed_at": row["executed_at"].isoformat() if row.get("executed_at") else None,
+        }
+
+    def _service_adapter_capability_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "service_kind": str(row["service_kind"]),
+            "manifest": dict(row["manifest_json"] or {}),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        }
+
+    def _managed_operation_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "operation_id": str(row["operation_id"]),
+            "app_id": str(row["app_id"]),
+            "repo_id": str(row["repo_id"]),
+            "operation_kind": str(row["operation_kind"]),
+            "lifecycle_stage": str(row["lifecycle_stage"]),
+            "status": str(row["status"]),
+            "correlation_key": (
+                str(row["correlation_key"]) if row.get("correlation_key") else None
+            ),
+            "summary": dict(row["summary_json"] or {}),
+            "metadata": dict(row["metadata_json"] or {}),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+            "last_observed_at": (
+                row["last_observed_at"].isoformat() if row.get("last_observed_at") else None
+            ),
+        }
+
+    def _operation_ref_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "ref_id": str(row["ref_id"]),
+            "operation_id": str(row["operation_id"]),
+            "service_kind": str(row["service_kind"]) if row.get("service_kind") else None,
+            "ref_kind": str(row["ref_kind"]),
+            "ref_value": str(row["ref_value"]),
+            "dedupe_key": str(row["dedupe_key"]),
+            "metadata": dict(row["metadata_json"] or {}),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        }
+
+    def _operation_evidence_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "evidence_id": str(row["evidence_id"]),
+            "operation_id": str(row["operation_id"]),
+            "service_kind": str(row["service_kind"]),
+            "evidence_type": str(row["evidence_type"]),
+            "title": self._decrypt_text(str(row["title_value"])) or "",
+            "state": str(row["state"]),
+            "dedupe_key": str(row["dedupe_key"]),
+            "payload": dict(row["payload_json"] or {}),
+            "log_text": (
+                self._decrypt_text(str(row["log_text_value"]))
+                if row.get("log_text_value")
+                else None
+            ),
+            "metadata": dict(row["metadata_json"] or {}),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+        }
+
+    def _operation_incident_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "owner_id": str(row["owner_id"]),
+            "incident_id": str(row["incident_id"]),
+            "operation_id": str(row["operation_id"]),
+            "service_kind": str(row["service_kind"]),
+            "incident_type": str(row["incident_type"]),
+            "severity": str(row["severity"]),
+            "blocking": bool(row["blocking"]),
+            "dedupe_key": str(row["dedupe_key"]),
+            "status": str(row["status"]),
+            "root_cause_summary": self._decrypt_text(str(row["root_cause_summary_value"])) or "",
+            "recommended_fix": (
+                self._decrypt_text(str(row["recommended_fix_value"]))
+                if row.get("recommended_fix_value")
+                else None
+            ),
+            "evidence_refs": list(row["evidence_refs_json"] or []),
+            "metadata": dict(row["metadata_json"] or {}),
+            "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+            "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+            "last_seen_at": row["last_seen_at"].isoformat() if row.get("last_seen_at") else None,
+            "occurrence_count": int(row["occurrence_count"]),
         }
 
     async def list_repo_profiles(self, owner_id: str) -> list[dict[str, Any]]:
@@ -2548,6 +2751,12 @@ class OwnerCiStorage:
         repos = await self.list_repo_profiles(owner_id)
         runs = await self.list_runs(owner_id, limit=200)
         gaps = await self.list_agent_gap_events(owner_id, unresolved_only=True, limit=500)
+        operations = await self.list_managed_operations(owner_id, limit=500)
+        incidents = await self.list_operation_incidents_for_owner(
+            owner_id,
+            unresolved_only=True,
+            limit=500,
+        )
         by_repo: dict[str, dict[str, Any]] = {}
         for repo in repos:
             repo_id = str(repo["repo_id"])
@@ -2562,6 +2771,9 @@ class OwnerCiStorage:
                 "ready_to_merge_runs": 0,
                 "open_gaps": 0,
                 "blocker_gaps": 0,
+                "operation_count": 0,
+                "failed_operations": 0,
+                "open_incidents": 0,
             }
         for run in runs:
             repo_id = str(run.get("repo_id") or "")
@@ -2578,6 +2790,9 @@ class OwnerCiStorage:
                     "ready_to_merge_runs": 0,
                     "open_gaps": 0,
                     "blocker_gaps": 0,
+                    "operation_count": 0,
+                    "failed_operations": 0,
+                    "open_incidents": 0,
                 },
             )
             summary["run_count"] += 1
@@ -2602,11 +2817,69 @@ class OwnerCiStorage:
                     "ready_to_merge_runs": 0,
                     "open_gaps": 0,
                     "blocker_gaps": 0,
+                    "operation_count": 0,
+                    "failed_operations": 0,
+                    "open_incidents": 0,
                 },
             )
             summary["open_gaps"] += 1
             if bool(gap.get("blocker")):
                 summary["blocker_gaps"] += 1
+        for operation in operations:
+            repo_id = str(operation.get("repo_id") or "")
+            summary = by_repo.setdefault(
+                repo_id,
+                {
+                    "repo_id": repo_id,
+                    "display_name": repo_id,
+                    "active": True,
+                    "stack_kind": "unknown",
+                    "platform_canary": False,
+                    "run_count": 0,
+                    "failed_runs": 0,
+                    "ready_to_merge_runs": 0,
+                    "open_gaps": 0,
+                    "blocker_gaps": 0,
+                    "operation_count": 0,
+                    "failed_operations": 0,
+                    "open_incidents": 0,
+                },
+            )
+            summary["operation_count"] += 1
+            if str(operation.get("status") or "") in {"failed", "error"}:
+                summary["failed_operations"] += 1
+        for incident in incidents:
+            operation = next(
+                (
+                    item
+                    for item in operations
+                    if str(item.get("operation_id") or "")
+                    == str(incident.get("operation_id") or "")
+                ),
+                {},
+            )
+            repo_id = str(operation.get("repo_id") or "")
+            if not repo_id:
+                continue
+            summary = by_repo.setdefault(
+                repo_id,
+                {
+                    "repo_id": repo_id,
+                    "display_name": repo_id,
+                    "active": True,
+                    "stack_kind": "unknown",
+                    "platform_canary": False,
+                    "run_count": 0,
+                    "failed_runs": 0,
+                    "ready_to_merge_runs": 0,
+                    "open_gaps": 0,
+                    "blocker_gaps": 0,
+                    "operation_count": 0,
+                    "failed_operations": 0,
+                    "open_incidents": 0,
+                },
+            )
+            summary["open_incidents"] += 1
         return {
             "owner_id": owner_id,
             "repos": list(by_repo.values()),
@@ -2616,6 +2889,23 @@ class OwnerCiStorage:
                 "blocker_total": sum(1 for gap in gaps if bool(gap.get("blocker"))),
                 "recurring_total": sum(
                     1 for gap in gaps if int(gap.get("occurrence_count") or 0) > 1
+                ),
+            },
+            "operations": {
+                "total": len(operations),
+                "failed_total": sum(
+                    1
+                    for operation in operations
+                    if str(operation.get("status") or "") in {"failed", "error"}
+                ),
+                "active_total": sum(
+                    1
+                    for operation in operations
+                    if str(operation.get("status") or "") not in {"resolved", "succeeded"}
+                ),
+                "incident_total": len(incidents),
+                "blocking_incident_total": sum(
+                    1 for incident in incidents if bool(incident.get("blocking"))
                 ),
             },
         }
@@ -3171,6 +3461,22 @@ class OwnerCiStorage:
                  LIMIT 1
                 """,
                 owner_id,
+                app_id,
+            )
+        return self._agent_app_profile_from_row(dict(row)) if row is not None else None
+
+    async def find_agent_app_profile(self, app_id: str) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_agent_app_profiles'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE app_id = $1
+                   AND active = TRUE
+                 ORDER BY updated_at DESC
+                 LIMIT 1
+                """,
                 app_id,
             )
         return self._agent_app_profile_from_row(dict(row)) if row is not None else None
@@ -4157,6 +4463,653 @@ class OwnerCiStorage:
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(query, *params)
         return [self._secret_ref_from_row(dict(row)) for row in rows]
+
+    async def upsert_service_adapter_capability(
+        self,
+        owner_id: str,
+        *,
+        service_kind: str,
+        manifest: dict[str, Any],
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_service_adapter_capabilities'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    service_kind,
+                    manifest_json,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    $1, $2, $3::jsonb, now(), now()
+                )
+                ON CONFLICT (owner_id, service_kind) DO UPDATE SET
+                    manifest_json = EXCLUDED.manifest_json,
+                    updated_at = now()
+                RETURNING *
+                """,
+                owner_id,
+                service_kind,
+                json.dumps(dict(manifest or {})),
+            )
+        if row is None:
+            raise RuntimeError("Upsert service adapter capability returned no row")
+        return self._service_adapter_capability_from_row(dict(row))
+
+    async def get_service_adapter_capability(
+        self,
+        owner_id: str,
+        service_kind: str,
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_service_adapter_capabilities'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND service_kind = $2
+                 LIMIT 1
+                """,
+                owner_id,
+                service_kind,
+            )
+        return self._service_adapter_capability_from_row(dict(row)) if row is not None else None
+
+    async def list_service_adapter_capabilities(self, owner_id: str) -> list[dict[str, Any]]:
+        table = f'"{self._schema}".owner_ci_service_adapter_capabilities'
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                 ORDER BY service_kind ASC
+                """,
+                owner_id,
+            )
+        return [self._service_adapter_capability_from_row(dict(row)) for row in rows]
+
+    async def create_managed_operation(
+        self,
+        owner_id: str,
+        *,
+        app_id: str,
+        repo_id: str,
+        operation_kind: str,
+        lifecycle_stage: str,
+        status: str,
+        summary: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+        correlation_key: str | None = None,
+        operation_id: str | None = None,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_managed_operations'
+        next_operation_id = operation_id or uuid4().hex
+        async with self._pool.acquire() as conn:
+            if correlation_key:
+                row = await conn.fetchrow(
+                    f"""
+                    INSERT INTO {table} (
+                        owner_id,
+                        operation_id,
+                        app_id,
+                        repo_id,
+                        operation_kind,
+                        lifecycle_stage,
+                        status,
+                        correlation_key,
+                        summary_json,
+                        metadata_json,
+                        created_at,
+                        updated_at,
+                        last_observed_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, now(), now(), now()
+                    )
+                    ON CONFLICT (owner_id, correlation_key) DO UPDATE SET
+                        app_id = EXCLUDED.app_id,
+                        repo_id = EXCLUDED.repo_id,
+                        operation_kind = EXCLUDED.operation_kind,
+                        lifecycle_stage = EXCLUDED.lifecycle_stage,
+                        status = EXCLUDED.status,
+                        summary_json = EXCLUDED.summary_json,
+                        metadata_json = EXCLUDED.metadata_json,
+                        updated_at = now(),
+                        last_observed_at = now()
+                    RETURNING *
+                    """,
+                    owner_id,
+                    next_operation_id,
+                    app_id,
+                    repo_id,
+                    operation_kind,
+                    lifecycle_stage,
+                    status,
+                    correlation_key,
+                    json.dumps(dict(summary or {})),
+                    json.dumps(dict(metadata or {})),
+                )
+            else:
+                row = await conn.fetchrow(
+                    f"""
+                    INSERT INTO {table} (
+                        owner_id,
+                        operation_id,
+                        app_id,
+                        repo_id,
+                        operation_kind,
+                        lifecycle_stage,
+                        status,
+                        correlation_key,
+                        summary_json,
+                        metadata_json,
+                        created_at,
+                        updated_at,
+                        last_observed_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, NULL, $8::jsonb, $9::jsonb, now(), now(), now()
+                    )
+                    RETURNING *
+                    """,
+                    owner_id,
+                    next_operation_id,
+                    app_id,
+                    repo_id,
+                    operation_kind,
+                    lifecycle_stage,
+                    status,
+                    json.dumps(dict(summary or {})),
+                    json.dumps(dict(metadata or {})),
+                )
+        if row is None:
+            raise RuntimeError("Create managed operation returned no row")
+        return self._managed_operation_from_row(dict(row))
+
+    async def update_managed_operation(
+        self,
+        owner_id: str,
+        *,
+        operation_id: str,
+        lifecycle_stage: str | None = None,
+        status: str | None = None,
+        summary: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_managed_operations'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                UPDATE {table}
+                   SET lifecycle_stage = COALESCE($3, lifecycle_stage),
+                       status = COALESCE($4, status),
+                       summary_json = CASE
+                           WHEN $5::jsonb IS NULL THEN summary_json
+                           ELSE $5::jsonb
+                       END,
+                       metadata_json = CASE
+                           WHEN $6::jsonb IS NULL THEN metadata_json
+                           ELSE $6::jsonb
+                       END,
+                       updated_at = now(),
+                       last_observed_at = now()
+                 WHERE owner_id = $1
+                   AND operation_id = $2
+                RETURNING *
+                """,
+                owner_id,
+                operation_id,
+                lifecycle_stage,
+                status,
+                json.dumps(dict(summary or {})) if summary is not None else None,
+                json.dumps(dict(metadata or {})) if metadata is not None else None,
+            )
+        return self._managed_operation_from_row(dict(row)) if row is not None else None
+
+    async def get_managed_operation(
+        self,
+        owner_id: str,
+        operation_id: str,
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_managed_operations'
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND operation_id = $2
+                 LIMIT 1
+                """,
+                owner_id,
+                operation_id,
+            )
+        return self._managed_operation_from_row(dict(row)) if row is not None else None
+
+    async def list_managed_operations(
+        self,
+        owner_id: str,
+        *,
+        app_id: str | None = None,
+        repo_id: str | None = None,
+        service_kind: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        table = f'"{self._schema}".owner_ci_managed_operations'
+        query = f"""
+            SELECT DISTINCT op.*
+              FROM {table} op
+         LEFT JOIN "{self._schema}".owner_ci_operation_refs ref
+                ON ref.owner_id = op.owner_id
+               AND ref.operation_id = op.operation_id
+             WHERE op.owner_id = $1
+        """
+        params: list[Any] = [owner_id]
+        if app_id:
+            params.append(app_id)
+            query += f" AND op.app_id = ${len(params)}"
+        if repo_id:
+            params.append(repo_id)
+            query += f" AND op.repo_id = ${len(params)}"
+        if service_kind:
+            params.append(service_kind)
+            query += f" AND ref.service_kind = ${len(params)}"
+        if status:
+            params.append(status)
+            query += f" AND op.status = ${len(params)}"
+        params.append(max(1, limit))
+        query += f" ORDER BY op.updated_at DESC LIMIT ${len(params)}"
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+        return [self._managed_operation_from_row(dict(row)) for row in rows]
+
+    async def find_managed_operation_by_ref(
+        self,
+        owner_id: str,
+        *,
+        ref_kind: str,
+        ref_value: str,
+        app_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        refs_table = f'"{self._schema}".owner_ci_operation_refs'
+        ops_table = f'"{self._schema}".owner_ci_managed_operations'
+        query = f"""
+            SELECT op.*
+              FROM {refs_table} ref
+              JOIN {ops_table} op
+                ON op.owner_id = ref.owner_id
+               AND op.operation_id = ref.operation_id
+             WHERE ref.owner_id = $1
+               AND ref.ref_kind = $2
+               AND ref.ref_value = $3
+        """
+        params: list[Any] = [owner_id, ref_kind, ref_value]
+        if app_id:
+            params.append(app_id)
+            query += f" AND op.app_id = ${len(params)}"
+        query += " ORDER BY ref.updated_at DESC LIMIT 1"
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(query, *params)
+        return self._managed_operation_from_row(dict(row)) if row is not None else None
+
+    async def upsert_operation_ref(
+        self,
+        owner_id: str,
+        *,
+        operation_id: str,
+        service_kind: str | None,
+        ref_kind: str,
+        ref_value: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_operation_refs'
+        dedupe_key = secrets.token_hex(8)
+        stable = f"{service_kind or ''}:{ref_kind}:{ref_value}"
+        dedupe_key = re.sub(r"\s+", "", stable.lower())
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    ref_id,
+                    operation_id,
+                    service_kind,
+                    ref_kind,
+                    ref_value,
+                    dedupe_key,
+                    metadata_json,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8::jsonb, now(), now()
+                )
+                ON CONFLICT (owner_id, operation_id, dedupe_key) DO UPDATE SET
+                    metadata_json = EXCLUDED.metadata_json,
+                    updated_at = now()
+                RETURNING *
+                """,
+                owner_id,
+                uuid4().hex,
+                operation_id,
+                service_kind,
+                ref_kind,
+                ref_value,
+                dedupe_key,
+                json.dumps(dict(metadata or {})),
+            )
+        if row is None:
+            raise RuntimeError("Upsert operation ref returned no row")
+        return self._operation_ref_from_row(dict(row))
+
+    async def list_operation_refs(
+        self,
+        owner_id: str,
+        operation_id: str,
+    ) -> list[dict[str, Any]]:
+        table = f'"{self._schema}".owner_ci_operation_refs'
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"""
+                SELECT *
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND operation_id = $2
+                 ORDER BY updated_at DESC
+                """,
+                owner_id,
+                operation_id,
+            )
+        return [self._operation_ref_from_row(dict(row)) for row in rows]
+
+    async def record_operation_evidence(
+        self,
+        owner_id: str,
+        *,
+        operation_id: str,
+        service_kind: str,
+        evidence_type: str,
+        title: str,
+        payload: dict[str, Any] | None = None,
+        log_text: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        state: str = "ready",
+        dedupe_key: str | None = None,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_operation_evidence'
+        stable_key = dedupe_key or re.sub(
+            r"\s+",
+            "",
+            f"{service_kind}:{evidence_type}:{title}".lower(),
+        )
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    evidence_id,
+                    operation_id,
+                    service_kind,
+                    evidence_type,
+                    title_value,
+                    state,
+                    dedupe_key,
+                    payload_json,
+                    log_text_value,
+                    metadata_json,
+                    created_at,
+                    updated_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11::jsonb, now(), now()
+                )
+                ON CONFLICT (owner_id, operation_id, dedupe_key) DO UPDATE SET
+                    state = EXCLUDED.state,
+                    payload_json = EXCLUDED.payload_json,
+                    log_text_value = EXCLUDED.log_text_value,
+                    metadata_json = EXCLUDED.metadata_json,
+                    updated_at = now()
+                RETURNING *
+                """,
+                owner_id,
+                uuid4().hex,
+                operation_id,
+                service_kind,
+                evidence_type,
+                self._encrypt_text(title.strip() or evidence_type),
+                state,
+                stable_key,
+                json.dumps(dict(payload or {})),
+                self._encrypt_text(log_text) if log_text else None,
+                json.dumps(dict(metadata or {})),
+            )
+        if row is None:
+            raise RuntimeError("Record operation evidence returned no row")
+        return self._operation_evidence_from_row(dict(row))
+
+    async def list_operation_evidence(
+        self,
+        owner_id: str,
+        operation_id: str,
+        *,
+        service_kind: str | None = None,
+        evidence_type: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        table = f'"{self._schema}".owner_ci_operation_evidence'
+        query = f"""
+            SELECT *
+              FROM {table}
+             WHERE owner_id = $1
+               AND operation_id = $2
+        """
+        params: list[Any] = [owner_id, operation_id]
+        if service_kind:
+            params.append(service_kind)
+            query += f" AND service_kind = ${len(params)}"
+        if evidence_type:
+            params.append(evidence_type)
+            query += f" AND evidence_type = ${len(params)}"
+        params.append(max(1, limit))
+        query += f" ORDER BY updated_at DESC LIMIT ${len(params)}"
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+        return [self._operation_evidence_from_row(dict(row)) for row in rows]
+
+    async def get_operation_log_chunks(
+        self,
+        owner_id: str,
+        operation_id: str,
+        *,
+        query_text: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        evidence = await self.list_operation_evidence(
+            owner_id,
+            operation_id,
+            evidence_type="logs",
+            limit=limit,
+        )
+        logs: list[dict[str, Any]] = []
+        needle = str(query_text or "").strip().lower()
+        for entry in evidence:
+            message = str(entry.get("log_text") or "").strip()
+            if not message:
+                continue
+            if needle and needle not in message.lower():
+                continue
+            logs.append(
+                {
+                    "chunk_id": str(entry.get("evidence_id") or uuid4().hex),
+                    "stream": str(
+                        (entry.get("payload") or {}).get("stream")
+                        or entry.get("service_kind")
+                        or "system"
+                    ),
+                    "message": message,
+                    "created_at": entry.get("updated_at"),
+                    "metadata": dict(entry.get("metadata") or {}),
+                }
+            )
+            if len(logs) >= limit:
+                break
+        return logs
+
+    async def record_operation_incident(
+        self,
+        owner_id: str,
+        *,
+        operation_id: str,
+        service_kind: str,
+        incident_type: str,
+        severity: str,
+        blocking: bool,
+        root_cause_summary: str,
+        recommended_fix: str | None = None,
+        evidence_refs: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+        status: str = "open",
+        dedupe_key: str | None = None,
+    ) -> dict[str, Any]:
+        table = f'"{self._schema}".owner_ci_operation_incidents'
+        stable_key = dedupe_key or re.sub(
+            r"\s+",
+            "",
+            f"{service_kind}:{incident_type}:{root_cause_summary}".lower(),
+        )
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                INSERT INTO {table} (
+                    owner_id,
+                    incident_id,
+                    operation_id,
+                    service_kind,
+                    incident_type,
+                    severity,
+                    blocking,
+                    dedupe_key,
+                    status,
+                    root_cause_summary_value,
+                    recommended_fix_value,
+                    evidence_refs_json,
+                    metadata_json,
+                    created_at,
+                    updated_at,
+                    last_seen_at,
+                    occurrence_count
+                ) VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                    $12::jsonb, $13::jsonb, now(), now(), now(), 1
+                )
+                ON CONFLICT (owner_id, operation_id, dedupe_key) DO UPDATE SET
+                    severity = EXCLUDED.severity,
+                    blocking = EXCLUDED.blocking,
+                    status = EXCLUDED.status,
+                    root_cause_summary_value = EXCLUDED.root_cause_summary_value,
+                    recommended_fix_value = EXCLUDED.recommended_fix_value,
+                    evidence_refs_json = EXCLUDED.evidence_refs_json,
+                    metadata_json = EXCLUDED.metadata_json,
+                    updated_at = now(),
+                    last_seen_at = now(),
+                    occurrence_count = {table}.occurrence_count + 1
+                RETURNING *
+                """,
+                owner_id,
+                uuid4().hex,
+                operation_id,
+                service_kind,
+                incident_type,
+                severity,
+                blocking,
+                stable_key,
+                status,
+                self._encrypt_text(root_cause_summary),
+                self._encrypt_text(recommended_fix) if recommended_fix else None,
+                json.dumps(list(evidence_refs or [])),
+                json.dumps(dict(metadata or {})),
+            )
+        if row is None:
+            raise RuntimeError("Record operation incident returned no row")
+        return self._operation_incident_from_row(dict(row))
+
+    async def list_operation_incidents(
+        self,
+        owner_id: str,
+        operation_id: str,
+        *,
+        unresolved_only: bool = False,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        table = f'"{self._schema}".owner_ci_operation_incidents'
+        query = f"""
+            SELECT *
+              FROM {table}
+             WHERE owner_id = $1
+               AND operation_id = $2
+        """
+        params: list[Any] = [owner_id, operation_id]
+        if unresolved_only:
+            query += " AND status <> 'resolved'"
+        params.append(max(1, limit))
+        query += f" ORDER BY blocking DESC, last_seen_at DESC LIMIT ${len(params)}"
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+        return [self._operation_incident_from_row(dict(row)) for row in rows]
+
+    async def list_operation_incidents_for_owner(
+        self,
+        owner_id: str,
+        *,
+        repo_id: str | None = None,
+        unresolved_only: bool = False,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        table = f'"{self._schema}".owner_ci_operation_incidents'
+        ops_table = f'"{self._schema}".owner_ci_managed_operations'
+        query = f"""
+            SELECT inc.*
+              FROM {table} inc
+              JOIN {ops_table} op
+                ON op.owner_id = inc.owner_id
+               AND op.operation_id = inc.operation_id
+             WHERE inc.owner_id = $1
+        """
+        params: list[Any] = [owner_id]
+        if repo_id:
+            params.append(repo_id)
+            query += f" AND op.repo_id = ${len(params)}"
+        if unresolved_only:
+            query += " AND inc.status <> 'resolved'"
+        params.append(max(1, limit))
+        query += f" ORDER BY inc.blocking DESC, inc.last_seen_at DESC LIMIT ${len(params)}"
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+        return [self._operation_incident_from_row(dict(row)) for row in rows]
+
+    async def get_operation_hydrated(
+        self,
+        owner_id: str,
+        operation_id: str,
+    ) -> dict[str, Any] | None:
+        operation = await self.get_managed_operation(owner_id, operation_id)
+        if operation is None:
+            return None
+        refs = await self.list_operation_refs(owner_id, operation_id)
+        evidence = await self.list_operation_evidence(owner_id, operation_id, limit=200)
+        incidents = await self.list_operation_incidents(
+            owner_id,
+            operation_id,
+            unresolved_only=False,
+            limit=200,
+        )
+        return {
+            **operation,
+            "refs": refs,
+            "evidence": evidence,
+            "incidents": incidents,
+            "top_incident": incidents[0] if incidents else None,
+        }
 
     async def _store_worker_observability(
         self,

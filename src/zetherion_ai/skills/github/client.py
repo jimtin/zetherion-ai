@@ -5,6 +5,8 @@ error handling, rate limiting awareness, and type-safe responses.
 """
 
 import contextlib
+import io
+import zipfile
 from dataclasses import dataclass
 from typing import Any
 
@@ -1074,6 +1076,108 @@ class GitHubClient:
             runs = data.get("workflow_runs", [])
             return [WorkflowRun.from_api(r, repository=repository) for r in runs]
         return []
+
+    async def get_workflow_run(self, owner: str, repo: str, run_id: int) -> dict[str, Any]:
+        """Fetch one workflow run by id."""
+        data = await self._request("GET", f"/repos/{owner}/{repo}/actions/runs/{run_id}")
+        if isinstance(data, dict):
+            return data
+        raise GitHubAPIError("Unexpected response format")
+
+    async def list_workflow_jobs(
+        self,
+        owner: str,
+        repo: str,
+        run_id: int,
+        *,
+        per_page: int = DEFAULT_PER_PAGE,
+        page: int = 1,
+    ) -> list[dict[str, Any]]:
+        """List jobs for a workflow run."""
+        data = await self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/actions/runs/{run_id}/jobs",
+            params={"per_page": per_page, "page": page},
+        )
+        if not isinstance(data, dict):
+            return []
+        jobs = data.get("jobs", [])
+        if not isinstance(jobs, list):
+            return []
+        return [dict(job) for job in jobs if isinstance(job, dict)]
+
+    async def list_workflow_run_artifacts(
+        self,
+        owner: str,
+        repo: str,
+        run_id: int,
+        *,
+        per_page: int = DEFAULT_PER_PAGE,
+        page: int = 1,
+    ) -> list[dict[str, Any]]:
+        """List artifacts produced by a workflow run."""
+        data = await self._request(
+            "GET",
+            f"/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts",
+            params={"per_page": per_page, "page": page},
+        )
+        if not isinstance(data, dict):
+            return []
+        artifacts = data.get("artifacts", [])
+        if not isinstance(artifacts, list):
+            return []
+        return [dict(artifact) for artifact in artifacts if isinstance(artifact, dict)]
+
+    async def download_workflow_run_logs(
+        self,
+        owner: str,
+        repo: str,
+        run_id: int,
+        *,
+        max_bytes: int = 200_000,
+    ) -> dict[str, Any]:
+        """Download and summarize workflow run logs.
+
+        GitHub returns a zip archive of text files. This helper returns a
+        compact, text-based representation that can be stored as broker evidence.
+        """
+        response = await self._send(
+            method="GET",
+            path=f"/repos/{owner}/{repo}/actions/runs/{run_id}/logs",
+            follow_redirects=True,
+        )
+        raw_bytes = bytes(response.content)
+        if not raw_bytes:
+            return {"entries": [], "combined_text": "", "truncated": False}
+        entries: list[dict[str, Any]] = []
+        combined_parts: list[str] = []
+        total_bytes = 0
+        with zipfile.ZipFile(io.BytesIO(raw_bytes)) as archive:
+            for name in archive.namelist():
+                if total_bytes >= max_bytes:
+                    break
+                if name.endswith("/"):
+                    continue
+                content = archive.read(name)
+                total_bytes += len(content)
+                decoded = content.decode("utf-8", errors="replace")
+                entries.append(
+                    {
+                        "name": name,
+                        "size_bytes": len(content),
+                        "excerpt": decoded[:4000],
+                    }
+                )
+                combined_parts.append(f"## {name}\n{decoded[:8000]}")
+        combined_text = "\n\n".join(combined_parts)
+        if len(combined_text) > max_bytes:
+            combined_text = combined_text[:max_bytes]
+        return {
+            "entries": entries,
+            "combined_text": combined_text,
+            "truncated": total_bytes > max_bytes,
+            "archive_size_bytes": len(raw_bytes),
+        }
 
     async def list_check_runs(
         self,

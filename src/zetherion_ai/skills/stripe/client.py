@@ -189,6 +189,22 @@ class StripeClient:
         data = payload.get("data", [])
         return [dict(item) for item in data if isinstance(item, dict)]
 
+    async def list_events(
+        self,
+        *,
+        limit: int = 10,
+        event_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"limit": max(1, min(limit, 100))}
+        if event_type:
+            params["type"] = event_type
+        payload = await self._request("GET", "/v1/events", params=params)
+        data = payload.get("data", [])
+        return [dict(item) for item in data if isinstance(item, dict)]
+
+    async def get_event(self, event_id: str) -> dict[str, Any]:
+        return await self._request("GET", f"/v1/events/{event_id}")
+
     async def get_product(self, product_id: str) -> dict[str, Any]:
         return await self._request("GET", f"/v1/products/{product_id}")
 

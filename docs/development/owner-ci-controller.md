@@ -79,16 +79,38 @@ not reusable after timestamp/nonce expiry.
 - `GET /service/ai/v1/agent/workspace-bundles/{bundle_id}`
 - `POST /service/ai/v1/agent/apps/{app_id}/test-plans/compile`
 - `POST /service/ai/v1/agent/apps/{app_id}/publish-candidates`
+- `POST /service/ai/v1/agent/apps/{app_id}/operations/resolve`
+- `GET /service/ai/v1/agent/operations/{operation_id}`
+- `GET /service/ai/v1/agent/operations/{operation_id}/evidence`
+- `GET /service/ai/v1/agent/operations/{operation_id}/logs`
+- `GET /service/ai/v1/agent/operations/{operation_id}/incidents`
 
 Supported brokered service views:
 
 - GitHub: `overview`, `compare`, `pulls`, `workflows`
 - Vercel: `overview`, `deployments`, `domains`, `envs`
 - Clerk: `overview`, `jwks`, `openid`
+- Stripe: `overview`, `products`, `prices`, `customers`, `subscriptions`,
+  `invoices`, `webhook_health`
 
 Downstream agents never receive reusable third-party credentials. External
 access is brokered through owner-managed connectors stored in Zetherion, and
 writeback to GitHub remains publish-candidate only.
+
+### Provider evidence ingestion
+
+- CGS now forwards Stripe and Clerk webhooks into the normalized operation
+  evidence model after the primary business logic succeeds.
+- CGS also exposes provider-specific observability webhook endpoints for
+  GitHub and Vercel:
+  - `POST /api/webhooks/github/{app_id}`
+  - `POST /api/webhooks/vercel/{app_id}`
+- Polling fallback is available through:
+  - `GET /api/cron/cgs-ai-operations`
+- The canonical debugging path is `resolve -> operation -> evidence`. When a
+  managed operation carries a linked CI `run_id`, operation evidence also
+  includes correlated CI lifecycle events, debug bundles, and Docker/container
+  logs.
 
 ## Windows Provisioning
 

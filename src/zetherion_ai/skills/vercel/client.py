@@ -115,6 +115,20 @@ class VercelClient:
             raise ValueError("project_ref is required")
         return await self._request(f"/v9/projects/{project}", params=self._params(team_id))
 
+    async def get_deployment(
+        self,
+        deployment_id: str,
+        *,
+        team_id: str | None = None,
+    ) -> dict[str, Any]:
+        deployment = str(deployment_id or "").strip()
+        if not deployment:
+            raise ValueError("deployment_id is required")
+        return await self._request(
+            f"/v13/deployments/{deployment}",
+            params=self._params(team_id),
+        )
+
     async def list_deployments(
         self,
         *,
@@ -166,3 +180,24 @@ class VercelClient:
         if not isinstance(envs, list):
             return []
         return [dict(item) for item in envs if isinstance(item, dict)]
+
+    async def get_deployment_events(
+        self,
+        deployment_id: str,
+        *,
+        team_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        deployment = str(deployment_id or "").strip()
+        if not deployment:
+            raise ValueError("deployment_id is required")
+        params = self._params(team_id)
+        params["limit"] = max(1, min(limit, 200))
+        payload = await self._request(
+            f"/v2/deployments/{deployment}/events",
+            params=params,
+        )
+        events = payload.get("events", payload.get("logs", []))
+        if not isinstance(events, list):
+            return []
+        return [dict(item) for item in events if isinstance(item, dict)]
