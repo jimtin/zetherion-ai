@@ -30,7 +30,7 @@ param(
     [Parameter(Mandatory = $false)]
     [string[]]$AllowedActions = @("worker.noop", "ci.test.run", "repo.patch", "repo.commit", "repo.pr.open"),
     [Parameter(Mandatory = $false)]
-    [string[]]$AllowedCommands = @("git", "python", "python3", "pytest", "ruff", "bash", "sh", "yarn", "node", "npm", "npx", "gitleaks", "docker", "docker-compose", "pwsh", "powershell"),
+    [string[]]$AllowedCommands = @("git", "python", "python3", "pytest", "ruff", "bash", "sh", "yarn", "node", "npm", "npx", "gitleaks", "docker", "docker-compose", "wsl", "pwsh", "powershell"),
     [Parameter(Mandatory = $false)]
     [string[]]$Capabilities = @("ci.test.run"),
     [Parameter(Mandatory = $false)]

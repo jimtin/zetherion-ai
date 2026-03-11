@@ -42,6 +42,7 @@ jobs:
       WINDOWS_RESILIENCE_ALLOW_SERVICE_FALLBACK: "true"
       WINDOWS_REQUIRE_PROMOTIONS_TASK: "false"
       WINDOWS_REQUIRE_HEALTHY_AUXILIARY_SERVICES: "false"
+      ZETHERION_WSL_DISTRIBUTION: Ubuntu
     steps:
       - name: Determine deployment target
         id: target

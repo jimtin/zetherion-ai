@@ -17,6 +17,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "docker-runtime.ps1")
 
 if ($FailureThreshold -lt 1) {
     throw "FailureThreshold must be >= 1."

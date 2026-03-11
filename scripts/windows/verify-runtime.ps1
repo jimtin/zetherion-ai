@@ -11,6 +11,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "docker-runtime.ps1")
 
 $checks = [ordered]@{
     containers_healthy = $false

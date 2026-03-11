@@ -13,6 +13,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "docker-runtime.ps1")
 
 function Read-AgentConfig {
     param(
@@ -175,14 +176,8 @@ catch {
     $githubReachable = $false
 }
 
-$dockerReachable = $false
-try {
-    $null = & docker version --format "{{.Server.Version}}" 2>$null
-    $dockerReachable = ($LASTEXITCODE -eq 0)
-}
-catch {
-    $dockerReachable = $false
-}
+$dockerStatus = Get-ZetherionDockerRuntimeStatus
+$dockerReachable = [bool]$dockerStatus.available
 
 $workerOnce = $null
 if ($RunWorkerOnce) {
@@ -222,6 +217,10 @@ $result = [ordered]@{
     }
     docker = @{
         reachable = $dockerReachable
+        backend = [string]$dockerStatus.backend
+        distribution = [string]$dockerStatus.distribution
+        enabled = [bool]$dockerStatus.enabled
+        active = [bool]$dockerStatus.active
     }
     worker_once = $workerOnce
     verified_at = (Get-Date).ToUniversalTime().ToString("o")
