@@ -1,13 +1,64 @@
-"""Owner-scoped agent bootstrap skill."""
+"""Owner-scoped agent bootstrap and broker skill."""
 
 from __future__ import annotations
 
+import asyncio
+import base64
+import hashlib
+import io
+import os
+import re
+import shutil
+import tarfile
+import tempfile
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+
 from zetherion_ai.logging import get_logger
-from zetherion_ai.owner_ci import OwnerCiStorage
+from zetherion_ai.owner_ci import OwnerCiStorage, default_repo_profile, default_repo_profiles
 from zetherion_ai.skills.base import Skill, SkillMetadata, SkillRequest, SkillResponse
+from zetherion_ai.skills.ci_controller import CiControllerSkill
+from zetherion_ai.skills.github.client import GitHubAPIError, GitHubClient, GitHubValidationError
 from zetherion_ai.skills.permissions import Permission, PermissionSet
 
 log = get_logger("zetherion_ai.skills.agent_bootstrap")
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_CGS_REPO_ROOT = _REPO_ROOT.parent / "catalyst-group-solutions"
+_INLINE_ARCHIVE_MAX_BYTES = 16 * 1024 * 1024
+_EXCLUDED_DIR_NAMES = {
+    ".git",
+    ".next",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+}
+_HEX_SHA_RE = re.compile(r"^[0-9a-f]{7,40}$", re.IGNORECASE)
+_REPO_ID_SANITIZE_RE = re.compile(r"[^a-z0-9]+")
+_GITHUB_CONNECTOR_ID = "github-primary"
+
+
+def _slugify_repo_id(value: str) -> str:
+    normalized = _REPO_ID_SANITIZE_RE.sub("-", value.strip().lower()).strip("-")
+    return normalized or "managed-repo"
+
+
+def _split_github_repo(value: str) -> tuple[str, str]:
+    full_name = str(value or "").strip().strip("/")
+    parts = full_name.split("/", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise ValueError("github_repo must be in `owner/repo` format")
+    return parts[0], parts[1]
+
+
+def _safe_branch_suffix(value: str) -> str:
+    normalized = _REPO_ID_SANITIZE_RE.sub("-", value.strip().lower()).strip("-")
+    return normalized or "managed-change"
+
 
 _DEFAULT_DOCS = [
     {
@@ -15,24 +66,28 @@ _DEFAULT_DOCS = [
         "title": "CGS AI API Quickstart",
         "path": "/docs/technical/cgs-ai-api-quickstart",
         "category": "quickstart",
+        "source_path": _CGS_REPO_ROOT / "docs/technical/cgs-ai-api-quickstart.md",
     },
     {
         "slug": "cgs-ai-api-reference",
         "title": "CGS AI API Reference",
         "path": "/docs/technical/cgs-ai-api-reference",
         "category": "reference",
+        "source_path": _CGS_REPO_ROOT / "docs/technical/cgs-ai-api-reference.md",
     },
     {
         "slug": "cgs-ai-integration-credentials-runbook",
         "title": "Integration Credentials Runbook",
         "path": "/docs/technical/cgs-ai-integration-credentials-runbook",
         "category": "runbook",
+        "source_path": _CGS_REPO_ROOT / "docs/technical/cgs-ai-integration-credentials-runbook.md",
     },
     {
         "slug": "zetherion-docs-index",
         "title": "Zetherion Product Docs",
         "path": "/products/zetherion-ai/docs",
         "category": "product",
+        "source_path": _REPO_ROOT / "docs/index.md",
     },
 ]
 
@@ -50,8 +105,339 @@ def _normalize_owner_id(request: SkillRequest) -> str:
     return "owner"
 
 
+def _normalize_principal_id(request: SkillRequest) -> str:
+    for candidate in (
+        request.context.get("principal_id"),
+        request.context.get("agent_principal_id"),
+        request.context.get("subject"),
+        request.user_id,
+    ):
+        value = str(candidate or "").strip()
+        if value:
+            return value
+    return "agent"
+
+
+def _read_text(path: Path | None) -> str | None:
+    if path is None or not path.exists() or not path.is_file():
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def _markdown_headings(content: str | None) -> list[str]:
+    if not content:
+        return []
+    headings: list[str] = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            headings.append(stripped.lstrip("#").strip())
+    return headings
+
+
+def _doc_manifest(definition: dict[str, Any], public_base_url: str) -> dict[str, Any]:
+    source_path = definition.get("source_path")
+    source = Path(source_path) if isinstance(source_path, Path | str) else None
+    content_markdown = _read_text(source)
+    path = str(definition["path"])
+    base = public_base_url.rstrip("/")
+    return {
+        "slug": str(definition["slug"]),
+        "title": str(definition["title"]),
+        "path": path,
+        "category": str(definition["category"]),
+        "url": f"{base}{path}" if base else path,
+        "version": "current",
+        "source_path": str(source) if source and source.exists() else None,
+        "content_markdown": content_markdown,
+        "headings": _markdown_headings(content_markdown),
+    }
+
+
+def _resolve_git_dir(repo_root: Path) -> Path | None:
+    dot_git = repo_root / ".git"
+    if dot_git.is_dir():
+        return dot_git
+    if dot_git.is_file():
+        try:
+            raw = dot_git.read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+        prefix = "gitdir:"
+        if raw.lower().startswith(prefix):
+            git_dir = raw[len(prefix) :].strip()
+            resolved = (
+                (repo_root / git_dir).resolve()
+                if not Path(git_dir).is_absolute()
+                else Path(git_dir)
+            )
+            return resolved if resolved.exists() else None
+    return None
+
+
+def _resolve_packed_ref(git_dir: Path, ref_name: str) -> str | None:
+    packed_refs = git_dir / "packed-refs"
+    if not packed_refs.exists():
+        return None
+    try:
+        content = packed_refs.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("^"):
+            continue
+        try:
+            sha, name = stripped.split(" ", 1)
+        except ValueError:
+            continue
+        if name.strip() == ref_name:
+            return sha.strip()
+    return None
+
+
+def _resolve_git_ref(repo_root: Path, git_ref: str) -> str | None:
+    candidate = git_ref.strip() or "HEAD"
+    if _HEX_SHA_RE.fullmatch(candidate):
+        return candidate
+    git_dir = _resolve_git_dir(repo_root)
+    if git_dir is None:
+        return None
+    if candidate == "HEAD":
+        head_file = git_dir / "HEAD"
+        try:
+            head_value = head_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+        if head_value.startswith("ref:"):
+            return _resolve_git_ref(repo_root, head_value.split(":", 1)[1].strip())
+        return head_value or None
+    ref_names = (
+        [candidate]
+        if candidate.startswith("refs/")
+        else [
+            f"refs/heads/{candidate}",
+            f"refs/tags/{candidate}",
+            candidate,
+        ]
+    )
+    for ref_name in ref_names:
+        ref_path = git_dir / ref_name
+        if ref_path.exists() and ref_path.is_file():
+            try:
+                return ref_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+        packed = _resolve_packed_ref(git_dir, ref_name)
+        if packed:
+            return packed
+    return None
+
+
+def _tar_workspace(repo_root: Path) -> tuple[bytes, int]:
+    file_count = 0
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        for path in sorted(repo_root.rglob("*")):
+            if path.is_dir() or path.is_symlink():
+                continue
+            rel = path.relative_to(repo_root)
+            if any(part in _EXCLUDED_DIR_NAMES for part in rel.parts):
+                continue
+            archive.add(path, arcname=str(Path(repo_root.name) / rel), recursive=False)
+            file_count += 1
+    return buffer.getvalue(), file_count
+
+
+def _collect_commands(repo: dict[str, Any]) -> dict[str, list[list[str]]]:
+    def extract(raw_lanes: list[Any]) -> list[list[str]]:
+        commands: list[list[str]] = []
+        for lane in raw_lanes:
+            if not isinstance(lane, dict):
+                continue
+            command = list(lane.get("command") or [])
+            if command:
+                commands.append([str(part) for part in command])
+        return commands
+
+    return {
+        "mandatory_static_gates": extract(list(repo.get("mandatory_static_gates") or [])),
+        "local_fast": extract(list(repo.get("local_fast_lanes") or [])),
+        "windows_full": extract(list(repo.get("windows_full_lanes") or [])),
+    }
+
+
+def _default_service_connector_map(repo_id: str) -> dict[str, Any]:
+    mapping: dict[str, Any] = {
+        "github": {
+            "connector_id": "github-primary",
+            "service_kind": "github",
+            "read_access": [
+                "repo_list",
+                "ref_resolve",
+                "branch_metadata",
+                "diff_compare",
+                "pr_metadata",
+                "workflow_status",
+                "archive_bundle",
+            ],
+            "write_access": [],
+            "broker_only": True,
+            "push_mode": "zetherion_only",
+        },
+    }
+    if repo_id in {"catalyst-group-solutions", "zetherion-ai"}:
+        mapping["vercel"] = {
+            "connector_id": "vercel-primary",
+            "service_kind": "vercel",
+            "read_access": [
+                "project_metadata",
+                "deployment_status",
+                "domain_metadata",
+                "env_names",
+            ],
+            "write_access": [],
+            "broker_only": True,
+        }
+        mapping["clerk"] = {
+            "connector_id": "clerk-primary",
+            "service_kind": "clerk",
+            "read_access": ["jwks_metadata", "issuer_metadata", "instance_metadata"],
+            "write_access": [],
+            "broker_only": True,
+        }
+    if repo_id == "zetherion-ai":
+        mapping["discord"] = {
+            "connector_id": "discord-primary",
+            "service_kind": "discord",
+            "read_access": ["guild_metadata", "channel_metadata"],
+            "write_access": [],
+            "broker_only": True,
+        }
+    return mapping
+
+
+def _default_mock_profiles(repo_id: str) -> list[dict[str, Any]]:
+    if repo_id == "catalyst-group-solutions":
+        return [
+            {
+                "profile_id": "cgs-zetherion-boundary",
+                "summary": (
+                    "Mock the upstream Zetherion boundary by stubbing "
+                    "@/lib/cgs-ai/zetherion in route and library tests."
+                ),
+                "references": [
+                    "src/lib/cgs-ai/zetherion.ts",
+                    "src/__tests__/api/service-ai-v1/*",
+                ],
+            }
+        ]
+    if repo_id == "zetherion-ai":
+        return [
+            {
+                "profile_id": "zetherion-isolated-docker-e2e",
+                "summary": (
+                    "Use docker-compose.test.yml and scripts/e2e_run_manager.py "
+                    "for isolated end-to-end runs."
+                ),
+                "references": [
+                    "scripts/e2e_run_manager.py",
+                    "docker-compose.test.yml",
+                ],
+            },
+            {
+                "profile_id": "zetherion-discord-required-receipt",
+                "summary": (
+                    "Use the required Discord roundtrip receipt wrappers "
+                    "for certification evidence."
+                ),
+                "references": [
+                    "scripts/local-required-e2e-receipt.sh",
+                    "scripts/run-required-discord-e2e.sh",
+                ],
+            },
+        ]
+    return [
+        {
+            "profile_id": "generic-fast-feedback",
+            "summary": (
+                "Start with local static analysis, lightweight smoke tests, and repo-specific "
+                "commands added during enrollment."
+            ),
+            "references": [],
+        }
+    ]
+
+
+def _default_workspace_manifest(repo: dict[str, Any]) -> dict[str, Any]:
+    repo_id = str(repo["repo_id"])
+    stack_kind = str(repo.get("stack_kind") or "generic").strip() or "generic"
+    if stack_kind == "nextjs":
+        install_commands = [["yarn", "install", "--frozen-lockfile"]]
+        start_commands = [["yarn", "dev"]]
+        package_manager = "yarn"
+    elif stack_kind == "python":
+        install_commands = [["python", "-m", "venv", "venv"], ["pip", "install", "-e", ".[dev]"]]
+        start_commands = [["python", "-m", "zetherion_ai.main"]]
+        package_manager = "pip"
+    else:
+        install_commands = []
+        start_commands = []
+        package_manager = "custom"
+    return {
+        "repo_id": repo_id,
+        "github_repo": str(repo["github_repo"]),
+        "clone_urls": {
+            "https": f"https://github.com/{repo['github_repo']}.git",
+            "ssh": f"git@github.com:{repo['github_repo']}.git",
+        },
+        "default_branch": str(repo["default_branch"]),
+        "workspace_roots": list(repo.get("allowed_paths") or []),
+        "package_manager": package_manager,
+        "install_commands": install_commands,
+        "start_commands": start_commands,
+        "local_fast_commands": _collect_commands(repo)["local_fast"],
+        "windows_full_commands": _collect_commands(repo)["windows_full"],
+        "docker_only_windows": str(repo.get("windows_execution_mode") or "") == "docker_only",
+        "github_governance": {
+            "managed_repo": True,
+            "broker_only": True,
+            "write_principal": "zetherion",
+            "agent_push_enabled": False,
+            "publish_flow": "publish_candidate_only",
+            "branch_protection_required": True,
+        },
+    }
+
+
+def _default_test_harness_manifest(repo: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "repo_id": str(repo["repo_id"]),
+        "mandatory_static_gates": list(repo.get("mandatory_static_gates") or []),
+        "local_fast_lanes": list(repo.get("local_fast_lanes") or []),
+        "windows_full_lanes": list(repo.get("windows_full_lanes") or []),
+        "shard_templates": list(repo.get("shard_templates") or []),
+        "resource_classes": dict(repo.get("resource_classes") or {}),
+        "certification_requirements": list(repo.get("certification_requirements") or []),
+        "scheduled_canaries": list(repo.get("scheduled_canaries") or []),
+        "windows_execution_mode": str(repo.get("windows_execution_mode") or "command"),
+    }
+
+
+def _default_command_catalog(repo: dict[str, Any]) -> dict[str, Any]:
+    commands = _collect_commands(repo)
+    return {
+        "mandatory_static_gates": commands["mandatory_static_gates"],
+        "local_fast": commands["local_fast"],
+        "windows_full": commands["windows_full"],
+    }
+
+
 class AgentBootstrapSkill(Skill):
-    """Store agent setup manifests and expose machine-readable docs manifests."""
+    """Store broker state for downstream Codex agents and expose machine-readable app knowledge."""
 
     def __init__(self, *, storage: OwnerCiStorage) -> None:
         super().__init__(memory=None)
@@ -61,14 +447,38 @@ class AgentBootstrapSkill(Skill):
     def metadata(self) -> SkillMetadata:
         return SkillMetadata(
             name="agent_bootstrap",
-            description="Owner agent bootstrap receipts, manifests, and docs metadata",
-            version="0.1.0",
+            description=(
+                "Owner-scoped agent bootstrap, app manifests, broker state, "
+                "and publish candidates"
+            ),
+            version="0.3.0",
             permissions=PermissionSet({Permission.ADMIN, Permission.READ_CONFIG}),
             intents=[
                 "agent_client_bootstrap",
                 "agent_client_manifest_get",
                 "agent_docs_list",
                 "agent_docs_get",
+                "agent_session_create",
+                "agent_apps_list",
+                "agent_app_manifest_get",
+                "agent_repo_discover",
+                "agent_repo_enroll",
+                "agent_workspace_bundle_create",
+                "agent_workspace_bundle_get",
+                "agent_test_plan_compile",
+                "agent_publish_candidate_submit",
+                "agent_publish_candidate_apply",
+                "agent_managed_repo_enforce",
+                "agent_principal_upsert",
+                "agent_principal_list",
+                "agent_connector_upsert",
+                "agent_connector_list",
+                "agent_connector_rotate",
+                "agent_principal_grants_put",
+                "agent_app_upsert",
+                "agent_app_list",
+                "agent_knowledge_pack_upsert",
+                "agent_audit_list",
             ],
         )
 
@@ -78,87 +488,2024 @@ class AgentBootstrapSkill(Skill):
 
     async def handle(self, request: SkillRequest) -> SkillResponse:
         owner_id = _normalize_owner_id(request)
-        await self._ensure_default_docs(
+        public_base_url = str(request.context.get("public_base_url") or "").strip()
+        await self._ensure_default_docs(owner_id, public_base_url)
+        await self._ensure_default_apps(owner_id, public_base_url)
+
+        handlers = {
+            "agent_client_bootstrap": self._handle_client_bootstrap,
+            "agent_client_manifest_get": self._handle_client_manifest_get,
+            "agent_docs_list": self._handle_docs_list,
+            "agent_docs_get": self._handle_docs_get,
+            "agent_session_create": self._handle_session_create,
+            "agent_apps_list": self._handle_apps_list,
+            "agent_app_manifest_get": self._handle_app_manifest_get,
+            "agent_repo_discover": self._handle_repo_discover,
+            "agent_repo_enroll": self._handle_repo_enroll,
+            "agent_workspace_bundle_create": self._handle_workspace_bundle_create,
+            "agent_workspace_bundle_get": self._handle_workspace_bundle_get,
+            "agent_test_plan_compile": self._handle_test_plan_compile,
+            "agent_publish_candidate_submit": self._handle_publish_candidate_submit,
+            "agent_publish_candidate_apply": self._handle_publish_candidate_apply,
+            "agent_managed_repo_enforce": self._handle_managed_repo_enforce,
+            "agent_principal_upsert": self._handle_principal_upsert,
+            "agent_principal_list": self._handle_principal_list,
+            "agent_connector_upsert": self._handle_connector_upsert,
+            "agent_connector_list": self._handle_connector_list,
+            "agent_connector_rotate": self._handle_connector_rotate,
+            "agent_principal_grants_put": self._handle_principal_grants_put,
+            "agent_app_upsert": self._handle_app_upsert,
+            "agent_app_list": self._handle_app_list,
+            "agent_knowledge_pack_upsert": self._handle_knowledge_pack_upsert,
+            "agent_audit_list": self._handle_audit_list,
+        }
+        handler = handlers.get(request.intent)
+        if handler is None:
+            return SkillResponse.error_response(
+                request.id,
+                f"Unknown agent bootstrap intent: {request.intent}",
+            )
+        try:
+            return await handler(request, owner_id, public_base_url)
+        except ValueError as exc:
+            return SkillResponse.error_response(request.id, str(exc))
+
+    async def _handle_client_bootstrap(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        client_id = str(request.context.get("client_id") or "").strip()
+        if not client_id:
+            return SkillResponse.error_response(request.id, "client_id is required")
+        manifest_payload = dict(request.context.get("manifest") or {})
+        if not manifest_payload:
+            return SkillResponse.error_response(request.id, "manifest is required")
+        stored_manifest = await self._storage.store_agent_bootstrap_manifest(
             owner_id,
-            str(request.context.get("public_base_url") or "").strip(),
+            client_id,
+            manifest_payload,
         )
-        if request.intent == "agent_client_bootstrap":
-            client_id = str(request.context.get("client_id") or "").strip()
-            if not client_id:
-                return SkillResponse.error_response(request.id, "client_id is required")
-            manifest_payload = dict(request.context.get("manifest") or {})
-            if not manifest_payload:
-                return SkillResponse.error_response(request.id, "manifest is required")
-            stored_manifest = await self._storage.store_agent_bootstrap_manifest(
+        receipt = await self._storage.store_agent_setup_receipt(
+            owner_id,
+            client_id=client_id,
+            receipt={
+                "status": "stored",
+                "steps": list(request.context.get("steps") or []),
+                "stored_manifest_version": manifest_payload.get("version") or "v1",
+            },
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Stored bootstrap manifest for `{client_id}`.",
+            data={"manifest": stored_manifest, "receipt": receipt},
+        )
+
+    async def _handle_client_manifest_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        client_id = str(request.context.get("client_id") or "").strip()
+        if not client_id:
+            return SkillResponse.error_response(request.id, "client_id is required")
+        stored_manifest = await self._storage.get_agent_bootstrap_manifest(owner_id, client_id)
+        if stored_manifest is None:
+            return SkillResponse.error_response(request.id, f"Manifest `{client_id}` not found")
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded bootstrap manifest for `{client_id}`.",
+            data={"manifest": stored_manifest},
+        )
+
+    async def _handle_docs_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip() or None
+        query = str(request.context.get("query") or "").strip().lower()
+        docs = await self._storage.list_agent_docs_manifests(owner_id)
+        allowed_slugs: set[str] | None = None
+        if app_id:
+            app_profile = await self._require_app_access(
                 owner_id,
-                client_id,
-                manifest_payload,
+                principal_id=str(request.context.get("principal_id") or "").strip() or None,
+                app_id=app_id,
             )
-            receipt = await self._storage.store_agent_setup_receipt(
+            allowed_slugs = {
+                str(slug)
+                for slug in list((app_profile.get("profile") or {}).get("docs_slugs") or [])
+                if str(slug).strip()
+            }
+        filtered: list[dict[str, Any]] = []
+        for doc in docs:
+            if allowed_slugs is not None and str(doc["slug"]) not in allowed_slugs:
+                continue
+            if query:
+                haystack = " ".join(
+                    [
+                        str(doc.get("slug") or ""),
+                        str(doc.get("title") or ""),
+                        str((doc.get("manifest") or {}).get("content_markdown") or ""),
+                    ]
+                ).lower()
+                if query not in haystack:
+                    continue
+            filtered.append(doc)
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(filtered)} docs manifests.",
+            data={"docs": filtered},
+        )
+
+    async def _handle_docs_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        slug = str(request.context.get("slug") or "").strip()
+        if not slug:
+            return SkillResponse.error_response(request.id, "slug is required")
+        app_id = str(request.context.get("app_id") or "").strip() or None
+        docs_manifest = await self._storage.get_agent_docs_manifest(owner_id, slug)
+        if docs_manifest is None:
+            return SkillResponse.error_response(request.id, f"Docs manifest `{slug}` not found")
+        if app_id:
+            app_profile = await self._require_app_access(
                 owner_id,
-                client_id=client_id,
-                receipt={
-                    "status": "stored",
-                    "steps": list(request.context.get("steps") or []),
-                    "stored_manifest_version": manifest_payload.get("version") or "v1",
-                },
+                principal_id=str(request.context.get("principal_id") or "").strip() or None,
+                app_id=app_id,
             )
-            return SkillResponse(
-                request_id=request.id,
-                message=f"Stored bootstrap manifest for `{client_id}`.",
-                data={"manifest": stored_manifest, "receipt": receipt},
+            allowed_slugs = {
+                str(item)
+                for item in list((app_profile.get("profile") or {}).get("docs_slugs") or [])
+            }
+            if slug not in allowed_slugs:
+                return SkillResponse.error_response(
+                    request.id, f"Docs manifest `{slug}` is not allowed"
+                )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded docs manifest `{slug}`.",
+            data={"doc": docs_manifest},
+        )
+
+    async def _handle_session_create(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        public_base_url: str,
+    ) -> SkillResponse:
+        principal_id = _normalize_principal_id(request)
+        existing = await self._storage.get_agent_principal(owner_id, principal_id)
+        if existing is None:
+            display_name = (
+                str(request.context.get("display_name") or principal_id).strip() or principal_id
             )
-        if request.intent == "agent_client_manifest_get":
-            client_id = str(request.context.get("client_id") or "").strip()
-            if not client_id:
-                return SkillResponse.error_response(request.id, "client_id is required")
-            stored_manifest_record = await self._storage.get_agent_bootstrap_manifest(
-                owner_id, client_id
+            principal = await self._storage.upsert_agent_principal(
+                owner_id,
+                principal_id=principal_id,
+                display_name=display_name,
+                principal_type=str(request.context.get("principal_type") or "codex").strip()
+                or "codex",
+                allowed_scopes=[
+                    str(scope).strip()
+                    for scope in list(request.context.get("allowed_scopes") or ["cgs:agent"])
+                    if str(scope).strip()
+                ],
+                metadata=dict(request.context.get("metadata") or {}),
+                active=True,
             )
-            if stored_manifest_record is None:
-                return SkillResponse.error_response(request.id, f"Manifest `{client_id}` not found")
-            return SkillResponse(
-                request_id=request.id,
-                message=f"Loaded bootstrap manifest for `{client_id}`.",
-                data={"manifest": stored_manifest_record},
+        else:
+            principal = existing
+        apps = await self._list_accessible_apps(owner_id, principal_id)
+        bundle = {
+            "owner_id": owner_id,
+            "principal": principal,
+            "accessible_apps": apps,
+            "routes": {
+                "apps": "/service/ai/v1/agent/apps",
+                "workspace_bundle_create": "/service/ai/v1/agent/apps/:appId/workspace-bundles",
+                "workspace_bundle_get": "/service/ai/v1/agent/workspace-bundles/:bundleId",
+                "test_plan_compile": "/service/ai/v1/agent/apps/:appId/test-plans/compile",
+                "publish_candidates": "/service/ai/v1/agent/apps/:appId/publish-candidates",
+                "logs": "/service/ai/v1/agent/runs/:runId/logs",
+                "resources": "/service/ai/v1/agent/runs/:runId/resources",
+            },
+            "public_base_url": public_base_url or None,
+            "bootstrap_model": "broker_only",
+            "github_governance": {
+                "write_principal": "zetherion",
+                "agent_push_enabled": False,
+                "publish_flow": "publish_candidate_only",
+            },
+        }
+        await self._storage.record_agent_audit_event(
+            owner_id,
+            principal_id=principal_id,
+            app_id=None,
+            service_kind=None,
+            resource="session",
+            action="agent.session.create",
+            decision="allowed",
+            audit={"app_count": len(apps)},
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Prepared session bundle for `{principal_id}`.",
+            data={"session": bundle},
+        )
+
+    async def _handle_apps_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        apps = (
+            await self._list_accessible_apps(owner_id, principal_id)
+            if principal_id
+            else await self._storage.list_agent_app_profiles(owner_id)
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(apps)} apps.",
+            data={"apps": apps},
+        )
+
+    async def _handle_app_manifest_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        if not app_id:
+            return SkillResponse.error_response(request.id, "app_id is required")
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        app_profile = await self._require_app_access(
+            owner_id, principal_id=principal_id, app_id=app_id
+        )
+        knowledge_pack = await self._storage.get_agent_knowledge_pack(owner_id, app_id)
+        if knowledge_pack is None:
+            return SkillResponse.error_response(request.id, f"Knowledge pack `{app_id}` not found")
+        docs = []
+        for slug in list((app_profile.get("profile") or {}).get("docs_slugs") or []):
+            manifest = await self._storage.get_agent_docs_manifest(owner_id, str(slug))
+            if manifest is not None:
+                docs.append(manifest)
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded app manifest for `{app_id}`.",
+            data={
+                "app": app_profile,
+                "knowledge_pack": knowledge_pack,
+                "docs": docs,
+            },
+        )
+
+    async def _handle_repo_discover(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        principal = (
+            await self._storage.get_agent_principal(owner_id, principal_id)
+            if principal_id
+            else None
+        )
+        scopes = {
+            str(scope).strip()
+            for scope in list(request.context.get("allowed_scopes") or [])
+            if str(scope).strip()
+        }
+        if principal_id and principal is None:
+            return SkillResponse.error_response(
+                request.id,
+                f"Principal `{principal_id}` is not registered",
             )
-        if request.intent == "agent_docs_get":
-            slug = str(request.context.get("slug") or "").strip()
-            if not slug:
-                return SkillResponse.error_response(request.id, "slug is required")
-            docs_manifest = await self._storage.get_agent_docs_manifest(owner_id, slug)
-            if docs_manifest is None:
-                return SkillResponse.error_response(request.id, f"Docs manifest `{slug}` not found")
-            return SkillResponse(
-                request_id=request.id,
-                message=f"Loaded docs manifest `{slug}`.",
-                data={"doc": docs_manifest},
+        if principal_id and not ({"cgs:agent", "cgs:agent:discover"} & scopes):
+            return SkillResponse.error_response(
+                request.id,
+                "Principal is not allowed to discover brokered repositories",
             )
-        if request.intent == "agent_docs_list":
-            docs = await self._storage.list_agent_docs_manifests(owner_id)
-            return SkillResponse(
-                request_id=request.id,
-                message=f"Loaded {len(docs)} docs manifests.",
-                data={"docs": docs},
+        repositories = await self._discover_github_repositories(
+            owner_id,
+            connector_id=str(request.context.get("connector_id") or "").strip() or None,
+            query=str(request.context.get("query") or "").strip() or None,
+            limit=max(1, min(int(request.context.get("limit") or 25), 100)),
+            private_only=bool(request.context.get("private_only", True)),
+        )
+        apps = await self._storage.list_agent_app_profiles(owner_id)
+        managed_by_repo = {
+            github_repo
+            for app in apps
+            for github_repo in list((app.get("profile") or {}).get("github_repos") or [])
+        }
+        payload = []
+        for repository in repositories:
+            repo_dict = dict(repository)
+            repo_dict["managed"] = repo_dict["full_name"] in managed_by_repo
+            payload.append(repo_dict)
+        await self._storage.record_agent_audit_event(
+            owner_id,
+            principal_id=principal_id,
+            app_id=None,
+            service_kind="github",
+            resource="discoverable_repositories",
+            action="repo.discover",
+            decision="allowed",
+            audit={"count": len(payload)},
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(payload)} discoverable repositories.",
+            data={"repositories": payload},
+        )
+
+    async def _handle_repo_enroll(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        public_base_url: str,
+    ) -> SkillResponse:
+        github_repo = str(
+            request.context.get("github_repo") or request.context.get("repo_full_name") or ""
+        ).strip()
+        if not github_repo:
+            return SkillResponse.error_response(request.id, "github_repo is required")
+        app_id = str(request.context.get("app_id") or "").strip() or None
+        display_name = str(request.context.get("display_name") or "").strip() or None
+        stack_kind = str(request.context.get("stack_kind") or "generic").strip() or "generic"
+        enrolled = await self._enroll_github_repository(
+            owner_id=owner_id,
+            github_repo=github_repo,
+            app_id=app_id,
+            display_name=display_name,
+            stack_kind=stack_kind,
+            public_base_url=public_base_url,
+            overrides=dict(request.context.get("profile_overrides") or {}),
+            enforce_managed_repo=bool(request.context.get("enforce_managed_repo", True)),
+            principal_id=str(request.context.get("principal_id") or "").strip() or None,
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Enrolled `{github_repo}` into managed broker control.",
+            data=enrolled,
+        )
+
+    async def _handle_workspace_bundle_create(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        if not app_id:
+            return SkillResponse.error_response(request.id, "app_id is required")
+        principal_id = _normalize_principal_id(request)
+        app_profile = await self._require_app_access(
+            owner_id, principal_id=principal_id, app_id=app_id
+        )
+        repo_id = str(
+            request.context.get("repo_id")
+            or ((app_profile.get("profile") or {}).get("repo_ids") or [None])[0]
+            or ""
+        ).strip()
+        if not repo_id:
+            return SkillResponse.error_response(request.id, "repo_id is required")
+        repo = await self._resolve_repo_profile(owner_id, repo_id)
+        knowledge_pack = await self._storage.get_agent_knowledge_pack(owner_id, app_id)
+        git_ref = str(
+            request.context.get("git_ref") or repo.get("default_branch") or "main"
+        ).strip()
+        bundle_payload, resolved_ref = await self._create_workspace_bundle_payload(
+            owner_id=owner_id,
+            repo=repo,
+            knowledge_pack=knowledge_pack["pack"] if knowledge_pack else {},
+            git_ref=git_ref,
+        )
+        bundle = await self._storage.create_workspace_bundle(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            repo_id=repo_id,
+            git_ref=git_ref,
+            resolved_ref=resolved_ref,
+            bundle=bundle_payload,
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+        await self._storage.record_agent_audit_event(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            service_kind="github",
+            resource=repo_id,
+            action="workspace_bundle.create",
+            decision="allowed",
+            audit={
+                "bundle_id": bundle["bundle_id"],
+                "git_ref": git_ref,
+                "resolved_ref": resolved_ref,
+            },
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Created workspace bundle `{bundle['bundle_id']}`.",
+            data={"bundle": bundle},
+        )
+
+    async def _handle_workspace_bundle_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        bundle_id = str(request.context.get("bundle_id") or "").strip()
+        if not bundle_id:
+            return SkillResponse.error_response(request.id, "bundle_id is required")
+        principal_id = _normalize_principal_id(request)
+        bundle = await self._storage.get_workspace_bundle(owner_id, bundle_id)
+        if bundle is None:
+            return SkillResponse.error_response(
+                request.id, f"Workspace bundle `{bundle_id}` not found"
             )
-        return SkillResponse.error_response(
-            request.id,
-            f"Unknown agent bootstrap intent: {request.intent}",
+        if str(bundle.get("principal_id") or "") != principal_id:
+            return SkillResponse.error_response(
+                request.id, "Workspace bundle is not available for this principal"
+            )
+        await self._storage.mark_workspace_bundle_downloaded(owner_id, bundle_id)
+        await self._storage.record_agent_audit_event(
+            owner_id,
+            principal_id=principal_id,
+            app_id=str(bundle.get("app_id") or ""),
+            service_kind="github",
+            resource=str(bundle.get("repo_id") or ""),
+            action="workspace_bundle.get",
+            decision="allowed",
+            audit={"bundle_id": bundle_id},
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded workspace bundle `{bundle_id}`.",
+            data={"bundle": bundle},
+        )
+
+    async def _handle_test_plan_compile(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        if not app_id:
+            return SkillResponse.error_response(request.id, "app_id is required")
+        principal_id = _normalize_principal_id(request)
+        app_profile = await self._require_app_access(
+            owner_id, principal_id=principal_id, app_id=app_id
+        )
+        repo_id = str(
+            request.context.get("repo_id")
+            or ((app_profile.get("profile") or {}).get("repo_ids") or [None])[0]
+            or ""
+        ).strip()
+        repo = await self._resolve_repo_profile(owner_id, repo_id)
+        git_ref = str(
+            request.context.get("git_ref") or repo.get("default_branch") or "main"
+        ).strip()
+        mode = str(request.context.get("mode") or "fast").strip().lower()
+        controller = CiControllerSkill(storage=self._storage)
+        compiled = controller._compile_run_plan(repo=repo, mode=mode, git_ref=git_ref)
+        plan = {
+            **compiled,
+            "app_id": app_id,
+            "prefer_mock_mode": bool(request.context.get("prefer_mock_mode", False)),
+            "changed_files": list(request.context.get("changed_files") or []),
+            "focus": str(request.context.get("focus") or "").strip() or None,
+        }
+        stored = await self._storage.create_compiled_plan(
+            owner_id=owner_id,
+            repo_id=repo_id,
+            git_ref=git_ref,
+            mode=mode,
+            plan=plan,
+            metadata={
+                "app_id": app_id,
+                "principal_id": principal_id,
+                "prefer_mock_mode": bool(request.context.get("prefer_mock_mode", False)),
+            },
+        )
+        await self._storage.record_agent_audit_event(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            service_kind=None,
+            resource=repo_id,
+            action="test_plan.compile",
+            decision="allowed",
+            audit={"compiled_plan_id": stored["compiled_plan_id"], "mode": mode},
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Compiled test plan `{stored['compiled_plan_id']}` for `{app_id}`.",
+            data={"compiled_plan": stored},
+        )
+
+    async def _handle_publish_candidate_submit(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        if not app_id:
+            return SkillResponse.error_response(request.id, "app_id is required")
+        principal_id = _normalize_principal_id(request)
+        app_profile = await self._require_app_access(
+            owner_id, principal_id=principal_id, app_id=app_id
+        )
+        repo_id = str(
+            request.context.get("repo_id")
+            or ((app_profile.get("profile") or {}).get("repo_ids") or [None])[0]
+            or ""
+        ).strip()
+        base_sha = str(request.context.get("base_sha") or "").strip()
+        if not base_sha:
+            return SkillResponse.error_response(request.id, "base_sha is required")
+        diff_text = str(request.context.get("diff_text") or "").strip()
+        patch_bundle_base64 = str(request.context.get("patch_bundle_base64") or "").strip()
+        if not diff_text and not patch_bundle_base64:
+            return SkillResponse.error_response(
+                request.id,
+                "diff_text or patch_bundle_base64 is required",
+            )
+        candidate = await self._storage.create_publish_candidate(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            repo_id=repo_id,
+            base_sha=base_sha,
+            candidate={
+                "base_sha": base_sha,
+                "candidate_type": "text/x-diff" if diff_text else "application/gzip",
+                "diff_text": diff_text or None,
+                "patch_bundle_base64": patch_bundle_base64 or None,
+                "changed_files": list(request.context.get("changed_files") or []),
+                "summary": str(request.context.get("summary") or "").strip() or None,
+                "intent": str(request.context.get("intent_summary") or "").strip() or None,
+                "target_branch": str(request.context.get("target_branch") or "").strip() or None,
+                "local_test_receipts": list(request.context.get("local_test_receipts") or []),
+                "github_governance": (
+                    (app_profile.get("profile") or {}).get("github_governance")
+                    or {"write_principal": "zetherion", "agent_push_enabled": False}
+                ),
+                "status": "submitted",
+            },
+        )
+        await self._storage.record_agent_audit_event(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            service_kind="github",
+            resource=repo_id,
+            action="publish_candidate.submit",
+            decision="allowed",
+            audit={"candidate_id": candidate["candidate_id"], "base_sha": base_sha},
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Stored publish candidate `{candidate['candidate_id']}`.",
+            data={"candidate": candidate},
+        )
+
+    async def _handle_publish_candidate_apply(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        candidate_id = str(request.context.get("candidate_id") or "").strip()
+        if not candidate_id:
+            return SkillResponse.error_response(request.id, "candidate_id is required")
+        applied = await self._apply_publish_candidate(
+            owner_id=owner_id,
+            candidate_id=candidate_id,
+            target_branch=str(request.context.get("target_branch") or "").strip() or None,
+            principal_id=str(request.context.get("principal_id") or "").strip() or None,
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Applied publish candidate `{candidate_id}`.",
+            data=applied,
+        )
+
+    async def _handle_managed_repo_enforce(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        github_repo = str(request.context.get("github_repo") or "").strip() or None
+        if not app_id and not github_repo:
+            return SkillResponse.error_response(request.id, "app_id or github_repo is required")
+        if app_id:
+            app = await self._storage.get_agent_app_profile(owner_id, app_id)
+            if app is None:
+                return SkillResponse.error_response(request.id, f"App `{app_id}` not found")
+            profile = dict(app.get("profile") or {})
+            github_repo = github_repo or (
+                str((profile.get("github_repos") or [None])[0] or "").strip() or None
+            )
+            if github_repo is None:
+                return SkillResponse.error_response(
+                    request.id, f"App `{app_id}` does not declare a GitHub repository"
+                )
+        result = await self._enforce_managed_repo(
+            owner_id=owner_id,
+            app_id=app_id or _slugify_repo_id(github_repo or ""),
+            github_repo=github_repo or "",
+            default_branch=str(request.context.get("default_branch") or "").strip() or None,
+            principal_id=str(request.context.get("principal_id") or "").strip() or None,
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Applied managed repo governance for `{github_repo}`.",
+            data=result,
+        )
+
+    async def _handle_principal_upsert(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        principal_id = str(request.context.get("principal_id") or "").strip()
+        if not principal_id:
+            return SkillResponse.error_response(request.id, "principal_id is required")
+        display_name = (
+            str(request.context.get("display_name") or principal_id).strip() or principal_id
+        )
+        principal = await self._storage.upsert_agent_principal(
+            owner_id,
+            principal_id=principal_id,
+            display_name=display_name,
+            principal_type=str(request.context.get("principal_type") or "codex").strip() or "codex",
+            allowed_scopes=[
+                str(scope).strip()
+                for scope in list(request.context.get("allowed_scopes") or ["cgs:agent"])
+                if str(scope).strip()
+            ],
+            metadata=dict(request.context.get("metadata") or {}),
+            active=bool(request.context.get("active", True)),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Upserted principal `{principal_id}`.",
+            data={"principal": principal},
+        )
+
+    async def _handle_principal_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        principals = await self._storage.list_agent_principals(owner_id)
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(principals)} principals.",
+            data={"principals": principals},
+        )
+
+    async def _handle_connector_upsert(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        connector_id = str(request.context.get("connector_id") or "").strip()
+        service_kind = str(request.context.get("service_kind") or "").strip()
+        auth_kind = str(request.context.get("auth_kind") or "").strip() or "token"
+        if not connector_id or not service_kind:
+            return SkillResponse.error_response(
+                request.id, "connector_id and service_kind are required"
+            )
+        connector = await self._storage.upsert_external_service_connector(
+            owner_id,
+            connector_id=connector_id,
+            service_kind=service_kind,
+            display_name=str(request.context.get("display_name") or connector_id).strip()
+            or connector_id,
+            auth_kind=auth_kind,
+            secret_value=(str(request.context.get("secret_value") or "").strip() or None),
+            policy=dict(request.context.get("policy") or {}),
+            metadata=dict(request.context.get("metadata") or {}),
+            active=bool(request.context.get("active", True)),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Upserted connector `{connector_id}`.",
+            data={"connector": connector},
+        )
+
+    async def _handle_connector_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        connectors = await self._storage.list_external_service_connectors(
+            owner_id,
+            service_kind=str(request.context.get("service_kind") or "").strip() or None,
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(connectors)} connectors.",
+            data={"connectors": connectors},
+        )
+
+    async def _handle_connector_rotate(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        connector_id = str(request.context.get("connector_id") or "").strip()
+        secret_value = str(request.context.get("secret_value") or "").strip()
+        if not connector_id or not secret_value:
+            return SkillResponse.error_response(
+                request.id, "connector_id and secret_value are required"
+            )
+        existing = await self._storage.get_external_service_connector(owner_id, connector_id)
+        if existing is None:
+            return SkillResponse.error_response(request.id, f"Connector `{connector_id}` not found")
+        connector = await self._storage.upsert_external_service_connector(
+            owner_id,
+            connector_id=connector_id,
+            service_kind=str(existing["service_kind"]),
+            display_name=str(existing["display_name"]),
+            auth_kind=str(existing["auth_kind"]),
+            secret_value=secret_value,
+            policy=dict(existing.get("policy") or {}),
+            metadata={
+                **dict(existing.get("metadata") or {}),
+                "rotated_by": _normalize_principal_id(request),
+            },
+            active=bool(existing.get("active", True)),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Rotated connector `{connector_id}`.",
+            data={"connector": connector},
+        )
+
+    async def _handle_principal_grants_put(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        principal_id = str(request.context.get("principal_id") or "").strip()
+        if not principal_id:
+            return SkillResponse.error_response(request.id, "principal_id is required")
+        grants = await self._storage.replace_external_access_grants(
+            owner_id,
+            principal_id=principal_id,
+            grants=list(request.context.get("grants") or []),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Updated grants for `{principal_id}`.",
+            data={"grants": grants},
+        )
+
+    async def _handle_app_upsert(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        if not app_id:
+            return SkillResponse.error_response(request.id, "app_id is required")
+        profile = dict(request.context.get("profile") or {})
+        app = await self._storage.upsert_agent_app_profile(
+            owner_id,
+            app_id=app_id,
+            display_name=str(request.context.get("display_name") or app_id).strip() or app_id,
+            profile=profile,
+            active=bool(request.context.get("active", True)),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Upserted app `{app_id}`.",
+            data={"app": app},
+        )
+
+    async def _handle_app_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        apps = await self._storage.list_agent_app_profiles(owner_id)
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(apps)} app profiles.",
+            data={"apps": apps},
+        )
+
+    async def _handle_knowledge_pack_upsert(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        app_id = str(request.context.get("app_id") or "").strip()
+        version = str(request.context.get("version") or "").strip() or "current"
+        pack = dict(request.context.get("pack") or {})
+        if not app_id or not pack:
+            return SkillResponse.error_response(request.id, "app_id and pack are required")
+        stored = await self._storage.upsert_agent_knowledge_pack(
+            owner_id,
+            app_id=app_id,
+            version=version,
+            pack=pack,
+            current=bool(request.context.get("current", True)),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Upserted knowledge pack `{app_id}@{version}`.",
+            data={"knowledge_pack": stored},
+        )
+
+    async def _handle_audit_list(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        events = await self._storage.list_agent_audit_events(
+            owner_id,
+            principal_id=str(request.context.get("principal_id") or "").strip() or None,
+            app_id=str(request.context.get("app_id") or "").strip() or None,
+            limit=int(request.context.get("limit") or 100),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded {len(events)} audit events.",
+            data={"events": events},
         )
 
     async def _ensure_default_docs(self, owner_id: str, public_base_url: str) -> None:
-        existing = await self._storage.list_agent_docs_manifests(owner_id)
-        if existing:
-            return
-        base = public_base_url.rstrip("/")
         for doc in _DEFAULT_DOCS:
+            manifest = _doc_manifest(doc, public_base_url)
             await self._storage.upsert_agent_docs_manifest(
                 owner_id,
                 slug=str(doc["slug"]),
                 title=str(doc["title"]),
-                manifest={
-                    **doc,
-                    "url": f"{base}{doc['path']}" if base else str(doc["path"]),
-                    "version": "current",
+                manifest=manifest,
+            )
+
+    async def _ensure_default_apps(self, owner_id: str, public_base_url: str) -> None:
+        docs_by_slug = {
+            doc["slug"]: doc["manifest"]
+            for doc in await self._storage.list_agent_docs_manifests(owner_id)
+        }
+        for repo in default_repo_profiles():
+            app_id = str(repo["repo_id"])
+            if await self._storage.get_agent_app_profile(owner_id, app_id) is None:
+                await self._storage.upsert_agent_app_profile(
+                    owner_id,
+                    app_id=app_id,
+                    display_name=str(repo["display_name"]),
+                    profile=self._default_app_profile(repo, public_base_url),
+                    active=True,
+                )
+            if await self._storage.get_agent_knowledge_pack(owner_id, app_id) is None:
+                await self._storage.upsert_agent_knowledge_pack(
+                    owner_id,
+                    app_id=app_id,
+                    version="current",
+                    pack=self._default_knowledge_pack(repo, docs_by_slug),
+                    current=True,
+                )
+
+    def _default_app_profile(self, repo: dict[str, Any], public_base_url: str) -> dict[str, Any]:
+        repo_id = str(repo["repo_id"])
+        bootstrap_profile = dict(repo.get("agent_bootstrap_profile") or {})
+        workspace_manifest = _default_workspace_manifest(repo)
+        base_url = public_base_url.rstrip("/") if public_base_url else ""
+        return {
+            "app_id": repo_id,
+            "display_name": str(repo["display_name"]),
+            "repo_ids": [repo_id],
+            "github_repos": [str(repo["github_repo"])],
+            "default_branches": [str(repo["default_branch"])],
+            "stack_kind": str(repo["stack_kind"]),
+            "workspace_roots": list(repo.get("allowed_paths") or []),
+            "docs_bundle_id": f"{repo_id}:current",
+            "docs_slugs": list(bootstrap_profile.get("docs_slugs") or []),
+            "ci_profile_id": repo_id,
+            "test_profile_id": f"{repo_id}:default",
+            "mock_profile_ids": [entry["profile_id"] for entry in _default_mock_profiles(repo_id)],
+            "env_contract_id": str(repo.get("secrets_profile") or "") or None,
+            "required_scopes": list(bootstrap_profile.get("required_scopes") or ["cgs:agent"]),
+            "service_connector_map": _default_service_connector_map(repo_id),
+            "workspace_manifest": workspace_manifest,
+            "github_governance": dict(workspace_manifest.get("github_governance") or {}),
+            "runtime_routes": {
+                "apps": f"{base_url}/service/ai/v1/agent/apps"
+                if base_url
+                else "/service/ai/v1/agent/apps",
+                "docs": f"{base_url}/service/ai/v1/agent/apps/{repo_id}/docs"
+                if base_url
+                else f"/service/ai/v1/agent/apps/{repo_id}/docs",
+                "workspace_bundles": (
+                    f"{base_url}/service/ai/v1/agent/apps/{repo_id}/workspace-bundles"
+                )
+                if base_url
+                else f"/service/ai/v1/agent/apps/{repo_id}/workspace-bundles",
+                "publish_candidates": (
+                    f"{base_url}/service/ai/v1/agent/apps/{repo_id}/publish-candidates"
+                )
+                if base_url
+                else f"/service/ai/v1/agent/apps/{repo_id}/publish-candidates",
+            },
+        }
+
+    def _default_knowledge_pack(
+        self,
+        repo: dict[str, Any],
+        docs_by_slug: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        repo_id = str(repo["repo_id"])
+        docs_slugs = list((repo.get("agent_bootstrap_profile") or {}).get("docs_slugs") or [])
+        docs = [docs_by_slug[slug] for slug in docs_slugs if slug in docs_by_slug]
+        workspace_manifest = _default_workspace_manifest(repo)
+        openapi_hints = []
+        if repo_id in {"catalyst-group-solutions", "zetherion-ai"}:
+            openapi_hints = [
+                "docs/technical/openapi-public-api.yaml",
+                "docs/technical/openapi-cgs-gateway.yaml",
+            ]
+        return {
+            "workspace_manifest": workspace_manifest,
+            "api_contract_bundle": {
+                "docs": docs,
+                "capabilities": list(
+                    (repo.get("metadata") or {}).get("certification_matrix") or []
+                ),
+                "openapi_hints": openapi_hints,
+            },
+            "test_harness_manifest": _default_test_harness_manifest(repo),
+            "mock_harness_manifest": {
+                "profiles": _default_mock_profiles(repo_id),
+            },
+            "env_contract": {
+                "secrets_profile": str(repo.get("secrets_profile") or "") or None,
+                "windows_execution_mode": str(repo.get("windows_execution_mode") or "command"),
+                "service_connectors": _default_service_connector_map(repo_id),
+            },
+            "command_catalog": _default_command_catalog(repo),
+            "observability_contract": {
+                "logs": "/service/ai/v1/agent/runs/:runId/logs",
+                "resources": "/service/ai/v1/agent/runs/:runId/resources",
+                "admin_dashboard": "/admin/ai",
+                "owner_dashboard": "/dashboard/ai",
+            },
+            "troubleshooting_playbook": {
+                "docs": docs,
+                "runbooks": [
+                    "docs/development/testing.md",
+                    "docs/development/ci-cd.md",
+                    "docs/development/owner-ci-controller.md",
+                ],
+                "required_receipts": list(repo.get("certification_requirements") or []),
+            },
+            "service_connector_map": _default_service_connector_map(repo_id),
+            "github_governance": dict(workspace_manifest.get("github_governance") or {}),
+        }
+
+    async def _resolve_repo_profile(self, owner_id: str, repo_id: str) -> dict[str, Any]:
+        profile = await self._storage.get_repo_profile(owner_id, repo_id)
+        if profile is None:
+            built_in = default_repo_profile(repo_id)
+            if built_in is None:
+                raise ValueError(f"Repo profile `{repo_id}` not found")
+            profile = built_in
+        return profile
+
+    async def _list_accessible_apps(
+        self,
+        owner_id: str,
+        principal_id: str,
+    ) -> list[dict[str, Any]]:
+        apps = await self._storage.list_agent_app_profiles(owner_id)
+        grants = await self._storage.list_external_access_grants(
+            owner_id, principal_id=principal_id
+        )
+        if not grants:
+            return []
+        allowed_app_ids: set[str] = set()
+        repo_to_apps: dict[str, set[str]] = {}
+        for app in apps:
+            profile = dict(app.get("profile") or {})
+            for repo_id in list(profile.get("repo_ids") or []):
+                repo_to_apps.setdefault(str(repo_id), set()).add(str(app["app_id"]))
+        for grant in grants:
+            if not bool(grant.get("active", True)):
+                continue
+            resource_type = str(grant.get("resource_type") or "").strip()
+            resource_id = str(grant.get("resource_id") or "").strip()
+            if resource_type == "app":
+                allowed_app_ids.add(resource_id)
+            elif resource_type == "repo":
+                allowed_app_ids.update(repo_to_apps.get(resource_id, set()))
+        return [app for app in apps if str(app["app_id"]) in allowed_app_ids]
+
+    async def _require_app_access(
+        self,
+        owner_id: str,
+        *,
+        principal_id: str | None,
+        app_id: str,
+    ) -> dict[str, Any]:
+        app = await self._storage.get_agent_app_profile(owner_id, app_id)
+        if app is None:
+            raise ValueError(f"App `{app_id}` not found")
+        if not principal_id:
+            return app
+        accessible = await self._list_accessible_apps(owner_id, principal_id)
+        allowed = {str(entry["app_id"]) for entry in accessible}
+        if app_id not in allowed:
+            raise ValueError(f"Principal `{principal_id}` is not allowed to access app `{app_id}`")
+        return app
+
+    def _build_workspace_bundle(
+        self,
+        *,
+        repo: dict[str, Any],
+        knowledge_pack: dict[str, Any],
+        git_ref: str,
+    ) -> tuple[dict[str, Any], str | None]:
+        repo_id = str(repo["repo_id"])
+        repo_root = None
+        for raw_path in list(repo.get("allowed_paths") or []):
+            path_str = str(raw_path).strip()
+            candidate = Path(path_str)
+            if candidate.exists() and candidate.is_dir():
+                repo_root = candidate
+                break
+        resolved_ref = _resolve_git_ref(repo_root, git_ref) if repo_root is not None else None
+        bundle: dict[str, Any] = {
+            "repo_id": repo_id,
+            "git_ref": git_ref,
+            "resolved_ref": resolved_ref or git_ref,
+            "workspace_manifest": dict(knowledge_pack.get("workspace_manifest") or {}),
+            "knowledge_pack_version": "current",
+            "source_kind": "local_checkout" if repo_root is not None else "metadata_only",
+            "download_mode": "metadata_only",
+        }
+        if repo_root is not None:
+            archive_bytes, file_count = _tar_workspace(repo_root)
+            bundle["file_count"] = file_count
+            bundle["archive_size_bytes"] = len(archive_bytes)
+            bundle["archive_sha256"] = hashlib.sha256(archive_bytes).hexdigest()
+            if len(archive_bytes) <= _INLINE_ARCHIVE_MAX_BYTES:
+                bundle["archive_format"] = "tar.gz"
+                bundle["archive_base64"] = base64.b64encode(archive_bytes).decode("ascii")
+                bundle["download_mode"] = "inline_base64"
+            else:
+                bundle["archive_omitted"] = {
+                    "reason": "inline_archive_too_large",
+                    "max_inline_bytes": _INLINE_ARCHIVE_MAX_BYTES,
+                }
+        return bundle, resolved_ref
+
+    async def _create_workspace_bundle_payload(
+        self,
+        *,
+        owner_id: str,
+        repo: dict[str, Any],
+        knowledge_pack: dict[str, Any],
+        git_ref: str,
+    ) -> tuple[dict[str, Any], str | None]:
+        bundle, resolved_ref = self._build_workspace_bundle(
+            repo=repo,
+            knowledge_pack=knowledge_pack,
+            git_ref=git_ref,
+        )
+        if bundle.get("source_kind") != "metadata_only":
+            return bundle, resolved_ref
+        github_repo = str(repo.get("github_repo") or "").strip()
+        if not github_repo:
+            return bundle, resolved_ref
+        github_connector = (knowledge_pack.get("service_connector_map") or {}).get("github") or {}
+        connector_id = (
+            str(github_connector.get("connector_id") or _GITHUB_CONNECTOR_ID).strip()
+            or _GITHUB_CONNECTOR_ID
+        )
+        try:
+            return await self._build_github_workspace_bundle(
+                owner_id=owner_id,
+                repo_id=str(repo["repo_id"]),
+                github_repo=github_repo,
+                knowledge_pack=knowledge_pack,
+                git_ref=git_ref,
+                connector_id=connector_id,
+            )
+        except (GitHubAPIError, ValueError) as exc:
+            log.warning(
+                "github_workspace_bundle_fallback_failed",
+                repo_id=str(repo["repo_id"]),
+                github_repo=github_repo,
+                error=str(exc),
+            )
+            return bundle, resolved_ref
+
+    async def _build_github_workspace_bundle(
+        self,
+        *,
+        owner_id: str,
+        repo_id: str,
+        github_repo: str,
+        knowledge_pack: dict[str, Any],
+        git_ref: str,
+        connector_id: str,
+    ) -> tuple[dict[str, Any], str | None]:
+        connector = await self._require_github_connector(owner_id, connector_id)
+        owner, repo_name = _split_github_repo(github_repo)
+        client = GitHubClient(token=str(connector["secret_value"]))
+        try:
+            repository = await client.get_repository(owner, repo_name)
+            resolved_ref = (
+                repository.default_branch if git_ref.strip() in {"", "HEAD"} else git_ref.strip()
+            )
+            archive_bytes = await client.get_repository_archive(
+                owner,
+                repo_name,
+                ref=resolved_ref,
+            )
+        finally:
+            await client.close()
+        bundle: dict[str, Any] = {
+            "repo_id": repo_id,
+            "git_ref": git_ref,
+            "resolved_ref": resolved_ref,
+            "workspace_manifest": dict(knowledge_pack.get("workspace_manifest") or {}),
+            "knowledge_pack_version": "current",
+            "source_kind": "github_archive",
+            "download_mode": "metadata_only",
+            "connector_id": connector_id,
+            "archive_format": "tar.gz",
+            "archive_size_bytes": len(archive_bytes),
+            "archive_sha256": hashlib.sha256(archive_bytes).hexdigest(),
+            "repository": repository.to_dict(),
+        }
+        if len(archive_bytes) <= _INLINE_ARCHIVE_MAX_BYTES:
+            bundle["archive_base64"] = base64.b64encode(archive_bytes).decode("ascii")
+            bundle["download_mode"] = "inline_base64"
+        else:
+            bundle["archive_omitted"] = {
+                "reason": "inline_archive_too_large",
+                "max_inline_bytes": _INLINE_ARCHIVE_MAX_BYTES,
+            }
+        return bundle, resolved_ref
+
+    async def _require_github_connector(
+        self,
+        owner_id: str,
+        connector_id: str | None = None,
+    ) -> dict[str, Any]:
+        connector = await self._storage.get_external_service_connector_with_secret(
+            owner_id,
+            connector_id or _GITHUB_CONNECTOR_ID,
+        )
+        if connector is None:
+            raise ValueError(f"GitHub connector `{connector_id or _GITHUB_CONNECTOR_ID}` not found")
+        if str(connector.get("service_kind") or "").strip() != "github":
+            raise ValueError(f"Connector `{connector['connector_id']}` is not a GitHub connector")
+        if not bool(connector.get("active", True)):
+            raise ValueError(f"Connector `{connector['connector_id']}` is inactive")
+        if not str(connector.get("secret_value") or "").strip():
+            raise ValueError(f"Connector `{connector['connector_id']}` has no secret configured")
+        return connector
+
+    async def _discover_github_repositories(
+        self,
+        owner_id: str,
+        *,
+        connector_id: str | None,
+        query: str | None,
+        limit: int,
+        private_only: bool,
+    ) -> list[dict[str, Any]]:
+        connector = await self._require_github_connector(owner_id, connector_id)
+        policy = dict(connector.get("policy") or {})
+        allowlist = {
+            str(item).strip()
+            for item in list(policy.get("allowed_repositories") or [])
+            if str(item).strip()
+        }
+        allowed_owners = {
+            str(item).strip()
+            for item in list(policy.get("allowed_owners") or [])
+            if str(item).strip()
+        }
+        search_term = str(query or "").strip().lower()
+        client = GitHubClient(token=str(connector["secret_value"]))
+        try:
+            page = 1
+            results: list[dict[str, Any]] = []
+            use_installation_endpoint = "app" in str(connector.get("auth_kind") or "").lower()
+            while len(results) < limit:
+                if use_installation_endpoint:
+                    repositories = await client.list_installation_repositories(
+                        per_page=min(limit, 100),
+                        page=page,
+                    )
+                else:
+                    repositories = await client.list_repositories(
+                        per_page=min(limit, 100),
+                        page=page,
+                    )
+                if not repositories:
+                    break
+                for repository in repositories:
+                    repo_data = repository.to_dict()
+                    if private_only and not bool(repo_data.get("private")):
+                        continue
+                    if bool(repo_data.get("archived")):
+                        continue
+                    if allowlist and str(repo_data["full_name"]) not in allowlist:
+                        continue
+                    if allowed_owners and str(repo_data["owner"]) not in allowed_owners:
+                        continue
+                    if (
+                        search_term
+                        and search_term
+                        not in " ".join(
+                            [
+                                str(repo_data.get("name") or ""),
+                                str(repo_data.get("full_name") or ""),
+                                str(repo_data.get("description") or ""),
+                            ]
+                        ).lower()
+                    ):
+                        continue
+                    results.append(
+                        {
+                            **repo_data,
+                            "connector_id": str(connector["connector_id"]),
+                        }
+                    )
+                    if len(results) >= limit:
+                        break
+                if len(repositories) < min(limit, 100):
+                    break
+                page += 1
+            return results
+        finally:
+            await client.close()
+
+    async def _enroll_github_repository(
+        self,
+        *,
+        owner_id: str,
+        github_repo: str,
+        app_id: str | None,
+        display_name: str | None,
+        stack_kind: str,
+        public_base_url: str,
+        overrides: dict[str, Any],
+        enforce_managed_repo: bool,
+        principal_id: str | None,
+    ) -> dict[str, Any]:
+        connector = await self._require_github_connector(owner_id, _GITHUB_CONNECTOR_ID)
+        repo_owner, repo_name = _split_github_repo(github_repo)
+        client = GitHubClient(token=str(connector["secret_value"]))
+        try:
+            repository = await client.get_repository(repo_owner, repo_name)
+        finally:
+            await client.close()
+
+        repo_id = app_id or _slugify_repo_id(repository.name)
+        repo_profile = self._build_enrolled_repo_profile(
+            repository=repository.to_dict(),
+            repo_id=repo_id,
+            display_name=display_name or repository.name,
+            stack_kind=stack_kind,
+            overrides=overrides,
+        )
+        stored_repo = await self._storage.upsert_repo_profile(owner_id, repo_profile)
+
+        docs_by_slug = {
+            doc["slug"]: doc["manifest"]
+            for doc in await self._storage.list_agent_docs_manifests(owner_id)
+        }
+        app_profile = self._default_app_profile(stored_repo, public_base_url)
+        app_profile = self._merge_mapping(
+            app_profile,
+            dict(overrides.get("app_profile") or {}),
+        )
+        stored_app = await self._storage.upsert_agent_app_profile(
+            owner_id,
+            app_id=repo_id,
+            display_name=str(app_profile.get("display_name") or repo_profile["display_name"]),
+            profile=app_profile,
+            active=True,
+        )
+
+        knowledge_pack = self._default_knowledge_pack(stored_repo, docs_by_slug)
+        knowledge_pack = self._merge_mapping(
+            knowledge_pack,
+            dict(overrides.get("knowledge_pack") or {}),
+        )
+        stored_pack = await self._storage.upsert_agent_knowledge_pack(
+            owner_id,
+            app_id=repo_id,
+            version="current",
+            pack=knowledge_pack,
+            current=True,
+        )
+
+        governance: dict[str, Any] | None = None
+        if enforce_managed_repo:
+            governance = await self._enforce_managed_repo(
+                owner_id=owner_id,
+                app_id=repo_id,
+                github_repo=github_repo,
+                default_branch=repository.default_branch,
+                principal_id=principal_id,
+            )
+
+        await self._storage.record_agent_audit_event(
+            owner_id,
+            principal_id=principal_id,
+            app_id=repo_id,
+            service_kind="github",
+            resource=github_repo,
+            action="repo.enroll",
+            decision="allowed",
+            audit={
+                "repo_id": repo_id,
+                "default_branch": repository.default_branch,
+                "managed_repo_enforced": bool(
+                    governance and governance.get("governance", {}).get("applied")
+                ),
+            },
+        )
+        return {
+            "repository": repository.to_dict(),
+            "repo_profile": stored_repo,
+            "app": stored_app,
+            "knowledge_pack": stored_pack,
+            **({"governance": governance} if governance else {}),
+        }
+
+    def _build_enrolled_repo_profile(
+        self,
+        *,
+        repository: dict[str, Any],
+        repo_id: str,
+        display_name: str,
+        stack_kind: str,
+        overrides: dict[str, Any],
+    ) -> dict[str, Any]:
+        repo_name = str(repository.get("name") or repo_id)
+        local_root = str((_REPO_ROOT.parent / repo_name).resolve())
+        windows_root = rf"C:\ZetherionCI\workspaces\{repo_name}"
+        base: dict[str, Any] = {
+            "repo_id": repo_id,
+            "display_name": display_name,
+            "github_repo": str(repository["full_name"]),
+            "default_branch": str(repository.get("default_branch") or "main"),
+            "stack_kind": stack_kind,
+            "mandatory_static_gates": [],
+            "local_fast_lanes": [],
+            "windows_full_lanes": [],
+            "shard_templates": [
+                {"family": "static", "source": "mandatory_static_gates"},
+                {"family": "fast", "source": "local_fast_lanes"},
+                {"family": "windows_full", "source": "windows_full_lanes"},
+            ],
+            "scheduling_policy": {
+                "default_mode": "fast",
+                "max_parallel_local": 1,
+                "max_parallel_windows": 2,
+                "rebalance_enabled": True,
+            },
+            "resource_classes": {
+                "tiny": {"max_parallel": 1},
+                "small": {"max_parallel": 1},
+                "docker_stack": {"max_parallel": 1},
+            },
+            "windows_execution_mode": "docker_only",
+            "certification_requirements": ["mandatory_static_gates"],
+            "scheduled_canaries": [],
+            "debug_policy": {
+                "redact_display_logs": True,
+                "retain_debug_bundle_days": 14,
+                "retain_raw_artifact_days": 14,
+            },
+            "agent_bootstrap_profile": {
+                "client_kind": "managed-github-repo",
+                "docs_slugs": [],
+                "required_scopes": ["cgs:agent"],
+            },
+            "review_policy": {
+                "require_reviewer": True,
+                "required_statuses": ["ready_to_merge"],
+            },
+            "promotion_policy": {
+                "deployment_mode": "github_only",
+                "require_certification": False,
+            },
+            "allowed_paths": [local_root, windows_root],
+            "secrets_profile": None,
+            "active": True,
+            "metadata": {
+                "managed_by_zetherion": True,
+                "source": "github_enrollment",
+                "private": bool(repository.get("private", False)),
+                "archived": bool(repository.get("archived", False)),
+                "html_url": str(repository.get("html_url") or ""),
+                "project_dashboard_tags": ["managed-repo", stack_kind],
+            },
+        }
+        return self._merge_mapping(base, overrides)
+
+    async def _enforce_managed_repo(
+        self,
+        *,
+        owner_id: str,
+        app_id: str,
+        github_repo: str,
+        default_branch: str | None,
+        principal_id: str | None,
+    ) -> dict[str, Any]:
+        connector = await self._require_github_connector(owner_id, _GITHUB_CONNECTOR_ID)
+        repo_owner, repo_name = _split_github_repo(github_repo)
+        client = GitHubClient(token=str(connector["secret_value"]))
+        policy = dict(connector.get("policy") or {})
+        branch = str(default_branch or "").strip()
+        try:
+            if not branch:
+                repository = await client.get_repository(repo_owner, repo_name)
+                branch = repository.default_branch
+            restrictions_payload = {
+                "users": [
+                    str(value).strip()
+                    for value in list(policy.get("allowed_push_users") or [])
+                    if str(value).strip()
+                ],
+                "teams": [
+                    str(value).strip()
+                    for value in list(policy.get("allowed_push_teams") or [])
+                    if str(value).strip()
+                ],
+                "apps": [
+                    str(value).strip()
+                    for value in list(policy.get("allowed_push_apps") or [])
+                    if str(value).strip()
+                ],
+            }
+            restrictions = restrictions_payload if any(restrictions_payload.values()) else None
+            protection_payload = {
+                "required_status_checks": None,
+                "enforce_admins": bool(policy.get("enforce_admins", True)),
+                "required_pull_request_reviews": {
+                    "dismiss_stale_reviews": bool(policy.get("dismiss_stale_reviews", True)),
+                    "require_code_owner_reviews": bool(
+                        policy.get("require_code_owner_reviews", False)
+                    ),
+                    "required_approving_review_count": max(
+                        1,
+                        int(policy.get("required_approving_review_count") or 1),
+                    ),
+                },
+                "restrictions": restrictions,
+                "required_conversation_resolution": True,
+                "allow_force_pushes": False,
+                "allow_deletions": False,
+                "block_creations": False,
+            }
+            protection = await client.update_branch_protection(
+                repo_owner,
+                repo_name,
+                branch=branch,
+                payload=protection_payload,
+            )
+            governance = {
+                "managed_repo": True,
+                "broker_only": True,
+                "write_principal": "zetherion",
+                "agent_push_enabled": False,
+                "publish_flow": "publish_candidate_only",
+                "branch_protection_required": True,
+                "default_branch": branch,
+                "applied": True,
+                "applied_at": datetime.now(UTC).isoformat(),
+                "restrictions": restrictions or {},
+            }
+            review = {
+                "status": "applied",
+                "protection": protection,
+                "governance": governance,
+            }
+        except (GitHubAPIError, GitHubValidationError) as exc:
+            governance = {
+                "managed_repo": True,
+                "broker_only": True,
+                "write_principal": "zetherion",
+                "agent_push_enabled": False,
+                "publish_flow": "publish_candidate_only",
+                "branch_protection_required": True,
+                "default_branch": branch or default_branch,
+                "applied": False,
+                "error": str(exc),
+                "attempted_at": datetime.now(UTC).isoformat(),
+            }
+            review = {
+                "status": "failed",
+                "error": str(exc),
+                "governance": governance,
+            }
+        finally:
+            await client.close()
+
+        app = await self._storage.get_agent_app_profile(owner_id, app_id)
+        if app is not None:
+            profile = dict(app.get("profile") or {})
+            profile["github_governance"] = governance
+            github_repos = list(profile.get("github_repos") or [])
+            if github_repo not in github_repos:
+                github_repos.append(github_repo)
+            profile["github_repos"] = github_repos
+            await self._storage.upsert_agent_app_profile(
+                owner_id,
+                app_id=app_id,
+                display_name=str(app.get("display_name") or app_id),
+                profile=profile,
+                active=bool(app.get("active", True)),
+            )
+
+        repo_profile = await self._storage.get_repo_profile(owner_id, app_id)
+        if repo_profile is not None:
+            metadata = dict(repo_profile.get("metadata") or {})
+            metadata["github_governance"] = governance
+            await self._storage.upsert_repo_profile(
+                owner_id,
+                {
+                    **repo_profile,
+                    "metadata": metadata,
                 },
             )
+
+        await self._storage.record_agent_audit_event(
+            owner_id,
+            principal_id=principal_id,
+            app_id=app_id,
+            service_kind="github",
+            resource=github_repo,
+            action="repo.governance.enforce",
+            decision="allowed" if governance.get("applied") else "warning",
+            audit=review,
+        )
+        return {
+            "app_id": app_id,
+            "github_repo": github_repo,
+            "governance": governance,
+            "review": review,
+        }
+
+    async def _apply_publish_candidate(
+        self,
+        *,
+        owner_id: str,
+        candidate_id: str,
+        target_branch: str | None,
+        principal_id: str | None,
+    ) -> dict[str, Any]:
+        candidate = await self._storage.get_publish_candidate(owner_id, candidate_id)
+        if candidate is None:
+            raise ValueError(f"Publish candidate `{candidate_id}` not found")
+        repo = await self._resolve_repo_profile(owner_id, str(candidate["repo_id"]))
+        connector = await self._require_github_connector(owner_id, _GITHUB_CONNECTOR_ID)
+        repo_owner, repo_name = _split_github_repo(str(repo["github_repo"]))
+        base_branch = str(repo.get("default_branch") or "main")
+        branch_name = (
+            target_branch
+            or str((candidate.get("candidate") or {}).get("target_branch") or "").strip()
+        )
+        if not branch_name:
+            branch_name = (
+                f"zetherion/{_safe_branch_suffix(str(candidate['app_id']))}/"
+                f"{_safe_branch_suffix(candidate_id[:12])}"
+            )
+        review: dict[str, Any] = {
+            "status": "applying",
+            "started_at": datetime.now(UTC).isoformat(),
+            "branch": branch_name,
+            "base_branch": base_branch,
+        }
+        await self._storage.update_publish_candidate_review(
+            owner_id,
+            candidate_id=candidate_id,
+            status="applying",
+            review=review,
+        )
+
+        temp_dir = tempfile.TemporaryDirectory(prefix="zetherion-publish-")
+        workspace = Path(temp_dir.name) / repo_name
+        token = str(connector["secret_value"])
+        client = GitHubClient(token=token)
+        try:
+            auth_args = ["-c", f"http.extraheader=Authorization: Bearer {token}"]
+            remote_url = f"https://github.com/{repo_owner}/{repo_name}.git"
+            git_env = {
+                **os.environ,
+                "GIT_TERMINAL_PROMPT": "0",
+            }
+            await self._run_command(["git", "init", str(workspace)], env=git_env)
+            await self._run_command(
+                ["git", "-C", str(workspace), "remote", "add", "origin", remote_url],
+                env=git_env,
+            )
+            await self._run_command(
+                [
+                    "git",
+                    *auth_args,
+                    "-C",
+                    str(workspace),
+                    "fetch",
+                    "--depth",
+                    "200",
+                    "origin",
+                    base_branch,
+                ],
+                env=git_env,
+            )
+            await self._run_command(
+                ["git", "-C", str(workspace), "checkout", "-B", branch_name, "FETCH_HEAD"],
+                env=git_env,
+            )
+            base_sha = str(candidate["base_sha"])
+            verify = await self._run_command(
+                ["git", "-C", str(workspace), "rev-parse", "--verify", f"{base_sha}^{{commit}}"],
+                env=git_env,
+                check=False,
+            )
+            if verify["returncode"] != 0:
+                await self._run_command(
+                    ["git", *auth_args, "-C", str(workspace), "fetch", "origin", base_branch],
+                    env=git_env,
+                )
+            await self._run_command(
+                ["git", "-C", str(workspace), "checkout", base_sha],
+                env=git_env,
+            )
+            await self._run_command(
+                ["git", "-C", str(workspace), "switch", "-C", branch_name],
+                env=git_env,
+            )
+            await self._apply_candidate_payload(
+                workspace=workspace,
+                candidate_payload=dict(candidate.get("candidate") or {}),
+                env=git_env,
+            )
+            changed = await self._run_command(
+                ["git", "-C", str(workspace), "status", "--porcelain"],
+                env=git_env,
+            )
+            if not str(changed["stdout"]).strip():
+                raise ValueError(
+                    "Publish candidate did not produce any staged " "or working-tree changes"
+                )
+
+            validation = await self._run_fast_validation_lanes(repo=repo, workspace=workspace)
+            review["validation"] = validation
+            if validation.get("status") == "failed":
+                review["status"] = "failed_validation"
+                review["completed_at"] = datetime.now(UTC).isoformat()
+                await self._storage.update_publish_candidate_review(
+                    owner_id,
+                    candidate_id=candidate_id,
+                    status="failed_validation",
+                    review=review,
+                )
+                return {
+                    "candidate": await self._storage.get_publish_candidate(
+                        owner_id,
+                        candidate_id,
+                    )
+                }
+
+            await self._run_command(
+                ["git", "-C", str(workspace), "config", "user.name", "Zetherion Broker"],
+                env=git_env,
+            )
+            await self._run_command(
+                ["git", "-C", str(workspace), "config", "user.email", "zetherion-broker@local"],
+                env=git_env,
+            )
+            commit_message = str(
+                (candidate.get("candidate") or {}).get("summary")
+                or f"Apply publish candidate {candidate_id[:12]}"
+            ).strip()
+            await self._run_command(
+                ["git", "-C", str(workspace), "add", "-A"],
+                env=git_env,
+            )
+            await self._run_command(
+                ["git", "-C", str(workspace), "commit", "-m", commit_message],
+                env=git_env,
+            )
+            await self._run_command(
+                [
+                    "git",
+                    *auth_args,
+                    "-C",
+                    str(workspace),
+                    "push",
+                    "--force-with-lease",
+                    "origin",
+                    f"HEAD:refs/heads/{branch_name}",
+                ],
+                env=git_env,
+            )
+            existing_pr = await client.find_open_pull_request(
+                repo_owner,
+                repo_name,
+                head=branch_name,
+                base=base_branch,
+            )
+            pr = existing_pr
+            if pr is None:
+                pr = await client.create_pull_request(
+                    repo_owner,
+                    repo_name,
+                    title=commit_message,
+                    head=branch_name,
+                    base=base_branch,
+                    body=str((candidate.get("candidate") or {}).get("intent") or ""),
+                    draft=False,
+                )
+            review.update(
+                {
+                    "status": "github_pr_open",
+                    "completed_at": datetime.now(UTC).isoformat(),
+                    "pr": pr.to_dict(),
+                }
+            )
+            updated_candidate = await self._storage.update_publish_candidate_review(
+                owner_id,
+                candidate_id=candidate_id,
+                status="github_pr_open",
+                review=review,
+            )
+            await self._storage.record_agent_audit_event(
+                owner_id,
+                principal_id=principal_id or str(candidate.get("principal_id") or ""),
+                app_id=str(candidate["app_id"]),
+                service_kind="github",
+                resource=str(repo["github_repo"]),
+                action="publish_candidate.apply",
+                decision="allowed",
+                audit={
+                    "candidate_id": candidate_id,
+                    "branch": branch_name,
+                    "pull_request": pr.to_dict(),
+                },
+            )
+            return {
+                "candidate": updated_candidate,
+                "pull_request": pr.to_dict(),
+            }
+        except Exception as exc:
+            review.update(
+                {
+                    "status": "failed",
+                    "completed_at": datetime.now(UTC).isoformat(),
+                    "error": str(exc),
+                }
+            )
+            updated_candidate = await self._storage.update_publish_candidate_review(
+                owner_id,
+                candidate_id=candidate_id,
+                status="failed",
+                review=review,
+            )
+            await self._storage.record_agent_audit_event(
+                owner_id,
+                principal_id=principal_id or str(candidate.get("principal_id") or ""),
+                app_id=str(candidate["app_id"]),
+                service_kind="github",
+                resource=str(repo["github_repo"]),
+                action="publish_candidate.apply",
+                decision="blocked",
+                audit={
+                    "candidate_id": candidate_id,
+                    "error": str(exc),
+                },
+            )
+            return {"candidate": updated_candidate, "error": str(exc)}
+        finally:
+            await client.close()
+            temp_dir.cleanup()
+
+    async def _apply_candidate_payload(
+        self,
+        *,
+        workspace: Path,
+        candidate_payload: dict[str, Any],
+        env: dict[str, str],
+    ) -> None:
+        diff_text = str(candidate_payload.get("diff_text") or "").strip()
+        patch_bundle = str(candidate_payload.get("patch_bundle_base64") or "").strip()
+        if diff_text:
+            patch_file = workspace / ".zetherion-publish.patch"
+            patch_file.write_text(diff_text, encoding="utf-8")
+            result = await self._run_command(
+                [
+                    "git",
+                    "-C",
+                    str(workspace),
+                    "apply",
+                    "--index",
+                    "--3way",
+                    str(patch_file),
+                ],
+                env=env,
+                check=False,
+            )
+            if result["returncode"] != 0:
+                await self._run_command(
+                    ["git", "-C", str(workspace), "apply", "--index", str(patch_file)],
+                    env=env,
+                )
+            return
+        if not patch_bundle:
+            raise ValueError("Publish candidate is missing diff_text and patch_bundle_base64")
+        archive_bytes = base64.b64decode(patch_bundle)
+        overlay_dir = workspace / ".zetherion-overlay"
+        overlay_dir.mkdir(parents=True, exist_ok=True)
+        with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:*") as archive:
+            self._extract_tar_safely(archive, overlay_dir)
+        patch_candidates = [
+            candidate
+            for candidate in [
+                overlay_dir / "patch.diff",
+                overlay_dir / "diff.patch",
+            ]
+            if candidate.exists()
+        ]
+        if patch_candidates:
+            await self._run_command(
+                [
+                    "git",
+                    "-C",
+                    str(workspace),
+                    "apply",
+                    "--index",
+                    "--3way",
+                    str(patch_candidates[0]),
+                ],
+                env=env,
+            )
+            return
+        extracted_roots = sorted(child for child in overlay_dir.iterdir())
+        for root in extracted_roots:
+            if root.name.startswith(".zetherion-"):
+                continue
+            if root.is_dir():
+                for path in sorted(root.rglob("*")):
+                    if path.is_dir():
+                        continue
+                    relative = path.relative_to(root)
+                    destination = workspace / relative
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(path, destination)
+            else:
+                destination = workspace / root.name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(root, destination)
+
+    async def _run_fast_validation_lanes(
+        self,
+        *,
+        repo: dict[str, Any],
+        workspace: Path,
+    ) -> dict[str, Any]:
+        lanes = [
+            lane
+            for lane in [
+                *list(repo.get("mandatory_static_gates") or []),
+                *list(repo.get("local_fast_lanes") or []),
+            ]
+            if isinstance(lane, dict)
+        ]
+        receipts: list[dict[str, Any]] = []
+        failed = False
+        for lane in lanes:
+            command = [str(part) for part in list(lane.get("command") or []) if str(part).strip()]
+            lane_id = str(lane.get("lane_id") or "lane")
+            if not command:
+                receipts.append(
+                    {
+                        "lane_id": lane_id,
+                        "status": "skipped",
+                        "reason": "empty_command",
+                    }
+                )
+                continue
+            if shutil.which(command[0]) is None:
+                receipts.append(
+                    {
+                        "lane_id": lane_id,
+                        "status": "skipped",
+                        "reason": f"command_not_available:{command[0]}",
+                        "command": command,
+                    }
+                )
+                continue
+            result = await self._run_command(command, cwd=workspace)
+            receipt = {
+                "lane_id": lane_id,
+                "status": "passed" if result["returncode"] == 0 else "failed",
+                "command": command,
+                "stdout": result["stdout"],
+                "stderr": result["stderr"],
+                "returncode": result["returncode"],
+            }
+            receipts.append(receipt)
+            if result["returncode"] != 0:
+                failed = True
+                break
+        return {
+            "status": "failed" if failed else "passed",
+            "receipts": receipts,
+        }
+
+    async def _run_command(
+        self,
+        command: list[str],
+        *,
+        cwd: Path | None = None,
+        env: dict[str, str] | None = None,
+        check: bool = True,
+    ) -> dict[str, Any]:
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            cwd=str(cwd) if cwd else None,
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout_bytes, stderr_bytes = await process.communicate()
+        stdout = stdout_bytes.decode("utf-8", errors="replace")
+        stderr = stderr_bytes.decode("utf-8", errors="replace")
+        result = {
+            "command": command,
+            "returncode": int(process.returncode or 0),
+            "stdout": stdout,
+            "stderr": stderr,
+        }
+        if check and process.returncode != 0:
+            raise ValueError(
+                "Command failed "
+                f"({process.returncode}): {' '.join(command[:4])}\n"
+                f"{stderr.strip() or stdout.strip()}"
+            )
+        return result
+
+    def _merge_mapping(
+        self,
+        base: dict[str, Any],
+        overrides: dict[str, Any],
+    ) -> dict[str, Any]:
+        merged = dict(base)
+        for key, value in overrides.items():
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key] = self._merge_mapping(dict(merged[key]), value)
+            else:
+                merged[key] = value
+        return merged
+
+    def _extract_tar_safely(self, archive: tarfile.TarFile, destination: Path) -> None:
+        root = destination.resolve()
+        for member in archive.getmembers():
+            member_path = (root / member.name).resolve()
+            if member_path != root and root not in member_path.parents:
+                raise ValueError(f"Archive member escapes destination: {member.name}")
+        archive.extractall(path=root)
