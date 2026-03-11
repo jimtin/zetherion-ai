@@ -1800,6 +1800,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#provider-evidence-ingestion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provider evidence ingestion
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1935,16 +1946,38 @@ not reusable after timestamp/nonce expiry.</p>
 <li><code>GET /service/ai/v1/agent/workspace-bundles/{bundle_id}</code></li>
 <li><code>POST /service/ai/v1/agent/apps/{app_id}/test-plans/compile</code></li>
 <li><code>POST /service/ai/v1/agent/apps/{app_id}/publish-candidates</code></li>
+<li><code>POST /service/ai/v1/agent/apps/{app_id}/operations/resolve</code></li>
+<li><code>GET /service/ai/v1/agent/operations/{operation_id}</code></li>
+<li><code>GET /service/ai/v1/agent/operations/{operation_id}/evidence</code></li>
+<li><code>GET /service/ai/v1/agent/operations/{operation_id}/logs</code></li>
+<li><code>GET /service/ai/v1/agent/operations/{operation_id}/incidents</code></li>
 </ul>
 <p>Supported brokered service views:</p>
 <ul>
 <li>GitHub: <code>overview</code>, <code>compare</code>, <code>pulls</code>, <code>workflows</code></li>
 <li>Vercel: <code>overview</code>, <code>deployments</code>, <code>domains</code>, <code>envs</code></li>
 <li>Clerk: <code>overview</code>, <code>jwks</code>, <code>openid</code></li>
+<li>Stripe: <code>overview</code>, <code>products</code>, <code>prices</code>, <code>customers</code>, <code>subscriptions</code>,
+  <code>invoices</code>, <code>webhook_health</code></li>
 </ul>
 <p>Downstream agents never receive reusable third-party credentials. External
 access is brokered through owner-managed connectors stored in Zetherion, and
 writeback to GitHub remains publish-candidate only.</p>
+<h3 id="provider-evidence-ingestion">Provider evidence ingestion<a class="headerlink" href="#provider-evidence-ingestion" title="Permanent link">&para;</a></h3>
+<ul>
+<li>CGS now forwards Stripe and Clerk webhooks into the normalized operation
+  evidence model after the primary business logic succeeds.</li>
+<li>CGS also exposes provider-specific observability webhook endpoints for
+  GitHub and Vercel:</li>
+<li><code>POST /api/webhooks/github/{app_id}</code></li>
+<li><code>POST /api/webhooks/vercel/{app_id}</code></li>
+<li>Polling fallback is available through:</li>
+<li><code>GET /api/cron/cgs-ai-operations</code></li>
+<li>The canonical debugging path is <code>resolve -&gt; operation -&gt; evidence</code>. When a
+  managed operation carries a linked CI <code>run_id</code>, operation evidence also
+  includes correlated CI lifecycle events, debug bundles, and Docker/container
+  logs.</li>
+</ul>
 <h2 id="windows-provisioning">Windows Provisioning<a class="headerlink" href="#windows-provisioning" title="Permanent link">&para;</a></h2>
 <p>Two PowerShell scripts are provided under <a href="/Users/jameshinton/Development/zetherion-ai/scripts/windows">scripts/windows</a>:</p>
 <ul>
