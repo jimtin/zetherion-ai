@@ -65,6 +65,31 @@ Worker result replays use:
 This bypass is limited to relay replays because original worker signatures are
 not reusable after timestamp/nonce expiry.
 
+### Agent broker surface
+
+- `POST /service/ai/v1/agent/sessions`
+- `GET /service/ai/v1/agent/apps`
+- `GET /service/ai/v1/agent/repos`
+- `GET /service/ai/v1/agent/apps/{app_id}/manifest`
+- `GET /service/ai/v1/agent/apps/{app_id}/docs`
+- `GET /service/ai/v1/agent/apps/{app_id}/docs/{slug}`
+- `GET /service/ai/v1/agent/apps/{app_id}/services`
+- `GET /service/ai/v1/agent/apps/{app_id}/services/{service_kind}`
+- `POST /service/ai/v1/agent/apps/{app_id}/workspace-bundles`
+- `GET /service/ai/v1/agent/workspace-bundles/{bundle_id}`
+- `POST /service/ai/v1/agent/apps/{app_id}/test-plans/compile`
+- `POST /service/ai/v1/agent/apps/{app_id}/publish-candidates`
+
+Supported brokered service views:
+
+- GitHub: `overview`, `compare`, `pulls`, `workflows`
+- Vercel: `overview`, `deployments`, `domains`, `envs`
+- Clerk: `overview`, `jwks`, `openid`
+
+Downstream agents never receive reusable third-party credentials. External
+access is brokered through owner-managed connectors stored in Zetherion, and
+writeback to GitHub remains publish-candidate only.
+
 ## Windows Provisioning
 
 Two PowerShell scripts are provided under [scripts/windows](/Users/jameshinton/Development/zetherion-ai/scripts/windows):
