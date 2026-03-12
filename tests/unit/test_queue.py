@@ -861,6 +861,19 @@ class TestQueueProcessorsSendReply:
         total_calls = message.reply.call_count + message.channel.send.call_count
         assert total_calls >= 2
 
+    @pytest.mark.asyncio
+    async def test_send_reply_falls_back_to_channel_send_when_reply_fails(self) -> None:
+        """Reply failures fall back to channel.send instead of wedging delivery."""
+        message = AsyncMock()
+        message.reply = AsyncMock(side_effect=Exception("missing message reference"))
+        message.channel = AsyncMock()
+        message.channel.send = AsyncMock()
+
+        await QueueProcessors._send_reply(message, "Fallback message", max_length=2000)
+
+        message.reply.assert_awaited_once_with("Fallback message", mention_author=True)
+        message.channel.send.assert_awaited_once_with("Fallback message")
+
 
 class TestQueueProcessorsDiscordMessageEdgeCases:
     """Additional edge cases for Discord message processing."""
@@ -930,6 +943,37 @@ class TestQueueProcessorsDiscordMessageEdgeCases:
 
         assert result.success is True
         mock_channel.send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_discord_message_reply_failure_returns_retryable_error(self) -> None:
+        """Unhandled delivery failures should return a retryable processor error."""
+        mock_channel = AsyncMock()
+        mock_channel.fetch_message = AsyncMock(side_effect=Exception("Not found"))
+        partial_message = AsyncMock()
+        partial_message.reply = AsyncMock(side_effect=Exception("Reply failed"))
+        partial_message.channel = MagicMock(spec=[])
+        mock_channel.get_partial_message = MagicMock(return_value=partial_message)
+
+        bot = MagicMock()
+        bot.get_channel.return_value = mock_channel
+        bot.fetch_channel = AsyncMock(return_value=mock_channel)
+
+        agent = AsyncMock()
+        agent.generate_response = AsyncMock(return_value="Response text")
+
+        procs = QueueProcessors(bot=bot, agent=agent)
+        result = await procs.process(
+            QueueTaskType.DISCORD_MESSAGE,
+            {
+                "content": "hello",
+                "user_id": 42,
+                "channel_id": 100,
+                "message_id": 200,
+            },
+        )
+
+        assert result.success is False
+        assert "could not be delivered" in (result.error or "")
 
     @pytest.mark.asyncio
     async def test_discord_message_no_channel_found(self) -> None:

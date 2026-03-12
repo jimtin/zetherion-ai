@@ -219,13 +219,22 @@ class QueueProcessors:
 
         # Reply to the original message or send to channel
         delivered = False
-        if message_obj is not None:
-            await self._send_reply(message_obj, response)
-            delivered = True
-        elif channel is not None and hasattr(channel, "send"):
-            for chunk in split_text_chunks(response, max_length=2000):
-                await channel.send(chunk)
-            delivered = True
+        try:
+            if message_obj is not None:
+                await self._send_reply(message_obj, response)
+                delivered = True
+            elif channel is not None and hasattr(channel, "send"):
+                for chunk in split_text_chunks(response, max_length=2000):
+                    await channel.send(chunk)
+                delivered = True
+        except Exception as exc:
+            log.warning(
+                "discord_delivery_failed",
+                channel_id=channel_id,
+                message_id=message_id,
+                error=str(exc),
+            )
+            delivered = False
 
         if not delivered:
             log.warning(
@@ -362,15 +371,26 @@ class QueueProcessors:
     @staticmethod
     async def _send_reply(message: Any, content: str, max_length: int = 2000) -> None:
         """Send a reply, splitting if necessary."""
-        if len(content) <= max_length:
-            await message.reply(content, mention_author=True)
-            return
-
-        parts = split_text_chunks(content, max_length=max_length)
+        parts = (
+            [content]
+            if len(content) <= max_length
+            else split_text_chunks(content, max_length=max_length)
+        )
+        channel = getattr(message, "channel", None)
 
         for i, part in enumerate(parts):
-            if part:
-                if i == 0:
+            if not part:
+                continue
+
+            if i == 0:
+                try:
                     await message.reply(part, mention_author=True)
-                else:
-                    await message.channel.send(part)
+                    continue
+                except Exception as exc:
+                    log.warning("discord_reply_fallback_to_channel_send", error=str(exc))
+                    if channel is None or not hasattr(channel, "send"):
+                        raise
+
+            if channel is None or not hasattr(channel, "send"):
+                raise AttributeError("Channel does not support send() fallback")
+            await channel.send(part)
