@@ -167,6 +167,7 @@ class QueueStorage:
         priority_min: int = 0,
         priority_max: int = 3,
         worker_id: str = "",
+        processing_timeout_seconds: int | None = None,
     ) -> QueueItem | None:
         """Atomically claim the highest-priority ready item.
 
@@ -177,6 +178,8 @@ class QueueStorage:
             priority_min: Minimum priority value to consider (inclusive).
             priority_max: Maximum priority value to consider (inclusive).
             worker_id: Identifier of the claiming worker.
+            processing_timeout_seconds: Ignore stale in-flight Discord leases
+                once they are older than this timeout.
 
         Returns:
             The claimed :class:`QueueItem`, or ``None`` if the queue is empty.
@@ -200,6 +203,11 @@ class QueueStorage:
                               AND inflight.task_type = 'discord_message'
                               AND inflight.user_id = mq.user_id
                               AND COALESCE(inflight.channel_id, -1) = COALESCE(mq.channel_id, -1)
+                              AND (
+                                $4::int IS NULL
+                                OR inflight.started_at IS NULL
+                                OR inflight.started_at >= now() - ($4::int * interval '1 second')
+                              )
                         )
                       )
                     ORDER BY mq.priority ASC, mq.scheduled_for ASC
@@ -217,6 +225,7 @@ class QueueStorage:
                 worker_id,
                 priority_min,
                 priority_max,
+                processing_timeout_seconds,
             )
         if row is None:
             return None
@@ -364,6 +373,22 @@ class QueueStorage:
                 "SELECT status, count(*)::int AS cnt FROM message_queue GROUP BY status"
             )
         return {row["status"]: row["cnt"] for row in rows}
+
+    async def count_stale_processing(self, timeout_seconds: int = 300) -> int:
+        """Return the number of stale in-flight items."""
+        cutoff = datetime.now(tz=UTC) - timedelta(seconds=timeout_seconds)
+        async with self._pool.acquire() as conn:
+            count = await conn.fetchval(
+                """
+                SELECT count(*)::int
+                FROM message_queue
+                WHERE status = 'processing'
+                  AND started_at IS NOT NULL
+                  AND started_at < $1
+                """,
+                cutoff,
+            )
+        return int(count or 0)
 
     async def purge_completed(self, older_than_hours: int = 24) -> int:
         """Delete completed items older than the given threshold.

@@ -23,11 +23,17 @@ class SkillsClient:
         actor_signing_secret: str | None = None,
         timeout_seconds: float = 20.0,
     ) -> None:
-        self._base_url = base_url.rstrip("/")
+        self._base_urls = self._parse_base_urls(base_url)
+        self._base_url = self._base_urls[0]
         self._api_secret = api_secret
         self._actor_signing_secret = (actor_signing_secret or api_secret).strip()
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._session: aiohttp.ClientSession | None = None
+
+    @staticmethod
+    def _parse_base_urls(base_url: str) -> list[str]:
+        urls = [piece.strip().rstrip("/") for piece in base_url.split(",") if piece.strip()]
+        return urls or [""]
 
     async def start(self) -> None:
         if self._session is None:
@@ -44,10 +50,53 @@ class SkillsClient:
             raise RuntimeError("SkillsClient session is not started")
         return self._session
 
-    def _url(self, path: str) -> str:
+    def _iter_base_urls(self) -> list[str]:
+        preferred = self._base_url
+        return [preferred, *[url for url in self._base_urls if url != preferred]]
+
+    def _url(self, base_url: str, path: str) -> str:
         if not path.startswith("/"):
             path = f"/{path}"
-        return f"{self._base_url}{path}"
+        return f"{base_url}{path}"
+
+    async def _request_with_failover(
+        self,
+        method: str,
+        path: str,
+        *,
+        headers: dict[str, str] | None = None,
+        json_body: dict[str, Any] | None = None,
+        query: dict[str, str] | None = None,
+    ) -> tuple[int, Any]:
+        merged_headers = {
+            "Content-Type": "application/json",
+            "X-API-Secret": self._api_secret,
+        }
+        if headers:
+            merged_headers.update(headers)
+
+        last_error: aiohttp.ClientError | None = None
+        for base_url in self._iter_base_urls():
+            try:
+                async with self.session.request(
+                    method.upper(),
+                    self._url(base_url, path),
+                    headers=merged_headers,
+                    json=json_body,
+                    params=query,
+                ) as response:
+                    try:
+                        payload: Any = await response.json()
+                    except Exception:
+                        payload = await response.text()
+                    self._base_url = base_url
+                    return response.status, payload
+            except aiohttp.ClientError as exc:
+                last_error = exc
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("SkillsClient has no configured upstream base URL")
 
     async def request_json(
         self,
@@ -59,25 +108,13 @@ class SkillsClient:
         query: dict[str, str] | None = None,
     ) -> tuple[int, Any]:
         """Call any Skills API route and return status + payload."""
-        merged_headers = {
-            "Content-Type": "application/json",
-            "X-API-Secret": self._api_secret,
-        }
-        if headers:
-            merged_headers.update(headers)
-
-        async with self.session.request(
-            method.upper(),
-            self._url(path),
-            headers=merged_headers,
-            json=json_body,
-            params=query,
-        ) as response:
-            try:
-                payload: Any = await response.json()
-            except Exception:
-                payload = await response.text()
-            return response.status, payload
+        return await self._request_with_failover(
+            method,
+            path,
+            headers=headers,
+            json_body=json_body,
+            query=query,
+        )
 
     def _build_actor_headers(self, actor: dict[str, Any]) -> dict[str, str]:
         if not self._actor_signing_secret:

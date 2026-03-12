@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 import re
 import time
 from datetime import UTC, datetime
@@ -38,6 +39,7 @@ from zetherion_ai.memory.qdrant import QdrantMemory
 from zetherion_ai.queue.manager import QueueManager
 from zetherion_ai.queue.models import QueuePriority, QueueTaskType
 from zetherion_ai.queue.plan_executor import PlanContinuationExecutor
+from zetherion_ai.runtime.status_store import RuntimeStatusStore
 from zetherion_ai.scheduler.actions import ActionExecutor
 from zetherion_ai.scheduler.heartbeat import HeartbeatScheduler, QuietHoursWindow
 from zetherion_ai.skills.client import SkillsClientError
@@ -47,6 +49,8 @@ if TYPE_CHECKING:
     from zetherion_ai.admin import TenantAdminManager
 
 log = get_logger("zetherion_ai.discord.bot")
+
+_RUNTIME_STATUS_INTERVAL_SECONDS = 30
 
 
 class ZetherionAIBot(discord.Client):
@@ -115,14 +119,17 @@ class ZetherionAIBot(discord.Client):
         self._queue_manager = queue_manager
         self._keep_warm_task: asyncio.Task[None] | None = None
         self._provider_watch_task: asyncio.Task[None] | None = None
+        self._runtime_status_task: asyncio.Task[None] | None = None
         self._security_pipeline: SecurityPipeline | None = None
         self._security_ai_analyzer: SecurityAIAnalyzer | None = None
         self._heartbeat_scheduler: HeartbeatScheduler | None = None
+        self._runtime_status_store: RuntimeStatusStore | None = None
         self._announcement_repository: AnnouncementRepository | None = None
         self._announcement_dispatcher: AnnouncementDispatcher | None = None
         self._owner_review_inbox: Any | None = None
         self._last_message_time: float = 0.0
         self._dev_watcher_wizards: dict[int, dict[str, Any]] = {}
+        self._runtime_instance_id = uuid4().hex
 
         self._setup_commands()
 
@@ -343,6 +350,18 @@ class ZetherionAIBot(discord.Client):
             user_manager_dict = getattr(self._user_manager, "__dict__", {})
             if "_pool" in user_manager_dict:
                 runtime_pool = getattr(self._user_manager, "_pool", None)
+        if runtime_pool is not None:
+            try:
+                self._runtime_status_store = RuntimeStatusStore(runtime_pool)
+                await self._runtime_status_store.initialize()
+                await self._publish_runtime_status(
+                    status="starting",
+                    summary="Discord bot startup is in progress.",
+                )
+                self._runtime_status_task = asyncio.create_task(self._runtime_status_loop())
+                log.info("runtime_status_task_started")
+            except Exception:
+                log.exception("runtime_status_init_failed")
         if runtime_pool is not None and plan_executor is not None:
             try:
                 from zetherion_ai.personal.operational_storage import (
@@ -620,6 +639,14 @@ class ZetherionAIBot(discord.Client):
 
     async def close(self) -> None:
         """Clean up resources when bot is closing."""
+        runtime_status_task = self._runtime_status_task
+        if runtime_status_task is not None and not runtime_status_task.done():
+            runtime_status_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await runtime_status_task
+            log.info("runtime_status_task_stopped")
+        self._runtime_status_task = None
+
         dispatcher = self._announcement_dispatcher
         if dispatcher is not None:
             await dispatcher.stop()
@@ -666,6 +693,12 @@ class ZetherionAIBot(discord.Client):
             await self._security_ai_analyzer.close()
             self._security_ai_analyzer = None
 
+        with contextlib.suppress(Exception):
+            await self._publish_runtime_status(
+                status="stopped",
+                summary="Discord bot is shutting down.",
+            )
+
         await super().close()
 
     async def on_ready(self) -> None:
@@ -682,6 +715,53 @@ class ZetherionAIBot(discord.Client):
             user=str(self.user),
             guilds=len(self.guilds),
         )
+        await self._publish_runtime_status(
+            status="healthy",
+            summary="Discord bot is connected and ready.",
+        )
+
+    def _release_revision(self) -> str | None:
+        for env_name in ("APP_GIT_SHA", "GITHUB_SHA", "RELEASE_SHA", "VERSION"):
+            value = os.environ.get(env_name, "").strip()
+            if value:
+                return value
+        return None
+
+    async def _runtime_status_details(self) -> dict[str, Any]:
+        details: dict[str, Any] = {
+            "ready": self.is_ready(),
+            "guild_count": len(self.guilds),
+            "user": str(self.user) if self.user is not None else None,
+        }
+        if self._queue_manager is not None:
+            with contextlib.suppress(Exception):
+                details["queue"] = await self._queue_manager.get_status()
+        return details
+
+    async def _publish_runtime_status(self, *, status: str, summary: str) -> None:
+        if self._runtime_status_store is None:
+            return
+        await self._runtime_status_store.upsert_status(
+            service_name="discord_bot",
+            status=status,
+            summary=summary,
+            details=await self._runtime_status_details(),
+            release_revision=self._release_revision(),
+            instance_id=self._runtime_instance_id,
+        )
+
+    async def _runtime_status_loop(self) -> None:
+        while True:
+            await asyncio.sleep(_RUNTIME_STATUS_INTERVAL_SECONDS)
+            with contextlib.suppress(Exception):
+                await self._publish_runtime_status(
+                    status="healthy" if self.is_ready() else "starting",
+                    summary=(
+                        "Discord bot is connected and ready."
+                        if self.is_ready()
+                        else "Discord bot is still starting up."
+                    ),
+                )
 
     @staticmethod
     def _as_int(value: Any, default: int = 0) -> int:

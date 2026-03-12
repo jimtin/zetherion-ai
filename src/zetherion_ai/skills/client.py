@@ -9,7 +9,7 @@ import base64
 import hashlib
 import hmac
 import json
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -66,30 +66,74 @@ class SkillsClient:
             api_secret: Shared secret for authentication.
             timeout: Request timeout in seconds.
         """
-        self._base_url = base_url.rstrip("/")
+        self._base_urls = self._parse_base_urls(base_url)
+        self._base_url = self._base_urls[0]
         self._api_secret = api_secret
         self._actor_signing_secret = (actor_signing_secret or api_secret or "").strip()
         self._timeout = timeout
         self._client: httpx.AsyncClient | None = None
 
-        log.info("skills_client_initialized", base_url=self._base_url)
+        log.info("skills_client_initialized", base_urls=self._base_urls)
 
-    async def _get_client(self) -> httpx.AsyncClient:
+    @staticmethod
+    def _parse_base_urls(base_url: str) -> list[str]:
+        urls = [piece.strip().rstrip("/") for piece in base_url.split(",") if piece.strip()]
+        return urls or ["http://zetherion_ai-skills:8080"]
+
+    def _iter_base_urls(self) -> list[str]:
+        preferred = self._base_url
+        return [preferred, *[url for url in self._base_urls if url != preferred]]
+
+    async def _get_client(self, base_url: str | None = None) -> httpx.AsyncClient:
         """Get or create the HTTP client.
 
         Returns:
             The async HTTP client.
         """
-        if self._client is None or self._client.is_closed:
+        target_base_url = (base_url or self._base_url).rstrip("/")
+        if (
+            self._client is None
+            or self._client.is_closed
+            or str(self._client.base_url).rstrip("/") != target_base_url
+        ):
+            if self._client is not None and not self._client.is_closed:
+                await self._client.aclose()
             headers = {}
             if self._api_secret:
                 headers["X-API-Secret"] = self._api_secret
             self._client = httpx.AsyncClient(
-                base_url=self._base_url,
+                base_url=target_base_url,
                 headers=headers,
                 timeout=self._timeout,
             )
         return self._client
+
+    async def _request_with_failover(self, send: Any) -> httpx.Response:
+        last_error: httpx.RequestError | None = None
+
+        for index, base_url in enumerate(self._iter_base_urls()):
+            try:
+                client = await self._get_client(base_url)
+                response = await send(client)
+                self._base_url = base_url
+                return cast(httpx.Response, response)
+            except httpx.RequestError as exc:
+                last_error = exc
+                log.warning(
+                    "skills_client_endpoint_failed",
+                    base_url=base_url,
+                    error=str(exc),
+                    attempt=index,
+                )
+                await self.close()
+
+        if isinstance(last_error, httpx.ConnectError):
+            raise SkillsConnectionError(
+                f"Unable to connect to skills service: {last_error}"
+            ) from last_error
+        if last_error is not None:
+            raise SkillsClientError(f"Request failed: {last_error}") from last_error
+        raise SkillsClientError("Request failed: no skills endpoints configured")
 
     async def close(self) -> None:
         """Close the HTTP client."""
@@ -127,24 +171,28 @@ class SkillsClient:
     ) -> tuple[int, Any]:
         """Call a Skills tenant-admin route with signed actor context."""
         try:
-            client = await self._get_client()
             headers = self._build_admin_actor_headers(actor)
-            response = await client.request(
-                method.upper(),
-                path,
-                headers=headers,
-                json=json_body,
-                params=query,
+            response = await self._request_with_failover(
+                lambda client: client.request(
+                    method.upper(),
+                    path,
+                    headers=headers,
+                    json=json_body,
+                    params=query,
+                )
             )
             try:
                 payload: Any = response.json()
             except Exception:
                 payload = response.text
             return response.status_code, payload
-        except httpx.ConnectError as e:
+        except SkillsConnectionError as e:
             log.error("skills_admin_connection_failed", error=str(e), method=method, path=path)
-            raise SkillsConnectionError(f"Unable to connect to skills service: {e}") from e
-        except httpx.RequestError as e:
+            raise
+        except SkillsAuthError as e:
+            log.error("skills_admin_auth_failed", error=str(e), method=method, path=path)
+            raise
+        except SkillsClientError as e:
             log.error("skills_admin_request_failed", error=str(e), method=method, path=path)
             raise SkillsClientError(f"Admin request failed: {e}") from e
 
@@ -174,13 +222,17 @@ class SkillsClient:
         Returns:
             True if the service is healthy.
         """
-        try:
-            client = await self._get_client()
-            response = await client.get("/health")
-            return response.status_code == 200
-        except httpx.RequestError as e:
-            log.warning("skills_health_check_failed", error=str(e))
-            return False
+        for base_url in self._iter_base_urls():
+            try:
+                client = await self._get_client(base_url)
+                response = await client.get("/health")
+                if response.status_code == 200:
+                    self._base_url = base_url
+                    return True
+            except httpx.RequestError as e:
+                log.warning("skills_health_check_failed", error=str(e), base_url=base_url)
+                await self.close()
+        return False
 
     async def handle_request(self, request: SkillRequest) -> SkillResponse:
         """Send a request to the skills service.
@@ -197,10 +249,11 @@ class SkillsClient:
             SkillsClientError: For other errors.
         """
         try:
-            client = await self._get_client()
-            response = await client.post(
-                "/handle",
-                json=request.to_dict(),
+            response = await self._request_with_failover(
+                lambda client: client.post(
+                    "/handle",
+                    json=request.to_dict(),
+                )
             )
 
             if response.status_code == 401:
@@ -213,12 +266,12 @@ class SkillsClient:
             data = response.json()
             return SkillResponse.from_dict(data)
 
-        except httpx.ConnectError as e:
+        except SkillsConnectionError as e:
             log.error("skills_connection_failed", error=str(e))
-            raise SkillsConnectionError(f"Unable to connect to skills service: {e}") from e
-        except httpx.RequestError as e:
+            raise
+        except SkillsClientError as e:
             log.error("skills_request_failed", error=str(e))
-            raise SkillsClientError(f"Request failed: {e}") from e
+            raise
 
     async def trigger_heartbeat(self, user_ids: list[str]) -> list[HeartbeatAction]:
         """Trigger a heartbeat cycle on the skills service.
@@ -234,10 +287,11 @@ class SkillsClient:
             SkillsClientError: For other errors.
         """
         try:
-            client = await self._get_client()
-            response = await client.post(
-                "/heartbeat",
-                json={"user_ids": user_ids},
+            response = await self._request_with_failover(
+                lambda client: client.post(
+                    "/heartbeat",
+                    json={"user_ids": user_ids},
+                )
             )
 
             if response.status_code == 401:
@@ -248,10 +302,13 @@ class SkillsClient:
             data = response.json()
             return [HeartbeatAction.from_dict(a) for a in data.get("actions", [])]
 
-        except httpx.ConnectError as e:
+        except SkillsConnectionError as e:
             log.error("skills_heartbeat_connection_failed", error=str(e))
-            raise SkillsConnectionError(f"Unable to connect to skills service: {e}") from e
-        except httpx.RequestError as e:
+            raise
+        except SkillsAuthError as e:
+            log.error("skills_heartbeat_auth_failed", error=str(e))
+            raise
+        except SkillsClientError as e:
             log.error("skills_heartbeat_failed", error=str(e))
             raise SkillsClientError(f"Heartbeat failed: {e}") from e
 
@@ -266,8 +323,7 @@ class SkillsClient:
             SkillsClientError: For other errors.
         """
         try:
-            client = await self._get_client()
-            response = await client.get("/skills")
+            response = await self._request_with_failover(lambda client: client.get("/skills"))
 
             if response.status_code == 401:
                 raise SkillsAuthError("Authentication failed")
@@ -277,10 +333,13 @@ class SkillsClient:
             data = response.json()
             return [SkillMetadata.from_dict(s) for s in data.get("skills", [])]
 
-        except httpx.ConnectError as e:
+        except SkillsConnectionError as e:
             log.error("skills_list_connection_failed", error=str(e))
-            raise SkillsConnectionError(f"Unable to connect to skills service: {e}") from e
-        except httpx.RequestError as e:
+            raise
+        except SkillsAuthError as e:
+            log.error("skills_list_auth_failed", error=str(e))
+            raise
+        except SkillsClientError as e:
             log.error("skills_list_failed", error=str(e))
             raise SkillsClientError(f"List skills failed: {e}") from e
 
@@ -298,8 +357,9 @@ class SkillsClient:
             SkillsClientError: For other errors.
         """
         try:
-            client = await self._get_client()
-            response = await client.get(f"/skills/{name}")
+            response = await self._request_with_failover(
+                lambda client: client.get(f"/skills/{name}")
+            )
 
             if response.status_code == 404:
                 return None
@@ -311,10 +371,13 @@ class SkillsClient:
             data = response.json()
             return SkillMetadata.from_dict(data)
 
-        except httpx.ConnectError as e:
+        except SkillsConnectionError as e:
             log.error("skills_get_connection_failed", error=str(e))
-            raise SkillsConnectionError(f"Unable to connect to skills service: {e}") from e
-        except httpx.RequestError as e:
+            raise
+        except SkillsAuthError as e:
+            log.error("skills_get_auth_failed", error=str(e))
+            raise
+        except SkillsClientError as e:
             log.error("skills_get_failed", error=str(e))
             raise SkillsClientError(f"Get skill failed: {e}") from e
 
@@ -329,8 +392,7 @@ class SkillsClient:
             SkillsClientError: For other errors.
         """
         try:
-            client = await self._get_client()
-            response = await client.get("/status")
+            response = await self._request_with_failover(lambda client: client.get("/status"))
 
             if response.status_code == 401:
                 raise SkillsAuthError("Authentication failed")
@@ -340,10 +402,13 @@ class SkillsClient:
             result: dict[str, Any] = response.json()
             return result
 
-        except httpx.ConnectError as e:
+        except SkillsConnectionError as e:
             log.error("skills_status_connection_failed", error=str(e))
-            raise SkillsConnectionError(f"Unable to connect to skills service: {e}") from e
-        except httpx.RequestError as e:
+            raise
+        except SkillsAuthError as e:
+            log.error("skills_status_auth_failed", error=str(e))
+            raise
+        except SkillsClientError as e:
             log.error("skills_status_failed", error=str(e))
             raise SkillsClientError(f"Get status failed: {e}") from e
 
@@ -361,10 +426,11 @@ class SkillsClient:
             SkillsClientError: For other errors.
         """
         try:
-            client = await self._get_client()
-            response = await client.get(
-                "/prompt-fragments",
-                params={"user_id": user_id},
+            response = await self._request_with_failover(
+                lambda client: client.get(
+                    "/prompt-fragments",
+                    params={"user_id": user_id},
+                )
             )
 
             if response.status_code == 401:
@@ -376,10 +442,13 @@ class SkillsClient:
             fragments: list[str] = data.get("fragments", [])
             return fragments
 
-        except httpx.ConnectError as e:
+        except SkillsConnectionError as e:
             log.error("skills_prompt_connection_failed", error=str(e))
-            raise SkillsConnectionError(f"Unable to connect to skills service: {e}") from e
-        except httpx.RequestError as e:
+            raise
+        except SkillsAuthError as e:
+            log.error("skills_prompt_auth_failed", error=str(e))
+            raise
+        except SkillsClientError as e:
             log.error("skills_prompt_failed", error=str(e))
             raise SkillsClientError(f"Get prompt fragments failed: {e}") from e
 
@@ -394,14 +463,15 @@ class SkillsClient:
     ) -> None:
         """Create/update a runtime setting via the skills service API."""
         try:
-            client = await self._get_client()
-            response = await client.put(
-                f"/settings/{namespace}/{key}",
-                json={
-                    "value": value,
-                    "changed_by": changed_by,
-                    "data_type": data_type,
-                },
+            response = await self._request_with_failover(
+                lambda client: client.put(
+                    f"/settings/{namespace}/{key}",
+                    json={
+                        "value": value,
+                        "changed_by": changed_by,
+                        "data_type": data_type,
+                    },
+                )
             )
 
             if response.status_code == 401:
@@ -410,10 +480,13 @@ class SkillsClient:
                 raise SkillsAuthError("Authorization failed")
 
             response.raise_for_status()
-        except httpx.ConnectError as e:
+        except SkillsConnectionError as e:
             log.error("skills_setting_connection_failed", error=str(e))
-            raise SkillsConnectionError(f"Unable to connect to skills service: {e}") from e
-        except httpx.RequestError as e:
+            raise
+        except SkillsAuthError as e:
+            log.error("skills_setting_auth_failed", error=str(e))
+            raise
+        except SkillsClientError as e:
             log.error("skills_setting_failed", error=str(e))
             raise SkillsClientError(f"Update setting failed: {e}") from e
 
@@ -427,14 +500,15 @@ class SkillsClient:
     ) -> None:
         """Create/update an encrypted secret via the skills service API."""
         try:
-            client = await self._get_client()
             payload: dict[str, Any] = {
                 "value": value,
                 "changed_by": changed_by,
             }
             if description:
                 payload["description"] = description
-            response = await client.put(f"/secrets/{name}", json=payload)
+            response = await self._request_with_failover(
+                lambda client: client.put(f"/secrets/{name}", json=payload)
+            )
 
             if response.status_code == 401:
                 raise SkillsAuthError("Authentication failed")
@@ -442,10 +516,13 @@ class SkillsClient:
                 raise SkillsAuthError("Authorization failed")
 
             response.raise_for_status()
-        except httpx.ConnectError as e:
+        except SkillsConnectionError as e:
             log.error("skills_secret_connection_failed", error=str(e))
-            raise SkillsConnectionError(f"Unable to connect to skills service: {e}") from e
-        except httpx.RequestError as e:
+            raise
+        except SkillsAuthError as e:
+            log.error("skills_secret_auth_failed", error=str(e))
+            raise
+        except SkillsClientError as e:
             log.error("skills_secret_failed", error=str(e))
             raise SkillsClientError(f"Update secret failed: {e}") from e
 
@@ -494,8 +571,9 @@ class SkillsClient:
             request_payload["occurred_at"] = occurred_at
 
         try:
-            client = await self._get_client()
-            response = await client.post("/announcements/events", json=request_payload)
+            response = await self._request_with_failover(
+                lambda client: client.post("/announcements/events", json=request_payload)
+            )
 
             if response.status_code == 401:
                 raise SkillsAuthError("Authentication failed")
@@ -505,10 +583,13 @@ class SkillsClient:
             response.raise_for_status()
             result: dict[str, Any] = response.json()
             return result
-        except httpx.ConnectError as e:
+        except SkillsConnectionError as e:
             log.error("skills_announcement_connection_failed", error=str(e))
-            raise SkillsConnectionError(f"Unable to connect to skills service: {e}") from e
-        except httpx.RequestError as e:
+            raise
+        except SkillsAuthError as e:
+            log.error("skills_announcement_auth_failed", error=str(e))
+            raise
+        except SkillsClientError as e:
             log.error("skills_announcement_emit_failed", error=str(e))
             raise SkillsClientError(f"Emit announcement failed: {e}") from e
 

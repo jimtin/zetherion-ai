@@ -145,6 +145,42 @@ class TestSkillsClient:
             assert result is False
 
     @pytest.mark.asyncio
+    async def test_handle_request_fails_over_to_secondary_base_url(self) -> None:
+        """handle_request() should retry the next configured base URL on request errors."""
+        client = SkillsClient(base_url="http://skills-green:8080,http://skills-blue:8080")
+        request = SkillRequest(user_id="user123", intent="test_intent", message="test")
+        response_data = {
+            "request_id": str(request.id),
+            "success": True,
+            "message": "Handled successfully",
+            "data": {"result": "ok"},
+            "error": None,
+            "actions": [],
+        }
+
+        failed_client = AsyncMock()
+        failed_client.post = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+        healthy_client = AsyncMock()
+        healthy_response = MagicMock()
+        healthy_response.status_code = 200
+        healthy_response.json.return_value = response_data
+        healthy_response.raise_for_status = MagicMock()
+        healthy_client.post = AsyncMock(return_value=healthy_response)
+
+        async def fake_get_client(base_url: str | None = None):
+            if base_url == "http://skills-green:8080":
+                return failed_client
+            return healthy_client
+
+        with patch.object(client, "_get_client", side_effect=fake_get_client):
+            result = await client.handle_request(request)
+
+        assert result.success is True
+        assert client._base_url == "http://skills-blue:8080"
+        failed_client.post.assert_called_once()
+        healthy_client.post.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_handle_request_success(self) -> None:
         """handle_request() should return SkillResponse on success."""
         client = SkillsClient()

@@ -237,7 +237,7 @@ async def run_server(
     public_client = PublicAPIClient(base_url=zetherion_public_api_base_url)
     skills_client = SkillsClient(
         base_url=zetherion_skills_api_base_url,
-        api_secret=zetherion_skills_api_secret,
+        api_secret=zetherion_skills_api_secret,  # gitleaks:allow
     )
     verifier = JWTVerifier(jwks_url=jwks_url, issuer=issuer, audience=audience)
 
@@ -289,11 +289,19 @@ def main() -> None:
 
     z_public = os.environ.get(
         "ZETHERION_PUBLIC_API_BASE_URL",
-        getattr(settings, "zetherion_public_api_base_url", "http://zetherion-ai-traefik:8443"),
+        getattr(
+            settings,
+            "zetherion_public_api_base_url",
+            "http://zetherion-ai-api-green:8443,http://zetherion-ai-api-blue:8443",
+        ),
     )
     z_skills = os.environ.get(
         "ZETHERION_SKILLS_API_BASE_URL",
-        getattr(settings, "zetherion_skills_api_base_url", "http://zetherion-ai-traefik:8080"),
+        getattr(
+            settings,
+            "zetherion_skills_api_base_url",
+            "http://zetherion-ai-skills-green:8080,http://zetherion-ai-skills-blue:8080",
+        ),
     )
 
     z_skills_secret = os.environ.get("ZETHERION_SKILLS_API_SECRET", "")

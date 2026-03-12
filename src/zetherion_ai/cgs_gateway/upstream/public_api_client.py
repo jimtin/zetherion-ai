@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+import inspect
+from typing import Any, cast
 
 import aiohttp
 
@@ -16,9 +17,15 @@ class PublicAPIClient:
         base_url: str,
         timeout_seconds: float = 30.0,
     ) -> None:
-        self._base_url = base_url.rstrip("/")
+        self._base_urls = self._parse_base_urls(base_url)
+        self._base_url = self._base_urls[0]
         self._timeout = aiohttp.ClientTimeout(total=timeout_seconds)
         self._session: aiohttp.ClientSession | None = None
+
+    @staticmethod
+    def _parse_base_urls(base_url: str) -> list[str]:
+        urls = [piece.strip().rstrip("/") for piece in base_url.split(",") if piece.strip()]
+        return urls or [""]
 
     async def start(self) -> None:
         if self._session is None:
@@ -35,10 +42,46 @@ class PublicAPIClient:
             raise RuntimeError("PublicAPIClient session is not started")
         return self._session
 
-    def _url(self, path: str) -> str:
+    def _iter_base_urls(self) -> list[str]:
+        preferred = self._base_url
+        return [preferred, *[url for url in self._base_urls if url != preferred]]
+
+    def _url(self, base_url: str, path: str) -> str:
         if not path.startswith("/"):
             path = f"/{path}"
-        return f"{self._base_url}{path}"
+        return f"{base_url}{path}"
+
+    async def _request_with_failover(
+        self,
+        method: str,
+        path: str,
+        *,
+        headers: dict[str, str] | None = None,
+        json_body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+        data: Any = None,
+    ) -> aiohttp.ClientResponse:
+        last_error: aiohttp.ClientError | None = None
+        for base_url in self._iter_base_urls():
+            try:
+                request_result = self.session.request(
+                    method.upper(),
+                    self._url(base_url, path),
+                    headers=headers,
+                    json=json_body,
+                    params=params,
+                    data=data,
+                )
+                response = (
+                    await request_result if inspect.isawaitable(request_result) else request_result
+                )
+                self._base_url = base_url
+                return cast(aiohttp.ClientResponse, response)
+            except aiohttp.ClientError as exc:
+                last_error = exc
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("PublicAPIClient has no configured upstream base URL")
 
     async def request_json(
         self,
@@ -51,14 +94,15 @@ class PublicAPIClient:
         data: Any = None,
     ) -> tuple[int, Any, dict[str, str]]:
         """Send request and parse response as JSON when possible."""
-        async with self.session.request(
-            method.upper(),
-            self._url(path),
+        response = await self._request_with_failover(
+            method,
+            path,
             headers=headers,
-            json=json_body,
+            json_body=json_body,
             params=params,
             data=data,
-        ) as response:
+        )
+        try:
             payload: Any
             try:
                 payload = await response.json()
@@ -66,6 +110,16 @@ class PublicAPIClient:
                 payload = await response.text()
             response_headers = dict(response.headers)
             return response.status, payload, response_headers
+        finally:
+            release = getattr(response, "release", None)
+            if release is None:
+                continue_response = getattr(response, "__aexit__", None)
+                if continue_response is not None:
+                    await continue_response(None, None, None)
+            else:
+                result = release()
+                if inspect.isawaitable(result):
+                    await result
 
     async def open_stream(
         self,
@@ -76,11 +130,11 @@ class PublicAPIClient:
         json_body: dict[str, Any] | None = None,
     ) -> aiohttp.ClientResponse:
         """Open streaming response; caller must close the response."""
-        return await self.session.request(
-            method.upper(),
-            self._url(path),
+        return await self._request_with_failover(
+            method,
+            path,
             headers=headers,
-            json=json_body,
+            json_body=json_body,
         )
 
     async def request_raw(
@@ -92,14 +146,25 @@ class PublicAPIClient:
         params: dict[str, Any] | None = None,
     ) -> tuple[int, bytes, dict[str, str]]:
         """Send request and return raw bytes body."""
-        async with self.session.request(
-            method.upper(),
-            self._url(path),
+        response = await self._request_with_failover(
+            method,
+            path,
             headers=headers,
             params=params,
-        ) as response:
+        )
+        try:
             payload = await response.read()
             return response.status, payload, dict(response.headers)
+        finally:
+            release = getattr(response, "release", None)
+            if release is None:
+                continue_response = getattr(response, "__aexit__", None)
+                if continue_response is not None:
+                    await continue_response(None, None, None)
+            else:
+                result = release()
+                if inspect.isawaitable(result):
+                    await result
 
     async def create_document_upload(
         self,

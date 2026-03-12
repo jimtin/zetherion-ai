@@ -73,6 +73,7 @@ class QueueManager:
                     priority_min=QueuePriority.INTERACTIVE,
                     priority_max=QueuePriority.NEAR_INTERACTIVE,
                     poll_ms=settings.queue_poll_interval_ms,
+                    processing_timeout_seconds=settings.queue_stale_timeout_seconds,
                 ),
             )
             self._workers.append(task)
@@ -85,6 +86,7 @@ class QueueManager:
                     priority_min=QueuePriority.SCHEDULED,
                     priority_max=QueuePriority.BULK,
                     poll_ms=settings.queue_background_poll_ms,
+                    processing_timeout_seconds=settings.queue_stale_timeout_seconds,
                 ),
             )
             self._workers.append(task)
@@ -223,6 +225,7 @@ class QueueManager:
         priority_min: int,
         priority_max: int,
         poll_ms: int,
+        processing_timeout_seconds: int,
     ) -> None:
         """Poll for items and process them.
 
@@ -246,6 +249,7 @@ class QueueManager:
                     priority_min=priority_min,
                     priority_max=priority_max,
                     worker_id=name,
+                    processing_timeout_seconds=processing_timeout_seconds,
                 )
 
                 if item is None:

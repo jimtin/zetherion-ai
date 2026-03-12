@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import aiohttp
 import pytest
 
 import zetherion_ai.cgs_gateway.upstream.public_api_client as public_mod
@@ -57,6 +58,19 @@ class _DummyJSONSession:
     def request(self, *args: object, **kwargs: object) -> _DummyResponseCtx:
         self.calls.append((args, kwargs))
         return self._response
+
+
+class _FailoverJSONSession:
+    def __init__(self, failing_url: str, success_response: _DummyResponseCtx) -> None:
+        self.failing_url = failing_url
+        self.success_response = success_response
+        self.calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def request(self, *args: object, **kwargs: object) -> _DummyResponseCtx:
+        self.calls.append((args, kwargs))
+        if len(args) > 1 and args[1] == self.failing_url:
+            raise aiohttp.ClientConnectionError("dial failed")
+        return self.success_response
 
 
 class _DummyAsyncStreamSession:
@@ -119,6 +133,26 @@ async def test_public_api_client_request_json_success_and_text_fallback() -> Non
     status2, payload2, _ = await client.request_json("POST", "v1/chat")
     assert status2 == 502
     assert payload2 == "upstream-error"
+
+
+@pytest.mark.asyncio
+async def test_public_api_client_retries_secondary_base_url() -> None:
+    client = PublicAPIClient(base_url="https://api-green.example,https://api-blue.example")
+    session = _FailoverJSONSession(
+        "https://api-green.example/health",
+        _DummyResponseCtx(status=200, json_payload={"ok": True}),
+    )
+    client._session = session  # type: ignore[assignment]
+
+    status, payload, _headers = await client.request_json("GET", "/health")
+
+    assert status == 200
+    assert payload == {"ok": True}
+    assert client._base_url == "https://api-blue.example"
+    assert [call[0][1] for call in session.calls] == [
+        "https://api-green.example/health",
+        "https://api-blue.example/health",
+    ]
 
 
 @pytest.mark.asyncio

@@ -290,6 +290,51 @@ class TestSkillsServerEndpoints:
         data = await resp.json()
         assert data["status"] == "healthy"
 
+    async def test_internal_runtime_health_endpoint(self, mock_registry):
+        """GET /internal/runtime/health should report runtime domains."""
+        fake_pool = object()
+        fake_store = SimpleNamespace(
+            get_status=AsyncMock(
+                return_value={
+                    "service_name": "discord_bot",
+                    "status": "healthy",
+                    "summary": "Discord bot is connected and ready.",
+                    "updated_at": datetime.now(UTC).isoformat(),
+                    "release_revision": "abc123",
+                    "details": {"guild_count": 2},
+                }
+            )
+        )
+        server = SkillsServer(
+            registry=mock_registry,
+            api_secret="test-secret",
+            user_manager=SimpleNamespace(_pool=fake_pool),
+        )
+        app = server.create_app()
+
+        with patch("zetherion_ai.skills.server.QueueStorage") as mock_queue_storage:
+            queue_storage = mock_queue_storage.return_value
+            queue_storage.get_status_counts = AsyncMock(
+                return_value={"queued": 1, "processing": 0, "dead": 0}
+            )
+            queue_storage.count_stale_processing = AsyncMock(return_value=0)
+            server._get_runtime_status_store = AsyncMock(return_value=fake_store)  # type: ignore[method-assign]
+
+            async with TestClient(TestServer(app)) as client:
+                resp = await client.get(
+                    "/internal/runtime/health",
+                    headers={"X-API-Secret": "test-secret"},
+                )
+                assert resp.status == 200
+                data = await resp.json()
+
+        assert data["summary"]["blocker_count"] == 0
+        keys = [domain["key"] for domain in data["domains"]]
+        assert "skills" in keys
+        assert "message_queue" in keys
+        assert "discord_bot" in keys
+        assert "release_verification" in keys
+
     async def test_handle_request_success(self, client, mock_registry):
         """POST /handle should return 200 with skill response on success."""
         request_id = uuid4()

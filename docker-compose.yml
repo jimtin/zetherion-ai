@@ -15,8 +15,8 @@ services:
     depends_on:
       qdrant:
         condition: service_healthy
-      traefik:
-        condition: service_started
+      zetherion-ai-skills-green:
+        condition: service_healthy
       zetherion-ai-skills-blue:
         condition: service_healthy
       postgres:
@@ -32,8 +32,7 @@ services:
       # Router container (small, fast model for classification)
       - OLLAMA_ROUTER_HOST=ollama-router
       - OLLAMA_ROUTER_PORT=11434
-      # Route skills traffic via Traefik so sidecar can blue/green swap
-      - SKILLS_SERVICE_URL=http://zetherion-ai-traefik:8080
+      - SKILLS_SERVICE_URL=http://zetherion-ai-skills-green:8080,http://zetherion-ai-skills-blue:8080
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - ENVIRONMENT=production
       - LOG_FILE_PREFIX=bot
@@ -178,16 +177,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      traefik:
-        condition: service_started
     env_file:
       - .env
     environment:
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - CGS_GATEWAY_HOST=0.0.0.0
       - CGS_GATEWAY_PORT=8443
-      - ZETHERION_PUBLIC_API_BASE_URL=http://zetherion-ai-traefik:8443
-      - ZETHERION_SKILLS_API_BASE_URL=http://zetherion-ai-traefik:8080
+      - ZETHERION_PUBLIC_API_BASE_URL=http://zetherion-ai-api-green:8443,http://zetherion-ai-api-blue:8443
+      - ZETHERION_SKILLS_API_BASE_URL=http://zetherion-ai-skills-green:8080,http://zetherion-ai-skills-blue:8080
       - ZETHERION_SKILLS_API_SECRET=${ZETHERION_SKILLS_API_SECRET:-${SKILLS_API_SECRET:-}}
       - CGS_AUTH_JWKS_URL=${CGS_AUTH_JWKS_URL:-}
       - CGS_AUTH_ISSUER=${CGS_AUTH_ISSUER:-}
@@ -230,16 +227,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      traefik:
-        condition: service_started
     env_file:
       - .env
     environment:
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - CGS_GATEWAY_HOST=0.0.0.0
       - CGS_GATEWAY_PORT=8443
-      - ZETHERION_PUBLIC_API_BASE_URL=http://zetherion-ai-traefik:8443
-      - ZETHERION_SKILLS_API_BASE_URL=http://zetherion-ai-traefik:8080
+      - ZETHERION_PUBLIC_API_BASE_URL=http://zetherion-ai-api-green:8443,http://zetherion-ai-api-blue:8443
+      - ZETHERION_SKILLS_API_BASE_URL=http://zetherion-ai-skills-green:8080,http://zetherion-ai-skills-blue:8080
       - ZETHERION_SKILLS_API_SECRET=${ZETHERION_SKILLS_API_SECRET:-${SKILLS_API_SECRET:-}}
       - CGS_AUTH_JWKS_URL=${CGS_AUTH_JWKS_URL:-}
       - CGS_AUTH_ISSUER=${CGS_AUTH_ISSUER:-}
@@ -304,16 +299,12 @@ services:
     security_opt:
       - no-new-privileges:true
     command:
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
       - "--providers.file.directory=/etc/traefik/dynamic"
       - "--providers.file.watch=true"
-      - "--entrypoints.skills.address=:8080"
       - "--entrypoints.api.address=:8443"
       - "--api.insecure=false"
       - "--log.level=WARN"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./config/traefik/dynamic:/etc/traefik/dynamic
     networks:
       - zetherion-ai-net

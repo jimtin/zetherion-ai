@@ -608,11 +608,11 @@ class Settings(BaseSettings):
         description="Expected JWT audience for CGS auth tokens",
     )
     zetherion_public_api_base_url: str = Field(
-        default="http://zetherion-ai-traefik:8443",
+        default="http://zetherion-ai-api-green:8443,http://zetherion-ai-api-blue:8443",
         description="Base URL for upstream Zetherion public API",
     )
     zetherion_skills_api_base_url: str = Field(
-        default="http://zetherion-ai-traefik:8080",
+        default="http://zetherion-ai-skills-green:8080,http://zetherion-ai-skills-blue:8080",
         description="Base URL for upstream Zetherion skills API",
     )
     zetherion_skills_api_secret: SecretStr | None = Field(

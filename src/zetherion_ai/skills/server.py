@@ -49,7 +49,9 @@ from zetherion_ai.automerge.orchestrator import (
 )
 from zetherion_ai.logging import get_logger
 from zetherion_ai.owner_ci import OwnerCiStorage
+from zetherion_ai.queue.storage import QueueStorage
 from zetherion_ai.routing.models import DestinationType
+from zetherion_ai.runtime.status_store import RuntimeStatusStore
 from zetherion_ai.security.trust_policy import TrustPolicyEvaluator
 from zetherion_ai.skills.base import SkillRequest
 from zetherion_ai.skills.github.client import GitHubAPIError, GitHubClient
@@ -360,6 +362,7 @@ class SkillsServer:
             interval_raw = 300
         self._messaging_ttl_cleanup_interval_seconds = max(30, interval_raw)
         self._messaging_ttl_cleanup_task: asyncio.Task[Any] | None = None
+        self._runtime_status_store: RuntimeStatusStore | None = None
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
 
@@ -984,6 +987,216 @@ class SkillsServer:
                 "status": "healthy",
                 "skills_ready": len(self._registry.list_ready_skills()),
                 "skills_total": self._registry.skill_count,
+            }
+        )
+
+    @staticmethod
+    def _runtime_domain(
+        *,
+        key: str,
+        label: str,
+        status: str,
+        summary: str,
+        details: dict[str, Any] | None = None,
+        incident_type: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "key": key,
+            "label": label,
+            "status": status,
+            "summary": summary,
+            "details": details or {},
+            "incident_type": incident_type,
+        }
+
+    def _runtime_pool(self) -> Any | None:
+        if self._user_manager is None:
+            return None
+        user_manager_dict = getattr(self._user_manager, "__dict__", {})
+        if "_pool" in user_manager_dict:
+            return getattr(self._user_manager, "_pool", None)
+        return None
+
+    async def _get_runtime_status_store(self) -> RuntimeStatusStore | None:
+        pool = self._runtime_pool()
+        if pool is None:
+            return None
+        if self._runtime_status_store is None:
+            store = RuntimeStatusStore(pool)
+            await store.initialize()
+            self._runtime_status_store = store
+        return self._runtime_status_store
+
+    async def handle_internal_runtime_health(self, request: web.Request) -> web.Response:
+        """Return runtime health domains for operator dashboards."""
+        from zetherion_ai.config import get_settings
+
+        settings = get_settings()
+        domains: list[dict[str, Any]] = [
+            self._runtime_domain(
+                key="skills",
+                label="Skills",
+                status="healthy",
+                summary="Skills service is responding over the direct internal path.",
+                details={"skills_ready": len(self._registry.list_ready_skills())},
+            )
+        ]
+
+        queue_domain = self._runtime_domain(
+            key="message_queue",
+            label="Message Queue",
+            status="blocked",
+            summary="Runtime database pool is unavailable.",
+            details={},
+            incident_type="queue_lease_wedged",
+        )
+        bot_domain = self._runtime_domain(
+            key="discord_bot",
+            label="Discord Bot",
+            status="blocked",
+            summary="Discord bot runtime status is unavailable.",
+            details={},
+            incident_type="discord_delivery_failed",
+        )
+        deploy_domain = self._runtime_domain(
+            key="deploy_state",
+            label="Deploy State",
+            status="degraded",
+            summary="Release revision metadata is unavailable.",
+            details={},
+            incident_type="release_blocker",
+        )
+
+        revision = (
+            os.environ.get("APP_GIT_SHA", "").strip()
+            or os.environ.get("GITHUB_SHA", "").strip()
+            or os.environ.get("RELEASE_SHA", "").strip()
+        )
+        if revision:
+            deploy_domain = self._runtime_domain(
+                key="deploy_state",
+                label="Deploy State",
+                status="healthy",
+                summary="Release revision metadata is present.",
+                details={"revision": revision},
+            )
+
+        pool = self._runtime_pool()
+        if pool is not None:
+            queue_storage = QueueStorage(pool)
+            counts = await queue_storage.get_status_counts()
+            stale_count = await queue_storage.count_stale_processing(
+                timeout_seconds=settings.queue_stale_timeout_seconds
+            )
+            queue_status = "healthy"
+            queue_summary = "Queue workers are healthy."
+            incident_type = None
+            if stale_count > 0:
+                queue_status = "blocked"
+                queue_summary = "Queue contains stale processing items."
+                incident_type = "queue_lease_wedged"
+            elif counts.get("dead", 0) > 0:
+                queue_status = "degraded"
+                queue_summary = "Queue contains dead-letter items."
+                incident_type = "discord_delivery_failed"
+            queue_domain = self._runtime_domain(
+                key="message_queue",
+                label="Message Queue",
+                status=queue_status,
+                summary=queue_summary,
+                details={
+                    "status_counts": counts,
+                    "stale_processing": stale_count,
+                    "stale_timeout_seconds": settings.queue_stale_timeout_seconds,
+                },
+                incident_type=incident_type,
+            )
+
+            status_store = await self._get_runtime_status_store()
+            if status_store is not None:
+                bot_status = await status_store.get_status("discord_bot")
+                if bot_status is not None:
+                    updated_at_raw = bot_status.get("updated_at")
+                    status_age_seconds: float | None = None
+                    if isinstance(updated_at_raw, str):
+                        try:
+                            updated_at = datetime.fromisoformat(updated_at_raw)
+                            if updated_at.tzinfo is None:
+                                updated_at = updated_at.replace(tzinfo=UTC)
+                            status_age_seconds = (datetime.now(UTC) - updated_at).total_seconds()
+                        except ValueError:
+                            status_age_seconds = None
+                    bot_status_value = str(bot_status.get("status") or "unknown")
+                    bot_summary = str(
+                        bot_status.get("summary") or "Discord bot status is unavailable."
+                    )
+                    bot_domain_status = "healthy"
+                    bot_incident_type = None
+                    if bot_status_value not in {"healthy", "starting"}:
+                        bot_domain_status = "blocked"
+                        bot_incident_type = "discord_delivery_failed"
+                    elif status_age_seconds is not None and status_age_seconds > 90:
+                        bot_domain_status = "blocked"
+                        bot_summary = "Discord bot heartbeat is stale."
+                        bot_incident_type = "discord_delivery_failed"
+                    elif bot_status_value == "starting":
+                        bot_domain_status = "degraded"
+                    bot_domain = self._runtime_domain(
+                        key="discord_bot",
+                        label="Discord Bot",
+                        status=bot_domain_status,
+                        summary=bot_summary,
+                        details={
+                            "service_status": bot_status_value,
+                            "updated_at": bot_status.get("updated_at"),
+                            "status_age_seconds": status_age_seconds,
+                            "release_revision": bot_status.get("release_revision"),
+                            "details": bot_status.get("details"),
+                        },
+                        incident_type=bot_incident_type,
+                    )
+
+        domains.extend([queue_domain, bot_domain, deploy_domain])
+        blocker_count = sum(1 for domain in domains if domain["status"] == "blocked")
+        degraded_count = sum(1 for domain in domains if domain["status"] == "degraded")
+        release_status = "healthy"
+        release_summary = "Required runtime checks are green."
+        if blocker_count > 0:
+            release_status = "blocked"
+            release_summary = "Release is deployed but unhealthy."
+        elif degraded_count > 0:
+            release_status = "degraded"
+            release_summary = "Release is deployed with degraded checks."
+        domains.append(
+            self._runtime_domain(
+                key="release_verification",
+                label="Release Verification",
+                status=release_status,
+                summary=release_summary,
+                details={
+                    "required_checks": [
+                        {
+                            "key": domain["key"],
+                            "status": domain["status"],
+                            "summary": domain["summary"],
+                        }
+                        for domain in domains
+                    ],
+                    "blocker_count": blocker_count,
+                    "degraded_count": degraded_count,
+                },
+                incident_type="release_blocker" if release_status != "healthy" else None,
+            )
+        )
+
+        return web.json_response(
+            {
+                "generated_at": datetime.now(UTC).isoformat(),
+                "domains": domains,
+                "summary": {
+                    "blocker_count": blocker_count,
+                    "degraded_count": degraded_count,
+                },
             }
         )
 
@@ -4796,6 +5009,7 @@ class SkillsServer:
 
         # Core routes
         app.router.add_get("/health", self.handle_health)
+        app.router.add_get("/internal/runtime/health", self.handle_internal_runtime_health)
         app.router.add_post("/handle", self.handle_request)
         app.router.add_post("/heartbeat", self.handle_heartbeat)
         app.router.add_get("/skills", self.handle_list_skills)
