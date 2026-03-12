@@ -81,6 +81,8 @@ services:
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - API_HOST=0.0.0.0
       - API_PORT=8443
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
       # LLM providers for chat inference
       - OLLAMA_HOST=ollama
       - OLLAMA_PORT=11434
@@ -89,6 +91,7 @@ services:
       - ENVIRONMENT=production
       - LOG_FILE_PREFIX=api-blue
     volumes:
+      - ./data:/app/data
       - ./logs:/app/logs
     logging:
       driver: json-file
@@ -131,6 +134,8 @@ services:
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - API_HOST=0.0.0.0
       - API_PORT=8443
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
       - OLLAMA_HOST=ollama
       - OLLAMA_PORT=11434
       - OLLAMA_ROUTER_HOST=ollama-router
@@ -138,6 +143,7 @@ services:
       - ENVIRONMENT=production
       - LOG_FILE_PREFIX=api-green
     volumes:
+      - ./data:/app/data
       - ./logs:/app/logs
     logging:
       driver: json-file

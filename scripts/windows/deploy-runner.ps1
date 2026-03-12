@@ -425,6 +425,7 @@ try {
         if ($bootstrappedKeys.Count -gt 0) {
             Write-Output "Bootstrapped runtime env keys: $($bootstrappedKeys -join ', ')"
         }
+        Ensure-ZetherionWslRuntimePaths -DeployPath $DeployPath
         $composeProfiles = @(Get-OptionalComposeProfiles -RepositoryPath $DeployPath)
         if ($composeProfiles.Count -gt 0) {
             Write-Output "Active optional compose profiles: $($composeProfiles -join ', ')"

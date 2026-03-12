@@ -293,6 +293,8 @@ try {
         if ($bootstrappedKeys.Count -gt 0) {
             $actionsTaken += "bootstrapped_runtime_env_keys:$($bootstrappedKeys -join ',')"
         }
+        Ensure-ZetherionWslRuntimePaths -DeployPath $DeployPath
+        $actionsTaken += "wsl_runtime_paths_ready"
         docker compose up -d
     }
     finally {
