@@ -277,6 +277,20 @@ class TestQueueStorageDequeue:
         assert call_args[2] == 2
         assert call_args[3] == 3
 
+    @pytest.mark.asyncio
+    async def test_dequeue_ignores_stale_processing_discord_leases(self) -> None:
+        pool, conn = _make_pool()
+        row = _make_row(status="processing", worker_id="w-1")
+        conn.fetchrow.return_value = row
+
+        storage = QueueStorage(pool=pool)
+        await storage.dequeue(worker_id="w-1", processing_timeout_seconds=300)
+
+        call_args = conn.fetchrow.call_args[0]
+        sql = call_args[0]
+        assert "inflight.started_at >= now() - ($4::int * interval '1 second')" in sql
+        assert call_args[4] == 300
+
 
 class TestQueueStorageComplete:
     """Tests for QueueStorage.complete()."""
@@ -360,6 +374,17 @@ class TestQueueStorageHousekeeping:
         storage = QueueStorage(pool=pool)
         counts = await storage.get_status_counts()
         assert counts == {"queued": 10, "processing": 2}
+
+    @pytest.mark.asyncio
+    async def test_count_stale_processing(self) -> None:
+        pool, conn = _make_pool()
+        conn.fetchval.return_value = 4
+
+        storage = QueueStorage(pool=pool)
+        count = await storage.count_stale_processing(timeout_seconds=120)
+
+        assert count == 4
+        conn.fetchval.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_purge_completed(self) -> None:
@@ -1195,6 +1220,31 @@ class TestQueueManagerWorkerLoop:
 
             # Workers should be stopped
             assert len(mgr._workers) == 0
+
+    @pytest.mark.asyncio
+    async def test_worker_loop_passes_stale_timeout_to_dequeue(self) -> None:
+        storage = AsyncMock(spec=QueueStorage)
+        storage.dequeue = AsyncMock(return_value=None)
+        processors = MagicMock(spec=QueueProcessors)
+
+        mgr = QueueManager(storage=storage, processors=processors)
+
+        with patch("zetherion_ai.queue.manager.get_settings") as mock_settings:
+            s = MagicMock()
+            s.queue_interactive_workers = 1
+            s.queue_background_workers = 0
+            s.queue_poll_interval_ms = 10
+            s.queue_background_poll_ms = 100
+            s.queue_stale_timeout_seconds = 300
+            mock_settings.return_value = s
+
+            await mgr.start()
+            await asyncio.sleep(0.02)
+            await mgr.stop()
+
+        assert storage.dequeue.await_args_list
+        first_call = storage.dequeue.await_args_list[0]
+        assert first_call.kwargs["processing_timeout_seconds"] == 300
 
     @pytest.mark.asyncio
     async def test_stop_requeues_stale_items(self) -> None:

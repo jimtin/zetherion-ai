@@ -5,7 +5,7 @@ Lifecycle:
 2. Build inactive color services from source
 3. Bring up inactive services and validate direct health
 4. Flip Traefik dynamic routing to the new color
-5. Validate routed health and restart bot gracefully
+5. Validate externally routed health and restart bot gracefully
 6. Stop old color services
 7. Auto-rollback and pause further rollouts on failure
 """
@@ -52,7 +52,7 @@ CGS_UI_SERVICES: dict[str, str] = {
 }
 
 BOT_SERVICE = "zetherion-ai-bot"
-ROUTED_HEALTH_KEYS = ("routed_skills", "routed_api", "routed_cgs_api", "routed_cgs_ui")
+ROUTED_HEALTH_KEYS = ("routed_api", "routed_cgs_api", "routed_cgs_ui")
 
 DEFAULT_HEALTH_URLS: dict[str, str] = {
     # Direct service health checks
@@ -65,7 +65,6 @@ DEFAULT_HEALTH_URLS: dict[str, str] = {
     "zetherion-ai-cgs-ui-blue": "http://zetherion-ai-cgs-ui-blue:3000/cgs/api/health",
     "zetherion-ai-cgs-ui-green": "http://zetherion-ai-cgs-ui-green:3000/cgs/api/health",
     # Routed health checks through Traefik
-    "routed_skills": "http://zetherion-ai-traefik:8080/health",
     "routed_api": "http://zetherion-ai-traefik:8443/health",
     "routed_cgs_api": "http://zetherion-ai-traefik:8443/service/ai/v1/health",
     "routed_cgs_ui": "http://zetherion-ai-traefik:8443/cgs/api/health",
@@ -850,12 +849,6 @@ class UpdateExecutor:
         """Build Traefik dynamic config for active blue/green routing."""
         return f"""http:
   routers:
-    skills:
-      entryPoints:
-        - skills
-      rule: \"PathPrefix(`/`)\"
-      service: skills-{active_color}
-      priority: 10
     cgs-api:
       entryPoints:
         - api
@@ -875,14 +868,6 @@ class UpdateExecutor:
       service: api-{active_color}
       priority: 10
   services:
-    skills-blue:
-      loadBalancer:
-        servers:
-          - url: \"http://{SKILLS_SERVICES['blue']}:8080\"
-    skills-green:
-      loadBalancer:
-        servers:
-          - url: \"http://{SKILLS_SERVICES['green']}:8080\"
     api-blue:
       loadBalancer:
         servers:
