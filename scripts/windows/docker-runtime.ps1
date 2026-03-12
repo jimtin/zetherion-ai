@@ -74,6 +74,69 @@ function Test-ZetherionDockerAvailable {
     return [bool]($status.enabled -and $status.active -and $status.available)
 }
 
+function Ensure-ZetherionWslRuntimePaths {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DeployPath,
+        [string[]]$RelativePaths = @("data", "logs")
+    )
+
+    $repoWslPath = ConvertTo-ZetherionWslPath -WindowsPath $DeployPath
+    $driveMatch = [regex]::Match($repoWslPath, "^(/mnt/[a-z])(?:/|$)")
+    if (-not $driveMatch.Success) {
+        throw "Deploy path '$DeployPath' is not on a supported WSL drvfs mount."
+    }
+
+    $driveRoot = $driveMatch.Groups[1].Value
+    $escapedRelativePaths = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($relativePath in $RelativePaths) {
+        $escapedRelativePaths.Add((ConvertTo-ZetherionBashLiteral -Value $relativePath))
+    }
+
+    $relativePathsLiteral = $escapedRelativePaths -join " "
+    $command = @'
+set -euo pipefail
+repo_path=__REPO_PATH__
+drive_root=__DRIVE_ROOT__
+mount_line=\$(mount | grep " on \$drive_root " | head -n 1 || true)
+if [ -z "\$mount_line" ]; then
+  echo "Unable to resolve WSL mount metadata for \$drive_root." >&2
+  exit 1
+fi
+case "\$mount_line" in
+  *metadata*) ;;
+  *)
+    echo "WSL automount for \$drive_root must include the metadata option to support writable runtime bind mounts." >&2
+    exit 1
+    ;;
+esac
+owner_user=\$(stat -c '%U' "\$repo_path")
+owner_group=\$(stat -c '%G' "\$repo_path")
+if [ -z "\$owner_user" ] || [ "\$owner_user" = "UNKNOWN" ]; then
+  echo "Unable to resolve a writable WSL owner for \$repo_path." >&2
+  exit 1
+fi
+for rel in __RELATIVE_PATHS__; do
+  target="\$repo_path/\$rel"
+  mkdir -p "\$target"
+  chown -R "\$owner_user:\$owner_group" "\$target"
+  chmod -R u+rwX,g+rwX "\$target"
+  runuser -u "\$owner_user" -- touch "\$target/.wsl-write-check"
+  rm -f "\$target/.wsl-write-check"
+done
+'@
+    $command = $command.Replace("__REPO_PATH__", (ConvertTo-ZetherionBashLiteral -Value $repoWslPath))
+    $command = $command.Replace("__DRIVE_ROOT__", (ConvertTo-ZetherionBashLiteral -Value $driveRoot))
+    $command = $command.Replace("__RELATIVE_PATHS__", $relativePathsLiteral)
+
+    $distro = Get-ZetherionWslDistribution
+    & wsl.exe -d $distro -u root -- bash -lc $command
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to prepare WSL runtime paths for Docker bind mounts under '$DeployPath'."
+    }
+}
+
 function Invoke-ZetherionWslDocker {
     [CmdletBinding()]
     param(
