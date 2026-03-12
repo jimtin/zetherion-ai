@@ -41,11 +41,38 @@ function ConvertTo-ZetherionBashLiteral {
 function Invoke-ZetherionWslCommand {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Command
+        [string]$Command,
+        [string]$User = ""
     )
 
     $distro = Get-ZetherionWslDistribution
-    & wsl.exe -d $distro -- bash -lc $Command
+    $wslArgs = New-Object 'System.Collections.Generic.List[string]'
+    $wslArgs.Add("-d")
+    $wslArgs.Add($distro)
+    if ($User) {
+        $wslArgs.Add("-u")
+        $wslArgs.Add($User)
+    }
+    $wslArgs.Add("--")
+    $wslArgs.Add("bash")
+    $wslArgs.Add("-lc")
+    $wslArgs.Add($Command)
+
+    $output = & wsl.exe @wslArgs 2>&1
+    $exitCode = $LASTEXITCODE
+    $global:LASTEXITCODE = $exitCode
+
+    foreach ($entry in @($output)) {
+        Write-Output $entry
+    }
+
+    if ($exitCode -ne 0) {
+        $message = ($output | Out-String).Trim()
+        if (-not $message) {
+            $message = "WSL command failed with exit code $exitCode."
+        }
+        throw $message
+    }
 }
 
 function Get-ZetherionDockerRuntimeStatus {
@@ -130,9 +157,13 @@ done
     $command = $command.Replace("__DRIVE_ROOT__", (ConvertTo-ZetherionBashLiteral -Value $driveRoot))
     $command = $command.Replace("__RELATIVE_PATHS__", $relativePathsLiteral)
 
-    $distro = Get-ZetherionWslDistribution
-    & wsl.exe -d $distro -u root -- bash -lc $command
-    if ($LASTEXITCODE -ne 0) {
+    try {
+        Invoke-ZetherionWslCommand -User "root" -Command $command | Out-Null
+    } catch {
+        $reason = $_.Exception.Message
+        if ($reason) {
+            throw "Failed to prepare WSL runtime paths for Docker bind mounts under '$DeployPath': $reason"
+        }
         throw "Failed to prepare WSL runtime paths for Docker bind mounts under '$DeployPath'."
     }
 }
