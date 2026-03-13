@@ -26,6 +26,7 @@ $details = [ordered]@{
     auxiliary_container_health = ""
     bot_marker_check = ""
     postgres_keys = @()
+    postgres_probe_error = ""
     fallback_probe_output = ""
     optional_services_skipped = @()
     monitored_services = @()
@@ -67,8 +68,13 @@ function Wait-ForBotStartupMarkers {
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     $lastLogs = ""
     while ((Get-Date) -lt $deadline) {
-        $botLogs = docker compose logs zetherion-ai-bot --tail 400
-        $lastLogs = ($botLogs | Out-String)
+        $botLogs = Invoke-ZetherionWslDockerResult compose logs zetherion-ai-bot --tail 400
+        $lastLogs = $botLogs.Text
+
+        if ($botLogs.ExitCode -ne 0) {
+            Start-Sleep -Seconds $IntervalSeconds
+            continue
+        }
 
         $allMarkersPresent = $true
         foreach ($marker in $RequiredMarkers) {
@@ -98,15 +104,16 @@ function Wait-ForFallbackProbe {
     param(
         [int]$TimeoutSeconds,
         [int]$IntervalSeconds,
+        [string]$DeployPath,
         [string]$ProbeScript
     )
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     $lastOutput = ""
     while ((Get-Date) -lt $deadline) {
-        $probeOutput = docker exec zetherion-ai-bot python -c $ProbeScript 2>&1
-        $lastOutput = ($probeOutput | Out-String).Trim()
-        if ($LASTEXITCODE -eq 0 -and $lastOutput -match "provider=") {
+        $probeOutput = Invoke-FallbackProbe -DeployPath $DeployPath -ProbeScript $ProbeScript
+        $lastOutput = $probeOutput.Text
+        if ($probeOutput.ExitCode -eq 0 -and $lastOutput -match "provider=") {
             return [pscustomobject]@{
                 passed = $true
                 output = $lastOutput
@@ -120,6 +127,36 @@ function Wait-ForFallbackProbe {
         passed = $false
         output = $lastOutput
     }
+}
+
+function Invoke-PostgresSettingsQuery {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DeployPath,
+        [Parameter(Mandatory = $true)]
+        [string]$Query
+    )
+
+    $repoWslPath = ConvertTo-ZetherionWslPath -WindowsPath $DeployPath
+    $encodedQuery = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($Query.Trim()))
+    $command = "cd $(ConvertTo-ZetherionBashLiteral -Value $repoWslPath) && printf '%s' $(ConvertTo-ZetherionBashLiteral -Value $encodedQuery) | base64 -d | docker exec -i zetherion-ai-postgres psql -U zetherion -d zetherion -t -A"
+
+    return (Invoke-ZetherionWslCommandResult -Command $command)
+}
+
+function Invoke-FallbackProbe {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DeployPath,
+        [Parameter(Mandatory = $true)]
+        [string]$ProbeScript
+    )
+
+    $repoWslPath = ConvertTo-ZetherionWslPath -WindowsPath $DeployPath
+    $encodedScript = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($ProbeScript.Trim()))
+    $command = "cd $(ConvertTo-ZetherionBashLiteral -Value $repoWslPath) && printf '%s' $(ConvertTo-ZetherionBashLiteral -Value $encodedScript) | base64 -d | docker exec -i zetherion-ai-bot python -"
+
+    return (Invoke-ZetherionWslCommandResult -Command $command)
 }
 
 function Get-EnvValueFromFile {
@@ -364,22 +401,34 @@ try {
             $details.bot_marker_check = "Missing one or more startup markers in bot logs after waiting for readiness."
         }
 
-        $pgRaw = docker exec zetherion-ai-postgres psql -U zetherion -d zetherion -t -A -c "SELECT key FROM settings WHERE namespace='models' ORDER BY key;"
-        $keys = @(
-            $pgRaw -split "`r?`n" | Where-Object { $_ -and $_.Trim() -ne "" } | ForEach-Object { $_.Trim() }
-        )
-        $details.postgres_keys = $keys
-        $requiredKeys = @(
-            "claude_model",
-            "groq_model",
-            "ollama_generation_model",
-            "openai_model",
-            "router_model"
-        )
-        $missing = @(
-            $requiredKeys | Where-Object { $keys -notcontains $_ }
-        )
-        $checks.postgres_model_keys = ($missing.Count -eq 0)
+        $pgResult = Invoke-PostgresSettingsQuery `
+            -DeployPath $DeployPath `
+            -Query @"
+SELECT key
+FROM settings
+WHERE namespace = 'models'
+ORDER BY key;
+"@
+        if ($pgResult.ExitCode -eq 0) {
+            $keys = @(
+                $pgResult.Text -split "`r?`n" | Where-Object { $_ -and $_.Trim() -ne "" } | ForEach-Object { $_.Trim() }
+            )
+            $details.postgres_keys = $keys
+            $requiredKeys = @(
+                "claude_model",
+                "groq_model",
+                "ollama_generation_model",
+                "openai_model",
+                "router_model"
+            )
+            $missing = @(
+                $requiredKeys | Where-Object { $keys -notcontains $_ }
+            )
+            $checks.postgres_model_keys = ($missing.Count -eq 0)
+        } else {
+            $details.postgres_probe_error = $pgResult.Text
+            $checks.postgres_model_keys = $false
+        }
 
         $probeScript = @"
 import asyncio
@@ -402,6 +451,7 @@ finally:
         $probeCheck = Wait-ForFallbackProbe `
             -TimeoutSeconds $StartupWaitSeconds `
             -IntervalSeconds $RetryIntervalSeconds `
+            -DeployPath $DeployPath `
             -ProbeScript $probeScript
         $details.fallback_probe_output = [string]$probeCheck.output
         $checks.fallback_probe = [bool]$probeCheck.passed

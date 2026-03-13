@@ -9,14 +9,18 @@ init_discord_e2e_run_manager() {
 
     DISCORD_E2E_RUNS_ROOT="${DISCORD_E2E_RUNS_ROOT:-$REPO_DIR/.artifacts/discord-e2e-runs}"
     TEST_DISCORD_E2E_TTL_MINUTES="${TEST_DISCORD_E2E_TTL_MINUTES:-180}"
+    TEST_DISCORD_E2E_HEARTBEAT_STALE_SECONDS="${TEST_DISCORD_E2E_HEARTBEAT_STALE_SECONDS:-300}"
     TEST_DISCORD_E2E_CHANNEL_PREFIX="${TEST_DISCORD_E2E_CHANNEL_PREFIX:-zeth-e2e}"
     DISCORD_E2E_MODE="${DISCORD_E2E_MODE:-local_required}"
     DISCORD_E2E_RUN_MANIFEST_PATH="${DISCORD_E2E_RUN_MANIFEST_PATH:-}"
+    DISCORD_E2E_HEARTBEAT_PATH="${DISCORD_E2E_HEARTBEAT_PATH:-}"
     DISCORD_E2E_CLEANUP_STATUS="${DISCORD_E2E_CLEANUP_STATUS:-not_run}"
     DISCORD_E2E_TARGET_LEASE_STATUS="${DISCORD_E2E_TARGET_LEASE_STATUS:-not_run}"
+    DISCORD_E2E_HEARTBEAT_PID="${DISCORD_E2E_HEARTBEAT_PID:-}"
     export DISCORD_E2E_RUNS_ROOT TEST_DISCORD_E2E_TTL_MINUTES TEST_DISCORD_E2E_CHANNEL_PREFIX \
-        DISCORD_E2E_MODE DISCORD_E2E_RUN_MANIFEST_PATH DISCORD_E2E_CLEANUP_STATUS \
-        DISCORD_E2E_TARGET_LEASE_STATUS
+        TEST_DISCORD_E2E_HEARTBEAT_STALE_SECONDS DISCORD_E2E_MODE \
+        DISCORD_E2E_RUN_MANIFEST_PATH DISCORD_E2E_HEARTBEAT_PATH \
+        DISCORD_E2E_CLEANUP_STATUS DISCORD_E2E_TARGET_LEASE_STATUS DISCORD_E2E_HEARTBEAT_PID
 }
 
 require_discord_e2e_scope() {
@@ -48,7 +52,7 @@ _discord_e2e_scope_args() {
 janitor_discord_e2e_runs() {
     init_discord_e2e_run_manager
     require_discord_e2e_scope
-    local -a args=("$REPO_DIR/scripts/discord_e2e_run_manager.py" janitor)
+    local -a args=("scripts/discord_e2e_run_manager.py" janitor)
     while IFS= read -r -d '' arg; do
         args+=("$arg")
     done < <(_discord_e2e_scope_args)
@@ -60,7 +64,7 @@ start_discord_e2e_run() {
     require_discord_e2e_scope
     janitor_discord_e2e_runs
 
-    local -a args=("$REPO_DIR/scripts/discord_e2e_run_manager.py" start)
+    local -a args=("scripts/discord_e2e_run_manager.py" start)
     while IFS= read -r -d '' arg; do
         args+=("$arg")
     done < <(_discord_e2e_scope_args)
@@ -72,14 +76,41 @@ start_discord_e2e_run() {
     exports="$($PYTHON_BIN "${args[@]}")"
     eval "$exports"
     export DISCORD_E2E_RUN_ID DISCORD_E2E_RUN_MANIFEST_PATH DISCORD_E2E_CLEANUP_LEDGER_PATH \
-        DISCORD_E2E_CHANNEL_ID DISCORD_E2E_CHANNEL_NAME DISCORD_E2E_TARGET_BOT_ID \
-        DISCORD_E2E_TEST_BOT_ID DISCORD_E2E_TARGET_LEASE_STATUS DISCORD_E2E_MODE \
-        TEST_DISCORD_CHANNEL_ID TEST_DISCORD_TARGET_BOT_ID
+        DISCORD_E2E_HEARTBEAT_PATH DISCORD_E2E_CHANNEL_ID DISCORD_E2E_CHANNEL_NAME \
+        DISCORD_E2E_TARGET_BOT_ID DISCORD_E2E_TEST_BOT_ID DISCORD_E2E_TARGET_LEASE_STATUS \
+        DISCORD_E2E_MODE TEST_DISCORD_CHANNEL_ID TEST_DISCORD_TARGET_BOT_ID
+}
+
+start_discord_e2e_heartbeat() {
+    init_discord_e2e_run_manager
+    if [[ -z "${DISCORD_E2E_HEARTBEAT_PATH:-}" ]]; then
+        return 0
+    fi
+    touch "$DISCORD_E2E_HEARTBEAT_PATH"
+    (
+        while true; do
+            touch "$DISCORD_E2E_HEARTBEAT_PATH" 2>/dev/null || exit 0
+            sleep 15
+        done
+    ) &
+    DISCORD_E2E_HEARTBEAT_PID="$!"
+    export DISCORD_E2E_HEARTBEAT_PID
+}
+
+stop_discord_e2e_heartbeat() {
+    init_discord_e2e_run_manager
+    if [[ -n "${DISCORD_E2E_HEARTBEAT_PID:-}" ]]; then
+        kill "$DISCORD_E2E_HEARTBEAT_PID" >/dev/null 2>&1 || true
+        wait "$DISCORD_E2E_HEARTBEAT_PID" 2>/dev/null || true
+        DISCORD_E2E_HEARTBEAT_PID=""
+        export DISCORD_E2E_HEARTBEAT_PID
+    fi
 }
 
 cleanup_discord_e2e_run() {
     init_discord_e2e_run_manager
     local reason="${1:-explicit_cleanup}"
+    stop_discord_e2e_heartbeat
 
     if [[ -z "${DISCORD_E2E_RUN_MANIFEST_PATH:-}" || ! -f "$DISCORD_E2E_RUN_MANIFEST_PATH" ]]; then
         DISCORD_E2E_CLEANUP_STATUS="not_run"
@@ -87,7 +118,7 @@ cleanup_discord_e2e_run() {
         return 0
     fi
 
-    "$PYTHON_BIN" "$REPO_DIR/scripts/discord_e2e_run_manager.py" cleanup \
+    "$PYTHON_BIN" scripts/discord_e2e_run_manager.py cleanup \
         --manifest "$DISCORD_E2E_RUN_MANIFEST_PATH" \
         --reason "$reason" >/dev/null || true
 

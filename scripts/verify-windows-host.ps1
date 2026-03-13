@@ -181,8 +181,6 @@ $coreContainers = @(
     "zetherion-ai-api-green",
     "zetherion-ai-cgs-gateway-blue",
     "zetherion-ai-cgs-gateway-green",
-    "zetherion-ai-ollama",
-    "zetherion-ai-ollama-router",
     "zetherion-ai-postgres",
     "zetherion-ai-qdrant",
     "zetherion-ai-traefik",
@@ -204,6 +202,12 @@ $whatsappTenantId = Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_TE
 $whatsappIngestUrl = Get-EnvValueFromFile -Path $envPath -Key "WHATSAPP_BRIDGE_INGEST_URL"
 if ($whatsappEnabled -and $whatsappSigningSecret -and $whatsappStateKey -and $whatsappTenantId -and $whatsappIngestUrl) {
     $auxiliaryContainers += "zetherion-ai-whatsapp-bridge"
+}
+
+$ollamaEnabled = Test-Truthy -Value (Get-EnvValueFromFile -Path $envPath -Key "ENABLE_OLLAMA_RUNTIME")
+if ($ollamaEnabled) {
+    $auxiliaryContainers += "zetherion-ai-ollama"
+    $auxiliaryContainers += "zetherion-ai-ollama-router"
 }
 
 function Test-ContainerHealthy {
@@ -253,27 +257,32 @@ else {
 }
 
 # 6. Ollama Models
-try {
-    $routerModels = docker exec zetherion-ai-ollama-router ollama list 2>&1 | Out-String
-    $genModels = docker exec zetherion-ai-ollama ollama list 2>&1 | Out-String
-
-    $hasRouter = $routerModels -match "llama3.2"
-    $hasGen = $genModels -match "llama3.1"
-    $hasEmbed = $genModels -match "nomic-embed"
-
-    if ($hasRouter -and $hasGen -and $hasEmbed) {
-        Add-Check -Name "ollama_models" -Status "pass" -Message "All required Ollama models present"
-    }
-    else {
-        $missing = @()
-        if (-not $hasRouter) { $missing += "llama3.2:3b (router)" }
-        if (-not $hasGen) { $missing += "llama3.1:8b (generation)" }
-        if (-not $hasEmbed) { $missing += "nomic-embed-text (embeddings)" }
-        Add-Check -Name "ollama_models" -Status "fail" -Message "Missing models: $($missing -join ', ')"
-    }
+if (-not $ollamaEnabled) {
+    Add-Check -Name "ollama_models" -Status "pass" -Message "Ollama runtime is disabled by default"
 }
-catch {
-    Add-Check -Name "ollama_models" -Status "warn" -Message "Could not check Ollama models"
+else {
+    try {
+        $routerModels = docker exec zetherion-ai-ollama-router ollama list 2>&1 | Out-String
+        $genModels = docker exec zetherion-ai-ollama ollama list 2>&1 | Out-String
+
+        $hasRouter = $routerModels -match "llama3.2"
+        $hasGen = $genModels -match "llama3.1"
+        $hasEmbed = $genModels -match "nomic-embed"
+
+        if ($hasRouter -and $hasGen -and $hasEmbed) {
+            Add-Check -Name "ollama_models" -Status "pass" -Message "All required Ollama models present"
+        }
+        else {
+            $missing = @()
+            if (-not $hasRouter) { $missing += "llama3.2:3b (router)" }
+            if (-not $hasGen) { $missing += "llama3.1:8b (generation)" }
+            if (-not $hasEmbed) { $missing += "nomic-embed-text (embeddings)" }
+            Add-Check -Name "ollama_models" -Status "fail" -Message "Missing models: $($missing -join ', ')"
+        }
+    }
+    catch {
+        Add-Check -Name "ollama_models" -Status "warn" -Message "Could not check Ollama models"
+    }
 }
 
 # 7. RBAC owner bootstrap determinism

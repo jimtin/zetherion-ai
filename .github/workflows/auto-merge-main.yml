@@ -1,215 +1,22 @@
-name: Auto Merge Main
+name: Auto Merge Main (Deprecated)
 
 on:
-  workflow_run:
-    workflows:
-      - CI/CD Pipeline
-    types:
-      - completed
+  workflow_dispatch:
 
-concurrency:
-  group: auto-merge-main-${{ github.event.workflow_run.head_branch }}
-  cancel-in-progress: true
+permissions:
+  contents: read
 
 jobs:
-  promote:
-    name: Auto-promote codex/* to main
-    if: >-
-      ${{
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'pull_request' &&
-        contains(github.event.workflow_run.pull_requests.*.base.ref, 'main') &&
-        github.event.workflow_run.head_branch != 'main' &&
-        startsWith(github.event.workflow_run.head_branch, 'codex/') &&
-        github.event.workflow_run.head_repository.full_name == github.repository
-      }}
+  deprecated:
+    name: Promotion Moved to Zetherion
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      actions: write
     steps:
-      - name: Checkout main
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-        with:
-          fetch-depth: 0
-          ref: main
-
-      - name: Promote branch to main (PR merge)
-        id: promote
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SOURCE_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
-          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
-          DELETE_SOURCE_BRANCH: "true"
+      - name: Summarize control-plane ownership
         shell: bash
         run: |
-          set -euo pipefail
-
-          merge_status="blocked"
-          blocked_reason=""
-          main_before_sha=""
-          main_after_sha=""
-          pr_url=""
-          pr_number="${PR_NUMBER:-}"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git fetch --prune origin "+refs/heads/main:refs/remotes/origin/main"
-          main_before_sha="$(git rev-parse refs/remotes/origin/main)"
-          main_after_sha="$main_before_sha"
-
-          # Fallback PR resolution in case workflow_run payload omits pull request linkage.
-          if [[ -z "$pr_number" || "$pr_number" == "null" ]]; then
-            pr_number="$(
-              gh pr list \
-                --state open \
-                --head "${SOURCE_BRANCH}" \
-                --base "main" \
-                --json number \
-                --jq '.[0].number // empty'
-            )"
-          fi
-
-          # If the exact source SHA is already in main, treat as idempotent success.
-          if git merge-base --is-ancestor "$SOURCE_SHA" "refs/remotes/origin/main"; then
-            merge_status="merged"
-            blocked_reason="already_merged"
-          else
-            if [[ -z "$pr_number" ]]; then
-              blocked_reason="pr_not_found"
-            else
-              pr_url="$(gh pr view "$pr_number" --json url --jq '.url')"
-              pr_state="$(gh pr view "$pr_number" --json state --jq '.state')"
-              pr_head_sha="$(gh pr view "$pr_number" --json headRefOid --jq '.headRefOid')"
-              pr_base_ref="$(gh pr view "$pr_number" --json baseRefName --jq '.baseRefName')"
-
-              if [[ "$pr_base_ref" != "main" ]]; then
-                blocked_reason="pr_base_not_main"
-              elif [[ "$pr_state" == "MERGED" ]]; then
-                merge_status="merged"
-                blocked_reason="already_merged"
-              elif [[ "$pr_state" != "OPEN" ]]; then
-                blocked_reason="pr_not_open"
-              elif [[ "$pr_head_sha" != "$SOURCE_SHA" ]]; then
-                blocked_reason="source_branch_head_moved"
-              else
-                merge_cmd=(gh pr merge "$pr_number" --rebase)
-                if [[ "${DELETE_SOURCE_BRANCH}" == "true" ]]; then
-                  merge_cmd+=(--delete-branch)
-                fi
-                if "${merge_cmd[@]}"; then
-                  merge_observed="false"
-                  for attempt in {1..10}; do
-                    git fetch --prune origin "+refs/heads/main:refs/remotes/origin/main"
-                    main_after_sha="$(git rev-parse refs/remotes/origin/main)"
-
-                    if git merge-base --is-ancestor "$SOURCE_SHA" "$main_after_sha"; then
-                      merge_observed="true"
-                      break
-                    fi
-
-                    # Rebase rewrites SHAs; if main advanced after a successful merge command,
-                    # treat that as merge observation even before PR state propagation catches up.
-                    if [[ "$main_after_sha" != "$main_before_sha" ]]; then
-                      merge_observed="true"
-                      break
-                    fi
-
-                    pr_state_after="$(gh pr view "$pr_number" --json state --jq '.state')"
-                    if [[ "$pr_state_after" == "MERGED" ]]; then
-                      pr_merge_commit_sha="$(gh pr view "$pr_number" --json mergeCommit --jq '.mergeCommit.oid // empty')"
-                      if [[ -n "$pr_merge_commit_sha" ]] && git merge-base --is-ancestor "$pr_merge_commit_sha" "$main_after_sha"; then
-                        merge_observed="true"
-                        break
-                      fi
-                    fi
-
-                    sleep 2
-                  done
-
-                  if [[ "$merge_observed" == "true" ]]; then
-                    merge_status="merged"
-                    blocked_reason=""
-                  else
-                    blocked_reason="merge_not_observed_on_main"
-                  fi
-                else
-                  blocked_reason="pr_merge_failed"
-                fi
-              fi
-            fi
-          fi
-
-          if [[ "$merge_status" == "blocked" ]]; then
-            if [[ -n "$pr_number" ]]; then
-              body_file="$(mktemp)"
-              cat >"$body_file" <<EOF
-          Auto-promotion from \`${SOURCE_BRANCH}\` to \`main\` was blocked.
-
-          Reason: \`${blocked_reason}\`
-
-          Required action:
-          1. Rebase \`${SOURCE_BRANCH}\` on the latest \`main\`.
-          2. Push the updated branch.
-          3. Wait for a fresh successful \`CI/CD Pipeline\` run.
-
-          Source SHA from passing CI run: \`${SOURCE_SHA}\`
-          Current main SHA: \`${main_before_sha}\`
-          EOF
-
-              gh pr comment "$pr_number" --body-file "$body_file" || true
-            fi
-          fi
-
-          jq -n \
-            --arg source_branch "$SOURCE_BRANCH" \
-            --arg source_sha "$SOURCE_SHA" \
-            --arg main_before_sha "$main_before_sha" \
-            --arg main_after_sha "$main_after_sha" \
-            --arg merge_method "pr-rebase" \
-            --arg status "$merge_status" \
-            --arg blocked_reason "$blocked_reason" \
-            --arg pr_url "$pr_url" \
-            --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            '{
-              generated_at: $generated_at,
-              source_branch: $source_branch,
-              source_sha: $source_sha,
-              main_before_sha: $main_before_sha,
-              main_after_sha: $main_after_sha,
-              merge_method: $merge_method,
-              status: $status,
-              blocked_reason: $blocked_reason,
-              pr_url: $pr_url
-            }' > automerge-receipt.json
-
-          echo "status=${merge_status}" >> "$GITHUB_OUTPUT"
-          echo "blocked_reason=${blocked_reason}" >> "$GITHUB_OUTPUT"
-          echo "main_after_sha=${main_after_sha}" >> "$GITHUB_OUTPUT"
-          echo "receipt_path=$PWD/automerge-receipt.json" >> "$GITHUB_OUTPUT"
-          echo "pr_url=${pr_url}" >> "$GITHUB_OUTPUT"
-
-      - name: Trigger Deploy Windows for merged SHA
-        if: ${{ steps.promote.outputs.status == 'merged' && steps.promote.outputs.blocked_reason != 'already_merged' && steps.promote.outputs.main_after_sha != '' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          target_sha="${{ steps.promote.outputs.main_after_sha }}"
-          echo "Dispatching Deploy Windows for main SHA: ${target_sha}"
-          gh workflow run "Deploy Windows" \
-            --ref main \
-            -f sha="${target_sha}" \
-            -f ref="refs/heads/main"
-
-      - name: Upload auto-merge receipt
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: automerge-receipt
-          path: ${{ steps.promote.outputs.receipt_path }}
-          retention-days: 30
+          {
+            echo "### Promotion Ownership"
+            echo ""
+            echo "Automatic merge and promotion are now owned by the Zetherion control plane."
+            echo "Do not use GitHub Actions to promote \`codex/*\` branches to \`main\`."
+          } >> "$GITHUB_STEP_SUMMARY"

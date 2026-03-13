@@ -12,11 +12,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from datetime import datetime
+import time
 from typing import Any
 from uuid import UUID
 
 from zetherion_ai.config import get_settings
-from zetherion_ai.logging import get_logger
+from zetherion_ai.logging import exception_fields, get_logger
 from zetherion_ai.queue.models import QueueItem, QueuePriority, QueueTaskType
 from zetherion_ai.queue.processors import QueueProcessors
 from zetherion_ai.queue.storage import QueueStorage
@@ -28,6 +29,7 @@ _DRAIN_TIMEOUT_SECONDS = 30
 
 # How often the housekeeping loop runs (stale re-queue + purge).
 _HOUSEKEEPING_INTERVAL_SECONDS = 60
+_WORKER_ERROR_THRESHOLD = 3
 
 
 class QueueManager:
@@ -48,9 +50,14 @@ class QueueManager:
         self._storage = storage
         self._processors = processors
         self._workers: list[asyncio.Task[None]] = []
+        self._worker_names_by_task: dict[asyncio.Task[None], str] = {}
+        self._worker_last_heartbeat: dict[str, float] = {}
+        self._worker_idle_timeout_seconds: dict[str, float] = {}
         self._housekeeping_task: asyncio.Task[None] | None = None
         self._running = False
         self._draining = False
+        self._consecutive_worker_errors = 0
+        self._last_worker_error: dict[str, Any] | None = None
 
     # ------------------------------------------------------------------
     # Public API
@@ -67,9 +74,10 @@ class QueueManager:
 
         # Interactive workers (P0/P1)
         for i in range(settings.queue_interactive_workers):
+            worker_name = f"interactive-{i}"
             task = asyncio.create_task(
                 self._worker_loop(
-                    name=f"interactive-{i}",
+                    name=worker_name,
                     priority_min=QueuePriority.INTERACTIVE,
                     priority_max=QueuePriority.NEAR_INTERACTIVE,
                     poll_ms=settings.queue_poll_interval_ms,
@@ -77,12 +85,15 @@ class QueueManager:
                 ),
             )
             self._workers.append(task)
+            self._worker_names_by_task[task] = worker_name
+            self._register_worker(worker_name, poll_ms=settings.queue_poll_interval_ms)
 
         # Background workers (P2/P3)
         for i in range(settings.queue_background_workers):
+            worker_name = f"background-{i}"
             task = asyncio.create_task(
                 self._worker_loop(
-                    name=f"background-{i}",
+                    name=worker_name,
                     priority_min=QueuePriority.SCHEDULED,
                     priority_max=QueuePriority.BULK,
                     poll_ms=settings.queue_background_poll_ms,
@@ -90,6 +101,8 @@ class QueueManager:
                 ),
             )
             self._workers.append(task)
+            self._worker_names_by_task[task] = worker_name
+            self._register_worker(worker_name, poll_ms=settings.queue_background_poll_ms)
 
         # Housekeeping
         self._housekeeping_task = asyncio.create_task(self._housekeeping_loop())
@@ -135,6 +148,9 @@ class QueueManager:
                     await task
 
         self._workers.clear()
+        self._worker_names_by_task.clear()
+        self._worker_last_heartbeat.clear()
+        self._worker_idle_timeout_seconds.clear()
 
         # Re-queue stale items that were mid-flight
         try:
@@ -205,14 +221,38 @@ class QueueManager:
         """Whether the manager is running."""
         return self._running
 
+    @property
+    def is_accepting_work(self) -> bool:
+        """Whether new work should be routed through the queue."""
+        if not self._running:
+            return False
+        if self._consecutive_worker_errors >= _WORKER_ERROR_THRESHOLD:
+            return False
+        if self._dead_workers():
+            return False
+        return not self._stale_workers()
+
     async def get_status(self) -> dict[str, Any]:
         """Return queue status counts + worker info."""
         counts = await self._storage.get_status_counts()
+        dead_workers = self._dead_workers()
+        stale_workers = self._stale_workers()
+        now = time.monotonic()
         return {
             "running": self._running,
             "draining": self._draining,
+            "healthy": self.is_accepting_work,
+            "accepting_work": self.is_accepting_work,
             "workers": len(self._workers),
             "status_counts": counts,
+            "consecutive_worker_errors": self._consecutive_worker_errors,
+            "last_worker_error": self._last_worker_error,
+            "dead_workers": dead_workers,
+            "stale_workers": stale_workers,
+            "worker_heartbeat_age_seconds": {
+                worker: round(max(0.0, now - heartbeat), 3)
+                for worker, heartbeat in self._worker_last_heartbeat.items()
+            },
         }
 
     # ------------------------------------------------------------------
@@ -242,6 +282,7 @@ class QueueManager:
             priority_max=priority_max,
         )
         poll_seconds = poll_ms / 1000.0
+        self._note_worker_heartbeat(name)
 
         while self._running:
             try:
@@ -253,16 +294,26 @@ class QueueManager:
                 )
 
                 if item is None:
+                    self._note_worker_success(worker=name)
                     # Queue empty — back off
                     await asyncio.sleep(poll_seconds)
                     continue
 
                 await self._process_item(item, worker_name=name)
+                self._note_worker_success(worker=name)
 
             except asyncio.CancelledError:
                 break
-            except Exception:
-                log.exception("worker_error", worker=name)
+            except Exception as exc:
+                self._note_worker_heartbeat(name)
+                self._note_worker_error(worker=name, exc=exc)
+                log.exception(
+                    "worker_error",
+                    worker=name,
+                    consecutive_worker_errors=self._consecutive_worker_errors,
+                    queue_accepting_work=self.is_accepting_work,
+                    **exception_fields(exc),
+                )
                 await asyncio.sleep(poll_seconds)
 
         log.debug("worker_stopped", worker=name)
@@ -289,6 +340,56 @@ class QueueManager:
                 error=result.error,
                 worker=worker_name,
             )
+
+    def _note_worker_success(self, *, worker: str) -> None:
+        self._note_worker_heartbeat(worker)
+        if self._consecutive_worker_errors <= 0:
+            return
+        log.info(
+            "queue_worker_recovered",
+            consecutive_worker_errors=self._consecutive_worker_errors,
+        )
+        self._consecutive_worker_errors = 0
+        self._last_worker_error = None
+
+    def _note_worker_error(self, *, worker: str, exc: Exception) -> None:
+        self._consecutive_worker_errors += 1
+        self._last_worker_error = {
+            "worker": worker,
+            **exception_fields(exc),
+        }
+        if self._consecutive_worker_errors == _WORKER_ERROR_THRESHOLD:
+            log.error(
+                "queue_manager_marked_unhealthy",
+                consecutive_worker_errors=self._consecutive_worker_errors,
+                **self._last_worker_error,
+            )
+
+    def _register_worker(self, worker: str, *, poll_ms: int) -> None:
+        self._worker_last_heartbeat[worker] = time.monotonic()
+        self._worker_idle_timeout_seconds[worker] = max(5.0, min(60.0, (poll_ms / 1000.0) * 10.0))
+
+    def _note_worker_heartbeat(self, worker: str) -> None:
+        self._worker_last_heartbeat[worker] = time.monotonic()
+
+    def _dead_workers(self) -> list[str]:
+        dead: list[str] = []
+        for task, worker in self._worker_names_by_task.items():
+            if task.done() and not task.cancelled():
+                dead.append(worker)
+        return sorted(dict.fromkeys(dead))
+
+    def _stale_workers(self) -> list[str]:
+        now = time.monotonic()
+        stale: list[str] = []
+        dead = set(self._dead_workers())
+        for worker, heartbeat in self._worker_last_heartbeat.items():
+            if worker in dead:
+                continue
+            timeout_seconds = self._worker_idle_timeout_seconds.get(worker, 5.0)
+            if max(0.0, now - heartbeat) > timeout_seconds:
+                stale.append(worker)
+        return sorted(stale)
 
     # ------------------------------------------------------------------
     # Housekeeping

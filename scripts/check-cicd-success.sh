@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+MERGE_STATUS_CONTEXT="zetherion/merge-readiness"
+DEPLOY_STATUS_CONTEXT="zetherion/deploy-readiness"
+
 usage() {
   cat <<'USAGE'
 Usage:
   scripts/check-cicd-success.sh --sha <sha> [--ref <ref>] [--wait-seconds <seconds>] [--poll-interval <seconds>]
 
 Rules:
-  - All refs require successful CI evidence for the target SHA.
-  - main/refs/heads/main additionally require a successful "Deploy Windows" run and
-    a valid deployment-receipt artifact proving runtime + resilience success.
+  - All refs require successful Zetherion merge readiness evidence for the target SHA.
+  - main/refs/heads/main additionally require successful deploy readiness evidence.
+  - Legacy GitHub workflow and deployment-receipt evidence remains a fallback while the cutover completes.
 
 Options:
-  --wait-seconds <seconds>  Poll for pending CI/deploy evidence before failing (default: 0)
+  --wait-seconds <seconds>  Poll for pending evidence before failing (default: 0)
   --poll-interval <seconds> Poll interval when waiting (default: 10)
 USAGE
 }
@@ -149,6 +152,84 @@ summarize_latest_run_state() {
   ' <<<"$runs_json"
 }
 
+fetch_commit_statuses_json() {
+  local target_sha="$1"
+  gh api "repos/$REPO_SLUG/commits/$target_sha/status"
+}
+
+status_state_for_context() {
+  local statuses_json="$1"
+  local context="$2"
+  jq -r --arg context "$context" '
+    ([.statuses[]? | select(.context == $context)] | .[0].state) // ""
+  ' <<<"$statuses_json"
+}
+
+required_statuses_success() {
+  local statuses_json="$1"
+  local include_deploy="$2"
+  local merge_state
+  local deploy_state
+
+  merge_state="$(status_state_for_context "$statuses_json" "$MERGE_STATUS_CONTEXT")"
+  if [[ "$merge_state" != "success" ]]; then
+    echo "false"
+    return 0
+  fi
+
+  if [[ "$include_deploy" != "true" ]]; then
+    echo "true"
+    return 0
+  fi
+
+  deploy_state="$(status_state_for_context "$statuses_json" "$DEPLOY_STATUS_CONTEXT")"
+  [[ "$deploy_state" == "success" ]] && echo "true" || echo "false"
+}
+
+required_statuses_pending() {
+  local statuses_json="$1"
+  local include_deploy="$2"
+  local merge_state
+  local deploy_state
+
+  merge_state="$(status_state_for_context "$statuses_json" "$MERGE_STATUS_CONTEXT")"
+  if [[ -z "$merge_state" || "$merge_state" == "pending" ]]; then
+    echo "true"
+    return 0
+  fi
+
+  if [[ "$include_deploy" != "true" ]]; then
+    echo "false"
+    return 0
+  fi
+
+  deploy_state="$(status_state_for_context "$statuses_json" "$DEPLOY_STATUS_CONTEXT")"
+  [[ -z "$deploy_state" || "$deploy_state" == "pending" ]] && echo "true" || echo "false"
+}
+
+summarize_required_statuses() {
+  local statuses_json="$1"
+  local include_deploy="$2"
+  local merge_state
+  local deploy_state
+
+  merge_state="$(status_state_for_context "$statuses_json" "$MERGE_STATUS_CONTEXT")"
+  if [[ -z "$merge_state" ]]; then
+    merge_state="missing"
+  fi
+
+  if [[ "$include_deploy" == "true" ]]; then
+    deploy_state="$(status_state_for_context "$statuses_json" "$DEPLOY_STATUS_CONTEXT")"
+    if [[ -z "$deploy_state" ]]; then
+      deploy_state="missing"
+    fi
+    echo "${MERGE_STATUS_CONTEXT}:${merge_state}; ${DEPLOY_STATUS_CONTEXT}:${deploy_state}"
+    return 0
+  fi
+
+  echo "${MERGE_STATUS_CONTEXT}:${merge_state}"
+}
+
 fetch_check_runs_json() {
   local target_sha="$1"
   gh api "repos/$REPO_SLUG/commits/$target_sha/check-runs"
@@ -281,26 +362,49 @@ validate_deploy_receipt() {
 START_EPOCH="$(date +%s)"
 
 while :; do
+  INCLUDE_DEPLOY="false"
+  if is_main_ref "$REF"; then
+    INCLUDE_DEPLOY="true"
+  fi
+
+  STATUS_JSON="$(fetch_commit_statuses_json "$TARGET_SHA" 2>/dev/null || printf '{}')"
+  EXTERNAL_OK="false"
+  EXTERNAL_PENDING="false"
+  EXTERNAL_SUMMARY="$(summarize_required_statuses "$STATUS_JSON" "$INCLUDE_DEPLOY")"
+
+  if [[ "$(required_statuses_success "$STATUS_JSON" "$INCLUDE_DEPLOY")" == "true" ]]; then
+    EXTERNAL_OK="true"
+  elif [[ "$(required_statuses_pending "$STATUS_JSON" "$INCLUDE_DEPLOY")" == "true" ]]; then
+    EXTERNAL_PENDING="true"
+  fi
+
   ALL_RUNS_JSON="$(fetch_all_runs_json)"
   CI_RUNS_JSON="$(filter_ci_runs_json <<<"$ALL_RUNS_JSON")"
   DEPLOY_RUNS_JSON="$(filter_deploy_runs_json <<<"$ALL_RUNS_JSON")"
 
-  CI_RUN_ID="$(find_successful_run_id "$CI_RUNS_JSON" "$TARGET_SHA" "$SHA")"
-  CI_SOURCE="workflow"
+  CI_RUN_ID=""
+  CI_SOURCE="external-statuses"
   CI_BRANCH=""
-  CI_OK="false"
-  CI_PENDING="false"
-  CI_PENDING_REASON=""
+  CI_OK="$EXTERNAL_OK"
+  CI_PENDING="$EXTERNAL_PENDING"
+  CI_PENDING_REASON="$EXTERNAL_SUMMARY"
   CI_ASSOCIATED_PR_SUMMARY=""
+  LEGACY_CHECK_RUN_SUMMARY=""
 
-  if [[ -n "$CI_RUN_ID" ]]; then
-    CI_OK="true"
-    CI_BRANCH="$({
-      jq -r --arg id "$CI_RUN_ID" '
-        map(select((.databaseId | tostring) == $id))
-        | .[0].headBranch // ""
-      ' <<<"$CI_RUNS_JSON"
-    } || true)"
+  if [[ "$CI_OK" != "true" ]]; then
+    CI_SOURCE="workflow"
+    CI_RUN_ID="$(find_successful_run_id "$CI_RUNS_JSON" "$TARGET_SHA" "$SHA")"
+    if [[ -n "$CI_RUN_ID" ]]; then
+      CI_OK="true"
+      CI_PENDING="false"
+      CI_PENDING_REASON=""
+      CI_BRANCH="$({
+        jq -r --arg id "$CI_RUN_ID" '
+          map(select((.databaseId | tostring) == $id))
+          | .[0].headBranch // ""
+        ' <<<"$CI_RUNS_JSON"
+      } || true)"
+    fi
   fi
 
   EFFECTIVE_REF="$REF"
@@ -309,21 +413,27 @@ while :; do
   fi
 
   if is_main_ref "$EFFECTIVE_REF"; then
-    CHECK_RUNS_JSON="$(fetch_check_runs_json "$TARGET_SHA")"
-    if [[ "$CI_OK" != "true" && "$(required_check_runs_success "$CHECK_RUNS_JSON")" == "true" ]]; then
-      CI_OK="true"
-      CI_SOURCE="check-runs"
-    elif [[ "$CI_OK" != "true" ]]; then
-      CI_PENDING_REASON="$(summarize_required_check_runs "$CHECK_RUNS_JSON")"
-      CI_ASSOCIATED_PR_SUMMARY="$(summarize_associated_pr_ci "$TARGET_SHA" "$CI_RUNS_JSON")"
-      if [[ "$(required_check_runs_pending "$CHECK_RUNS_JSON")" == "true" ]]; then
-        CI_PENDING="true"
-      elif [[ -n "$CI_ASSOCIATED_PR_SUMMARY" ]]; then
-        CI_PENDING="true"
+    INCLUDE_DEPLOY="true"
+    if [[ "$EXTERNAL_OK" != "true" && "$CI_OK" != "true" ]]; then
+      CHECK_RUNS_JSON="$(fetch_check_runs_json "$TARGET_SHA")"
+      LEGACY_CHECK_RUN_SUMMARY="$(summarize_required_check_runs "$CHECK_RUNS_JSON")"
+      if [[ "$(required_check_runs_success "$CHECK_RUNS_JSON")" == "true" ]]; then
+        CI_OK="true"
+        CI_SOURCE="check-runs"
+        CI_PENDING="false"
+        CI_PENDING_REASON=""
+      else
+        CI_ASSOCIATED_PR_SUMMARY="$(summarize_associated_pr_ci "$TARGET_SHA" "$CI_RUNS_JSON")"
+        if [[ "$(required_check_runs_pending "$CHECK_RUNS_JSON")" == "true" ]]; then
+          CI_PENDING="true"
+          CI_PENDING_REASON="$LEGACY_CHECK_RUN_SUMMARY"
+        elif [[ -n "$CI_ASSOCIATED_PR_SUMMARY" ]]; then
+          CI_PENDING="true"
+        fi
       fi
     fi
   else
-    if [[ "$CI_OK" != "true" ]]; then
+    if [[ "$CI_OK" != "true" && -z "$CI_PENDING_REASON" ]]; then
       CI_PENDING_REASON="$(summarize_latest_run_state "$CI_RUNS_JSON" "$TARGET_SHA" "$SHA")"
       if [[ -n "$CI_PENDING_REASON" && "$CI_PENDING_REASON" == *"status=in_progress"* ]]; then
         CI_PENDING="true"
@@ -337,7 +447,7 @@ while :; do
   DEPLOY_PENDING="false"
   DEPLOY_PENDING_REASON=""
 
-  if is_main_ref "$EFFECTIVE_REF"; then
+  if is_main_ref "$EFFECTIVE_REF" && [[ "$EXTERNAL_OK" != "true" ]]; then
     DEPLOY_RUN_ID="$(find_successful_run_id "$DEPLOY_RUNS_JSON" "$TARGET_SHA" "$SHA")"
     if [[ -z "$DEPLOY_RUN_ID" ]]; then
       DEPLOY_PENDING_REASON="$(summarize_latest_run_state "$DEPLOY_RUNS_JSON" "$TARGET_SHA" "$SHA")"
@@ -351,7 +461,15 @@ while :; do
 
   if [[ "$CI_OK" == "true" ]]; then
     echo "CI success verified: source=$CI_SOURCE sha=$TARGET_SHA ref=$EFFECTIVE_REF${CI_RUN_ID:+ run_id=$CI_RUN_ID}"
+    if [[ "$CI_SOURCE" == "external-statuses" ]]; then
+      echo "Required status contexts: $EXTERNAL_SUMMARY"
+    fi
+
     if ! is_main_ref "$EFFECTIVE_REF"; then
+      exit 0
+    fi
+
+    if [[ "$CI_SOURCE" == "external-statuses" ]]; then
       exit 0
     fi
 
@@ -389,18 +507,19 @@ while :; do
     if [[ "$CI_PENDING" == "true" ]]; then
       echo "ERROR: CI verification is still pending for commit $TARGET_SHA."
       if [[ -n "$CI_PENDING_REASON" ]]; then
-        echo "Required main check-runs: $CI_PENDING_REASON"
+        echo "Required evidence: $CI_PENDING_REASON"
       fi
       if [[ -n "$CI_ASSOCIATED_PR_SUMMARY" ]]; then
         echo "Associated PR context: $CI_ASSOCIATED_PR_SUMMARY"
       fi
     else
       echo "ERROR: No successful CI evidence found for commit $TARGET_SHA."
+      echo "Required external statuses: $EXTERNAL_SUMMARY"
       echo "$CI_RUNS_JSON" | jq -r '.[] | "- run=\(.databaseId) branch=\(.headBranch) sha=\(.headSha) status=\(.status) conclusion=\(.conclusion)"'
       if is_main_ref "$EFFECTIVE_REF"; then
-        echo "Main fallback requires successful check-runs named \"CI Gate / CI Summary\" and \"CI Gate / Required E2E Gate\"."
-        if [[ -n "$CI_PENDING_REASON" ]]; then
-          echo "Observed main check-runs: $CI_PENDING_REASON"
+        echo "Legacy fallback requires successful check-runs named \"CI Gate / CI Summary\" and \"CI Gate / Required E2E Gate\" plus a valid Deploy Windows receipt."
+        if [[ -n "$LEGACY_CHECK_RUN_SUMMARY" ]]; then
+          echo "Observed legacy check-runs: $LEGACY_CHECK_RUN_SUMMARY"
         fi
         if [[ -n "$CI_ASSOCIATED_PR_SUMMARY" ]]; then
           echo "Associated PR context: $CI_ASSOCIATED_PR_SUMMARY"
@@ -412,10 +531,11 @@ while :; do
 
   if [[ -z "$DEPLOY_RUN_ID" ]]; then
     if [[ "$DEPLOY_PENDING" == "true" ]]; then
-      echo "ERROR: Deploy Windows verification is still pending for commit $TARGET_SHA."
+      echo "ERROR: legacy Deploy Windows verification is still pending for commit $TARGET_SHA."
       echo "Deploy state: $DEPLOY_PENDING_REASON"
     else
-      echo "ERROR: main requires successful Deploy Windows run for commit $TARGET_SHA."
+      echo "ERROR: main requires successful deploy readiness evidence for commit $TARGET_SHA."
+      echo "Required external statuses: $EXTERNAL_SUMMARY"
       echo "$DEPLOY_RUNS_JSON" | jq -r '.[] | "- run=\(.databaseId) branch=\(.headBranch) sha=\(.headSha) status=\(.status) conclusion=\(.conclusion)"'
       if [[ -n "$DEPLOY_PENDING_REASON" ]]; then
         echo "Observed Deploy Windows state: $DEPLOY_PENDING_REASON"

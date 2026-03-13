@@ -8,6 +8,10 @@ from dataclasses import dataclass
 
 DEFAULT_COMPOSE_FILE = "docker-compose.test.yml"
 DEFAULT_PROJECT = "zetherion-ai-test"
+SERVICE_SLOT_OFFSETS = {
+    "slot_a": 0,
+    "slot_b": 1000,
+}
 
 
 @dataclass(frozen=True)
@@ -16,6 +20,9 @@ class E2ERuntime:
     project_name: str
     run_id: str
     stack_root: str
+    host: str
+    service_slot: str
+    port_offset: int
     skills_port: int
     api_port: int
     cgs_gateway_port: int
@@ -27,23 +34,23 @@ class E2ERuntime:
 
     @property
     def skills_url(self) -> str:
-        return f"http://localhost:{self.skills_port}"
+        return f"http://{self.host}:{self.skills_port}"
 
     @property
     def api_url(self) -> str:
-        return f"http://localhost:{self.api_port}"
+        return f"http://{self.host}:{self.api_port}"
 
     @property
     def cgs_gateway_url(self) -> str:
-        return f"http://localhost:{self.cgs_gateway_port}"
+        return f"http://{self.host}:{self.cgs_gateway_port}"
 
     @property
     def qdrant_url(self) -> str:
-        return f"http://localhost:{self.qdrant_port}"
+        return f"http://{self.host}:{self.qdrant_port}"
 
     @property
     def postgres_dsn(self) -> str:
-        return f"postgresql://zetherion:password@localhost:{self.postgres_port}/zetherion"
+        return f"postgresql://zetherion:password@{self.host}:{self.postgres_port}/zetherion"
 
     def compose_base_command(self) -> list[str]:
         return ["docker", "compose", "-f", self.compose_file, "-p", self.project_name]
@@ -102,13 +109,20 @@ def get_runtime() -> E2ERuntime:
         return _runtime
 
     def _port(name: str, default: int) -> int:
-        return int(os.getenv(name, str(default)))
+        return int(os.getenv(name, str(default + slot_offset)))
+
+    requested_slot = os.getenv("E2E_SERVICE_SLOT", "slot_a").strip().lower() or "slot_a"
+    service_slot = requested_slot if requested_slot in SERVICE_SLOT_OFFSETS else "slot_a"
+    slot_offset = SERVICE_SLOT_OFFSETS[service_slot]
 
     _runtime = E2ERuntime(
         compose_file=os.getenv("COMPOSE_FILE", DEFAULT_COMPOSE_FILE),
         project_name=os.getenv("E2E_PROJECT_NAME", os.getenv("PROJECT", DEFAULT_PROJECT)),
         run_id=os.getenv("E2E_RUN_ID", "static"),
         stack_root=os.getenv("E2E_STACK_ROOT", ""),
+        host=os.getenv("E2E_RUNTIME_HOST", "localhost"),
+        service_slot=service_slot,
+        port_offset=slot_offset,
         skills_port=_port("E2E_SKILLS_HOST_PORT", 18080),
         api_port=_port("E2E_API_HOST_PORT", 28443),
         cgs_gateway_port=_port("E2E_CGS_GATEWAY_HOST_PORT", 28444),

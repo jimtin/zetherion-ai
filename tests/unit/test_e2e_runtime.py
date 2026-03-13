@@ -7,6 +7,8 @@ from types import SimpleNamespace
 
 
 def test_get_runtime_reads_dynamic_ports(monkeypatch) -> None:
+    monkeypatch.delenv("E2E_RUNTIME_HOST", raising=False)
+    monkeypatch.delenv("E2E_SERVICE_SLOT", raising=False)
     monkeypatch.setenv("E2E_PROJECT_NAME", "proj-123")
     monkeypatch.setenv("E2E_RUN_ID", "run-123")
     monkeypatch.setenv("E2E_STACK_ROOT", "/tmp/e2e-stack")
@@ -22,6 +24,8 @@ def test_get_runtime_reads_dynamic_ports(monkeypatch) -> None:
 
     assert runtime.project_name == "proj-123"
     assert runtime.run_id == "run-123"
+    assert runtime.service_slot == "slot_a"
+    assert runtime.port_offset == 0
     assert runtime.skills_url == "http://localhost:28003"
     assert runtime.postgres_dsn == "postgresql://zetherion:password@localhost:28007/zetherion"
     assert runtime.qdrant_url == "http://localhost:28008"
@@ -75,3 +79,18 @@ def test_service_running_reads_inspect_status(monkeypatch) -> None:
     monkeypatch.setattr(module.subprocess, "run", fake_run)
 
     assert runtime.service_running("postgres") is True
+
+
+def test_get_runtime_uses_slot_b_port_offset(monkeypatch) -> None:
+    monkeypatch.delenv("E2E_SKILLS_HOST_PORT", raising=False)
+    monkeypatch.delenv("E2E_POSTGRES_HOST_PORT", raising=False)
+    monkeypatch.setenv("E2E_SERVICE_SLOT", "slot_b")
+
+    module = importlib.import_module("tests.integration.e2e_runtime")
+    module._runtime = None
+    runtime = module.get_runtime()
+
+    assert runtime.service_slot == "slot_b"
+    assert runtime.port_offset == 1000
+    assert runtime.skills_port == 19080
+    assert runtime.postgres_port == 16432

@@ -22,6 +22,14 @@ def _requirement_ids(plan: dict[str, object]) -> set[str]:
     return {item["id"] for item in plan["requirements"]}  # type: ignore[index]
 
 
+def _required_path_ids(plan: dict[str, object]) -> set[str]:
+    return {item["id"] for item in plan["required_paths"]}  # type: ignore[index]
+
+
+def _lane_ids(plan: dict[str, object]) -> set[str]:
+    return {item["lane_id"] for item in plan["lanes"]}  # type: ignore[index]
+
+
 def test_api_route_change_requires_docs_bundle_and_mypy() -> None:
     module = _load_module()
     manifest = module.load_manifest()
@@ -123,6 +131,17 @@ def test_queue_manager_change_requires_unit_full() -> None:
     )
 
     assert _requirement_ids(plan) == {"bandit-src", "mypy-src", "unit-full"}
+    assert _required_path_ids(plan) == {
+        "queue_reliability",
+        "runtime_status_persistence",
+        "startup_readiness",
+    }
+    assert _lane_ids(plan) >= {
+        "z-unit-core",
+        "z-unit-runtime",
+        "z-int-runtime-queue",
+        "z-e2e-faults",
+    }
     assert plan["unmapped_protected_paths"] == []
 
 
@@ -174,6 +193,12 @@ def test_ci_support_script_change_requires_regression_packs() -> None:
         "ci-failure-attribution-regression-suite",
         "ci-receipt-regression-suite",
     }
+    assert _required_path_ids(plan) == {
+        "owner_ci_cutover",
+        "owner_ci_receipts",
+        "release_contracts",
+    }
+    assert _lane_ids(plan) >= {"z-unit-owner-ci", "z-release"}
     assert plan["unmapped_protected_paths"] == []
 
 

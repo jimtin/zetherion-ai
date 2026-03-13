@@ -2,6 +2,8 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$DeployPath = "C:\ZetherionAI",
     [Parameter(Mandatory = $false)]
+    [string]$WslDistribution = "Ubuntu",
+    [Parameter(Mandatory = $false)]
     [string]$StartupTaskName = "ZetherionStartupRecover",
     [Parameter(Mandatory = $false)]
     [string]$WatchdogTaskName = "ZetherionRuntimeWatchdog",
@@ -10,13 +12,19 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$CanaryTaskName = "ZetherionDiscordCanary",
     [Parameter(Mandatory = $false)]
+    [string]$CleanupTaskName = "ZetherionDiskCleanup",
+    [Parameter(Mandatory = $false)]
     [string]$LegacyTaskName = "ZetherionDockerAutoStart",
+    [Parameter(Mandatory = $false)]
+    [string]$TaskUser = "",
     [Parameter(Mandatory = $false)]
     [int]$WatchdogIntervalMinutes = 5,
     [Parameter(Mandatory = $false)]
     [int]$PromotionsIntervalMinutes = 10,
     [Parameter(Mandatory = $false)]
     [int]$CanaryIntervalMinutes = 360,
+    [Parameter(Mandatory = $false)]
+    [int]$CleanupIntervalMinutes = 180,
     [Parameter(Mandatory = $false)]
     [string]$OutputPath = "resilience-registration.json"
 )
@@ -32,6 +40,9 @@ if ($PromotionsIntervalMinutes -lt 1) {
 }
 if ($CanaryIntervalMinutes -lt 1) {
     throw "CanaryIntervalMinutes must be >= 1."
+}
+if ($CleanupIntervalMinutes -lt 1) {
+    throw "CleanupIntervalMinutes must be >= 1."
 }
 
 function Write-RegistrationResult {
@@ -96,49 +107,49 @@ function Get-RecoveryTaskRecord {
         [string]$ScriptNeedle
     )
 
-    $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-    if ($task) {
-        $enabled = [bool]$task.Settings.Enabled
-        $systemPrincipal = Is-ServiceAccountPrincipal -UserId $task.Principal.UserId
-        $actionMatches = Task-ActionContains -Task $task -Needle $ScriptNeedle
-        return [ordered]@{
-            exists = $true
-            enabled = $enabled
-            system_principal = $systemPrincipal
-            action_matches = $actionMatches
-            task_state = $task.State.ToString()
-            source = "scheduled_task_api"
-            passes = ($enabled -and $actionMatches -and $systemPrincipal)
-            degraded_pass = ($enabled -and $actionMatches)
+    try {
+        $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+        if ($task) {
+            $enabled = [bool]$task.Settings.Enabled
+            $principalUser = [string]$task.Principal.UserId
+            $wslCompatiblePrincipal = Test-WslCompatibleTaskPrincipal -UserId $principalUser
+            $actionMatches = Task-ActionContains -Task $task -Needle $ScriptNeedle
+            return [ordered]@{
+                exists = $true
+                enabled = $enabled
+                principal_user = $principalUser
+                system_principal = (Is-ServiceAccountPrincipal -UserId $principalUser)
+                wsl_compatible_principal = $wslCompatiblePrincipal
+                action_matches = $actionMatches
+                task_state = $task.State.ToString()
+                source = "scheduled_task_api"
+                passes = ($enabled -and $actionMatches -and $wslCompatiblePrincipal)
+                degraded_pass = $false
+            }
         }
     }
-
-    $query = @(& schtasks /Query /TN $TaskName /FO LIST 2>$null)
-    if ($LASTEXITCODE -eq 0 -and $query.Count -gt 0) {
-        $parsed = Parse-SchtasksListOutput -Lines $query
-        $status = ""
-        if ($parsed.ContainsKey("Status")) {
-            $status = [string]$parsed["Status"]
-        }
-        $enabled = -not ($status -match "Disabled")
-        $stateLooksActive = [bool]($status -match "Ready|Running|Queued")
-
+    catch {
         return [ordered]@{
-            exists = $true
-            enabled = [bool]$enabled
+            exists = $false
+            enabled = $false
+            principal_user = ""
             system_principal = $false
+            wsl_compatible_principal = $false
             action_matches = $false
-            task_state = $status
-            source = "schtasks_query_fallback"
-            passes = [bool]($enabled -and $stateLooksActive)
-            degraded_pass = [bool]($enabled -and $stateLooksActive)
+            task_state = "probe_error"
+            source = "scheduled_task_api_error"
+            passes = $false
+            degraded_pass = $false
+            error = $_.Exception.Message
         }
     }
 
     return [ordered]@{
         exists = $false
         enabled = $false
+        principal_user = ""
         system_principal = $false
+        wsl_compatible_principal = $false
         action_matches = $false
         task_state = "missing"
         source = "not_found"
@@ -162,6 +173,16 @@ function Is-ServiceAccountPrincipal {
     )
 }
 
+function Test-WslCompatibleTaskPrincipal {
+    param([string]$UserId)
+
+    if (-not $UserId) {
+        return $false
+    }
+
+    return -not (Is-ServiceAccountPrincipal -UserId $UserId)
+}
+
 function Get-RegistrationActor {
     try {
         $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -183,6 +204,33 @@ function Get-RegistrationActor {
     return "unknown"
 }
 
+function Resolve-TaskUser {
+    param([string]$RequestedUser)
+
+    if ($RequestedUser) {
+        if (-not (Test-WslCompatibleTaskPrincipal -UserId $RequestedUser)) {
+            throw "TaskUser must be a non-service Windows user principal."
+        }
+        return $RequestedUser
+    }
+
+    $candidate = Get-RegistrationActor
+    if (Test-WslCompatibleTaskPrincipal -UserId $candidate) {
+        return $candidate
+    }
+
+    $fallback = if ($env:USERDOMAIN -and $env:USERNAME) {
+        "$env:USERDOMAIN\$env:USERNAME"
+    } else {
+        [string]$env:USERNAME
+    }
+    if (Test-WslCompatibleTaskPrincipal -UserId $fallback) {
+        return $fallback
+    }
+
+    throw "TaskUser must resolve to a non-service Windows user principal."
+}
+
 function Test-IsElevated {
     try {
         $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -196,8 +244,21 @@ function Test-IsElevated {
     }
 }
 
+function Resolve-PowerShellExecutable {
+    foreach ($candidate in @("pwsh.exe", "powershell.exe")) {
+        $command = Get-Command $candidate -ErrorAction SilentlyContinue
+        if ($command -and $command.Source) {
+            return [string]$command.Source
+        }
+    }
+
+    throw "Unable to locate pwsh.exe or powershell.exe for scheduled task registration."
+}
+
 $registrationActor = Get-RegistrationActor
 $isElevated = Test-IsElevated
+$taskUser = Resolve-TaskUser -RequestedUser $TaskUser
+$powerShellExecutable = Resolve-PowerShellExecutable
 
 $result = [ordered]@{
     generated_at = [DateTime]::UtcNow.ToString("o")
@@ -206,6 +267,7 @@ $result = [ordered]@{
         watchdog_task_registered = $false
         promotions_task_registered = $false
         canary_task_registered = $false
+        cleanup_task_registered = $false
         legacy_task_disabled = $false
         recovery_tasks_registered = $false
     }
@@ -214,19 +276,25 @@ $result = [ordered]@{
         watchdog_task = $WatchdogTaskName
         promotions_task = $PromotionsTaskName
         canary_task = $CanaryTaskName
+        cleanup_task = $CleanupTaskName
         legacy_task = $LegacyTaskName
+        wsl_distribution = $WslDistribution
+        task_user = $taskUser
         deploy_path = $DeployPath
         watchdog_interval_minutes = $WatchdogIntervalMinutes
         promotions_interval_minutes = $PromotionsIntervalMinutes
         canary_interval_minutes = $CanaryIntervalMinutes
+        cleanup_interval_minutes = $CleanupIntervalMinutes
         startup_task_probe = $null
         watchdog_task_probe = $null
         promotions_task_probe = $null
         canary_task_probe = $null
+        cleanup_task_probe = $null
         bootstrap_required = $false
         failure_code = ""
         registration_actor = $registrationActor
         is_elevated = [bool]$isElevated
+        powershell_executable = $powerShellExecutable
         actions_taken = @()
         warnings = @()
     }
@@ -240,6 +308,7 @@ try {
     $promotionsWatchScriptPath = Join-Path $DeployPath "scripts\windows\promotions-watch.ps1"
     $canaryScriptPath = Join-Path $DeployPath "scripts\windows\discord-canary-runner.ps1"
     $canaryPythonScriptPath = Join-Path $DeployPath "scripts\windows\discord-canary.py"
+    $cleanupScriptPath = Join-Path $DeployPath "scripts\windows\disk-cleanup.ps1"
 
     if (-not (Test-Path $startupScriptPath)) {
         $sourceStartupScriptPath = Join-Path $PSScriptRoot "startup-recover.ps1"
@@ -301,6 +370,18 @@ try {
         Copy-Item -Path $sourceCanaryPythonScriptPath -Destination $canaryPythonScriptPath -Force
         $result.details.actions_taken += "bootstrapped_recovery_script:discord-canary.py"
     }
+    if (-not (Test-Path $cleanupScriptPath)) {
+        $sourceCleanupScriptPath = Join-Path $PSScriptRoot "disk-cleanup.ps1"
+        if (-not (Test-Path $sourceCleanupScriptPath)) {
+            throw "Disk cleanup script not found at $cleanupScriptPath or $sourceCleanupScriptPath"
+        }
+        $cleanupParent = Split-Path -Parent $cleanupScriptPath
+        if ($cleanupParent -and -not (Test-Path $cleanupParent)) {
+            New-Item -ItemType Directory -Path $cleanupParent -Force | Out-Null
+        }
+        Copy-Item -Path $sourceCleanupScriptPath -Destination $cleanupScriptPath -Force
+        $result.details.actions_taken += "bootstrapped_recovery_script:disk-cleanup.ps1"
+    }
 
     $legacyTask = Get-ScheduledTask -TaskName $LegacyTaskName -ErrorAction SilentlyContinue
     if ($legacyTask) {
@@ -320,107 +401,160 @@ try {
     $watchdogProbe = Get-RecoveryTaskRecord -TaskName $WatchdogTaskName -ScriptNeedle "runtime-watchdog.ps1"
     $promotionsProbe = Get-RecoveryTaskRecord -TaskName $PromotionsTaskName -ScriptNeedle "promotions-watch.ps1"
     $canaryProbe = Get-RecoveryTaskRecord -TaskName $CanaryTaskName -ScriptNeedle "discord-canary-runner.ps1"
+    $cleanupProbe = Get-RecoveryTaskRecord -TaskName $CleanupTaskName -ScriptNeedle "disk-cleanup.ps1"
     $result.details.startup_task_probe = $startupProbe
     $result.details.watchdog_task_probe = $watchdogProbe
     $result.details.promotions_task_probe = $promotionsProbe
     $result.details.canary_task_probe = $canaryProbe
+    $result.details.cleanup_task_probe = $cleanupProbe
 
-    if ($startupProbe.passes -and $watchdogProbe.passes -and $promotionsProbe.passes -and $canaryProbe.passes) {
+    if ($startupProbe.passes -and $watchdogProbe.passes -and $promotionsProbe.passes -and $canaryProbe.passes -and $cleanupProbe.passes) {
         $result.details.actions_taken += "resilience_tasks_already_registered"
         $result.checks.startup_task_registered = $true
         $result.checks.watchdog_task_registered = $true
         $result.checks.promotions_task_registered = $true
         $result.checks.canary_task_registered = $true
+        $result.checks.cleanup_task_registered = $true
     } else {
         $registrationAccessDenied = $false
         try {
-            $principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\NETWORK SERVICE" -LogonType ServiceAccount -RunLevel Highest
+            $principal = New-ScheduledTaskPrincipal -UserId $taskUser -LogonType S4U -RunLevel Highest
 
-            $startupAction = New-ScheduledTaskAction `
-                -Execute "pwsh.exe" `
-                -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$startupScriptPath`" -DeployPath `"$DeployPath`""
-            $startupTrigger = New-ScheduledTaskTrigger -AtStartup
-            $startupSettings = New-ScheduledTaskSettingsSet `
-                -StartWhenAvailable `
-                -AllowStartIfOnBatteries `
-                -DontStopIfGoingOnBatteries `
-                -ExecutionTimeLimit (New-TimeSpan -Hours 2)
-            $startupTask = New-ScheduledTask `
-                -Action $startupAction `
-                -Trigger $startupTrigger `
-                -Principal $principal `
-                -Settings $startupSettings `
-                -Description "Recover Zetherion runtime at host startup."
-            Register-ScheduledTask -TaskName $StartupTaskName -InputObject $startupTask -Force | Out-Null
-            $result.details.actions_taken += "registered_startup_task:$StartupTaskName"
+            $startupNeedsRegistration = -not ($startupProbe.passes -or $startupProbe.degraded_pass)
+            $watchdogNeedsRegistration = -not ($watchdogProbe.passes -or $watchdogProbe.degraded_pass)
+            $promotionsNeedsRegistration = -not ($promotionsProbe.passes -or $promotionsProbe.degraded_pass)
+            $canaryNeedsRegistration = -not ($canaryProbe.passes -or $canaryProbe.degraded_pass)
+            $cleanupNeedsRegistration = -not ($cleanupProbe.passes -or $cleanupProbe.degraded_pass)
 
-            $watchdogAction = New-ScheduledTaskAction `
-                -Execute "pwsh.exe" `
-                -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$watchdogScriptPath`" -DeployPath `"$DeployPath`""
-            $watchdogTrigger = New-ScheduledTaskTrigger `
-                -Once `
-                -At ((Get-Date).AddMinutes(1)) `
-                -RepetitionInterval (New-TimeSpan -Minutes $WatchdogIntervalMinutes) `
-                -RepetitionDuration (New-TimeSpan -Days 30)
-            $watchdogSettings = New-ScheduledTaskSettingsSet `
-                -StartWhenAvailable `
-                -AllowStartIfOnBatteries `
-                -DontStopIfGoingOnBatteries `
-                -ExecutionTimeLimit (New-TimeSpan -Minutes 20)
-            $watchdogTask = New-ScheduledTask `
-                -Action $watchdogAction `
-                -Trigger $watchdogTrigger `
-                -Principal $principal `
-                -Settings $watchdogSettings `
-                -Description "Periodic runtime watchdog for Zetherion."
-            Register-ScheduledTask -TaskName $WatchdogTaskName -InputObject $watchdogTask -Force | Out-Null
-            $result.details.actions_taken += "registered_watchdog_task:$WatchdogTaskName"
+            if ($startupNeedsRegistration) {
+                $startupAction = New-ScheduledTaskAction `
+                    -Execute $powerShellExecutable `
+                    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$startupScriptPath`" -DeployPath `"$DeployPath`" -WslDistribution `"$WslDistribution`""
+                $startupTrigger = New-ScheduledTaskTrigger -AtStartup
+                $startupSettings = New-ScheduledTaskSettingsSet `
+                    -StartWhenAvailable `
+                    -AllowStartIfOnBatteries `
+                    -DontStopIfGoingOnBatteries `
+                    -ExecutionTimeLimit (New-TimeSpan -Hours 2)
+                $startupTask = New-ScheduledTask `
+                    -Action $startupAction `
+                    -Trigger $startupTrigger `
+                    -Principal $principal `
+                    -Settings $startupSettings `
+                    -Description "Recover Zetherion runtime at host startup."
+                Register-ScheduledTask -TaskName $StartupTaskName -InputObject $startupTask -Force | Out-Null
+                $result.details.actions_taken += "registered_startup_task:$StartupTaskName"
+            } else {
+                $result.details.actions_taken += "startup_task_already_registered:$StartupTaskName"
+            }
 
-            $promotionsAction = New-ScheduledTaskAction `
-                -Execute "pwsh.exe" `
-                -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$promotionsWatchScriptPath`" -DeployPath `"$DeployPath`""
-            $promotionsStartupTrigger = New-ScheduledTaskTrigger -AtStartup
-            $promotionsRecurringTrigger = New-ScheduledTaskTrigger `
-                -Once `
-                -At ((Get-Date).AddMinutes(2)) `
-                -RepetitionInterval (New-TimeSpan -Minutes $PromotionsIntervalMinutes) `
-                -RepetitionDuration (New-TimeSpan -Days 3650)
-            $promotionsSettings = New-ScheduledTaskSettingsSet `
-                -StartWhenAvailable `
-                -AllowStartIfOnBatteries `
-                -DontStopIfGoingOnBatteries `
-                -ExecutionTimeLimit (New-TimeSpan -Minutes 20)
-            $promotionsTask = New-ScheduledTask `
-                -Action $promotionsAction `
-                -Trigger @($promotionsStartupTrigger, $promotionsRecurringTrigger) `
-                -Principal $principal `
-                -Settings $promotionsSettings `
-                -Description "Process post-deploy promotions (blog + release) on startup and periodic schedule."
-            Register-ScheduledTask -TaskName $PromotionsTaskName -InputObject $promotionsTask -Force | Out-Null
-            $result.details.actions_taken += "registered_promotions_task:$PromotionsTaskName"
+            if ($watchdogNeedsRegistration) {
+                $watchdogAction = New-ScheduledTaskAction `
+                    -Execute $powerShellExecutable `
+                    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$watchdogScriptPath`" -DeployPath `"$DeployPath`" -WslDistribution `"$WslDistribution`""
+                $watchdogTrigger = New-ScheduledTaskTrigger `
+                    -Once `
+                    -At ((Get-Date).AddMinutes(1)) `
+                    -RepetitionInterval (New-TimeSpan -Minutes $WatchdogIntervalMinutes) `
+                    -RepetitionDuration (New-TimeSpan -Days 30)
+                $watchdogSettings = New-ScheduledTaskSettingsSet `
+                    -StartWhenAvailable `
+                    -AllowStartIfOnBatteries `
+                    -DontStopIfGoingOnBatteries `
+                    -ExecutionTimeLimit (New-TimeSpan -Minutes 20)
+                $watchdogTask = New-ScheduledTask `
+                    -Action $watchdogAction `
+                    -Trigger $watchdogTrigger `
+                    -Principal $principal `
+                    -Settings $watchdogSettings `
+                    -Description "Periodic runtime watchdog for Zetherion."
+                Register-ScheduledTask -TaskName $WatchdogTaskName -InputObject $watchdogTask -Force | Out-Null
+                $result.details.actions_taken += "registered_watchdog_task:$WatchdogTaskName"
+            } else {
+                $result.details.actions_taken += "watchdog_task_already_registered:$WatchdogTaskName"
+            }
 
-            $canaryAction = New-ScheduledTaskAction `
-                -Execute "pwsh.exe" `
-                -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$canaryScriptPath`" -DeployPath `"$DeployPath`""
-            $canaryStartupTrigger = New-ScheduledTaskTrigger -AtStartup
-            $canaryRecurringTrigger = New-ScheduledTaskTrigger `
-                -Once `
-                -At ((Get-Date).AddMinutes(3)) `
-                -RepetitionInterval (New-TimeSpan -Minutes $CanaryIntervalMinutes) `
-                -RepetitionDuration (New-TimeSpan -Days 3650)
-            $canarySettings = New-ScheduledTaskSettingsSet `
-                -StartWhenAvailable `
-                -AllowStartIfOnBatteries `
-                -DontStopIfGoingOnBatteries `
-                -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
-            $canaryTask = New-ScheduledTask `
-                -Action $canaryAction `
-                -Trigger @($canaryStartupTrigger, $canaryRecurringTrigger) `
-                -Principal $principal `
-                -Settings $canarySettings `
-                -Description "Run the isolated Discord production canary on startup and periodic schedule."
-            Register-ScheduledTask -TaskName $CanaryTaskName -InputObject $canaryTask -Force | Out-Null
-            $result.details.actions_taken += "registered_canary_task:$CanaryTaskName"
+            if ($promotionsNeedsRegistration) {
+                $promotionsAction = New-ScheduledTaskAction `
+                    -Execute $powerShellExecutable `
+                    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$promotionsWatchScriptPath`" -DeployPath `"$DeployPath`" -WslDistribution `"$WslDistribution`""
+                $promotionsStartupTrigger = New-ScheduledTaskTrigger -AtStartup
+                $promotionsRecurringTrigger = New-ScheduledTaskTrigger `
+                    -Once `
+                    -At ((Get-Date).AddMinutes(2)) `
+                    -RepetitionInterval (New-TimeSpan -Minutes $PromotionsIntervalMinutes) `
+                    -RepetitionDuration (New-TimeSpan -Days 3650)
+                $promotionsSettings = New-ScheduledTaskSettingsSet `
+                    -StartWhenAvailable `
+                    -AllowStartIfOnBatteries `
+                    -DontStopIfGoingOnBatteries `
+                    -ExecutionTimeLimit (New-TimeSpan -Minutes 20)
+                $promotionsTask = New-ScheduledTask `
+                    -Action $promotionsAction `
+                    -Trigger @($promotionsStartupTrigger, $promotionsRecurringTrigger) `
+                    -Principal $principal `
+                    -Settings $promotionsSettings `
+                    -Description "Process post-deploy promotions (blog + release) on startup and periodic schedule."
+                Register-ScheduledTask -TaskName $PromotionsTaskName -InputObject $promotionsTask -Force | Out-Null
+                $result.details.actions_taken += "registered_promotions_task:$PromotionsTaskName"
+            } else {
+                $result.details.actions_taken += "promotions_task_already_registered:$PromotionsTaskName"
+            }
+
+            if ($canaryNeedsRegistration) {
+                $canaryAction = New-ScheduledTaskAction `
+                    -Execute $powerShellExecutable `
+                    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$canaryScriptPath`" -DeployPath `"$DeployPath`" -WslDistribution `"$WslDistribution`""
+                $canaryStartupTrigger = New-ScheduledTaskTrigger -AtStartup
+                $canaryRecurringTrigger = New-ScheduledTaskTrigger `
+                    -Once `
+                    -At ((Get-Date).AddMinutes(3)) `
+                    -RepetitionInterval (New-TimeSpan -Minutes $CanaryIntervalMinutes) `
+                    -RepetitionDuration (New-TimeSpan -Days 3650)
+                $canarySettings = New-ScheduledTaskSettingsSet `
+                    -StartWhenAvailable `
+                    -AllowStartIfOnBatteries `
+                    -DontStopIfGoingOnBatteries `
+                    -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+                $canaryTask = New-ScheduledTask `
+                    -Action $canaryAction `
+                    -Trigger @($canaryStartupTrigger, $canaryRecurringTrigger) `
+                    -Principal $principal `
+                    -Settings $canarySettings `
+                    -Description "Run the isolated Discord production canary on startup and periodic schedule."
+                Register-ScheduledTask -TaskName $CanaryTaskName -InputObject $canaryTask -Force | Out-Null
+                $result.details.actions_taken += "registered_canary_task:$CanaryTaskName"
+            } else {
+                $result.details.actions_taken += "canary_task_already_registered:$CanaryTaskName"
+            }
+
+            if ($cleanupNeedsRegistration) {
+                $cleanupAction = New-ScheduledTaskAction `
+                    -Execute $powerShellExecutable `
+                    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$cleanupScriptPath`" -CiRoot `"C:\ZetherionCI`" -WslDistribution `"$WslDistribution`""
+                $cleanupStartupTrigger = New-ScheduledTaskTrigger -AtStartup
+                $cleanupRecurringTrigger = New-ScheduledTaskTrigger `
+                    -Once `
+                    -At ((Get-Date).AddMinutes(4)) `
+                    -RepetitionInterval (New-TimeSpan -Minutes $CleanupIntervalMinutes) `
+                    -RepetitionDuration (New-TimeSpan -Days 3650)
+                $cleanupSettings = New-ScheduledTaskSettingsSet `
+                    -StartWhenAvailable `
+                    -AllowStartIfOnBatteries `
+                    -DontStopIfGoingOnBatteries `
+                    -ExecutionTimeLimit (New-TimeSpan -Minutes 45)
+                $cleanupTask = New-ScheduledTask `
+                    -Action $cleanupAction `
+                    -Trigger @($cleanupStartupTrigger, $cleanupRecurringTrigger) `
+                    -Principal $principal `
+                    -Settings $cleanupSettings `
+                    -Description "Prune stale CI artifacts and Docker caches on startup and periodic schedule."
+                Register-ScheduledTask -TaskName $CleanupTaskName -InputObject $cleanupTask -Force | Out-Null
+                $result.details.actions_taken += "registered_cleanup_task:$CleanupTaskName"
+            } else {
+                $result.details.actions_taken += "cleanup_task_already_registered:$CleanupTaskName"
+            }
+            $result.details.actions_taken += "registered_task_user:$taskUser"
         } catch {
             $message = $_.Exception.Message
             if ($message -and $message -like "*Access is denied*") {
@@ -436,10 +570,12 @@ try {
         $watchdogProbe = Get-RecoveryTaskRecord -TaskName $WatchdogTaskName -ScriptNeedle "runtime-watchdog.ps1"
         $promotionsProbe = Get-RecoveryTaskRecord -TaskName $PromotionsTaskName -ScriptNeedle "promotions-watch.ps1"
         $canaryProbe = Get-RecoveryTaskRecord -TaskName $CanaryTaskName -ScriptNeedle "discord-canary-runner.ps1"
+        $cleanupProbe = Get-RecoveryTaskRecord -TaskName $CleanupTaskName -ScriptNeedle "disk-cleanup.ps1"
         $result.details.startup_task_probe = $startupProbe
         $result.details.watchdog_task_probe = $watchdogProbe
         $result.details.promotions_task_probe = $promotionsProbe
         $result.details.canary_task_probe = $canaryProbe
+        $result.details.cleanup_task_probe = $cleanupProbe
 
         $result.checks.startup_task_registered = [bool](
             $startupProbe.passes -or $startupProbe.degraded_pass
@@ -453,6 +589,9 @@ try {
         $result.checks.canary_task_registered = [bool](
             $canaryProbe.passes -or $canaryProbe.degraded_pass
         )
+        $result.checks.cleanup_task_registered = [bool](
+            $cleanupProbe.passes -or $cleanupProbe.degraded_pass
+        )
 
         if ($registrationAccessDenied) {
             $missingTasks = @()
@@ -460,6 +599,7 @@ try {
             if (-not $watchdogProbe.exists) { $missingTasks += $WatchdogTaskName }
             if (-not $promotionsProbe.exists) { $missingTasks += $PromotionsTaskName }
             if (-not $canaryProbe.exists) { $missingTasks += $CanaryTaskName }
+            if (-not $cleanupProbe.exists) { $missingTasks += $CleanupTaskName }
 
             if ($missingTasks.Count -gt 0) {
                 $result.details.bootstrap_required = $true
@@ -482,6 +622,7 @@ try {
         $result.checks.recovery_tasks_registered -and
         $result.checks.promotions_task_registered -and
         $result.checks.canary_task_registered -and
+        $result.checks.cleanup_task_registered -and
         $result.checks.legacy_task_disabled
     ) {
         "success"

@@ -96,7 +96,7 @@ class AutomergeGuardrails:
     max_changed_files: int = 120
     max_additions: int = 6000
     max_deletions: int = 3000
-    required_checks: tuple[str, ...] = ("CI/CD Pipeline",)
+    required_checks: tuple[str, ...] = ("zetherion/merge-readiness",)
     forbidden_actions: tuple[str, ...] = (
         "git.force_push",
         "git.reset.hard",

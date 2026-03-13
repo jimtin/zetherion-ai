@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import UTC, datetime
+import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
@@ -1290,6 +1291,68 @@ class TestQueueManagerWorkerLoop:
 
             await mgr.start()
             await mgr.stop()  # Should not raise despite requeue error
+
+    def test_queue_manager_stops_accepting_work_after_repeated_worker_errors(self) -> None:
+        storage = AsyncMock(spec=QueueStorage)
+        processors = MagicMock(spec=QueueProcessors)
+        mgr = QueueManager(storage=storage, processors=processors)
+
+        for _ in range(3):
+            mgr._note_worker_error(worker="interactive-0", exc=RuntimeError("db unavailable"))
+
+        assert mgr.is_accepting_work is False
+        assert mgr._last_worker_error is not None
+        assert mgr._last_worker_error["error_type"] == "RuntimeError"
+
+    def test_queue_manager_recovers_accepting_work_after_success(self) -> None:
+        storage = AsyncMock(spec=QueueStorage)
+        processors = MagicMock(spec=QueueProcessors)
+        mgr = QueueManager(storage=storage, processors=processors)
+        mgr._running = True
+        mgr._register_worker("interactive-0", poll_ms=100)
+
+        for _ in range(3):
+            mgr._note_worker_error(worker="interactive-0", exc=RuntimeError("db unavailable"))
+
+        assert mgr.is_accepting_work is False
+
+        mgr._note_worker_success(worker="interactive-0")
+
+        assert mgr.is_accepting_work is True
+        assert mgr._last_worker_error is None
+        assert mgr._consecutive_worker_errors == 0
+
+    def test_queue_manager_marks_stale_worker_unhealthy(self) -> None:
+        storage = AsyncMock(spec=QueueStorage)
+        processors = MagicMock(spec=QueueProcessors)
+        mgr = QueueManager(storage=storage, processors=processors)
+        mgr._running = True
+        mgr._worker_last_heartbeat["interactive-0"] = 100.0
+        mgr._worker_idle_timeout_seconds["interactive-0"] = 5.0
+
+        with patch.object(time, "monotonic", return_value=106.0):
+            assert mgr.is_accepting_work is False
+            assert mgr._stale_workers() == ["interactive-0"]
+
+    @pytest.mark.asyncio
+    async def test_queue_status_reports_dead_and_stale_workers(self) -> None:
+        storage = AsyncMock(spec=QueueStorage)
+        storage.get_status_counts.return_value = {"queued": 0}
+        processors = MagicMock(spec=QueueProcessors)
+        mgr = QueueManager(storage=storage, processors=processors)
+        mgr._running = True
+        mgr._worker_last_heartbeat["interactive-0"] = 100.0
+        mgr._worker_idle_timeout_seconds["interactive-0"] = 5.0
+        dead_task: asyncio.Task[None] = MagicMock()
+        dead_task.done.return_value = True
+        dead_task.cancelled.return_value = False
+        mgr._worker_names_by_task[dead_task] = "background-0"
+
+        with patch.object(time, "monotonic", return_value=107.0):
+            status = await mgr.get_status()
+
+        assert status["dead_workers"] == ["background-0"]
+        assert status["stale_workers"] == ["interactive-0"]
 
 
 class TestQueueManagerEnqueueWithStringTaskType:

@@ -13,7 +13,7 @@ from zetherion_ai.announcements.storage import (
     AnnouncementEvent,
     AnnouncementRepository,
 )
-from zetherion_ai.logging import get_logger
+from zetherion_ai.logging import exception_fields, get_logger
 
 log = get_logger("zetherion_ai.announcements.dispatcher")
 
@@ -163,8 +163,11 @@ class AnnouncementDispatcher:
                     await asyncio.sleep(self._poll_interval_seconds)
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                log.exception("announcement_dispatch_cycle_failed")
+            except Exception as exc:
+                log.exception(
+                    "announcement_dispatch_cycle_failed",
+                    **exception_fields(exc),
+                )
                 await asyncio.sleep(self._poll_interval_seconds)
 
     async def _dispatch_delivery(self, delivery: AnnouncementDelivery) -> None:
@@ -247,6 +250,7 @@ class AnnouncementDispatcher:
                 "announcement_delivery_failed_unhandled",
                 delivery_id=delivery.delivery_id,
                 event_id=delivery.event_id,
+                **exception_fields(exc),
             )
 
     def _retry_delay_seconds(self, retry_count: int) -> int:

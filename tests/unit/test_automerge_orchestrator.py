@@ -43,7 +43,7 @@ async def test_execute_merges_when_guardrails_and_checks_pass() -> None:
         list_check_runs=AsyncMock(
             return_value=[
                 {
-                    "name": "CI/CD Pipeline",
+                    "name": "zetherion/merge-readiness",
                     "status": "completed",
                     "conclusion": "success",
                 }
@@ -61,7 +61,7 @@ async def test_execute_merges_when_guardrails_and_checks_pass() -> None:
         head_branch="codex/automerge-1",
         guardrails=AutomergeGuardrails(
             allowed_paths=("src/", "tests/"),
-            required_checks=("CI/CD Pipeline",),
+            required_checks=("zetherion/merge-readiness",),
             max_changed_files=10,
             max_additions=500,
             max_deletions=250,
@@ -116,7 +116,7 @@ async def test_execute_blocks_when_required_checks_are_not_green() -> None:
         list_check_runs=AsyncMock(
             return_value=[
                 {
-                    "name": "CI/CD Pipeline",
+                    "name": "zetherion/merge-readiness",
                     "status": "completed",
                     "conclusion": "failure",
                 }
@@ -130,7 +130,7 @@ async def test_execute_blocks_when_required_checks_are_not_green() -> None:
         head_branch="codex/automerge-1",
         guardrails=AutomergeGuardrails(
             allowed_paths=("src/",),
-            required_checks=("CI/CD Pipeline",),
+            required_checks=("zetherion/merge-readiness",),
         ),
     )
 
@@ -154,7 +154,7 @@ async def test_execute_flags_rollback_required_on_post_merge_validation_failure(
         list_check_runs=AsyncMock(
             return_value=[
                 {
-                    "name": "CI/CD Pipeline",
+                    "name": "zetherion/merge-readiness",
                     "status": "completed",
                     "conclusion": "success",
                 }
@@ -168,7 +168,7 @@ async def test_execute_flags_rollback_required_on_post_merge_validation_failure(
         head_branch="codex/automerge-1",
         guardrails=AutomergeGuardrails(
             allowed_paths=("src/",),
-            required_checks=("CI/CD Pipeline",),
+            required_checks=("zetherion/merge-readiness",),
         ),
         post_merge_validation_passed=False,
     )

@@ -1,13 +1,6 @@
 name: Deploy Windows
 
 on:
-  workflow_run:
-    workflows:
-      - CI/CD Pipeline
-    types:
-      - completed
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       sha:
@@ -30,7 +23,6 @@ jobs:
     runs-on:
       - self-hosted
       - windows
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     permissions:
       contents: read
       actions: read
@@ -51,30 +43,18 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = "Stop"
 
-          $eventName = "${{ github.event_name }}"
-          $targetSha = ""
-          $targetRef = ""
-          $sourceWorkflowRunId = ""
+          $targetRef = "${{ inputs.ref }}"
+          if (-not $targetRef) {
+            $targetRef = "refs/heads/main"
+          }
 
-          if ($eventName -eq "workflow_run") {
-            $targetSha = "${{ github.event.workflow_run.head_sha }}"
-            $targetRef = "refs/heads/${{ github.event.workflow_run.head_branch }}"
-            $sourceWorkflowRunId = "${{ github.event.workflow_run.id }}"
-          } else {
-            $targetRef = "${{ inputs.ref }}"
-            if (-not $targetRef) {
-              $targetRef = "refs/heads/main"
+          $targetSha = "${{ inputs.sha }}"
+          if (-not $targetSha) {
+            $lsRemote = git ls-remote "https://github.com/${{ github.repository }}.git" $targetRef
+            if (-not $lsRemote) {
+              throw "Unable to resolve SHA for ref: $targetRef"
             }
-
-            $targetSha = "${{ inputs.sha }}"
-            if (-not $targetSha) {
-              $lsRemote = git ls-remote "https://github.com/${{ github.repository }}.git" $targetRef
-              if (-not $lsRemote) {
-                throw "Unable to resolve SHA for ref: $targetRef"
-              }
-              $targetSha = ($lsRemote -split "\s+")[0]
-            }
-            $sourceWorkflowRunId = "${{ github.run_id }}"
+            $targetSha = ($lsRemote -split "\s+")[0]
           }
 
           if (-not $targetSha) {
@@ -83,7 +63,7 @@ jobs:
 
           "target_sha=$targetSha" >> $env:GITHUB_OUTPUT
           "target_ref=$targetRef" >> $env:GITHUB_OUTPUT
-          "source_workflow_run_id=$sourceWorkflowRunId" >> $env:GITHUB_OUTPUT
+          "source_workflow_run_id=${{ github.run_id }}" >> $env:GITHUB_OUTPUT
 
       - name: Checkout deployment scripts for target commit
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd

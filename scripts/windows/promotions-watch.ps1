@@ -2,6 +2,8 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$DeployPath = "C:\ZetherionAI",
     [Parameter(Mandatory = $false)]
+    [string]$WslDistribution = "Ubuntu",
+    [Parameter(Mandatory = $false)]
     [string]$QueuePath = "C:\ZetherionAI\data\promotions\queue.json",
     [Parameter(Mandatory = $false)]
     [string]$StatePath = "C:\ZetherionAI\data\promotions\watch-state.json",

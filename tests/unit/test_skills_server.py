@@ -15,6 +15,14 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
+from zetherion_ai.announcements.policy import AnnouncementPolicyDecision
+from zetherion_ai.announcements.storage import (
+    AnnouncementDelivery,
+    AnnouncementPreferencePatch,
+    AnnouncementReceipt,
+    AnnouncementSeverity,
+    AnnouncementUserPreferences,
+)
 from zetherion_ai.skills.base import (
     HeartbeatAction,
     SkillMetadata,
@@ -319,6 +327,16 @@ class TestSkillsServerEndpoints:
             )
             queue_storage.count_stale_processing = AsyncMock(return_value=0)
             server._get_runtime_status_store = AsyncMock(return_value=fake_store)  # type: ignore[method-assign]
+            server._runtime_external_services_domain = AsyncMock(  # type: ignore[method-assign]
+                return_value={
+                    "key": "external_services",
+                    "label": "External Services",
+                    "status": "healthy",
+                    "summary": "Required external service dependencies are reachable.",
+                    "details": {"available_collections": ["user_profiles"]},
+                    "incident_type": None,
+                }
+            )
 
             async with TestClient(TestServer(app)) as client:
                 resp = await client.get(
@@ -333,6 +351,8 @@ class TestSkillsServerEndpoints:
         assert "skills" in keys
         assert "message_queue" in keys
         assert "discord_bot" in keys
+        assert "announcement_dispatcher" in keys
+        assert "external_services" in keys
         assert "release_verification" in keys
 
     async def test_handle_request_success(self, client, mock_registry):
@@ -572,6 +592,588 @@ class TestSkillsServerEndpoints:
             headers={"X-API-Secret": "test-secret"},
         )
         assert resp.status == 200
+
+
+class TestSkillsServerAnnouncements:
+    """Tests for announcement helper and handler flows."""
+
+    def test_announcement_helper_payloads_and_parsing(self, mock_registry):
+        server = SkillsServer(registry=mock_registry)
+        updated_at = datetime(2026, 3, 13, 12, 0, tzinfo=UTC)
+        preferences = AnnouncementUserPreferences(
+            user_id=42,
+            timezone="Australia/Sydney",
+            digest_enabled=False,
+            digest_window_local="18:30",
+            immediate_categories=["deploy.failed"],
+            muted_categories=["insight.summary"],
+            max_immediate_per_hour=3,
+            updated_at=updated_at,
+        )
+
+        assert server._announcement_preferences_payload(preferences) == {
+            "user_id": 42,
+            "timezone": "Australia/Sydney",
+            "digest_enabled": False,
+            "digest_window_local": "18:30",
+            "immediate_categories": ["deploy.failed"],
+            "muted_categories": ["insight.summary"],
+            "max_immediate_per_hour": 3,
+            "updated_at": updated_at.isoformat(),
+        }
+        assert server._announcement_receipt_payload(
+            status="scheduled",
+            event_id="evt-1",
+            scheduled_for=updated_at,
+            reason_code="digest_window",
+        ) == {
+            "status": "scheduled",
+            "event_id": "evt-1",
+            "scheduled_for": updated_at.isoformat(),
+            "reason_code": "digest_window",
+        }
+
+        parsed = server._parse_announcement_event(
+            {
+                "source": "owner-ci",
+                "category": "deploy.failed",
+                "severity": "high",
+                "title": "Deploy failed",
+                "body": "The deployment failed during verification.",
+                "target_user_id": "42",
+                "tenant_id": "tenant-1",
+                "occurred_at": "2026-03-13T14:00:00",
+                "fingerprint": "deploy-failed",
+                "idempotency_key": "dedupe-1",
+                "payload": {"sha": "abc123"},
+                "state": "accepted",
+                "recipient": {
+                    "channel": "Email",
+                    "routing_key": "ops",
+                    "target_user_id": "44",
+                    "webhook_url": "https://example.test/hook",
+                    "email": "OWNER@EXAMPLE.COM",
+                    "display_name": " Ops ",
+                    "metadata": {"team": "ops"},
+                },
+            }
+        )
+        assert parsed.source == "owner-ci"
+        assert parsed.category == "deploy.failed"
+        assert parsed.target_user_id == 42
+        assert parsed.recipient is not None
+        assert parsed.recipient.channel == "email"
+        assert parsed.recipient.target_user_id == 44
+        assert parsed.recipient.email == "owner@example.com"
+        assert parsed.recipient.display_name == "Ops"
+        assert parsed.payload == {"sha": "abc123"}
+        assert parsed.occurred_at is not None
+        assert parsed.occurred_at.tzinfo is UTC
+
+        with pytest.raises(ValueError, match="Missing source"):
+            server._parse_announcement_event(
+                {
+                    "source": "",
+                    "category": "deploy.failed",
+                    "title": "x",
+                    "body": "y",
+                    "target_user_id": 1,
+                }
+            )
+        with pytest.raises(ValueError, match="Invalid target_user_id"):
+            server._parse_announcement_event(
+                {
+                    "source": "owner-ci",
+                    "category": "deploy.failed",
+                    "title": "x",
+                    "body": "y",
+                    "target_user_id": True,
+                }
+            )
+        with pytest.raises(ValueError, match="Invalid recipient"):
+            server._parse_announcement_event(
+                {
+                    "source": "owner-ci",
+                    "category": "deploy.failed",
+                    "title": "x",
+                    "body": "y",
+                    "target_user_id": 1,
+                    "recipient": "not-a-dict",
+                }
+            )
+        with pytest.raises(ValueError, match="Invalid recipient target_user_id"):
+            server._parse_announcement_event(
+                {
+                    "source": "owner-ci",
+                    "category": "deploy.failed",
+                    "title": "x",
+                    "body": "y",
+                    "recipient": {"target_user_id": True},
+                }
+            )
+        with pytest.raises(ValueError, match="Invalid occurred_at timestamp"):
+            server._parse_announcement_event(
+                {
+                    "source": "owner-ci",
+                    "category": "deploy.failed",
+                    "title": "x",
+                    "body": "y",
+                    "target_user_id": 1,
+                    "occurred_at": "not-a-time",
+                }
+            )
+
+    def test_announcement_dependencies_raise_when_unconfigured(self, mock_registry):
+        server = SkillsServer(registry=mock_registry)
+        with pytest.raises(RuntimeError, match="Announcements are not configured"):
+            server._announcement_dependencies()
+
+    @pytest.mark.asyncio
+    async def test_emit_announcement_event_schedules_immediate_delivery(self, mock_registry):
+        repository = MagicMock()
+        repository.create_event = AsyncMock(
+            return_value=AnnouncementReceipt(status="accepted", event_id="evt-1")
+        )
+        repository.create_delivery = AsyncMock()
+        policy_engine = MagicMock()
+        decision_time = datetime(2026, 3, 13, 15, 30, tzinfo=UTC)
+        policy_engine.evaluate_event = AsyncMock(
+            return_value=AnnouncementPolicyDecision(
+                status="scheduled",
+                delivery_mode="immediate",
+                severity=AnnouncementSeverity.HIGH,
+                scheduled_for=decision_time,
+                reason_code="user_immediate_category",
+            )
+        )
+        server = SkillsServer(
+            registry=mock_registry,
+            announcement_repository=repository,
+            announcement_policy_engine=policy_engine,
+        )
+
+        result = await server._emit_announcement_event(
+            {
+                "source": "owner-ci",
+                "category": "deploy.failed",
+                "title": "Deploy failed",
+                "body": "The release verification failed.",
+                "target_user_id": 42,
+                "channel": "discord_dm",
+                "personal_profile": {"timezone": "UTC"},
+                "dedupe_window_minutes": 15,
+            }
+        )
+
+        create_event_call = repository.create_event.await_args
+        assert create_event_call.args[0].state == "immediate"
+        assert create_event_call.kwargs["dedupe_window_minutes"] == 15
+        repository.create_delivery.assert_awaited_once_with(
+            event_id="evt-1",
+            channel="discord_dm",
+            scheduled_for=decision_time,
+        )
+        assert result["receipt"] == {
+            "status": "scheduled",
+            "event_id": "evt-1",
+            "scheduled_for": decision_time.isoformat(),
+            "reason_code": "user_immediate_category",
+        }
+        assert result["decision"] == {
+            "delivery_mode": "immediate",
+            "severity": "high",
+        }
+
+    @pytest.mark.asyncio
+    async def test_emit_announcement_event_handles_deduped_and_deferred_paths(
+        self,
+        mock_registry,
+    ):
+        repository = MagicMock()
+        repository.create_event = AsyncMock(
+            side_effect=[
+                AnnouncementReceipt(
+                    status="deduped",
+                    event_id="evt-deduped",
+                    reason_code="deduped",
+                ),
+                AnnouncementReceipt(status="accepted", event_id="evt-deferred"),
+            ]
+        )
+        repository.create_delivery = AsyncMock()
+        policy_engine = MagicMock()
+        deferred_time = datetime(2026, 3, 13, 18, 0, tzinfo=UTC)
+        policy_engine.evaluate_event = AsyncMock(
+            side_effect=[
+                AnnouncementPolicyDecision(
+                    status="scheduled",
+                    delivery_mode="immediate",
+                    severity=AnnouncementSeverity.HIGH,
+                    scheduled_for=deferred_time,
+                    reason_code="deduped",
+                ),
+                AnnouncementPolicyDecision(
+                    status="deferred",
+                    delivery_mode="deferred",
+                    severity=AnnouncementSeverity.NORMAL,
+                    scheduled_for=deferred_time,
+                    reason_code="digest_window",
+                ),
+            ]
+        )
+        server = SkillsServer(
+            registry=mock_registry,
+            announcement_repository=repository,
+            announcement_policy_engine=policy_engine,
+        )
+
+        deduped = await server._emit_announcement_event(
+            {
+                "source": "owner-ci",
+                "category": "deploy.failed",
+                "title": "Deploy failed",
+                "body": "Deduped duplicate event.",
+                "target_user_id": 7,
+            }
+        )
+        deferred = await server._emit_announcement_event(
+            {
+                "source": "owner-ci",
+                "category": "insight.summary",
+                "title": "Daily summary",
+                "body": "Digest this later.",
+                "target_user_id": 7,
+            }
+        )
+
+        repository.create_delivery.assert_not_awaited()
+        assert deduped["receipt"]["status"] == "deduped"
+        assert deduped["receipt"]["reason_code"] == "deduped"
+        assert deferred["receipt"]["status"] == "deferred"
+        assert deferred["receipt"]["scheduled_for"] == deferred_time.isoformat()
+        assert deferred["receipt"]["reason_code"] == "digest_window"
+
+    @pytest.mark.asyncio
+    async def test_announcement_emit_handlers_map_success_and_errors(self, mock_registry):
+        server = SkillsServer(registry=mock_registry)
+        request = MagicMock()
+        request.json = AsyncMock(return_value={"source": "owner-ci"})
+        server._emit_announcement_event = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "receipt": {"status": "scheduled", "event_id": "evt-1"},
+                "decision": {"delivery_mode": "immediate", "severity": "high"},
+            }
+        )
+
+        resp = await server.handle_announcement_emit_event(request)
+        assert resp.status == 200
+        data = json.loads(resp.text)
+        assert data["ok"] is True
+        assert data["receipt"]["event_id"] == "evt-1"
+
+        server._emit_announcement_event = AsyncMock(side_effect=RuntimeError("not configured"))  # type: ignore[method-assign]
+        resp = await server.handle_announcement_emit_event(request)
+        assert resp.status == 501
+        assert json.loads(resp.text)["error"] == "not configured"
+
+        server._emit_announcement_event = AsyncMock(side_effect=ValueError("bad payload"))  # type: ignore[method-assign]
+        resp = await server.handle_announcement_emit_event(request)
+        assert resp.status == 400
+        assert json.loads(resp.text)["error"] == "bad payload"
+
+        server._emit_announcement_event = AsyncMock(side_effect=RuntimeError("boom"))  # type: ignore[method-assign]
+        server._read_json_object = AsyncMock(side_effect=Exception("explode"))  # type: ignore[method-assign]
+        resp = await server.handle_announcement_emit_event(request)
+        assert resp.status == 500
+        assert json.loads(resp.text)["error"] == "Failed to emit announcement"
+
+    @pytest.mark.asyncio
+    async def test_announcement_batch_preferences_and_flush_handlers(self, mock_registry):
+        repository = MagicMock()
+        repository.get_user_preferences = AsyncMock(return_value=None)
+        updated_at = datetime(2026, 3, 13, 16, 0, tzinfo=UTC)
+        repository.upsert_user_preferences = AsyncMock(
+            return_value=AnnouncementUserPreferences(
+                user_id=42,
+                timezone="Australia/Sydney",
+                digest_enabled=False,
+                digest_window_local="19:45",
+                immediate_categories=["deploy.failed"],
+                muted_categories=["insight.summary"],
+                max_immediate_per_hour=2,
+                updated_at=updated_at,
+            )
+        )
+        repository.list_due_deliveries = AsyncMock(
+            return_value=[
+                AnnouncementDelivery(
+                    delivery_id=1,
+                    event_id="evt-1",
+                    channel="discord_dm",
+                    scheduled_for=updated_at,
+                    sent_at=None,
+                    status="scheduled",
+                    error_code=None,
+                    error_detail=None,
+                    retry_count=0,
+                    created_at=updated_at,
+                    updated_at=updated_at,
+                )
+            ]
+        )
+        server = SkillsServer(registry=mock_registry, announcement_repository=repository)
+
+        batch_request = MagicMock()
+        batch_request.json = AsyncMock(
+            return_value={
+                "events": [
+                    {
+                        "source": "owner-ci",
+                        "category": "deploy.failed",
+                        "title": "Deploy failed",
+                        "body": "Release verification failed.",
+                        "target_user_id": 42,
+                    },
+                    "not-a-dict",
+                    {
+                        "source": "owner-ci",
+                        "category": "deploy.failed",
+                        "title": "Missing body",
+                    },
+                ]
+            }
+        )
+        server._emit_announcement_event = AsyncMock(  # type: ignore[method-assign]
+            side_effect=[
+                {
+                    "receipt": {
+                        "status": "scheduled",
+                        "event_id": "evt-1",
+                        "scheduled_for": updated_at.isoformat(),
+                        "reason_code": "digest_window",
+                    }
+                },
+                ValueError("Missing body"),
+            ]
+        )
+
+        batch_resp = await server.handle_announcement_emit_batch(batch_request)
+        batch_data = json.loads(batch_resp.text)
+        assert batch_resp.status == 200
+        assert batch_data["ok"] is False
+        assert batch_data["count"] == 1
+        assert len(batch_data["errors"]) == 2
+
+        runtime_batch_request = MagicMock()
+        runtime_batch_request.json = AsyncMock(
+            return_value={"events": [{"source": "owner-ci", "category": "deploy.failed"}]}
+        )
+        server._emit_announcement_event = AsyncMock(side_effect=RuntimeError("not configured"))  # type: ignore[method-assign]
+        runtime_batch_resp = await server.handle_announcement_emit_batch(runtime_batch_request)
+        assert runtime_batch_resp.status == 501
+        assert json.loads(runtime_batch_resp.text)["error"] == "not configured"
+
+        get_request = MagicMock()
+        get_request.match_info = {"user_id": "42"}
+        get_resp = await server.handle_announcement_get_preferences(get_request)
+        get_data = json.loads(get_resp.text)
+        assert get_resp.status == 200
+        assert get_data["preferences"]["user_id"] == 42
+        assert get_data["preferences"]["timezone"] == "UTC"
+
+        put_request = MagicMock()
+        put_request.match_info = {"user_id": "42"}
+        put_request.json = AsyncMock(
+            return_value={
+                "timezone": "Australia/Sydney",
+                "digest_enabled": False,
+                "digest_window_local": "19:45",
+                "immediate_categories": ["deploy.failed"],
+                "muted_categories": ["insight.summary"],
+                "max_immediate_per_hour": 2,
+            }
+        )
+        put_resp = await server.handle_announcement_put_preferences(put_request)
+        put_data = json.loads(put_resp.text)
+        assert put_resp.status == 200
+        patch_arg = repository.upsert_user_preferences.await_args.kwargs["patch"]
+        assert isinstance(patch_arg, AnnouncementPreferencePatch)
+        assert patch_arg.timezone == "Australia/Sydney"
+        assert patch_arg.digest_enabled is False
+        assert put_data["preferences"]["digest_window_local"] == "19:45"
+
+        flush_request = MagicMock()
+        flush_request.json = AsyncMock(return_value={"limit": 2500})
+        flush_resp = await server.handle_announcement_dispatch_flush(flush_request)
+        flush_data = json.loads(flush_resp.text)
+        assert flush_resp.status == 200
+        repository.list_due_deliveries.assert_awaited_once_with(limit=1000)
+        assert flush_data["count"] == 1
+        assert flush_data["deliveries"][0]["delivery_id"] == 1
+
+
+class TestSkillsServerWorkerBridge:
+    """Tests for worker bridge handler success paths."""
+
+    @pytest.mark.asyncio
+    async def test_worker_bridge_handlers_cover_success_paths(self, mock_registry):
+        tenant_admin_manager = MagicMock()
+        now = datetime(2026, 3, 13, 17, 0, tzinfo=UTC)
+        tenant_admin_manager.bootstrap_worker_node_session = AsyncMock(
+            return_value={
+                "node": {"node_id": "node-1", "status": "bootstrapped"},
+                "capabilities": ["docker", "ci"],
+                "session": {"session_id": "sess-1", "expires_at": now},
+            }
+        )
+        tenant_admin_manager.register_worker_node = AsyncMock(
+            return_value={"node_id": "node-1", "status": "registered"}
+        )
+        tenant_admin_manager.rotate_worker_session_credentials = AsyncMock(
+            return_value={"expires_at": now, "rotated_at": now}
+        )
+        tenant_admin_manager.heartbeat_worker_node = AsyncMock(
+            return_value={"node_id": "node-1", "health_status": "healthy"}
+        )
+        tenant_admin_manager.record_worker_job_event = AsyncMock()
+        tenant_admin_manager.has_worker_capabilities = AsyncMock(return_value=True)
+        tenant_admin_manager.claim_worker_dispatch_job = AsyncMock(
+            return_value={
+                "job_id": "job-1",
+                "plan_id": "plan-1",
+                "step_id": "step-1",
+                "retry_id": "retry-1",
+                "execution_mode": "live",
+                "execution_target": "windows-worker",
+                "action": "ci.test.run",
+                "required_capabilities": ["docker", "ci"],
+                "max_runtime_seconds": 900,
+                "artifact_contract": {"required": ["logs"]},
+                "payload_json": {"runner": "compose", "lane_id": "unit-full"},
+            }
+        )
+        tenant_admin_manager.is_worker_node_canary_enabled = MagicMock(return_value=True)
+
+        server = SkillsServer(registry=mock_registry, tenant_admin_manager=tenant_admin_manager)
+        allowed_decision = SimpleNamespace(allowed=True, status=200, code="allowed")
+        server._trust_policy_evaluator = SimpleNamespace(
+            evaluate=MagicMock(return_value=allowed_decision)
+        )
+        server._resolve_worker_bootstrap_secret = MagicMock(  # type: ignore[method-assign]
+            return_value="bootstrap-secret"
+        )
+        server._record_security_event = AsyncMock()  # type: ignore[method-assign]
+        server._verify_worker_signature = AsyncMock(  # type: ignore[method-assign]
+            side_effect=[
+                {
+                    "session_id": "sess-1",
+                    "request_nonce": "nonce-register",
+                    "status": "registered",
+                    "health_status": "healthy",
+                    "node_metadata": {"lane": "ci"},
+                },
+                {
+                    "session_id": "sess-1",
+                    "request_nonce": "nonce-heartbeat",
+                    "status": "active",
+                    "health_status": "healthy",
+                },
+                {
+                    "session_id": "sess-1",
+                    "request_nonce": "nonce-claim",
+                    "status": "active",
+                    "health_status": "healthy",
+                    "node_metadata": {"lane": "ci"},
+                },
+            ]
+        )
+        server._emit_worker_lifecycle_announcement = AsyncMock()  # type: ignore[method-assign]
+
+        bootstrap_request = MagicMock()
+        bootstrap_request.text = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "tenant_id": "tenant-1",
+                    "node_id": "node-1",
+                    "node_name": "CI Worker",
+                    "capabilities": ["docker", "ci"],
+                    "metadata": {"role": "owner-ci"},
+                }
+            )
+        )
+        bootstrap_request.headers = {"X-Worker-Bootstrap-Secret": "bootstrap-secret"}
+        bootstrap_resp = await server.handle_worker_bootstrap(bootstrap_request)
+        bootstrap_data = json.loads(bootstrap_resp.text)
+        assert bootstrap_resp.status == 201
+        assert bootstrap_data["ok"] is True
+        assert bootstrap_data["node"]["node_id"] == "node-1"
+        assert bootstrap_data["session"]["session_id"] == "sess-1"
+
+        register_request = MagicMock()
+        register_request.text = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "tenant_id": "tenant-1",
+                    "node_id": "node-1",
+                    "node_name": "CI Worker",
+                    "capabilities": ["docker", "ci"],
+                    "metadata": {"role": "owner-ci"},
+                    "rotate_credentials": True,
+                }
+            )
+        )
+        register_resp = await server.handle_worker_register_node(register_request)
+        register_data = json.loads(register_resp.text)
+        assert register_resp.status == 200
+        assert register_data["ok"] is True
+        assert register_data["session"]["session_id"] == "sess-1"
+        assert register_data["session"]["token"]
+        assert register_data["session"]["signing_secret"]
+
+        heartbeat_request = MagicMock()
+        heartbeat_request.match_info = {"node_id": "node-1"}
+        heartbeat_request.text = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "tenant_id": "tenant-1",
+                    "node_id": "node-1",
+                    "health_status": "healthy",
+                    "metadata": {"load": "normal"},
+                }
+            )
+        )
+        heartbeat_resp = await server.handle_worker_node_heartbeat(heartbeat_request)
+        heartbeat_data = json.loads(heartbeat_resp.text)
+        assert heartbeat_resp.status == 200
+        assert heartbeat_data["node"]["health_status"] == "healthy"
+
+        claim_request = MagicMock()
+        claim_request.match_info = {"node_id": "node-1"}
+        claim_request.text = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "tenant_id": "tenant-1",
+                    "required_capabilities": ["docker", "ci"],
+                    "poll_after_seconds": 250,
+                }
+            )
+        )
+        claim_resp = await server.handle_worker_claim_job(claim_request)
+        claim_data = json.loads(claim_resp.text)
+        assert claim_resp.status == 200
+        assert claim_data["ok"] is True
+        assert claim_data["reason"] == "claimed"
+        assert claim_data["job"]["job_id"] == "job-1"
+        assert claim_data["job"]["payload"]["lane_id"] == "unit-full"
+        assert claim_data["poll_after_seconds"] == 120
+
+        tenant_admin_manager.bootstrap_worker_node_session.assert_awaited_once()
+        tenant_admin_manager.register_worker_node.assert_awaited_once()
+        tenant_admin_manager.rotate_worker_session_credentials.assert_awaited_once()
+        tenant_admin_manager.heartbeat_worker_node.assert_awaited_once()
+        tenant_admin_manager.claim_worker_dispatch_job.assert_awaited_once()
+        tenant_admin_manager.record_worker_job_event.assert_awaited()
+        server._emit_worker_lifecycle_announcement.assert_awaited_once()
 
 
 class TestSkillsServerLifecycle:
@@ -1853,7 +2455,7 @@ class TestTenantAdminEndpoints:
             async def list_check_runs(self, *_args, **_kwargs):
                 return [
                     {
-                        "name": "CI/CD Pipeline",
+                        "name": "zetherion/merge-readiness",
                         "status": "completed",
                         "conclusion": "success",
                     }
@@ -1883,7 +2485,7 @@ class TestTenantAdminEndpoints:
                 "head_branch": "codex/automerge-1",
                 "branch_guard_passed": True,
                 "risk_guard_passed": True,
-                "required_checks": ["CI/CD Pipeline"],
+                "required_checks": ["zetherion/merge-readiness"],
                 "allowed_paths": ["src/", "tests/"],
                 "max_changed_files": 10,
                 "max_additions": 500,
@@ -3081,3 +3683,604 @@ class TestAdditionalEndpointBranches:
             assert get_resp.status == 501
             assert put_resp.status == 501
             assert del_resp.status == 501
+
+
+def _response_json(response: web.Response) -> dict[str, object]:
+    return json.loads(response.text)
+
+
+@pytest.mark.asyncio
+async def test_runtime_external_services_domain_reports_healthy_blocked_and_exception(
+    mock_registry,
+):
+    server = SkillsServer(registry=mock_registry)
+    settings = SimpleNamespace(
+        qdrant_owner_cert_path="",
+        qdrant_owner_url="https://qdrant.internal",
+    )
+
+    healthy_response = MagicMock()
+    healthy_response.raise_for_status.return_value = None
+    healthy_response.json.return_value = {
+        "result": {
+            "collections": [
+                {"name": "conversations"},
+                {"name": "long_term_memory"},
+                {"name": "user_profiles"},
+            ]
+        }
+    }
+    blocked_response = MagicMock()
+    blocked_response.raise_for_status.return_value = None
+    blocked_response.json.return_value = {
+        "result": {
+            "collections": [
+                {"name": "conversations"},
+                {"name": "long_term_memory"},
+            ]
+        }
+    }
+
+    async_client = AsyncMock()
+    async_client.get = AsyncMock(
+        side_effect=[healthy_response, blocked_response, RuntimeError("boom")]
+    )
+    async_client_ctx = MagicMock()
+    async_client_ctx.__aenter__ = AsyncMock(return_value=async_client)
+    async_client_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("zetherion_ai.config.get_settings", return_value=settings),
+        patch("zetherion_ai.skills.server.httpx.AsyncClient", return_value=async_client_ctx),
+    ):
+        healthy = await server._runtime_external_services_domain()  # noqa: SLF001
+        blocked = await server._runtime_external_services_domain()  # noqa: SLF001
+        failed = await server._runtime_external_services_domain()  # noqa: SLF001
+
+    assert healthy["status"] == "healthy"
+    assert blocked["status"] == "blocked"
+    assert blocked["details"]["missing_collections"] == ["user_profiles"]
+    assert failed["status"] == "blocked"
+    assert failed["details"]["error"] == "boom"
+
+
+@pytest.mark.asyncio
+async def test_owner_ci_worker_register_and_heartbeat_handlers_cover_success_and_validation(
+    mock_registry,
+):
+    storage = MagicMock()
+    storage.register_worker_node = AsyncMock(
+        return_value={"node_id": "node-1", "status": "active"}
+    )
+    storage.rotate_worker_session_credentials = AsyncMock(
+        return_value={"session_id": "sess-1", "token": "secret"}
+    )
+    storage.heartbeat_worker_node = AsyncMock(
+        return_value={"node_id": "node-1", "health_status": "healthy"}
+    )
+    server = SkillsServer(registry=mock_registry, owner_ci_storage=storage)
+    server._verify_owner_ci_worker_signature = AsyncMock(  # type: ignore[method-assign]
+        return_value={"session_id": "sess-1"}
+    )
+
+    register_request = MagicMock()
+    register_request.text = AsyncMock(
+        return_value=json.dumps(
+            {
+                "scope_id": "owner:owner-1",
+                "node_id": "node-1",
+                "node_name": "Windows worker",
+                "capabilities": ["docker"],
+                "rotate_credentials": True,
+                "metadata": {"pool": "local"},
+            }
+        )
+    )
+    register_request.headers = {}
+
+    register_response = await server.handle_owner_ci_worker_register_node(register_request)
+    register_payload = _response_json(register_response)
+
+    invalid_heartbeat_request = MagicMock()
+    invalid_heartbeat_request.match_info = {"node_id": "node-1"}
+    invalid_heartbeat_request.text = AsyncMock(
+        return_value=json.dumps(
+            {"scope_id": "owner:owner-1", "node_id": "node-2", "metadata": {}}
+        )
+    )
+    invalid_heartbeat_request.headers = {}
+
+    heartbeat_request = MagicMock()
+    heartbeat_request.match_info = {"node_id": "node-1"}
+    heartbeat_request.text = AsyncMock(
+        return_value=json.dumps(
+            {
+                "scope_id": "owner:owner-1",
+                "node_id": "node-1",
+                "health_status": "healthy",
+                "metadata": {"pool": "local"},
+            }
+        )
+    )
+    heartbeat_request.headers = {}
+
+    invalid_heartbeat = await server.handle_owner_ci_worker_node_heartbeat(
+        invalid_heartbeat_request
+    )
+    heartbeat_response = await server.handle_owner_ci_worker_node_heartbeat(
+        heartbeat_request
+    )
+
+    assert register_response.status == 200
+    assert register_payload["session"]["token"] == "secret"
+    assert invalid_heartbeat.status == 400
+    assert heartbeat_response.status == 200
+    storage.register_worker_node.assert_awaited_once()
+    storage.rotate_worker_session_credentials.assert_awaited_once()
+    storage.heartbeat_worker_node.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_owner_ci_worker_claim_and_submit_result_handlers_cover_success_and_replay(
+    mock_registry,
+):
+    storage = MagicMock()
+    storage.claim_worker_job = AsyncMock(
+        return_value={
+            "job_id": "job-1",
+            "run_id": "run-1",
+            "shard_id": "shard-1",
+            "execution_target": "windows_local",
+            "action": "ci.test.run",
+            "runner": "docker",
+            "required_capabilities": ["docker"],
+            "artifact_contract": {"kind": "ci_shard"},
+            "payload_json": {"runner": "docker", "execution_mode": "live"},
+        }
+    )
+    storage.submit_worker_job_result = AsyncMock(
+        side_effect=[
+            {"accepted": True},
+            RuntimeError("relay replay already accepted"),
+        ]
+    )
+    server = SkillsServer(registry=mock_registry, owner_ci_storage=storage, api_secret="secret")
+    server._verify_owner_ci_worker_signature = AsyncMock(  # type: ignore[method-assign]
+        return_value={"session_id": "sess-1"}
+    )
+    server._check_auth = MagicMock(return_value=True)  # type: ignore[method-assign]
+
+    claim_request = MagicMock()
+    claim_request.match_info = {"node_id": "node-1"}
+    claim_request.text = AsyncMock(
+        return_value=json.dumps(
+            {
+                "scope_id": "owner:owner-1",
+                "required_capabilities": ["docker"],
+                "poll_after_seconds": 200,
+            }
+        )
+    )
+    claim_request.headers = {}
+
+    claim_response = await server.handle_owner_ci_worker_claim_job(claim_request)
+    claim_payload = _response_json(claim_response)
+
+    submit_request = MagicMock()
+    submit_request.match_info = {"node_id": "node-1", "job_id": "job-1"}
+    submit_request.text = AsyncMock(
+        return_value=json.dumps(
+            {
+                "scope_id": "owner:owner-1",
+                "status": "succeeded",
+                "output": {"summary": "ok"},
+                "events": [{"event_type": "worker.result.accepted"}],
+                "log_chunks": [{"stream": "stdout", "message": "ok"}],
+                "resource_samples": [{"memory_mb": 512}],
+                "debug_bundle": {"compose_state": {"bot": "running"}},
+                "cleanup_receipt": {"status": "clean"},
+                "container_receipts": [{"container": "bot"}],
+            }
+        )
+    )
+    submit_request.headers = {}
+
+    replay_request = MagicMock()
+    replay_request.match_info = {"node_id": "node-1", "job_id": "job-1"}
+    replay_request.text = AsyncMock(
+        return_value=json.dumps({"scope_id": "owner:owner-1", "status": "succeeded"})
+    )
+    replay_request.headers = {"X-CI-Relay-Replay": "1"}
+
+    submit_response = await server.handle_owner_ci_worker_submit_job_result(submit_request)
+    replay_response = await server.handle_owner_ci_worker_submit_job_result(replay_request)
+    replay_payload = _response_json(replay_response)
+
+    assert claim_response.status == 200
+    assert claim_payload["job"]["runner"] == "docker"
+    assert claim_payload["poll_after_seconds"] == 120
+    assert submit_response.status == 202
+    assert replay_response.status == 202
+    assert replay_payload["idempotent"] is True
+    storage.claim_worker_job.assert_awaited_once()
+    assert storage.submit_worker_job_result.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_owner_ci_worker_claim_handler_accepts_string_backed_json_fields(
+    mock_registry,
+):
+    storage = MagicMock()
+    storage.claim_worker_job = AsyncMock(
+        return_value={
+            "job_id": "job-1",
+            "run_id": "run-1",
+            "shard_id": "shard-1",
+            "execution_target": "windows_local",
+            "action": "worker.noop",
+            "runner": "docker",
+            "required_capabilities": json.dumps(["docker"]),
+            "artifact_contract": json.dumps({"kind": "ci_shard"}),
+            "payload_json": json.dumps({"runner": "docker", "execution_mode": "live"}),
+        }
+    )
+    server = SkillsServer(registry=mock_registry, owner_ci_storage=storage, api_secret="secret")
+    server._verify_owner_ci_worker_signature = AsyncMock(  # type: ignore[method-assign]
+        return_value={"session_id": "sess-1"}
+    )
+    server._check_auth = MagicMock(return_value=True)  # type: ignore[method-assign]
+
+    claim_request = MagicMock()
+    claim_request.match_info = {"node_id": "node-1"}
+    claim_request.text = AsyncMock(
+        return_value=json.dumps(
+            {
+                "scope_id": "owner:owner-1",
+                "required_capabilities": ["docker"],
+            }
+        )
+    )
+    claim_request.headers = {}
+
+    claim_response = await server.handle_owner_ci_worker_claim_job(claim_request)
+    claim_payload = _response_json(claim_response)
+
+    assert claim_response.status == 200
+    assert claim_payload["job"]["action"] == "worker.noop"
+    assert claim_payload["job"]["required_capabilities"] == ["docker"]
+    assert claim_payload["job"]["artifact_contract"] == {"kind": "ci_shard"}
+    assert claim_payload["job"]["payload"]["execution_mode"] == "live"
+
+
+@pytest.mark.asyncio
+async def test_internal_runtime_health_endpoint_reports_blocked_queue_and_stale_bot(
+    mock_registry,
+):
+    fake_pool = object()
+    stale_updated_at = datetime(2025, 3, 13, 10, 0, tzinfo=UTC).isoformat()
+    fake_store = SimpleNamespace(
+        get_status=AsyncMock(
+            return_value={
+                "service_name": "discord_bot",
+                "status": "healthy",
+                "summary": "Discord bot is connected.",
+                "updated_at": stale_updated_at,
+                "release_revision": "rev-123",
+                "details": {
+                    "queue": {
+                        "accepting_work": False,
+                        "healthy": False,
+                        "workers": [{"worker_id": "worker-1", "status": "stale"}],
+                    }
+                },
+            }
+        )
+    )
+    server = SkillsServer(
+        registry=mock_registry,
+        api_secret="test-secret",
+        user_manager=SimpleNamespace(_pool=fake_pool),
+    )
+    app = server.create_app()
+    settings = SimpleNamespace(queue_stale_timeout_seconds=30)
+
+    with (
+        patch("zetherion_ai.skills.server.QueueStorage") as mock_queue_storage,
+        patch("zetherion_ai.config.get_settings", return_value=settings),
+        patch.dict(os.environ, {"APP_GIT_SHA": "rev-123"}, clear=False),
+    ):
+        queue_storage = mock_queue_storage.return_value
+        queue_storage.get_status_counts = AsyncMock(
+            return_value={"queued": 0, "processing": 2, "dead": 1}
+        )
+        queue_storage.count_stale_processing = AsyncMock(return_value=2)
+        server._get_runtime_status_store = AsyncMock(return_value=fake_store)  # type: ignore[method-assign]
+        server._runtime_external_services_domain = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "key": "external_services",
+                "label": "External Services",
+                "status": "blocked",
+                "summary": "Missing required service evidence.",
+                "details": {"missing_collections": ["user_profiles"]},
+                "incident_type": "service_evidence_incomplete",
+            }
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/internal/runtime/health",
+                headers={"X-API-Secret": "test-secret"},
+            )
+            assert resp.status == 200
+            data = await resp.json()
+
+    domains = {domain["key"]: domain for domain in data["domains"]}
+    assert domains["deploy_state"]["status"] == "healthy"
+    assert domains["deploy_state"]["details"]["revision"] == "rev-123"
+    assert domains["message_queue"]["status"] == "blocked"
+    assert domains["message_queue"]["incident_type"] == "queue_lease_wedged"
+    assert domains["message_queue"]["details"]["runtime"]["accepting_work"] is False
+    assert domains["discord_bot"]["status"] == "blocked"
+    assert domains["discord_bot"]["incident_type"] == "discord_delivery_failed"
+    assert domains["external_services"]["status"] == "blocked"
+    assert data["summary"]["blocker_count"] >= 2
+
+
+@pytest.mark.asyncio
+async def test_owner_ci_worker_bootstrap_handler_covers_success_and_error_paths(mock_registry):
+    no_storage_server = SkillsServer(registry=mock_registry)
+    no_storage_request = MagicMock()
+    no_storage_request.text = AsyncMock(return_value="{}")
+    no_storage_request.headers = {}
+    no_storage_response = await no_storage_server.handle_owner_ci_worker_bootstrap(
+        no_storage_request
+    )
+    assert no_storage_response.status == 501
+
+    storage = MagicMock()
+    storage.bootstrap_worker_node_session = AsyncMock(
+        return_value={"session_id": "sess-1", "token": "bootstrap-token"}
+    )
+    storage.get_worker_node = AsyncMock(
+        return_value={"node_id": "node-1", "status": "active", "label": "Worker"}
+    )
+    server = SkillsServer(registry=mock_registry, owner_ci_storage=storage)
+    server._resolve_owner_ci_worker_bootstrap_secret = MagicMock(  # type: ignore[method-assign]
+        return_value="bootstrap-secret"
+    )
+
+    invalid_json_request = MagicMock()
+    invalid_json_request.text = AsyncMock(return_value="[]")
+    invalid_json_request.headers = {}
+    invalid_json_response = await server.handle_owner_ci_worker_bootstrap(invalid_json_request)
+
+    missing_scope_request = MagicMock()
+    missing_scope_request.text = AsyncMock(return_value=json.dumps({"node_id": "node-1"}))
+    missing_scope_request.headers = {"X-Worker-Bootstrap-Secret": "bootstrap-secret"}
+    missing_scope_response = await server.handle_owner_ci_worker_bootstrap(
+        missing_scope_request
+    )
+
+    invalid_secret_request = MagicMock()
+    invalid_secret_request.text = AsyncMock(
+        return_value=json.dumps({"scope_id": "owner:owner-1", "node_id": "node-1"})
+    )
+    invalid_secret_request.headers = {"X-Worker-Bootstrap-Secret": "wrong"}
+    invalid_secret_response = await server.handle_owner_ci_worker_bootstrap(
+        invalid_secret_request
+    )
+
+    invalid_metadata_request = MagicMock()
+    invalid_metadata_request.text = AsyncMock(
+        return_value=json.dumps(
+            {
+                "scope_id": "owner:owner-1",
+                "node_id": "node-1",
+                "metadata": "not-an-object",
+            }
+        )
+    )
+    invalid_metadata_request.headers = {"X-Worker-Bootstrap-Secret": "bootstrap-secret"}
+    invalid_metadata_response = await server.handle_owner_ci_worker_bootstrap(
+        invalid_metadata_request
+    )
+
+    success_request = MagicMock()
+    success_request.text = AsyncMock(
+        return_value=json.dumps(
+            {
+                "scope_id": "owner:owner-1",
+                "node_id": "node-1",
+                "node_name": "Windows Worker",
+                "capabilities": ["docker", "playwright"],
+                "metadata": {"pool": "windows"},
+            }
+        )
+    )
+    success_request.headers = {"X-Worker-Bootstrap-Secret": "bootstrap-secret"}
+    success_response = await server.handle_owner_ci_worker_bootstrap(success_request)
+    success_payload = _response_json(success_response)
+
+    storage.bootstrap_worker_node_session.side_effect = Exception("boom")
+    failing_request = MagicMock()
+    failing_request.text = AsyncMock(
+        return_value=json.dumps(
+            {
+                "scope_id": "owner:owner-1",
+                "node_id": "node-2",
+                "capabilities": ["docker"],
+            }
+        )
+    )
+    failing_request.headers = {"X-Worker-Bootstrap-Secret": "bootstrap-secret"}
+    failing_response = await server.handle_owner_ci_worker_bootstrap(failing_request)
+
+    assert invalid_json_response.status == 400
+    assert missing_scope_response.status == 400
+    assert invalid_secret_response.status == 401
+    assert invalid_metadata_response.status == 400
+    assert success_response.status == 201
+    assert success_payload["scope_id"] == "owner:owner-1"
+    assert success_payload["capabilities"] == ["docker", "playwright"]
+    assert success_payload["session"]["token"] == "bootstrap-token"
+    assert failing_response.status == 502
+
+
+@pytest.mark.asyncio
+async def test_owner_ci_worker_bridge_error_paths_cover_registration_heartbeat_claim_and_submit(
+    mock_registry,
+):
+    no_storage_server = SkillsServer(registry=mock_registry, api_secret="secret")
+
+    register_request = MagicMock()
+    register_request.text = AsyncMock(return_value=json.dumps({"scope_id": "owner:owner-1"}))
+    register_request.headers = {}
+    assert (await no_storage_server.handle_owner_ci_worker_register_node(register_request)).status == 501
+
+    heartbeat_request = MagicMock()
+    heartbeat_request.match_info = {"node_id": "node-1"}
+    heartbeat_request.text = AsyncMock(return_value=json.dumps({"scope_id": "owner:owner-1"}))
+    heartbeat_request.headers = {}
+    assert (await no_storage_server.handle_owner_ci_worker_node_heartbeat(heartbeat_request)).status == 501
+
+    claim_request = MagicMock()
+    claim_request.match_info = {"node_id": "node-1"}
+    claim_request.text = AsyncMock(return_value=json.dumps({"scope_id": "owner:owner-1"}))
+    claim_request.headers = {}
+    assert (await no_storage_server.handle_owner_ci_worker_claim_job(claim_request)).status == 501
+
+    submit_request = MagicMock()
+    submit_request.match_info = {"node_id": "node-1", "job_id": "job-1"}
+    submit_request.text = AsyncMock(return_value=json.dumps({"scope_id": "owner:owner-1"}))
+    submit_request.headers = {}
+    assert (
+        await no_storage_server.handle_owner_ci_worker_submit_job_result(submit_request)
+    ).status == 501
+
+    storage = MagicMock()
+    storage.register_worker_node = AsyncMock(return_value={"node_id": "node-1"})
+    storage.rotate_worker_session_credentials = AsyncMock(
+        return_value={"session_id": "sess-1", "token": "token-1"}
+    )
+    storage.heartbeat_worker_node = AsyncMock(return_value={"node_id": "node-1"})
+    storage.claim_worker_job = AsyncMock(return_value=None)
+    storage.submit_worker_job_result = AsyncMock(return_value={"idempotent": False})
+    server = SkillsServer(registry=mock_registry, owner_ci_storage=storage, api_secret="secret")
+    server._verify_owner_ci_worker_signature = AsyncMock(  # type: ignore[method-assign]
+        return_value={"session_id": "sess-1"}
+    )
+    server._check_auth = MagicMock(return_value=False)  # type: ignore[method-assign]
+
+    bad_register_request = MagicMock()
+    bad_register_request.text = AsyncMock(
+        return_value=json.dumps(
+            {
+                "scope_id": "owner:owner-1",
+                "node_id": "node-1",
+                "metadata": "bad",
+            }
+        )
+    )
+    bad_register_request.headers = {}
+    bad_register_response = await server.handle_owner_ci_worker_register_node(
+        bad_register_request
+    )
+
+    storage.register_worker_node.side_effect = RuntimeError("session expired")
+    runtime_register_request = MagicMock()
+    runtime_register_request.text = AsyncMock(
+        return_value=json.dumps({"scope_id": "owner:owner-1", "node_id": "node-1"})
+    )
+    runtime_register_request.headers = {}
+    runtime_register_response = await server.handle_owner_ci_worker_register_node(
+        runtime_register_request
+    )
+    storage.register_worker_node.side_effect = None
+
+    storage.heartbeat_worker_node.side_effect = ValueError("heartbeat bad metadata")
+    bad_heartbeat_request = MagicMock()
+    bad_heartbeat_request.match_info = {"node_id": "node-1"}
+    bad_heartbeat_request.text = AsyncMock(
+        return_value=json.dumps({"scope_id": "owner:owner-1", "node_id": "node-1"})
+    )
+    bad_heartbeat_request.headers = {}
+    bad_heartbeat_response = await server.handle_owner_ci_worker_node_heartbeat(
+        bad_heartbeat_request
+    )
+    storage.heartbeat_worker_node.side_effect = None
+
+    storage.claim_worker_job.side_effect = RuntimeError("lease lost")
+    runtime_claim_request = MagicMock()
+    runtime_claim_request.match_info = {"node_id": "node-1"}
+    runtime_claim_request.text = AsyncMock(
+        return_value=json.dumps({"scope_id": "owner:owner-1", "required_capabilities": []})
+    )
+    runtime_claim_request.headers = {}
+    runtime_claim_response = await server.handle_owner_ci_worker_claim_job(runtime_claim_request)
+    storage.claim_worker_job.side_effect = None
+
+    idle_claim_request = MagicMock()
+    idle_claim_request.match_info = {"node_id": "node-1"}
+    idle_claim_request.text = AsyncMock(
+        return_value=json.dumps(
+            {"scope_id": "owner:owner-1", "required_capabilities": [], "poll_after_seconds": 1}
+        )
+    )
+    idle_claim_request.headers = {}
+    idle_claim_response = await server.handle_owner_ci_worker_claim_job(idle_claim_request)
+    idle_claim_payload = _response_json(idle_claim_response)
+
+    bad_submit_request = MagicMock()
+    bad_submit_request.match_info = {"node_id": "node-1", "job_id": "job-1"}
+    bad_submit_request.text = AsyncMock(
+        return_value=json.dumps({"scope_id": "owner:owner-1", "output": "bad"})
+    )
+    bad_submit_request.headers = {}
+    bad_submit_response = await server.handle_owner_ci_worker_submit_job_result(
+        bad_submit_request
+    )
+
+    replay_submit_request = MagicMock()
+    replay_submit_request.match_info = {"node_id": "node-1", "job_id": "job-1"}
+    replay_submit_request.text = AsyncMock(
+        return_value=json.dumps({"scope_id": "owner:owner-1", "status": "succeeded"})
+    )
+    replay_submit_request.headers = {"X-CI-Relay-Replay": "1"}
+    replay_submit_response = await server.handle_owner_ci_worker_submit_job_result(
+        replay_submit_request
+    )
+
+    server._check_auth = MagicMock(return_value=True)  # type: ignore[method-assign]
+    storage.submit_worker_job_result.side_effect = RuntimeError("conflict")
+    runtime_submit_request = MagicMock()
+    runtime_submit_request.match_info = {"node_id": "node-1", "job_id": "job-1"}
+    runtime_submit_request.text = AsyncMock(
+        return_value=json.dumps({"scope_id": "owner:owner-1", "status": "failed"})
+    )
+    runtime_submit_request.headers = {}
+    runtime_submit_response = await server.handle_owner_ci_worker_submit_job_result(
+        runtime_submit_request
+    )
+
+    storage.submit_worker_job_result.side_effect = Exception("boom")
+    exception_submit_request = MagicMock()
+    exception_submit_request.match_info = {"node_id": "node-1", "job_id": "job-1"}
+    exception_submit_request.text = AsyncMock(
+        return_value=json.dumps({"scope_id": "owner:owner-1", "status": "failed"})
+    )
+    exception_submit_request.headers = {}
+    exception_submit_response = await server.handle_owner_ci_worker_submit_job_result(
+        exception_submit_request
+    )
+
+    assert bad_register_response.status == 400
+    assert runtime_register_response.status == 409
+    assert bad_heartbeat_response.status == 400
+    assert runtime_claim_response.status == 409
+    assert idle_claim_response.status == 200
+    assert idle_claim_payload["reason"] == "no_jobs_available"
+    assert idle_claim_payload["poll_after_seconds"] == 5
+    assert bad_submit_response.status == 400
+    assert replay_submit_response.status == 401
+    assert runtime_submit_response.status == 409
+    assert exception_submit_response.status == 502

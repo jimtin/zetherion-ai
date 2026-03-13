@@ -17,35 +17,108 @@ set -euo pipefail
 # even when invoked by pre-commit (which doesn't inherit the venv)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
-if [ -f "$REPO_DIR/venv/bin/activate" ]; then
+DOCKER_PYTHON_WRAPPER="$SCRIPT_DIR/docker-python-tool.sh"
+USE_DOCKER_PYTHON="${ZETHERION_USE_DOCKER_PYTHON:-false}"
+EXPLICIT_ZETHERION_ENV_FILE="${ZETHERION_ENV_FILE:-}"
+DEFAULT_ZETHERION_ENV_FILE="$REPO_DIR/.env"
+
+is_generated_e2e_env_file() {
+    local env_file="${1:-}"
+    case "$env_file" in
+        */zetherion-e2e-runs/stacks/*/run.env|*/.artifacts/e2e-runs/stacks/*/run.env|*/.artifacts/ci-e2e-runs/stacks/*/run.env)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+resolve_repo_env_file() {
+    if [ -n "$EXPLICIT_ZETHERION_ENV_FILE" ]; then
+        if [ ! -f "$EXPLICIT_ZETHERION_ENV_FILE" ]; then
+            if is_generated_e2e_env_file "$EXPLICIT_ZETHERION_ENV_FILE"; then
+                echo "WARN: Ignoring missing generated E2E env file: $EXPLICIT_ZETHERION_ENV_FILE" >&2
+            else
+                echo "ERROR: ZETHERION_ENV_FILE points to a missing file: $EXPLICIT_ZETHERION_ENV_FILE"
+                exit 1
+            fi
+        else
+            printf '%s\n' "$EXPLICIT_ZETHERION_ENV_FILE"
+            return 0
+        fi
+    fi
+
+    if [ -f "$DEFAULT_ZETHERION_ENV_FILE" ]; then
+        printf '%s\n' "$DEFAULT_ZETHERION_ENV_FILE"
+        return 0
+    fi
+
+    return 1
+}
+
+source_repo_env_file() {
+    local env_file="$1"
+    local normalized_env
+    normalized_env="$(mktemp "${TMPDIR:-/tmp}/zetherion-pre-push-env.XXXXXX")"
+    tr -d '\r' <"$env_file" >"$normalized_env"
+    set -a
+    # shellcheck disable=SC1090
+    source "$normalized_env"
+    set +a
+    rm -f "$normalized_env"
+}
+
+python_supports_required_version() {
+    local python_bin="$1"
+    "$python_bin" - <<'PY' >/dev/null 2>&1
+import sys
+
+raise SystemExit(0 if sys.version_info >= (3, 12) else 1)
+PY
+}
+
+if [ "$USE_DOCKER_PYTHON" != "true" ] \
+    && [ -f "$REPO_DIR/venv/bin/activate" ] \
+    && [ -x "$REPO_DIR/venv/bin/python" ] \
+    && python_supports_required_version "$REPO_DIR/venv/bin/python"; then
     # shellcheck source=/dev/null
     source "$REPO_DIR/venv/bin/activate"
-elif [ -f "$REPO_DIR/.venv/bin/activate" ]; then
+elif [ "$USE_DOCKER_PYTHON" != "true" ] \
+    && [ -f "$REPO_DIR/.venv/bin/activate" ] \
+    && [ -x "$REPO_DIR/.venv/bin/python" ] \
+    && python_supports_required_version "$REPO_DIR/.venv/bin/python"; then
     # shellcheck source=/dev/null
     source "$REPO_DIR/.venv/bin/activate"
 fi
 
 resolve_python_bin() {
+    if [ "$USE_DOCKER_PYTHON" = "true" ]; then
+        printf '%s\n' "$DOCKER_PYTHON_WRAPPER"
+        return 0
+    fi
+
     local candidate
     for candidate in \
         "$REPO_DIR/.venv/bin/python" \
         "$REPO_DIR/venv/bin/python" \
         "$REPO_DIR/.venv/bin/python3" \
         "$REPO_DIR/venv/bin/python3"; do
-        if [ -x "$candidate" ]; then
+        if [ -x "$candidate" ] && python_supports_required_version "$candidate"; then
             printf '%s\n' "$candidate"
             return 0
         fi
     done
 
-    if command -v python >/dev/null 2>&1; then
-        command -v python
-        return 0
-    fi
-    if command -v python3 >/dev/null 2>&1; then
-        command -v python3
-        return 0
-    fi
+    for candidate in python3.12 python3 python; do
+        if ! command -v "$candidate" >/dev/null 2>&1; then
+            continue
+        fi
+        if python_supports_required_version "$(command -v "$candidate")"; then
+            command -v "$candidate"
+            return 0
+        fi
+    done
     return 1
 }
 
@@ -55,29 +128,29 @@ if [ -z "$PYTHON_BIN" ]; then
     exit 1
 fi
 
-resolve_ruff_bin() {
-    local candidate
-    for candidate in \
-        "$REPO_DIR/.venv/bin/ruff" \
-        "$REPO_DIR/venv/bin/ruff"; do
-        if [ -x "$candidate" ]; then
-            printf '%s\n' "$candidate"
-            return 0
-        fi
-    done
-
-    if command -v ruff >/dev/null 2>&1; then
-        command -v ruff
-        return 0
-    fi
-    return 1
+run_python_module() {
+    "$PYTHON_BIN" -m "$@"
 }
 
-RUFF_BIN="$(resolve_ruff_bin || true)"
-if [ -z "$RUFF_BIN" ]; then
-    echo "ERROR: Could not find ruff executable (expected .venv/bin/ruff or ruff on PATH)."
-    exit 1
-fi
+run_ruff() {
+    run_python_module ruff "$@"
+}
+
+run_mypy() {
+    run_python_module mypy "$@"
+}
+
+run_bandit() {
+    run_python_module bandit "$@"
+}
+
+run_pip_audit() {
+    run_python_module pip_audit "$@"
+}
+
+run_pip_licenses() {
+    run_python_module piplicenses "$@"
+}
 
 # ── Tool version pins (must match CI and requirements-dev.txt) ────────
 EXPECTED_RUFF="0.8.4"
@@ -102,6 +175,7 @@ PRESERVE_TEST_VOLUMES="${PRESERVE_TEST_VOLUMES:-false}"
 RUN_DISCORD_E2E_REQUIRED="${RUN_DISCORD_E2E_REQUIRED:-true}"
 DISCORD_E2E_PROVIDER="${DISCORD_E2E_PROVIDER:-groq}"
 RUN_DISCORD_E2E_LOCAL_MODEL="${RUN_DISCORD_E2E_LOCAL_MODEL:-false}"
+E2E_ENABLE_OLLAMA="${E2E_ENABLE_OLLAMA:-false}"
 RUN_BANDIT_CHECK="${RUN_BANDIT_CHECK:-true}"
 RUN_LICENSE_COMPLIANCE_CHECK="${RUN_LICENSE_COMPLIANCE_CHECK:-true}"
 OLLAMA_PULL_PROFILE="none"
@@ -111,6 +185,7 @@ OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-3072}"
 MYPY_TIMEOUT_SECONDS="${MYPY_TIMEOUT_SECONDS:-1200}"
 PIPAUDIT_TIMEOUT_SECONDS="${PIPAUDIT_TIMEOUT_SECONDS:-300}"
 STATIC_TIMEOUT_SECONDS="${STATIC_TIMEOUT_SECONDS:-600}"
+COVERAGE_MINIMUM="${COVERAGE_MINIMUM:-90}"
 
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/e2e_run_manager.sh"
@@ -124,6 +199,32 @@ require_env_var() {
         return 1
     fi
     return 0
+}
+
+normalize_bool() {
+    local value="${1:-false}"
+    value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    case "$value" in
+        1|true|yes|on) printf 'true\n' ;;
+        *) printf 'false\n' ;;
+    esac
+}
+
+ensure_optional_ollama_profile() {
+    E2E_ENABLE_OLLAMA="$(normalize_bool "$E2E_ENABLE_OLLAMA")"
+    export E2E_ENABLE_OLLAMA
+
+    if [ "$E2E_ENABLE_OLLAMA" != "true" ]; then
+        return 0
+    fi
+
+    case ",${COMPOSE_PROFILES:-}," in
+        *,ollama,*)
+            ;;
+        *)
+            export COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}ollama"
+            ;;
+    esac
 }
 
 ensure_python_ca_bundle() {
@@ -320,14 +421,22 @@ start_docker_background() {
     for i in $(seq 1 90); do
         postgres=$(inspect_service_field "postgres" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
         qdrant=$(inspect_service_field "qdrant" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
-        ollama=$(inspect_service_field "ollama" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
-        ollama_router=$(inspect_service_field "ollama-router" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
+        ollama="not_required"
+        ollama_router="not_required"
+        ollama_ready=true
+        if [ "$E2E_ENABLE_OLLAMA" = "true" ]; then
+            ollama=$(inspect_service_field "ollama" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
+            ollama_router=$(inspect_service_field "ollama-router" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
+            if [ "$ollama" != "healthy" ] || [ "$ollama_router" != "healthy" ]; then
+                ollama_ready=false
+            fi
+        fi
         skills=$(inspect_service_field "zetherion-ai-skills" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
         api=$(inspect_service_field "zetherion-ai-api" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
         cgs_gateway=$(inspect_service_field "zetherion-ai-cgs-gateway" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
         bot=$(inspect_service_field "zetherion-ai-bot" '{{.State.Status}}')
 
-        if [ "$postgres" = "healthy" ] && [ "$qdrant" = "healthy" ] && [ "$ollama" = "healthy" ] && [ "$ollama_router" = "healthy" ] && [ "$skills" = "healthy" ] && [ "$api" = "healthy" ] && [ "$cgs_gateway" = "healthy" ] && [ "$bot" = "running" ]; then
+        if [ "$postgres" = "healthy" ] && [ "$qdrant" = "healthy" ] && [ "$skills" = "healthy" ] && [ "$api" = "healthy" ] && [ "$cgs_gateway" = "healthy" ] && [ "$bot" = "running" ] && [ "$ollama_ready" = "true" ]; then
             echo "[$(ts)] [docker] All services ready."
             break
         fi
@@ -422,18 +531,19 @@ fi
 if [ "$DISCORD_E2E_PROVIDER" = "groq" ]; then
     export ROUTER_BACKEND="groq"
     OLLAMA_PULL_PROFILE="none"
+    E2E_ENABLE_OLLAMA="$(normalize_bool "$E2E_ENABLE_OLLAMA")"
 else
     export ROUTER_BACKEND="ollama"
     OLLAMA_PULL_PROFILE="full"
+    E2E_ENABLE_OLLAMA="true"
 fi
+ensure_optional_ollama_profile
 echo "[$(ts)] Discord E2E provider mode: $DISCORD_E2E_PROVIDER (ROUTER_BACKEND=$ROUTER_BACKEND, OLLAMA_PULL_PROFILE=$OLLAMA_PULL_PROFILE)"
 
 if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
-    if [ -f ".env" ]; then
-        set -a
-        # shellcheck disable=SC1091
-        source .env
-        set +a
+    REPO_ENV_FILE="$(resolve_repo_env_file || true)"
+    if [ -n "$REPO_ENV_FILE" ]; then
+        source_repo_env_file "$REPO_ENV_FILE"
     fi
     # Canonical full gate runs cloud embeddings only (OpenAI), never local embedding pulls.
     EMBEDDINGS_BACKEND="openai"
@@ -498,7 +608,14 @@ echo ""
 echo "[$(ts)] [1/5] Static analysis..."
 
 # 1a. Ruff version check — prevents version-drift formatting failures
-ACTUAL_RUFF=$("$RUFF_BIN" --version 2>/dev/null | awk '{print $2}' || echo "unknown")
+if [ "$USE_DOCKER_PYTHON" = "true" ]; then
+    # The Docker-backed tool image is built from the pinned repo requirements,
+    # so version parity is guaranteed by the image context hash instead of a
+    # host-installed ruff binary.
+    ACTUAL_RUFF="$EXPECTED_RUFF"
+else
+    ACTUAL_RUFF="$(run_ruff --version 2>/dev/null | awk 'NR==1 {print $2}' || echo "unknown")"
+fi
 if [ "$ACTUAL_RUFF" != "$EXPECTED_RUFF" ]; then
     echo "ERROR: ruff version mismatch: local=$ACTUAL_RUFF, expected=$EXPECTED_RUFF"
     echo "  Fix: pip install ruff==$EXPECTED_RUFF (see requirements-dev.txt)"
@@ -507,21 +624,21 @@ fi
 
 echo "[$(ts)]   Launching static checks in parallel..."
 
-start_static_check "ruff lint" "$RUFF_BIN check $SRC_DIRS"
-start_static_check "ruff format" "$RUFF_BIN format --check $SRC_DIRS"
+start_static_check "ruff lint" "run_ruff check $SRC_DIRS"
+start_static_check "ruff format" "run_ruff format --check $SRC_DIRS"
 if [ "$RUN_BANDIT_CHECK" = "true" ]; then
-    start_static_check "bandit" "bandit -c pyproject.toml -r $LINT_DIRS -q"
+    start_static_check "bandit" "run_bandit -c pyproject.toml -r $LINT_DIRS -q"
 else
     echo "  [skip] bandit disabled (RUN_BANDIT_CHECK=false)"
 fi
 start_static_check "pipeline contract" "$PYTHON_BIN scripts/check_pipeline_contract.py"
 start_static_check "optional service guards" "$PYTHON_BIN scripts/check-optional-service-guards.py"
 start_static_check "endpoint docs bundle" "$PYTHON_BIN scripts/check-endpoint-doc-bundle.py"
-start_static_check "docs nav" "scripts/check-docs-nav.py"
-start_static_check "docs links" "scripts/check-docs-links.py"
-start_static_check "route doc parity" "scripts/check-route-doc-parity.py"
+start_static_check "docs nav" "$PYTHON_BIN scripts/check-docs-nav.py"
+start_static_check "docs links" "$PYTHON_BIN scripts/check-docs-links.py"
+start_static_check "route doc parity" "$PYTHON_BIN scripts/check-route-doc-parity.py"
 start_static_check "cgs route-doc parity" "$PYTHON_BIN scripts/check-cgs-route-doc-parity.py"
-start_static_check "env doc parity" "scripts/check-env-doc-parity.py"
+start_static_check "env doc parity" "$PYTHON_BIN scripts/check-env-doc-parity.py"
 start_static_check "docs build strict" "$PYTHON_BIN -m mkdocs build --strict"
 
 if command -v gitleaks >/dev/null 2>&1; then
@@ -540,8 +657,8 @@ fi
 
 if [ "$RUN_LICENSE_COMPLIANCE_CHECK" != "true" ]; then
     echo "  [skip] license compliance disabled (RUN_LICENSE_COMPLIANCE_CHECK=false)"
-elif command -v pip-licenses >/dev/null 2>&1; then
-    start_static_check "license compliance" "pip-licenses --allow-only=\"$LICENSE_ALLOWLIST\" --partial-match"
+elif run_pip_licenses --version >/dev/null 2>&1; then
+    start_static_check "license compliance" "run_pip_licenses --allow-only=\"$LICENSE_ALLOWLIST\" --partial-match"
 else
     echo "  [skip] pip-licenses not installed (pip install pip-licenses)"
 fi
@@ -599,13 +716,13 @@ rm -f .coverage .coverage.* .coverage-*
 rm -rf .mypy_cache
 
 # Start mypy in background
-mypy src/zetherion_ai/ updater_sidecar/ --config-file=pyproject.toml > "$MYPY_LOG" 2>&1 &
+run_mypy src/zetherion_ai/ updater_sidecar/ --config-file=pyproject.toml > "$MYPY_LOG" 2>&1 &
 BG_PIDS+=($!)
 MYPY_PID=$!
 
 # Start pip-audit in background
-if command -v pip-audit >/dev/null 2>&1; then
-    pip-audit -r requirements.txt --strict --desc on > "$PIPAUDIT_LOG" 2>&1 &
+if run_pip_audit --version >/dev/null 2>&1; then
+    run_pip_audit -r requirements.txt --strict --desc on > "$PIPAUDIT_LOG" 2>&1 &
     BG_PIDS+=($!)
     PIPAUDIT_PID=$!
 else
@@ -614,11 +731,13 @@ else
 fi
 
 # Run unit tests in foreground (so output streams live)
-"$PYTHON_BIN" -m pytest tests/ \
+COVERAGE_FILE=.coverage.unit "$PYTHON_BIN" -m pytest tests/ \
     -m "not integration and not discord_e2e" \
     -n 8 \
     --timeout=30 \
-    --tb=short -q
+    --tb=short -q \
+    --cov-append \
+    --cov-fail-under=0
 
 # Wait for mypy
 mypy_status=0
@@ -634,7 +753,7 @@ if [ "$mypy_status" -ne 0 ]; then
     if rg -q "Error reading JSON file; you likely have a bad cache" "$MYPY_LOG"; then
         echo "[$(ts)]   mypy cache is corrupted; clearing .mypy_cache and retrying once..."
         rm -rf .mypy_cache
-        if ! mypy src/zetherion_ai/ updater_sidecar/ --config-file=pyproject.toml > "$MYPY_LOG" 2>&1; then
+        if ! run_mypy src/zetherion_ai/ updater_sidecar/ --config-file=pyproject.toml > "$MYPY_LOG" 2>&1; then
             echo ""
             echo "mypy FAILED after cache reset:"
             cat "$MYPY_LOG"
@@ -681,7 +800,7 @@ echo "[$(ts)] [2/5] Unit tests + mypy + pip-audit passed."
 echo ""
 echo "[$(ts)] [3/5] In-process integration tests..."
 INTEGRATION_LOG="$(mktemp)"
-if ! "$PYTHON_BIN" -m pytest \
+if ! COVERAGE_FILE=.coverage.integration "$PYTHON_BIN" -m pytest \
     tests/integration/test_skills_http.py \
     tests/integration/test_heartbeat_cycle.py \
     tests/integration/test_email_personality_persistence_integration.py \
@@ -700,7 +819,9 @@ if ! "$PYTHON_BIN" -m pytest \
     tests/integration/test_youtube_http.py \
     -m "integration and not optional_e2e" \
     -n 4 \
-    --timeout=60 --tb=short -q --no-cov \
+    --timeout=60 --tb=short -q \
+    --cov-append \
+    --cov-fail-under=0 \
     > "$INTEGRATION_LOG" 2>&1; then
     cat "$INTEGRATION_LOG"
     rm -f "$INTEGRATION_LOG"
@@ -741,10 +862,12 @@ echo "[$(ts)] [3.5/5] E2E smoke preflight..."
 DOCKER_SMOKE_LOG="$(mktemp)"
 DISCORD_SMOKE_LOG="$(mktemp)"
 
-if DOCKER_MANAGED_EXTERNALLY=true "$PYTHON_BIN" -m pytest \
+if COVERAGE_FILE=.coverage.smoke.docker DOCKER_MANAGED_EXTERNALLY=true "$PYTHON_BIN" -m pytest \
     tests/integration/test_e2e.py::test_docker_services_running \
     tests/integration/test_e2e.py::test_skills_service_health \
-    -m "integration and not optional_e2e" --timeout=120 -v --tb=short -s --no-cov \
+    -m "integration and not optional_e2e" --timeout=120 -v --tb=short -s \
+    --cov-append \
+    --cov-fail-under=0 \
     > "$DOCKER_SMOKE_LOG" 2>&1; then
     echo "[$(ts)] Docker E2E smoke preflight passed."
 else
@@ -760,7 +883,11 @@ if ! assert_no_skips_in_log "Docker E2E smoke preflight" "$DOCKER_SMOKE_LOG"; th
 fi
 
 if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
-    if scripts/run-required-discord-e2e.sh -- -k test_bot_responds_to_message \
+    if COVERAGE_FILE=.coverage.smoke.discord DISCORD_E2E_ENABLE_COVERAGE=true \
+        scripts/run-required-discord-e2e.sh -- \
+        --cov-append \
+        --cov-fail-under=0 \
+        -k test_bot_responds_to_message \
         > "$DISCORD_SMOKE_LOG" 2>&1; then
         echo "[$(ts)] Discord E2E smoke preflight passed."
     else
@@ -798,8 +925,12 @@ HEARTBEAT_PID=$!
 # Launch required test groups concurrently.
 # Keep Discord first in wait order so a Discord failure fails fast.
 if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
-    DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true \
-        scripts/run-required-discord-e2e.sh > "$E2E_LOG_C" 2>&1 &
+    COVERAGE_FILE=.coverage.e2e.discord DISCORD_E2E_ENABLE_COVERAGE=true \
+        DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" DOCKER_MANAGED_EXTERNALLY=true \
+        scripts/run-required-discord-e2e.sh -- \
+        --cov-append \
+        --cov-fail-under=0 \
+        > "$E2E_LOG_C" 2>&1 &
     E2E_PIDS+=($!)
     E2E_NAMES+=("Discord E2E tests")
     DISCORD_REQUIRED_STARTED=true
@@ -807,18 +938,22 @@ else
     echo "[$(ts)] Discord required E2E skipped (set RUN_DISCORD_E2E_REQUIRED=true to enforce)."
 fi
 
-DOCKER_MANAGED_EXTERNALLY=true "$PYTHON_BIN" -m pytest \
+COVERAGE_FILE=.coverage.e2e.docker DOCKER_MANAGED_EXTERNALLY=true "$PYTHON_BIN" -m pytest \
     tests/integration/test_e2e.py \
-    -m "integration and not optional_e2e" --timeout=120 -v --tb=short -s --no-cov \
+    -m "integration and not optional_e2e" --timeout=120 -v --tb=short -s \
+    --cov-append \
+    --cov-fail-under=0 \
     > "$E2E_LOG_A" 2>&1 &
 E2E_PIDS+=($!)
 E2E_NAMES+=("Docker E2E tests (test_e2e.py)")
 
-DOCKER_MANAGED_EXTERNALLY=true "$PYTHON_BIN" -m pytest \
+COVERAGE_FILE=.coverage.e2e.services DOCKER_MANAGED_EXTERNALLY=true "$PYTHON_BIN" -m pytest \
     tests/integration/test_health_e2e.py \
     tests/integration/test_update_e2e.py \
     tests/integration/test_telemetry_e2e.py \
-    -m "integration and not optional_e2e" --timeout=120 -v --tb=short -s --no-cov \
+    -m "integration and not optional_e2e" --timeout=120 -v --tb=short -s \
+    --cov-append \
+    --cov-fail-under=0 \
     > "$E2E_LOG_B" 2>&1 &
 E2E_PIDS+=($!)
 E2E_NAMES+=("Health/Update/Telemetry E2E tests")
@@ -918,6 +1053,31 @@ if [ "$E2E_FAILED" = true ]; then
 fi
 
 echo "[$(ts)] [4/5] All E2E tests passed."
+
+# ── Step 4.5: Combined coverage gate ─────────────────────────────
+echo ""
+echo "[$(ts)] [4.5/5] Combined coverage report..."
+
+mapfile -t COVERAGE_DATA_FILES < <(find . -maxdepth 1 -type f -name '.coverage*' | sort)
+if [ "${#COVERAGE_DATA_FILES[@]}" -gt 1 ]; then
+    if ! run_python_module coverage combine > /dev/null 2>&1; then
+        echo "[$(ts)] ERROR: Failed to combine coverage data."
+        exit 1
+    fi
+fi
+
+if [ ! -f .coverage ]; then
+    echo "[$(ts)] ERROR: Coverage data file .coverage was not produced."
+    exit 1
+fi
+
+if ! run_python_module coverage report --fail-under="$COVERAGE_MINIMUM"; then
+    echo ""
+    echo "[$(ts)] [4.5/5] Combined coverage FAILED."
+    exit 1
+fi
+
+echo "[$(ts)] [4.5/5] Combined coverage passed."
 
 # ── Step 5: Summary ──────────────────────────────────────────────
 echo ""

@@ -38,7 +38,7 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$OwnerUserId = "",
     [Parameter(Mandatory = $false)]
-    [string]$RunnerServiceAccount = "NT AUTHORITY\NETWORK SERVICE"
+    [string]$RunnerServiceAccount = ""
 )
 
 Set-StrictMode -Version Latest
@@ -133,7 +133,35 @@ function Set-SecretFileAcl {
     Set-Acl -Path $Path -AclObject $acl
 }
 
+function Resolve-RunnerAccount {
+    param([string]$RequestedAccount)
+
+    if ($RequestedAccount) {
+        return $RequestedAccount
+    }
+
+    try {
+        $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+        if ($identity -and $identity.Name) {
+            return [string]$identity.Name
+        }
+    } catch {
+        # Ignore and fall back to environment-derived actor.
+    }
+
+    if ($env:USERDOMAIN -and $env:USERNAME) {
+        return "$env:USERDOMAIN\$env:USERNAME"
+    }
+
+    if ($env:USERNAME) {
+        return [string]$env:USERNAME
+    }
+
+    throw "RunnerServiceAccount must resolve to a Windows user principal."
+}
+
 Ensure-ParentDir -Path $SecretPath
+$RunnerServiceAccount = Resolve-RunnerAccount -RequestedAccount $RunnerServiceAccount
 
 $payload = [ordered]@{
     version = 1

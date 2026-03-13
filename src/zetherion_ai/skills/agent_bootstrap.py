@@ -348,6 +348,7 @@ def _collect_commands(repo: dict[str, Any]) -> dict[str, list[list[str]]]:
     return {
         "mandatory_static_gates": extract(list(repo.get("mandatory_static_gates") or [])),
         "local_fast": extract(list(repo.get("local_fast_lanes") or [])),
+        "local_full": extract(list(repo.get("local_full_lanes") or [])),
         "windows_full": extract(list(repo.get("windows_full_lanes") or [])),
     }
 
@@ -498,6 +499,7 @@ def _default_workspace_manifest(repo: dict[str, Any]) -> dict[str, Any]:
         "install_commands": install_commands,
         "start_commands": start_commands,
         "local_fast_commands": _collect_commands(repo)["local_fast"],
+        "local_full_commands": _collect_commands(repo)["local_full"],
         "windows_full_commands": _collect_commands(repo)["windows_full"],
         "docker_only_windows": str(repo.get("windows_execution_mode") or "") == "docker_only",
         "github_governance": {
@@ -516,6 +518,7 @@ def _default_test_harness_manifest(repo: dict[str, Any]) -> dict[str, Any]:
         "repo_id": str(repo["repo_id"]),
         "mandatory_static_gates": list(repo.get("mandatory_static_gates") or []),
         "local_fast_lanes": list(repo.get("local_fast_lanes") or []),
+        "local_full_lanes": list(repo.get("local_full_lanes") or []),
         "windows_full_lanes": list(repo.get("windows_full_lanes") or []),
         "shard_templates": list(repo.get("shard_templates") or []),
         "resource_classes": dict(repo.get("resource_classes") or {}),
@@ -530,6 +533,7 @@ def _default_command_catalog(repo: dict[str, Any]) -> dict[str, Any]:
     return {
         "mandatory_static_gates": commands["mandatory_static_gates"],
         "local_fast": commands["local_fast"],
+        "local_full": commands["local_full"],
         "windows_full": commands["windows_full"],
     }
 
@@ -5672,22 +5676,24 @@ class AgentBootstrapSkill(Skill):
             "stack_kind": stack_kind,
             "mandatory_static_gates": [],
             "local_fast_lanes": [],
+            "local_full_lanes": [],
             "windows_full_lanes": [],
             "shard_templates": [
                 {"family": "static", "source": "mandatory_static_gates"},
                 {"family": "fast", "source": "local_fast_lanes"},
+                {"family": "local_full", "source": "local_full_lanes"},
                 {"family": "windows_full", "source": "windows_full_lanes"},
             ],
             "scheduling_policy": {
                 "default_mode": "fast",
-                "max_parallel_local": 1,
+                "max_parallel_local": 8,
                 "max_parallel_windows": 2,
                 "rebalance_enabled": True,
             },
             "resource_classes": {
-                "tiny": {"max_parallel": 1},
-                "small": {"max_parallel": 1},
-                "docker_stack": {"max_parallel": 1},
+                "cpu": {"max_parallel": 8},
+                "service": {"max_parallel": 2},
+                "serial": {"max_parallel": 1},
             },
             "windows_execution_mode": "docker_only",
             "certification_requirements": ["mandatory_static_gates"],
@@ -5704,11 +5710,17 @@ class AgentBootstrapSkill(Skill):
             },
             "review_policy": {
                 "require_reviewer": True,
-                "required_statuses": ["ready_to_merge"],
+                "required_statuses": ["zetherion/merge-readiness"],
             },
             "promotion_policy": {
-                "deployment_mode": "github_only",
+                "deployment_mode": "zetherion_control_plane",
+                "github_decision_mode": "external_status_only",
+                "status_contexts": {
+                    "merge": "zetherion/merge-readiness",
+                    "deploy": "zetherion/deploy-readiness",
+                },
                 "require_certification": False,
+                "require_release_receipt": True,
             },
             "allowed_paths": [local_root, windows_root],
             "secrets_profile": None,

@@ -2,6 +2,8 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$DeployPath = "C:\ZetherionAI",
     [Parameter(Mandatory = $false)]
+    [string]$WslDistribution = "Ubuntu",
+    [Parameter(Mandatory = $false)]
     [string]$StartupTaskName = "ZetherionStartupRecover",
     [Parameter(Mandatory = $false)]
     [string]$WatchdogTaskName = "ZetherionRuntimeWatchdog",
@@ -9,6 +11,8 @@ param(
     [string]$PromotionsTaskName = "ZetherionPostDeployPromotions",
     [Parameter(Mandatory = $false)]
     [string]$CanaryTaskName = "ZetherionDiscordCanary",
+    [Parameter(Mandatory = $false)]
+    [string]$TaskUser = "",
     [Parameter(Mandatory = $false)]
     [string]$OutputPath = "resilience-verify.json"
 )
@@ -38,6 +42,55 @@ function Is-ServiceAccountPrincipal {
         "NETWORK SERVICE",
         "NT AUTHORITY\NETWORK SERVICE"
     )
+}
+
+function Test-WslCompatibleTaskPrincipal {
+    param([string]$UserId)
+
+    if (-not $UserId) {
+        return $false
+    }
+
+    return -not (Is-ServiceAccountPrincipal -UserId $UserId)
+}
+
+function Get-Actor {
+    try {
+        $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+        if ($identity -and $identity.Name) {
+            return [string]$identity.Name
+        }
+    } catch {
+        # Ignore and fall back to environment-derived actor.
+    }
+
+    $userDomain = [string]$env:USERDOMAIN
+    $userName = [string]$env:USERNAME
+    if ($userDomain -and $userName) {
+        return "$userDomain\$userName"
+    }
+    if ($userName) {
+        return $userName
+    }
+    return ""
+}
+
+function Resolve-TaskUser {
+    param([string]$RequestedUser)
+
+    if ($RequestedUser) {
+        if (-not (Test-WslCompatibleTaskPrincipal -UserId $RequestedUser)) {
+            throw "TaskUser must be a non-service Windows user principal."
+        }
+        return $RequestedUser
+    }
+
+    $candidate = Get-Actor
+    if (Test-WslCompatibleTaskPrincipal -UserId $candidate) {
+        return $candidate
+    }
+
+    throw "TaskUser must resolve to a non-service Windows user principal."
 }
 
 function Task-ActionContains {
@@ -126,6 +179,7 @@ function Get-TaskVerification {
     param(
         [string]$TaskName,
         [string]$ScriptNeedle,
+        [string]$ExpectedPrincipalUser,
         [bool]$RequireStartupTrigger,
         [bool]$RequireRepetitionTrigger
     )
@@ -138,11 +192,13 @@ function Get-TaskVerification {
             enabled = $false
             principal_user = ""
             system_principal = $false
+            wsl_compatible_principal = $false
             action_matches = $false
             trigger_startup = $false
             trigger_repetition = $false
             trigger_types = @()
             trigger_count = 0
+            expected_principal_user = $ExpectedPrincipalUser
             required_startup_trigger = [bool]$RequireStartupTrigger
             required_repetition_trigger = [bool]$RequireRepetitionTrigger
             source = "missing"
@@ -155,14 +211,18 @@ function Get-TaskVerification {
     $enabled = [bool]$task.Settings.Enabled
     $principalUser = [string]$task.Principal.UserId
     $systemPrincipal = Is-ServiceAccountPrincipal -UserId $principalUser
+    $wslCompatiblePrincipal = Test-WslCompatibleTaskPrincipal -UserId $principalUser
     $actionMatches = Task-ActionContains -Task $task -Needle $ScriptNeedle
 
     $failures = @()
     if (-not $enabled) {
         $failures += "task_disabled"
     }
-    if (-not $systemPrincipal) {
-        $failures += "principal_not_system"
+    if (-not $wslCompatiblePrincipal) {
+        $failures += "principal_not_wsl_compatible"
+    }
+    if ($ExpectedPrincipalUser -and $principalUser -ine $ExpectedPrincipalUser) {
+        $failures += "principal_mismatch"
     }
     if (-not $actionMatches) {
         $failures += "action_mismatch"
@@ -180,11 +240,13 @@ function Get-TaskVerification {
         enabled = [bool]$enabled
         principal_user = $principalUser
         system_principal = [bool]$systemPrincipal
+        wsl_compatible_principal = [bool]$wslCompatiblePrincipal
         action_matches = [bool]$actionMatches
         trigger_startup = [bool]$triggerFacts.trigger_startup
         trigger_repetition = [bool]$triggerFacts.trigger_repetition
         trigger_types = @($triggerFacts.trigger_types)
         trigger_count = [int]$triggerFacts.trigger_count
+        expected_principal_user = $ExpectedPrincipalUser
         required_startup_trigger = [bool]$RequireStartupTrigger
         required_repetition_trigger = [bool]$RequireRepetitionTrigger
         source = "scheduled_task_api"
@@ -192,6 +254,8 @@ function Get-TaskVerification {
         passes = [bool]($failures.Count -eq 0)
     }
 }
+
+$taskUser = Resolve-TaskUser -RequestedUser $TaskUser
 
 $result = [ordered]@{
     generated_at = [DateTime]::UtcNow.ToString("o")
@@ -204,36 +268,38 @@ $result = [ordered]@{
     }
     details = [ordered]@{
         deploy_path = $DeployPath
+        wsl_distribution = $WslDistribution
         expected = [ordered]@{
             startup = [ordered]@{
                 task_name = $StartupTaskName
                 script = "startup-recover.ps1"
-                principal = "NT AUTHORITY\\NETWORK SERVICE"
+                principal = $taskUser
                 requires_startup_trigger = $true
                 requires_repetition_trigger = $false
             }
             watchdog = [ordered]@{
                 task_name = $WatchdogTaskName
                 script = "runtime-watchdog.ps1"
-                principal = "NT AUTHORITY\\NETWORK SERVICE"
+                principal = $taskUser
                 requires_startup_trigger = $false
                 requires_repetition_trigger = $true
             }
             promotions = [ordered]@{
                 task_name = $PromotionsTaskName
                 script = "promotions-watch.ps1"
-                principal = "NT AUTHORITY\\NETWORK SERVICE"
+                principal = $taskUser
                 requires_startup_trigger = $true
                 requires_repetition_trigger = $true
             }
             canary = [ordered]@{
                 task_name = $CanaryTaskName
                 script = "discord-canary-runner.ps1"
-                principal = "NT AUTHORITY\\NETWORK SERVICE"
+                principal = $taskUser
                 requires_startup_trigger = $true
                 requires_repetition_trigger = $true
             }
         }
+        task_user = $taskUser
         startup_task = $null
         watchdog_task = $null
         promotions_task = $null
@@ -247,24 +313,28 @@ try {
     $startup = Get-TaskVerification `
         -TaskName $StartupTaskName `
         -ScriptNeedle "startup-recover.ps1" `
+        -ExpectedPrincipalUser $taskUser `
         -RequireStartupTrigger $true `
         -RequireRepetitionTrigger $false
 
     $watchdog = Get-TaskVerification `
         -TaskName $WatchdogTaskName `
         -ScriptNeedle "runtime-watchdog.ps1" `
+        -ExpectedPrincipalUser $taskUser `
         -RequireStartupTrigger $false `
         -RequireRepetitionTrigger $true
 
     $promotions = Get-TaskVerification `
         -TaskName $PromotionsTaskName `
         -ScriptNeedle "promotions-watch.ps1" `
+        -ExpectedPrincipalUser $taskUser `
         -RequireStartupTrigger $true `
         -RequireRepetitionTrigger $true
 
     $canary = Get-TaskVerification `
         -TaskName $CanaryTaskName `
         -ScriptNeedle "discord-canary-runner.ps1" `
+        -ExpectedPrincipalUser $taskUser `
         -RequireStartupTrigger $true `
         -RequireRepetitionTrigger $true
 

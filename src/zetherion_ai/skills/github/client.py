@@ -1203,6 +1203,34 @@ class GitHubClient:
             return []
         return [dict(row) for row in runs if isinstance(row, dict)]
 
+    async def create_commit_status(
+        self,
+        owner: str,
+        repo: str,
+        sha: str,
+        *,
+        state: str,
+        context: str,
+        description: str,
+        target_url: str | None = None,
+    ) -> dict[str, Any]:
+        """Create or update a classic commit status for a SHA."""
+        payload: dict[str, Any] = {
+            "state": state,
+            "context": context,
+            "description": description[:140],
+        }
+        if target_url:
+            payload["target_url"] = target_url
+        data = await self._request(
+            "POST",
+            f"/repos/{owner}/{repo}/statuses/{sha}",
+            json_body=payload,
+        )
+        if isinstance(data, dict):
+            return data
+        raise GitHubAPIError("Unexpected response format")
+
     async def rerun_workflow(self, owner: str, repo: str, run_id: int) -> None:
         """Re-run a workflow.
 

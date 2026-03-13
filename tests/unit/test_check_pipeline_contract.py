@@ -20,20 +20,14 @@ def _load_module():
     return module
 
 
-def test_required_jobs_include_fast_path_and_deferred_jobs() -> None:
+def test_required_status_contexts_include_merge_and_deploy_readiness() -> None:
     module = _load_module()
 
-    expected = {
-        "detect-changes",
-        "risk-classifier",
-        "required-e2e-gate",
-        "docker-build-test",
-    }
+    expected = {"zetherion/merge-readiness", "zetherion/deploy-readiness"}
 
-    assert expected.issubset(module.REQUIRED_JOBS)
+    assert expected.issubset(module.REQUIRED_STATUS_CONTEXTS)
 
-
-def test_workflow_contracts_match_segment_4_offload_rules() -> None:
+def test_workflow_contracts_match_manual_helper_rules() -> None:
     module = _load_module()
 
     errors = module.validate_workflow_contracts(REPO_ROOT)

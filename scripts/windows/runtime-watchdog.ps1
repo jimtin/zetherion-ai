@@ -2,6 +2,8 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$DeployPath = "C:\ZetherionAI",
     [Parameter(Mandatory = $false)]
+    [string]$WslDistribution = "Ubuntu",
+    [Parameter(Mandatory = $false)]
     [string]$StatePath = "C:\ZetherionAI\data\watchdog-state.json",
     [Parameter(Mandatory = $false)]
     [string]$OutputPath = "C:\ZetherionAI\data\watchdog-result.json",
@@ -12,11 +14,18 @@ param(
     [Parameter(Mandatory = $false)]
     [int]$FailureThreshold = 2,
     [Parameter(Mandatory = $false)]
-    [string]$EventSource = "ZetherionRuntimeWatchdog"
+    [string]$EventSource = "ZetherionRuntimeWatchdog",
+    [Parameter(Mandatory = $false)]
+    [string]$CiRoot = "C:\ZetherionCI",
+    [Parameter(Mandatory = $false)]
+    [int64]$LowDiskFreeBytes = 21474836480,
+    [Parameter(Mandatory = $false)]
+    [int64]$TargetFreeBytes = 42949672960
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$env:ZETHERION_WSL_DISTRIBUTION = $WslDistribution
 . (Join-Path $PSScriptRoot "docker-runtime.ps1")
 
 if ($FailureThreshold -lt 1) {
@@ -99,6 +108,16 @@ function Extract-Checks {
     }
 }
 
+function Test-RestartableRuntimeFailure {
+    param([object]$Checks)
+
+    if ($null -eq $Checks) {
+        return $true
+    }
+
+    return (-not [bool]$Checks.containers_healthy) -or (-not [bool]$Checks.bot_startup_markers)
+}
+
 $state = Read-State -Path $StatePath
 $actions = @()
 $status = "failed"
@@ -116,6 +135,9 @@ $checks = [ordered]@{
 
 $verifyScriptPath = Join-Path $DeployPath "scripts\windows\verify-runtime.ps1"
 $rollbackScriptPath = Join-Path $DeployPath "scripts\windows\rollback-last-good.ps1"
+$diskStatusBefore = $null
+$diskStatusAfter = $null
+$diskCleanup = $null
 
 try {
     if (-not (Test-Path $DeployPath)) {
@@ -128,6 +150,13 @@ try {
         throw "Rollback script not found: $rollbackScriptPath"
     }
 
+    $diskStatusBefore = Get-ZetherionDiskStatus -Path $CiRoot -LowDiskFreeBytes $LowDiskFreeBytes -TargetFreeBytes $TargetFreeBytes
+    if ($diskStatusBefore.under_pressure) {
+        $diskCleanup = Invoke-ZetherionDiskCleanup -CiRoot $CiRoot -LowDiskFreeBytes $LowDiskFreeBytes -TargetFreeBytes $TargetFreeBytes -Aggressive
+        $actions += "disk_cleanup_low_headroom"
+    }
+    $diskStatusAfter = Get-ZetherionDiskStatus -Path $CiRoot -LowDiskFreeBytes $LowDiskFreeBytes -TargetFreeBytes $TargetFreeBytes
+
     & $verifyScriptPath -DeployPath $DeployPath -OutputPath $verifyPath
     if ($LASTEXITCODE -eq 0) {
         $checks = Extract-Checks -Path $verifyPath
@@ -136,51 +165,58 @@ try {
         $actions += "verify_success"
     } else {
         $checks = Extract-Checks -Path $verifyPath
-        $state.consecutive_failures = [int]$state.consecutive_failures + 1
         $actions += "verify_failed"
 
-        Push-Location $DeployPath
-        try {
-            docker compose restart
-        }
-        finally {
-            Pop-Location
-        }
-        $actions += "compose_restart"
+        if (Test-RestartableRuntimeFailure -Checks $checks) {
+            $state.consecutive_failures = [int]$state.consecutive_failures + 1
 
-        & $verifyScriptPath -DeployPath $DeployPath -OutputPath $verifyAfterRestartPath
-        if ($LASTEXITCODE -eq 0) {
-            $checks = Extract-Checks -Path $verifyAfterRestartPath
-            $state.consecutive_failures = 0
-            $status = "recovered_after_restart"
-            $actions += "verify_success_after_restart"
-        } elseif ([int]$state.consecutive_failures -ge $FailureThreshold) {
-            & $rollbackScriptPath `
-                -DeployPath $DeployPath `
-                -LastGoodShaPath $LastGoodShaPath `
-                -LockPath $LockPath `
-                -OutputPath $rollbackPath
-            if ($LASTEXITCODE -ne 0) {
-                throw "Rollback failed after repeated watchdog failures."
+            Push-Location $DeployPath
+            try {
+                docker compose restart
             }
+            finally {
+                Pop-Location
+            }
+            $actions += "compose_restart"
 
-            $actions += "rollback_executed"
-
-            & $verifyScriptPath -DeployPath $DeployPath -OutputPath $verifyAfterRollbackPath
+            & $verifyScriptPath -DeployPath $DeployPath -OutputPath $verifyAfterRestartPath
             if ($LASTEXITCODE -eq 0) {
-                $checks = Extract-Checks -Path $verifyAfterRollbackPath
+                $checks = Extract-Checks -Path $verifyAfterRestartPath
                 $state.consecutive_failures = 0
-                $status = "rolled_back"
-                $actions += "verify_success_after_rollback"
+                $status = "recovered_after_restart"
+                $actions += "verify_success_after_restart"
+            } elseif ([int]$state.consecutive_failures -ge $FailureThreshold) {
+                & $rollbackScriptPath `
+                    -DeployPath $DeployPath `
+                    -LastGoodShaPath $LastGoodShaPath `
+                    -LockPath $LockPath `
+                    -OutputPath $rollbackPath
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Rollback failed after repeated watchdog failures."
+                }
+
+                $actions += "rollback_executed"
+
+                & $verifyScriptPath -DeployPath $DeployPath -OutputPath $verifyAfterRollbackPath
+                if ($LASTEXITCODE -eq 0) {
+                    $checks = Extract-Checks -Path $verifyAfterRollbackPath
+                    $state.consecutive_failures = 0
+                    $status = "rolled_back"
+                    $actions += "verify_success_after_rollback"
+                } else {
+                    $checks = Extract-Checks -Path $verifyAfterRollbackPath
+                    $status = "failed"
+                    $actions += "verify_failed_after_rollback"
+                }
             } else {
-                $checks = Extract-Checks -Path $verifyAfterRollbackPath
-                $status = "failed"
-                $actions += "verify_failed_after_rollback"
+                $checks = Extract-Checks -Path $verifyAfterRestartPath
+                $status = "degraded"
+                $actions += "awaiting_failure_threshold"
             }
         } else {
-            $checks = Extract-Checks -Path $verifyAfterRestartPath
             $status = "degraded"
-            $actions += "awaiting_failure_threshold"
+            $state.consecutive_failures = 0
+            $actions += "restart_skipped_nonrestartable_failure"
         }
     }
 }
@@ -202,6 +238,9 @@ finally {
         actions = $actions
         consecutive_failures = [int]$state.consecutive_failures
         error = $errorText
+        disk_status_before = $diskStatusBefore
+        disk_status_after = $diskStatusAfter
+        disk_cleanup = $diskCleanup
     }
 
     Write-JsonFile -Payload $state -Path $StatePath

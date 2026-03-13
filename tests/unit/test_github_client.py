@@ -1,5 +1,7 @@
 """Tests for GitHub API client."""
 
+import io
+import zipfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -73,6 +75,124 @@ class TestGitHubClient:
             assert client.rate_limit is not None
             assert client.rate_limit.limit == 5000
             assert client.rate_limit.remaining == 4999
+
+    @pytest.mark.asyncio
+    async def test_installation_archive_compare_and_branch_protection_helpers(self, client):
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(
+                side_effect=[
+                    {
+                        "repositories": [
+                            {
+                                "id": 1,
+                                "name": "repo",
+                                "full_name": "owner/repo",
+                                "private": True,
+                                "default_branch": "main",
+                            }
+                        ]
+                    },
+                    {"ahead_by": 1},
+                    {"required_status_checks": {"strict": True}},
+                ]
+            ),
+        ) as mock_request:
+            repositories = await client.list_installation_repositories()
+            comparison = await client.compare_commits(
+                "owner",
+                "repo",
+                base="main",
+                head="feature",
+            )
+            protection = await client.get_branch_protection(
+                "owner",
+                "repo",
+                branch="main",
+            )
+
+        assert repositories[0].full_name == "owner/repo"
+        assert comparison["ahead_by"] == 1
+        assert protection == {"required_status_checks": {"strict": True}}
+        assert mock_request.await_count == 3
+
+        with pytest.raises(ValueError, match="base and head are required"):
+            await client.compare_commits("owner", "repo", base="", head="feature")
+        with pytest.raises(ValueError, match="branch is required"):
+            await client.get_branch_protection("owner", "repo", branch="")
+
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(side_effect=GitHubNotFoundError("missing")),
+        ):
+            assert await client.get_branch_protection("owner", "repo", branch="main") is None
+
+    @pytest.mark.asyncio
+    async def test_archive_workflow_logs_and_commit_status_helpers(self, client):
+        archive_response = MagicMock()
+        archive_response.content = b"archive-bytes"
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("logs/unit.txt", "line 1\nline 2\n")
+            archive.writestr("logs/worker.txt", "worker_error\n")
+        logs_response = MagicMock()
+        logs_response.content = buffer.getvalue()
+
+        with patch.object(
+            client,
+            "_send",
+            AsyncMock(side_effect=[archive_response, logs_response]),
+        ) as mock_send:
+            archive_bytes = await client.get_repository_archive(
+                "owner",
+                "repo",
+                ref="main",
+                archive_format="tarball",
+            )
+            logs = await client.download_workflow_run_logs("owner", "repo", 123)
+
+        assert archive_bytes == b"archive-bytes"
+        assert logs["entries"][0]["name"] == "logs/unit.txt"
+        assert "worker_error" in logs["combined_text"]
+        assert logs["archive_size_bytes"] > 0
+        assert mock_send.await_count == 2
+        with pytest.raises(ValueError, match="archive_format"):
+            await client.get_repository_archive("owner", "repo", archive_format="rar")
+
+        with patch.object(
+            client,
+            "_request",
+            AsyncMock(
+                side_effect=[
+                    {"id": 123},
+                    {"jobs": [{"id": 1}]},
+                    {"artifacts": [{"id": 2}]},
+                    {"id": 999},
+                ]
+            ),
+        ) as mock_request:
+            workflow_run = await client.get_workflow_run("owner", "repo", 123)
+            jobs = await client.list_workflow_jobs("owner", "repo", 123)
+            artifacts = await client.list_workflow_run_artifacts("owner", "repo", 123)
+            status = await client.create_commit_status(
+                "owner",
+                "repo",
+                "a" * 40,
+                state="success",
+                context="zetherion/merge-readiness",
+                description="ready",
+                target_url="https://cgs.example.com",
+            )
+
+        assert workflow_run["id"] == 123
+        assert jobs[0]["id"] == 1
+        assert artifacts[0]["id"] == 2
+        assert status["id"] == 999
+        status_payload = mock_request.await_args.kwargs["json_body"]
+        assert status_payload["target_url"] == "https://cgs.example.com"
 
 
 class TestGitHubClientErrors:

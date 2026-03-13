@@ -2,6 +2,8 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$DeployPath = "C:\ZetherionAI",
     [Parameter(Mandatory = $false)]
+    [string]$WslDistribution = "Ubuntu",
+    [Parameter(Mandatory = $false)]
     [string]$StartupTaskName = "ZetherionStartupRecover",
     [Parameter(Mandatory = $false)]
     [string]$WatchdogTaskName = "ZetherionRuntimeWatchdog",
@@ -9,6 +11,8 @@ param(
     [string]$PromotionsTaskName = "ZetherionPostDeployPromotions",
     [Parameter(Mandatory = $false)]
     [string]$CanaryTaskName = "ZetherionDiscordCanary",
+    [Parameter(Mandatory = $false)]
+    [string]$TaskUser = "",
     [Parameter(Mandatory = $false)]
     [int]$WatchdogIntervalMinutes = 5,
     [Parameter(Mandatory = $false)]
@@ -87,6 +91,7 @@ $result = [ordered]@{
         watchdog_task = $WatchdogTaskName
         promotions_task = $PromotionsTaskName
         canary_task = $CanaryTaskName
+        task_user = $TaskUser
         registration_output_path = $registrationPath
         verification_output_path = $verificationPath
         registration_exit_code = $null
@@ -111,10 +116,12 @@ try {
 
     & (Join-Path $PSScriptRoot "register-resilience-tasks.ps1") `
         -DeployPath $DeployPath `
+        -WslDistribution $WslDistribution `
         -StartupTaskName $StartupTaskName `
         -WatchdogTaskName $WatchdogTaskName `
         -PromotionsTaskName $PromotionsTaskName `
         -CanaryTaskName $CanaryTaskName `
+        -TaskUser $TaskUser `
         -WatchdogIntervalMinutes $WatchdogIntervalMinutes `
         -PromotionsIntervalMinutes $PromotionsIntervalMinutes `
         -CanaryIntervalMinutes $CanaryIntervalMinutes `
@@ -129,10 +136,12 @@ try {
 
     & (Join-Path $PSScriptRoot "verify-resilience-tasks.ps1") `
         -DeployPath $DeployPath `
+        -WslDistribution $WslDistribution `
         -StartupTaskName $StartupTaskName `
         -WatchdogTaskName $WatchdogTaskName `
         -PromotionsTaskName $PromotionsTaskName `
         -CanaryTaskName $CanaryTaskName `
+        -TaskUser $TaskUser `
         -OutputPath $verificationPath
     $verificationExitCode = $LASTEXITCODE
     $result.details.verification_exit_code = $verificationExitCode

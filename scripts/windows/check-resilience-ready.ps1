@@ -2,6 +2,8 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$DeployPath = "C:\ZetherionAI",
     [Parameter(Mandatory = $false)]
+    [string]$WslDistribution = "Ubuntu",
+    [Parameter(Mandatory = $false)]
     [string]$StartupTaskName = "ZetherionStartupRecover",
     [Parameter(Mandatory = $false)]
     [string]$WatchdogTaskName = "ZetherionRuntimeWatchdog",
@@ -10,11 +12,14 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$CanaryTaskName = "ZetherionDiscordCanary",
     [Parameter(Mandatory = $false)]
+    [string]$TaskUser = "",
+    [Parameter(Mandatory = $false)]
     [string]$OutputPath = "resilience-ready.json"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$env:ZETHERION_WSL_DISTRIBUTION = $WslDistribution
 . (Join-Path $PSScriptRoot "docker-runtime.ps1")
 
 function Ensure-ParentDir {
@@ -36,6 +41,53 @@ function Is-ServiceAccountPrincipal {
         "NETWORK SERVICE",
         "NT AUTHORITY\NETWORK SERVICE"
     )
+}
+
+function Test-WslCompatibleTaskPrincipal {
+    param([string]$UserId)
+    if (-not $UserId) {
+        return $false
+    }
+    return -not (Is-ServiceAccountPrincipal -UserId $UserId)
+}
+
+function Get-Actor {
+    try {
+        $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+        if ($identity -and $identity.Name) {
+            return [string]$identity.Name
+        }
+    } catch {
+        # Ignore and fall back to environment-derived actor.
+    }
+
+    $userDomain = [string]$env:USERDOMAIN
+    $userName = [string]$env:USERNAME
+    if ($userDomain -and $userName) {
+        return "$userDomain\$userName"
+    }
+    if ($userName) {
+        return $userName
+    }
+    return ""
+}
+
+function Resolve-TaskUser {
+    param([string]$RequestedUser)
+
+    if ($RequestedUser) {
+        if (-not (Test-WslCompatibleTaskPrincipal -UserId $RequestedUser)) {
+            throw "TaskUser must be a non-service Windows user principal."
+        }
+        return $RequestedUser
+    }
+
+    $candidate = Get-Actor
+    if (Test-WslCompatibleTaskPrincipal -UserId $candidate) {
+        return $candidate
+    }
+
+    throw "TaskUser must resolve to a non-service Windows user principal."
 }
 
 function Task-ActionContains {
@@ -74,15 +126,18 @@ function Parse-SchtasksListOutput {
 }
 
 function Test-RecoveryTask {
-    param([string]$TaskName, [string]$ScriptNeedle)
+    param([string]$TaskName, [string]$ScriptNeedle, [string]$ExpectedPrincipalUser)
 
     $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     $record = [ordered]@{
         exists = $false
         enabled = $false
+        principal_user = ""
         system_principal = $false
+        wsl_compatible_principal = $false
         action_matches = $false
         task_state = "missing"
+        expected_principal_user = $ExpectedPrincipalUser
         source = "not_found"
         passes = $false
         degraded_pass = $false
@@ -90,18 +145,23 @@ function Test-RecoveryTask {
 
     if ($task) {
         $enabled = [bool]$task.Settings.Enabled
-        $systemPrincipal = Is-ServiceAccountPrincipal -UserId $task.Principal.UserId
+        $principalUser = [string]$task.Principal.UserId
+        $systemPrincipal = Is-ServiceAccountPrincipal -UserId $principalUser
+        $wslCompatiblePrincipal = Test-WslCompatibleTaskPrincipal -UserId $principalUser
         $actionMatches = Task-ActionContains -Task $task -Needle $ScriptNeedle
 
         $record = [ordered]@{
             exists = $true
             enabled = [bool]$enabled
+            principal_user = $principalUser
             system_principal = [bool]$systemPrincipal
+            wsl_compatible_principal = [bool]$wslCompatiblePrincipal
             action_matches = [bool]$actionMatches
             task_state = $task.State.ToString()
+            expected_principal_user = $ExpectedPrincipalUser
             source = "scheduled_task_api"
-            passes = ($enabled -and $systemPrincipal -and $actionMatches)
-            degraded_pass = ($enabled -and $actionMatches)
+            passes = ($enabled -and $wslCompatiblePrincipal -and $actionMatches -and ($principalUser -ieq $ExpectedPrincipalUser))
+            degraded_pass = $false
         }
     }
 
@@ -122,17 +182,22 @@ function Test-RecoveryTask {
         return [ordered]@{
             exists = $true
             enabled = [bool]$enabledFromStatus
+            principal_user = ""
             system_principal = [bool]$record.system_principal
+            wsl_compatible_principal = [bool]$record.wsl_compatible_principal
             action_matches = [bool]$record.action_matches
             task_state = $status
+            expected_principal_user = $ExpectedPrincipalUser
             source = "schtasks_query_fallback"
-            passes = [bool]($record.passes -or ($enabledFromStatus -and $stateLooksActive))
+            passes = [bool]$record.passes
             degraded_pass = [bool]($record.degraded_pass -or ($enabledFromStatus -and $stateLooksActive))
         }
     }
 
     return $record
 }
+
+$taskUser = Resolve-TaskUser -RequestedUser $TaskUser
 
 $checks = [ordered]@{
     recovery_tasks_registered = $false
@@ -144,10 +209,12 @@ $checks = [ordered]@{
 
 $details = [ordered]@{
     deploy_path = $DeployPath
+    wsl_distribution = $WslDistribution
     startup_task_name = $StartupTaskName
     watchdog_task_name = $WatchdogTaskName
     promotions_task_name = $PromotionsTaskName
     canary_task_name = $CanaryTaskName
+    task_user = $taskUser
     startup_task = $null
     watchdog_task = $null
     promotions_task = $null
@@ -158,10 +225,10 @@ $details = [ordered]@{
 }
 
 try {
-    $details.startup_task = Test-RecoveryTask -TaskName $StartupTaskName -ScriptNeedle "startup-recover.ps1"
-    $details.watchdog_task = Test-RecoveryTask -TaskName $WatchdogTaskName -ScriptNeedle "runtime-watchdog.ps1"
-    $details.promotions_task = Test-RecoveryTask -TaskName $PromotionsTaskName -ScriptNeedle "promotions-watch.ps1"
-    $details.canary_task = Test-RecoveryTask -TaskName $CanaryTaskName -ScriptNeedle "discord-canary-runner.ps1"
+    $details.startup_task = Test-RecoveryTask -TaskName $StartupTaskName -ScriptNeedle "startup-recover.ps1" -ExpectedPrincipalUser $taskUser
+    $details.watchdog_task = Test-RecoveryTask -TaskName $WatchdogTaskName -ScriptNeedle "runtime-watchdog.ps1" -ExpectedPrincipalUser $taskUser
+    $details.promotions_task = Test-RecoveryTask -TaskName $PromotionsTaskName -ScriptNeedle "promotions-watch.ps1" -ExpectedPrincipalUser $taskUser
+    $details.canary_task = Test-RecoveryTask -TaskName $CanaryTaskName -ScriptNeedle "discord-canary-runner.ps1" -ExpectedPrincipalUser $taskUser
 
     $checks.recovery_tasks_registered = [bool](
         ($details.startup_task.passes -or $details.startup_task.degraded_pass) -and

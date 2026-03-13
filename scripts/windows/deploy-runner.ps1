@@ -12,7 +12,9 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$DiagnosticsPath = "deploy-container-diagnostics.json",
     [Parameter(Mandatory = $false)]
-    [string]$DiagnosticsLogsPath = "deploy-container-logs.txt"
+    [string]$DiagnosticsLogsPath = "deploy-container-logs.txt",
+    [Parameter(Mandatory = $false)]
+    [string]$CleanupReceiptPath = "deploy-cleanup-receipt.json"
 )
 
 Set-StrictMode -Version Latest
@@ -229,6 +231,22 @@ function Get-EnvValueFromFile {
     return ""
 }
 
+function Test-TruthyValue {
+    param([string]$Value)
+
+    if (-not $Value) {
+        return $false
+    }
+
+    switch ($Value.Trim().ToLowerInvariant()) {
+        "1" { return $true }
+        "true" { return $true }
+        "yes" { return $true }
+        "on" { return $true }
+        default { return $false }
+    }
+}
+
 function Set-OrAddEnvLine {
     param(
         [Parameter(Mandatory = $true)]
@@ -301,6 +319,11 @@ function Get-OptionalComposeProfiles {
         $profiles.Add("whatsapp-bridge")
     }
 
+    $ollamaEnabled = Test-TruthyValue -Value (Get-EnvValueFromFile -Path $rootEnvPath -Keys @("ENABLE_OLLAMA_RUNTIME"))
+    if ($ollamaEnabled) {
+        $profiles.Add("ollama")
+    }
+
     return [string[]]$profiles.ToArray()
 }
 
@@ -346,8 +369,17 @@ function Ensure-RequiredRuntimeEnv {
         $updatedKeys.Add("CGS_AUTH_AUDIENCE")
     }
 
+    $ollamaEnabled = Test-TruthyValue -Value (Get-EnvValueFromFile -Path $rootEnvPath -Keys @("ENABLE_OLLAMA_RUNTIME"))
+    if (-not $ollamaEnabled) {
+        $routerBackend = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("ROUTER_BACKEND")
+        if ((-not $routerBackend) -or ($routerBackend -eq "ollama")) {
+            Set-OrAddEnvLine -Lines $lines -Key "ROUTER_BACKEND" -Value "gemini"
+            $updatedKeys.Add("ROUTER_BACKEND")
+        }
+    }
+
     $embeddingsBackend = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("EMBEDDINGS_BACKEND")
-    if (-not $embeddingsBackend) {
+    if ((-not $embeddingsBackend) -or ((-not $ollamaEnabled) -and ($embeddingsBackend -eq "ollama"))) {
         Set-OrAddEnvLine -Lines $lines -Key "EMBEDDINGS_BACKEND" -Value "openai"
         $updatedKeys.Add("EMBEDDINGS_BACKEND")
     }
@@ -385,6 +417,7 @@ $result = [ordered]@{
 }
 
 $lockCreated = $false
+$buildAttempted = $false
 
 try {
     if (-not (Test-Path $DeployPath)) {
@@ -452,6 +485,7 @@ try {
         $composeArgs.Add("--build")
         $composeArgs.Add("--remove-orphans")
 
+        $buildAttempted = $true
         & docker @composeArgs
         $composeExitCode = $LASTEXITCODE
         if ($composeExitCode -ne 0) {
@@ -461,6 +495,17 @@ try {
         $result.deployed_sha = $deployedSha
         $result.status = "deployed"
     } finally {
+        if ($buildAttempted) {
+            try {
+                $cleanupReceipt = Invoke-ZetherionDiskCleanup -CiRoot "C:\ZetherionCI" -Aggressive
+                Write-DeployResult -Result $cleanupReceipt -Path $CleanupReceiptPath
+                $result.cleanup_receipt_path = $CleanupReceiptPath
+                $result.cleanup_status = [string]$cleanupReceipt.status
+            } catch {
+                $result.cleanup_receipt_path = $CleanupReceiptPath
+                $result.cleanup_status = "cleanup_failed"
+            }
+        }
         Pop-Location
     }
 } catch {

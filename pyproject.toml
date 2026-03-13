@@ -94,9 +94,13 @@ timeout = 30
 timeout_method = "signal"
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "service_integration: marks tests that require the Docker-backed service integration harness",
+    "service_e2e: marks tests that require the Docker-backed end-to-end harness",
+    "delivery_canary: marks delivery-path canaries that are release-blocking",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "discord_e2e: marks tests as Discord end-to-end tests (deselect with '-m \"not discord_e2e\"')",
     "optional_e2e: marks environment-dependent end-to-end tests that are non-blocking",
+    "security_canary: marks expected-block security probes that are tracked separately from delivery canaries",
 ]
 
 [tool.coverage.run]

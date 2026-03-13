@@ -2,6 +2,8 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$DeployPath = "C:\ZetherionAI",
     [Parameter(Mandatory = $false)]
+    [string]$WslDistribution = "Ubuntu",
+    [Parameter(Mandatory = $false)]
     [string]$OutputPath = "C:\ZetherionAI\data\discord-canary\last-run.json",
     [Parameter(Mandatory = $false)]
     [string]$StatePath = "C:\ZetherionAI\data\discord-canary\state.json",

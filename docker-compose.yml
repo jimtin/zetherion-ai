@@ -302,8 +302,12 @@ services:
       - "--providers.file.directory=/etc/traefik/dynamic"
       - "--providers.file.watch=true"
       - "--entrypoints.api.address=:8443"
+      - "--entrypoints.skills.address=:8080"
       - "--api.insecure=false"
       - "--log.level=WARN"
+    ports:
+      - "127.0.0.1:${OWNER_CI_LOOPBACK_PORT:-18443}:8443"
+      - "127.0.0.1:${TRAEFIK_DASHBOARD_PORT:-18080}:8080"
     volumes:
       - ./config/traefik/dynamic:/etc/traefik/dynamic
     networks:
@@ -430,6 +434,8 @@ services:
     # Pin image by digest for reproducible builds (Dependabot auto-updates)
     image: ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed
     container_name: zetherion-ai-ollama
+    profiles:
+      - ollama
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -469,6 +475,8 @@ services:
     # Pin image by digest for reproducible builds (Dependabot auto-updates)
     image: ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed
     container_name: zetherion-ai-ollama-router
+    profiles:
+      - ollama
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
