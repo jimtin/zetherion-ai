@@ -9,14 +9,15 @@ import pytest
 from zetherion_ai.owner_ci import default_repo_profile
 from zetherion_ai.skills.base import SkillRequest
 from zetherion_ai.skills.ci_controller import CiControllerSkill
-from zetherion_ai.skills.pr_reviewer import PrReviewerSkill
+from zetherion_ai.skills.ci_observer import CiObserverSkill
+from zetherion_ai.skills.pr_reviewer import PrReviewerSkill, _normalize_owner_id
 
 
 def _storage() -> MagicMock:
     storage = MagicMock()
     storage.upsert_repo_profile = AsyncMock()
     storage.list_repo_profiles = AsyncMock(return_value=[])
-    storage.get_repo_profile = AsyncMock()
+    storage.get_repo_profile = AsyncMock(return_value=None)
     storage.create_plan_snapshot = AsyncMock()
     storage.get_plan_snapshot = AsyncMock()
     storage.list_plan_versions = AsyncMock(return_value=[])
@@ -26,10 +27,33 @@ def _storage() -> MagicMock:
     storage.create_run = AsyncMock()
     storage.get_run = AsyncMock()
     storage.list_runs = AsyncMock(return_value=[])
+    storage.get_reporting_readiness = AsyncMock(
+        return_value={"workspace_readiness": {"merge_ready": False, "deploy_ready": False}}
+    )
+    storage.get_local_repo_readiness = AsyncMock(return_value=(None, None))
     storage.store_run_github_receipt = AsyncMock()
+    storage.merge_run_metadata = AsyncMock()
     storage.set_run_status = AsyncMock()
     storage.store_run_review = AsyncMock()
     return storage
+
+
+def test_normalize_owner_id_prefers_context_then_user_then_default() -> None:
+    assert _normalize_owner_id(
+        SkillRequest(
+            user_id="user-1",
+            context={"owner_id": "owner-1", "operator_id": "op-1", "actor_sub": "actor-1"},
+        )
+    ) == "owner-1"
+    assert _normalize_owner_id(
+        SkillRequest(
+            user_id="user-1",
+            context={"operator_id": "op-1", "actor_sub": "actor-1"},
+        )
+    ) == "op-1"
+    assert _normalize_owner_id(SkillRequest(user_id="user-1", context={"actor_sub": "actor-1"})) == "actor-1"
+    assert _normalize_owner_id(SkillRequest(user_id="user-1")) == "user-1"
+    assert _normalize_owner_id(SkillRequest(user_id="")) == "owner"
 
 
 @pytest.mark.asyncio
@@ -77,8 +101,9 @@ async def test_ci_controller_certification_run_seeds_platform_canary_and_windows
     assert "discord_roundtrip" in create_kwargs["metadata"]["certification_requirements"]
     shards = create_kwargs["shards"]
     assert any(shard["execution_target"] == "windows_local" for shard in shards)
-    assert any(shard["lane_id"] == "ruff-check" for shard in shards)
     assert any(shard["lane_id"] == "discord-required-e2e" for shard in shards)
+    assert all(shard["execution_target"] == "windows_local" for shard in shards)
+    assert not any(shard["lane_id"] == "ruff-check" for shard in shards)
     assert all(
         shard.get("runner") == "docker"
         for shard in shards
@@ -94,8 +119,12 @@ async def test_ci_controller_certification_run_seeds_platform_canary_and_windows
 @pytest.mark.asyncio
 async def test_ci_controller_promotion_blocks_when_shards_are_awaiting_sync() -> None:
     storage = _storage()
+    profile = default_repo_profile("zetherion-ai")
+    assert profile is not None
+    storage.get_repo_profile.return_value = profile
     storage.get_run.return_value = {
         "run_id": "run-1",
+        "repo_id": "zetherion-ai",
         "review_receipts": {"merge_blocked": False},
         "shards": [{"lane_id": "windows", "status": "awaiting_sync"}],
     }
@@ -113,6 +142,311 @@ async def test_ci_controller_promotion_blocks_when_shards_are_awaiting_sync() ->
     assert response.success is True
     assert response.data["promoted"] is False
     storage.set_run_status.assert_awaited_once_with("owner-1", "run-1", "promotion_blocked")
+
+
+@pytest.mark.asyncio
+async def test_ci_controller_promotion_stores_merge_and_deploy_readiness_receipts() -> None:
+    storage = _storage()
+    profile = default_repo_profile("zetherion-ai")
+    assert profile is not None
+    storage.get_repo_profile.return_value = profile
+    storage.get_run.return_value = {
+        "run_id": "run-1",
+        "repo_id": "zetherion-ai",
+        "git_ref": "0123456789abcdef0123456789abcdef01234567",
+        "review_receipts": {"merge_blocked": False, "verdict": "approved"},
+        "metadata": {
+            "git_sha": "0123456789abcdef0123456789abcdef01234567",
+            "release_verification": {
+                "status": "healthy",
+                "summary": "Required runtime checks are green.",
+                "blocker_count": 0,
+            },
+        },
+        "shards": [{"lane_id": "windows", "status": "succeeded"}],
+        "github_receipts": {},
+    }
+    storage.store_run_github_receipt.side_effect = [
+        {"run_id": "run-1", "github_receipts": {}},
+        {"run_id": "run-1", "github_receipts": {}},
+    ]
+    storage.set_run_status.return_value = {"run_id": "run-1", "status": "ready_to_merge"}
+    skill = CiControllerSkill(storage=storage)
+
+    response = await skill.handle(
+        SkillRequest(
+            intent="ci_run_promote",
+            user_id="owner-1",
+            context={"run_id": "run-1"},
+        )
+    )
+
+    assert response.success is True
+    assert response.data["promoted"] is True
+    first_receipt = storage.store_run_github_receipt.await_args_list[0].args[2]
+    assert first_receipt["merge_readiness"]["state"] == "success"
+    assert first_receipt["deploy_readiness"]["state"] == "success"
+    assert first_receipt["repo_readiness"]["merge_ready"] is True
+
+
+@pytest.mark.asyncio
+async def test_ci_controller_promotion_blocks_when_local_required_paths_failed() -> None:
+    storage = _storage()
+    profile = default_repo_profile("zetherion-ai")
+    assert profile is not None
+    storage.get_repo_profile.return_value = profile
+    storage.get_run.return_value = {
+        "run_id": "run-2",
+        "repo_id": "zetherion-ai",
+        "git_ref": "0123456789abcdef0123456789abcdef01234567",
+        "review_receipts": {"merge_blocked": False, "verdict": "approved"},
+        "metadata": {
+            "git_sha": "0123456789abcdef0123456789abcdef01234567",
+            "release_verification": {
+                "status": "healthy",
+                "blocker_count": 0,
+            },
+        },
+        "shards": [
+            {
+                "shard_id": "shard-1",
+                "lane_id": "z-int-faults",
+                "status": "failed",
+                "metadata": {"covered_required_paths": ["queue_reliability"]},
+                "result": {},
+                "error": {},
+                "artifact_contract": {"expects": ["stdout"]},
+            }
+        ],
+        "github_receipts": {},
+    }
+    storage.store_run_github_receipt.return_value = {"run_id": "run-2", "github_receipts": {}}
+    storage.set_run_status.return_value = {"run_id": "run-2", "status": "promotion_blocked"}
+    skill = CiControllerSkill(storage=storage)
+
+    response = await skill.handle(
+        SkillRequest(
+            intent="ci_run_promote",
+            user_id="owner-1",
+            context={"run_id": "run-2"},
+        )
+    )
+
+    assert response.success is True
+    assert response.data["promoted"] is False
+    assert response.data["merge_readiness"]["state"] == "failure"
+    storage.set_run_status.assert_awaited_with("owner-1", "run-2", "promotion_blocked")
+
+
+@pytest.mark.asyncio
+async def test_ci_controller_store_release_receipt_patches_run_metadata() -> None:
+    storage = _storage()
+    storage.merge_run_metadata.return_value = {"run_id": "run-1"}
+    skill = CiControllerSkill(storage=storage)
+
+    response = await skill.handle(
+        SkillRequest(
+            intent="ci_run_store_release_receipt",
+            user_id="owner-1",
+            context={
+                "run_id": "run-1",
+                "receipt": {
+                    "status": "deployed_but_unhealthy",
+                    "summary": "Discord DM roundtrip failed.",
+                    "blocker_count": 1,
+                },
+            },
+        )
+    )
+
+    assert response.success is True
+    storage.merge_run_metadata.assert_awaited_once()
+    patch = storage.merge_run_metadata.await_args.args[2]
+    assert patch["release_verification"]["status"] == "deployed_but_unhealthy"
+    assert patch["release_verification"]["blocker_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_ci_controller_repo_plan_schedule_and_run_read_handlers() -> None:
+    storage = _storage()
+    profile = default_repo_profile("zetherion-ai")
+    assert profile is not None
+    storage.upsert_repo_profile.return_value = profile
+    storage.list_repo_profiles.return_value = [profile]
+    storage.get_repo_profile.return_value = profile
+    storage.create_plan_snapshot.return_value = {
+        "plan_id": "plan-1",
+        "version": 2,
+        "repo_id": "zetherion-ai",
+    }
+    storage.get_plan_snapshot.return_value = {
+        "plan_id": "plan-1",
+        "version": 2,
+        "repo_id": "zetherion-ai",
+    }
+    storage.list_plan_versions.return_value = [{"version": 2}, {"version": 1}]
+    storage.upsert_schedule.return_value = {"schedule_id": "sched-1", "repo_id": "zetherion-ai"}
+    storage.list_schedules.return_value = [{"schedule_id": "sched-1"}]
+    storage.get_run.return_value = {
+        "run_id": "run-1",
+        "repo_id": "zetherion-ai",
+        "shards": [
+            {
+                "shard_id": "shard-1",
+                "lane_id": "z-unit-core",
+                "status": "queued_local",
+                "metadata": {"resource_class": "cpu", "parallel_group": "unit"},
+            },
+            {
+                "shard_id": "shard-2",
+                "lane_id": "z-int-runtime",
+                "status": "running",
+                "metadata": {"resource_class": "service", "parallel_group": "db"},
+            },
+        ],
+    }
+    storage.list_runs.return_value = [{"run_id": "run-1"}]
+    skill = CiControllerSkill(storage=storage)
+
+    repo_upsert = await skill.handle(
+        SkillRequest(
+            intent="ci_repo_upsert",
+            user_id="owner-1",
+            context={
+                "repo_id": "zetherion-ai",
+                "github_repo": "jimtin/zetherion-ai",
+                "stack_kind": "python",
+            },
+        )
+    )
+    repo_list = await skill.handle(SkillRequest(intent="ci_repo_list", user_id="owner-1"))
+    repo_get = await skill.handle(
+        SkillRequest(
+            intent="ci_repo_get",
+            user_id="owner-1",
+            context={"repo_id": "zetherion-ai"},
+        )
+    )
+    plan_save = await skill.handle(
+        SkillRequest(
+            intent="ci_plan_save",
+            user_id="owner-1",
+            context={
+                "repo_id": "zetherion-ai",
+                "title": "Repair plan",
+                "content_markdown": "# Repair",
+            },
+        )
+    )
+    plan_get = await skill.handle(
+        SkillRequest(
+            intent="ci_plan_get",
+            user_id="owner-1",
+            context={"plan_id": "plan-1"},
+        )
+    )
+    plan_versions = await skill.handle(
+        SkillRequest(
+            intent="ci_plan_versions",
+            user_id="owner-1",
+            context={"plan_id": "plan-1"},
+        )
+    )
+    schedule = await skill.handle(
+        SkillRequest(
+            intent="ci_schedule_upsert",
+            user_id="owner-1",
+            context={"repo_id": "zetherion-ai", "name": "Daily"},
+        )
+    )
+    schedules = await skill.handle(
+        SkillRequest(
+            intent="ci_schedule_list",
+            user_id="owner-1",
+            context={"repo_id": "zetherion-ai"},
+        )
+    )
+    run_get = await skill.handle(
+        SkillRequest(
+            intent="ci_run_get",
+            user_id="owner-1",
+            context={"run_id": "run-1"},
+        )
+    )
+    run_list = await skill.handle(
+        SkillRequest(
+            intent="ci_run_list",
+            user_id="owner-1",
+            context={"repo_id": "zetherion-ai"},
+        )
+    )
+    rebalance = await skill.handle(
+        SkillRequest(
+            intent="ci_run_rebalance",
+            user_id="owner-1",
+            context={"run_id": "run-1"},
+        )
+    )
+
+    assert repo_upsert.success is True
+    assert repo_list.data["repos"][0]["repo_id"] == "zetherion-ai"
+    assert repo_get.data["repo"]["repo_id"] == "zetherion-ai"
+    assert plan_save.data["plan"]["plan_id"] == "plan-1"
+    assert plan_get.data["plan"]["version"] == 2
+    assert len(plan_versions.data["versions"]) == 2
+    assert schedule.data["schedule"]["schedule_id"] == "sched-1"
+    assert schedules.data["schedules"] == [{"schedule_id": "sched-1"}]
+    assert run_get.data["run"]["run_id"] == "run-1"
+    assert run_list.data["runs"] == [{"run_id": "run-1"}]
+    assert rebalance.data["rebalance"]["busy_parallel_groups"] == ["db"]
+
+
+@pytest.mark.asyncio
+async def test_ci_controller_store_github_receipt_and_publish_status_handlers() -> None:
+    storage = _storage()
+    profile = default_repo_profile("zetherion-ai")
+    assert profile is not None
+    storage.get_repo_profile.return_value = profile
+    storage.store_run_github_receipt.return_value = {
+        "run_id": "run-1",
+        "github_receipts": {"published_statuses": {"published": True}},
+    }
+    storage.get_run.return_value = {
+        "run_id": "run-1",
+        "repo_id": "zetherion-ai",
+        "metadata": {"git_sha": "0" * 40},
+        "github_receipts": {
+            "merge_readiness": {
+                "context": "zetherion/merge-readiness",
+                "state": "success",
+                "description": "Merge ready.",
+            }
+        },
+    }
+    skill = CiControllerSkill(storage=storage)
+    skill._publish_github_statuses = AsyncMock(  # type: ignore[method-assign]
+        return_value={"published": True, "contexts": ["zetherion/merge-readiness"]}
+    )
+
+    stored = await skill.handle(
+        SkillRequest(
+            intent="ci_run_store_github_receipt",
+            user_id="owner-1",
+            context={"run_id": "run-1", "receipt": {"merge_readiness": {"state": "success"}}},
+        )
+    )
+    published = await skill.handle(
+        SkillRequest(
+            intent="ci_run_publish_statuses",
+            user_id="owner-1",
+            context={"run_id": "run-1"},
+        )
+    )
+
+    assert stored.success is True
+    assert published.success is True
+    assert published.data["published_statuses"]["published"] is True
+    storage.store_run_github_receipt.assert_awaited()
 
 
 @pytest.mark.asyncio
@@ -150,6 +484,132 @@ async def test_pr_reviewer_blocks_certification_repo_without_windows_success() -
     }
 
 
+def test_pr_reviewer_metadata_and_initialize() -> None:
+    skill = PrReviewerSkill(storage=MagicMock())
+
+    assert skill.metadata.name == "pr_reviewer"
+    assert "ci_run_review" in skill.metadata.intents
+    assert skill.metadata.version == "0.2.0"
+
+
+@pytest.mark.asyncio
+async def test_pr_reviewer_initialize_and_run_id_validation() -> None:
+    skill = PrReviewerSkill(storage=MagicMock())
+
+    assert await skill.initialize() is True
+
+    response = await skill.handle(
+        SkillRequest(intent="ci_run_review", user_id="owner-1", context={})
+    )
+
+    assert response.success is False
+    assert "run_id is required" in str(response.error)
+
+
+@pytest.mark.asyncio
+async def test_pr_reviewer_supports_approved_and_needs_sync_verdicts() -> None:
+    storage = _storage()
+    skill = PrReviewerSkill(storage=storage)
+
+    approved_run = {
+        "run_id": "run-approved",
+        "repo_id": "zetherion-ai",
+        "metadata": {
+            "required_static_gates": ["ruff-check"],
+            "certification_required": False,
+            "platform_canary": True,
+        },
+        "shards": [{"lane_id": "ruff-check", "status": "succeeded"}],
+    }
+    needs_sync_run = {
+        "run_id": "run-sync",
+        "repo_id": "catalyst-group-solutions",
+        "metadata": {
+            "required_static_gates": ["lint"],
+            "certification_required": True,
+            "certification_requirements": ["discord_roundtrip"],
+            "platform_canary": False,
+        },
+        "shards": [
+            {
+                "lane_id": "lint",
+                "status": "succeeded",
+                "execution_target": "windows_local",
+                "result": {},
+            },
+            {
+                "lane_id": "discord-required-e2e",
+                "status": "succeeded",
+                "execution_target": "windows_local",
+                "result": {},
+            },
+        ],
+    }
+
+    approved = skill._review_run(approved_run)  # noqa: SLF001
+    needs_sync = skill._review_run(needs_sync_run)  # noqa: SLF001
+
+    assert approved["verdict"] == "approved"
+    assert approved["merge_blocked"] is False
+    assert needs_sync["verdict"] == "needs_sync"
+    assert needs_sync["merge_blocked"] is True
+    assert {finding["code"] for finding in needs_sync["findings"]} >= {
+        "observability_logs_missing",
+        "resource_samples_missing",
+        "platform_canary_missing",
+    }
+
+
+def test_pr_reviewer_flags_missing_static_gate_pending_and_missing_discord_receipt() -> None:
+    skill = PrReviewerSkill(storage=MagicMock())
+
+    review = skill._review_run(  # noqa: SLF001
+        {
+            "run_id": "run-2",
+            "repo_id": "zetherion-ai",
+            "metadata": {
+                "required_static_gates": ["ruff-check"],
+                "certification_required": True,
+                "certification_requirements": ["discord_roundtrip"],
+                "platform_canary": True,
+            },
+            "shards": [
+                {
+                    "lane_id": "unit-full",
+                    "status": "running",
+                    "execution_target": "windows_local",
+                    "result": {"log_chunks": ["ok"], "resource_samples": [1]},
+                }
+            ],
+        }
+    )
+
+    assert review["verdict"] == "blocked"
+    assert {finding["code"] for finding in review["findings"]} >= {
+        "mandatory_static_gates_missing",
+        "shard_pending",
+        "certification_incomplete",
+        "discord_roundtrip_missing",
+    }
+
+
+@pytest.mark.asyncio
+async def test_pr_reviewer_handle_reports_missing_run_and_unknown_intent() -> None:
+    storage = _storage()
+    storage.get_run.return_value = None
+    skill = PrReviewerSkill(storage=storage)
+
+    missing = await skill.handle(
+        SkillRequest(intent="ci_run_review", user_id="owner-1", context={"run_id": "missing"})
+    )
+    unknown = await skill.handle(SkillRequest(intent="ci_unknown", user_id="owner-1"))
+
+    assert missing.success is False
+    assert "not found" in str(missing.error)
+    assert unknown.success is False
+    assert "Unknown reviewer intent" in str(unknown.error)
+
+
 @pytest.mark.asyncio
 async def test_ci_controller_compile_plan_includes_static_gates_and_resource_budget() -> None:
     storage = _storage()
@@ -177,5 +637,154 @@ async def test_ci_controller_compile_plan_includes_static_gates_and_resource_bud
     plan = create_kwargs["plan"]
     assert plan["windows_execution_mode"] == "docker_only"
     assert "mandatory_static_gates" in plan["certification_requirements"]
-    assert any(shard["lane_id"] == "lint" for shard in plan["shards"])
     assert any(shard["lane_id"] == "golive-gate" for shard in plan["shards"])
+    assert all(shard["execution_target"] == "windows_local" for shard in plan["shards"])
+    assert not any(shard["lane_id"] == "lint" for shard in plan["shards"])
+    assert not any(shard["lane_id"] == "c-unit-core" for shard in plan["shards"])
+
+
+@pytest.mark.asyncio
+async def test_ci_observer_returns_workspace_readiness() -> None:
+    storage = _storage()
+    storage.get_reporting_readiness.return_value = {
+        "workspace_readiness": {
+            "merge_ready": True,
+            "deploy_ready": False,
+            "failed_required_paths": ["cgs_release_verification"],
+        },
+        "worker_certification": {
+            "status": "pending",
+            "execution_backend": "wsl_docker",
+            "wsl_distribution": "Ubuntu",
+        },
+        "repo_readiness": [
+            {
+                "repo_id": "catalyst-group-solutions",
+                "readiness": {"merge_ready": True, "deploy_ready": False},
+            }
+        ],
+    }
+    skill = CiObserverSkill(storage=storage)
+
+    response = await skill.handle(
+        SkillRequest(intent="ci_reporting_readiness", user_id="owner-1")
+    )
+
+    assert response.success is True
+    assert response.data["readiness"]["workspace_readiness"]["merge_ready"] is True
+    assert response.data["readiness"]["worker_certification"]["status"] == "pending"
+    assert response.data["readiness"]["worker_certification"]["execution_backend"] == "wsl_docker"
+    storage.get_reporting_readiness.assert_awaited_once_with("owner-1")
+
+
+@pytest.mark.asyncio
+async def test_ci_observer_supports_events_logs_and_debug_bundle_intents() -> None:
+    storage = _storage()
+    storage.get_run_events = AsyncMock(return_value=[{"event_id": "evt-1"}])
+    storage.get_run_log_chunks = AsyncMock(return_value=[{"chunk_id": "log-1"}])
+    storage.get_run_debug_bundle = AsyncMock(return_value={"bundle_id": "bundle-1"})
+    skill = CiObserverSkill(storage=storage)
+
+    events = await skill.handle(
+        SkillRequest(
+            intent="ci_run_events",
+            user_id="owner-1",
+            context={"run_id": "run-1", "shard_id": "shard-1", "limit": 25},
+        )
+    )
+    logs = await skill.handle(
+        SkillRequest(
+            intent="ci_run_logs",
+            user_id="owner-1",
+            context={"run_id": "run-1", "query": "error", "limit": 50},
+        )
+    )
+    bundle = await skill.handle(
+        SkillRequest(
+            intent="ci_run_debug_bundle",
+            user_id="owner-1",
+            context={"run_id": "run-1"},
+        )
+    )
+
+    assert events.success is True
+    assert events.data["events"] == [{"event_id": "evt-1"}]
+    assert logs.success is True
+    assert logs.data["logs"] == [{"chunk_id": "log-1"}]
+    assert bundle.success is True
+    assert bundle.data["debug_bundle"] == {"bundle_id": "bundle-1"}
+
+
+@pytest.mark.asyncio
+async def test_ci_observer_supports_project_and_worker_reports() -> None:
+    storage = _storage()
+    storage.get_project_resource_report = AsyncMock(return_value={"cpu": 12})
+    storage.get_project_failure_report = AsyncMock(return_value={"failures": 1})
+    storage.get_worker_resource_report = AsyncMock(return_value={"memory_gb": 48})
+    skill = CiObserverSkill(storage=storage)
+
+    project_resources = await skill.handle(
+        SkillRequest(
+            intent="ci_reporting_project_resources",
+            context={"operator_id": "owner-2", "repo_id": "zetherion-ai", "limit": 10},
+        )
+    )
+    project_failures = await skill.handle(
+        SkillRequest(
+            intent="ci_reporting_project_failures",
+            context={"operator_id": "owner-2", "repo_id": "zetherion-ai", "limit": 10},
+        )
+    )
+    worker_resources = await skill.handle(
+        SkillRequest(
+            intent="ci_reporting_worker_resources",
+            context={"actor_sub": "owner-3", "node_id": "windows-main", "limit": 10},
+        )
+    )
+
+    assert project_resources.success is True
+    assert project_resources.data["report"] == {"cpu": 12}
+    assert project_failures.success is True
+    assert project_failures.data["report"] == {"failures": 1}
+    assert worker_resources.success is True
+    assert worker_resources.data["report"] == {"memory_gb": 48}
+    storage.get_project_resource_report.assert_awaited_once_with(
+        "owner-2",
+        "zetherion-ai",
+        limit=10,
+    )
+    storage.get_project_failure_report.assert_awaited_once_with(
+        "owner-2",
+        "zetherion-ai",
+        limit=10,
+    )
+    storage.get_worker_resource_report.assert_awaited_once_with(
+        "owner-3",
+        "windows-main",
+        limit=10,
+    )
+
+
+@pytest.mark.asyncio
+async def test_ci_observer_requires_run_or_repo_identifiers_for_scoped_intents() -> None:
+    storage = _storage()
+    skill = CiObserverSkill(storage=storage)
+
+    missing_run = await skill.handle(SkillRequest(intent="ci_run_events", user_id="owner-1"))
+    missing_repo = await skill.handle(
+        SkillRequest(intent="ci_reporting_project_resources", user_id="owner-1")
+    )
+    missing_node = await skill.handle(
+        SkillRequest(intent="ci_reporting_worker_resources", user_id="owner-1")
+    )
+    unknown = await skill.handle(SkillRequest(intent="ci_unknown", user_id="owner-1"))
+
+    assert missing_run.success is False
+    assert missing_run.error == "run_id is required"
+    assert missing_repo.success is False
+    assert missing_repo.error == "repo_id is required"
+    assert missing_node.success is False
+    assert missing_node.error == "node_id is required"
+    assert unknown.success is False
+    assert unknown.error is not None
+    assert "Unknown CI observer intent" in unknown.error

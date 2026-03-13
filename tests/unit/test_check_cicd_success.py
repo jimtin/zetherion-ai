@@ -36,6 +36,9 @@ def _write_fake_gh(tmp_path: Path, fixtures: dict[str, object]) -> dict[str, str
 
             if args[:1] == ["api"]:
                 endpoint = args[1]
+                if endpoint.endswith("/status"):
+                    print(json.dumps(fixtures.get("statuses", {"statuses": []})))
+                    raise SystemExit(0)
                 if endpoint.endswith("/check-runs"):
                     print(json.dumps(fixtures.get("check_runs", {"check_runs": []})))
                     raise SystemExit(0)
@@ -143,6 +146,26 @@ def test_main_check_run_fallback_validates_deploy_receipt(tmp_path: Path) -> Non
     assert "Deployment success verified:" in result.stdout
 
 
+def test_external_statuses_satisfy_main_without_legacy_workflows(tmp_path: Path) -> None:
+    target_sha = "c" * 40
+    fixtures = {
+        "run_list": [],
+        "statuses": {
+            "statuses": [
+                {"context": "zetherion/deploy-readiness", "state": "success"},
+                {"context": "zetherion/merge-readiness", "state": "success"},
+            ]
+        },
+        "download_artifacts": {},
+    }
+
+    result = _run_script(tmp_path, fixtures, "--sha", target_sha, "--ref", "main")
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "CI success verified: source=external-statuses" in result.stdout
+    assert "Required status contexts:" in result.stdout
+
+
 def test_pending_main_check_runs_fail_with_pending_diagnostic(tmp_path: Path) -> None:
     target_sha = "b" * 40
     fixtures = {
@@ -177,4 +200,4 @@ def test_pending_main_check_runs_fail_with_pending_diagnostic(tmp_path: Path) ->
 
     assert result.returncode == 1
     assert "ERROR: CI verification is still pending" in result.stdout
-    assert "Required main check-runs:" in result.stdout
+    assert "Required evidence:" in result.stdout

@@ -1,89 +1,27 @@
 {
-  "jobs": {
-    "detect-changes": {
-      "local_equivalent": false,
-      "local_stage": "ci-policy",
-      "note": "Changed-path detection is CI workflow orchestration; local preflight uses the source-controlled manifest instead of this GitHub job."
-    },
-    "lint": {
-      "local_equivalent": true,
-      "local_stage": "static-analysis",
-      "note": "ruff lint/format are included in scripts/pre-push-tests.sh"
-    },
-    "type-check": {
-      "local_equivalent": true,
-      "local_stage": "unit+mypy",
-      "note": "mypy is required in scripts/pre-push-tests.sh; CI type-check runs on push code changes plus weekly/manual heavy verification, not on PRs."
-    },
-    "security": {
-      "local_equivalent": true,
-      "local_stage": "static-analysis",
-      "note": "bandit is included in scripts/pre-push-tests.sh; CI bandit runs on push code changes plus weekly/manual heavy verification, not on PRs."
-    },
-    "semgrep": {
-      "local_equivalent": false,
-      "local_stage": "ci-heavy-only",
-      "note": "semgrep runs only in heavy CI mode (manual/nightly)."
-    },
-    "secret-scan": {
-      "local_equivalent": true,
-      "local_stage": "static-analysis",
-      "note": "gitleaks diff scan runs in PR CI; full-history scan runs weekly/manual."
-    },
-    "dependency-audit": {
-      "local_equivalent": true,
-      "local_stage": "unit+mypy",
-      "note": "pip-audit is required in scripts/pre-push-tests.sh and runs in heavy CI mode weekly/manual."
-    },
-    "license-check": {
-      "local_equivalent": true,
-      "local_stage": "static-analysis",
-      "note": "pip-licenses allowlist check is in scripts/pre-push-tests.sh"
-    },
-    "pre-commit": {
-      "local_equivalent": true,
-      "local_stage": "superset-local",
-      "note": "pre-commit is covered by stricter canonical local pipeline checks"
-    },
-    "docs-contract": {
-      "local_equivalent": false,
-      "local_stage": "ci-path-gated",
-      "note": "docs-contract runs on push docs changes plus weekly/manual verification; PRs rely on local docs bundle checks instead of a GitHub docs job."
-    },
-    "pipeline-contract": {
-      "local_equivalent": true,
-      "local_stage": "static-analysis",
-      "note": "contract validation runs locally via scripts/check_pipeline_contract.py"
-    },
-    "risk-classifier": {
-      "local_equivalent": false,
-      "local_stage": "ci-policy",
-      "note": "risk classifier is CI policy logic that decides whether local required-E2E receipt evidence is mandatory."
-    },
-    "required-e2e-gate": {
-      "local_equivalent": true,
-      "local_stage": "e2e",
-      "note": "CI validates local required-E2E receipt contract; generate .ci/e2e-receipt.json via scripts/local-required-e2e-receipt.sh."
-    },
-    "zetherion-boundary-check": {
-      "local_equivalent": true,
-      "local_stage": "pre-push-boundary",
-      "note": "Top-level cgs/** is blocked in local pre-push and CI boundary checks."
-    },
-    "unit-test": {
-      "local_equivalent": true,
-      "local_stage": "unit+mypy",
-      "note": "unit tests with coverage >=90% are required locally; CI unit tests run on push code changes plus weekly/manual heavy verification, not on PRs."
-    },
-    "integration-test": {
-      "local_equivalent": true,
-      "local_stage": "integration",
-      "note": "integration suites run in canonical local pipeline and heavy CI mode (weekly/manual)."
-    },
-    "docker-build-test": {
-      "local_equivalent": true,
-      "local_stage": "integration",
-      "note": "Docker build validation is covered by the canonical local pipeline when it rebuilds the containerized test harness before required E2E."
-    }
+  "control_plane": {
+    "ci_authority": "zetherion",
+    "github_actions_role": "manual_helpers_only",
+    "local_heavy_gate_entrypoint": "./scripts/test-full.sh",
+    "local_required_e2e_receipt_entrypoint": "bash scripts/local-required-e2e-receipt.sh",
+    "required_status_contexts": [
+      "zetherion/merge-readiness",
+      "zetherion/deploy-readiness"
+    ],
+    "manual_helper_workflows": [
+      "Owner CI Bridge",
+      "Deploy Windows",
+      "Release",
+      "CodeQL",
+      "CI Maintenance",
+      "Deploy Documentation",
+      "Weekly Docs Gap Triage",
+      "Sync Documentation to Wiki"
+    ],
+    "notes": [
+      "Zetherion owns merge readiness, deploy readiness, evidence, incidents, and release verification.",
+      "GitHub Actions is limited to manual helper workflows and optional deployment handoff only.",
+      "All heavy lint, unit, integration, E2E, and Windows certification work must run locally or on the Windows worker."
+    ]
   }
 }

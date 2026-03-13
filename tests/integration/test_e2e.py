@@ -5,17 +5,21 @@ Tests cover core functionality and Phase 5 features (skills, scheduler, profiles
 """
 
 import asyncio
+import json
 import os
 import subprocess
 import time
 from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import pytest
 import pytest_asyncio
 
 from tests.integration.e2e_runtime import get_runtime
+from zetherion_ai.trust.scope import TrustDomain
 
 # Use module-scoped event loop so module-scoped async fixtures (mock_bot)
 # share the same loop across all tests in this module.
@@ -42,6 +46,22 @@ SKIP_INTEGRATION = os.getenv("SKIP_INTEGRATION_TESTS", "false").lower() == "true
 
 
 RUNTIME = get_runtime()
+
+
+def _http_get_json(url: str, *, timeout: int = 15) -> Any:
+    """Fetch JSON from a runtime service without relying on host curl."""
+    request = Request(url, headers={"Accept": "application/json"})
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            payload = response.read().decode("utf-8")
+    except HTTPError as exc:
+        pytest.fail(f"HTTP {exc.code} from {url}: {exc.reason}")
+    except URLError as exc:
+        pytest.fail(f"Could not reach {url}: {exc.reason}")
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError as exc:
+        pytest.fail(f"{url} did not return JSON: {exc}: {payload[:200]}")
 
 
 class DockerEnvironment:
@@ -109,11 +129,18 @@ class DockerEnvironment:
         expected = {
             "postgres": "healthy",
             "qdrant": "healthy",
-            "ollama-router": "healthy",
-            "ollama": "healthy",
             "zetherion-ai-skills": "healthy",
             "zetherion-ai-bot": "healthy",
         }
+        ollama_enabled = os.getenv("E2E_ENABLE_OLLAMA", "false").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if ollama_enabled:
+            expected["ollama-router"] = "healthy"
+            expected["ollama"] = "healthy"
 
         while time.time() - start_time < timeout:
             services_ok = all(
@@ -236,11 +263,12 @@ class MockDiscordBot:
         runtime = get_runtime()
 
         # Set container-exposed service URLs from the isolated runtime.
-        os.environ["QDRANT_HOST"] = "localhost"
+        os.environ["QDRANT_HOST"] = runtime.host
         os.environ["QDRANT_PORT"] = str(runtime.qdrant_port)
-        os.environ["OLLAMA_ROUTER_HOST"] = "localhost"
+        os.environ["SKILLS_SERVICE_URL"] = runtime.skills_url
+        os.environ["OLLAMA_ROUTER_HOST"] = runtime.host
         os.environ["OLLAMA_ROUTER_PORT"] = str(runtime.ollama_router_port)
-        os.environ["OLLAMA_HOST"] = "localhost"
+        os.environ["OLLAMA_HOST"] = runtime.host
         os.environ["OLLAMA_PORT"] = str(runtime.ollama_port)
         # Canonical E2E uses cloud embeddings (OpenAI), not local Ollama embeddings.
         os.environ["EMBEDDINGS_BACKEND"] = "openai"
@@ -253,7 +281,7 @@ class MockDiscordBot:
         get_settings.cache_clear()
 
         # Initialize components
-        self.memory = QdrantMemory()
+        self.memory = QdrantMemory(trust_domain=TrustDomain.OWNER_PERSONAL)
         self.agent = Agent(memory=self.memory)
         self.test_user_id = 123456789
         self.test_channel_id = 987654321
@@ -580,14 +608,11 @@ async def test_docker_services_running(docker_env: DockerEnvironment) -> None:
 @pytest.mark.integration
 async def test_qdrant_collections_exist(docker_env: DockerEnvironment) -> None:
     """Test that Qdrant collections are created."""
-    # Use curl from host machine since Qdrant container doesn't have curl
-    result = subprocess.run(
-        ["curl", "-s", RUNTIME.qdrant_url + "/collections"],
-        capture_output=True,
-        text=True,
-    )
+    payload = _http_get_json(RUNTIME.qdrant_url + "/collections")
+    collections = payload.get("result", {}).get("collections", [])
+    collection_names = {entry.get("name") for entry in collections if isinstance(entry, dict)}
 
-    assert "conversations" in result.stdout or "long_term_memory" in result.stdout
+    assert "conversations" in collection_names or "long_term_memory" in collection_names
     print("✅ Qdrant collections verified")
 
 
@@ -602,7 +627,10 @@ async def test_task_management_skill(mock_bot: MockDiscordBot) -> None:
 
     assert response is not None
     assert len(response) > 20
-    # Should acknowledge task creation or provide task-related response
+    lower = response.lower()
+    assert "trouble processing" not in lower
+    assert "skills service" not in lower
+    assert "task" in lower
     preview: str = response[0:100] if len(response) > 100 else response  # type: ignore[index]
     print(f"✅ Task management test: {preview}...")
 
@@ -615,7 +643,9 @@ async def test_calendar_query_skill(mock_bot: MockDiscordBot) -> None:
 
     assert response is not None
     assert len(response) > 20
-    # Should provide schedule-related response
+    lower = response.lower()
+    assert "trouble processing" not in lower
+    assert "skills service" not in lower
     preview: str = response[0:100] if len(response) > 100 else response  # type: ignore[index]
     print(f"✅ Calendar query test: {preview}...")
 
@@ -628,7 +658,9 @@ async def test_profile_query_skill(mock_bot: MockDiscordBot) -> None:
 
     assert response is not None
     assert len(response) > 20
-    # Should provide profile-related response or indicate no data yet
+    lower = response.lower()
+    assert "trouble processing" not in lower
+    assert "skills service" not in lower
     preview: str = response[0:100] if len(response) > 100 else response  # type: ignore[index]
     print(f"✅ Profile query test: {preview}...")
 
@@ -656,14 +688,9 @@ async def test_skills_service_health(docker_env: DockerEnvironment) -> None:
     assert result.stdout.strip()
     print("✅ Skills service container is running")
 
-    # Check skills service health endpoint
-    result = subprocess.run(
-        ["curl", "-s", RUNTIME.skills_url + "/health"],
-        capture_output=True,
-        text=True,
-    )
-    # Health endpoint should return OK or healthy status
-    assert result.returncode == 0 or "healthy" in result.stdout.lower()
+    payload = _http_get_json(RUNTIME.skills_url + "/health")
+    health = str(payload.get("status", payload)).lower()
+    assert "healthy" in health or health == "ok"
     print("✅ Skills service health check passed")
 
 

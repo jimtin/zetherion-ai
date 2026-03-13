@@ -1816,7 +1816,7 @@ async def test_internal_admin_automerge_execute_success_paths(
                 "branch_guard_passed": True,
                 "risk_guard_passed": True,
                 "change_ticket_id": "chg-automerge-1",
-                "required_checks": ["CI/CD Pipeline"],
+                "required_checks": ["zetherion/merge-readiness"],
                 "allowed_paths": ["src/", "tests/"],
                 "requested_actions": [],
             },

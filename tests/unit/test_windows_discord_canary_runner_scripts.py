@@ -18,6 +18,11 @@ def test_discord_e2e_shell_wrappers_support_windows_repo_venvs() -> None:
         assert 'cygpath -u "$provided_bundle"' in rendered
         assert 'cygpath -u "$ca_bundle"' in rendered
         assert "tr -d '\\r'" in rendered
+    manager_rendered = (REPO_ROOT / "scripts/discord_e2e_run_manager.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "start_discord_e2e_heartbeat" in manager_rendered
+    assert "stop_discord_e2e_heartbeat" in manager_rendered
 
 
 def test_required_discord_wrapper_uses_thread_timeout_on_windows() -> None:
@@ -25,6 +30,8 @@ def test_required_discord_wrapper_uses_thread_timeout_on_windows() -> None:
     assert "--timeout-method=thread" in rendered
     assert "${PYTEST_TIMEOUT_ARGS[@]}" in rendered
     assert 'case "$(uname -s)" in' in rendered
+    assert "pytest_exit_code=$?" in rendered
+    assert 'finalize_wrapper "$pytest_exit_code"' in rendered
 
 
 def test_discord_e2e_shell_wrappers_avoid_bash4_only_assoc_arrays() -> None:
@@ -41,6 +48,7 @@ def test_discord_e2e_shell_wrappers_avoid_bash4_only_assoc_arrays() -> None:
 
 def test_windows_canary_runner_bootstraps_repo_venv_dependencies() -> None:
     rendered = (REPO_ROOT / "scripts/windows/discord-canary-runner.ps1").read_text(encoding="utf-8")
+    assert '[string]$WslDistribution = "Ubuntu"' in rendered
     assert "function Ensure-RepoPythonExecutable" in rendered
     assert "function Install-RepoPythonDependencies" in rendered
     assert "function Resolve-RepoCaBundle" in rendered

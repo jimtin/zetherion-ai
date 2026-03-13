@@ -50,6 +50,15 @@ def _env_list(name: str, default: list[str]) -> list[str]:
     return values or default
 
 
+def _toml_basic_string(value: str) -> str:
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _toml_string_array(values: list[str]) -> str:
+    return "[" + ", ".join(_toml_basic_string(value) for value in values) + "]"
+
+
 @dataclass
 class AgentConfig:
     """Dev agent configuration."""
@@ -88,6 +97,16 @@ class AgentConfig:
     worker_poll_after_seconds: int = 15
     worker_heartbeat_interval_seconds: int = 30
     worker_runner: str = "noop"
+    worker_execution_backend: str = "wsl_docker"
+    worker_workspace_root: str = r"C:\ZetherionCI\workspaces"
+    worker_runtime_root: str = r"C:\ZetherionCI\agent-runtime"
+    worker_docker_backend: str = "wsl_docker"
+    worker_wsl_distribution: str = "Ubuntu"
+    worker_cleanup_enabled: bool = True
+    worker_cleanup_low_disk_free_bytes: int = 21_474_836_480
+    worker_cleanup_target_free_bytes: int = 42_949_672_960
+    worker_cleanup_artifact_retention_hours: int = 24
+    worker_cleanup_log_retention_days: int = 7
     worker_allowed_repo_roots: list[str] = field(default_factory=list)
     worker_denied_repo_roots: list[str] = field(default_factory=lambda: [r"C:\ZetherionAI"])
     worker_allowed_actions: list[str] = field(
@@ -121,7 +140,7 @@ class AgentConfig:
     )
     worker_max_runtime_seconds: int = 600
     worker_max_memory_mb: int = 512
-    worker_max_artifact_bytes: int = 131_072
+    worker_max_artifact_bytes: int = 1_048_576
     worker_log_dir: str = str(WORKER_LOG_DIR)
 
     @classmethod
@@ -171,6 +190,43 @@ class AgentConfig:
             worker_poll_after_seconds=data.get("worker_poll_after_seconds", 15),
             worker_heartbeat_interval_seconds=data.get("worker_heartbeat_interval_seconds", 30),
             worker_runner=data.get("worker_runner", "noop"),
+            worker_execution_backend=data.get(
+                "worker_execution_backend",
+                "wsl_docker",
+            ),
+            worker_workspace_root=data.get(
+                "worker_workspace_root",
+                r"C:\ZetherionCI\workspaces",
+            ),
+            worker_runtime_root=data.get(
+                "worker_runtime_root",
+                r"C:\ZetherionCI\agent-runtime",
+            ),
+            worker_docker_backend=data.get(
+                "worker_docker_backend",
+                "wsl_docker",
+            ),
+            worker_wsl_distribution=data.get(
+                "worker_wsl_distribution",
+                "Ubuntu",
+            ),
+            worker_cleanup_enabled=data.get("worker_cleanup_enabled", True),
+            worker_cleanup_low_disk_free_bytes=data.get(
+                "worker_cleanup_low_disk_free_bytes",
+                21_474_836_480,
+            ),
+            worker_cleanup_target_free_bytes=data.get(
+                "worker_cleanup_target_free_bytes",
+                42_949_672_960,
+            ),
+            worker_cleanup_artifact_retention_hours=data.get(
+                "worker_cleanup_artifact_retention_hours",
+                24,
+            ),
+            worker_cleanup_log_retention_days=data.get(
+                "worker_cleanup_log_retention_days",
+                7,
+            ),
             worker_allowed_repo_roots=data.get("worker_allowed_repo_roots", []),
             worker_denied_repo_roots=data.get("worker_denied_repo_roots", [r"C:\ZetherionAI"]),
             worker_allowed_actions=data.get(
@@ -200,7 +256,7 @@ class AgentConfig:
             ),
             worker_max_runtime_seconds=data.get("worker_max_runtime_seconds", 600),
             worker_max_memory_mb=data.get("worker_max_memory_mb", 512),
-            worker_max_artifact_bytes=data.get("worker_max_artifact_bytes", 131_072),
+            worker_max_artifact_bytes=data.get("worker_max_artifact_bytes", 1_048_576),
             worker_log_dir=data.get("worker_log_dir", str(WORKER_LOG_DIR)),
         )
         return cls._apply_env_overrides(loaded)
@@ -272,6 +328,46 @@ class AgentConfig:
             cfg.worker_heartbeat_interval_seconds,
         )
         cfg.worker_runner = os.environ.get("DEV_AGENT_WORKER_RUNNER", cfg.worker_runner)
+        cfg.worker_execution_backend = os.environ.get(
+            "DEV_AGENT_WORKER_EXECUTION_BACKEND",
+            cfg.worker_execution_backend,
+        )
+        cfg.worker_workspace_root = os.environ.get(
+            "DEV_AGENT_WORKER_WORKSPACE_ROOT",
+            cfg.worker_workspace_root,
+        )
+        cfg.worker_runtime_root = os.environ.get(
+            "DEV_AGENT_WORKER_RUNTIME_ROOT",
+            cfg.worker_runtime_root,
+        )
+        cfg.worker_docker_backend = os.environ.get(
+            "DEV_AGENT_WORKER_DOCKER_BACKEND",
+            cfg.worker_docker_backend,
+        )
+        cfg.worker_wsl_distribution = os.environ.get(
+            "DEV_AGENT_WORKER_WSL_DISTRIBUTION",
+            cfg.worker_wsl_distribution,
+        )
+        cfg.worker_cleanup_enabled = _env_bool(
+            "DEV_AGENT_WORKER_CLEANUP_ENABLED",
+            cfg.worker_cleanup_enabled,
+        )
+        cfg.worker_cleanup_low_disk_free_bytes = _env_int(
+            "DEV_AGENT_WORKER_CLEANUP_LOW_DISK_FREE_BYTES",
+            cfg.worker_cleanup_low_disk_free_bytes,
+        )
+        cfg.worker_cleanup_target_free_bytes = _env_int(
+            "DEV_AGENT_WORKER_CLEANUP_TARGET_FREE_BYTES",
+            cfg.worker_cleanup_target_free_bytes,
+        )
+        cfg.worker_cleanup_artifact_retention_hours = _env_int(
+            "DEV_AGENT_WORKER_CLEANUP_ARTIFACT_RETENTION_HOURS",
+            cfg.worker_cleanup_artifact_retention_hours,
+        )
+        cfg.worker_cleanup_log_retention_days = _env_int(
+            "DEV_AGENT_WORKER_CLEANUP_LOG_RETENTION_DAYS",
+            cfg.worker_cleanup_log_retention_days,
+        )
         cfg.worker_allowed_repo_roots = _env_list(
             "DEV_AGENT_WORKER_ALLOWED_REPO_ROOTS",
             cfg.worker_allowed_repo_roots,
@@ -308,9 +404,9 @@ class AgentConfig:
         self.ensure_api_token()
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         lines = [
-            f'webhook_url = "{self.webhook_url}"',
-            f'agent_name = "{self.agent_name}"',
-            f"repos = {self.repos!r}",
+            f"webhook_url = {_toml_basic_string(self.webhook_url)}",
+            f"agent_name = {_toml_basic_string(self.agent_name)}",
+            f"repos = {_toml_string_array(self.repos)}",
             f"scan_interval = {self.scan_interval}",
             f"claude_code_enabled = {'true' if self.claude_code_enabled else 'false'}",
             f"annotations_enabled = {'true' if self.annotations_enabled else 'false'}",
@@ -320,34 +416,48 @@ class AgentConfig:
             f"cleanup_hour = {self.cleanup_hour}",
             f"cleanup_minute = {self.cleanup_minute}",
             f"approval_reprompt_hours = {self.approval_reprompt_hours}",
-            f'api_host = "{self.api_host}"',
+            f"api_host = {_toml_basic_string(self.api_host)}",
             f"api_port = {self.api_port}",
-            f'api_token = "{self.api_token}"',
-            f'database_path = "{self.database_path}"',
-            f'bootstrap_secret = "{self.bootstrap_secret}"',
+            f"api_token = {_toml_basic_string(self.api_token)}",
+            f"database_path = {_toml_basic_string(self.database_path)}",
+            f"bootstrap_secret = {_toml_basic_string(self.bootstrap_secret)}",
             f"bootstrap_require_once = {'true' if self.bootstrap_require_once else 'false'}",
-            f'worker_base_url = "{self.worker_base_url}"',
-            f'worker_relay_base_url = "{self.worker_relay_base_url}"',
-            f'worker_relay_secret = "{self.worker_relay_secret}"',
-            f'worker_control_plane = "{self.worker_control_plane}"',
-            f'worker_scope_id = "{self.worker_scope_id}"',
-            f'worker_tenant_id = "{self.worker_tenant_id}"',
-            f'worker_node_id = "{self.worker_node_id}"',
-            f'worker_node_name = "{self.worker_node_name}"',
-            f'worker_bootstrap_secret = "{self.worker_bootstrap_secret}"',
-            f"worker_capabilities = {self.worker_capabilities!r}",
-            f"worker_claim_required_capabilities = {self.worker_claim_required_capabilities!r}",
+            f"worker_base_url = {_toml_basic_string(self.worker_base_url)}",
+            f"worker_relay_base_url = {_toml_basic_string(self.worker_relay_base_url)}",
+            f"worker_relay_secret = {_toml_basic_string(self.worker_relay_secret)}",
+            f"worker_control_plane = {_toml_basic_string(self.worker_control_plane)}",
+            f"worker_scope_id = {_toml_basic_string(self.worker_scope_id)}",
+            f"worker_tenant_id = {_toml_basic_string(self.worker_tenant_id)}",
+            f"worker_node_id = {_toml_basic_string(self.worker_node_id)}",
+            f"worker_node_name = {_toml_basic_string(self.worker_node_name)}",
+            f"worker_bootstrap_secret = {_toml_basic_string(self.worker_bootstrap_secret)}",
+            f"worker_capabilities = {_toml_string_array(self.worker_capabilities)}",
+            "worker_claim_required_capabilities = "
+            f"{_toml_string_array(self.worker_claim_required_capabilities)}",
             f"worker_poll_after_seconds = {self.worker_poll_after_seconds}",
             ("worker_heartbeat_interval_seconds = " f"{self.worker_heartbeat_interval_seconds}"),
-            f'worker_runner = "{self.worker_runner}"',
-            f"worker_allowed_repo_roots = {self.worker_allowed_repo_roots!r}",
-            f"worker_denied_repo_roots = {self.worker_denied_repo_roots!r}",
-            f"worker_allowed_actions = {self.worker_allowed_actions!r}",
-            f"worker_allowed_commands = {self.worker_allowed_commands!r}",
+            f"worker_runner = {_toml_basic_string(self.worker_runner)}",
+            f"worker_execution_backend = {_toml_basic_string(self.worker_execution_backend)}",
+            f"worker_workspace_root = {_toml_basic_string(self.worker_workspace_root)}",
+            f"worker_runtime_root = {_toml_basic_string(self.worker_runtime_root)}",
+            f"worker_docker_backend = {_toml_basic_string(self.worker_docker_backend)}",
+            f"worker_wsl_distribution = {_toml_basic_string(self.worker_wsl_distribution)}",
+            f"worker_cleanup_enabled = {'true' if self.worker_cleanup_enabled else 'false'}",
+            ("worker_cleanup_low_disk_free_bytes = " f"{self.worker_cleanup_low_disk_free_bytes}"),
+            ("worker_cleanup_target_free_bytes = " f"{self.worker_cleanup_target_free_bytes}"),
+            (
+                "worker_cleanup_artifact_retention_hours = "
+                f"{self.worker_cleanup_artifact_retention_hours}"
+            ),
+            f"worker_cleanup_log_retention_days = {self.worker_cleanup_log_retention_days}",
+            f"worker_allowed_repo_roots = {_toml_string_array(self.worker_allowed_repo_roots)}",
+            f"worker_denied_repo_roots = {_toml_string_array(self.worker_denied_repo_roots)}",
+            f"worker_allowed_actions = {_toml_string_array(self.worker_allowed_actions)}",
+            f"worker_allowed_commands = {_toml_string_array(self.worker_allowed_commands)}",
             f"worker_max_runtime_seconds = {self.worker_max_runtime_seconds}",
             f"worker_max_memory_mb = {self.worker_max_memory_mb}",
             f"worker_max_artifact_bytes = {self.worker_max_artifact_bytes}",
-            f'worker_log_dir = "{self.worker_log_dir}"',
+            f"worker_log_dir = {_toml_basic_string(self.worker_log_dir)}",
         ]
         CONFIG_FILE.write_text("\n".join(lines) + "\n")
 

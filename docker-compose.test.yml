@@ -21,7 +21,7 @@ services:
       postgres:
         condition: service_healthy
     env_file:
-      - .env
+      - ${ZETHERION_ENV_FILE:-.env}
     environment:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
@@ -47,8 +47,8 @@ services:
       - ALLOWED_USER_IDS=1468994603633086485
       - OWNER_USER_ID=1468994603633086485
     volumes:
-      - ${E2E_STACK_ROOT:-./.artifacts/e2e-runs/static}/data:/app/data
-      - ${E2E_STACK_ROOT:-./.artifacts/e2e-runs/static}/logs:/app/logs
+      - ${E2E_STACK_ROOT:-./.artifacts/ci-e2e-runs/static}/data:/app/data
+      - ${E2E_STACK_ROOT:-./.artifacts/ci-e2e-runs/static}/logs:/app/logs
     networks:
       - zetherion-ai-test-net
 
@@ -68,7 +68,7 @@ services:
       postgres:
         condition: service_healthy
     env_file:
-      - .env
+      - ${ZETHERION_ENV_FILE:-.env}
     environment:
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - API_HOST=0.0.0.0
@@ -111,7 +111,7 @@ services:
       zetherion-ai-skills:
         condition: service_healthy
     env_file:
-      - .env
+      - ${ZETHERION_ENV_FILE:-.env}
     environment:
       - POSTGRES_DSN=postgresql://zetherion:password@postgres:5432/zetherion
       - CGS_GATEWAY_HOST=0.0.0.0
@@ -125,7 +125,7 @@ services:
       - ZETHERION_SKILLS_API_SECRET=${ZETHERION_SKILLS_API_SECRET:-${SKILLS_API_SECRET:-test-skills-secret}}
       - ENVIRONMENT=test
     volumes:
-      - ${E2E_STACK_ROOT:-./.artifacts/e2e-runs/static}/data:/app/data
+      - ${E2E_STACK_ROOT:-./.artifacts/ci-e2e-runs/static}/data:/app/data
     ports:
       - "${E2E_CGS_GATEWAY_HOST_PORT:-28444}:8443"
     networks:
@@ -147,12 +147,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      ollama:
-        condition: service_healthy
-      ollama-router:
-        condition: service_healthy
     env_file:
-      - .env
+      - ${ZETHERION_ENV_FILE:-.env}
     environment:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
@@ -168,7 +164,7 @@ services:
     ports:
       - "${E2E_SKILLS_HOST_PORT:-18080}:8080"
     volumes:
-      - ${E2E_STACK_ROOT:-./.artifacts/e2e-runs/static}/data:/app/data
+      - ${E2E_STACK_ROOT:-./.artifacts/ci-e2e-runs/static}/data:/app/data
     networks:
       - zetherion-ai-test-net
     # Use Dockerfile HEALTHCHECK - distroless can only exec via ENTRYPOINT
@@ -184,7 +180,7 @@ services:
       zetherion-ai-skills:
         condition: service_healthy
     env_file:
-      - .env
+      - ${ZETHERION_ENV_FILE:-.env}
     environment:
       - WHATSAPP_BRIDGE_HOST=0.0.0.0
       - WHATSAPP_BRIDGE_PORT=8877
@@ -198,7 +194,7 @@ services:
     ports:
       - "${E2E_WHATSAPP_BRIDGE_HOST_PORT:-18877}:8877"
     volumes:
-      - ${E2E_STACK_ROOT:-./.artifacts/e2e-runs/static}/data:/app/data
+      - ${E2E_STACK_ROOT:-./.artifacts/ci-e2e-runs/static}/data:/app/data
     networks:
       - zetherion-ai-test-net
 
@@ -206,6 +202,8 @@ services:
   ollama-router:
     image: ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed
     restart: "no"
+    profiles:
+      - ollama
     security_opt:
       - no-new-privileges:true
     # Expose port for integration tests (host needs to reach router)
@@ -234,6 +232,8 @@ services:
   ollama:
     image: ollama/ollama:latest@sha256:37ef34d78a6f4563a11cbbb336bbaa75f01eb19671d639973f98baa58f11a5ed
     restart: "no"
+    profiles:
+      - ollama
     security_opt:
       - no-new-privileges:true
     # Use different host port for tests (21434 instead of 11434)

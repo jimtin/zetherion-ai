@@ -13,6 +13,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from uuid import NAMESPACE_URL, uuid5
 
 from zetherion_ai.agent.providers import TaskType
 from zetherion_ai.logging import get_logger
@@ -252,10 +253,10 @@ class DocsKnowledgeBase:
         timestamp = datetime.now(UTC).isoformat()
         for idx, chunk in enumerate(chunks):
             point_key = f"{rel_path}:{source_hash}:{idx}"
-            point_id = hashlib.sha1(point_key.encode(), usedforsecurity=False)
+            point_id = uuid5(NAMESPACE_URL, point_key)
             await self._memory.store_scoped_payload(
                 collection_name=DOCS_COLLECTION,
-                point_id=point_id.hexdigest(),
+                point_id=str(point_id),
                 payload={
                     "source_path": rel_path,
                     "source_hash": source_hash,

@@ -13,6 +13,7 @@ from zetherion_ai.skills.profile_skill import (
     ProfileSkill,
     ProfileSummary,
 )
+from zetherion_ai.memory.embeddings import get_embedding_dimension
 
 
 class TestProfileSummary:
@@ -76,6 +77,36 @@ class TestProfileSkill:
         result = await skill.safe_initialize()
         assert result is True
         assert skill.status == SkillStatus.READY
+
+    @pytest.mark.asyncio
+    async def test_initialize_with_memory(self) -> None:
+        """Skill should ensure the profile collection exists when memory is configured."""
+        mock_memory = AsyncMock()
+        mock_memory.ensure_scoped_collection = AsyncMock()
+
+        skill = ProfileSkill(memory=mock_memory)
+
+        result = await skill.initialize()
+
+        assert result is True
+        mock_memory.ensure_scoped_collection.assert_awaited_once_with(
+            PROFILES_COLLECTION,
+            vector_size=get_embedding_dimension(),
+        )
+
+    @pytest.mark.asyncio
+    async def test_initialize_with_memory_failure(self) -> None:
+        """Skill should fail initialization when the profile collection cannot be ensured."""
+        mock_memory = AsyncMock()
+        mock_memory.ensure_scoped_collection = AsyncMock(
+            side_effect=RuntimeError("qdrant unavailable")
+        )
+
+        skill = ProfileSkill(memory=mock_memory)
+
+        result = await skill.initialize()
+
+        assert result is False
 
     @pytest.mark.asyncio
     async def test_handle_summary_no_entries(self) -> None:
@@ -279,6 +310,41 @@ class TestProfileSkill:
         mock_builder.update_profile_entry.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_handle_update_without_builder_reports_error(self) -> None:
+        skill = ProfileSkill()
+        await skill.safe_initialize()
+
+        response = await skill.handle(
+            SkillRequest(
+                user_id="user123",
+                intent="profile_update",
+                context={"category": "preferences", "key": "timezone", "value": "UTC"},
+            )
+        )
+
+        assert response.success is False
+        assert "Profile builder not available" in str(response.error)
+
+    @pytest.mark.asyncio
+    async def test_handle_update_builder_failure_returns_error(self) -> None:
+        mock_builder = MagicMock()
+        mock_builder.update_profile_entry = AsyncMock(side_effect=RuntimeError("boom"))
+
+        skill = ProfileSkill(profile_builder=mock_builder)
+        await skill.safe_initialize()
+
+        response = await skill.handle(
+            SkillRequest(
+                user_id="user123",
+                intent="profile_update",
+                context={"category": "preferences", "key": "timezone", "value": "UTC"},
+            )
+        )
+
+        assert response.success is False
+        assert "Update failed: boom" in str(response.error)
+
+    @pytest.mark.asyncio
     async def test_handle_delete_missing_params(self) -> None:
         """Skill should error on missing delete params."""
         skill = ProfileSkill()
@@ -313,6 +379,51 @@ class TestProfileSkill:
         response = await skill.handle(request)
         assert response.success is True
         assert "Forgotten" in response.message
+
+    @pytest.mark.asyncio
+    async def test_handle_delete_with_entry_id_and_failure_paths(self) -> None:
+        mock_builder = MagicMock()
+        mock_builder.delete_profile_entry = AsyncMock()
+        mock_builder.delete_profile_entry_by_key = AsyncMock(side_effect=RuntimeError("nope"))
+
+        skill = ProfileSkill(profile_builder=mock_builder)
+        await skill.safe_initialize()
+
+        by_id = await skill.handle(
+            SkillRequest(
+                user_id="user123",
+                intent="profile_delete",
+                context={"entry_id": "entry-1"},
+            )
+        )
+        assert by_id.success is True
+        mock_builder.delete_profile_entry.assert_awaited_once()
+
+        by_key = await skill.handle(
+            SkillRequest(
+                user_id="user123",
+                intent="profile_delete",
+                context={"category": "preferences", "key": "timezone"},
+            )
+        )
+        assert by_key.success is False
+        assert "Delete failed: nope" in str(by_key.error)
+
+    @pytest.mark.asyncio
+    async def test_handle_delete_without_builder_reports_error(self) -> None:
+        skill = ProfileSkill()
+        await skill.safe_initialize()
+
+        response = await skill.handle(
+            SkillRequest(
+                user_id="user123",
+                intent="profile_delete",
+                context={"category": "preferences", "key": "timezone"},
+            )
+        )
+
+        assert response.success is False
+        assert "Profile builder not available" in str(response.error)
 
     @pytest.mark.asyncio
     async def test_handle_export(self) -> None:
@@ -431,6 +542,69 @@ class TestProfileSkill:
         skill = ProfileSkill()
         fragment = skill.get_system_prompt_fragment("user123")
         assert fragment is None
+
+    @pytest.mark.asyncio
+    async def test_profile_helper_methods_dedupe_fallback_and_filter_memory_entries(self) -> None:
+        now = datetime.now().isoformat()
+        mock_memory = AsyncMock()
+
+        async def _filter_by_field(*, collection_name, field, value, limit=100):
+            assert field == "user_id"
+            if collection_name == PROFILES_COLLECTION:
+                if value == "123":
+                    return [
+                        {
+                            "id": "entry-1",
+                            "category": "identity",
+                            "key": "name",
+                            "value": "John",
+                            "confidence": 0.9,
+                        }
+                    ]
+                return [
+                    {
+                        "id": "entry-1",
+                        "category": "identity",
+                        "key": "name",
+                        "value": "John",
+                        "confidence": 0.9,
+                    }
+                ]
+            if value not in ("123", 123):
+                return []
+            return [
+                {"id": "m1", "type": "profile", "content": "John", "timestamp": now},
+                {"id": "m2", "type": "other", "content": "skip me", "timestamp": now},
+                {"id": "m3", "type": "general", "content": "", "timestamp": now},
+                {"id": "m4", "type": "general", "content": "Prefers tea", "timestamp": now},
+            ]
+
+        mock_memory.filter_scoped_by_field = AsyncMock(side_effect=_filter_by_field)
+
+        skill = ProfileSkill(memory=mock_memory)
+        await skill.safe_initialize()
+
+        profile_entries = await skill._get_profile_entries("123")  # noqa: SLF001
+        assert len(profile_entries) == 1
+
+        summary_entries = await skill._get_summary_entries("123")  # noqa: SLF001
+        assert len(summary_entries) == 3
+        assert {entry["value"] for entry in summary_entries} == {"John", "Prefers tea"}
+
+        memory_entries = await skill._get_profile_memory_entries("123")  # noqa: SLF001
+        assert len(memory_entries) == 2
+        assert {entry["key"] for entry in memory_entries} == {"profile", "general"}
+        assert skill._entry_fingerprint({"value": ""}) == ""  # noqa: SLF001
+
+    @pytest.mark.asyncio
+    async def test_get_profile_entries_builder_fallback_returns_empty_on_error(self) -> None:
+        mock_builder = MagicMock()
+        mock_builder.get_all_profile_entries = AsyncMock(side_effect=RuntimeError("broken"))
+
+        skill = ProfileSkill(profile_builder=mock_builder)
+        await skill.safe_initialize()
+
+        assert await skill._get_profile_entries("123") == []  # noqa: SLF001
 
     @pytest.mark.asyncio
     async def test_cleanup(self) -> None:

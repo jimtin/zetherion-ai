@@ -3,13 +3,24 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import secrets
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from zetherion_ai.logging import get_logger
+from zetherion_ai.owner_ci.models import (
+    RepoReadinessReceipt,
+    build_repo_readiness_receipt,
+    build_workspace_readiness_receipt,
+    normalize_release_verification_receipt,
+    normalize_shard_receipt,
+    normalize_worker_certification_receipt,
+    overlay_local_readiness_shards,
+)
 
 if TYPE_CHECKING:
     import asyncpg  # type: ignore[import-not-found,import-untyped]
@@ -19,6 +30,7 @@ if TYPE_CHECKING:
 log = get_logger("zetherion_ai.owner_ci.storage")
 
 _SCHEMA_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_WINDOWS_ABS_PATH_RE = re.compile(r"^(?P<drive>[A-Za-z]):[\\/]*(?P<rest>.*)$")
 _RUN_STATUSES = {
     "planned",
     "queued_local",
@@ -33,6 +45,167 @@ _RUN_STATUSES = {
     "cancelled",
 }
 _SHARD_PENDING_STATUSES = {"planned", "queued_local", "running"}
+
+
+def _pending_repo_readiness(repo_id: str, summary: str) -> RepoReadinessReceipt:
+    return RepoReadinessReceipt(
+        repo_id=repo_id,
+        merge_ready=False,
+        deploy_ready=False,
+        failed_required_paths=[],
+        missing_evidence=["owner_ci_run_missing"],
+        shard_receipts=[],
+        release_verification=None,
+        summary=summary,
+    )
+
+
+def _expand_local_candidate_roots(raw_path: str) -> list[Path]:
+    candidate = str(raw_path or "").strip()
+    if not candidate:
+        return []
+
+    roots: list[Path] = []
+    root = Path(candidate)
+    if root.is_absolute():
+        roots.append(root)
+
+    windows_match = _WINDOWS_ABS_PATH_RE.match(candidate)
+    if windows_match and os.name != "nt":
+        drive = windows_match.group("drive").lower()
+        rest = windows_match.group("rest").replace("\\", "/").lstrip("/")
+        translated = Path(f"/mnt/{drive}/{rest}") if rest else Path(f"/mnt/{drive}")
+        if translated not in roots:
+            roots.append(translated)
+
+    return roots
+
+
+def _load_local_repo_readiness(
+    repo: dict[str, Any],
+) -> tuple[RepoReadinessReceipt | None, dict[str, Any] | None]:
+    repo_id_fallback = str(repo.get("repo_id") or "").strip()
+    for allowed_path in list(repo.get("allowed_paths") or []):
+        for candidate_root in _expand_local_candidate_roots(str(allowed_path or "").strip()):
+            for candidate_path in (
+                candidate_root / ".artifacts" / "local-readiness-receipt.json",
+                candidate_root / ".ci" / "local-readiness-receipt.json",
+            ):
+                if not candidate_path.is_file():
+                    continue
+                try:
+                    payload = json.loads(candidate_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                receipt, normalized_payload = _normalize_local_repo_readiness_payload(
+                    payload,
+                    repo_id_fallback=repo_id_fallback,
+                )
+                if receipt is not None:
+                    return receipt, normalized_payload
+    return None, None
+
+
+def _normalize_local_repo_readiness_payload(
+    payload: Any,
+    *,
+    repo_id_fallback: str,
+) -> tuple[RepoReadinessReceipt | None, dict[str, Any] | None]:
+    if not isinstance(payload, dict):
+        return None, None
+
+    repo_id = str(payload.get("repo_id") or repo_id_fallback or "").strip()
+    if not repo_id:
+        return None, None
+
+    release_payload = dict(payload.get("release_verification") or {})
+    shard_payloads = [
+        dict(entry)
+        for entry in list(payload.get("shard_receipts") or [])
+        if isinstance(entry, dict)
+    ]
+    receipt = RepoReadinessReceipt(
+        repo_id=repo_id,
+        merge_ready=bool(payload.get("merge_ready", False)),
+        deploy_ready=bool(payload.get("deploy_ready", False)),
+        failed_required_paths=[
+            str(path).strip()
+            for path in list(payload.get("failed_required_paths") or [])
+            if str(path).strip()
+        ],
+        missing_evidence=[
+            str(path).strip()
+            for path in list(payload.get("missing_evidence") or [])
+            if str(path).strip()
+        ],
+        shard_receipts=[
+            normalize_shard_receipt(repo_id, shard_payload)
+            for shard_payload in shard_payloads
+        ],
+        release_verification=(
+            normalize_release_verification_receipt(release_payload)
+            if release_payload
+            else None
+        ),
+        summary=str(payload.get("summary") or "local readiness receipt loaded").strip(),
+    )
+    return receipt, dict(payload)
+
+
+def _load_local_repo_readiness_from_shards(
+    repo: dict[str, Any],
+    shard_payloads: list[dict[str, Any]],
+) -> tuple[RepoReadinessReceipt | None, dict[str, Any] | None]:
+    repo_id_fallback = str(repo.get("repo_id") or "").strip()
+    for shard_payload in reversed(list(shard_payloads or [])):
+        if not isinstance(shard_payload, dict):
+            continue
+        result_payload = dict(shard_payload.get("result") or {})
+        candidate = result_payload.get("local_readiness_receipt")
+        receipt, normalized_payload = _normalize_local_repo_readiness_payload(
+            candidate,
+            repo_id_fallback=repo_id_fallback,
+        )
+        if receipt is not None:
+            return receipt, normalized_payload
+    return None, None
+
+
+def _load_local_worker_certification(
+    repo: dict[str, Any],
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    for allowed_path in list(repo.get("allowed_paths") or []):
+        for candidate_root in _expand_local_candidate_roots(str(allowed_path or "").strip()):
+            for candidate_path in (
+                candidate_root / ".artifacts" / "worker-certification-receipt.json",
+                candidate_root / ".artifacts" / "ci-worker-connectivity.json",
+                candidate_root / ".ci" / "worker-certification-receipt.json",
+                candidate_root / ".ci" / "ci-worker-connectivity.json",
+            ):
+                if not candidate_path.is_file():
+                    continue
+                try:
+                    payload = json.loads(candidate_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                receipt = normalize_worker_certification_receipt(payload)
+                return receipt.model_dump(mode="json"), payload
+    return None, None
+
+
+def _merge_json_dict(
+    current: dict[str, Any] | None,
+    patch: dict[str, Any] | None,
+) -> dict[str, Any]:
+    merged = dict(current or {})
+    for key, value in dict(patch or {}).items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = {**dict(merged.get(key) or {}), **value}
+        else:
+            merged[key] = value
+    return merged
 
 
 def _validate_schema_identifier(schema: str) -> str:
@@ -53,6 +226,7 @@ CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_repo_profiles (
     default_branch      TEXT         NOT NULL DEFAULT 'main',
     stack_kind          TEXT         NOT NULL,
     local_fast_lanes    JSONB        NOT NULL DEFAULT '[]'::jsonb,
+    local_full_lanes    JSONB        NOT NULL DEFAULT '[]'::jsonb,
     windows_full_lanes  JSONB        NOT NULL DEFAULT '[]'::jsonb,
     review_policy       JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
     promotion_policy    JSONB        NOT NULL DEFAULT '{{}}'::jsonb,
@@ -195,6 +369,9 @@ CREATE INDEX IF NOT EXISTS idx_owner_ci_worker_jobs_scope_status
 
 ALTER TABLE "{validated}".owner_ci_shards
     ADD COLUMN IF NOT EXISTS metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb;
+
+ALTER TABLE "{validated}".owner_ci_repo_profiles
+    ADD COLUMN IF NOT EXISTS local_full_lanes JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE TABLE IF NOT EXISTS "{validated}".owner_ci_compiled_plans (
     owner_id            TEXT         NOT NULL,
@@ -813,6 +990,40 @@ class OwnerCiStorage:
             return value
 
     @staticmethod
+    def _coerce_json_value(raw: Any, field_name: str) -> Any:
+        if raw is None:
+            return None
+        if isinstance(raw, str):
+            text = raw.strip()
+            if not text:
+                return None
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"{field_name} must contain valid JSON") from exc
+        return raw
+
+    @classmethod
+    def _coerce_json_object(cls, raw: Any, field_name: str) -> dict[str, Any]:
+        value = cls._coerce_json_value(raw, field_name)
+        if value is None:
+            return {}
+        if isinstance(value, dict):
+            return dict(value)
+        raise ValueError(f"{field_name} must be a JSON object")
+
+    @classmethod
+    def _coerce_json_list(cls, raw: Any, field_name: str) -> list[Any]:
+        value = cls._coerce_json_value(raw, field_name)
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return list(value)
+        if isinstance(value, tuple):
+            return list(value)
+        raise ValueError(f"{field_name} must be a JSON array")
+
+    @staticmethod
     def _repo_profile_extensions(metadata: dict[str, Any]) -> dict[str, Any]:
         return {
             "mandatory_static_gates": list(metadata.get("mandatory_static_gates") or []),
@@ -830,7 +1041,7 @@ class OwnerCiStorage:
         }
 
     def _repo_profile_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
-        metadata = dict(row["metadata_json"] or {})
+        metadata = self._coerce_json_object(row["metadata_json"], "metadata_json")
         return {
             "owner_id": str(row["owner_id"]),
             "repo_id": str(row["repo_id"]),
@@ -839,11 +1050,21 @@ class OwnerCiStorage:
             "default_branch": str(row["default_branch"]),
             "stack_kind": str(row["stack_kind"]),
             **self._repo_profile_extensions(metadata),
-            "local_fast_lanes": list(row["local_fast_lanes"] or []),
-            "windows_full_lanes": list(row["windows_full_lanes"] or []),
-            "review_policy": dict(row["review_policy"] or {}),
-            "promotion_policy": dict(row["promotion_policy"] or {}),
-            "allowed_paths": list(row["allowed_paths"] or []),
+            "local_fast_lanes": self._coerce_json_list(row["local_fast_lanes"], "local_fast_lanes"),
+            "local_full_lanes": self._coerce_json_list(
+                row.get("local_full_lanes"),
+                "local_full_lanes",
+            ),
+            "windows_full_lanes": self._coerce_json_list(
+                row["windows_full_lanes"],
+                "windows_full_lanes",
+            ),
+            "review_policy": self._coerce_json_object(row["review_policy"], "review_policy"),
+            "promotion_policy": self._coerce_json_object(
+                row["promotion_policy"],
+                "promotion_policy",
+            ),
+            "allowed_paths": self._coerce_json_list(row["allowed_paths"], "allowed_paths"),
             "secrets_profile": str(row["secrets_profile"]) if row["secrets_profile"] else None,
             "active": bool(row["active"]),
             "metadata": metadata,
@@ -859,9 +1080,9 @@ class OwnerCiStorage:
             "version": int(row["version"]),
             "title": self._decrypt_text(str(row["title_value"])) or "",
             "content_markdown": self._decrypt_text(str(row["content_markdown_value"])) or "",
-            "tags": list(row["tags_json"] or []),
+            "tags": self._coerce_json_list(row["tags_json"], "tags_json"),
             "current": bool(row["current_version"]),
-            "metadata": dict(row["metadata_json"] or {}),
+            "metadata": self._coerce_json_object(row["metadata_json"], "metadata_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         }
 
@@ -873,10 +1094,16 @@ class OwnerCiStorage:
             "git_ref": str(row["git_ref"]),
             "trigger": str(row["trigger_value"]),
             "status": str(row["status"]),
-            "plan": dict(row["plan_json"] or {}),
-            "review_receipts": dict(row["review_receipts"] or {}),
-            "github_receipts": dict(row["github_receipts"] or {}),
-            "metadata": dict(row["metadata_json"] or {}),
+            "plan": self._coerce_json_object(row["plan_json"], "plan_json"),
+            "review_receipts": self._coerce_json_object(
+                row["review_receipts"],
+                "review_receipts",
+            ),
+            "github_receipts": self._coerce_json_object(
+                row["github_receipts"],
+                "github_receipts",
+            ),
+            "metadata": self._coerce_json_object(row["metadata_json"], "metadata_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         }
@@ -890,15 +1117,21 @@ class OwnerCiStorage:
             "lane_id": str(row["lane_id"]),
             "lane_label": self._decrypt_text(str(row["lane_label_value"])) or "",
             "execution_target": str(row["execution_target"]),
-            "command": list(row["command_json"] or []),
-            "env_refs": list(row["env_refs_json"] or []),
-            "artifact_contract": dict(row["artifact_contract"] or {}),
-            "required_capabilities": list(row["required_capabilities"] or []),
+            "command": self._coerce_json_list(row["command_json"], "command_json"),
+            "env_refs": self._coerce_json_list(row["env_refs_json"], "env_refs_json"),
+            "artifact_contract": self._coerce_json_object(
+                row["artifact_contract"],
+                "artifact_contract",
+            ),
+            "required_capabilities": self._coerce_json_list(
+                row["required_capabilities"],
+                "required_capabilities",
+            ),
             "relay_mode": str(row["relay_mode"]),
-            "metadata": dict(row.get("metadata_json") or {}),
+            "metadata": self._coerce_json_object(row.get("metadata_json"), "metadata_json"),
             "status": str(row["status"]),
-            "result": dict(row["result_json"] or {}),
-            "error": dict(row["error_json"] or {}),
+            "result": self._coerce_json_object(row["result_json"], "result_json"),
+            "error": self._coerce_json_object(row["error_json"], "error_json"),
             "started_at": row["started_at"].isoformat() if row.get("started_at") else None,
             "completed_at": row["completed_at"].isoformat() if row.get("completed_at") else None,
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
@@ -915,9 +1148,15 @@ class OwnerCiStorage:
             "repo_id": str(row["repo_id"]),
             "action": str(row["action_name"]),
             "runner": str(row["runner_name"]),
-            "payload_json": dict(row["payload_json"] or {}),
-            "required_capabilities": list(row["required_capabilities"] or []),
-            "artifact_contract": dict(row["artifact_contract"] or {}),
+            "payload_json": self._coerce_json_object(row["payload_json"], "payload_json"),
+            "required_capabilities": self._coerce_json_list(
+                row["required_capabilities"],
+                "required_capabilities",
+            ),
+            "artifact_contract": self._coerce_json_object(
+                row["artifact_contract"],
+                "artifact_contract",
+            ),
             "status": str(row["status"]),
             "idempotency_key": str(row["idempotency_key"]),
             "execution_target": str(row["execution_target"]),
@@ -927,8 +1166,8 @@ class OwnerCiStorage:
             "claimed_session_id": (
                 str(row["claimed_session_id"]) if row["claimed_session_id"] else None
             ),
-            "result_json": dict(row["result_json"] or {}),
-            "error_json": dict(row["error_json"] or {}),
+            "result_json": self._coerce_json_object(row["result_json"], "result_json"),
+            "error_json": self._coerce_json_object(row["error_json"], "error_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
             "submitted_at": row["submitted_at"].isoformat() if row.get("submitted_at") else None,
@@ -941,8 +1180,8 @@ class OwnerCiStorage:
             "repo_id": str(row["repo_id"]),
             "git_ref": str(row["git_ref"]),
             "mode": str(row["mode_value"]),
-            "plan": dict(row["plan_json"] or {}),
-            "metadata": dict(row["metadata_json"] or {}),
+            "plan": self._coerce_json_object(row["plan_json"], "plan_json"),
+            "metadata": self._coerce_json_object(row["metadata_json"], "metadata_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         }
@@ -954,9 +1193,12 @@ class OwnerCiStorage:
             "repo_id": str(row["repo_id"]),
             "name": self._decrypt_text(str(row["name_value"])) or "",
             "schedule_kind": str(row["schedule_kind"]),
-            "schedule_spec": dict(row["schedule_spec_json"] or {}),
+            "schedule_spec": self._coerce_json_object(
+                row["schedule_spec_json"],
+                "schedule_spec_json",
+            ),
             "active": bool(row["active"]),
-            "metadata": dict(row["metadata_json"] or {}),
+            "metadata": self._coerce_json_object(row["metadata_json"], "metadata_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         }
@@ -971,7 +1213,7 @@ class OwnerCiStorage:
             "node_id": str(row["node_id"]) if row.get("node_id") else None,
             "event_type": str(row["event_type"]),
             "level": str(row["level_value"]),
-            "payload": dict(row["payload_json"] or {}),
+            "payload": self._coerce_json_object(row["payload_json"], "payload_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         }
 
@@ -985,7 +1227,7 @@ class OwnerCiStorage:
             "node_id": str(row["node_id"]) if row.get("node_id") else None,
             "stream": str(row["stream_name"]),
             "message": self._decrypt_text(str(row["message_value"])) or "",
-            "metadata": dict(row["metadata_json"] or {}),
+            "metadata": self._coerce_json_object(row["metadata_json"], "metadata_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         }
 
@@ -997,7 +1239,7 @@ class OwnerCiStorage:
             "run_id": str(row["run_id"]) if row.get("run_id") else None,
             "shard_id": str(row["shard_id"]) if row.get("shard_id") else None,
             "node_id": str(row["node_id"]) if row.get("node_id") else None,
-            "sample": dict(row["sample_json"] or {}),
+            "sample": self._coerce_json_object(row["sample_json"], "sample_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         }
 
@@ -1008,7 +1250,7 @@ class OwnerCiStorage:
             "repo_id": str(row["repo_id"]),
             "run_id": str(row["run_id"]) if row.get("run_id") else None,
             "shard_id": str(row["shard_id"]) if row.get("shard_id") else None,
-            "bundle": dict(row["bundle_json"] or {}),
+            "bundle": self._coerce_json_object(row["bundle_json"], "bundle_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         }
@@ -1019,22 +1261,25 @@ class OwnerCiStorage:
             "principal_id": str(row["principal_id"]),
             "display_name": self._decrypt_text(str(row["display_name_value"])) or "",
             "principal_type": str(row["principal_type"]),
-            "allowed_scopes": list(row["allowed_scopes_json"] or []),
-            "metadata": dict(row["metadata_json"] or {}),
+            "allowed_scopes": self._coerce_json_list(
+                row["allowed_scopes_json"],
+                "allowed_scopes_json",
+            ),
+            "metadata": self._coerce_json_object(row["metadata_json"], "metadata_json"),
             "active": bool(row["active"]),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         }
 
     def _external_connector_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
-        metadata = dict(row["metadata_json"] or {})
+        metadata = self._coerce_json_object(row["metadata_json"], "metadata_json")
         return {
             "owner_id": str(row["owner_id"]),
             "connector_id": str(row["connector_id"]),
             "service_kind": str(row["service_kind"]),
             "display_name": self._decrypt_text(str(row["display_name_value"])) or "",
             "auth_kind": str(row["auth_kind"]),
-            "policy": dict(row["policy_json"] or {}),
+            "policy": self._coerce_json_object(row["policy_json"], "policy_json"),
             "metadata": metadata,
             "active": bool(row["active"]),
             "has_secret": bool(row.get("secret_value")),
@@ -1049,15 +1294,18 @@ class OwnerCiStorage:
             "grant_key": str(row["grant_key"]),
             "resource_type": str(row["resource_type"]),
             "resource_id": str(row["resource_id"]),
-            "capabilities": list(row["capabilities_json"] or []),
-            "metadata": dict(row["metadata_json"] or {}),
+            "capabilities": self._coerce_json_list(
+                row["capabilities_json"],
+                "capabilities_json",
+            ),
+            "metadata": self._coerce_json_object(row["metadata_json"], "metadata_json"),
             "active": bool(row["active"]),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         }
 
     def _agent_app_profile_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
-        profile = dict(row["profile_json"] or {})
+        profile = self._coerce_json_object(row["profile_json"], "profile_json")
         return {
             "owner_id": str(row["owner_id"]),
             "app_id": str(row["app_id"]),
@@ -1073,14 +1321,14 @@ class OwnerCiStorage:
             "owner_id": str(row["owner_id"]),
             "app_id": str(row["app_id"]),
             "version": str(row["version_value"]),
-            "pack": dict(row["pack_json"] or {}),
+            "pack": self._coerce_json_object(row["pack_json"], "pack_json"),
             "current": bool(row["current_version"]),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         }
 
     def _workspace_bundle_from_row(self, row: dict[str, Any]) -> dict[str, Any]:
-        bundle = dict(row["bundle_json"] or {})
+        bundle = self._coerce_json_object(row["bundle_json"], "bundle_json")
         return {
             "owner_id": str(row["owner_id"]),
             "bundle_id": str(row["bundle_id"]),
@@ -1105,8 +1353,8 @@ class OwnerCiStorage:
             "repo_id": str(row["repo_id"]),
             "base_sha": str(row["base_sha"]),
             "status": str(row["status"]),
-            "candidate": dict(row["candidate_json"] or {}),
-            "review": dict(row["review_json"] or {}),
+            "candidate": self._coerce_json_object(row["candidate_json"], "candidate_json"),
+            "review": self._coerce_json_object(row["review_json"], "review_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         }
@@ -1117,7 +1365,7 @@ class OwnerCiStorage:
             "secret_ref_id": str(row["secret_ref_id"]),
             "connector_id": str(row["connector_id"]) if row.get("connector_id") else None,
             "purpose": self._decrypt_text(str(row["purpose_value"])) or "",
-            "metadata": dict(row["metadata_json"] or {}),
+            "metadata": self._coerce_json_object(row["metadata_json"], "metadata_json"),
             "active": bool(row["active"]),
             "has_secret": bool(row.get("secret_value")),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
@@ -1136,7 +1384,7 @@ class OwnerCiStorage:
             else None,
             "action": self._decrypt_text(str(row["action_value"])) or "",
             "decision": str(row["decision_value"]),
-            "audit": dict(row["audit_json"] or {}),
+            "audit": self._coerce_json_object(row["audit_json"], "audit_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         }
 
@@ -1147,7 +1395,7 @@ class OwnerCiStorage:
             "principal_id": str(row["principal_id"]),
             "app_id": str(row["app_id"]) if row.get("app_id") else None,
             "status": str(row["session_status"]),
-            "metadata": dict(row["metadata_json"] or {}),
+            "metadata": self._coerce_json_object(row["metadata_json"], "metadata_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
             "last_activity_at": (
@@ -1174,8 +1422,11 @@ class OwnerCiStorage:
                 if row.get("request_text_value")
                 else None
             ),
-            "request": dict(row["request_json"] or {}),
-            "normalized_intent": dict(row["normalized_intent_json"] or {}),
+            "request": self._coerce_json_object(row["request_json"], "request_json"),
+            "normalized_intent": self._coerce_json_object(
+                row["normalized_intent_json"],
+                "normalized_intent_json",
+            ),
             "related_run_id": str(row["related_run_id"]) if row.get("related_run_id") else None,
             "related_candidate_id": (
                 str(row["related_candidate_id"]) if row.get("related_candidate_id") else None
@@ -1198,7 +1449,7 @@ class OwnerCiStorage:
             "app_id": str(row["app_id"]) if row.get("app_id") else None,
             "action": self._decrypt_text(str(row["action_value"])) or "",
             "status": str(row["status"]),
-            "payload": dict(row["payload_json"] or {}),
+            "payload": self._coerce_json_object(row["payload_json"], "payload_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         }
@@ -1213,7 +1464,7 @@ class OwnerCiStorage:
             ),
             "status": str(row["status"]),
             "summary": self._decrypt_text(str(row["summary_value"])) or "",
-            "payload": dict(row["payload_json"] or {}),
+            "payload": self._coerce_json_object(row["payload_json"], "payload_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         }
 
@@ -1234,14 +1485,17 @@ class OwnerCiStorage:
             "required_capability": (
                 str(row["required_capability"]) if row.get("required_capability") else None
             ),
-            "observed_request": dict(row["observed_request_json"] or {}),
+            "observed_request": self._coerce_json_object(
+                row["observed_request_json"],
+                "observed_request_json",
+            ),
             "suggested_fix": (
                 self._decrypt_text(str(row["suggested_fix_value"]))
                 if row.get("suggested_fix_value")
                 else None
             ),
             "status": str(row["status"]),
-            "metadata": dict(row["metadata_json"] or {}),
+            "metadata": self._coerce_json_object(row["metadata_json"], "metadata_json"),
             "first_seen_at": row["first_seen_at"].isoformat() if row.get("first_seen_at") else None,
             "last_seen_at": row["last_seen_at"].isoformat() if row.get("last_seen_at") else None,
             "occurrence_count": int(row["occurrence_count"]),
@@ -1263,10 +1517,10 @@ class OwnerCiStorage:
                 if row.get("change_reason_value")
                 else None
             ),
-            "request": dict(row["request_json"] or {}),
+            "request": self._coerce_json_object(row["request_json"], "request_json"),
             "status": str(row["status"]),
             "approved": bool(row["approved"]),
-            "result": dict(row["result_json"] or {}),
+            "result": self._coerce_json_object(row["result_json"], "result_json"),
             "audit_id": str(row["audit_id"]) if row.get("audit_id") else None,
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
@@ -1277,7 +1531,7 @@ class OwnerCiStorage:
         return {
             "owner_id": str(row["owner_id"]),
             "service_kind": str(row["service_kind"]),
-            "manifest": dict(row["manifest_json"] or {}),
+            "manifest": self._coerce_json_object(row["manifest_json"], "manifest_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         }
@@ -1294,8 +1548,8 @@ class OwnerCiStorage:
             "correlation_key": (
                 str(row["correlation_key"]) if row.get("correlation_key") else None
             ),
-            "summary": dict(row["summary_json"] or {}),
-            "metadata": dict(row["metadata_json"] or {}),
+            "summary": self._coerce_json_object(row["summary_json"], "summary_json"),
+            "metadata": self._coerce_json_object(row["metadata_json"], "metadata_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
             "last_observed_at": (
@@ -1312,7 +1566,7 @@ class OwnerCiStorage:
             "ref_kind": str(row["ref_kind"]),
             "ref_value": str(row["ref_value"]),
             "dedupe_key": str(row["dedupe_key"]),
-            "metadata": dict(row["metadata_json"] or {}),
+            "metadata": self._coerce_json_object(row["metadata_json"], "metadata_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         }
@@ -1327,13 +1581,13 @@ class OwnerCiStorage:
             "title": self._decrypt_text(str(row["title_value"])) or "",
             "state": str(row["state"]),
             "dedupe_key": str(row["dedupe_key"]),
-            "payload": dict(row["payload_json"] or {}),
+            "payload": self._coerce_json_object(row["payload_json"], "payload_json"),
             "log_text": (
                 self._decrypt_text(str(row["log_text_value"]))
                 if row.get("log_text_value")
                 else None
             ),
-            "metadata": dict(row["metadata_json"] or {}),
+            "metadata": self._coerce_json_object(row["metadata_json"], "metadata_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         }
@@ -1355,8 +1609,11 @@ class OwnerCiStorage:
                 if row.get("recommended_fix_value")
                 else None
             ),
-            "evidence_refs": list(row["evidence_refs_json"] or []),
-            "metadata": dict(row["metadata_json"] or {}),
+            "evidence_refs": self._coerce_json_list(
+                row["evidence_refs_json"],
+                "evidence_refs_json",
+            ),
+            "metadata": self._coerce_json_object(row["metadata_json"], "metadata_json"),
             "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
             "last_seen_at": row["last_seen_at"].isoformat() if row.get("last_seen_at") else None,
@@ -1406,6 +1663,7 @@ class OwnerCiStorage:
                     default_branch,
                     stack_kind,
                     local_fast_lanes,
+                    local_full_lanes,
                     windows_full_lanes,
                     review_policy,
                     promotion_policy,
@@ -1417,7 +1675,7 @@ class OwnerCiStorage:
                     updated_at
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb,
-                    $11::jsonb, $12, $13, $14::jsonb, now(), now()
+                    $11::jsonb, $12::jsonb, $13, $14, $15::jsonb, now(), now()
                 )
                 ON CONFLICT (owner_id, repo_id) DO UPDATE SET
                     display_name_value = EXCLUDED.display_name_value,
@@ -1425,6 +1683,7 @@ class OwnerCiStorage:
                     default_branch = EXCLUDED.default_branch,
                     stack_kind = EXCLUDED.stack_kind,
                     local_fast_lanes = EXCLUDED.local_fast_lanes,
+                    local_full_lanes = EXCLUDED.local_full_lanes,
                     windows_full_lanes = EXCLUDED.windows_full_lanes,
                     review_policy = EXCLUDED.review_policy,
                     promotion_policy = EXCLUDED.promotion_policy,
@@ -1442,6 +1701,7 @@ class OwnerCiStorage:
                 str(profile.get("default_branch") or "main").strip(),
                 str(profile["stack_kind"]).strip(),
                 json.dumps(list(profile.get("local_fast_lanes") or [])),
+                json.dumps(list(profile.get("local_full_lanes") or [])),
                 json.dumps(list(profile.get("windows_full_lanes") or [])),
                 json.dumps(dict(profile.get("review_policy") or {})),
                 json.dumps(dict(profile.get("promotion_policy") or {})),
@@ -1878,6 +2138,23 @@ class OwnerCiStorage:
     ) -> dict[str, Any] | None:
         table = f'"{self._schema}".owner_ci_runs'
         async with self._pool.acquire() as conn:
+            current = await conn.fetchrow(
+                f"""
+                SELECT github_receipts
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND run_id = $2
+                 LIMIT 1
+                """,
+                owner_id,
+                run_id,
+            )
+            if current is None:
+                return None
+            merged = _merge_json_dict(
+                self._coerce_json_object(current["github_receipts"], "github_receipts"),
+                receipt,
+            )
             row = await conn.fetchrow(
                 f"""
                 UPDATE {table}
@@ -1889,12 +2166,52 @@ class OwnerCiStorage:
                 """,
                 owner_id,
                 run_id,
-                json.dumps(receipt),
+                json.dumps(merged),
             )
         if row is None:
             return None
         await self._recompute_run_status(owner_id, run_id)
         return await self.get_run(owner_id, run_id)
+
+    async def merge_run_metadata(
+        self,
+        owner_id: str,
+        run_id: str,
+        metadata_patch: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        table = f'"{self._schema}".owner_ci_runs'
+        async with self._pool.acquire() as conn:
+            current = await conn.fetchrow(
+                f"""
+                SELECT metadata_json
+                  FROM {table}
+                 WHERE owner_id = $1
+                   AND run_id = $2
+                 LIMIT 1
+                """,
+                owner_id,
+                run_id,
+            )
+            if current is None:
+                return None
+            merged = _merge_json_dict(
+                self._coerce_json_object(current["metadata_json"], "metadata_json"),
+                metadata_patch,
+            )
+            row = await conn.fetchrow(
+                f"""
+                UPDATE {table}
+                   SET metadata_json = $3::jsonb,
+                       updated_at = now()
+                 WHERE owner_id = $1
+                   AND run_id = $2
+                RETURNING *
+                """,
+                owner_id,
+                run_id,
+                json.dumps(merged),
+            )
+        return self._run_from_row(dict(row)) if row is not None else None
 
     async def set_run_status(
         self,
@@ -2632,6 +2949,12 @@ class OwnerCiStorage:
             row = await conn.fetchrow(query, *params)
         return self._debug_bundle_from_row(dict(row)) if row is not None else None
 
+    async def get_local_repo_readiness(
+        self,
+        repo: dict[str, Any],
+    ) -> tuple[RepoReadinessReceipt | None, dict[str, Any] | None]:
+        return _load_local_repo_readiness(repo)
+
     async def get_project_resource_report(
         self,
         owner_id: str,
@@ -2654,7 +2977,10 @@ class OwnerCiStorage:
                 repo_id,
                 max(1, limit),
             )
-        items = [dict(row["summary_json"] or {}) for row in rows]
+        items = [
+            self._coerce_json_object(row["summary_json"], "summary_json")
+            for row in rows
+        ]
         return {
             "repo_id": repo_id,
             "items": items,
@@ -2745,6 +3071,133 @@ class OwnerCiStorage:
                     or [0]
                 ),
             },
+        }
+
+    async def get_reporting_readiness(self, owner_id: str) -> dict[str, Any]:
+        repos = await self.list_repo_profiles(owner_id)
+        recent_runs = await self.list_runs(owner_id, limit=max(200, len(repos) * 25, 50))
+
+        repo_order: list[str] = []
+        repo_index: dict[str, dict[str, Any]] = {}
+        for repo in repos:
+            repo_id = str(repo.get("repo_id") or "").strip()
+            if not repo_id:
+                continue
+            repo_order.append(repo_id)
+            repo_index[repo_id] = repo
+
+        latest_run_ids: dict[str, str] = {}
+        for run in recent_runs:
+            repo_id = str(run.get("repo_id") or "").strip()
+            run_id = str(run.get("run_id") or "").strip()
+            if not repo_id or not run_id or repo_id in latest_run_ids:
+                continue
+            latest_run_ids[repo_id] = run_id
+            if repo_id not in repo_index:
+                repo_order.append(repo_id)
+                repo_index[repo_id] = {
+                    "repo_id": repo_id,
+                    "display_name": repo_id,
+                    "active": True,
+                    "stack_kind": "unknown",
+                    "metadata": {},
+                }
+
+        repo_receipts: list[RepoReadinessReceipt] = []
+        repo_readiness: list[dict[str, Any]] = []
+        worker_certification: dict[str, Any] | None = None
+        worker_certification_source = "missing"
+        for repo_id in repo_order:
+            repo = dict(repo_index.get(repo_id) or {})
+            latest_run = None
+            latest_run_id = latest_run_ids.get(repo_id)
+            if latest_run_id:
+                latest_run = await self.get_run(owner_id, latest_run_id)
+
+            embedded_local_receipt = None
+            if latest_run is not None:
+                embedded_local_receipt, _ = _load_local_repo_readiness_from_shards(
+                    repo,
+                    list(latest_run.get("shards") or []),
+                )
+            local_receipt, local_receipt_payload = _load_local_repo_readiness(repo)
+            if embedded_local_receipt is not None:
+                local_receipt = embedded_local_receipt
+
+            if worker_certification is None and repo_id == "zetherion-ai":
+                (
+                    worker_certification,
+                    worker_certification_payload,
+                ) = _load_local_worker_certification(repo)
+                if worker_certification_payload is not None:
+                    worker_certification_source = "local_file"
+
+            if latest_run is not None:
+                receipt = build_repo_readiness_receipt(
+                    repo=repo,
+                    run=latest_run,
+                    review=dict(latest_run.get("review_receipts") or {}),
+                    release_receipt=dict(
+                        (latest_run.get("metadata") or {}).get("release_verification") or {}
+                    ),
+                    local_receipt=local_receipt,
+                )
+            elif local_receipt is not None:
+                receipt = local_receipt
+            else:
+                receipt = _pending_repo_readiness(
+                    repo_id,
+                    "No owner-CI run has produced readiness receipts yet.",
+                )
+
+            repo_receipts.append(receipt)
+            repo_readiness.append(
+                {
+                    "repo_id": repo_id,
+                    "display_name": str(repo.get("display_name") or repo_id),
+                    "active": bool(repo.get("active", True)),
+                    "stack_kind": str(repo.get("stack_kind") or "unknown"),
+                    "platform_canary": bool((repo.get("metadata") or {}).get("platform_canary")),
+                    "latest_run": (
+                        {
+                            "run_id": str(latest_run.get("run_id") or ""),
+                            "status": str(latest_run.get("status") or ""),
+                            "git_ref": str(latest_run.get("git_ref") or ""),
+                            "created_at": latest_run.get("created_at"),
+                            "updated_at": latest_run.get("updated_at"),
+                        }
+                        if latest_run is not None
+                        else (
+                            {
+                                "run_id": None,
+                                "status": str(local_receipt_payload.get("status") or ""),
+                                "git_ref": str(
+                                    (local_receipt_payload.get("metadata") or {}).get("git_sha")
+                                    or ""
+                                ),
+                                "created_at": local_receipt_payload.get("recorded_at"),
+                                "updated_at": local_receipt_payload.get("recorded_at"),
+                            }
+                            if local_receipt_payload is not None
+                            else None
+                        )
+                    ),
+                    "receipt_source": (
+                        "owner_ci_run"
+                        if latest_run is not None
+                        else ("local_file" if local_receipt_payload is not None else "missing")
+                    ),
+                    "readiness": receipt.model_dump(mode="json"),
+                }
+            )
+
+        workspace = build_workspace_readiness_receipt(repo_receipts)
+        return {
+            "generated_at": datetime.now(UTC).isoformat(),
+            "workspace_readiness": workspace.model_dump(mode="json"),
+            "repo_readiness": repo_readiness,
+            "worker_certification": worker_certification,
+            "worker_certification_source": worker_certification_source,
         }
 
     async def get_reporting_summary(self, owner_id: str) -> dict[str, Any]:
@@ -2940,7 +3393,7 @@ class OwnerCiStorage:
             )
         if row is None:
             raise RuntimeError("Store agent bootstrap manifest returned no row")
-        payload = dict(row["manifest_json"] or {})
+        payload = self._coerce_json_object(row["manifest_json"], "manifest_json")
         payload["client_id"] = client_id
         return payload
 
@@ -2964,7 +3417,7 @@ class OwnerCiStorage:
             )
         if row is None:
             return None
-        payload = dict(row["manifest_json"] or {})
+        payload = self._coerce_json_object(row["manifest_json"], "manifest_json")
         payload["client_id"] = client_id
         return payload
 
@@ -2999,7 +3452,7 @@ class OwnerCiStorage:
             )
         if row is None:
             raise RuntimeError("Store agent setup receipt returned no row")
-        return dict(row["receipt_json"] or {})
+        return self._coerce_json_object(row["receipt_json"], "receipt_json")
 
     async def upsert_agent_docs_manifest(
         self,
@@ -3039,7 +3492,7 @@ class OwnerCiStorage:
         return {
             "slug": slug,
             "title": self._decrypt_text(str(row["title_value"])) or slug,
-            "manifest": dict(row["manifest_json"] or {}),
+            "manifest": self._coerce_json_object(row["manifest_json"], "manifest_json"),
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         }
 
@@ -3059,7 +3512,7 @@ class OwnerCiStorage:
             {
                 "slug": str(row["slug"]),
                 "title": self._decrypt_text(str(row["title_value"])) or str(row["slug"]),
-                "manifest": dict(row["manifest_json"] or {}),
+                "manifest": self._coerce_json_object(row["manifest_json"], "manifest_json"),
                 "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
             }
             for row in rows
@@ -3084,7 +3537,7 @@ class OwnerCiStorage:
         return {
             "slug": str(row["slug"]),
             "title": self._decrypt_text(str(row["title_value"])) or str(row["slug"]),
-            "manifest": dict(row["manifest_json"] or {}),
+            "manifest": self._coerce_json_object(row["manifest_json"], "manifest_json"),
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
         }
 
@@ -5362,7 +5815,7 @@ class OwnerCiStorage:
                 return
             shard_rows = await conn.fetch(
                 f"""
-                SELECT status
+                SELECT *
                   FROM {shards_table}
                  WHERE owner_id = $1
                    AND run_id = $2
@@ -5370,8 +5823,47 @@ class OwnerCiStorage:
                 owner_id,
                 run_id,
             )
-            shard_statuses = [str(row["status"]).strip().lower() for row in shard_rows]
-            review_receipts = dict(run_row["review_receipts"] or {})
+            repo_row = await conn.fetchrow(
+                f"""
+                SELECT *
+                  FROM "{self._schema}".owner_ci_repo_profiles
+                 WHERE owner_id = $1
+                   AND repo_id = $2
+                 LIMIT 1
+                """,
+                owner_id,
+                str(run_row["repo_id"]),
+            )
+            repo_profile = (
+                self._repo_profile_from_row(dict(repo_row)) if repo_row is not None else None
+            )
+            shard_payloads = [
+                self._shard_from_row(dict(row))
+                for row in shard_rows
+            ]
+            local_receipt = None
+            if repo_profile is not None:
+                local_receipt, _ = _load_local_repo_readiness_from_shards(
+                    repo_profile,
+                    shard_payloads,
+                )
+            if repo_profile is not None:
+                filesystem_receipt, _ = _load_local_repo_readiness(repo_profile)
+                if local_receipt is None:
+                    local_receipt = filesystem_receipt
+            effective_shards = [
+                normalize_shard_receipt(str(run_row["repo_id"]), shard_payload)
+                for shard_payload in shard_payloads
+            ]
+            effective_shards = overlay_local_readiness_shards(
+                effective_shards,
+                local_receipt,
+            )
+            shard_statuses = [shard.status for shard in effective_shards]
+            review_receipts = self._coerce_json_object(
+                run_row["review_receipts"],
+                "review_receipts",
+            )
             next_status = str(run_row["status"]).strip().lower()
             if any(status == "failed" for status in shard_statuses):
                 next_status = "failed"

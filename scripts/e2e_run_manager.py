@@ -6,19 +6,20 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
 import secrets
 import shlex
 import shutil
 import socket
 import subprocess
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_COMPOSE_FILE = REPO_ROOT / "docker-compose.test.yml"
-DEFAULT_RUNS_ROOT = REPO_ROOT / ".artifacts" / "e2e-runs"
+DEFAULT_RUNS_ROOT = REPO_ROOT / ".artifacts" / "ci-e2e-runs"
 DEFAULT_PROJECT_PREFIX = "zetherion-ai-test"
 DEFAULT_TTL_MINUTES = 180
 RUN_LABEL = "zetherion.e2e"
@@ -32,6 +33,10 @@ PORT_DEFAULTS: dict[str, int] = {
     "E2E_OLLAMA_HOST_PORT": 21434,
     "E2E_POSTGRES_HOST_PORT": 15432,
     "E2E_QDRANT_HOST_PORT": 16333,
+}
+SERVICE_SLOT_OFFSETS: dict[str, int] = {
+    "slot_a": 0,
+    "slot_b": 1000,
 }
 
 
@@ -56,7 +61,7 @@ class RunManagerError(RuntimeError):
 
 
 def _now() -> datetime:
-    return datetime.now(tz=UTC)
+    return datetime.now(tz=timezone.utc)
 
 
 def _iso(timestamp: datetime) -> str:
@@ -71,10 +76,33 @@ def build_layout(runs_root: Path) -> RunLayout:
     )
 
 
+def _running_in_wsl() -> bool:
+    distro = os.environ.get("WSL_DISTRO_NAME", "").strip()
+    if distro:
+        return True
+    return "microsoft" in platform.release().lower()
+
+
+def _path_uses_windows_mount(path: Path) -> bool:
+    parts = path.resolve().parts
+    return len(parts) >= 3 and parts[0] == "/" and parts[1] == "mnt"
+
+
+def _resolve_stack_storage_root(layout: RunLayout) -> Path:
+    override = os.environ.get("E2E_STACK_STORAGE_ROOT", "").strip()
+    if override:
+        return Path(override).expanduser()
+
+    if _running_in_wsl() and _path_uses_windows_mount(layout.runs_root):
+        tmp_root = os.environ.get("TMPDIR", "/tmp").strip() or "/tmp"
+        return Path(tmp_root) / "zetherion-e2e-runs" / "stacks"
+
+    return layout.stacks_dir
+
+
 def ensure_layout(layout: RunLayout) -> None:
-    layout.runs_root.mkdir(parents=True, exist_ok=True)
-    layout.manifests_dir.mkdir(parents=True, exist_ok=True)
-    layout.stacks_dir.mkdir(parents=True, exist_ok=True)
+    for directory in (layout.runs_root, layout.manifests_dir, layout.stacks_dir):
+        _mkdir_idempotent(directory)
 
 
 def make_run_id(prefix: str = "run") -> str:
@@ -89,7 +117,12 @@ def reserve_host_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def allocate_port_map() -> dict[str, int]:
+def allocate_port_map(service_slot: str | None = None) -> dict[str, int]:
+    normalized_slot = (service_slot or "").strip().lower()
+    if normalized_slot in SERVICE_SLOT_OFFSETS:
+        offset = SERVICE_SLOT_OFFSETS[normalized_slot]
+        return {env_name: default + offset for env_name, default in PORT_DEFAULTS.items()}
+
     allocated: dict[str, int] = {}
     used: set[int] = set()
     for env_name in PORT_DEFAULTS:
@@ -102,7 +135,7 @@ def allocate_port_map() -> dict[str, int]:
 
 
 def build_paths(layout: RunLayout, run_id: str) -> RunPaths:
-    stack_root = layout.stacks_dir / run_id
+    stack_root = _resolve_stack_storage_root(layout) / run_id
     return RunPaths(
         manifest_path=layout.manifests_dir / f"{run_id}.json",
         stack_root=stack_root,
@@ -110,6 +143,34 @@ def build_paths(layout: RunLayout, run_id: str) -> RunPaths:
         logs_root=stack_root / "logs",
         env_file=stack_root / "run.env",
     )
+
+
+def _mkdir_idempotent(path: Path) -> None:
+    if path.is_dir():
+        return
+    parent = path.parent
+    if parent != path:
+        _mkdir_idempotent(parent)
+    try:
+        path.mkdir(exist_ok=True)
+    except FileExistsError:
+        if path.is_dir():
+            return
+        raise
+
+
+def ensure_stack_permissions(paths: RunPaths) -> None:
+    # Avoid recursive mkdir on WSL-mounted Windows paths. pathlib can surface a
+    # spurious FileExistsError from parent creation even when the directory tree
+    # is already present under /mnt/<drive>/...
+    _mkdir_idempotent(paths.stack_root.parent)
+    for directory in (paths.stack_root, paths.data_root, paths.logs_root):
+        _mkdir_idempotent(directory)
+        try:
+            directory.chmod(0o777)
+        except OSError:
+            # Best-effort on filesystems that do not support chmod semantics.
+            continue
 
 
 def write_env_file(path: Path, values: dict[str, str]) -> None:
@@ -221,19 +282,38 @@ def create_run(
     compose_file: Path,
     project_prefix: str,
     ttl_minutes: int,
+    service_slot: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, str]]:
     layout = build_layout(runs_root)
     ensure_layout(layout)
 
     run_id = make_run_id()
     paths = build_paths(layout, run_id)
-    paths.data_root.mkdir(parents=True, exist_ok=True)
-    paths.logs_root.mkdir(parents=True, exist_ok=True)
+    ensure_stack_permissions(paths)
 
-    host_ports = allocate_port_map()
+    normalized_slot = (service_slot or "").strip().lower()
+    host_ports = allocate_port_map(service_slot=normalized_slot or None)
     project_name = f"{project_prefix}-{run_id}"
     created_at = _now()
     expires_at = created_at + timedelta(minutes=ttl_minutes)
+    runtime_env_defaults = {
+        "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", ""),
+        "DISCORD_TOKEN_TEST": os.environ.get("DISCORD_TOKEN_TEST", "test-discord-token"),
+        "DISCORD_TOKEN": os.environ.get(
+            "DISCORD_TOKEN",
+            os.environ.get("DISCORD_TOKEN_TEST", "test-discord-token"),
+        ),
+        "DISCORD_E2E_ENABLED": os.environ.get("DISCORD_E2E_ENABLED", "false"),
+        "DISCORD_E2E_ALLOWED_AUTHOR_IDS": os.environ.get("DISCORD_E2E_ALLOWED_AUTHOR_IDS", ""),
+        "DISCORD_E2E_GUILD_ID": os.environ.get("DISCORD_E2E_GUILD_ID", ""),
+        "DISCORD_E2E_CATEGORY_ID": os.environ.get("DISCORD_E2E_CATEGORY_ID", ""),
+        "DISCORD_E2E_CHANNEL_PREFIX": os.environ.get("DISCORD_E2E_CHANNEL_PREFIX", "zeth-e2e"),
+        "EMBEDDINGS_BACKEND": os.environ.get("EMBEDDINGS_BACKEND", "openai"),
+        "ENCRYPTION_PASSPHRASE": os.environ.get(
+            "ENCRYPTION_PASSPHRASE", "test-encryption-passphrase"
+        ),
+        "GEMINI_API_KEY": os.environ.get("GEMINI_API_KEY", "test-gemini-api-key"),
+    }
 
     exports: dict[str, str] = {
         "E2E_RUN_ID": run_id,
@@ -241,12 +321,15 @@ def create_run(
         "E2E_STACK_ROOT": str(paths.stack_root),
         "E2E_RUN_MANIFEST_PATH": str(paths.manifest_path),
         "E2E_RUN_ENV_PATH": str(paths.env_file),
+        "ZETHERION_ENV_FILE": str(paths.env_file),
         "COMPOSE_FILE": str(compose_file),
         "PROJECT": project_name,
+        "E2E_SERVICE_SLOT": normalized_slot or "dynamic",
     }
     exports.update({key: str(value) for key, value in host_ports.items()})
+    exports.update(runtime_env_defaults)
 
-    write_env_file(paths.env_file, exports)
+    write_env_file(paths.env_file, runtime_env_defaults)
 
     manifest: dict[str, Any] = {
         "version": 1,
@@ -261,6 +344,7 @@ def create_run(
             "logs_root": str(paths.logs_root),
         },
         "ports": host_ports,
+        "service_slot": normalized_slot or "dynamic",
         "lease": {
             "created_at": _iso(created_at),
             "expires_at": _iso(expires_at),
@@ -291,7 +375,7 @@ def _manifest_expired(payload: dict[str, Any], now: datetime) -> bool:
     except ValueError:
         return True
     if expiry.tzinfo is None:
-        expiry = expiry.replace(tzinfo=UTC)
+        expiry = expiry.replace(tzinfo=timezone.utc)
     return expiry <= now
 
 
@@ -383,6 +467,7 @@ def build_parser() -> argparse.ArgumentParser:
     start_parser.add_argument("--compose-file", default=str(DEFAULT_COMPOSE_FILE))
     start_parser.add_argument("--project-prefix", default=DEFAULT_PROJECT_PREFIX)
     start_parser.add_argument("--ttl-minutes", type=int, default=DEFAULT_TTL_MINUTES)
+    start_parser.add_argument("--service-slot", default="")
     start_parser.add_argument(
         "--shell",
         action="store_true",
@@ -414,6 +499,7 @@ def main() -> int:
             compose_file=Path(args.compose_file),
             project_prefix=str(args.project_prefix),
             ttl_minutes=int(args.ttl_minutes),
+            service_slot=str(args.service_slot),
         )
         if args.shell:
             print(render_shell_exports(exports))

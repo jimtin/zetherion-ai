@@ -18,6 +18,7 @@ import json
 import math
 import os
 import secrets
+import ssl
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from json import JSONDecodeError
@@ -25,6 +26,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import httpx
 from aiohttp import web
 
 from zetherion_ai.admin.tenant_admin_manager import (
@@ -100,6 +102,40 @@ def _extract_json_object(raw: str) -> dict[str, Any]:
             return parsed if isinstance(parsed, dict) else {}
         except Exception:
             return {}
+
+
+def _coerce_json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            return {}
+        if isinstance(parsed, dict):
+            return dict(parsed)
+    return {}
+
+
+def _coerce_json_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return list(value)
+    if isinstance(value, tuple):
+        return list(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            return []
+        if isinstance(parsed, list):
+            return list(parsed)
+    return []
 
 
 def _resolve_updater_secret() -> str:
@@ -1027,6 +1063,83 @@ class SkillsServer:
             self._runtime_status_store = store
         return self._runtime_status_store
 
+    async def _runtime_external_services_domain(self) -> dict[str, Any]:
+        from zetherion_ai.config import get_settings
+        from zetherion_ai.memory.qdrant import (
+            CONVERSATIONS_COLLECTION,
+            LONG_TERM_MEMORY_COLLECTION,
+            USER_PROFILES_COLLECTION,
+        )
+
+        settings = get_settings()
+        verify: ssl.SSLContext | bool | str = (
+            settings.qdrant_owner_cert_path if settings.qdrant_owner_cert_path else True
+        )
+
+        required_collections = [
+            CONVERSATIONS_COLLECTION,
+            LONG_TERM_MEMORY_COLLECTION,
+            USER_PROFILES_COLLECTION,
+        ]
+        try:
+            async with httpx.AsyncClient(
+                base_url=settings.qdrant_owner_url.rstrip("/"),
+                timeout=10.0,
+                verify=verify,
+            ) as client:
+                response = await client.get("/collections")
+                response.raise_for_status()
+                payload = response.json()
+
+            collections = payload.get("result", {}).get("collections", [])
+            available = sorted(
+                {
+                    str(item.get("name") or "").strip()
+                    for item in collections
+                    if isinstance(item, dict) and str(item.get("name") or "").strip()
+                }
+            )
+            missing = sorted(set(required_collections) - set(available))
+            if missing:
+                return self._runtime_domain(
+                    key="external_services",
+                    label="External Services",
+                    status="blocked",
+                    summary="Required Qdrant collections are missing.",
+                    details={
+                        "qdrant_url": settings.qdrant_owner_url,
+                        "required_collections": required_collections,
+                        "available_collections": available,
+                        "missing_collections": missing,
+                    },
+                    incident_type="release_blocker",
+                )
+
+            return self._runtime_domain(
+                key="external_services",
+                label="External Services",
+                status="healthy",
+                summary="Required external service dependencies are reachable.",
+                details={
+                    "qdrant_url": settings.qdrant_owner_url,
+                    "required_collections": required_collections,
+                    "available_collections": available,
+                },
+            )
+        except Exception as exc:
+            return self._runtime_domain(
+                key="external_services",
+                label="External Services",
+                status="blocked",
+                summary="External dependency readiness check failed.",
+                details={
+                    "qdrant_url": settings.qdrant_owner_url,
+                    "required_collections": required_collections,
+                    "error": str(exc),
+                },
+                incident_type="release_blocker",
+            )
+
     async def handle_internal_runtime_health(self, request: web.Request) -> web.Response:
         """Return runtime health domains for operator dashboards."""
         from zetherion_ai.config import get_settings
@@ -1057,6 +1170,14 @@ class SkillsServer:
             summary="Discord bot runtime status is unavailable.",
             details={},
             incident_type="discord_delivery_failed",
+        )
+        announcement_domain = self._runtime_domain(
+            key="announcement_dispatcher",
+            label="Announcement Dispatcher",
+            status="degraded",
+            summary="Announcement dispatcher runtime status is unavailable.",
+            details={},
+            incident_type="service_evidence_incomplete",
         )
         deploy_domain = self._runtime_domain(
             key="deploy_state",
@@ -1118,6 +1239,8 @@ class SkillsServer:
                 if bot_status is not None:
                     updated_at_raw = bot_status.get("updated_at")
                     status_age_seconds: float | None = None
+                    bot_details = bot_status.get("details")
+                    runtime_details = bot_details if isinstance(bot_details, dict) else {}
                     if isinstance(updated_at_raw, str):
                         try:
                             updated_at = datetime.fromisoformat(updated_at_raw)
@@ -1141,6 +1264,57 @@ class SkillsServer:
                         bot_incident_type = "discord_delivery_failed"
                     elif bot_status_value == "starting":
                         bot_domain_status = "degraded"
+
+                    queue_runtime = runtime_details.get("queue")
+                    if isinstance(queue_runtime, dict):
+                        queue_domain_details = {
+                            "status_counts": counts,
+                            "stale_processing": stale_count,
+                            "stale_timeout_seconds": settings.queue_stale_timeout_seconds,
+                            "runtime": queue_runtime,
+                        }
+                        queue_accepting = bool(queue_runtime.get("accepting_work", True))
+                        queue_healthy = bool(queue_runtime.get("healthy", queue_accepting))
+                        if not queue_accepting or not queue_healthy:
+                            queue_domain = self._runtime_domain(
+                                key="message_queue",
+                                label="Message Queue",
+                                status="blocked",
+                                summary=(
+                                    "Queue workers are not accepting new work; Discord replies "
+                                    "are falling back to inline processing."
+                                ),
+                                details=queue_domain_details,
+                                incident_type="queue_lease_wedged",
+                            )
+                        else:
+                            queue_domain = self._runtime_domain(
+                                key="message_queue",
+                                label="Message Queue",
+                                status=queue_status,
+                                summary=queue_summary,
+                                details=queue_domain_details,
+                                incident_type=incident_type,
+                            )
+
+                    dispatcher_runtime = runtime_details.get("announcement_dispatcher")
+                    if isinstance(dispatcher_runtime, dict):
+                        dispatcher_running = bool(dispatcher_runtime.get("running", False))
+                        announcement_domain = self._runtime_domain(
+                            key="announcement_dispatcher",
+                            label="Announcement Dispatcher",
+                            status="healthy" if dispatcher_running else "degraded",
+                            summary=(
+                                "Announcement dispatcher is running."
+                                if dispatcher_running
+                                else "Announcement dispatcher is configured but not running."
+                            ),
+                            details=dispatcher_runtime,
+                            incident_type=(
+                                None if dispatcher_running else "service_evidence_incomplete"
+                            ),
+                        )
+
                     bot_domain = self._runtime_domain(
                         key="discord_bot",
                         label="Discord Bot",
@@ -1151,12 +1325,15 @@ class SkillsServer:
                             "updated_at": bot_status.get("updated_at"),
                             "status_age_seconds": status_age_seconds,
                             "release_revision": bot_status.get("release_revision"),
-                            "details": bot_status.get("details"),
+                            "details": runtime_details,
                         },
                         incident_type=bot_incident_type,
                     )
 
-        domains.extend([queue_domain, bot_domain, deploy_domain])
+        external_services_domain = await self._runtime_external_services_domain()
+        domains.extend(
+            [queue_domain, bot_domain, announcement_domain, deploy_domain, external_services_domain]
+        )
         blocker_count = sum(1 for domain in domains if domain["status"] == "blocked")
         degraded_count = sum(1 for domain in domains if domain["status"] == "degraded")
         release_status = "healthy"
@@ -1184,6 +1361,11 @@ class SkillsServer:
                     ],
                     "blocker_count": blocker_count,
                     "degraded_count": degraded_count,
+                    "receipt_status": (
+                        "healthy"
+                        if blocker_count == 0 and degraded_count == 0
+                        else "deployed_but_unhealthy"
+                    ),
                 },
                 incident_type="release_blocker" if release_status != "healthy" else None,
             )
@@ -2955,7 +3137,11 @@ class SkillsServer:
                     if data.get("max_deletions") is not None
                     else 3000
                 ),
-                required_checks=tuple(required_checks) if required_checks else ("CI/CD Pipeline",),
+                required_checks=(
+                    tuple(required_checks)
+                    if required_checks
+                    else ("zetherion/merge-readiness",)
+                ),
                 forbidden_actions=tuple(forbidden_actions) if forbidden_actions else (),
             )
             orchestrator = AutomergeOrchestrator()
@@ -4815,8 +5001,7 @@ class SkillsServer:
             )
             claimed_job_payload: dict[str, Any] | None = None
             if claimed_job is not None:
-                raw_payload = claimed_job.get("payload_json")
-                payload_json = raw_payload if isinstance(raw_payload, dict) else {}
+                payload_json = _coerce_json_object(claimed_job.get("payload_json"))
                 claimed_job_payload = {
                     "job_id": str(claimed_job.get("job_id") or ""),
                     "run_id": str(claimed_job.get("run_id") or ""),
@@ -4827,8 +5012,12 @@ class SkillsServer:
                     "runner": str(
                         claimed_job.get("runner") or payload_json.get("runner") or "command"
                     ),
-                    "required_capabilities": list(claimed_job.get("required_capabilities") or []),
-                    "artifact_contract": dict(claimed_job.get("artifact_contract") or {}),
+                    "required_capabilities": _coerce_json_list(
+                        claimed_job.get("required_capabilities")
+                    ),
+                    "artifact_contract": _coerce_json_object(
+                        claimed_job.get("artifact_contract")
+                    ),
                     "payload": payload_json,
                 }
             poll_after_seconds = max(

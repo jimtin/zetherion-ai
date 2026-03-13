@@ -392,7 +392,7 @@ class HeartbeatScheduler:
     async def _execute_actions(self, actions: list[HeartbeatAction]) -> list[ActionResult]:
         """Execute a list of actions (via queue if available, else direct)."""
         # If queue is available and running, enqueue at P2 priority
-        if self._queue_manager is not None and self._queue_manager.is_running:
+        if self._queue_manager is not None and self._queue_manager.is_accepting_work:
             return await self._enqueue_actions(actions)
 
         # Direct execution fallback

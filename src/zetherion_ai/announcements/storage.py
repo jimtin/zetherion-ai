@@ -756,6 +756,36 @@ class AnnouncementRepository:
             )
         return [self._delivery_from_row(row) for row in rows]
 
+    async def probe_claim_due_deliveries(self) -> None:
+        """Exercise the delivery-claim SQL without persisting claim state."""
+        pool = self._require_pool()
+        async with pool.acquire() as conn:
+            transaction = conn.transaction()
+            await transaction.start()
+            try:
+                await conn.fetch(
+                    """
+                    WITH due AS (
+                        SELECT delivery_id
+                        FROM announcement_deliveries
+                        WHERE status IN ('scheduled', 'retry')
+                          AND scheduled_for <= $1
+                        ORDER BY scheduled_for ASC
+                        FOR UPDATE SKIP LOCKED
+                        LIMIT 1
+                    )
+                    UPDATE announcement_deliveries AS deliveries
+                    SET status = 'processing',
+                        updated_at = NOW()
+                    FROM due
+                    WHERE deliveries.delivery_id = due.delivery_id
+                    RETURNING deliveries.delivery_id
+                    """,
+                    datetime.now(UTC),
+                )
+            finally:
+                await transaction.rollback()
+
     async def list_due_deliveries(
         self,
         *,

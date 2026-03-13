@@ -3,12 +3,16 @@
 
 # Include source and dependencies
 !requirements.txt
+!requirements-dev.txt
+!pyproject.toml
+!docs/requirements.txt
 !src/
 !scripts/
 !scripts/migrate-qdrant-embeddings.py
 !updater_sidecar/
 !zetherion-dev-agent/
 !zetherion-whatsapp-bridge/
+!Dockerfile.dev-tools
 
 # Exclude Python caches from included dirs
 **/__pycache__

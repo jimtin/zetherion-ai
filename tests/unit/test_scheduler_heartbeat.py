@@ -264,6 +264,7 @@ class TestHeartbeatScheduler:
         """Queued heartbeat actions should use scheduled_for when quiet-hours deferral applies."""
         queue_manager = AsyncMock()
         queue_manager.is_running = True
+        queue_manager.is_accepting_work = True
         queue_manager.enqueue = AsyncMock()
         scheduler = HeartbeatScheduler(queue_manager=queue_manager)
 

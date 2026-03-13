@@ -22,6 +22,28 @@ class PlanRequirement:
     kind: str
     description: str
     pytest_targets: tuple[str, ...] = ()
+    lane_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class RequiredPath:
+    id: str
+    description: str
+    lane_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class LanePlan:
+    lane_id: str
+    lane_label: str
+    resource_class: str
+    timeout_seconds: int
+    depends_on: tuple[str, ...] = ()
+    artifact_paths: tuple[str, ...] = ()
+    covered_required_paths: tuple[str, ...] = ()
+    cleanup_receipt_path: str | None = None
+    service_slot: str | None = None
+    release_blocking: bool = True
 
 
 def _normalize_paths(paths: list[str]) -> list[str]:
@@ -77,6 +99,7 @@ def build_plan(*, changed_paths: list[str], manifest: dict[str, Any]) -> dict[st
 
     matched_rules: list[dict[str, Any]] = []
     requirement_ids: list[str] = []
+    required_path_ids: list[str] = []
     protected_paths_by_rule: dict[str, set[str]] = {}
 
     for rule in rules:
@@ -89,12 +112,15 @@ def build_plan(*, changed_paths: list[str], manifest: dict[str, Any]) -> dict[st
             protected_paths_by_rule[rule_id] = set(matched)
         for requirement_id in rule.get("requirements", []):
             requirement_ids.append(str(requirement_id))
+        for required_path_id in rule.get("required_paths", []):
+            required_path_ids.append(str(required_path_id))
         matched_rules.append(
             {
                 "id": rule_id,
                 "patterns": list(patterns),
                 "matched_files": matched,
                 "requirements": [str(value) for value in rule.get("requirements", [])],
+                "required_paths": [str(value) for value in rule.get("required_paths", [])],
             }
         )
 
@@ -108,6 +134,57 @@ def build_plan(*, changed_paths: list[str], manifest: dict[str, Any]) -> dict[st
                 kind=str(requirement["kind"]),
                 description=str(requirement["description"]),
                 pytest_targets=tuple(str(value) for value in requirement.get("pytest_targets", [])),
+                lane_ids=tuple(str(value) for value in requirement.get("lane_ids", [])),
+            )
+        )
+
+    required_path_catalog = manifest.get("required_path_catalog", {})
+    ordered_required_path_ids = sorted(dict.fromkeys(required_path_ids))
+    required_paths: list[RequiredPath] = []
+    for required_path_id in ordered_required_path_ids:
+        payload = required_path_catalog.get(required_path_id)
+        if not isinstance(payload, dict):
+            continue
+        required_paths.append(
+            RequiredPath(
+                id=required_path_id,
+                description=str(payload.get("description") or required_path_id),
+                lane_ids=tuple(str(value) for value in payload.get("lane_ids", [])),
+            )
+        )
+
+    lane_catalog = manifest.get("lane_catalog", {})
+    lane_ids = {
+        lane_id
+        for requirement in requirements
+        for lane_id in requirement.lane_ids
+        if lane_id
+    } | {
+        lane_id
+        for required_path in required_paths
+        for lane_id in required_path.lane_ids
+        if lane_id
+    }
+    lanes: list[LanePlan] = []
+    for lane_id in sorted(lane_ids):
+        payload = lane_catalog.get(lane_id)
+        if not isinstance(payload, dict):
+            continue
+        lanes.append(
+            LanePlan(
+                lane_id=lane_id,
+                lane_label=str(payload.get("lane_label") or lane_id),
+                resource_class=str(payload.get("resource_class") or "cpu"),
+                timeout_seconds=int(payload.get("timeout_seconds") or 0),
+                depends_on=tuple(str(value) for value in payload.get("depends_on", [])),
+                artifact_paths=tuple(str(value) for value in payload.get("artifact_paths", [])),
+                covered_required_paths=tuple(
+                    str(value) for value in payload.get("covered_required_paths", [])
+                ),
+                cleanup_receipt_path=str(payload.get("cleanup_receipt_path") or "").strip()
+                or None,
+                service_slot=str(payload.get("service_slot") or "").strip() or None,
+                release_blocking=bool(payload.get("release_blocking", True)),
             )
         )
 
@@ -127,8 +204,32 @@ def build_plan(*, changed_paths: list[str], manifest: dict[str, Any]) -> dict[st
                 "kind": requirement.kind,
                 "description": requirement.description,
                 "pytest_targets": list(requirement.pytest_targets),
+                "lane_ids": list(requirement.lane_ids),
             }
             for requirement in requirements
+        ],
+        "required_paths": [
+            {
+                "id": required_path.id,
+                "description": required_path.description,
+                "lane_ids": list(required_path.lane_ids),
+            }
+            for required_path in required_paths
+        ],
+        "lanes": [
+            {
+                "lane_id": lane.lane_id,
+                "lane_label": lane.lane_label,
+                "resource_class": lane.resource_class,
+                "timeout_seconds": lane.timeout_seconds,
+                "depends_on": list(lane.depends_on),
+                "artifact_paths": list(lane.artifact_paths),
+                "covered_required_paths": list(lane.covered_required_paths),
+                "cleanup_receipt_path": lane.cleanup_receipt_path,
+                "service_slot": lane.service_slot,
+                "release_blocking": lane.release_blocking,
+            }
+            for lane in lanes
         ],
         "unmapped_protected_paths": unmapped_protected_paths,
     }

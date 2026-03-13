@@ -82,6 +82,22 @@ function Get-EnvValueFromFile {
     return ""
 }
 
+function Test-TruthyValue {
+    param([string]$Value)
+
+    if (-not $Value) {
+        return $false
+    }
+
+    switch ($Value.Trim().ToLowerInvariant()) {
+        "1" { return $true }
+        "true" { return $true }
+        "yes" { return $true }
+        "on" { return $true }
+        default { return $false }
+    }
+}
+
 function Set-OrAddEnvLine {
     param(
         [Parameter(Mandatory = $true)]
@@ -101,6 +117,41 @@ function Set-OrAddEnvLine {
     }
 
     $Lines.Add("$Key=$Value")
+}
+
+function Get-OptionalComposeProfiles {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepositoryPath
+    )
+
+    $profiles = New-Object 'System.Collections.Generic.List[string]'
+    $rootEnvPath = Join-Path $RepositoryPath ".env"
+    if (-not (Test-Path $rootEnvPath)) {
+        return [string[]]$profiles.ToArray()
+    }
+
+    $cloudflareToken = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("CLOUDFLARE_TUNNEL_TOKEN")
+    if ($cloudflareToken) {
+        $profiles.Add("cloudflared")
+    }
+
+    $whatsappEnabled = Test-TruthyValue -Value (Get-EnvValueFromFile -Path $rootEnvPath -Keys @("WHATSAPP_BRIDGE_ENABLED"))
+    $whatsappSigningSecret = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("WHATSAPP_BRIDGE_SIGNING_SECRET")
+    $whatsappStateKey = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("WHATSAPP_BRIDGE_STATE_KEY")
+    $whatsappTenantId = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("WHATSAPP_BRIDGE_TENANT_ID")
+    $whatsappIngestUrl = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("WHATSAPP_BRIDGE_INGEST_URL")
+
+    if ($whatsappEnabled -and $whatsappSigningSecret -and $whatsappStateKey -and $whatsappTenantId -and $whatsappIngestUrl) {
+        $profiles.Add("whatsapp-bridge")
+    }
+
+    $ollamaEnabled = Test-TruthyValue -Value (Get-EnvValueFromFile -Path $rootEnvPath -Keys @("ENABLE_OLLAMA_RUNTIME"))
+    if ($ollamaEnabled) {
+        $profiles.Add("ollama")
+    }
+
+    return [string[]]$profiles.ToArray()
 }
 
 function New-RandomUrlSafeSecret {
@@ -164,6 +215,21 @@ function Ensure-RequiredRuntimeEnv {
         $updatedKeys.Add("CGS_AUTH_AUDIENCE")
     }
 
+    $ollamaEnabled = Test-TruthyValue -Value (Get-EnvValueFromFile -Path $rootEnvPath -Keys @("ENABLE_OLLAMA_RUNTIME"))
+    if (-not $ollamaEnabled) {
+        $routerBackend = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("ROUTER_BACKEND")
+        if ((-not $routerBackend) -or ($routerBackend -eq "ollama")) {
+            Set-OrAddEnvLine -Lines $lines -Key "ROUTER_BACKEND" -Value "gemini"
+            $updatedKeys.Add("ROUTER_BACKEND")
+        }
+    }
+
+    $embeddingsBackend = Get-EnvValueFromFile -Path $rootEnvPath -Keys @("EMBEDDINGS_BACKEND")
+    if ((-not $embeddingsBackend) -or ((-not $ollamaEnabled) -and ($embeddingsBackend -eq "ollama"))) {
+        Set-OrAddEnvLine -Lines $lines -Key "EMBEDDINGS_BACKEND" -Value "openai"
+        $updatedKeys.Add("EMBEDDINGS_BACKEND")
+    }
+
     if ($updatedKeys.Count -gt 0) {
         Set-Content -Path $rootEnvPath -Value $lines -Encoding utf8
     }
@@ -218,7 +284,17 @@ try {
         if ($bootstrappedKeys.Count -gt 0) {
             Write-Output "Bootstrapped runtime env keys during rollback: $($bootstrappedKeys -join ', ')"
         }
-        docker compose up -d --build
+        $composeArgs = New-Object 'System.Collections.Generic.List[string]'
+        $composeArgs.Add("compose")
+        foreach ($profile in @(Get-OptionalComposeProfiles -RepositoryPath $DeployPath)) {
+            $composeArgs.Add("--profile")
+            $composeArgs.Add($profile)
+        }
+        $composeArgs.Add("up")
+        $composeArgs.Add("-d")
+        $composeArgs.Add("--build")
+        $composeArgs.Add("--remove-orphans")
+        & docker @composeArgs
     } finally {
         Pop-Location
     }

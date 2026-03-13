@@ -34,7 +34,7 @@ from zetherion_ai.discord.security import (
 )
 from zetherion_ai.discord.security.tier2_ai import SecurityAIAnalyzer
 from zetherion_ai.discord.user_manager import ROLE_HIERARCHY, UserManager
-from zetherion_ai.logging import get_logger
+from zetherion_ai.logging import exception_fields, get_logger
 from zetherion_ai.memory.qdrant import QdrantMemory
 from zetherion_ai.queue.manager import QueueManager
 from zetherion_ai.queue.models import QueuePriority, QueueTaskType
@@ -130,6 +130,7 @@ class ZetherionAIBot(discord.Client):
         self._last_message_time: float = 0.0
         self._dev_watcher_wizards: dict[int, dict[str, Any]] = {}
         self._runtime_instance_id = uuid4().hex
+        self._startup_blocker: dict[str, Any] | None = None
 
         self._setup_commands()
 
@@ -315,41 +316,7 @@ class ZetherionAIBot(discord.Client):
                 agent=self._agent,
             )
 
-        # Wire queue processors with bot/agent/deps, then start workers
-        if self._queue_manager is not None:
-            self._queue_manager._processors._bot = self
-            self._queue_manager._processors._agent = self._agent
-            self._queue_manager._processors._skills_client = skills_client
-            self._queue_manager._processors._action_executor = action_executor
-            self._queue_manager._processors._plan_executor = plan_executor
-            await self._queue_manager.start()
-            log.info("queue_manager_started")
-
-        # Start heartbeat scheduler
-        self._heartbeat_scheduler = HeartbeatScheduler(
-            skills_client=skills_client,
-            action_executor=action_executor,
-            queue_manager=self._queue_manager,
-            quiet_hours_resolver=self._resolve_quiet_hours,
-        )
-        if self._user_manager is not None:
-            try:
-                users = await self._user_manager.list_users()
-                heartbeat_users = [
-                    str(u["discord_user_id"])
-                    for u in users
-                    if str(u.get("role", "")) != "restricted"
-                ]
-                self._heartbeat_scheduler.set_user_ids(heartbeat_users)
-            except Exception:
-                log.exception("heartbeat_user_list_failed")
-        await self._heartbeat_scheduler.start()
-
-        runtime_pool = None
-        if self._user_manager is not None:
-            user_manager_dict = getattr(self._user_manager, "__dict__", {})
-            if "_pool" in user_manager_dict:
-                runtime_pool = getattr(self._user_manager, "_pool", None)
+        runtime_pool = self._resolve_runtime_pool()
         if runtime_pool is not None:
             try:
                 self._runtime_status_store = RuntimeStatusStore(runtime_pool)
@@ -423,9 +390,124 @@ class ZetherionAIBot(discord.Client):
                 self._announcement_repository = None
                 self._announcement_dispatcher = None
 
+        # Wire queue processors with bot/agent/deps, then start workers only
+        # when the shared runtime path passes startup verification.
+        if self._queue_manager is not None:
+            self._queue_manager._processors._bot = self
+            self._queue_manager._processors._agent = self._agent
+            self._queue_manager._processors._skills_client = skills_client
+            self._queue_manager._processors._action_executor = action_executor
+            self._queue_manager._processors._plan_executor = plan_executor
+            if await self._startup_queue_path_ready():
+                await self._queue_manager.start()
+                log.info("queue_manager_started")
+            else:
+                log.warning(
+                    "queue_manager_start_blocked",
+                    blocker_code=self._startup_blocker.get("code")
+                    if self._startup_blocker is not None
+                    else None,
+                    summary=self._startup_blocker.get("summary")
+                    if self._startup_blocker is not None
+                    else None,
+                )
+
+        # Start heartbeat scheduler
+        self._heartbeat_scheduler = HeartbeatScheduler(
+            skills_client=skills_client,
+            action_executor=action_executor,
+            queue_manager=self._queue_manager,
+            quiet_hours_resolver=self._resolve_quiet_hours,
+        )
+        if self._user_manager is not None:
+            try:
+                users = await self._user_manager.list_users()
+                heartbeat_users = [
+                    str(u["discord_user_id"])
+                    for u in users
+                    if str(u.get("role", "")) != "restricted"
+                ]
+                self._heartbeat_scheduler.set_user_ids(heartbeat_users)
+            except Exception:
+                log.exception("heartbeat_user_list_failed")
+        await self._heartbeat_scheduler.start()
+
         # Sync commands
         await self._tree.sync()
         log.info("commands_synced")
+
+    def _resolve_runtime_pool(self) -> Any | None:
+        if self._user_manager is None:
+            return None
+        user_manager_dict = getattr(self._user_manager, "__dict__", {})
+        if "_pool" in user_manager_dict:
+            return getattr(self._user_manager, "_pool", None)
+        return None
+
+    async def _startup_queue_path_ready(self) -> bool:
+        checks: dict[str, Any] = {
+            "checked_at": datetime.now(UTC).isoformat(),
+        }
+        issues: dict[str, Any] = {}
+
+        if self._queue_manager is not None:
+            try:
+                await self._queue_manager.get_status()
+                await self._queue_manager._storage.dequeue(
+                    priority_min=0,
+                    priority_max=-1,
+                    worker_id="startup-self-check",
+                    processing_timeout_seconds=0,
+                )
+                checks["message_queue"] = "ok"
+            except Exception as exc:
+                issues["message_queue"] = exception_fields(exc)
+
+        if self._runtime_status_store is not None:
+            service_name = f"discord_bot_startup_probe:{self._runtime_instance_id}"
+            try:
+                await self._runtime_status_store.upsert_status(
+                    service_name=service_name,
+                    status="healthy",
+                    summary="Discord bot startup probe succeeded.",
+                    details={"probe": True},
+                    release_revision=self._release_revision(),
+                    instance_id=self._runtime_instance_id,
+                )
+                await self._runtime_status_store.get_status(service_name)
+                checks["runtime_status_persistence"] = "ok"
+            except Exception as exc:
+                issues["runtime_status_persistence"] = exception_fields(exc)
+
+        if self._announcement_repository is not None:
+            try:
+                await self._announcement_repository.probe_claim_due_deliveries()
+                checks["announcement_dispatcher"] = "ok"
+            except Exception as exc:
+                issues["announcement_dispatcher"] = exception_fields(exc)
+
+        if issues:
+            self._startup_blocker = {
+                "code": "runtime_startup_self_check_failed",
+                "summary": (
+                    "Discord queue startup self-check failed; new messages will fall back "
+                    "to inline processing until the queue path is healthy."
+                ),
+                "details": {
+                    "checks": checks,
+                    "issues": issues,
+                },
+            }
+            if self._runtime_status_store is not None:
+                with contextlib.suppress(Exception):
+                    await self._publish_runtime_status(
+                        status="blocked",
+                        summary=str(self._startup_blocker["summary"]),
+                    )
+            return False
+
+        self._startup_blocker = None
+        return True
 
     @staticmethod
     def _parse_clock_time(value: Any) -> clock_time | None:
@@ -716,8 +798,12 @@ class ZetherionAIBot(discord.Client):
             guilds=len(self.guilds),
         )
         await self._publish_runtime_status(
-            status="healthy",
-            summary="Discord bot is connected and ready.",
+            status="blocked" if self._startup_blocker is not None else "healthy",
+            summary=(
+                str(self._startup_blocker["summary"])
+                if self._startup_blocker is not None
+                else "Discord bot is connected and ready."
+            ),
         )
 
     def _release_revision(self) -> str | None:
@@ -736,6 +822,12 @@ class ZetherionAIBot(discord.Client):
         if self._queue_manager is not None:
             with contextlib.suppress(Exception):
                 details["queue"] = await self._queue_manager.get_status()
+        if self._announcement_dispatcher is not None:
+            details["announcement_dispatcher"] = {
+                "running": self._announcement_dispatcher.is_running,
+            }
+        if self._startup_blocker is not None:
+            details["startup_blocker"] = self._startup_blocker
         return details
 
     async def _publish_runtime_status(self, *, status: str, summary: str) -> None:
@@ -753,14 +845,28 @@ class ZetherionAIBot(discord.Client):
     async def _runtime_status_loop(self) -> None:
         while True:
             await asyncio.sleep(_RUNTIME_STATUS_INTERVAL_SECONDS)
-            with contextlib.suppress(Exception):
+            try:
+                startup_blocker = self._startup_blocker
                 await self._publish_runtime_status(
-                    status="healthy" if self.is_ready() else "starting",
-                    summary=(
-                        "Discord bot is connected and ready."
-                        if self.is_ready()
-                        else "Discord bot is still starting up."
+                    status=(
+                        "blocked"
+                        if startup_blocker is not None
+                        else ("healthy" if self.is_ready() else "starting")
                     ),
+                    summary=(
+                        str(startup_blocker["summary"])
+                        if startup_blocker is not None
+                        else (
+                            "Discord bot is connected and ready."
+                            if self.is_ready()
+                            else "Discord bot is still starting up."
+                        )
+                    ),
+                )
+            except Exception as exc:
+                log.exception(
+                    "runtime_status_publish_failed",
+                    **exception_fields(exc),
                 )
 
     @staticmethod
@@ -1084,7 +1190,7 @@ class ZetherionAIBot(discord.Client):
                 return
 
             # Route through queue if enabled, otherwise process inline
-            if self._queue_manager is not None and self._queue_manager.is_running:
+            if self._queue_manager is not None and self._queue_manager.is_accepting_work:
                 await self._enqueue_message(message, content, is_mention)
             else:
                 await self._process_message_inline(message, content)
@@ -1116,8 +1222,14 @@ class ZetherionAIBot(discord.Client):
             )
             # Show typing indicator while the queue worker processes
             await message.channel.typing()
-        except Exception:
-            log.exception("enqueue_failed")
+        except Exception as exc:
+            log.exception(
+                "enqueue_failed",
+                channel_id=message.channel.id,
+                message_id=message.id,
+                user_id=message.author.id,
+                **exception_fields(exc),
+            )
             # Fall back to inline processing
             await self._process_message_inline(message, content)
 

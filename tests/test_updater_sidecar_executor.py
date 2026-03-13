@@ -51,7 +51,10 @@ class TestUpdateExecutorInit:
 
         route_file = Path(ex._route_config_path)
         assert route_file.exists()
-        assert "skills-blue" in route_file.read_text(encoding="utf-8")
+        route_text = route_file.read_text(encoding="utf-8")
+        assert "api-blue" in route_text
+        assert "cgs-api-blue" in route_text
+        assert "skills-blue" not in route_text
 
     def test_load_existing_state(self, tmp_path: Path) -> None:
         ex1 = _make_executor(tmp_path)
@@ -134,10 +137,10 @@ class TestApplyUpdate:
         assert ex.last_good_tag == "v1.0.1"
 
         route_text = Path(ex._route_config_path).read_text(encoding="utf-8")
-        assert "skills-green" in route_text
         assert "api-green" in route_text
         assert "cgs-api-green" in route_text
         assert "cgs-ui-green" in route_text
+        assert "skills-green" not in route_text
 
     @pytest.mark.asyncio
     async def test_update_fetches_exact_tag_from_origin(self, tmp_path: Path) -> None:
@@ -278,7 +281,9 @@ class TestStateTransitions:
         assert ex._switch_active_color("green") is True
         assert ex.active_color == "green"
         text = Path(ex._route_config_path).read_text(encoding="utf-8")
-        assert "skills-green" in text
+        assert "api-green" in text
+        assert "cgs-api-green" in text
+        assert "skills-green" not in text
 
     def test_switch_active_color_rejects_invalid(self, tmp_path: Path) -> None:
         ex = _make_executor(tmp_path)

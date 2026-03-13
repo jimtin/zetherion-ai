@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID
 
 import pytest
 
@@ -76,6 +77,17 @@ class TestSync:
 
         assert memory.delete_scoped_by_field.await_count >= 2
         assert memory.store_scoped_payload.await_count > first_store_count
+
+    @pytest.mark.asyncio
+    async def test_sync_uses_uuid_point_ids(self, tmp_path: Path) -> None:
+        service, memory, _ = _make_service(tmp_path)
+        (tmp_path / "docs" / "setup.md").write_text("Docs content", encoding="utf-8")
+
+        await service.sync(force=True)
+
+        kwargs = memory.store_scoped_payload.await_args.kwargs
+        assert kwargs["collection_name"] == DOCS_COLLECTION
+        assert isinstance(UUID(kwargs["point_id"]), UUID)
 
 
 class TestMaybeAnswer:

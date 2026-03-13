@@ -101,7 +101,11 @@
     },
     "unit-full": {
       "kind": "lane",
-      "description": "Run the bounded unit-full lane to enforce repo-wide coverage for shared runtime, model, context, and storage changes."
+      "description": "Run the bounded unit-full lane to enforce repo-wide coverage for shared runtime, model, context, and storage changes.",
+      "lane_ids": [
+        "z-unit-core",
+        "z-unit-runtime"
+      ]
     },
     "qdrant-regression-suite": {
       "kind": "pytest",
@@ -126,6 +130,10 @@
         "tests/unit/test_check_cicd_success.py",
         "tests/unit/test_ci_required_e2e_gate.py",
         "tests/unit/test_validate_deployment_receipt.py"
+      ],
+      "lane_ids": [
+        "z-unit-owner-ci",
+        "z-release"
       ]
     },
     "ci-failure-attribution-regression-suite": {
@@ -138,6 +146,9 @@
         "tests/unit/test_ci_cost_report.py",
         "tests/unit/test_ci_cache_hygiene.py",
         "tests/unit/test_check_pr_metadata.py"
+      ],
+      "lane_ids": [
+        "z-unit-owner-ci"
       ]
     },
     "deploy-preflight-regression-suite": {
@@ -158,6 +169,15 @@
         "tests/unit/test_e2e_runtime.py",
         "tests/unit/test_discord_e2e_run_manager.py",
         "tests/unit/test_discord_e2e_isolation.py"
+      ],
+      "lane_ids": [
+        "z-int-runtime-queue",
+        "z-int-dependencies",
+        "z-e2e-dm-sim",
+        "z-e2e-channel-sim",
+        "z-e2e-faults",
+        "z-e2e-discord-live",
+        "z-e2e-discord-security"
       ]
     },
     "windows-discord-canary-regression-suite": {
@@ -172,6 +192,186 @@
       "kind": "check",
       "description": "Run the full documentation contract suite (nav, links, parity, and strict MkDocs build).",
       "pytest_targets": []
+    }
+  },
+  "required_path_catalog": {
+    "discord_dm_reply": {
+      "description": "Discord DM delivery remains live and falls back inline when queue health is unsafe.",
+      "lane_ids": ["z-unit-runtime", "z-e2e-dm-sim", "z-e2e-discord-live"]
+    },
+    "discord_channel_reply": {
+      "description": "Discord guild/channel replies remain healthy through the queue path.",
+      "lane_ids": ["z-unit-runtime", "z-e2e-channel-sim", "z-e2e-discord-live"]
+    },
+    "queue_reliability": {
+      "description": "Queue enqueue/dequeue, stale recovery, retries, and dead-letter paths stay healthy.",
+      "lane_ids": ["z-unit-core", "z-int-runtime-queue", "z-e2e-faults", "z-e2e-dm-sim"]
+    },
+    "startup_readiness": {
+      "description": "Bot startup self-checks and runtime blockers remain correct.",
+      "lane_ids": ["z-unit-runtime", "z-int-runtime-queue", "z-e2e-faults"]
+    },
+    "runtime_status_persistence": {
+      "description": "Runtime status persistence and health surfacing stay queryable.",
+      "lane_ids": ["z-unit-core", "z-int-runtime-queue", "z-release"]
+    },
+    "skills_reachability": {
+      "description": "Skills reachability and direct internal routing stay healthy.",
+      "lane_ids": ["z-int-runtime-api", "z-int-dependencies", "z-release"]
+    },
+    "qdrant_readiness": {
+      "description": "Required Qdrant collections and dependent readiness checks remain intact.",
+      "lane_ids": ["z-int-dependencies", "z-e2e-faults", "z-release"]
+    },
+    "owner_ci_cutover": {
+      "description": "Owner-CI planning, external status publication, and GitHub-light cutover stay intact.",
+      "lane_ids": ["z-unit-owner-ci", "z-release"]
+    },
+    "owner_ci_receipts": {
+      "description": "Readiness receipts and release verification receipts remain consistent.",
+      "lane_ids": ["z-unit-owner-ci", "z-release"]
+    },
+    "release_contracts": {
+      "description": "Release verification, merge readiness, and deploy readiness contracts remain green.",
+      "lane_ids": ["z-unit-core", "z-unit-owner-ci", "z-release"]
+    },
+    "runtime_drift_zero": {
+      "description": "Release verification continues to assert deployed SHA and zero drift expectations.",
+      "lane_ids": ["z-release"]
+    },
+    "back_to_back_deploys": {
+      "description": "Consecutive deploy verification remains part of the release contract.",
+      "lane_ids": ["z-release"]
+    }
+  },
+  "lane_catalog": {
+    "z-unit-core": {
+      "lane_label": "Zetherion unit core",
+      "resource_class": "cpu",
+      "timeout_seconds": 1200,
+      "artifact_paths": ["stdout", "stderr"],
+      "covered_required_paths": ["queue_reliability", "runtime_status_persistence", "release_contracts"]
+    },
+    "z-unit-runtime": {
+      "lane_label": "Zetherion unit runtime",
+      "resource_class": "cpu",
+      "timeout_seconds": 1200,
+      "artifact_paths": ["stdout", "stderr"],
+      "covered_required_paths": ["discord_dm_reply", "discord_channel_reply", "startup_readiness"]
+    },
+    "z-unit-owner-ci": {
+      "lane_label": "Zetherion owner-CI unit",
+      "resource_class": "cpu",
+      "timeout_seconds": 1200,
+      "artifact_paths": ["stdout", "stderr"],
+      "covered_required_paths": ["owner_ci_cutover", "owner_ci_receipts", "release_contracts"]
+    },
+    "z-int-runtime-api": {
+      "lane_label": "Zetherion runtime API integration",
+      "resource_class": "service",
+      "timeout_seconds": 2400,
+      "artifact_paths": ["stdout", "stderr", "compose.ps", "service-logs", "health-snapshot"],
+      "cleanup_receipt_path": ".artifacts/e2e-runtime-api-cleanup.json",
+      "service_slot": "slot_a",
+      "release_blocking": true,
+      "depends_on": ["z-unit-core", "z-unit-runtime"],
+      "covered_required_paths": ["skills_reachability", "qdrant_readiness", "runtime_status_persistence"]
+    },
+    "z-int-runtime-queue": {
+      "lane_label": "Zetherion queue/runtime integration",
+      "resource_class": "service",
+      "timeout_seconds": 2400,
+      "artifact_paths": ["stdout", "stderr", "compose.ps", "service-logs", "health-snapshot"],
+      "cleanup_receipt_path": ".artifacts/e2e-runtime-queue-cleanup.json",
+      "service_slot": "slot_a",
+      "release_blocking": true,
+      "depends_on": ["z-unit-core", "z-unit-runtime"],
+      "covered_required_paths": ["queue_reliability", "startup_readiness", "runtime_status_persistence"]
+    },
+    "z-int-dependencies": {
+      "lane_label": "Zetherion dependency integration",
+      "resource_class": "service",
+      "timeout_seconds": 2400,
+      "artifact_paths": ["stdout", "stderr", "compose.ps", "service-logs", "health-snapshot"],
+      "cleanup_receipt_path": ".artifacts/e2e-dependencies-cleanup.json",
+      "service_slot": "slot_b",
+      "release_blocking": true,
+      "depends_on": ["z-unit-core", "z-unit-runtime"],
+      "covered_required_paths": ["skills_reachability", "qdrant_readiness", "runtime_status_persistence"]
+    },
+    "z-int-platform": {
+      "lane_label": "Zetherion platform integration",
+      "resource_class": "service",
+      "timeout_seconds": 1800,
+      "artifact_paths": ["stdout", "stderr", "compose.ps", "service-logs"],
+      "cleanup_receipt_path": ".artifacts/e2e-platform-cleanup.json",
+      "service_slot": "slot_b",
+      "release_blocking": false,
+      "depends_on": ["z-unit-runtime", "z-int-runtime-api"],
+      "covered_required_paths": ["runtime_status_persistence"]
+    },
+    "z-e2e-dm-sim": {
+      "lane_label": "Discord DM simulated canaries",
+      "resource_class": "service",
+      "timeout_seconds": 1800,
+      "artifact_paths": ["stdout", "stderr", "compose.ps", "scenario-log", "service-logs"],
+      "cleanup_receipt_path": ".artifacts/e2e-dm-sim-cleanup.json",
+      "service_slot": "slot_a",
+      "release_blocking": true,
+      "depends_on": ["z-unit-runtime", "z-int-runtime-queue", "z-int-dependencies"],
+      "covered_required_paths": ["discord_dm_reply", "queue_reliability"]
+    },
+    "z-e2e-channel-sim": {
+      "lane_label": "Discord channel simulated canaries",
+      "resource_class": "service",
+      "timeout_seconds": 1800,
+      "artifact_paths": ["stdout", "stderr", "compose.ps", "scenario-log", "service-logs"],
+      "cleanup_receipt_path": ".artifacts/e2e-channel-sim-cleanup.json",
+      "service_slot": "slot_b",
+      "release_blocking": true,
+      "depends_on": ["z-unit-runtime", "z-int-runtime-api", "z-int-dependencies"],
+      "covered_required_paths": ["discord_channel_reply", "queue_reliability"]
+    },
+    "z-e2e-faults": {
+      "lane_label": "Discord queue/runtime fault injection",
+      "resource_class": "service",
+      "timeout_seconds": 1800,
+      "artifact_paths": ["stdout", "stderr", "compose.ps", "scenario-log", "service-logs"],
+      "cleanup_receipt_path": ".artifacts/e2e-faults-cleanup.json",
+      "service_slot": "slot_b",
+      "release_blocking": true,
+      "depends_on": ["z-unit-runtime", "z-int-runtime-queue"],
+      "covered_required_paths": ["queue_reliability", "startup_readiness", "qdrant_readiness"]
+    },
+    "z-e2e-discord-live": {
+      "lane_label": "Discord live delivery canaries",
+      "resource_class": "serial",
+      "timeout_seconds": 3600,
+      "artifact_paths": ["stdout", "stderr", "discord-receipt"],
+      "cleanup_receipt_path": ".artifacts/e2e-discord-live-cleanup.json",
+      "release_blocking": true,
+      "depends_on": ["z-e2e-dm-sim", "z-e2e-channel-sim", "z-e2e-faults"],
+      "covered_required_paths": ["discord_dm_reply", "discord_channel_reply"]
+    },
+    "z-e2e-discord-security": {
+      "lane_label": "Discord live security canaries",
+      "resource_class": "serial",
+      "timeout_seconds": 2400,
+      "artifact_paths": ["stdout", "stderr", "discord-receipt"],
+      "cleanup_receipt_path": ".artifacts/e2e-discord-security-cleanup.json",
+      "release_blocking": false,
+      "depends_on": ["z-e2e-discord-live"],
+      "covered_required_paths": []
+    },
+    "z-release": {
+      "lane_label": "Local release verification",
+      "resource_class": "serial",
+      "timeout_seconds": 5400,
+      "artifact_paths": ["stdout", "stderr", "release-receipt"],
+      "cleanup_receipt_path": ".artifacts/e2e-release-cleanup.json",
+      "release_blocking": true,
+      "depends_on": ["z-unit-owner-ci", "z-int-runtime-api", "z-int-runtime-queue", "z-int-dependencies", "z-e2e-dm-sim", "z-e2e-channel-sim", "z-e2e-discord-live"],
+      "covered_required_paths": ["owner_ci_cutover", "owner_ci_receipts", "release_contracts", "runtime_drift_zero", "back_to_back_deploys"]
     }
   },
   "rules": [
@@ -240,6 +440,11 @@
         "src/zetherion_ai/queue/**",
         "src/zetherion_ai/security/trust_policy.py"
       ],
+      "required_paths": [
+        "queue_reliability",
+        "startup_readiness",
+        "runtime_status_persistence"
+      ],
       "requirements": [
         "unit-full"
       ]
@@ -250,6 +455,10 @@
       "patterns": [
         "src/zetherion_ai/memory/qdrant.py",
         "src/zetherion_ai/config.py"
+      ],
+      "required_paths": [
+        "qdrant_readiness",
+        "skills_reachability"
       ],
       "requirements": [
         "qdrant-regression-suite"
@@ -294,6 +503,11 @@
         "docs/development/ci-hardening-baseline.md",
         "scripts/check_pr_metadata.py",
         "tests/unit/test_check_pr_metadata.py"
+      ],
+      "required_paths": [
+        "owner_ci_cutover",
+        "owner_ci_receipts",
+        "release_contracts"
       ],
       "requirements": [
         "ci-receipt-regression-suite",
@@ -349,6 +563,11 @@
         "scripts/discord_e2e_run_manager.sh",
         "scripts/run-required-discord-e2e.sh",
         "tests/integration/test_discord_e2e.py"
+      ],
+      "required_paths": [
+        "discord_dm_reply",
+        "discord_channel_reply",
+        "queue_reliability"
       ],
       "requirements": [
         "e2e-isolation-regression-suite"

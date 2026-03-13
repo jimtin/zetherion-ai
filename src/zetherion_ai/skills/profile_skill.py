@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from zetherion_ai.logging import get_logger
+from zetherion_ai.memory.embeddings import get_embedding_dimension
 from zetherion_ai.skills.base import (
     HeartbeatAction,
     Skill,
@@ -129,7 +130,16 @@ class ProfileSkill(Skill):
 
     async def initialize(self) -> bool:
         """Initialize the skill."""
-        # Collection already exists from Phase 5C
+        if self._memory is not None:
+            try:
+                await self._memory.ensure_scoped_collection(
+                    PROFILES_COLLECTION,
+                    vector_size=get_embedding_dimension(),
+                )
+            except Exception as exc:
+                log.error("profile_skill_memory_init_failed", error=str(exc))
+                return False
+
         log.info("profile_skill_initialized")
         return True
 

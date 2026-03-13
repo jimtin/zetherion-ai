@@ -41,6 +41,7 @@ class CiObserverSkill(Skill):
                 "ci_run_events",
                 "ci_run_logs",
                 "ci_run_debug_bundle",
+                "ci_reporting_readiness",
                 "ci_reporting_summary",
                 "ci_reporting_project_resources",
                 "ci_reporting_project_failures",
@@ -106,6 +107,13 @@ class CiObserverSkill(Skill):
                 request_id=request.id,
                 message="Loaded CI reporting summary.",
                 data={"summary": summary},
+            )
+        if intent == "ci_reporting_readiness":
+            readiness = await self._storage.get_reporting_readiness(owner_id)
+            return SkillResponse(
+                request_id=request.id,
+                message="Loaded CI readiness summary.",
+                data={"readiness": readiness},
             )
         if intent == "ci_reporting_project_resources":
             repo_id = str(request.context.get("repo_id") or "").strip()

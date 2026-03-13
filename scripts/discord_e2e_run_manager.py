@@ -56,6 +56,7 @@ def _channel_permission_overwrites(*, test_bot_id: int, target_bot_id: int) -> l
 class RunPaths:
     manifest_path: Path
     cleanup_ledger_path: Path
+    heartbeat_path: Path
 
 
 class DiscordE2ERunManagerError(RuntimeError):
@@ -153,12 +154,14 @@ def build_paths(runs_root: Path, run_id: str) -> RunPaths:
     return RunPaths(
         manifest_path=runs_root / "manifests" / f"{run_id}.json",
         cleanup_ledger_path=runs_root / "cleanup-ledgers" / f"{run_id}.jsonl",
+        heartbeat_path=runs_root / "heartbeats" / f"{run_id}.touch",
     )
 
 
 def ensure_layout(runs_root: Path) -> None:
     (runs_root / "manifests").mkdir(parents=True, exist_ok=True)
     (runs_root / "cleanup-ledgers").mkdir(parents=True, exist_ok=True)
+    (runs_root / "heartbeats").mkdir(parents=True, exist_ok=True)
 
 
 def load_manifest(path: Path) -> dict[str, Any]:
@@ -171,6 +174,20 @@ def load_manifest(path: Path) -> dict[str, Any]:
 def write_manifest(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def touch_heartbeat(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch()
+
+
+def resolve_heartbeat_stale_seconds() -> int:
+    raw = str(os.environ.get("TEST_DISCORD_E2E_HEARTBEAT_STALE_SECONDS", "300")).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return 300
+    return max(value, 60)
 
 
 def render_shell_exports(values: dict[str, str]) -> str:
@@ -345,6 +362,7 @@ def create_run(
     paths.cleanup_ledger_path.parent.mkdir(parents=True, exist_ok=True)
     created_at = now
     expires_at = now + timedelta(minutes=ttl_minutes)
+    heartbeat_stale_seconds = resolve_heartbeat_stale_seconds()
     lease = DiscordE2ELease(
         run_id=run_id,
         mode=mode,
@@ -384,6 +402,7 @@ def create_run(
             },
         )
     channel_id = int(created_channel["id"])
+    touch_heartbeat(paths.heartbeat_path)
 
     manifest: dict[str, Any] = {
         "version": 1,
@@ -405,6 +424,10 @@ def create_run(
             ),
         },
         "cleanup_ledger_path": str(paths.cleanup_ledger_path),
+        "runtime": {
+            "heartbeat_path": str(paths.heartbeat_path),
+            "heartbeat_stale_seconds": heartbeat_stale_seconds,
+        },
         "lease": {
             **lease.to_payload(),
             "status": "active",
@@ -429,6 +452,7 @@ def create_run(
         "DISCORD_E2E_RUN_ID": run_id,
         "DISCORD_E2E_RUN_MANIFEST_PATH": str(paths.manifest_path),
         "DISCORD_E2E_CLEANUP_LEDGER_PATH": str(paths.cleanup_ledger_path),
+        "DISCORD_E2E_HEARTBEAT_PATH": str(paths.heartbeat_path),
         "DISCORD_E2E_CHANNEL_ID": str(channel_id),
         "DISCORD_E2E_CHANNEL_NAME": str(created_channel.get("name", resource_name)),
         "DISCORD_E2E_TARGET_BOT_ID": str(target_bot_id),
@@ -439,6 +463,50 @@ def create_run(
         "TEST_DISCORD_TARGET_BOT_ID": str(target_bot_id),
     }
     return manifest, exports
+
+
+def _parse_lease_created_at(payload: dict[str, Any]) -> datetime | None:
+    lease_payload = payload.get("lease", {})
+    if not isinstance(lease_payload, dict):
+        return None
+    raw = lease_payload.get("created_at")
+    if raw in (None, ""):
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(raw))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_manifest_heartbeat_stale(payload: dict[str, Any], *, now: datetime) -> bool:
+    runtime = payload.get("runtime", {})
+    if not isinstance(runtime, dict):
+        runtime = {}
+    stale_seconds = runtime.get("heartbeat_stale_seconds", resolve_heartbeat_stale_seconds())
+    try:
+        stale_seconds = max(int(stale_seconds), 60)
+    except (TypeError, ValueError):
+        stale_seconds = 300
+    cutoff = now - timedelta(seconds=stale_seconds)
+
+    heartbeat_path_raw = str(runtime.get("heartbeat_path", "")).strip()
+    if heartbeat_path_raw:
+        heartbeat_path = Path(heartbeat_path_raw)
+        if heartbeat_path.is_file():
+            heartbeat_at = datetime.fromtimestamp(heartbeat_path.stat().st_mtime, tz=UTC)
+            return heartbeat_at < cutoff
+
+    created_at = _parse_lease_created_at(payload)
+    return created_at is not None and created_at < cutoff
+
+
+def _is_orphan_lease_stale(lease: DiscordE2ELease, *, now: datetime) -> bool:
+    stale_seconds = resolve_heartbeat_stale_seconds()
+    cutoff = now - timedelta(seconds=stale_seconds)
+    return lease.created_at.astimezone(UTC) < cutoff
 
 
 def _normalize_message_id(raw: Any) -> int:
@@ -556,6 +624,9 @@ def cleanup_run(
     channel_id = int(payload.get("channel", {}).get("id", 0) or 0)
     target_bot_id = int(payload.get("target_bot_id", 0) or 0)
     ledger_path = Path(payload.get("cleanup_ledger_path", ""))
+    runtime = payload.get("runtime", {})
+    heartbeat_path_raw = runtime.get("heartbeat_path", "") if isinstance(runtime, dict) else ""
+    heartbeat_path = Path(str(heartbeat_path_raw)) if str(heartbeat_path_raw).strip() else None
     synthetic_cleanup = {
         "status": "not_run",
         "attempted": 0,
@@ -606,6 +677,9 @@ def cleanup_run(
     )
     lease = payload.setdefault("lease", {})
     lease["status"] = cleanup_status
+    if heartbeat_path is not None:
+        with contextlib.suppress(Exception):
+            heartbeat_path.unlink()
     write_manifest(manifest_path, payload)
     return payload
 
@@ -632,11 +706,22 @@ def janitor(
         try:
             payload = load_manifest(manifest_path)
             lease = DiscordE2ELease.from_payload(payload.get("lease", {}))
-            if lease is None or not lease.is_active(now=now):
+            if (
+                lease is None
+                or not lease.is_active(now=now)
+                or _is_manifest_heartbeat_stale(payload, now=now)
+            ):
+                reason = (
+                    "stale_discord_e2e_heartbeat"
+                    if lease is not None
+                    and lease.is_active(now=now)
+                    and _is_manifest_heartbeat_stale(payload, now=now)
+                    else "stale_discord_e2e_run"
+                )
                 cleaned.append(
                     cleanup_run(
                         manifest_path=manifest_path,
-                        reason="stale_discord_e2e_run",
+                        reason=reason,
                         test_api=test_api,
                         admin_api=admin_api,
                     )
@@ -675,20 +760,26 @@ def janitor(
             ):
                 lease = entry["lease"]
                 channel = entry["channel"]
-                if lease.is_active(now=now):
-                    continue
                 channel_id = int(channel["id"])
                 matching_manifest = manifests_dir / f"{lease.run_id}.json"
-                if matching_manifest.exists():
+                manifest_exists = matching_manifest.exists()
+                if manifest_exists and lease.is_active(now=now):
+                    continue
+                if lease.is_active(now=now) and not _is_orphan_lease_stale(lease, now=now):
                     continue
                 try:
                     channel_api.delete_channel(channel_id)
+                    reason = (
+                        "orphaned_stale_discord_channel"
+                        if not lease.is_active(now=now)
+                        else "orphaned_stale_active_discord_channel"
+                    )
                     cleaned.append(
                         {
                             "run_id": lease.run_id,
                             "cleanup": {
                                 "status": "cleaned",
-                                "reason": "orphaned_stale_discord_channel",
+                                "reason": reason,
                                 "executed_at": _iso(now),
                             },
                         }

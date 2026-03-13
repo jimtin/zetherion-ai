@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate that CI pipeline jobs, workflow triggers, and policy docs match the contract."""
+"""Validate the local-first owner-CI contract and manual GitHub helper posture."""
 
 from __future__ import annotations
 
@@ -11,38 +11,20 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = REPO_ROOT / ".ci/pipeline_contract.json"
 WORKSTREAM_MANIFEST_PATH = REPO_ROOT / ".ci/ci_hardening_workstream_manifest.json"
-REQUIRED_JOBS = {
-    "detect-changes",
-    "risk-classifier",
-    "lint",
-    "type-check",
-    "security",
-    "semgrep",
-    "secret-scan",
-    "dependency-audit",
-    "license-check",
-    "pre-commit",
-    "docs-contract",
-    "pipeline-contract",
-    "zetherion-boundary-check",
-    "unit-test",
-    "required-e2e-gate",
-    "integration-test",
-    "docker-build-test",
+REQUIRED_STATUS_CONTEXTS = {
+    "zetherion/merge-readiness",
+    "zetherion/deploy-readiness",
 }
-DOCS_DEPLOY_REQUIRED_PATHS = {
-    "docs/**",
-    "README.md",
-    "mkdocs.yml",
-    "docs/requirements.txt",
-    ".github/workflows/docs.yml",
+MANUAL_ONLY_WORKFLOWS = {
+    ".github/workflows/ci.yml": "Owner CI Bridge",
+    ".github/workflows/codeql.yml": "CodeQL",
+    ".github/workflows/ci-maintenance.yml": "CI Maintenance",
+    ".github/workflows/docs.yml": "Deploy Documentation",
+    ".github/workflows/docs-gap-triage.yml": "Weekly Docs Gap Triage",
+    ".github/workflows/sync-wiki.yml": "Sync Documentation to Wiki",
+    ".github/workflows/auto-merge-main.yml": "Auto Merge Main (Deprecated)",
+    ".github/workflows/revert-failed-main-deploy.yml": "Revert Failed Main Deploy (Deprecated)",
 }
-CI_MAINTENANCE_REQUIRED_TOKENS = (
-    "name: CI Maintenance",
-    "scripts/ci_cost_report.py summary",
-    "scripts/ci_cache_hygiene.py",
-    "actions: write",
-)
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -55,81 +37,72 @@ def validate_pipeline_contract(contract_path: Path) -> list[str]:
         return [".ci/pipeline_contract.json is missing"]
 
     data = _load_json(contract_path)
-    jobs = data.get("jobs", {})
-    missing = sorted(job for job in REQUIRED_JOBS if job not in jobs)
-    if missing:
-        errors.append("Pipeline contract missing jobs: " + ", ".join(missing))
+    control_plane = dict(data.get("control_plane") or {})
+
+    if control_plane.get("ci_authority") != "zetherion":
+        errors.append("Pipeline contract must declare Zetherion as the CI authority.")
+    if control_plane.get("github_actions_role") != "manual_helpers_only":
+        errors.append("Pipeline contract must declare GitHub Actions as manual helpers only.")
+    if control_plane.get("local_heavy_gate_entrypoint") != "./scripts/test-full.sh":
+        errors.append("Pipeline contract must point local_heavy_gate_entrypoint to ./scripts/test-full.sh.")
+
+    statuses = {
+        str(item).strip()
+        for item in list(control_plane.get("required_status_contexts") or [])
+        if str(item).strip()
+    }
+    missing_statuses = sorted(REQUIRED_STATUS_CONTEXTS - statuses)
+    if missing_statuses:
+        errors.append(
+            "Pipeline contract missing required status contexts: " + ", ".join(missing_statuses)
+        )
+
     return errors
+
+
+def _has_only_manual_trigger(text: str) -> bool:
+    return bool(re.search(r"(?m)^on:\s*\n\s+workflow_dispatch:\s*$", text))
+
+
+def _contains_automatic_trigger(text: str) -> bool:
+    return any(
+        re.search(pattern, text)
+        for pattern in (
+            r"(?m)^\s+push:\s*$",
+            r"(?m)^\s+pull_request:\s*$",
+            r"(?m)^\s+schedule:\s*$",
+            r"(?m)^\s+workflow_run:\s*$",
+        )
+    )
 
 
 def validate_workflow_contracts(repo_root: Path) -> list[str]:
     errors: list[str] = []
 
-    ci_text = (repo_root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    if '- cron: "30 2 * * 0"' not in ci_text:
-        errors.append("CI workflow must keep the weekly scheduled heavy verification cron.")
-    if "group: ci-${{ github.workflow }}-${{ github.ref }}" not in ci_text:
-        errors.append("CI workflow must keep concurrency grouping for superseded PR cancellation.")
-    if "cancel-in-progress: true" not in ci_text:
-        errors.append("CI workflow must cancel superseded in-progress runs.")
-    if "name: CI Cost Report" not in ci_text:
-        errors.append("CI workflow must publish the CI Cost Report job.")
-    if "scripts/ci_cost_report.py run" not in ci_text:
-        errors.append("CI workflow must generate a per-run CI cost report artifact.")
-    if 'scripts/check_pr_metadata.py --event-path "$GITHUB_EVENT_PATH"' not in ci_text:
-        errors.append(
-            "CI workflow must validate pull-request metadata in the " "pipeline-contract job."
-        )
+    for rel_path, expected_name in MANUAL_ONLY_WORKFLOWS.items():
+        path = repo_root / rel_path
+        if not path.exists():
+            errors.append(f"Required manual helper workflow missing: {rel_path}")
+            continue
+        text = path.read_text(encoding="utf-8")
+        if not re.search(rf'(?m)^name:\s+"?{re.escape(expected_name)}"?\s*$', text):
+            errors.append(f"{rel_path} must keep workflow name {expected_name!r}.")
+        if not _has_only_manual_trigger(text):
+            errors.append(f"{rel_path} must be workflow_dispatch only.")
+        if _contains_automatic_trigger(text):
+            errors.append(f"{rel_path} must not use automatic push/pull_request/schedule/workflow_run triggers.")
 
-    codeql_text = (repo_root / ".github/workflows/codeql.yml").read_text(encoding="utf-8")
-    if re.search(r"(?m)^  push:\s*$", codeql_text):
-        errors.append("CodeQL workflow must not trigger on push.")
-    if re.search(r"(?m)^  pull_request:\s*$", codeql_text):
-        errors.append("CodeQL workflow must not trigger on pull_request.")
-    if not re.search(r"(?m)^  schedule:\s*$", codeql_text):
-        errors.append("CodeQL workflow must keep a weekly schedule trigger.")
-    if not re.search(r"(?m)^  workflow_dispatch:\s*$", codeql_text):
-        errors.append("CodeQL workflow must keep manual dispatch support.")
+    deploy_text = (repo_root / ".github/workflows/deploy-windows.yml").read_text(encoding="utf-8")
+    if not re.search(r"(?m)^  workflow_dispatch:\s*$", deploy_text):
+        errors.append("deploy-windows.yml must keep workflow_dispatch support.")
+    if re.search(r"(?m)^  workflow_run:\s*$", deploy_text):
+        errors.append("deploy-windows.yml must not trigger from workflow_run.")
 
-    docs_text = (repo_root / ".github/workflows/docs.yml").read_text(encoding="utf-8")
-    if not re.search(r"(?m)^  push:\s*$", docs_text):
-        errors.append("Docs deploy workflow must trigger on push.")
-    if not re.search(r"(?m)^  workflow_dispatch:\s*$", docs_text):
-        errors.append("Docs deploy workflow must keep manual dispatch support.")
-    if not re.search(r"(?m)^    paths:\s*$", docs_text):
-        errors.append("Docs deploy workflow must scope push triggers to docs-related paths.")
-    for path_glob in sorted(DOCS_DEPLOY_REQUIRED_PATHS):
-        single = f"      - '{path_glob}'"
-        double = f'      - "{path_glob}"'
-        if single not in docs_text and double not in docs_text:
-            errors.append(f"Docs deploy workflow must include path filter {path_glob!r}.")
-    if "Validate docs contracts" in docs_text:
-        errors.append(
-            "Docs deploy workflow must not duplicate docs-contract validation "
-            "already enforced elsewhere."
-        )
-    if "pip install -r docs/requirements.txt" not in docs_text:
-        errors.append(
-            "Docs deploy workflow must install documentation dependencies "
-            "from docs/requirements.txt."
-        )
-    for command in ("mkdocs build --strict", "mkdocs gh-deploy --force"):
-        if command not in docs_text:
-            errors.append(f"Docs deploy workflow must run `{command}`.")
-
-    maintenance_path = repo_root / ".github/workflows/ci-maintenance.yml"
-    if not maintenance_path.exists():
-        errors.append("CI maintenance workflow must exist.")
-        return errors
-
-    maintenance_text = maintenance_path.read_text(encoding="utf-8")
-    if not re.search(r"(?m)^  schedule:\s*$", maintenance_text):
-        errors.append("CI maintenance workflow must keep a weekly schedule trigger.")
-    if not re.search(r"(?m)^  workflow_dispatch:\s*$", maintenance_text):
-        errors.append("CI maintenance workflow must keep manual dispatch support.")
-    for token in CI_MAINTENANCE_REQUIRED_TOKENS:
-        if token not in maintenance_text:
-            errors.append(f"CI maintenance workflow missing required token: {token}")
+    release_text = (repo_root / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    if not re.search(r"(?m)^  workflow_dispatch:\s*$", release_text):
+        errors.append("release.yml must keep workflow_dispatch support.")
+    if "uses: ./.github/workflows/ci.yml" in release_text:
+        errors.append("release.yml must not reuse ci.yml as a release gate.")
 
     return errors
 
@@ -140,51 +113,33 @@ def validate_policy_docs(repo_root: Path, manifest_path: Path) -> list[str]:
         return [".ci/ci_hardening_workstream_manifest.json is missing"]
 
     manifest = _load_json(manifest_path)
-    current_contract = manifest.get("current_contract", {})
-    policy = manifest.get("policy_enforcement", {})
-    contract_docs = policy.get("contract_docs", [])
-    doc_specific_tokens = policy.get("doc_specific_tokens", {})
-    pr_template_path = policy.get("pr_template_path")
-    required_pr_template_tokens = policy.get("required_pr_template_tokens", [])
+    current_contract = dict(manifest.get("current_contract") or {})
+    policy = dict(manifest.get("policy_enforcement") or {})
+    contract_docs = list(policy.get("contract_docs") or [])
+    doc_specific_tokens = dict(policy.get("doc_specific_tokens") or {})
 
-    if not contract_docs:
-        errors.append("CI hardening manifest must list contract_docs for policy enforcement.")
-        return errors
-
-    required_checks = current_contract.get("github_required_check_inventory", [])
-    pr_fast_path_jobs = current_contract.get("pr_fast_path_jobs", [])
-    heavy_gate = current_contract.get("local_heavy_gate_entrypoint")
-    receipt_entrypoint = current_contract.get("local_required_e2e_receipt_entrypoint")
-
-    common_tokens = [heavy_gate, receipt_entrypoint, *required_checks, *pr_fast_path_jobs]
+    common_tokens = [
+        str(current_contract.get("local_heavy_gate_entrypoint") or "").strip(),
+        *[
+            str(token).strip()
+            for token in list(current_contract.get("required_status_contexts") or [])
+            if str(token).strip()
+        ],
+    ]
     common_tokens = [token for token in common_tokens if token]
 
     for rel_path in contract_docs:
-        doc_path = repo_root / rel_path
-        if not doc_path.exists():
+        path = repo_root / rel_path
+        if not path.exists():
             errors.append(f"Policy contract doc missing: {rel_path}")
             continue
-        text = doc_path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8")
         for token in common_tokens:
             if token not in text:
                 errors.append(f"{rel_path} missing required contract token: {token}")
-        for token in doc_specific_tokens.get(rel_path, []):
+        for token in list(doc_specific_tokens.get(rel_path) or []):
             if token not in text:
                 errors.append(f"{rel_path} missing required policy token: {token}")
-
-    if not pr_template_path:
-        errors.append("CI hardening manifest must declare pr_template_path.")
-        return errors
-
-    template_path = repo_root / pr_template_path
-    if not template_path.exists():
-        errors.append(f"Pull request template missing: {pr_template_path}")
-        return errors
-
-    template_text = template_path.read_text(encoding="utf-8")
-    for token in required_pr_template_tokens:
-        if token not in template_text:
-            errors.append(f"{pr_template_path} missing required template token: {token}")
 
     return errors
 
@@ -203,7 +158,7 @@ def main() -> int:
         return 1
 
     print("Pipeline contract is complete.")
-    print("Workflow trigger contract is aligned.")
+    print("Workflow helper contract is aligned.")
     print("Policy docs are aligned.")
     return 0
 

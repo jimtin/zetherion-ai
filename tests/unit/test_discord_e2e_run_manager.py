@@ -130,8 +130,10 @@ def test_create_run_creates_channel_and_exports(
     overwrites = admin_api.created_channels[0]["permission_overwrites"]
     assert {entry["id"] for entry in overwrites} == {"1111", "2222"}
     assert Path(manifest["cleanup_ledger_path"]).parent.is_dir()
+    assert Path(manifest["runtime"]["heartbeat_path"]).parent.is_dir()
     assert exports["TEST_DISCORD_CHANNEL_ID"] == str(manifest["channel"]["id"])
     assert exports["TEST_DISCORD_TARGET_BOT_ID"] == "2222"
+    assert exports["DISCORD_E2E_HEARTBEAT_PATH"] == manifest["runtime"]["heartbeat_path"]
     assert exports["DISCORD_E2E_TARGET_LEASE_STATUS"] == "acquired"
     lease = DiscordE2ELease.from_topic(manifest["channel"]["topic"])
     assert lease is not None
@@ -293,6 +295,9 @@ def test_cleanup_run_replays_cleanup_prompts_and_deletes_channel(tmp_path: Path)
     manifest_path.parent.mkdir(parents=True)
     cleanup_ledger_path = tmp_path / "cleanup-ledgers" / "discord-fixed.jsonl"
     cleanup_ledger_path.parent.mkdir(parents=True)
+    heartbeat_path = tmp_path / "heartbeats" / "discord-fixed.touch"
+    heartbeat_path.parent.mkdir(parents=True)
+    heartbeat_path.touch()
     cleanup_ledger_path.write_text(
         json.dumps({"label": "task:demo", "prompt": "Delete the task demo"}) + "\n",
         encoding="utf-8",
@@ -304,6 +309,7 @@ def test_cleanup_run_replays_cleanup_prompts_and_deletes_channel(tmp_path: Path)
             "target_bot_id": 2222,
             "channel": {"id": "9001", "name": "zeth-e2e-discord-fixed"},
             "cleanup_ledger_path": str(cleanup_ledger_path),
+            "runtime": {"heartbeat_path": str(heartbeat_path)},
             "lease": {"status": "active"},
             "cleanup": {"status": "pending"},
         },
@@ -323,3 +329,175 @@ def test_cleanup_run_replays_cleanup_prompts_and_deletes_channel(tmp_path: Path)
     assert payload["cleanup"]["synthetic_cleanup"]["acknowledged"] == 1
     assert admin_api.deleted_channels == [9001]
     assert test_api.sent_messages[0]["content"].startswith("<@2222> Delete the task demo")
+    assert not heartbeat_path.exists()
+
+
+def test_janitor_cleans_active_run_with_stale_missing_heartbeat(tmp_path: Path) -> None:
+    module = _load_module()
+    now = datetime.now(tz=UTC)
+    manifest_path = tmp_path / "manifests" / "discord-stale.json"
+    manifest_path.parent.mkdir(parents=True)
+    cleanup_ledger_path = tmp_path / "cleanup-ledgers" / "discord-stale.jsonl"
+    cleanup_ledger_path.parent.mkdir(parents=True)
+
+    module.write_manifest(
+        manifest_path,
+        {
+            "run_id": "discord-stale",
+            "target_bot_id": 2222,
+            "channel": {"id": "9001", "name": "zeth-e2e-discord-stale"},
+            "cleanup_ledger_path": str(cleanup_ledger_path),
+            "runtime": {
+                "heartbeat_path": str(tmp_path / "heartbeats" / "discord-stale.touch"),
+                "heartbeat_stale_seconds": 300,
+            },
+            "lease": {
+                "version": 1,
+                "run_id": "discord-stale",
+                "mode": "local_required",
+                "target_bot_id": 2222,
+                "author_id": 1111,
+                "created_at": (now - timedelta(minutes=10)).isoformat(),
+                "expires_at": (now + timedelta(minutes=20)).isoformat(),
+                "guild_id": 123,
+                "category_id": 456,
+                "channel_prefix": "zeth-e2e",
+                "status": "active",
+            },
+            "cleanup": {"status": "pending"},
+        },
+    )
+
+    channels = [
+        {"id": "456", "type": 4, "name": "zeth-e2e"},
+        {
+            "id": "9001",
+            "type": 0,
+            "name": "zeth-e2e-discord-stale",
+            "parent_id": "456",
+            "topic": DiscordE2ELease(
+                run_id="discord-stale",
+                mode="local_required",
+                target_bot_id=2222,
+                author_id=1111,
+                created_at=now - timedelta(minutes=10),
+                expires_at=now + timedelta(minutes=20),
+                guild_id=123,
+                category_id=456,
+                channel_prefix="zeth-e2e",
+            ).to_topic(),
+        },
+    ]
+    test_api = FakeDiscordAPI(user_id=1111, channels=[dict(channel) for channel in channels])
+    admin_api = FakeDiscordAPI(user_id=3333, channels=[dict(channel) for channel in channels])
+
+    result = module.janitor(
+        runs_root=tmp_path,
+        guild_id=123,
+        category_id=456,
+        category_name=None,
+        parent_channel_id=None,
+        channel_prefix="zeth-e2e",
+        test_api=test_api,
+        admin_api=admin_api,
+    )
+
+    assert result["cleaned"]
+    assert result["cleaned"][0]["cleanup"]["reason"] == "stale_discord_e2e_heartbeat"
+
+
+def test_janitor_skips_active_run_with_fresh_heartbeat(tmp_path: Path) -> None:
+    module = _load_module()
+    now = datetime.now(tz=UTC)
+    manifest_path = tmp_path / "manifests" / "discord-fresh.json"
+    manifest_path.parent.mkdir(parents=True)
+    cleanup_ledger_path = tmp_path / "cleanup-ledgers" / "discord-fresh.jsonl"
+    cleanup_ledger_path.parent.mkdir(parents=True)
+    heartbeat_path = tmp_path / "heartbeats" / "discord-fresh.touch"
+    heartbeat_path.parent.mkdir(parents=True)
+    heartbeat_path.touch()
+
+    module.write_manifest(
+        manifest_path,
+        {
+            "run_id": "discord-fresh",
+            "target_bot_id": 2222,
+            "channel": {"id": "9002", "name": "zeth-e2e-discord-fresh"},
+            "cleanup_ledger_path": str(cleanup_ledger_path),
+            "runtime": {
+                "heartbeat_path": str(heartbeat_path),
+                "heartbeat_stale_seconds": 300,
+            },
+            "lease": {
+                "version": 1,
+                "run_id": "discord-fresh",
+                "mode": "local_required",
+                "target_bot_id": 2222,
+                "author_id": 1111,
+                "created_at": (now - timedelta(minutes=1)).isoformat(),
+                "expires_at": (now + timedelta(minutes=20)).isoformat(),
+                "guild_id": 123,
+                "category_id": 456,
+                "channel_prefix": "zeth-e2e",
+                "status": "active",
+            },
+            "cleanup": {"status": "pending"},
+        },
+    )
+
+    test_api = FakeDiscordAPI(user_id=1111, channels=[{"id": "456", "type": 4, "name": "zeth-e2e"}])
+    admin_api = FakeDiscordAPI(user_id=3333, channels=[{"id": "456", "type": 4, "name": "zeth-e2e"}])
+
+    result = module.janitor(
+        runs_root=tmp_path,
+        guild_id=123,
+        category_id=456,
+        category_name=None,
+        parent_channel_id=None,
+        channel_prefix="zeth-e2e",
+        test_api=test_api,
+        admin_api=admin_api,
+    )
+
+    assert not result["cleaned"]
+    assert str(manifest_path) in result["skipped"]
+
+
+def test_janitor_cleans_orphaned_active_channel_when_lease_is_stale(tmp_path: Path) -> None:
+    module = _load_module()
+    now = datetime.now(tz=UTC)
+    category = {"id": "456", "type": 4, "name": "zeth-e2e"}
+    stale_orphan = {
+        "id": "9010",
+        "type": 0,
+        "name": "zeth-e2e-discord-orphan",
+        "parent_id": "456",
+        "topic": DiscordE2ELease(
+            run_id="discord-orphan",
+            mode="local_required",
+            target_bot_id=2222,
+            author_id=1111,
+            created_at=now - timedelta(minutes=10),
+            expires_at=now + timedelta(minutes=20),
+            guild_id=123,
+            category_id=456,
+            channel_prefix="zeth-e2e",
+        ).to_topic(),
+    }
+    test_api = FakeDiscordAPI(user_id=1111, channels=[dict(category), dict(stale_orphan)])
+    admin_api = FakeDiscordAPI(user_id=3333, channels=[dict(category), dict(stale_orphan)])
+
+    result = module.janitor(
+        runs_root=tmp_path,
+        guild_id=123,
+        category_id=456,
+        category_name=None,
+        parent_channel_id=None,
+        channel_prefix="zeth-e2e",
+        test_api=test_api,
+        admin_api=admin_api,
+    )
+
+    assert result["cleaned"]
+    assert result["cleaned"][0]["run_id"] == "discord-orphan"
+    assert result["cleaned"][0]["cleanup"]["reason"] == "orphaned_stale_active_discord_channel"

@@ -5,6 +5,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
+DOCKER_PYTHON_WRAPPER="$SCRIPT_DIR/docker-python-tool.sh"
+EXPLICIT_ZETHERION_ENV_FILE="${ZETHERION_ENV_FILE:-}"
+DEFAULT_ZETHERION_ENV_FILE="$REPO_DIR/.env"
 cd "$REPO_DIR"
 
 usage() {
@@ -12,7 +15,7 @@ usage() {
 Usage: ./scripts/run-required-discord-e2e.sh [-- <extra pytest args>]
 
 Runs the required Discord E2E suite using the repo-local contract. Standalone execution is diagnostic-only; authoritative merge evidence comes from `bash scripts/local-required-e2e-receipt.sh`:
-- sources .env if present
+- sources an explicit `ZETHERION_ENV_FILE`, otherwise `.env` if present
 - activates the repo-local virtualenv if present
 - validates required credentials and E2E scope config
 - creates an isolated Discord channel with a target-bot lease
@@ -34,8 +37,59 @@ if [[ "${1:-}" == "--" ]]; then
     shift
 fi
 
+python_supports_required_version() {
+    local python_bin="$1"
+    "$python_bin" - <<'PY' >/dev/null 2>&1
+import sys
+
+raise SystemExit(0 if sys.version_info >= (3, 12) else 1)
+PY
+}
+
+python_has_required_modules() {
+    local python_bin="$1"
+    "$python_bin" - <<'PY' >/dev/null 2>&1
+import importlib.util
+
+required = (
+    "httpx",
+    "pytest",
+    "pytest_asyncio",
+)
+missing = [name for name in required if importlib.util.find_spec(name) is None]
+raise SystemExit(1 if missing else 0)
+PY
+}
+
+is_generated_e2e_env_file() {
+    local env_file="${1:-}"
+    case "$env_file" in
+        */zetherion-e2e-runs/stacks/*/run.env|*/.artifacts/e2e-runs/stacks/*/run.env|*/.artifacts/ci-e2e-runs/stacks/*/run.env)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
 load_repo_env() {
-    if [[ ! -f "$REPO_DIR/.env" ]]; then
+    local env_file="$DEFAULT_ZETHERION_ENV_FILE"
+
+    if [[ -n "$EXPLICIT_ZETHERION_ENV_FILE" ]]; then
+        if [[ ! -f "$EXPLICIT_ZETHERION_ENV_FILE" ]]; then
+            if is_generated_e2e_env_file "$EXPLICIT_ZETHERION_ENV_FILE"; then
+                echo "WARN: Ignoring missing generated E2E env file: $EXPLICIT_ZETHERION_ENV_FILE" >&2
+            else
+                echo "ERROR: ZETHERION_ENV_FILE points to a missing file: $EXPLICIT_ZETHERION_ENV_FILE" >&2
+                exit 1
+            fi
+        else
+            env_file="$EXPLICIT_ZETHERION_ENV_FILE"
+        fi
+    fi
+
+    if [[ ! -f "$env_file" ]]; then
         return 0
     fi
 
@@ -61,7 +115,9 @@ load_repo_env() {
     )
     local key
     local restore_file
+    local normalized_env
     restore_file="$(mktemp "${TMPDIR:-/tmp}/discord-e2e-env-restore.XXXXXX")"
+    normalized_env="$(mktemp "${TMPDIR:-/tmp}/discord-e2e-env.XXXXXX")"
 
     for key in "${preserved_keys[@]}"; do
         if [[ -n "${!key+x}" ]]; then
@@ -71,24 +127,43 @@ load_repo_env() {
         fi
     done
 
+    tr -d '\r' <"$env_file" >"$normalized_env"
+
     set -a
-    # shellcheck source=/dev/null
-    source "$REPO_DIR/.env"
+    # shellcheck disable=SC1090
+    source "$normalized_env"
     set +a
 
     # shellcheck source=/dev/null
     source "$restore_file"
     rm -f "$restore_file"
+    rm -f "$normalized_env"
 }
 
 activate_repo_venv() {
+    if [[ "${ZETHERION_USE_DOCKER_PYTHON:-false}" == "true" ]]; then
+        return 0
+    fi
     local candidate
     for candidate in \
         "$REPO_DIR/.venv/bin/activate" \
         "$REPO_DIR/venv/bin/activate" \
         "$REPO_DIR/.venv/Scripts/activate" \
         "$REPO_DIR/venv/Scripts/activate"; do
-        if [[ -f "$candidate" ]]; then
+        local python_candidate=""
+        case "$candidate" in
+            */bin/activate)
+                python_candidate="${candidate%/activate}/python"
+                ;;
+            */Scripts/activate)
+                python_candidate="${candidate%/activate}/python.exe"
+                ;;
+        esac
+        if [[ -f "$candidate" ]] \
+            && [[ -n "$python_candidate" ]] \
+            && [[ -x "$python_candidate" || -f "$python_candidate" ]] \
+            && python_supports_required_version "$python_candidate" \
+            && python_has_required_modules "$python_candidate"; then
             # shellcheck source=/dev/null
             source "$candidate"
             return 0
@@ -106,6 +181,11 @@ require_env_var() {
 }
 
 resolve_python_bin() {
+    if [[ "${ZETHERION_USE_DOCKER_PYTHON:-false}" == "true" && -x "$DOCKER_PYTHON_WRAPPER" ]]; then
+        printf '%s\n' "$DOCKER_PYTHON_WRAPPER"
+        return 0
+    fi
+
     local candidate
     for candidate in \
         "$REPO_DIR/.venv/bin/python" \
@@ -114,18 +194,28 @@ resolve_python_bin() {
         "$REPO_DIR/venv/bin/python3" \
         "$REPO_DIR/.venv/Scripts/python.exe" \
         "$REPO_DIR/venv/Scripts/python.exe"; do
-        if [[ -x "$candidate" || -f "$candidate" ]]; then
+        if [[ -x "$candidate" || -f "$candidate" ]] \
+            && python_supports_required_version "$candidate" \
+            && python_has_required_modules "$candidate"; then
             printf '%s\n' "$candidate"
             return 0
         fi
     done
 
-    if command -v python3 >/dev/null 2>&1; then
-        command -v python3
-        return 0
-    fi
-    if command -v python >/dev/null 2>&1; then
-        command -v python
+    local fallback
+    for fallback in python3.12 python3 python; do
+        if ! command -v "$fallback" >/dev/null 2>&1; then
+            continue
+        fi
+        if python_supports_required_version "$(command -v "$fallback")" \
+            && python_has_required_modules "$(command -v "$fallback")"; then
+            command -v "$fallback"
+            return 0
+        fi
+    done
+
+    if [[ -x "$DOCKER_PYTHON_WRAPPER" ]]; then
+        printf '%s\n' "$DOCKER_PYTHON_WRAPPER"
         return 0
     fi
     return 1
@@ -248,6 +338,7 @@ PY
 }
 
 DISCORD_E2E_WRAPPER_CLEANED=false
+DISCORD_E2E_WRAPPER_FINALIZED=false
 
 cleanup() {
     local exit_code="${1:-$?}"
@@ -260,9 +351,19 @@ cleanup() {
     return 0
 }
 
+finalize_wrapper() {
+    local exit_code="$1"
+    if [[ "$DISCORD_E2E_WRAPPER_FINALIZED" == "true" ]]; then
+        return 0
+    fi
+    DISCORD_E2E_WRAPPER_FINALIZED=true
+    cleanup "$exit_code"
+    return 0
+}
+
 handle_signal() {
     local signal_exit_code="$1"
-    cleanup "$signal_exit_code"
+    finalize_wrapper "$signal_exit_code"
     exit "$signal_exit_code"
 }
 
@@ -307,11 +408,12 @@ fi
 
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/discord_e2e_run_manager.sh"
-trap 'cleanup $?' EXIT
+trap 'finalize_wrapper $?' EXIT
 trap 'handle_signal 130' INT
 trap 'handle_signal 143' TERM
 
 start_discord_e2e_run
+start_discord_e2e_heartbeat
 
 PYTEST_TIMEOUT_ARGS=(--timeout=180)
 case "$(uname -s)" in
@@ -322,6 +424,27 @@ esac
 
 echo "[discord-e2e] Running required Discord E2E via blessed wrapper (provider=$DISCORD_E2E_PROVIDER, run_id=${DISCORD_E2E_RUN_ID}, channel_id=${TEST_DISCORD_CHANNEL_ID}, ssl_cert=$SSL_CERT_FILE)"
 
+PYTEST_COVERAGE_ARGS=(--no-cov)
+if [[ "${DISCORD_E2E_ENABLE_COVERAGE:-false}" == "true" ]]; then
+    PYTEST_COVERAGE_ARGS=()
+fi
+
+PYTEST_ARGS=(
+    tests/integration/test_discord_e2e.py
+    -m "discord_e2e and not optional_e2e"
+    "${PYTEST_TIMEOUT_ARGS[@]}"
+    -v
+    --tb=short
+    -s
+)
+if [[ ${#PYTEST_COVERAGE_ARGS[@]} -gt 0 ]]; then
+    PYTEST_ARGS+=("${PYTEST_COVERAGE_ARGS[@]}")
+fi
+if [[ "$#" -gt 0 ]]; then
+    PYTEST_ARGS+=("$@")
+fi
+
+set +e
 env \
     DISCORD_E2E_PROVIDER="$DISCORD_E2E_PROVIDER" \
     DOCKER_MANAGED_EXTERNALLY=true \
@@ -331,11 +454,9 @@ env \
     DISCORD_E2E_RUN_ID="$DISCORD_E2E_RUN_ID" \
     DISCORD_E2E_CLEANUP_LEDGER_PATH="$DISCORD_E2E_CLEANUP_LEDGER_PATH" \
     "$PYTHON_BIN" -m pytest \
-    tests/integration/test_discord_e2e.py \
-    -m "discord_e2e and not optional_e2e" \
-    "${PYTEST_TIMEOUT_ARGS[@]}" \
-    -v \
-    --tb=short \
-    -s \
-    --no-cov \
-    "$@"
+    "${PYTEST_ARGS[@]}"
+pytest_exit_code=$?
+set -e
+
+finalize_wrapper "$pytest_exit_code"
+exit "$pytest_exit_code"

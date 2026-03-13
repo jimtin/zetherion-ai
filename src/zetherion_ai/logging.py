@@ -2,12 +2,38 @@
 
 import logging
 import sys
+import traceback
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Any
 
 import structlog
 
 from zetherion_ai.config import get_settings
+
+
+def exception_fields(exc: BaseException | None = None) -> dict[str, Any]:
+    """Return structured exception details for JSON/event logs."""
+    resolved = exc
+    tb = exc.__traceback__ if exc is not None else None
+    if resolved is None:
+        _exc_type, resolved, tb = sys.exc_info()
+    if resolved is None:
+        return {
+            "error_type": None,
+            "error_message": None,
+            "traceback": None,
+        }
+
+    message = str(resolved).strip() or repr(resolved)
+    formatted = "".join(
+        traceback.format_exception(type(resolved), resolved, tb),
+    ).strip()
+    return {
+        "error_type": type(resolved).__name__,
+        "error_message": message,
+        "traceback": formatted or None,
+    }
 
 
 def setup_logging() -> None:
@@ -60,6 +86,7 @@ def setup_logging() -> None:
             structlog.processors.add_log_level,
             structlog.processors.StackInfoRenderer(),
             structlog.dev.set_exc_info,
+            structlog.processors.format_exc_info,
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],

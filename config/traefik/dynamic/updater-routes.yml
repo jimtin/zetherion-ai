@@ -1,5 +1,17 @@
 http:
   routers:
+    owner-ci-worker-bridge:
+      entryPoints:
+        - api
+      rule: "PathPrefix(`/owner/ci/worker/v1`)"
+      service: skills-blue
+      priority: 30
+    worker-bridge:
+      entryPoints:
+        - api
+      rule: "PathPrefix(`/worker/v1`)"
+      service: skills-blue
+      priority: 30
     skills:
       entryPoints:
         - skills

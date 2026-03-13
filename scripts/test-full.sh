@@ -6,6 +6,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
+DOCKER_PYTHON_WRAPPER="$SCRIPT_DIR/docker-python-tool.sh"
+READINESS_WRITER="$SCRIPT_DIR/write-local-readiness-receipt.py"
+LOCAL_READINESS_RECEIPT_PATH="${LOCAL_READINESS_RECEIPT_PATH:-.artifacts/local-readiness-receipt.json}"
+LOCAL_RELEASE_RECEIPT_PATH="${LOCAL_RELEASE_RECEIPT_PATH:-.ci/e2e-receipt.json}"
+CURRENT_HEAD_SHA="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)"
 
 cd "$REPO_DIR"
 
@@ -13,17 +18,97 @@ log() {
     printf '[test-full] %s\n' "$*"
 }
 
+python_supports_required_version() {
+    local python_bin="$1"
+    "$python_bin" - <<'PY' >/dev/null 2>&1
+import sys
+
+raise SystemExit(0 if sys.version_info >= (3, 12) else 1)
+PY
+}
+
 pick_python() {
-    if command -v python3.12 >/dev/null 2>&1; then
-        printf '%s\n' "$(command -v python3.12)"
-        return 0
-    fi
-    if command -v python3 >/dev/null 2>&1; then
-        printf '%s\n' "$(command -v python3)"
-        return 0
-    fi
+    local candidate
+    for candidate in python3.12 python3 python; do
+        if ! command -v "$candidate" >/dev/null 2>&1; then
+            continue
+        fi
+        if python_supports_required_version "$(command -v "$candidate")"; then
+            printf '%s\n' "$(command -v "$candidate")"
+            return 0
+        fi
+    done
     return 1
 }
+
+resolve_receipt_python() {
+    if [ "${ZETHERION_USE_DOCKER_PYTHON:-false}" = "true" ]; then
+        printf '%s\n' "$DOCKER_PYTHON_WRAPPER"
+        return 0
+    fi
+    if [ -n "${VIRTUAL_ENV:-}" ]; then
+        printf 'python\n'
+        return 0
+    fi
+    pick_python
+}
+
+write_local_readiness_receipt() {
+    local exit_code="$1"
+    local receipt_python
+    receipt_python="$(resolve_receipt_python || true)"
+    if [ -z "$receipt_python" ] || [ ! -f "$READINESS_WRITER" ]; then
+        return 0
+    fi
+
+    local status="failed"
+    local summary="Zetherion local full gate failed."
+    local merge_ready="false"
+    local deploy_ready="false"
+    local failed_path="local_full_gate"
+    local missing_evidence=""
+    local receipt_args=()
+
+    if [ "$exit_code" -eq 0 ]; then
+        status="success"
+        summary="Zetherion local full gate passed."
+        merge_ready="true"
+        deploy_ready="true"
+        failed_path=""
+        if [ ! -f "$LOCAL_RELEASE_RECEIPT_PATH" ]; then
+            missing_evidence="$LOCAL_RELEASE_RECEIPT_PATH"
+        fi
+    fi
+
+    receipt_args=(
+        --repo-id "zetherion-ai"
+        --output "$LOCAL_READINESS_RECEIPT_PATH"
+        --status "$status"
+        --summary "$summary"
+        --merge-ready "$merge_ready"
+        --deploy-ready "$deploy_ready"
+        --git-sha "$CURRENT_HEAD_SHA"
+        --source "test_full"
+    )
+    if [ -n "$failed_path" ]; then
+        receipt_args+=(--failed-path "$failed_path")
+    fi
+    if [ -n "$missing_evidence" ]; then
+        receipt_args+=(--missing-evidence "$missing_evidence")
+    fi
+    if [ -n "$LOCAL_RELEASE_RECEIPT_PATH" ]; then
+        receipt_args+=(--release-receipt "$LOCAL_RELEASE_RECEIPT_PATH")
+    fi
+
+    "$receipt_python" "$READINESS_WRITER" "${receipt_args[@]}" >/dev/null 2>&1 || true
+}
+
+finish() {
+    local exit_code="$1"
+    write_local_readiness_receipt "$exit_code"
+}
+
+trap 'finish $?' EXIT
 
 venv_has_required_modules() {
     python - <<'PY' >/dev/null 2>&1
@@ -62,6 +147,7 @@ validate_existing_venv() {
     local venv_dir="$1"
     [ -x "$venv_dir/bin/python" ] || return 1
     "$venv_dir/bin/python" -c "import sys" >/dev/null 2>&1 || return 1
+    python_supports_required_version "$venv_dir/bin/python" || return 1
     return 0
 }
 
@@ -104,17 +190,28 @@ if [ -z "${VIRTUAL_ENV:-}" ]; then
         fi
         python_bin="$(pick_python || true)"
         if [ -z "$python_bin" ]; then
-            log "Python 3.12+ is required. Install Python and re-run."
-            exit 1
+            if [ -x "$DOCKER_PYTHON_WRAPPER" ]; then
+                log "Local Python 3.12 is unavailable. Falling back to Docker-backed Python tooling."
+                export ZETHERION_USE_DOCKER_PYTHON=true
+            else
+                log "Python 3.12+ is required. Install Python and re-run."
+                exit 1
+            fi
+        else
+            bootstrap_venv "$python_bin"
         fi
-        bootstrap_venv "$python_bin"
     fi
 fi
 
-if ! venv_has_required_modules; then
-    log "Active virtualenv does not have test dependencies."
-    log "Run: python -m pip install -r requirements-dev.txt && python -m pip install -e ."
-    exit 1
+if [ "${ZETHERION_USE_DOCKER_PYTHON:-false}" != "true" ] && ! venv_has_required_modules; then
+    if [ -x "$DOCKER_PYTHON_WRAPPER" ]; then
+        log "Active virtualenv does not have test dependencies. Falling back to Docker-backed Python tooling."
+        export ZETHERION_USE_DOCKER_PYTHON=true
+    else
+        log "Active virtualenv does not have test dependencies."
+        log "Run: python -m pip install -r requirements-dev.txt && python -m pip install -e ."
+        exit 1
+    fi
 fi
 
 # Enforce strict canonical defaults.
@@ -129,4 +226,4 @@ export EMBEDDINGS_BACKEND="${EMBEDDINGS_BACKEND:-openai}"
 export OPENAI_EMBEDDING_MODEL="${OPENAI_EMBEDDING_MODEL:-text-embedding-3-large}"
 export OPENAI_EMBEDDING_DIMENSIONS="${OPENAI_EMBEDDING_DIMENSIONS:-3072}"
 
-exec "$SCRIPT_DIR/pre-push-tests.sh" "$@"
+"$SCRIPT_DIR/pre-push-tests.sh" "$@"

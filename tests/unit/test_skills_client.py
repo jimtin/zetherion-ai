@@ -107,6 +107,25 @@ class TestSkillsClient:
         await client.close()
 
     @pytest.mark.asyncio
+    async def test_get_client_recreates_cached_client_for_new_base_url(self) -> None:
+        """_get_client() should close and replace the cached client when the base URL changes."""
+        client = SkillsClient(base_url="http://skills-green:8080")
+        existing_client = MagicMock()
+        existing_client.is_closed = False
+        existing_client.base_url = "http://skills-green:8080"
+        existing_client.aclose = AsyncMock()
+        replacement = MagicMock()
+        replacement.is_closed = False
+        replacement.base_url = "http://skills-blue:8080"
+        client._client = existing_client
+
+        with patch("zetherion_ai.skills.client.httpx.AsyncClient", return_value=replacement):
+            rebuilt = await client._get_client("http://skills-blue:8080")
+
+        assert rebuilt is replacement
+        existing_client.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_close(self) -> None:
         """close() should close the HTTP client."""
         client = SkillsClient()
@@ -275,6 +294,15 @@ class TestSkillsClient:
 
             with pytest.raises(SkillsClientError, match="Request failed"):
                 await client.handle_request(request)
+
+    @pytest.mark.asyncio
+    async def test_request_with_failover_rejects_empty_endpoint_list(self) -> None:
+        """_request_with_failover() should fail clearly when no base URLs are configured."""
+        client = SkillsClient()
+
+        with patch.object(client, "_iter_base_urls", return_value=[]):
+            with pytest.raises(SkillsClientError, match="no skills endpoints configured"):
+                await client._request_with_failover(lambda _client: None)
 
     @pytest.mark.asyncio
     async def test_trigger_heartbeat_success(self) -> None:
@@ -711,6 +739,63 @@ class TestSkillsClient:
                     "/admin/tenants/t1/workers/nodes",
                     actor={"actor_sub": "discord:1"},
                 )
+
+    @pytest.mark.asyncio
+    async def test_request_admin_json_auth_error_passthrough(self) -> None:
+        """request_admin_json() should preserve explicit auth failures."""
+        client = SkillsClient(api_secret="skills-secret", actor_signing_secret="actor-secret")
+        with patch.object(client, "_request_with_failover", side_effect=SkillsAuthError("denied")):
+            with pytest.raises(SkillsAuthError, match="denied"):
+                await client.request_admin_json(
+                    "GET",
+                    "/admin/tenants/t1/workers/nodes",
+                    actor={"actor_sub": "discord:1"},
+                )
+
+    @pytest.mark.parametrize(
+        ("method_name", "kwargs", "expected_message"),
+        [
+            ("trigger_heartbeat", {"user_ids": ["u1"]}, "Heartbeat failed: boom"),
+            ("list_skills", {}, "List skills failed: boom"),
+            ("get_skill", {"name": "calendar"}, "Get skill failed: boom"),
+            ("get_status", {}, "Get status failed: boom"),
+            ("get_prompt_fragments", {"user_id": "u1"}, "Get prompt fragments failed: boom"),
+            (
+                "put_setting",
+                {"namespace": "runtime", "key": "flag", "value": "on", "changed_by": 1},
+                "Update setting failed: boom",
+            ),
+            (
+                "put_secret",
+                {"name": "token", "value": "secret", "changed_by": 1},
+                "Update secret failed: boom",
+            ),
+            (
+                "emit_announcement_event",
+                {
+                    "source": "owner-ci",
+                    "category": "deploy.failed",
+                    "title": "Deploy failed",
+                    "body": "broken",
+                },
+                "Emit announcement failed: boom",
+            ),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_skills_client_methods_wrap_generic_client_errors(
+        self,
+        method_name: str,
+        kwargs: dict[str, object],
+        expected_message: str,
+    ) -> None:
+        """High-level client methods should wrap generic client failures with contextual errors."""
+        client = SkillsClient()
+
+        with patch.object(client, "_request_with_failover", side_effect=SkillsClientError("boom")):
+            method = getattr(client, method_name)
+            with pytest.raises(SkillsClientError, match=expected_message):
+                await method(**kwargs)
 
 
 class TestCreateSkillsClient:

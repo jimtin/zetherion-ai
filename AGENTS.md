@@ -46,16 +46,13 @@ This is the only supported full local gate. Do not substitute ad-hoc pytest comm
 
 1. `./scripts/test-full.sh` remains the only supported heavy local gate for substantial delivery.
 2. When `e2e_required=true`, run `bash scripts/local-required-e2e-receipt.sh` after the full gate passes and commit `.ci/e2e-receipt.json`.
-3. GitHub currently validates the committed local receipt contract for required E2E instead of executing the full E2E suites directly on PRs.
-4. Current required branch checks are:
-   - `CI Summary`
-   - `Linting & Formatting`
-   - `Pipeline Contract`
-   - `Secret Scan (Gitleaks)`
-   - `Zetherion Boundary Check`
-5. PR fast path now runs only `detect-changes`, `risk-classifier`, `lint`, `secret-scan`, `pipeline-contract`, `zetherion-boundary-check`, `required-e2e-gate`, `CI Summary`, and `CI Failure Attribution`; heavy local-equivalent jobs are deferred off PRs to push or scheduled/manual runs.
-6. If a PR changes CI, deploy, or gating logic, fill the checklist in `.github/pull_request_template.md` with capability IDs, workflow scenario IDs, deterministic validation evidence, and any required receipt or Windows verification notes.
-7. Pull requests targeting standard delivery must use a `codex/` head branch and must satisfy the PR metadata policy enforced by `scripts/check_pr_metadata.py` in the required `Pipeline Contract` job.
+3. GitHub external statuses are the public readiness contract:
+   - `zetherion/merge-readiness`
+   - `zetherion/deploy-readiness`
+4. GitHub Actions is manual helper only.
+5. Retained helper workflows include `Owner CI Bridge`, `Deploy Windows`, `Release`, `CodeQL`, and `CI Maintenance`.
+6. If a change affects CI, deploy, or gating behavior, update `.ci/pipeline_contract.json`, the owner-CI docs, and the local validation evidence in the same change.
+7. Standard delivery still uses `codex/` head branches, but merge and deploy decisions are owned by Zetherion receipts, not GitHub workflow names.
 
 ## API Documentation Contract (Mandatory)
 
@@ -114,14 +111,15 @@ Critical-path integration coverage in canonical runs must include both:
 3. If reason is `PIPELINE_CONTRACT_GAP`, update contract mappings immediately.
 4. Run `./scripts/require-local-gate-update.sh --sha <failed_commit_sha>` and do not proceed until it passes.
 5. Re-run `./scripts/test-full.sh` after fixes before pushing again.
+6. GitHub Actions is manual helper only; a failing helper workflow does not override Zetherion readiness receipts.
 
 ## Automatic Main Promotion (Mandatory)
 
 1. Standard branch workflow is `codex/*` -> auto-promotion into `main`; do not use non-`codex/*` branches when the goal is standard delivery.
 2. Direct feature pushes to `main` are non-standard; use only break-glass procedures when automation cannot be used.
-3. Successful `CI/CD Pipeline` runs for `codex/*` pull requests targeting `main` are promoted by `.github/workflows/auto-merge-main.yml` using fast-forward-only rules.
-4. If fast-forward is blocked, automation must stop merge attempts and open/update a PR from `codex/*` to `main` with rebase instructions.
-5. If `Deploy Windows` fails for an auto-merged `main` SHA, `.github/workflows/revert-failed-main-deploy.yml` must auto-revert the merged commit range on `main`.
+3. Promotion is owned by the Zetherion control plane, not by GitHub workflow runs.
+4. Deprecated GitHub workflows such as `auto-merge-main.yml` and `revert-failed-main-deploy.yml` are manual placeholders only.
+5. If fast-forward or promotion is blocked, fix the Zetherion receipt or blocker incident rather than adding GitHub-side automation.
 6. Manual merge to `main` is break-glass only and must include explicit operator justification in workflow/runbook notes.
 
 ## Break-Glass SSH Deployment (Non-Standard)
@@ -131,7 +129,7 @@ SSH-based deployment/remoting is emergency-only recovery and is not part of the 
 ## Post-Deploy Promotions (Mandatory)
 
 1. Blog/release promotion execution is owned by the Windows main machine, not GitHub Actions.
-2. Promotions may run only after deployment receipt validation passes (`status=success`, SHA match, all required checks true).
+2. Promotions may run only after `zetherion/deploy-readiness` is green and the release verification receipt is healthy.
 3. Blog generation/publish is mandatory per deployed `main` SHA:
    - required models: `gpt-5.2` (draft) and `claude-sonnet-4-6` (refine)
    - no lower-tier fallback

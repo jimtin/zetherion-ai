@@ -1,239 +1,57 @@
 {
-  "workstream": "segmented-ci-hardening-and-spend-reduction",
-  "contract_version": 2,
-  "recorded_at": "2026-03-08",
-  "status": "complete",
-  "segment_contract": {
-    "branch_prefix": "codex/seg-ci-",
-    "one_segment_per_pr": true,
-    "require_capability_ids": true,
-    "require_workflow_scenario_ids": true,
-    "require_local_deterministic_evidence_before_push": true,
-    "notes": [
-      "Current required checks remain in force until Segment 3 lands.",
-      "Workflow, receipt, or deploy-script changes require regression coverage in the same PR.",
-      "Windows deploy behavior changes require post-merge verification on the Windows host."
-    ]
-  },
+  "workstream": "owner-ci-cutover-and-production-repair",
+  "contract_version": 3,
+  "recorded_at": "2026-03-12",
+  "status": "active",
   "current_contract": {
     "local_heavy_gate_entrypoint": "./scripts/test-full.sh",
     "local_required_e2e_receipt_entrypoint": "bash scripts/local-required-e2e-receipt.sh",
-    "required_e2e_receipt_path": ".ci/e2e-receipt.json",
-    "github_required_check_inventory": [
-      "CI Summary",
-      "Linting & Formatting",
-      "Pipeline Contract",
-      "Secret Scan (Gitleaks)",
-      "Zetherion Boundary Check"
+    "required_status_contexts": [
+      "zetherion/merge-readiness",
+      "zetherion/deploy-readiness"
+    ],
+    "github_helper_workflows": [
+      "Owner CI Bridge",
+      "Deploy Windows",
+      "Release",
+      "CodeQL",
+      "CI Maintenance"
     ],
     "notes": [
-      "GitHub validates exact-SHA local E2E receipt evidence instead of executing the full E2E suites directly on PRs.",
-      "PR fast path is limited to detect-changes, risk-classifier, lint, secret-scan, pipeline-contract, zetherion-boundary-check, required-e2e-gate, CI Summary, and CI Failure Attribution.",
-      "Heavy local-equivalent jobs are deferred off PRs to push or scheduled/manual verification runs.",
-      "Scheduled/manual GitHub runs remain the independent heavy-verification cadence on main.",
-      "CodeQL now runs only on weekly/manual triggers so it does not register skipped PR runs.",
-      "Documentation deployment now runs on main only when docs-site sources change or via manual dispatch."
-    ],
-    "pr_fast_path_jobs": [
-      "detect-changes",
-      "risk-classifier",
-      "lint",
-      "secret-scan",
-      "pipeline-contract",
-      "zetherion-boundary-check",
-      "required-e2e-gate",
-      "CI Summary",
-      "CI Failure Attribution"
+      "GitHub is an event source plus manual helper surface only.",
+      "GitHub-hosted heavy test matrices are disabled.",
+      "Branch protection should rely on Zetherion external statuses instead of GitHub workflow names.",
+      "Deploy promotion is healthy only when the Zetherion release verification receipt is green."
     ]
   },
-  "capabilities": [
-    "ci.contract.alignment",
-    "ci.local_preflight",
-    "ci.receipt.validation",
-    "ci.pr.fast_path",
-    "ci.weekly.independent_verification",
-    "deploy.windows.core_aux_health",
-    "ci.failure_attribution",
-    "ci.cost.observability",
-    "ci.e2e.run_isolation",
-    "ci.e2e.discord_isolation"
-  ],
-  "workflow_scenarios": [
-    "pr.docs_only_fast_path",
-    "pr.shared_runtime_requires_unit_full",
-    "pr.vector_regression_pack_required",
-    "pr.receipt_script_change_requires_regression_pack",
-    "pr.receipt_sha_mismatch_rejected",
-    "deploy.aux_misconfig_degraded",
-    "deploy.core_failure_rollback",
-    "weekly.full_independent_verification",
-    "e2e.concurrent_docker_runs_isolated",
-    "e2e.stale_stack_janitor_cleanup",
-    "e2e.concurrent_discord_runs_isolated",
-    "e2e.target_lease_unavailable",
-    "e2e.windows_discord_canary"
-  ],
-  "segments": [
-    {
-      "id": "seg-ci-00-contract-alignment",
-      "title": "Contract Alignment and Failure Baseline",
-      "capability_ids": [
-        "ci.contract.alignment"
-      ],
-      "workflow_scenario_ids": [
-        "pr.docs_only_fast_path",
-        "pr.receipt_sha_mismatch_rejected"
-      ]
-    },
-    {
-      "id": "seg-ci-01-local-gate-expansion",
-      "title": "Local Gate Expansion for Shared Runtime Changes",
-      "capability_ids": [
-        "ci.local_preflight"
-      ],
-      "workflow_scenario_ids": [
-        "pr.shared_runtime_requires_unit_full",
-        "pr.vector_regression_pack_required"
-      ]
-    },
-    {
-      "id": "seg-ci-02-script-receipt-regressions",
-      "title": "Script and Receipt Regression Packs",
-      "capability_ids": [
-        "ci.receipt.validation",
-        "ci.failure_attribution"
-      ],
-      "workflow_scenario_ids": [
-        "pr.receipt_script_change_requires_regression_pack",
-        "pr.receipt_sha_mismatch_rejected"
-      ]
-    },
-    {
-      "id": "seg-ci-03-pr-fast-path",
-      "title": "PR CI Fast Path and Ruleset Alignment",
-      "capability_ids": [
-        "ci.pr.fast_path",
-        "ci.receipt.validation"
-      ],
-      "workflow_scenario_ids": [
-        "pr.docs_only_fast_path",
-        "pr.receipt_sha_mismatch_rejected"
-      ]
-    },
-    {
-      "id": "seg-ci-04-heavy-verification-offload",
-      "title": "Heavy Verification Offload and Workflow Noise Removal",
-      "capability_ids": [
-        "ci.weekly.independent_verification",
-        "ci.pr.fast_path"
-      ],
-      "workflow_scenario_ids": [
-        "weekly.full_independent_verification",
-        "pr.docs_only_fast_path"
-      ]
-    },
-    {
-      "id": "seg-ci-05-containerized-e2e-run-isolation",
-      "title": "Containerized E2E Run Isolation",
-      "capability_ids": [
-        "ci.e2e.run_isolation",
-        "ci.local_preflight"
-      ],
-      "workflow_scenario_ids": [
-        "e2e.concurrent_docker_runs_isolated",
-        "e2e.stale_stack_janitor_cleanup"
-      ]
-    },
-    {
-      "id": "seg-ci-06-discord-e2e-isolation",
-      "title": "Discord E2E Channel Isolation, Target Lease, and Synthetic Cleanup",
-      "capability_ids": [
-        "ci.e2e.discord_isolation"
-      ],
-      "workflow_scenario_ids": [
-        "e2e.concurrent_discord_runs_isolated",
-        "e2e.target_lease_unavailable"
-      ]
-    },
-    {
-      "id": "seg-ci-07-windows-discord-canary",
-      "title": "Windows Full-Parity Production Discord Canary",
-      "capability_ids": [
-        "ci.e2e.discord_isolation",
-        "ci.weekly.independent_verification"
-      ],
-      "workflow_scenario_ids": [
-        "e2e.windows_discord_canary"
-      ]
-    },
-    {
-      "id": "seg-ci-08-windows-core-vs-aux",
-      "title": "Windows Deploy Core vs Auxiliary Split",
-      "capability_ids": [
-        "deploy.windows.core_aux_health"
-      ],
-      "workflow_scenario_ids": [
-        "deploy.aux_misconfig_degraded",
-        "deploy.core_failure_rollback"
-      ]
-    },
-    {
-      "id": "seg-ci-09-cost-observability",
-      "title": "Cost Observability and Cache Hygiene",
-      "capability_ids": [
-        "ci.cost.observability"
-      ],
-      "workflow_scenario_ids": [
-        "weekly.full_independent_verification"
-      ]
-    },
-    {
-      "id": "seg-ci-10-closeout-enforcement",
-      "title": "Closeout and Policy Enforcement",
-      "capability_ids": [
-        "ci.contract.alignment",
-        "ci.failure_attribution"
-      ],
-      "workflow_scenario_ids": [
-        "pr.receipt_sha_mismatch_rejected"
-      ]
-    }
-  ],
   "policy_enforcement": {
     "contract_docs": [
       "AGENTS.md",
       "docs/development/ci-cd.md",
-      "docs/development/ci-hardening-baseline.md"
+      "docs/development/canonical-test-gate-and-ci-cost-plan.md",
+      "docs/development/owner-ci-controller.md"
     ],
-    "pr_template_path": ".github/pull_request_template.md",
     "doc_specific_tokens": {
       "AGENTS.md": [
-        ".github/pull_request_template.md",
-        "If a PR changes CI, deploy, or gating logic, fill the checklist",
-        "scripts/check_pr_metadata.py"
+        "zetherion/merge-readiness",
+        "zetherion/deploy-readiness",
+        "GitHub Actions is manual helper only"
       ],
       "docs/development/ci-cd.md": [
-        "CI Cost Report",
-        "CI Maintenance",
-        "Windows Discord production canary",
-        ".github/pull_request_template.md",
-        "Pull-request metadata matches policy."
+        "Owner CI Bridge",
+        "Deploy Windows",
+        "GitHub Actions is manual helper only"
       ],
-      "docs/development/ci-hardening-baseline.md": [
-        ".ci/ci_hardening_workstream_manifest.json",
-        ".github/pull_request_template.md",
-        "The workstream closes by validating policy docs and the PR template through the pipeline contract guard."
+      "docs/development/canonical-test-gate-and-ci-cost-plan.md": [
+        "All heavy validation runs locally or on the Windows worker.",
+        "GitHub external statuses",
+        "./scripts/test-full.sh"
+      ],
+      "docs/development/owner-ci-controller.md": [
+        "GitHub is an event source and manual helper boundary only.",
+        "C:\\ZetherionCI\\agent-src",
+        "ReleaseVerificationReceipt"
       ]
-    },
-    "required_pr_template_tokens": [
-      "## Capability IDs",
-      "## Workflow Scenario IDs",
-      "## Validation",
-      "## Receipt / Verification",
-      "- [ ] Included deterministic local evidence for this segment.",
-      "- [ ] Updated and committed `.ci/e2e-receipt.json`, or this PR is not `e2e_required`.",
-      "- [ ] Same-PR regression coverage is included, or this PR does not change CI, deploy, or gating logic.",
-      "- [ ] Windows post-merge verification is included, or this PR does not change Windows deploy behavior."
-    ]
+    }
   }
 }

@@ -1,14 +1,6 @@
 name: Deploy Documentation
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'docs/**'
-      - 'README.md'
-      - 'mkdocs.yml'
-      - 'docs/requirements.txt'
-      - '.github/workflows/docs.yml'
   workflow_dispatch:
 
 permissions:

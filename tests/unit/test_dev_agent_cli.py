@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import importlib
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -18,6 +19,24 @@ from zetherion_dev_agent.cli import _watch_loop  # noqa: E402
 from zetherion_dev_agent.config import AgentConfig  # noqa: E402
 from zetherion_dev_agent.state import ScanState  # noqa: E402
 from zetherion_dev_agent.watchers.git import CommitInfo, TagInfo  # noqa: E402
+
+
+def test_cli_import_does_not_require_daemon_module(monkeypatch: pytest.MonkeyPatch) -> None:
+    cli_name = "zetherion_dev_agent.cli"
+    sys.modules.pop(cli_name, None)
+
+    original_import = __import__
+
+    def guarded_import(name: str, globals=None, locals=None, fromlist=(), level: int = 0):
+        if name == "zetherion_dev_agent.daemon":
+            raise ModuleNotFoundError("daemon import blocked for worker bootstrap regression")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("builtins.__import__", guarded_import)
+    module = importlib.import_module(cli_name)
+
+    assert hasattr(module, "worker_command")
+    assert callable(module.worker_command)
 
 
 def test_watch_loop_uses_asyncio_sleep() -> None:

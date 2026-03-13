@@ -3,6 +3,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, existsSync, appendFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { LANE_DEFINITIONS, LANE_ORDER, STALL_THRESHOLD_SECONDS } from "./lanes.mjs";
 
@@ -227,6 +228,15 @@ function isPythonExecutable(command) {
   return /(^|\/)python([0-9]+(\.[0-9]+)*)?$/.test(value);
 }
 
+function pythonExecutableSupportsPytest(executable, env = process.env) {
+  const result = spawnSync(executable, ["-c", "import pytest"], {
+    cwd: process.cwd(),
+    env,
+    encoding: "utf-8",
+  });
+  return result.status === 0;
+}
+
 function isHeartbeatWrapper(command, args) {
   const value = String(command ?? "").trim();
   if (!/(^|\/)(node|node[0-9]+)?$/.test(path.basename(value)) && value !== process.execPath) {
@@ -239,7 +249,7 @@ function isHeartbeatWrapper(command, args) {
   return wrapperPath.endsWith("scripts/testing/run-with-heartbeat.mjs");
 }
 
-function rewriteDirectPytestInvocation(command, args) {
+function rewriteDirectPytestInvocation(command, args, env = process.env) {
   if (process.env.CI) {
     return { command, args, rewritten: false };
   }
@@ -249,6 +259,9 @@ function rewriteDirectPytestInvocation(command, args) {
 
   const venvPython = path.resolve(".venv/bin/python");
   if (!isReadableFile(venvPython)) {
+    return { command, args, rewritten: false };
+  }
+  if (!pythonExecutableSupportsPytest(venvPython, env)) {
     return { command, args, rewritten: false };
   }
 
@@ -295,6 +308,13 @@ function prefersLocalVenvPytest(command, args) {
     rewritten: true,
   };
 }
+
+export {
+  isPytestInvocation,
+  prefersLocalVenvPytest,
+  pythonExecutableSupportsPytest,
+  rewriteDirectPytestInvocation,
+};
 
 function captureDiagnostics({ lane, reason, diagnosticsRoot, pid }) {
   const stamp = nowIso().replaceAll(":", "-");
@@ -466,7 +486,12 @@ async function run() {
   process.exit(status.code);
 }
 
-run().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exit(1);
-});
+const entrypoint = process.argv[1] ? path.resolve(process.argv[1]) : "";
+const currentFile = path.resolve(fileURLToPath(import.meta.url));
+
+if (entrypoint === currentFile) {
+  run().catch((error) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(1);
+  });
+}

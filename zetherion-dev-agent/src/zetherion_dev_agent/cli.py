@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from typing import Any
 
 import click  # type: ignore[import-not-found]
 
 from zetherion_dev_agent.config import AgentConfig
-from zetherion_dev_agent.daemon import DevAutopilotDaemon
 from zetherion_dev_agent.policy_store import PolicyStore
 from zetherion_dev_agent.worker_runtime import WorkerRuntime, WorkerRuntimeError
 
@@ -106,6 +106,11 @@ def status() -> None:
     )
     click.echo(f"  Node ID:         {config.worker_node_id or 'NOT SET'}")
     click.echo(f"  Runner:          {config.worker_runner}")
+    click.echo(f"  Backend:         {config.worker_execution_backend}")
+    click.echo(f"  Docker backend:  {config.worker_docker_backend}")
+    click.echo(f"  WSL distro:      {config.worker_wsl_distribution}")
+    click.echo(f"  Workspace root:  {config.worker_workspace_root}")
+    click.echo(f"  Runtime root:    {config.worker_runtime_root}")
     allowlist_display = (
         ", ".join(config.worker_allowed_repo_roots) if config.worker_allowed_repo_roots else "none"
     )
@@ -134,9 +139,7 @@ def daemon(once: bool, dry_run_cleanup: bool, verbose: bool) -> None:
     if not config.webhook_url:
         click.echo("Webhook URL not configured; Discord prompts/reports will be skipped.")
     if once:
-        daemon_runtime = DevAutopilotDaemon(config)
-        result = asyncio.run(daemon_runtime.run_once(dry_run_cleanup=dry_run_cleanup))
-        asyncio.run(daemon_runtime.close())
+        result = asyncio.run(_run_daemon_once_and_close(config, dry_run_cleanup=dry_run_cleanup))
         click.echo("One-shot autopilot run complete.")
         click.echo(f"Projects discovered: {', '.join(result['projects_discovered']) or 'none'}")
         cleanup_summary = result["cleanup_summary"]
@@ -158,11 +161,11 @@ def daemon(once: bool, dry_run_cleanup: bool, verbose: bool) -> None:
 @click.option("--once", is_flag=True, help="Claim and process at most one job")  # type: ignore[misc]
 @click.option(  # type: ignore[misc]
     "--runner",
-    type=click.Choice(["noop", "codex", "command"]),
-    default="",
+    type=click.Choice(["noop", "codex", "command", "docker"]),
+    default=None,
     help="Override configured worker runner for this invocation",
 )
-def worker_command(once: bool, runner: str) -> None:
+def worker_command(once: bool, runner: str | None) -> None:
     """Run dev-agent in controlled sub-worker mode."""
     config = AgentConfig.load()
     if runner:
@@ -174,17 +177,14 @@ def worker_command(once: bool, runner: str) -> None:
         sys.exit(1)
 
     if once:
-        try:
-            outcome = asyncio.run(runtime.run_once())
-            click.echo(
-                "Worker cycle complete: "
-                f"claimed_job={outcome.claimed_job}, "
-                f"job_id={outcome.job_id or 'none'}, "
-                f"status={outcome.status}, "
-                f"poll_after_seconds={outcome.poll_after_seconds}"
-            )
-        finally:
-            asyncio.run(runtime.close())
+        outcome = asyncio.run(_run_worker_once_and_close(runtime))
+        click.echo(
+            "Worker cycle complete: "
+            f"claimed_job={outcome.claimed_job}, "
+            f"job_id={outcome.job_id or 'none'}, "
+            f"status={outcome.status}, "
+            f"poll_after_seconds={outcome.poll_after_seconds}"
+        )
         return
 
     click.echo(
@@ -194,11 +194,9 @@ def worker_command(once: bool, runner: str) -> None:
         f"runner={config.worker_runner}"
     )
     try:
-        asyncio.run(runtime.run_forever())
+        asyncio.run(_run_worker_forever_and_close(runtime))
     except KeyboardInterrupt:
         click.echo("Worker stopped.")
-    finally:
-        asyncio.run(runtime.close())
 
 
 @main.group()  # type: ignore[misc]
@@ -267,22 +265,69 @@ def policy_pending() -> None:
 def cleanup_command(project_id: str, dry_run: bool) -> None:
     """Run cleanup immediately using current policies."""
     config = AgentConfig.load()
-    daemon_runtime = DevAutopilotDaemon(config)
     summary = asyncio.run(
-        daemon_runtime.run_cleanup_cycle(
+        _run_cleanup_cycle_and_close(
+            config,
             dry_run=dry_run,
             project_id=project_id.strip() or None,
         )
     )
-    asyncio.run(daemon_runtime.close())
     click.echo(
         f"Cleanup run complete: {summary.success_count} success, "
         f"{summary.failure_count} failed, {summary.project_count} project(s)."
     )
 
 
+async def _run_daemon_once_and_close(
+    config: AgentConfig,
+    *,
+    dry_run_cleanup: bool,
+) -> dict[str, Any]:
+    from zetherion_dev_agent.daemon import DevAutopilotDaemon
+
+    daemon_runtime = DevAutopilotDaemon(config)
+    try:
+        return await daemon_runtime.run_once(dry_run_cleanup=dry_run_cleanup)
+    finally:
+        await daemon_runtime.close()
+
+
+async def _run_worker_once_and_close(runtime: WorkerRuntime) -> Any:
+    try:
+        return await runtime.run_once()
+    finally:
+        await runtime.close()
+
+
+async def _run_worker_forever_and_close(runtime: WorkerRuntime) -> None:
+    try:
+        await runtime.run_forever()
+    finally:
+        await runtime.close()
+
+
+async def _run_cleanup_cycle_and_close(
+    config: AgentConfig,
+    *,
+    dry_run: bool,
+    project_id: str | None,
+) -> Any:
+    from zetherion_dev_agent.daemon import DevAutopilotDaemon
+
+    daemon_runtime = DevAutopilotDaemon(config)
+    try:
+        return await daemon_runtime.run_cleanup_cycle(
+            dry_run=dry_run,
+            project_id=project_id,
+        )
+    finally:
+        await daemon_runtime.close()
+
+
 async def _run_daemon(config: AgentConfig, *, verbose: bool) -> None:
     """Run legacy watch loop and autopilot daemon together."""
+    from zetherion_dev_agent.daemon import DevAutopilotDaemon
+
     daemon_runtime = DevAutopilotDaemon(config)
     watch_task: asyncio.Task[None] | None = None
     if config.webhook_url and config.repos:

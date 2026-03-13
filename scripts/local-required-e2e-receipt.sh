@@ -5,6 +5,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
+DOCKER_PYTHON_WRAPPER="$SCRIPT_DIR/docker-python-tool.sh"
+EXPLICIT_ZETHERION_ENV_FILE="${ZETHERION_ENV_FILE:-}"
+DEFAULT_ZETHERION_ENV_FILE="$REPO_DIR/.env"
 cd "$REPO_DIR"
 
 RECEIPT_PATH="${LOCAL_E2E_RECEIPT_PATH:-.ci/e2e-receipt.json}"
@@ -12,6 +15,7 @@ DOCKER_LOG_PATH="${DOCKER_LOG_PATH:-docker-e2e.log}"
 DISCORD_LOG_PATH="${DISCORD_LOG_PATH:-discord-e2e.log}"
 DISCORD_RESULT_PATH="${DISCORD_RESULT_PATH:-.artifacts/discord-e2e-last-run.json}"
 DISCORD_E2E_PROVIDER="${DISCORD_E2E_PROVIDER:-groq}"
+E2E_ENABLE_OLLAMA="${E2E_ENABLE_OLLAMA:-false}"
 CURRENT_HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
 RECEIPT_HEAD_SHA="${LOCAL_E2E_RECEIPT_HEAD_SHA:-local}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.test.yml}"
@@ -28,23 +32,123 @@ RECEIPT_REASON_CODE="uninitialized"
 RECEIPT_REASON="Local required E2E did not run."
 MISSING_ENV=""
 
+python_supports_required_version() {
+    local python_bin="$1"
+    "$python_bin" - <<'PY' >/dev/null 2>&1
+import sys
+
+raise SystemExit(0 if sys.version_info >= (3, 12) else 1)
+PY
+}
+
+python_has_required_modules() {
+    local python_bin="$1"
+    "$python_bin" - <<'PY' >/dev/null 2>&1
+import importlib.util
+
+required = (
+    "httpx",
+    "pytest",
+    "pytest_asyncio",
+)
+missing = [name for name in required if importlib.util.find_spec(name) is None]
+raise SystemExit(1 if missing else 0)
+PY
+}
+
+normalize_bool() {
+    local value="${1:-false}"
+    value="$(printf '%s' "$value" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    case "$value" in
+        1|true|yes|on) printf 'true\n' ;;
+        *) printf 'false\n' ;;
+    esac
+}
+
+is_generated_e2e_env_file() {
+    local env_file="${1:-}"
+    case "$env_file" in
+        */zetherion-e2e-runs/stacks/*/run.env|*/.artifacts/e2e-runs/stacks/*/run.env|*/.artifacts/ci-e2e-runs/stacks/*/run.env)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+ensure_optional_ollama_profile() {
+    E2E_ENABLE_OLLAMA="$(normalize_bool "$E2E_ENABLE_OLLAMA")"
+    if [[ "$DISCORD_E2E_PROVIDER" == "local" ]]; then
+        E2E_ENABLE_OLLAMA="true"
+    fi
+    export E2E_ENABLE_OLLAMA
+
+    if [[ "$E2E_ENABLE_OLLAMA" != "true" ]]; then
+        return 0
+    fi
+
+    case ",${COMPOSE_PROFILES:-}," in
+        *,ollama,*)
+            ;;
+        *)
+            export COMPOSE_PROFILES="${COMPOSE_PROFILES:+${COMPOSE_PROFILES},}ollama"
+            ;;
+    esac
+}
+
 load_repo_env() {
-    if [[ -f "$REPO_DIR/.env" ]]; then
+    local env_file="$DEFAULT_ZETHERION_ENV_FILE"
+
+    if [[ -n "$EXPLICIT_ZETHERION_ENV_FILE" ]]; then
+        if [[ ! -f "$EXPLICIT_ZETHERION_ENV_FILE" ]]; then
+            if is_generated_e2e_env_file "$EXPLICIT_ZETHERION_ENV_FILE"; then
+                echo "WARN: Ignoring missing generated E2E env file: $EXPLICIT_ZETHERION_ENV_FILE" >&2
+            else
+                echo "ERROR: ZETHERION_ENV_FILE points to a missing file: $EXPLICIT_ZETHERION_ENV_FILE" >&2
+                exit 1
+            fi
+        else
+            env_file="$EXPLICIT_ZETHERION_ENV_FILE"
+        fi
+    fi
+
+    if [[ -f "$env_file" ]]; then
+        local normalized_env
+        normalized_env="$(mktemp "${TMPDIR:-/tmp}/zetherion-e2e-env.XXXXXX")"
+        tr -d '\r' <"$env_file" >"$normalized_env"
         set -a
-        # shellcheck source=/dev/null
-        source "$REPO_DIR/.env"
+        # shellcheck disable=SC1090
+        source "$normalized_env"
         set +a
+        rm -f "$normalized_env"
     fi
 }
 
 activate_repo_venv() {
+    if [[ "${ZETHERION_USE_DOCKER_PYTHON:-false}" == "true" ]]; then
+        return 0
+    fi
     local candidate
     for candidate in \
         "$REPO_DIR/.venv/bin/activate" \
         "$REPO_DIR/venv/bin/activate" \
         "$REPO_DIR/.venv/Scripts/activate" \
         "$REPO_DIR/venv/Scripts/activate"; do
-        if [[ -f "$candidate" ]]; then
+        local python_candidate=""
+        case "$candidate" in
+            */bin/activate)
+                python_candidate="${candidate%/activate}/python"
+                ;;
+            */Scripts/activate)
+                python_candidate="${candidate%/activate}/python.exe"
+                ;;
+        esac
+        if [[ -f "$candidate" ]] \
+            && [[ -n "$python_candidate" ]] \
+            && [[ -x "$python_candidate" || -f "$python_candidate" ]] \
+            && python_supports_required_version "$python_candidate" \
+            && python_has_required_modules "$python_candidate"; then
             # shellcheck source=/dev/null
             source "$candidate"
             return 0
@@ -54,6 +158,11 @@ activate_repo_venv() {
 }
 
 resolve_python_bin() {
+    if [[ "${ZETHERION_USE_DOCKER_PYTHON:-false}" == "true" && -x "$DOCKER_PYTHON_WRAPPER" ]]; then
+        printf '%s\n' "$DOCKER_PYTHON_WRAPPER"
+        return 0
+    fi
+
     local candidate
     for candidate in \
         "$REPO_DIR/.venv/bin/python" \
@@ -62,18 +171,28 @@ resolve_python_bin() {
         "$REPO_DIR/venv/bin/python3" \
         "$REPO_DIR/.venv/Scripts/python.exe" \
         "$REPO_DIR/venv/Scripts/python.exe"; do
-        if [[ -x "$candidate" || -f "$candidate" ]]; then
+        if [[ -x "$candidate" || -f "$candidate" ]] \
+            && python_supports_required_version "$candidate" \
+            && python_has_required_modules "$candidate"; then
             printf '%s\n' "$candidate"
             return 0
         fi
     done
 
-    if command -v python3 >/dev/null 2>&1; then
-        command -v python3
-        return 0
-    fi
-    if command -v python >/dev/null 2>&1; then
-        command -v python
+    local fallback
+    for fallback in python3.12 python3 python; do
+        if ! command -v "$fallback" >/dev/null 2>&1; then
+            continue
+        fi
+        if python_supports_required_version "$(command -v "$fallback")" \
+            && python_has_required_modules "$(command -v "$fallback")"; then
+            command -v "$fallback"
+            return 0
+        fi
+    done
+
+    if [[ -x "$DOCKER_PYTHON_WRAPPER" ]]; then
+        printf '%s\n' "$DOCKER_PYTHON_WRAPPER"
         return 0
     fi
     return 1
@@ -150,10 +269,15 @@ refresh_receipt_cleanup_status() {
     if [[ -z "${RECEIPT_PATH:-}" || ! -f "$RECEIPT_PATH" ]]; then
         return 0
     fi
+    local helper_python=""
+    helper_python="$(command -v python3 || command -v python || true)"
+    if [[ -z "$helper_python" ]]; then
+        return 0
+    fi
     RECEIPT_PATH="$RECEIPT_PATH" \
     E2E_DOCKER_CLEANUP_STATUS="$E2E_DOCKER_CLEANUP_STATUS" \
     DISCORD_RESULT_PATH="$DISCORD_RESULT_PATH" \
-    "$PYTHON_BIN" - <<'PY'
+    "$helper_python" - <<'PY'
 import json
 import os
 from pathlib import Path
@@ -163,15 +287,17 @@ payload = json.loads(path.read_text(encoding='utf-8'))
 payload['docker_cleanup_status'] = os.environ.get('E2E_DOCKER_CLEANUP_STATUS', 'unknown')
 path.write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
 PY
+    return 0
 }
 
 cleanup() {
     if [[ -n "${E2E_RUN_MANIFEST_PATH:-}" ]]; then
-        cleanup_e2e_run "local_required_e2e_exit"
-        refresh_receipt_cleanup_status
+        cleanup_e2e_run "local_required_e2e_exit" || true
+        refresh_receipt_cleanup_status || true
     elif [[ "$DOCKER_STARTED_BY_SCRIPT" == "true" ]]; then
         compose_down
     fi
+    return 0
 }
 
 wait_for_docker_health() {
@@ -179,25 +305,32 @@ wait_for_docker_health() {
     for i in $(seq 1 90); do
         local postgres
         local qdrant
-        local ollama
-        local ollama_router
+        local ollama="not_required"
+        local ollama_router="not_required"
         local skills
         local api
         local cgs_gateway
         local bot
+        local ollama_ready=true
 
         postgres="$(inspect_service_field "postgres" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')"
         qdrant="$(inspect_service_field "qdrant" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')"
-        ollama="$(inspect_service_field "ollama" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')"
-        ollama_router="$(inspect_service_field "ollama-router" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')"
+        if [[ "$E2E_ENABLE_OLLAMA" == "true" ]]; then
+            ollama="$(inspect_service_field "ollama" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')"
+            ollama_router="$(inspect_service_field "ollama-router" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')"
+            if [[ "$ollama" != "healthy" || "$ollama_router" != "healthy" ]]; then
+                ollama_ready=false
+            fi
+        fi
         skills="$(inspect_service_field "zetherion-ai-skills" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')"
         api="$(inspect_service_field "zetherion-ai-api" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')"
         cgs_gateway="$(inspect_service_field "zetherion-ai-cgs-gateway" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')"
         bot="$(inspect_service_field "zetherion-ai-bot" '{{.State.Status}}')"
 
-        if [[ "$postgres" == "healthy" && "$qdrant" == "healthy" && "$ollama" == "healthy" \
-            && "$ollama_router" == "healthy" && "$skills" == "healthy" && "$api" == "healthy" \
-            && "$cgs_gateway" == "healthy" && "$bot" == "running" ]]; then
+        if [[ "$postgres" == "healthy" && "$qdrant" == "healthy" \
+            && "$skills" == "healthy" && "$api" == "healthy" \
+            && "$cgs_gateway" == "healthy" && "$bot" == "running" \
+            && "$ollama_ready" == "true" ]]; then
             return 0
         fi
 
@@ -237,7 +370,7 @@ fi
 source "$SCRIPT_DIR/e2e_run_manager.sh"
 
 ensure_python_ca_bundle
-trap cleanup EXIT
+trap 'cleanup || true' EXIT
 
 contains_skips() {
     local log_file="$1"
@@ -329,6 +462,7 @@ if [[ -z "$provider_normalized" ]]; then
     provider_normalized="groq"
 fi
 DISCORD_E2E_PROVIDER="$provider_normalized"
+ensure_optional_ollama_profile
 
 if [[ "$DISCORD_E2E_PROVIDER" == "groq" ]]; then
     required_env+=("GROQ_API_KEY")

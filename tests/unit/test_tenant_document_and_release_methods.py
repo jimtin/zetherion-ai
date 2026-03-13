@@ -122,6 +122,126 @@ async def test_document_upload_and_document_crud_methods(tenant_manager: TenantM
 
 
 @pytest.mark.asyncio
+async def test_tenant_crud_methods_cover_create_list_update_and_deactivate(
+    tenant_manager: TenantManager,
+) -> None:
+    created_at = datetime.now(UTC)
+    tenant_manager._fetchrow.side_effect = [  # type: ignore[attr-defined]
+        {
+            "tenant_id": "tenant-1",
+            "name": "Tenant One",
+            "domain": "example.com",
+            "is_active": True,
+            "rate_limit_rpm": 60,
+            "config": {"region": "au"},
+            "created_at": created_at,
+            "updated_at": created_at,
+        },
+        {
+            "tenant_id": "tenant-1",
+            "name": "Tenant One",
+            "domain": "example.com",
+            "is_active": True,
+            "rate_limit_rpm": 60,
+            "config": {"region": "au"},
+            "created_at": created_at,
+            "updated_at": created_at,
+        },
+        {
+            "tenant_id": "tenant-1",
+            "name": "Tenant One Updated",
+            "domain": "example.org",
+            "is_active": True,
+            "rate_limit_rpm": 60,
+            "config": {"region": "us"},
+            "created_at": created_at,
+            "updated_at": created_at,
+        },
+        {
+            "tenant_id": "tenant-1",
+            "name": "Tenant One Updated",
+            "domain": "example.org",
+            "is_active": True,
+            "rate_limit_rpm": 60,
+            "config": {"region": "us"},
+            "created_at": created_at,
+            "updated_at": created_at,
+        },
+    ]
+    tenant_manager._fetch.side_effect = [  # type: ignore[attr-defined]
+        [
+            {
+                "tenant_id": "tenant-1",
+                "name": "Tenant One",
+                "domain": "example.com",
+                "is_active": True,
+                "rate_limit_rpm": 60,
+                "config": {"region": "au"},
+                "created_at": created_at,
+                "updated_at": created_at,
+            }
+        ],
+        [
+            {
+                "tenant_id": "tenant-1",
+                "name": "Tenant One",
+                "domain": "example.com",
+                "is_active": True,
+                "rate_limit_rpm": 60,
+                "config": {"region": "au"},
+                "created_at": created_at,
+                "updated_at": created_at,
+            },
+            {
+                "tenant_id": "tenant-2",
+                "name": "Tenant Two",
+                "domain": None,
+                "is_active": False,
+                "rate_limit_rpm": 60,
+                "config": {},
+                "created_at": created_at,
+                "updated_at": created_at,
+            },
+        ],
+    ]
+    tenant_manager._execute.side_effect = [  # type: ignore[attr-defined]
+        "INSERT 0 1",
+        "INSERT 0 1",
+        "INSERT 0 1",
+        "UPDATE 1",
+        "INSERT 0 1",
+    ]
+
+    tenant, plaintext_key = await tenant_manager.create_tenant(
+        "Tenant One",
+        domain="example.com",
+        config={"region": "au"},
+    )
+    fetched = await tenant_manager.get_tenant("tenant-1")
+    listed_active = await tenant_manager.list_tenants(active_only=True)
+    listed_all = await tenant_manager.list_tenants(active_only=False)
+    updated = await tenant_manager.update_tenant(
+        "tenant-1",
+        name="Tenant One Updated",
+        domain="example.org",
+        config={"region": "us"},
+    )
+    unchanged = await tenant_manager.update_tenant("tenant-1")
+    deactivated = await tenant_manager.deactivate_tenant("tenant-1")
+
+    assert tenant["tenant_id"] == "tenant-1"
+    assert plaintext_key.startswith("sk_live_")
+    create_args = tenant_manager._fetchrow.call_args_list[0].args  # type: ignore[attr-defined]
+    assert json.loads(create_args[5]) == {"region": "au"}
+    assert fetched is not None and fetched["name"] == "Tenant One"
+    assert len(listed_active) == 1
+    assert len(listed_all) == 2
+    assert updated is not None and updated["domain"] == "example.org"
+    assert unchanged is not None and unchanged["name"] == "Tenant One Updated"
+    assert deactivated is True
+
+
+@pytest.mark.asyncio
 async def test_document_archive_job_and_lifecycle_methods(tenant_manager: TenantManager) -> None:
     now = datetime.now(UTC)
     purge_after = datetime.now(UTC)
@@ -194,6 +314,434 @@ async def test_document_archive_job_and_lifecycle_methods(tenant_manager: Tenant
     execute_sql_calls = [call.args[0] for call in tenant_manager._execute.call_args_list]  # type: ignore[attr-defined]
     assert any("status = 'succeeded'" in sql for sql in execute_sql_calls)
     assert any("status = 'failed'" in sql for sql in execute_sql_calls)
+
+
+@pytest.mark.asyncio
+async def test_session_message_memory_contact_and_web_methods_cover_branch_paths(
+    tenant_manager: TenantManager,
+) -> None:
+    now = datetime.now(UTC)
+    tenant_manager._fetchrow.side_effect = [  # type: ignore[attr-defined]
+        {
+            "web_session_id": "web-existing",
+            "tenant_id": "tenant-1",
+            "session_id": "session-1",
+            "external_user_id": "user-1",
+            "execution_mode": "live",
+            "consent_replay": True,
+            "replay_sampled": False,
+            "started_at": now,
+            "ended_at": None,
+            "metadata": {"source": "existing"},
+        },
+        None,
+        {
+            "web_session_id": "web-created",
+            "tenant_id": "tenant-1",
+            "session_id": "session-2",
+            "external_user_id": "user-2",
+            "execution_mode": "test",
+            "consent_replay": False,
+            "replay_sampled": True,
+            "started_at": now,
+            "ended_at": None,
+            "metadata": {"source": "new"},
+        },
+        {
+            "web_session_id": "web-created",
+            "tenant_id": "tenant-1",
+            "session_id": "session-2",
+            "external_user_id": "user-2",
+            "execution_mode": "test",
+            "consent_replay": False,
+            "replay_sampled": True,
+            "started_at": now,
+            "ended_at": None,
+            "metadata": {"source": "new"},
+        },
+        {
+            "web_session_id": "web-created",
+            "tenant_id": "tenant-1",
+            "session_id": "session-2",
+            "external_user_id": "user-2",
+            "execution_mode": "test",
+            "consent_replay": False,
+            "replay_sampled": True,
+            "started_at": now,
+            "ended_at": now,
+            "metadata": {"ended": True},
+        },
+        {
+            "message_id": "msg-1",
+            "session_id": "session-1",
+            "tenant_id": "tenant-1",
+            "execution_mode": "live",
+            "role": "user",
+            "content": "hello",
+            "created_at": now,
+        },
+        {
+            "memory_id": "mem-1",
+            "tenant_id": "tenant-1",
+            "memory_subject_id": "subject-1",
+            "category": "profile",
+            "memory_key": "timezone",
+            "value": "Australia/Sydney",
+            "confidence": 0.8,
+            "source_session_id": "session-1",
+            "created_at": now,
+            "updated_at": now,
+        },
+        {
+            "contact_id": "contact-1",
+            "name": "Alice",
+            "phone": "123",
+            "tags": ["vip"],
+            "custom_fields": {"source": "chat"},
+        },
+        {
+            "contact_id": "contact-1",
+            "tenant_id": "tenant-1",
+            "name": "Alice",
+            "email": "alice@example.com",
+            "phone": "456",
+            "source": "chat",
+            "tags": ["vip", "trial"],
+            "custom_fields": {"source": "chat", "plan": "pro"},
+            "created_at": now,
+            "updated_at": now,
+        },
+        None,
+        {
+            "contact_id": "contact-2",
+            "tenant_id": "tenant-1",
+            "name": "Bob",
+            "email": "bob@example.com",
+            "phone": None,
+            "source": "chat",
+            "tags": [],
+            "custom_fields": {},
+            "created_at": now,
+            "updated_at": now,
+        },
+        {
+            "interaction_id": "interaction-1",
+            "tenant_id": "tenant-1",
+            "contact_id": "contact-1",
+            "session_id": "session-1",
+            "interaction_type": "chat",
+            "summary": "Asked a question",
+            "entities": {},
+            "sentiment": "positive",
+            "intent": "support",
+            "outcome": "answered",
+            "created_at": now,
+        },
+        {
+            "contact_id": "contact-1",
+            "tenant_id": "tenant-1",
+            "name": "Alice",
+            "email": "alice@example.com",
+            "phone": "456",
+            "source": "chat",
+            "tags": ["vip", "trial"],
+            "custom_fields": {"source": "chat", "plan": "enterprise"},
+            "created_at": now,
+            "updated_at": now,
+        },
+        {
+            "event_id": "evt-1",
+            "tenant_id": "tenant-1",
+            "web_session_id": "web-created",
+            "session_id": "session-2",
+            "execution_mode": "live",
+            "event_type": "click",
+            "event_name": "cta",
+            "page_url": "/pricing",
+            "element_selector": "#buy",
+            "properties": {"plan": "pro"},
+            "occurred_at": now,
+        },
+        {
+            "chunk_id": "chunk-1",
+            "tenant_id": "tenant-1",
+            "web_session_id": "web-created",
+            "sequence_no": 1,
+            "object_key": "replays/chunk-1.json",
+            "checksum_sha256": "abc",
+            "chunk_size_bytes": 123,
+            "metadata": {"codec": "json"},
+            "created_at": now,
+        },
+        {
+            "chunk_id": "chunk-1",
+            "tenant_id": "tenant-1",
+            "web_session_id": "web-created",
+            "sequence_no": 1,
+            "object_key": "replays/chunk-1.json",
+            "checksum_sha256": "abc",
+            "chunk_size_bytes": 123,
+            "metadata": {"codec": "json"},
+            "created_at": now,
+        },
+        {
+            "chunk_id": "chunk-1",
+            "tenant_id": "tenant-1",
+            "web_session_id": "web-created",
+            "sequence_no": 1,
+            "object_key": "replays/chunk-1.json",
+            "checksum_sha256": "abc",
+            "chunk_size_bytes": 123,
+            "metadata": {"codec": "json"},
+            "created_at": now,
+        },
+    ]
+    tenant_manager._fetch.side_effect = [  # type: ignore[attr-defined]
+        [
+            {
+                "message_id": "msg-older",
+                "session_id": "session-1",
+                "execution_mode": "live",
+                "role": "assistant",
+                "content": "previous",
+                "metadata": {},
+                "created_at": now,
+            },
+            {
+                "message_id": "msg-newer",
+                "session_id": "session-1",
+                "execution_mode": "live",
+                "role": "user",
+                "content": "latest",
+                "metadata": {},
+                "created_at": now,
+            },
+        ],
+        [
+            {
+                "message_id": "msg-only",
+                "session_id": "session-1",
+                "execution_mode": "live",
+                "role": "user",
+                "content": "only",
+                "metadata": {},
+                "created_at": now,
+            }
+        ],
+        [
+            {
+                "memory_id": "mem-1",
+                "tenant_id": "tenant-1",
+                "memory_subject_id": "subject-1",
+                "category": "profile",
+                "memory_key": "timezone",
+                "value": "Australia/Sydney",
+                "confidence": 0.8,
+                "source_session_id": "session-1",
+                "created_at": now,
+                "updated_at": now,
+            }
+        ],
+        [
+            {
+                "contact_id": "contact-1",
+                "tenant_id": "tenant-1",
+                "name": "Alice",
+                "email": "alice@example.com",
+                "phone": "456",
+                "source": "chat",
+                "tags": ["vip", "trial"],
+                "custom_fields": {"source": "chat", "plan": "pro"},
+                "created_at": now,
+                "updated_at": now,
+            }
+        ],
+        [
+            {
+                "contact_id": "contact-2",
+                "tenant_id": "tenant-1",
+                "name": "Bob",
+                "email": "bob@example.com",
+                "phone": None,
+                "source": "chat",
+                "tags": [],
+                "custom_fields": {},
+                "created_at": now,
+                "updated_at": now,
+            }
+        ],
+        [
+            {
+                "interaction_id": "interaction-1",
+                "tenant_id": "tenant-1",
+                "contact_id": "contact-1",
+                "session_id": "session-1",
+                "interaction_type": "chat",
+                "summary": "Asked a question",
+                "entities": {},
+                "sentiment": "positive",
+                "intent": "support",
+                "outcome": "answered",
+                "created_at": now,
+            }
+        ],
+    ]
+    tenant_manager._execute.side_effect = [None, "DELETE 1"]  # type: ignore[attr-defined]
+
+    existing_web_session = await tenant_manager.ensure_web_session(
+        "tenant-1",
+        session_id="session-1",
+        external_user_id="user-1",
+        consent_replay=True,
+    )
+    created_web_session = await tenant_manager.ensure_web_session(
+        "tenant-1",
+        session_id="session-2",
+        external_user_id="user-2",
+        execution_mode="test",
+        replay_sampled=True,
+        metadata={"source": "new"},
+    )
+    fetched_web_session = await tenant_manager.get_web_session("tenant-1", "web-created")
+    ended_web_session = await tenant_manager.end_web_session(
+        "tenant-1",
+        "web-created",
+        ended_at=now,
+        metadata_patch={"ended": True},
+    )
+    await tenant_manager.touch_session("session-1")
+    deleted_session = await tenant_manager.delete_session("session-1", "tenant-1")
+    message = await tenant_manager.add_message(
+        "session-1",
+        "tenant-1",
+        "live",
+        "user",
+        "hello",
+        metadata={"source": "chat"},
+    )
+    paged_messages = await tenant_manager.get_messages(
+        "session-1",
+        "tenant-1",
+        limit=5,
+        before_id="msg-cutoff",
+    )
+    recent_messages = await tenant_manager.get_messages("session-1", "tenant-1", limit=5)
+    memory = await tenant_manager.upsert_subject_memory(
+        tenant_id="tenant-1",
+        memory_subject_id="subject-1",
+        category="profile",
+        memory_key="timezone",
+        value="Australia/Sydney",
+        source_session_id="session-1",
+    )
+    memories = await tenant_manager.list_subject_memories(
+        tenant_id="tenant-1",
+        memory_subject_id="subject-1",
+        limit=10,
+    )
+    merged_contact = await tenant_manager.upsert_contact(
+        "tenant-1",
+        name="Alice",
+        email="alice@example.com",
+        phone="456",
+        tags=["trial"],
+        custom_fields={"plan": "pro"},
+    )
+    created_contact = await tenant_manager.upsert_contact(
+        "tenant-1",
+        name="Bob",
+        email="bob@example.com",
+    )
+    interaction = await tenant_manager.add_interaction(
+        "tenant-1",
+        contact_id="contact-1",
+        session_id="session-1",
+        summary="Asked a question",
+        sentiment="positive",
+        intent="support",
+        outcome="answered",
+    )
+    contacts_by_email = await tenant_manager.list_contacts(
+        "tenant-1",
+        email="alice@example.com",
+        limit=10,
+    )
+    all_contacts = await tenant_manager.list_contacts("tenant-1", limit=10)
+    interactions = await tenant_manager.get_interactions(
+        "tenant-1",
+        contact_id="contact-1",
+        session_id="session-1",
+        interaction_type="chat",
+        limit=10,
+    )
+    patched_contact = await tenant_manager.update_contact_custom_fields(
+        "tenant-1",
+        "contact-1",
+        {"plan": "enterprise"},
+    )
+    web_event = await tenant_manager.add_web_event(
+        "tenant-1",
+        web_session_id="web-created",
+        session_id="session-2",
+        event_type="click",
+        event_name="cta",
+        page_url="/pricing",
+        element_selector="#buy",
+        properties={"plan": "pro"},
+        occurred_at=now,
+    )
+    replay_chunk = await tenant_manager.add_replay_chunk(
+        "tenant-1",
+        web_session_id="web-created",
+        sequence_no=1,
+        object_key="replays/chunk-1.json",
+        checksum_sha256="abc",
+        chunk_size_bytes=123,
+        metadata={"codec": "json"},
+    )
+    latest_chunk = await tenant_manager.get_latest_replay_chunk(
+        "tenant-1",
+        web_session_id="web-created",
+    )
+    replay_chunk_by_seq = await tenant_manager.get_replay_chunk(
+        "tenant-1",
+        web_session_id="web-created",
+        sequence_no=1,
+    )
+
+    assert existing_web_session["web_session_id"] == "web-existing"
+    assert created_web_session["web_session_id"] == "web-created"
+    assert fetched_web_session is not None
+    assert fetched_web_session["web_session_id"] == "web-created"
+    assert ended_web_session is not None and ended_web_session["metadata"] == {"ended": True}
+    assert deleted_session is True
+    assert message["message_id"] == "msg-1"
+    assert [item["message_id"] for item in paged_messages] == ["msg-newer", "msg-older"]
+    assert recent_messages == [
+        {
+            "message_id": "msg-only",
+            "session_id": "session-1",
+            "execution_mode": "live",
+            "role": "user",
+            "content": "only",
+            "metadata": {},
+            "created_at": now,
+        }
+    ]
+    assert memory["memory_id"] == "mem-1"
+    assert memories[0]["memory_key"] == "timezone"
+    assert merged_contact["contact_id"] == "contact-1"
+    assert merged_contact["tags"] == ["vip", "trial"]
+    assert created_contact["contact_id"] == "contact-2"
+    assert interaction["interaction_id"] == "interaction-1"
+    assert contacts_by_email[0]["email"] == "alice@example.com"
+    assert all_contacts[0]["contact_id"] == "contact-2"
+    assert interactions[0]["intent"] == "support"
+    assert patched_contact is not None and patched_contact["custom_fields"]["plan"] == "enterprise"
+    assert web_event["event_id"] == "evt-1"
+    assert replay_chunk["chunk_id"] == "chunk-1"
+    assert latest_chunk is not None and latest_chunk["sequence_no"] == 1
+    assert replay_chunk_by_seq is not None and replay_chunk_by_seq["chunk_id"] == "chunk-1"
 
 
 @pytest.mark.asyncio

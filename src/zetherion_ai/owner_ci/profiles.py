@@ -6,12 +6,77 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-LOCAL_WORKSPACE_ROOT = Path("/Users/jameshinton/Development")
-WINDOWS_CI_ROOT = r"C:\ZetherionCI\workspaces"
+_LOCAL_WORKSPACE_ROOT_CANDIDATES = (
+    Path("/Users/jameshinton/Developer"),
+    Path("/Users/jameshinton/Development"),
+)
+
+
+def _resolve_local_workspace_root() -> Path:
+    for candidate in _LOCAL_WORKSPACE_ROOT_CANDIDATES:
+        if candidate.exists():
+            return candidate
+    return _LOCAL_WORKSPACE_ROOT_CANDIDATES[0]
+
+
+LOCAL_WORKSPACE_ROOT = _resolve_local_workspace_root()
+WINDOWS_WORKSPACE_ROOT = r"C:\ZetherionCI\workspaces"
+WINDOWS_RUNTIME_ROOT = r"C:\ZetherionCI\agent-runtime"
 WINDOWS_LIVE_DENYLIST = [r"C:\ZetherionAI", r"C:\ZetherionAI\*"]
 
 _CGS_ROOT = str((LOCAL_WORKSPACE_ROOT / "catalyst-group-solutions").resolve())
 _ZETHERION_ROOT = str((LOCAL_WORKSPACE_ROOT / "zetherion-ai").resolve())
+_CGS_WINDOWS_WORKSPACE_ROOT = rf"{WINDOWS_WORKSPACE_ROOT}\catalyst-group-solutions"
+_ZETHERION_WINDOWS_WORKSPACE_ROOT = rf"{WINDOWS_WORKSPACE_ROOT}\zetherion-ai"
+
+
+def _cgs_windows_node_cache_mounts(workspace_root: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "source": workspace_root,
+            "target": "/workspace",
+            "read_only": False,
+        },
+        {
+            "source": "cgs-node-tool-node_modules",
+            "target": "/workspace/node_modules",
+            "read_only": False,
+        },
+        {
+            "source": "cgs-node-tool-yarn_cache",
+            "target": "/usr/local/share/.cache/yarn",
+            "read_only": False,
+        },
+    ]
+
+
+def _cgs_windows_bootstrap_command(script_command: str) -> list[str]:
+    return [
+        "bash",
+        "-lc",
+        (
+            "corepack enable >/dev/null 2>&1 || true; "
+            "corepack prepare yarn@1.22.22 --activate >/dev/null 2>&1 || true; "
+            "if [ ! -f /workspace/node_modules/.yarn-integrity ] "
+            "|| [ /workspace/yarn.lock -nt /workspace/node_modules/.yarn-integrity ]; then "
+            "yarn install --frozen-lockfile >/dev/null; "
+            "fi; "
+            f"{script_command}"
+        ),
+    ]
+
+
+def _cgs_windows_env(*, include_playwright: bool = False) -> dict[str, str]:
+    env = {
+        "CI": "true",
+        "HOME": "/root",
+        "TMPDIR": "/tmp",
+        "TMP": "/tmp",
+        "TEMP": "/tmp",
+    }
+    if include_playwright:
+        env["PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD"] = "1"
+    return env
 
 
 def _local_gate(
@@ -20,6 +85,10 @@ def _local_gate(
     command: list[str],
     *,
     workspace_root: str,
+    resource_class: str = "cpu",
+    parallel_group: str = "local-cpu",
+    timeout_seconds: int = 1200,
+    required_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     return {
         "lane_id": lane_id,
@@ -28,15 +97,18 @@ def _local_gate(
         "runner": "command",
         "action": "ci.test.run",
         "command": command,
+        "timeout_seconds": timeout_seconds,
         "artifact_contract": {
             "kind": "ci_shard",
             "expects": ["stdout", "stderr"],
         },
         "metadata": {
             "gate_kind": "static",
-            "resource_class": "tiny",
-            "parallel_group": "local-static",
+            "resource_class": resource_class,
+            "parallel_group": parallel_group,
             "workspace_root": workspace_root,
+            "covered_required_paths": list(required_paths or []),
+            "timeout_seconds": timeout_seconds,
         },
     }
 
@@ -50,7 +122,16 @@ def _docker_gate(
     image: str,
     resource_class: str,
     parallel_group: str,
+    timeout_seconds: int = 3600,
+    required_paths: list[str] | None = None,
     certification_receipt: str | None = None,
+    execution_backend: str = "wsl_docker",
+    docker_backend: str = "wsl_docker",
+    runtime_root: str = WINDOWS_RUNTIME_ROOT,
+    wsl_distribution: str = "Ubuntu",
+    mounts: list[dict[str, Any]] | None = None,
+    env: dict[str, str] | None = None,
+    workdir: str = "/workspace",
 ) -> dict[str, Any]:
     repo_label = (
         Path(workspace_root).name if ":" not in workspace_root else workspace_root.split("\\")[-1]
@@ -67,6 +148,7 @@ def _docker_gate(
         "runner": "docker",
         "action": "ci.test.run",
         "command": command,
+        "timeout_seconds": timeout_seconds,
         "required_capabilities": ["ci.test.run"],
         "artifact_contract": {
             "kind": "ci_shard",
@@ -84,21 +166,28 @@ def _docker_gate(
         "payload": {
             "container_spec": {
                 "image": image,
-                "workdir": "/workspace",
-                "mounts": [
+                "workdir": workdir,
+                "mounts": list(mounts or [])
+                or [
                     {
                         "source": workspace_root,
                         "target": "/workspace",
                         "read_only": False,
                     }
                 ],
-                "env": {},
+                "env": dict(env or {}),
                 "command": command,
             },
             "compose_project": f"owner-ci-{lane_id}",
             "cleanup_labels": cleanup_labels,
             "resource_class": resource_class,
             "parallel_group": parallel_group,
+            "covered_required_paths": list(required_paths or []),
+            "execution_backend": execution_backend,
+            "docker_backend": docker_backend,
+            "wsl_distribution": wsl_distribution,
+            "workspace_root": workspace_root,
+            "runtime_root": runtime_root,
             "network_contract": {
                 "mode": "isolated",
                 "requires_dns": True,
@@ -110,6 +199,9 @@ def _docker_gate(
             "execution_contract": {
                 "docker_only": True,
                 "allow_host_commands": False,
+                "execution_backend": execution_backend,
+                "docker_backend": docker_backend,
+                "wsl_distribution": wsl_distribution,
             },
             **({"certification_receipt": certification_receipt} if certification_receipt else {}),
         },
@@ -117,7 +209,13 @@ def _docker_gate(
             "resource_class": resource_class,
             "parallel_group": parallel_group,
             "docker_only": True,
+            "execution_backend": execution_backend,
+            "docker_backend": docker_backend,
+            "wsl_distribution": wsl_distribution,
             "workspace_root": workspace_root,
+            "runtime_root": runtime_root,
+            "covered_required_paths": list(required_paths or []),
+            "timeout_seconds": timeout_seconds,
             **({"certification_receipt": certification_receipt} if certification_receipt else {}),
         },
     }
@@ -154,101 +252,215 @@ DEFAULT_REPO_PROFILES: dict[str, dict[str, Any]] = {
             _local_gate(
                 "lint",
                 "Next lint",
-                ["yarn", "lint"],
+                ["bash", "-lc", "scripts/cgs-ai/docker-node-tool.sh yarn lint"],
                 workspace_root=_CGS_ROOT,
+                required_paths=["cgs_repo_integrity"],
             ),
             _local_gate(
                 "format-check",
                 "Prettier check",
-                ["yarn", "prettier:check"],
+                ["bash", "-lc", "scripts/cgs-ai/docker-node-tool.sh yarn prettier:check"],
                 workspace_root=_CGS_ROOT,
+                required_paths=["cgs_repo_integrity"],
             ),
             _local_gate(
                 "typecheck",
                 "TypeScript noEmit",
-                ["yarn", "typecheck"],
+                ["bash", "-lc", "scripts/cgs-ai/docker-node-tool.sh yarn typecheck"],
                 workspace_root=_CGS_ROOT,
+                required_paths=["cgs_repo_integrity"],
             ),
             _local_gate(
                 "gitleaks",
                 "Gitleaks secrets scan",
                 ["gitleaks", "detect", "--source", ".", "--no-git"],
                 workspace_root=_CGS_ROOT,
+                required_paths=["cgs_repo_integrity"],
             ),
         ],
         "local_fast_lanes": [
-            {
-                "lane_id": "repo-check",
-                "lane_label": "Repository integrity",
-                "execution_target": "local_mac",
-                "runner": "command",
-                "action": "ci.test.run",
-                "command": ["yarn", "cgs-ai:repo:check"],
-                "artifact_contract": {"kind": "ci_shard", "expects": ["stdout", "stderr"]},
-                "metadata": {
-                    "resource_class": "small",
-                    "parallel_group": "local-fast",
-                    "workspace_root": _CGS_ROOT,
-                },
-            },
-            {
-                "lane_id": "tenant-scope-fast",
-                "lane_label": "Tenant scope regression",
-                "execution_target": "local_mac",
-                "runner": "command",
-                "action": "ci.test.run",
-                "command": [
-                    "yarn",
-                    "test",
-                    "src/__tests__/lib/cgs-ai-tenant-scope.test.ts",
-                    "src/__tests__/api/service-ai-v1/internal-tenants-auth.test.ts",
-                    "--runInBand",
+            _local_gate(
+                "repo-check",
+                "Repository integrity",
+                ["bash", "-lc", "scripts/cgs-ai/docker-node-tool.sh yarn cgs-ai:repo:check"],
+                workspace_root=_CGS_ROOT,
+                parallel_group="local-cpu",
+                required_paths=["cgs_repo_integrity"],
+            ),
+            _local_gate(
+                "tenant-scope-fast",
+                "Tenant scope regression",
+                [
+                    "bash",
+                    "-lc",
+                    (
+                        "scripts/cgs-ai/docker-node-tool.sh yarn test "
+                        "src/__tests__/lib/cgs-ai-tenant-scope.test.ts "
+                        "src/__tests__/api/service-ai-v1/internal-tenants-auth.test.ts "
+                        "--runInBand"
+                    ),
                 ],
-                "artifact_contract": {"kind": "ci_shard", "expects": ["stdout", "stderr"]},
-                "metadata": {
-                    "resource_class": "small",
-                    "parallel_group": "local-fast",
-                    "workspace_root": _CGS_ROOT,
-                },
-            },
+                workspace_root=_CGS_ROOT,
+                parallel_group="local-cpu",
+                required_paths=["cgs_tenant_scope"],
+            ),
+        ],
+        "local_full_lanes": [
+            _local_gate(
+                "c-unit-core",
+                "CGS unit core",
+                [
+                    "bash",
+                    "-lc",
+                    (
+                        "scripts/cgs-ai/docker-node-tool.sh yarn test "
+                        "src/__tests__/lib/cgs-ai-tenant-scope.test.ts "
+                        "src/__tests__/lib/cgs-ai-auth-bootstrap.test.ts "
+                        "src/__tests__/lib/cgs-ai-startup.test.ts "
+                        "--runInBand"
+                    ),
+                ],
+                workspace_root=_CGS_ROOT,
+                parallel_group="local-cpu",
+                required_paths=["cgs_auth_flow", "cgs_tenant_scope", "owner_ci_receipts"],
+            ),
+            _local_gate(
+                "c-unit-routes",
+                "CGS API route unit checks",
+                [
+                    "bash",
+                    "-lc",
+                    (
+                        "scripts/cgs-ai/docker-node-tool.sh yarn test "
+                        "src/__tests__/api/admin-ai-health.test.ts "
+                        "src/__tests__/api/service-ai-v1/owner-ci-routes.test.ts "
+                        "src/__tests__/auth-redirect-page.test.tsx "
+                        "--runInBand"
+                    ),
+                ],
+                workspace_root=_CGS_ROOT,
+                parallel_group="local-cpu",
+                required_paths=["cgs_auth_flow", "cgs_ai_ops_schema", "owner_ci_receipts"],
+            ),
+            _local_gate(
+                "c-int-auth",
+                "CGS auth integration",
+                ["bash", "-lc", "scripts/cgs-ai/docker-node-tool.sh yarn cgs-ai:test:integration"],
+                workspace_root=_CGS_ROOT,
+                resource_class="service",
+                parallel_group="local-service",
+                timeout_seconds=2400,
+                required_paths=["cgs_auth_flow", "cgs_login_redirect"],
+            ),
+            _local_gate(
+                "c-int-ai-ops",
+                "CGS AI Ops integration",
+                [
+                    "bash",
+                    "-lc",
+                    (
+                        "scripts/cgs-ai/docker-node-tool.sh yarn test "
+                        "src/__tests__/api/admin-ai-health.test.ts "
+                        "src/__tests__/components/admin/OwnerCiDashboard.test.tsx "
+                        "--runInBand"
+                    ),
+                ],
+                workspace_root=_CGS_ROOT,
+                resource_class="service",
+                parallel_group="local-service",
+                timeout_seconds=1800,
+                required_paths=[
+                    "cgs_ai_ops_schema",
+                    "owner_ci_receipts",
+                    "cross_repo_runtime_health",
+                ],
+            ),
+            _local_gate(
+                "c-e2e-browser",
+                "CGS Playwright critical flows",
+                ["bash", "-lc", "scripts/cgs-ai/docker-node-tool.sh yarn test:e2e"],
+                workspace_root=_CGS_ROOT,
+                resource_class="serial",
+                parallel_group="local-serial",
+                timeout_seconds=3600,
+                required_paths=["cgs_auth_flow", "cgs_login_redirect", "cgs_admin_ai_page"],
+            ),
+            _local_gate(
+                "c-release",
+                "CGS go-live receipt",
+                ["bash", "-lc", "scripts/cgs-ai/docker-node-tool.sh yarn cgs-ai:test:golive"],
+                workspace_root=_CGS_ROOT,
+                resource_class="serial",
+                parallel_group="local-serial",
+                timeout_seconds=4200,
+                required_paths=["cgs_release_verification", "owner_ci_receipts"],
+            ),
         ],
         "windows_full_lanes": [
             _docker_gate(
                 "integration-critical",
                 "Critical integration gate",
-                ["yarn", "cgs-ai:test:integration"],
-                workspace_root=rf"{WINDOWS_CI_ROOT}\catalyst-group-solutions",
-                image="cgs-ci:latest",
-                resource_class="docker_stack",
+                _cgs_windows_bootstrap_command("yarn cgs-ai:test:integration"),
+                workspace_root=_CGS_WINDOWS_WORKSPACE_ROOT,
+                image="node:22-bookworm",
+                resource_class="service",
                 parallel_group="windows-certification",
+                required_paths=[
+                    "cgs_auth_flow",
+                    "cgs_login_redirect",
+                    "cgs_ai_ops_schema",
+                    "cgs_owner_ci_reporting",
+                    "cgs_chatbot_runtime_proxy",
+                    "cgs_tenant_scope",
+                    "cross_repo_runtime_health",
+                    "owner_ci_receipts",
+                ],
+                mounts=_cgs_windows_node_cache_mounts(_CGS_WINDOWS_WORKSPACE_ROOT),
+                env=_cgs_windows_env(),
             ),
             _docker_gate(
                 "golive-gate",
                 "Go-live certification",
-                ["yarn", "cgs-ai:test:golive"],
-                workspace_root=rf"{WINDOWS_CI_ROOT}\catalyst-group-solutions",
-                image="cgs-ci:latest",
-                resource_class="docker_stack",
+                _cgs_windows_bootstrap_command("yarn cgs-ai:test:golive"),
+                workspace_root=_CGS_WINDOWS_WORKSPACE_ROOT,
+                image="mcr.microsoft.com/playwright:v1.58.2-noble",
+                resource_class="serial",
                 parallel_group="windows-certification",
+                required_paths=[
+                    "cgs_repo_integrity",
+                    "cgs_auth_flow",
+                    "cgs_login_redirect",
+                    "cgs_ai_ops_schema",
+                    "cgs_admin_ai_page",
+                    "cgs_owner_ci_reporting",
+                    "cgs_chatbot_runtime_proxy",
+                    "cgs_release_verification",
+                    "cgs_tenant_scope",
+                    "cross_repo_runtime_health",
+                    "owner_ci_receipts",
+                ],
                 certification_receipt="golive",
+                mounts=_cgs_windows_node_cache_mounts(_CGS_WINDOWS_WORKSPACE_ROOT),
+                env=_cgs_windows_env(include_playwright=True),
             ),
         ],
         "shard_templates": [
             {"family": "static", "source": "mandatory_static_gates"},
             {"family": "fast", "source": "local_fast_lanes"},
+            {"family": "local_full", "source": "local_full_lanes"},
             {"family": "windows_full", "source": "windows_full_lanes"},
         ],
         "scheduling_policy": {
             "default_mode": "fast",
-            "max_parallel_local": 1,
+            "max_parallel_local": 8,
             "max_parallel_windows": 2,
-            "resource_budgets": {"tiny": 1, "small": 1, "docker_stack": 2},
+            "resource_budgets": {"cpu": 8, "service": 2, "serial": 1},
             "rebalance_enabled": True,
         },
         "resource_classes": {
-            "tiny": {"max_parallel": 1},
-            "small": {"max_parallel": 1},
-            "docker_stack": {"max_parallel": 2},
+            "cpu": {"max_parallel": 8},
+            "service": {"max_parallel": 2},
+            "serial": {"max_parallel": 1},
         },
         "windows_execution_mode": "docker_only",
         "certification_requirements": [
@@ -282,16 +494,22 @@ DEFAULT_REPO_PROFILES: dict[str, dict[str, Any]] = {
         "review_policy": {
             "require_reviewer": True,
             "block_on_cross_tenant_keywords": ["cross-tenant", "tenant", "scope", "authorization"],
-            "required_statuses": ["ready_to_merge"],
+            "required_statuses": ["zetherion/merge-readiness"],
         },
         "promotion_policy": {
-            "deployment_mode": "github_only",
+            "deployment_mode": "zetherion_control_plane",
+            "github_decision_mode": "external_status_only",
+            "status_contexts": {
+                "merge": "zetherion/merge-readiness",
+                "deploy": "zetherion/deploy-readiness",
+            },
             "require_windows_full": True,
             "require_certification": True,
+            "require_release_receipt": True,
         },
         "allowed_paths": [
             _CGS_ROOT,
-            rf"{WINDOWS_CI_ROOT}\catalyst-group-solutions",
+            _CGS_WINDOWS_WORKSPACE_ROOT,
         ],
         "secrets_profile": "cgs-default",
         "active": True,
@@ -312,113 +530,253 @@ DEFAULT_REPO_PROFILES: dict[str, dict[str, Any]] = {
             _local_gate(
                 "ruff-check",
                 "Ruff lint",
-                ["ruff", "check", "."],
+                ["bash", "-lc", "scripts/docker-python-tool.sh -m ruff check ."],
                 workspace_root=_ZETHERION_ROOT,
+                required_paths=["zetherion_repo_integrity"],
             ),
             _local_gate(
                 "ruff-format-check",
                 "Ruff format check",
-                ["ruff", "format", "--check", "."],
+                ["bash", "-lc", "scripts/docker-python-tool.sh -m ruff format --check ."],
                 workspace_root=_ZETHERION_ROOT,
+                required_paths=["zetherion_repo_integrity"],
             ),
             _local_gate(
                 "gitleaks",
                 "Gitleaks secrets scan",
                 ["gitleaks", "detect", "--source", ".", "--no-git"],
                 workspace_root=_ZETHERION_ROOT,
+                required_paths=["zetherion_repo_integrity"],
             ),
         ],
         "local_fast_lanes": [
-            {
-                "lane_id": "check",
-                "lane_label": "Contract checks",
-                "execution_target": "local_mac",
-                "runner": "command",
-                "action": "ci.test.run",
-                "command": ["node", "scripts/testing/run-bounded.mjs", "--lane", "check"],
-                "artifact_contract": {"kind": "ci_shard", "expects": ["stdout", "stderr"]},
-                "metadata": {
-                    "resource_class": "small",
-                    "parallel_group": "local-fast",
-                    "workspace_root": _ZETHERION_ROOT,
-                },
-            },
-            {
-                "lane_id": "targeted-unit",
-                "lane_label": "Targeted unit lane",
-                "execution_target": "local_mac",
-                "runner": "command",
-                "action": "ci.test.run",
-                "command": ["node", "scripts/testing/run-bounded.mjs", "--lane", "targeted-unit"],
-                "artifact_contract": {"kind": "ci_shard", "expects": ["stdout", "stderr"]},
-                "metadata": {
-                    "resource_class": "small",
-                    "parallel_group": "local-fast",
-                    "workspace_root": _ZETHERION_ROOT,
-                },
-            },
+            _local_gate(
+                "check",
+                "Contract checks",
+                ["node", "scripts/testing/run-bounded.mjs", "--lane", "check"],
+                workspace_root=_ZETHERION_ROOT,
+                parallel_group="local-cpu",
+                required_paths=[
+                    "owner_ci_cutover",
+                    "release_contracts",
+                    "zetherion_repo_integrity",
+                ],
+            ),
+            _local_gate(
+                "targeted-unit",
+                "Targeted unit lane",
+                ["node", "scripts/testing/run-bounded.mjs", "--lane", "targeted-unit"],
+                workspace_root=_ZETHERION_ROOT,
+                parallel_group="local-cpu",
+                required_paths=["discord_dm_reply", "queue_reliability"],
+            ),
+        ],
+        "local_full_lanes": [
+            _local_gate(
+                "z-unit-core",
+                "Zetherion unit core",
+                ["node", "scripts/testing/run-bounded.mjs", "--lane", "z-unit-core"],
+                workspace_root=_ZETHERION_ROOT,
+                parallel_group="local-cpu",
+                required_paths=[
+                    "queue_reliability",
+                    "runtime_status_persistence",
+                    "release_contracts",
+                ],
+            ),
+            _local_gate(
+                "z-unit-runtime",
+                "Zetherion unit runtime",
+                ["node", "scripts/testing/run-bounded.mjs", "--lane", "z-unit-runtime"],
+                workspace_root=_ZETHERION_ROOT,
+                parallel_group="local-cpu",
+                required_paths=["discord_dm_reply", "discord_channel_reply", "startup_readiness"],
+            ),
+            _local_gate(
+                "z-unit-owner-ci",
+                "Zetherion owner-CI unit",
+                ["node", "scripts/testing/run-bounded.mjs", "--lane", "z-unit-owner-ci"],
+                workspace_root=_ZETHERION_ROOT,
+                parallel_group="local-cpu",
+                required_paths=["owner_ci_cutover", "owner_ci_receipts", "release_contracts"],
+            ),
+            _local_gate(
+                "z-int-runtime-api",
+                "Zetherion runtime API integration",
+                ["node", "scripts/testing/run-bounded.mjs", "--lane", "z-int-runtime-api"],
+                workspace_root=_ZETHERION_ROOT,
+                resource_class="service",
+                parallel_group="local-service",
+                timeout_seconds=2400,
+                required_paths=[
+                    "skills_reachability",
+                    "qdrant_readiness",
+                    "runtime_status_persistence",
+                ],
+            ),
+            _local_gate(
+                "z-int-runtime-queue",
+                "Zetherion queue/runtime integration",
+                ["node", "scripts/testing/run-bounded.mjs", "--lane", "z-int-runtime-queue"],
+                workspace_root=_ZETHERION_ROOT,
+                resource_class="service",
+                parallel_group="local-service",
+                timeout_seconds=2400,
+                required_paths=[
+                    "queue_reliability",
+                    "startup_readiness",
+                    "runtime_status_persistence",
+                ],
+            ),
+            _local_gate(
+                "z-int-dependencies",
+                "Zetherion dependency integration",
+                ["node", "scripts/testing/run-bounded.mjs", "--lane", "z-int-dependencies"],
+                workspace_root=_ZETHERION_ROOT,
+                resource_class="service",
+                parallel_group="local-service",
+                timeout_seconds=2400,
+                required_paths=[
+                    "skills_reachability",
+                    "qdrant_readiness",
+                    "runtime_status_persistence",
+                ],
+            ),
+            _local_gate(
+                "z-int-platform",
+                "Zetherion platform integration",
+                ["node", "scripts/testing/run-bounded.mjs", "--lane", "z-int-platform"],
+                workspace_root=_ZETHERION_ROOT,
+                resource_class="service",
+                parallel_group="local-service",
+                timeout_seconds=2400,
+                required_paths=["runtime_status_persistence"],
+            ),
+            _local_gate(
+                "z-e2e-dm-sim",
+                "Discord DM simulated canaries",
+                ["node", "scripts/testing/run-bounded.mjs", "--lane", "z-e2e-dm-sim"],
+                workspace_root=_ZETHERION_ROOT,
+                resource_class="service",
+                parallel_group="local-service",
+                timeout_seconds=1800,
+                required_paths=["discord_dm_reply", "queue_reliability"],
+            ),
+            _local_gate(
+                "z-e2e-channel-sim",
+                "Discord channel simulated canaries",
+                ["node", "scripts/testing/run-bounded.mjs", "--lane", "z-e2e-channel-sim"],
+                workspace_root=_ZETHERION_ROOT,
+                resource_class="service",
+                parallel_group="local-service",
+                timeout_seconds=1800,
+                required_paths=["discord_channel_reply", "queue_reliability"],
+            ),
+            _local_gate(
+                "z-e2e-faults",
+                "Discord queue/runtime fault injection",
+                ["node", "scripts/testing/run-bounded.mjs", "--lane", "z-e2e-faults"],
+                workspace_root=_ZETHERION_ROOT,
+                resource_class="service",
+                parallel_group="local-service",
+                timeout_seconds=1800,
+                required_paths=["queue_reliability", "startup_readiness", "qdrant_readiness"],
+            ),
+            _local_gate(
+                "z-e2e-discord-live",
+                "Discord live canaries",
+                ["node", "scripts/testing/run-bounded.mjs", "--lane", "z-e2e-discord-live"],
+                workspace_root=_ZETHERION_ROOT,
+                resource_class="serial",
+                parallel_group="local-serial",
+                timeout_seconds=3600,
+                required_paths=["discord_dm_reply", "discord_channel_reply"],
+            ),
+            _local_gate(
+                "z-e2e-discord-security",
+                "Discord security canaries",
+                ["node", "scripts/testing/run-bounded.mjs", "--lane", "z-e2e-discord-security"],
+                workspace_root=_ZETHERION_ROOT,
+                resource_class="serial",
+                parallel_group="local-serial",
+                timeout_seconds=2400,
+                required_paths=[],
+            ),
+            _local_gate(
+                "z-release",
+                "Local release verification",
+                ["node", "scripts/testing/run-bounded.mjs", "--lane", "z-release"],
+                workspace_root=_ZETHERION_ROOT,
+                resource_class="serial",
+                parallel_group="local-serial",
+                timeout_seconds=5400,
+                required_paths=["release_contracts", "runtime_drift_zero", "back_to_back_deploys"],
+            ),
         ],
         "windows_full_lanes": [
             _docker_gate(
                 "unit-full",
                 "Full unit coverage",
                 ["node", "scripts/testing/run-bounded.mjs", "--lane", "unit-full"],
-                workspace_root=rf"{WINDOWS_CI_ROOT}\zetherion-ai",
+                workspace_root=_ZETHERION_WINDOWS_WORKSPACE_ROOT,
                 image="zetherion-ci:latest",
-                resource_class="docker_stack",
+                resource_class="service",
                 parallel_group="windows-certification",
+                required_paths=["queue_reliability", "runtime_status_persistence"],
             ),
             _docker_gate(
                 "api-integration-coverage",
                 "API integration coverage",
                 ["node", "scripts/testing/run-bounded.mjs", "--lane", "api-integration-coverage"],
-                workspace_root=rf"{WINDOWS_CI_ROOT}\zetherion-ai",
+                workspace_root=_ZETHERION_WINDOWS_WORKSPACE_ROOT,
                 image="zetherion-ci:latest",
-                resource_class="docker_stack",
+                resource_class="service",
                 parallel_group="windows-certification",
+                required_paths=["skills_reachability", "qdrant_readiness"],
             ),
             _docker_gate(
                 "e2e-fullstack-critical",
                 "Full-stack critical gate",
                 ["node", "scripts/testing/run-bounded.mjs", "--lane", "e2e-fullstack-critical"],
-                workspace_root=rf"{WINDOWS_CI_ROOT}\zetherion-ai",
+                workspace_root=_ZETHERION_WINDOWS_WORKSPACE_ROOT,
                 image="zetherion-ci:latest",
-                resource_class="docker_stack",
+                resource_class="service",
                 parallel_group="windows-certification",
+                required_paths=["release_contracts", "owner_ci_cutover"],
             ),
             _docker_gate(
                 "discord-required-e2e",
                 "Discord required roundtrip",
                 ["bash", "scripts/local-required-e2e-receipt.sh"],
-                workspace_root=rf"{WINDOWS_CI_ROOT}\zetherion-ai",
+                workspace_root=_ZETHERION_WINDOWS_WORKSPACE_ROOT,
                 image="zetherion-ci:latest",
-                resource_class="discord_e2e",
+                resource_class="serial",
                 parallel_group="windows-discord",
+                required_paths=["discord_dm_reply", "discord_channel_reply"],
                 certification_receipt="discord_roundtrip",
             ),
         ],
         "shard_templates": [
             {"family": "static", "source": "mandatory_static_gates"},
             {"family": "fast", "source": "local_fast_lanes"},
+            {"family": "local_full", "source": "local_full_lanes"},
             {"family": "windows_full", "source": "windows_full_lanes"},
         ],
         "scheduling_policy": {
             "default_mode": "fast",
-            "max_parallel_local": 1,
+            "max_parallel_local": 8,
             "max_parallel_windows": 2,
             "resource_budgets": {
-                "tiny": 1,
-                "small": 1,
-                "docker_stack": 2,
-                "discord_e2e": 1,
+                "cpu": 8,
+                "service": 2,
+                "serial": 1,
             },
             "rebalance_enabled": True,
         },
         "resource_classes": {
-            "tiny": {"max_parallel": 1},
-            "small": {"max_parallel": 1},
-            "docker_stack": {"max_parallel": 2},
-            "discord_e2e": {"max_parallel": 1},
+            "cpu": {"max_parallel": 8},
+            "service": {"max_parallel": 2},
+            "serial": {"max_parallel": 1},
         },
         "windows_execution_mode": "docker_only",
         "certification_requirements": [
@@ -464,16 +822,22 @@ DEFAULT_REPO_PROFILES: dict[str, dict[str, Any]] = {
                 "authorization",
                 "worker",
             ],
-            "required_statuses": ["ready_to_merge"],
+            "required_statuses": ["zetherion/merge-readiness"],
         },
         "promotion_policy": {
-            "deployment_mode": "github_only",
+            "deployment_mode": "zetherion_control_plane",
+            "github_decision_mode": "external_status_only",
+            "status_contexts": {
+                "merge": "zetherion/merge-readiness",
+                "deploy": "zetherion/deploy-readiness",
+            },
             "require_windows_full": True,
             "require_certification": True,
+            "require_release_receipt": True,
         },
         "allowed_paths": [
             _ZETHERION_ROOT,
-            rf"{WINDOWS_CI_ROOT}\zetherion-ai",
+            _ZETHERION_WINDOWS_WORKSPACE_ROOT,
         ],
         "secrets_profile": "zetherion-default",
         "active": True,

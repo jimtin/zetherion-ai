@@ -10,6 +10,9 @@ import pytest
 
 from zetherion_ai.discord.bot import ZetherionAIBot
 from zetherion_ai.memory.qdrant import QdrantMemory
+from zetherion_ai.queue.manager import QueueManager
+from zetherion_ai.queue.processors import QueueProcessors
+from zetherion_ai.queue.storage import QueueStorage
 
 
 @pytest.fixture
@@ -20,6 +23,7 @@ def bot_with_queue() -> tuple[ZetherionAIBot, AsyncMock]:
     user_manager.is_allowed = AsyncMock(return_value=True)
     queue_manager = AsyncMock()
     queue_manager.is_running = True
+    queue_manager.is_accepting_work = True
 
     bot = ZetherionAIBot(memory=memory, user_manager=user_manager, queue_manager=queue_manager)
     bot_user = MagicMock(spec=discord.ClientUser)
@@ -89,6 +93,71 @@ class TestDiscordBotCriticalPaths:
             await bot.on_message(queue_message)
 
         mock_enqueue.assert_awaited_once_with(queue_message, "hello from dm", False)
+
+    @pytest.mark.asyncio
+    async def test_on_message_falls_back_inline_when_queue_is_unhealthy(
+        self,
+        bot_with_queue: tuple[ZetherionAIBot, AsyncMock],
+        queue_message: MagicMock,
+    ) -> None:
+        bot, queue_manager = bot_with_queue
+        bot._agent = AsyncMock()
+        queue_manager.is_accepting_work = False
+
+        with (
+            patch.object(bot, "_enqueue_message", new=AsyncMock()) as mock_enqueue,
+            patch.object(bot, "_process_message_inline", new=AsyncMock()) as mock_inline,
+            patch.object(bot._rate_limiter, "check", return_value=(True, None)),
+            patch(
+                "zetherion_ai.discord.bot.detect_prompt_injection",
+                return_value=False,
+            ),
+        ):
+            await bot.on_message(queue_message)
+
+        mock_enqueue.assert_not_called()
+        mock_inline.assert_awaited_once_with(queue_message, "hello from dm")
+
+    @pytest.mark.asyncio
+    async def test_on_message_falls_back_inline_when_queue_worker_is_stale(
+        self,
+        queue_message: MagicMock,
+    ) -> None:
+        memory = AsyncMock(spec=QdrantMemory)
+        user_manager = AsyncMock()
+        user_manager.is_allowed = AsyncMock(return_value=True)
+        storage = AsyncMock(spec=QueueStorage)
+        processors = MagicMock(spec=QueueProcessors)
+        queue_manager = QueueManager(storage=storage, processors=processors)
+        queue_manager._running = True
+        queue_manager._worker_last_heartbeat["interactive-0"] = 100.0
+        queue_manager._worker_idle_timeout_seconds["interactive-0"] = 5.0
+
+        bot = ZetherionAIBot(
+            memory=memory,
+            user_manager=user_manager,
+            queue_manager=queue_manager,
+        )
+        bot._agent = AsyncMock()
+        bot_user = MagicMock(spec=discord.ClientUser)
+        bot_user.id = 999999999
+        bot_user.name = "ZetherionAIBot"
+        bot._connection.user = bot_user
+
+        with (
+            patch("zetherion_ai.queue.manager.time.monotonic", return_value=107.0),
+            patch.object(bot, "_enqueue_message", new=AsyncMock()) as mock_enqueue,
+            patch.object(bot, "_process_message_inline", new=AsyncMock()) as mock_inline,
+            patch.object(bot._rate_limiter, "check", return_value=(True, None)),
+            patch(
+                "zetherion_ai.discord.bot.detect_prompt_injection",
+                return_value=False,
+            ),
+        ):
+            await bot.on_message(queue_message)
+
+        mock_enqueue.assert_not_called()
+        mock_inline.assert_awaited_once_with(queue_message, "hello from dm")
 
     @pytest.mark.asyncio
     async def test_on_message_blocks_prompt_injection(
