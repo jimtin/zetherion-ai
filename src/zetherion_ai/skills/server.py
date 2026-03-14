@@ -1045,12 +1045,25 @@ class SkillsServer:
             "incident_type": incident_type,
         }
 
-    def _runtime_pool(self) -> Any | None:
-        if self._user_manager is None:
+    @staticmethod
+    def _component_pool(component: Any | None) -> Any | None:
+        if component is None:
             return None
-        user_manager_dict = getattr(self._user_manager, "__dict__", {})
-        if "_pool" in user_manager_dict:
-            return getattr(self._user_manager, "_pool", None)
+        component_dict = getattr(component, "__dict__", {})
+        if "_pool" in component_dict:
+            return getattr(component, "_pool", None)
+        return None
+
+    def _runtime_pool(self) -> Any | None:
+        for component in (
+            self._user_manager,
+            self._owner_ci_storage,
+            self._announcement_repository,
+            self._tenant_admin_manager,
+        ):
+            pool = self._component_pool(component)
+            if pool is not None:
+                return pool
         return None
 
     async def _get_runtime_status_store(self) -> RuntimeStatusStore | None:

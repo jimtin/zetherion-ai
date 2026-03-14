@@ -1689,7 +1689,7 @@ async def test_claim_worker_job_and_submit_result_cover_success_and_idempotent_r
             completed_job,
             completed_job,
         ],
-        fetch_results=[[queued_job]],
+        fetch_results=[[queued_job], [], []],
     )
     storage = _storage(conn)
     storage._store_worker_observability = AsyncMock()  # type: ignore[method-assign]
@@ -1747,7 +1747,131 @@ async def test_rotate_worker_session_credentials_raises_when_session_is_missing(
 
 @pytest.mark.asyncio
 async def test_claim_worker_job_returns_none_when_node_lacks_required_capabilities() -> None:
-    conn = _FakeConn(fetch_results=[[{**_worker_job_row(), "required_capabilities": ["docker"]}]])
+    conn = _FakeConn(
+        fetch_results=[[{**_worker_job_row(), "required_capabilities": ["docker"]}], [], []]
+    )
+    storage = _storage(conn)
+    storage._recompute_run_status = AsyncMock()  # type: ignore[method-assign]
+
+    claimed = await storage.claim_worker_job(
+        scope_id="owner:owner-1:repo:zetherion-ai",
+        node_id="node-1",
+        required_capabilities=["ci.test.run"],
+        session_id="sess-1",
+    )
+
+    assert claimed is None
+    storage._recompute_run_status.assert_not_awaited()  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_claim_worker_job_skips_blocked_parallel_group_and_claims_next_admissible_job(
+) -> None:
+    blocked_job = {
+        **_worker_job_row(),
+        "job_id": "job-blocked",
+        "shard_id": "shard-blocked",
+        "payload_json": {
+            "execution_target": "windows_local",
+            "resource_class": "service",
+            "parallel_group": "db",
+        },
+    }
+    admissible_job = {
+        **_worker_job_row(),
+        "job_id": "job-admitted",
+        "shard_id": "shard-admitted",
+        "payload_json": {
+            "execution_target": "windows_local",
+            "resource_class": "service",
+            "parallel_group": "queue",
+        },
+    }
+    active_job = {
+        **_worker_job_row(),
+        "job_id": "job-active",
+        "status": "claimed",
+        "payload_json": {
+            "execution_target": "windows_local",
+            "resource_class": "service",
+            "parallel_group": "db",
+        },
+    }
+    claimed_row = {
+        **admissible_job,
+        "status": "claimed",
+        "claimed_by_node_id": "node-1",
+        "claimed_session_id": "sess-1",
+    }
+    conn = _FakeConn(
+        fetchrow_results=[claimed_row],
+        fetch_results=[
+            [blocked_job, admissible_job],
+            [active_job],
+            [
+                {
+                    "run_id": "run-1",
+                    "plan_json": {
+                        "host_capacity_policy": {
+                            "host_id": "windows-owner-ci",
+                            "resource_budget": {"service": 2},
+                        }
+                    },
+                    "metadata_json": {},
+                }
+            ],
+        ],
+    )
+    storage = _storage(conn)
+    storage._recompute_run_status = AsyncMock()  # type: ignore[method-assign]
+
+    claimed = await storage.claim_worker_job(
+        scope_id="owner:owner-1:repo:zetherion-ai",
+        node_id="node-1",
+        required_capabilities=["ci.test.run"],
+        session_id="sess-1",
+    )
+
+    assert claimed is not None
+    assert claimed["job_id"] == "job-admitted"
+
+
+@pytest.mark.asyncio
+async def test_claim_worker_job_returns_none_when_host_budget_is_exhausted() -> None:
+    queued_job = {
+        **_worker_job_row(),
+        "payload_json": {
+            "execution_target": "windows_local",
+            "resource_class": "service",
+        },
+    }
+    active_job = {
+        **_worker_job_row(),
+        "job_id": "job-active",
+        "status": "claimed",
+        "payload_json": {
+            "execution_target": "windows_local",
+            "resource_class": "service",
+        },
+    }
+    conn = _FakeConn(
+        fetch_results=[
+            [queued_job],
+            [active_job],
+            [
+                {
+                    "run_id": "run-1",
+                    "plan_json": {
+                        "host_capacity_policy": {
+                            "host_id": "windows-owner-ci",
+                            "resource_budget": {"service": 1},
+                        }
+                    },
+                    "metadata_json": {},
+                }
+            ],
+        ]
+    )
     storage = _storage(conn)
     storage._recompute_run_status = AsyncMock()  # type: ignore[method-assign]
 

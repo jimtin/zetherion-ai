@@ -527,11 +527,18 @@ def normalize_shard_receipt(repo_id: str, shard: dict[str, Any]) -> ShardReceipt
     metadata = dict(shard.get("metadata") or {})
     result = dict(shard.get("result") or {})
     error = dict(shard.get("error") or {})
+    artifact_receipt_paths = dict(
+        dict(result.get("debug_bundle") or {}).get("artifact_receipt_paths") or {}
+    )
     evidence_paths = [
         str(path).strip()
         for path in list(result.get("evidence_paths") or result.get("artifacts") or [])
         if str(path).strip()
     ]
+    for raw_path in artifact_receipt_paths.values():
+        path = str(raw_path or "").strip()
+        if path and path not in evidence_paths:
+            evidence_paths.append(path)
     typed_incidents = [
         str(code).strip()
         for code in list(result.get("typed_incidents") or error.get("typed_incidents") or [])

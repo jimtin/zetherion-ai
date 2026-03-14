@@ -1208,6 +1208,22 @@ async def test_docker_runner_includes_local_readiness_receipt_in_output(
         ),
         encoding="utf-8",
     )
+    (artifacts_dir / "coverage-summary.json").write_text(
+        json.dumps({"passed": False, "metrics": {"branches": {"actual": 88.5}}}),
+        encoding="utf-8",
+    )
+    (artifacts_dir / "coverage-gaps.json").write_text(
+        json.dumps({"gaps": [{"identifier": "foo"}]}),
+        encoding="utf-8",
+    )
+    (artifacts_dir / "diagnostic-summary.json").write_text(
+        json.dumps({"blocking": True, "finding_count": 1}),
+        encoding="utf-8",
+    )
+    (artifacts_dir / "diagnostic-findings.json").write_text(
+        json.dumps({"findings": [{"code": "coverage_gate_failed"}]}),
+        encoding="utf-8",
+    )
 
     runner = worker_runtime_module.DockerRunner(
         execution_backend="wsl_docker",
@@ -1248,8 +1264,13 @@ async def test_docker_runner_includes_local_readiness_receipt_in_output(
 
     assert result.output is not None
     assert result.output["local_readiness_receipt"]["merge_ready"] is True
+    assert result.output["coverage_summary"]["passed"] is False
+    assert result.output["diagnostic_summary"]["blocking"] is True
     assert result.debug_bundle["artifact_receipt_paths"]["local_readiness_receipt"].endswith(
         ".artifacts/local-readiness-receipt.json"
+    )
+    assert result.debug_bundle["artifact_receipt_paths"]["coverage_summary"].endswith(
+        ".artifacts/coverage-summary.json"
     )
 
 

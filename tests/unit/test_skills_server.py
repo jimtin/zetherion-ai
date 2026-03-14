@@ -4027,6 +4027,77 @@ async def test_internal_runtime_health_endpoint_reports_blocked_queue_and_stale_
 
 
 @pytest.mark.asyncio
+async def test_internal_runtime_health_uses_owner_ci_storage_pool_when_user_manager_missing(
+    mock_registry,
+):
+    fake_pool = object()
+    fake_store = SimpleNamespace(
+        get_status=AsyncMock(
+            return_value={
+                "service_name": "discord_bot",
+                "status": "healthy",
+                "summary": "Discord bot is connected.",
+                "updated_at": datetime.now(UTC).isoformat(),
+                "release_revision": "rev-owner-ci",
+                "details": {
+                    "queue": {
+                        "accepting_work": True,
+                        "healthy": True,
+                    },
+                    "announcement_dispatcher": {
+                        "running": True,
+                    },
+                },
+            }
+        )
+    )
+    server = SkillsServer(
+        registry=mock_registry,
+        api_secret="test-secret",
+        owner_ci_storage=SimpleNamespace(_pool=fake_pool),
+    )
+    app = server.create_app()
+    settings = SimpleNamespace(queue_stale_timeout_seconds=30)
+
+    with (
+        patch("zetherion_ai.skills.server.QueueStorage") as mock_queue_storage,
+        patch("zetherion_ai.config.get_settings", return_value=settings),
+        patch.dict(os.environ, {"APP_GIT_SHA": "rev-owner-ci"}, clear=False),
+    ):
+        queue_storage = mock_queue_storage.return_value
+        queue_storage.get_status_counts = AsyncMock(
+            return_value={"queued": 1, "processing": 0, "dead": 0}
+        )
+        queue_storage.count_stale_processing = AsyncMock(return_value=0)
+        server._get_runtime_status_store = AsyncMock(return_value=fake_store)  # type: ignore[method-assign]
+        server._runtime_external_services_domain = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "key": "external_services",
+                "label": "External Services",
+                "status": "healthy",
+                "summary": "Required external service dependencies are reachable.",
+                "details": {},
+                "incident_type": None,
+            }
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/internal/runtime/health",
+                headers={"X-API-Secret": "test-secret"},
+            )
+            assert resp.status == 200
+            data = await resp.json()
+
+    domains = {domain["key"]: domain for domain in data["domains"]}
+    assert domains["message_queue"]["status"] == "healthy"
+    assert domains["discord_bot"]["status"] == "healthy"
+    assert domains["announcement_dispatcher"]["status"] == "healthy"
+    assert domains["deploy_state"]["details"]["revision"] == "rev-owner-ci"
+    assert domains["release_verification"]["status"] == "healthy"
+
+
+@pytest.mark.asyncio
 async def test_owner_ci_worker_bootstrap_handler_covers_success_and_error_paths(mock_registry):
     no_storage_server = SkillsServer(registry=mock_registry)
     no_storage_request = MagicMock()
@@ -4135,13 +4206,19 @@ async def test_owner_ci_worker_bridge_error_paths_cover_registration_heartbeat_c
     register_request = MagicMock()
     register_request.text = AsyncMock(return_value=json.dumps({"scope_id": "owner:owner-1"}))
     register_request.headers = {}
-    assert (await no_storage_server.handle_owner_ci_worker_register_node(register_request)).status == 501
+    register_response = await no_storage_server.handle_owner_ci_worker_register_node(
+        register_request
+    )
+    assert register_response.status == 501
 
     heartbeat_request = MagicMock()
     heartbeat_request.match_info = {"node_id": "node-1"}
     heartbeat_request.text = AsyncMock(return_value=json.dumps({"scope_id": "owner:owner-1"}))
     heartbeat_request.headers = {}
-    assert (await no_storage_server.handle_owner_ci_worker_node_heartbeat(heartbeat_request)).status == 501
+    heartbeat_response = await no_storage_server.handle_owner_ci_worker_node_heartbeat(
+        heartbeat_request
+    )
+    assert heartbeat_response.status == 501
 
     claim_request = MagicMock()
     claim_request.match_info = {"node_id": "node-1"}

@@ -90,6 +90,10 @@ _WORKSPACE_EPHEMERAL_FILE_GLOBS = (
 )
 _PRESERVED_ARTIFACT_FILES = {
     "ci-worker-connectivity.json",
+    "coverage-gaps.json",
+    "coverage-summary.json",
+    "diagnostic-findings.json",
+    "diagnostic-summary.json",
     "e2e-receipt.json",
     "local-readiness-receipt.json",
     "worker-certification-receipt.json",
@@ -97,6 +101,10 @@ _PRESERVED_ARTIFACT_FILES = {
 }
 _JSON_ARTIFACT_FILES = {
     "ci_worker_connectivity_receipt": "ci-worker-connectivity.json",
+    "coverage_gaps": "coverage-gaps.json",
+    "coverage_summary": "coverage-summary.json",
+    "diagnostic_findings": "diagnostic-findings.json",
+    "diagnostic_summary": "diagnostic-summary.json",
     "e2e_receipt": "e2e-receipt.json",
     "local_readiness_receipt": "local-readiness-receipt.json",
     "worker_certification_receipt": "worker-certification-receipt.json",
@@ -139,7 +147,10 @@ def _compute_tool_image_context_hash(workspace_root: Path) -> str:
     return digest.hexdigest() if seen_any else ""
 
 
-def _wsl_socket_path_available(distribution: str, socket_path: str = "/var/run/docker.sock") -> bool:
+def _wsl_socket_path_available(
+    distribution: str,
+    socket_path: str = "/var/run/docker.sock",
+) -> bool:
     distro = str(distribution).strip()
     if not distro:
         return False
@@ -867,7 +878,9 @@ class DockerRunner:
                             "read_only": True,
                         }
                     )
-                    docker_inner_command.extend(["-v", f"{runtime_env_target}:{runtime_env_target}:ro"])
+                    docker_inner_command.extend(
+                        ["-v", f"{runtime_env_target}:{runtime_env_target}:ro"]
+                    )
 
         docker_socket_path = "/var/run/docker.sock"
         docker_socket_available = False
@@ -2110,6 +2123,10 @@ class WorkerRuntime:
             )
         for receipt_key in (
             "ci_worker_connectivity_receipt",
+            "coverage_gaps",
+            "coverage_summary",
+            "diagnostic_findings",
+            "diagnostic_summary",
             "e2e_receipt",
             "local_readiness_receipt",
             "worker_certification_receipt",

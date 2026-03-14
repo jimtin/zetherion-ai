@@ -186,6 +186,7 @@ MYPY_TIMEOUT_SECONDS="${MYPY_TIMEOUT_SECONDS:-1200}"
 PIPAUDIT_TIMEOUT_SECONDS="${PIPAUDIT_TIMEOUT_SECONDS:-300}"
 STATIC_TIMEOUT_SECONDS="${STATIC_TIMEOUT_SECONDS:-600}"
 COVERAGE_MINIMUM="${COVERAGE_MINIMUM:-90}"
+COVERAGE_ARTIFACTS_DIR="${COVERAGE_ARTIFACTS_DIR:-.artifacts/coverage}"
 
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/e2e_run_manager.sh"
@@ -1071,7 +1072,22 @@ if [ ! -f .coverage ]; then
     exit 1
 fi
 
-if ! run_python_module coverage report --fail-under="$COVERAGE_MINIMUM"; then
+mkdir -p "$COVERAGE_ARTIFACTS_DIR"
+COVERAGE_REPORT_PATH="$COVERAGE_ARTIFACTS_DIR/coverage-report.txt"
+if ! run_python_module coverage report >"$COVERAGE_REPORT_PATH"; then
+    echo "[$(ts)] ERROR: Failed to generate coverage report."
+    exit 1
+fi
+cat "$COVERAGE_REPORT_PATH"
+
+if ! "$PYTHON_BIN" "$SCRIPT_DIR/testing/coverage_gate.py" \
+    --artifacts-dir "$COVERAGE_ARTIFACTS_DIR" \
+    --coverage-file ".coverage" \
+    --repo-sha "$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)" \
+    --minimum-statements "$COVERAGE_MINIMUM" \
+    --minimum-lines "$COVERAGE_MINIMUM" \
+    --minimum-branches "$COVERAGE_MINIMUM" \
+    --minimum-functions "$COVERAGE_MINIMUM"; then
     echo ""
     echo "[$(ts)] [4.5/5] Combined coverage FAILED."
     exit 1

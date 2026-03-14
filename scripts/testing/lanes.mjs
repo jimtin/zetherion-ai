@@ -253,7 +253,11 @@ export const LANE_DEFINITIONS = {
       "-lc",
       [
         "node --test scripts/testing/run-bounded.test.mjs",
-        "python3 -m pytest tests/ -m 'not integration and not discord_e2e' --cov=src/zetherion_ai --cov-report=term-missing --cov-fail-under=90 -q --tb=short",
+        "rm -f .coverage .coverage.* .coverage-*",
+        "mkdir -p .artifacts/coverage/unit-full",
+        "python3 -m pytest tests/ -m 'not integration and not discord_e2e' --cov=src/zetherion_ai --cov-report=term-missing --cov-fail-under=0 -q --tb=short",
+        "python3 -m coverage report > .artifacts/coverage/unit-full-coverage-report.txt",
+        "python3 scripts/testing/coverage_gate.py --artifacts-dir .artifacts/coverage/unit-full --coverage-file .coverage --lane-id unit-full --minimum-statements 90 --minimum-lines 90 --minimum-branches 90 --minimum-functions 90",
       ].join(" && "),
     ],
   },

@@ -19,6 +19,7 @@ from typing import Any
 
 from zetherion_ai.logging import get_logger
 from zetherion_ai.owner_ci import OwnerCiStorage, default_repo_profile, default_repo_profiles
+from zetherion_ai.owner_ci.diagnostics import build_run_diagnostics
 from zetherion_ai.skills.base import Skill, SkillMetadata, SkillRequest, SkillResponse
 from zetherion_ai.skills.ci_controller import CiControllerSkill
 from zetherion_ai.skills.clerk.client import ClerkMetadataClient, ClerkMetadataError
@@ -3432,10 +3433,27 @@ class AgentBootstrapSkill(Skill):
         events = await self._storage.get_run_events(owner_id, run_id, limit=100)
         logs = await self._storage.get_run_log_chunks(owner_id, run_id, limit=200)
         debug_bundle = await self._storage.get_run_debug_bundle(owner_id, run_id)
+        coverage_summary = next(
+            (
+                dict((dict(shard.get("result") or {})).get("coverage_summary") or {})
+                for shard in list(run.get("shards") or [])
+                if isinstance(dict(shard.get("result") or {}).get("coverage_summary"), dict)
+            ),
+            {},
+        )
+        coverage_gaps = next(
+            (
+                dict((dict(shard.get("result") or {})).get("coverage_gaps") or {})
+                for shard in list(run.get("shards") or [])
+                if isinstance(dict(shard.get("result") or {}).get("coverage_gaps"), dict)
+            ),
+            {},
+        )
         summary = {
             "run": run,
             "event_count": len(events),
             "log_count": len(logs),
+            "coverage_summary": coverage_summary,
             "debug_bundle": {
                 "bundle_id": str(debug_bundle.get("bundle_id") or "") if debug_bundle else None,
                 "shard_id": str(debug_bundle.get("shard_id") or "") if debug_bundle else None,
@@ -3500,6 +3518,32 @@ class AgentBootstrapSkill(Skill):
                 payload=dict(debug_bundle.get("bundle") or {}),
                 metadata={"run_id": run_id, "bundle_id": str(debug_bundle.get("bundle_id") or "")},
             )
+        if coverage_summary:
+            await self._storage.record_operation_evidence(
+                owner_id,
+                operation_id=operation_id,
+                service_kind="ci_runtime",
+                evidence_type="coverage_summary",
+                title="CI coverage summary",
+                payload=coverage_summary,
+                metadata={"run_id": run_id},
+                state="failed" if not bool(coverage_summary.get("passed", True)) else "ready",
+            )
+        if coverage_gaps:
+            await self._storage.record_operation_evidence(
+                owner_id,
+                operation_id=operation_id,
+                service_kind="ci_runtime",
+                evidence_type="coverage_gaps",
+                title="CI coverage gaps",
+                payload=coverage_gaps,
+                metadata={"run_id": run_id},
+                state=(
+                    "failed"
+                    if coverage_summary and not bool(coverage_summary.get("passed", True))
+                    else "ready"
+                ),
+            )
         if not logs and not debug_bundle:
             await self._record_gap(
                 owner_id=owner_id,
@@ -3520,40 +3564,105 @@ class AgentBootstrapSkill(Skill):
                 metadata={},
                 run_id=run_id,
             )
+        diagnostic_summary, diagnostic_findings = build_run_diagnostics(
+            run=run,
+            logs=logs,
+            debug_bundle=debug_bundle,
+        )
+        if diagnostic_findings:
+            diagnostic_summary_evidence = await self._storage.record_operation_evidence(
+                owner_id,
+                operation_id=operation_id,
+                service_kind="ci_runtime",
+                evidence_type="diagnostic_summary",
+                title="CI runtime diagnosis",
+                payload=diagnostic_summary,
+                metadata={"run_id": run_id},
+                state="failed" if bool(diagnostic_summary.get("blocking")) else "ready",
+            )
+            await self._storage.record_operation_evidence(
+                owner_id,
+                operation_id=operation_id,
+                service_kind="ci_runtime",
+                evidence_type="diagnostic_findings",
+                title="CI runtime diagnostic findings",
+                payload={"findings": diagnostic_findings},
+                metadata={"run_id": run_id},
+                state="failed" if bool(diagnostic_summary.get("blocking")) else "ready",
+            )
+            diagnostic_artifacts = list(diagnostic_summary.get("diagnostic_artifacts") or [])
+            if diagnostic_artifacts:
+                await self._storage.record_operation_evidence(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="ci_runtime",
+                    evidence_type="diagnostic_artifacts",
+                    title="CI runtime diagnostic artifacts",
+                    payload={"artifacts": diagnostic_artifacts},
+                    metadata={"run_id": run_id},
+                    state="failed" if bool(diagnostic_summary.get("blocking")) else "ready",
+                )
+            for finding in diagnostic_findings:
+                await self._storage.record_operation_incident(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="ci_runtime",
+                    incident_type=str(
+                        finding.get("code") or finding.get("type") or "ci_runtime_failed"
+                    ),
+                    severity=str(finding.get("severity") or "high"),
+                    blocking=bool(finding.get("blocking", False)),
+                    root_cause_summary=str(
+                        finding.get("root_cause_summary")
+                        or finding.get("summary")
+                        or "CI runtime failure"
+                    ),
+                    recommended_fix=str(finding.get("recommended_fix") or "").strip() or None,
+                    evidence_refs=[str(diagnostic_summary_evidence["evidence_id"])],
+                    metadata={
+                        "run_id": run_id,
+                        "shard_id": finding.get("shard_id"),
+                        "lane_id": finding.get("lane_id"),
+                        "diagnostic": True,
+                    },
+                )
         run_status = str(run.get("status") or "").strip().lower()
         status = "active"
         if run_status in {"failed", "promotion_blocked", "cancelled"}:
             status = "failed"
-            first_message = next(
-                (
-                    str(entry.get("message") or "").strip()
-                    for entry in logs
-                    if str(entry.get("message") or "").strip()
-                ),
-                "",
-            )
-            await self._storage.record_operation_incident(
-                owner_id,
-                operation_id=operation_id,
-                service_kind="ci_runtime",
-                incident_type="ci_runtime_failed",
-                severity="high",
-                blocking=True,
-                root_cause_summary=first_message
-                or f"CI runtime failed with status `{run_status}`.",
-                recommended_fix=(
-                    "Inspect the CI/container logs and debug bundle, then rerun "
-                    "the failing shard after applying the fix."
-                ),
-                evidence_refs=[str(summary_evidence["evidence_id"])],
-                metadata={"run_id": run_id, "status": run_status},
-            )
+            if not diagnostic_findings:
+                first_message = next(
+                    (
+                        str(entry.get("message") or "").strip()
+                        for entry in logs
+                        if str(entry.get("message") or "").strip()
+                    ),
+                    "",
+                )
+                await self._storage.record_operation_incident(
+                    owner_id,
+                    operation_id=operation_id,
+                    service_kind="ci_runtime",
+                    incident_type="ci_runtime_failed",
+                    severity="high",
+                    blocking=True,
+                    root_cause_summary=first_message
+                    or f"CI runtime failed with status `{run_status}`.",
+                    recommended_fix=(
+                        "Inspect the CI/container logs and debug bundle, then rerun "
+                        "the failing shard after applying the fix."
+                    ),
+                    evidence_refs=[str(summary_evidence["evidence_id"])],
+                    metadata={"run_id": run_id, "status": run_status},
+                )
         elif run_status in {"ready_to_merge", "merged", "succeeded", "completed"}:
             status = "succeeded"
         return {
             "summary": summary,
             "status": status,
             "lifecycle_stage": "ci_runtime",
+            "diagnostic_summary": diagnostic_summary,
+            "diagnostic_findings": diagnostic_findings,
         }
 
     async def _collect_service_operation_evidence(

@@ -166,6 +166,25 @@ async def test_collect_ci_runtime_operation_evidence_records_summary_logs_bundle
             "run_id": "run-1",
             "repo_id": "catalyst-group-solutions",
             "status": "failed",
+            "shards": [
+                {
+                    "shard_id": "shard-1",
+                    "lane_id": "unit-full",
+                    "status": "failed",
+                    "result": {
+                        "coverage_summary": {
+                            "passed": False,
+                            "metrics": {"branches": {"passed": False, "actual": 88.4}},
+                            "artifacts": {
+                                "coverage_json": ".artifacts/coverage/coverage.json",
+                                "coverage_report": ".artifacts/coverage/coverage-report.txt",
+                            },
+                        },
+                        "coverage_gaps": {"gaps": [{"identifier": "foo"}]},
+                    },
+                    "error": {},
+                }
+            ],
         }
     )
     storage.get_run_events = AsyncMock(return_value=[{"event_type": "worker.result.accepted"}])
@@ -192,6 +211,11 @@ async def test_collect_ci_runtime_operation_evidence_records_summary_logs_bundle
             {"evidence_id": "events-1"},
             {"evidence_id": "logs-1"},
             {"evidence_id": "bundle-1"},
+            {"evidence_id": "coverage-summary-1"},
+            {"evidence_id": "coverage-gaps-1"},
+            {"evidence_id": "diagnostic-summary-1"},
+            {"evidence_id": "diagnostic-findings-1"},
+            {"evidence_id": "diagnostic-artifacts-1"},
         ]
     )
     storage.record_operation_incident = AsyncMock(return_value={"incident_id": "incident-1"})
@@ -212,8 +236,10 @@ async def test_collect_ci_runtime_operation_evidence_records_summary_logs_bundle
     assert result["lifecycle_stage"] == "ci_runtime"
     assert result["summary"]["event_count"] == 1
     assert result["summary"]["debug_bundle"]["bundle_id"] == "bundle-1"
-    assert storage.record_operation_evidence.await_count == 4
-    storage.record_operation_incident.assert_awaited_once()
+    assert result["diagnostic_summary"]["blocking"] is True
+    assert result["diagnostic_summary"]["diagnostic_artifacts"]
+    assert storage.record_operation_evidence.await_count == 9
+    assert storage.record_operation_incident.await_count >= 1
     skill._record_gap.assert_not_awaited()  # type: ignore[attr-defined]
 
 

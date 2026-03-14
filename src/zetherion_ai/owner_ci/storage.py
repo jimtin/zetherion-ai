@@ -14,6 +14,7 @@ from uuid import uuid4
 from zetherion_ai.logging import get_logger
 from zetherion_ai.owner_ci.models import (
     RepoReadinessReceipt,
+    ResourceReservation,
     build_repo_readiness_receipt,
     build_workspace_readiness_receipt,
     normalize_release_verification_receipt,
@@ -951,6 +952,37 @@ CREATE INDEX IF NOT EXISTS idx_owner_ci_operation_incidents_owner_operation
         last_seen_at DESC
     );
 """
+
+
+def _job_resource_reservation(job: dict[str, Any]) -> ResourceReservation:
+    payload = dict(job.get("payload_json") or job.get("payload") or {})
+    raw_reservation = dict(payload.get("resource_reservation") or {})
+    if raw_reservation:
+        raw_reservation.setdefault("repo_id", str(job.get("repo_id") or "").strip() or None)
+        raw_reservation.setdefault("shard_id", str(job.get("shard_id") or "").strip() or None)
+        return ResourceReservation.model_validate(raw_reservation)
+    return ResourceReservation(
+        repo_id=str(job.get("repo_id") or "").strip() or None,
+        shard_id=str(job.get("shard_id") or "").strip() or None,
+        resource_class=str(payload.get("resource_class") or "cpu").strip() or "cpu",
+        units=max(1, int(payload.get("resource_units") or payload.get("units") or 1)),
+        parallel_group=str(payload.get("parallel_group") or "").strip() or None,
+        workspace_root=str(payload.get("workspace_root") or "").strip() or None,
+        metadata={
+            "execution_target": str(job.get("execution_target") or "").strip() or None,
+        },
+    )
+
+
+def _job_host_capacity_policy(
+    job: dict[str, Any],
+    run_rows: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    run_id = str(job.get("run_id") or "").strip()
+    run_row = dict(run_rows.get(run_id) or {})
+    plan = dict(run_row.get("plan_json") or run_row.get("plan") or {})
+    metadata = dict(run_row.get("metadata_json") or run_row.get("metadata") or {})
+    return dict(plan.get("host_capacity_policy") or metadata.get("host_capacity_policy") or {})
 
 
 class OwnerCiStorage:
@@ -2515,6 +2547,7 @@ class OwnerCiStorage:
     ) -> dict[str, Any] | None:
         jobs_table = f'"{self._schema}".owner_ci_worker_jobs'
         shards_table = f'"{self._schema}".owner_ci_shards'
+        runs_table = f'"{self._schema}".owner_ci_runs'
         async with self._pool.acquire() as conn, conn.transaction():
             rows = await conn.fetch(
                 f"""
@@ -2523,15 +2556,81 @@ class OwnerCiStorage:
                      WHERE scope_id = $1
                        AND status = 'queued'
                      ORDER BY created_at ASC
-                     LIMIT 20
+                     LIMIT 50
                     """,
                 scope_id,
             )
+            active_rows = await conn.fetch(
+                f"""
+                    SELECT *
+                      FROM {jobs_table}
+                     WHERE scope_id = $1
+                       AND status = 'claimed'
+                    """,
+                scope_id,
+            )
+            run_ids = sorted(
+                {
+                    str(row.get("run_id") or "").strip()
+                    for row in [*rows, *active_rows]
+                    if str(row.get("run_id") or "").strip()
+                }
+            )
+            run_rows: dict[str, dict[str, Any]] = {}
+            if run_ids:
+                fetched_runs = await conn.fetch(
+                    f"""
+                        SELECT owner_id, run_id, plan_json, metadata_json
+                          FROM {runs_table}
+                         WHERE run_id = ANY($1::text[])
+                    """,
+                    run_ids,
+                )
+                run_rows = {
+                    str(row.get("run_id") or "").strip(): dict(row)
+                    for row in fetched_runs
+                    if str(row.get("run_id") or "").strip()
+                }
             claimed: dict[str, Any] | None = None
+            capability_set = set(required_capabilities or [])
+            usage_by_host: dict[str, dict[str, int]] = {}
+            busy_groups_by_host: dict[str, set[str]] = {}
+            for raw_row in active_rows:
+                active_job = self._worker_job_from_row(dict(raw_row))
+                reservation = _job_resource_reservation(active_job)
+                host_policy = _job_host_capacity_policy(active_job, run_rows)
+                host_id = (
+                    str(host_policy.get("host_id") or "windows-owner-ci").strip()
+                    or "windows-owner-ci"
+                )
+                usage = usage_by_host.setdefault(host_id, {"cpu": 0, "service": 0, "serial": 0})
+                resource_class = reservation.resource_class.strip() or "cpu"
+                usage[resource_class] = usage.get(resource_class, 0) + max(
+                    1,
+                    int(reservation.units or 1),
+                )
+                if reservation.parallel_group:
+                    busy_groups_by_host.setdefault(host_id, set()).add(reservation.parallel_group)
             for row in rows:
                 job = self._worker_job_from_row(dict(row))
                 job_required = set(job["required_capabilities"])
-                if not job_required.issubset(set(required_capabilities or [])):
+                if not job_required.issubset(capability_set):
+                    continue
+                reservation = _job_resource_reservation(job)
+                host_policy = _job_host_capacity_policy(job, run_rows)
+                host_id = (
+                    str(host_policy.get("host_id") or "windows-owner-ci").strip()
+                    or "windows-owner-ci"
+                )
+                resource_budget = dict(host_policy.get("resource_budget") or {})
+                usage = usage_by_host.setdefault(host_id, {"cpu": 0, "service": 0, "serial": 0})
+                busy_groups = busy_groups_by_host.setdefault(host_id, set())
+                resource_class = reservation.resource_class.strip() or "cpu"
+                units = max(1, int(reservation.units or 1))
+                total_slots = int(resource_budget.get(resource_class) or 0)
+                if total_slots and int(usage.get(resource_class) or 0) + units > total_slots:
+                    continue
+                if reservation.parallel_group and reservation.parallel_group in busy_groups:
                     continue
                 updated = await conn.fetchrow(
                     f"""
@@ -2552,6 +2651,9 @@ class OwnerCiStorage:
                 )
                 if updated is None:
                     continue
+                usage[resource_class] = int(usage.get(resource_class) or 0) + units
+                if reservation.parallel_group:
+                    busy_groups.add(reservation.parallel_group)
                 await conn.execute(
                     f"""
                         UPDATE {shards_table}
