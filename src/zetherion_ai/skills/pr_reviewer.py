@@ -10,6 +10,7 @@ from zetherion_ai.skills.base import Skill, SkillMetadata, SkillRequest, SkillRe
 from zetherion_ai.skills.permissions import Permission, PermissionSet
 
 log = get_logger("zetherion_ai.skills.pr_reviewer")
+_REQUIRED_CERTIFICATION_GATE_CATEGORIES = {"static", "security", "unit", "integration", "e2e"}
 
 
 def _normalize_owner_id(request: SkillRequest) -> str:
@@ -23,6 +24,25 @@ def _normalize_owner_id(request: SkillRequest) -> str:
         if value:
             return value
     return "owner"
+
+
+def _infer_gate_family(shard: dict[str, Any]) -> str | None:
+    metadata = dict(shard.get("metadata") or {})
+    explicit = str(metadata.get("gate_family") or metadata.get("gate_kind") or "").strip().lower()
+    if explicit:
+        return explicit
+    lane_id = str(shard.get("lane_id") or "").strip().lower()
+    if not lane_id:
+        return None
+    if "release" in lane_id or "golive" in lane_id:
+        return "release"
+    if "e2e" in lane_id or "playwright" in lane_id:
+        return "e2e"
+    if lane_id.startswith(("z-unit", "c-unit")) or "unit" in lane_id:
+        return "unit"
+    if lane_id.startswith(("z-int", "c-int")) or "integration" in lane_id:
+        return "integration"
+    return "integration"
 
 
 class PrReviewerSkill(Skill):
@@ -81,7 +101,17 @@ class PrReviewerSkill(Skill):
             for item in list(metadata.get("required_static_gates") or [])
             if str(item).strip()
         }
+        required_security_gates = {
+            str(item).strip()
+            for item in list(metadata.get("required_security_gates") or [])
+            if str(item).strip()
+        }
         completed_static_gates = {
+            str(shard.get("lane_id") or "").strip()
+            for shard in shards
+            if str(shard.get("status") or "").strip().lower() == "succeeded"
+        }
+        completed_security_gates = {
             str(shard.get("lane_id") or "").strip()
             for shard in shards
             if str(shard.get("status") or "").strip().lower() == "succeeded"
@@ -94,6 +124,52 @@ class PrReviewerSkill(Skill):
                     "code": "mandatory_static_gates_missing",
                     "summary": "Mandatory static gates are missing or not green",
                     "details": {"missing": missing_static_gates},
+                }
+            )
+        missing_security_gates = sorted(required_security_gates - completed_security_gates)
+        if missing_security_gates:
+            findings.append(
+                {
+                    "severity": "high",
+                    "code": "mandatory_security_gates_missing",
+                    "summary": "Mandatory security gates are missing or not green",
+                    "details": {"missing": missing_security_gates},
+                }
+            )
+
+        required_gate_categories = {
+            str(item).strip().lower()
+            for item in list(metadata.get("required_gate_categories") or [])
+            if str(item).strip()
+        }
+        if not required_gate_categories and bool(metadata.get("certification_required")):
+            required_gate_categories = set(_REQUIRED_CERTIFICATION_GATE_CATEGORIES)
+        completed_gate_categories = {
+            category
+            for shard in shards
+            if str(shard.get("status") or "").strip().lower() in {"succeeded", "skipped"}
+            and bool((shard.get("metadata") or {}).get("blocking", True))
+            for category in [
+                (
+                    "static"
+                    if str(shard.get("lane_id") or "").strip() in required_static_gates
+                    else (
+                        "security"
+                        if str(shard.get("lane_id") or "").strip() in required_security_gates
+                        else _infer_gate_family(shard)
+                    )
+                )
+            ]
+            if category in required_gate_categories
+        }
+        missing_gate_categories = sorted(required_gate_categories - completed_gate_categories)
+        if missing_gate_categories:
+            findings.append(
+                {
+                    "severity": "high",
+                    "code": "required_gate_categories_missing",
+                    "summary": "Required gate categories are incomplete",
+                    "details": {"missing": missing_gate_categories},
                 }
             )
 

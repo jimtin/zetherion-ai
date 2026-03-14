@@ -1,8 +1,11 @@
 """Owner-scoped CI controller primitives."""
 
 from zetherion_ai.owner_ci.models import (
+    AdmissionDecision,
+    HostCapacitySnapshot,
     LocalGatePlan,
     ReleaseVerificationReceipt,
+    ResourceReservation,
     RepoReadinessReceipt,
     ShardReceipt,
     WorkerCertificationReceipt,
@@ -23,9 +26,12 @@ from zetherion_ai.owner_ci.storage import OwnerCiStorage, ensure_owner_ci_schema
 __all__ = [
     "CERTIFICATION_MATRIX",
     "DEFAULT_REPO_PROFILES",
+    "AdmissionDecision",
+    "HostCapacitySnapshot",
     "LocalGatePlan",
     "OwnerCiStorage",
     "ReleaseVerificationReceipt",
+    "ResourceReservation",
     "RepoReadinessReceipt",
     "ShardReceipt",
     "WorkerCertificationReceipt",

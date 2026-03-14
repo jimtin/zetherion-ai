@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
 from copy import deepcopy
-import re
 from typing import Any
 
 from zetherion_ai.config import get_settings
 from zetherion_ai.logging import get_logger
 from zetherion_ai.owner_ci import (
+    AdmissionDecision,
+    HostCapacitySnapshot,
     LocalGatePlan,
     OwnerCiStorage,
+    ResourceReservation,
     build_repo_readiness_receipt,
     build_workspace_readiness_receipt,
     normalize_release_verification_receipt,
@@ -25,8 +28,11 @@ log = get_logger("zetherion_ai.skills.ci_controller")
 
 _RUN_MODES = {"fast", "full", "certification"}
 _DISCONNECTED_STATUSES = {"queued_local", "running_disconnected", "awaiting_sync"}
+_ACTIVE_SHARD_STATUSES = {"running", "claimed", "awaiting_sync", "running_disconnected"}
+_REQUIRED_CERTIFICATION_GATE_CATEGORIES = ("static", "security", "unit", "integration", "e2e")
 _PROFILE_EXTENSION_KEYS = {
     "mandatory_static_gates",
+    "mandatory_security_gates",
     "shard_templates",
     "scheduling_policy",
     "resource_classes",
@@ -78,6 +84,7 @@ def _normalize_repo_profile_input(payload: dict[str, Any]) -> dict[str, Any]:
         "default_branch": str(payload.get("default_branch") or "main").strip() or "main",
         "stack_kind": stack_kind,
         "mandatory_static_gates": list(metadata.get("mandatory_static_gates") or []),
+        "mandatory_security_gates": list(metadata.get("mandatory_security_gates") or []),
         "local_fast_lanes": list(payload.get("local_fast_lanes") or []),
         "local_full_lanes": list(payload.get("local_full_lanes") or []),
         "windows_full_lanes": list(payload.get("windows_full_lanes") or []),
@@ -149,6 +156,180 @@ def _infer_git_sha(run: dict[str, Any]) -> str | None:
         if _FULL_SHA_RE.fullmatch(value):
             return value
     return None
+
+
+def _dedupe_strings(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        value = str(raw or "").strip()
+        if not value or value in seen:
+            continue
+        deduped.append(value)
+        seen.add(value)
+    return deduped
+
+
+def _gate_family_for_lane(
+    lane: dict[str, Any],
+    *,
+    static_gate_ids: set[str],
+    security_gate_ids: set[str],
+) -> str:
+    lane_id = str(lane.get("lane_id") or "").strip()
+    metadata = dict(lane.get("metadata") or {})
+    explicit = str(metadata.get("gate_family") or metadata.get("gate_kind") or "").strip().lower()
+    if lane_id in static_gate_ids:
+        return "static"
+    if lane_id in security_gate_ids:
+        return "security"
+    lowered = lane_id.lower()
+    if explicit in {"static", "security", "unit", "integration", "e2e", "release"}:
+        return explicit
+    if "release" in lowered or "golive" in lowered:
+        return "release"
+    if "e2e" in lowered or "playwright" in lowered:
+        return "e2e"
+    if lowered.startswith(("z-unit", "c-unit")) or "unit" in lowered:
+        return "unit"
+    if lowered.startswith(("z-int", "c-int")) or "integration" in lowered:
+        return "integration"
+    return "integration"
+
+
+def _required_category_for_family(gate_family: str) -> str | None:
+    normalized = str(gate_family or "").strip().lower()
+    if normalized in set(_REQUIRED_CERTIFICATION_GATE_CATEGORIES):
+        return normalized
+    return None
+
+
+def _resource_reservation_for_shard(repo_id: str, shard: dict[str, Any]) -> dict[str, Any]:
+    metadata = dict(shard.get("metadata") or {})
+    return {
+        "repo_id": repo_id,
+        "shard_id": str(shard.get("shard_id") or shard.get("lane_id") or "").strip() or None,
+        "resource_class": str(metadata.get("resource_class") or "cpu").strip() or "cpu",
+        "units": 1,
+        "parallel_group": str(metadata.get("parallel_group") or "").strip() or None,
+        "workspace_root": (
+            str(metadata.get("workspace_root") or shard.get("workspace_root") or "").strip()
+            or None
+        ),
+        "metadata": {
+            "execution_target": str(shard.get("execution_target") or "").strip() or None,
+            "gate_family": str(metadata.get("gate_family") or "").strip() or None,
+        },
+    }
+
+
+def _host_capacity_policy_for(
+    repo: dict[str, Any],
+    *,
+    resource_budget: dict[str, int],
+    windows_execution_mode: str,
+) -> dict[str, Any]:
+    scheduling_policy = dict(repo.get("scheduling_policy") or {})
+    resource_classes = dict(repo.get("resource_classes") or {})
+    windows_lanes = _coerce_lane_objects(list(repo.get("windows_full_lanes") or []))
+    runtime_root = next(
+        (
+            str((lane.get("metadata") or {}).get("runtime_root") or "").strip()
+            for lane in windows_lanes
+            if str((lane.get("metadata") or {}).get("runtime_root") or "").strip()
+        ),
+        "",
+    )
+    workspace_root = next(
+        (
+            str(
+                (lane.get("metadata") or {}).get("workspace_root")
+                or lane.get("workspace_root")
+                or ""
+            ).strip()
+            for lane in windows_lanes
+            if str(
+                (lane.get("metadata") or {}).get("workspace_root")
+                or lane.get("workspace_root")
+                or ""
+            ).strip()
+        ),
+        "",
+    )
+    return {
+        "host_id": "windows-owner-ci",
+        "admission_mode": "dynamic_resource_based",
+        "resource_budget": dict(resource_budget),
+        "resource_classes": resource_classes,
+        "reserve_runtime_headroom": True,
+        "runtime_root": runtime_root or None,
+        "workspace_root": workspace_root or None,
+        "max_parallel_windows": int(scheduling_policy.get("max_parallel_windows") or 0),
+        "rebalance_enabled": bool(scheduling_policy.get("rebalance_enabled", True)),
+        "windows_execution_mode": windows_execution_mode,
+        "cleanup_policy": {
+            "stale_workspace_prune": True,
+            "artifact_retention_enforced": True,
+            "docker_cleanup_required": True,
+        },
+    }
+
+
+def _reservation_from_shard(repo_id: str, shard: dict[str, Any]) -> ResourceReservation:
+    metadata = dict(shard.get("metadata") or {})
+    if isinstance(metadata.get("resource_reservation"), dict):
+        return ResourceReservation.model_validate(
+            dict(metadata.get("resource_reservation") or {})
+        )
+    return ResourceReservation.model_validate(_resource_reservation_for_shard(repo_id, shard))
+
+
+def _active_resource_usage(
+    runs: list[dict[str, Any]],
+) -> tuple[dict[str, int], set[str], int]:
+    usage = {"cpu": 0, "service": 0, "serial": 0}
+    busy_parallel_groups: set[str] = set()
+    active_run_count = 0
+    for run in runs:
+        run_has_active_shard = False
+        repo_id = str(run.get("repo_id") or "").strip()
+        for shard in list(run.get("shards") or []):
+            status = str(shard.get("status") or "").strip().lower()
+            if status not in _ACTIVE_SHARD_STATUSES:
+                continue
+            run_has_active_shard = True
+            reservation = _reservation_from_shard(repo_id, shard)
+            resource_class = reservation.resource_class.strip() or "cpu"
+            usage[resource_class] = usage.get(resource_class, 0) + max(
+                1, int(reservation.units or 1)
+            )
+            if reservation.parallel_group:
+                busy_parallel_groups.add(reservation.parallel_group)
+        if run_has_active_shard:
+            active_run_count += 1
+    return usage, busy_parallel_groups, active_run_count
+
+
+def _capacity_snapshot_from_policy(
+    *,
+    policy: dict[str, Any],
+    usage: dict[str, int],
+    blocking_reasons: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> HostCapacitySnapshot:
+    resource_budget = dict(policy.get("resource_budget") or {})
+    return HostCapacitySnapshot(
+        host_id=str(policy.get("host_id") or "windows-owner-ci"),
+        cpu_slots_total=int(resource_budget.get("cpu") or 0),
+        cpu_slots_used=int(usage.get("cpu") or 0),
+        service_slots_total=int(resource_budget.get("service") or 0),
+        service_slots_used=int(usage.get("service") or 0),
+        serial_slots_total=int(resource_budget.get("serial") or 0),
+        serial_slots_used=int(usage.get("serial") or 0),
+        runtime_headroom_reserved=bool(policy.get("reserve_runtime_headroom", True)),
+        blocking_reasons=list(blocking_reasons or []),
+        metadata=dict(metadata or {}),
+    )
 
 
 class CiControllerSkill(Skill):
@@ -346,6 +527,7 @@ class CiControllerSkill(Skill):
             metadata={
                 "windows_execution_mode": repo.get("windows_execution_mode"),
                 "resource_classes": repo.get("resource_classes"),
+                "required_gate_categories": compiled.get("required_gate_categories") or [],
             },
         )
         return SkillResponse(
@@ -425,6 +607,10 @@ class CiControllerSkill(Skill):
             },
         )
         plan["compiled_plan"] = stored_compiled_plan
+        plan["required_gate_categories"] = list(compiled.get("required_gate_categories") or [])
+        plan["required_security_gate_ids"] = list(compiled.get("required_security_gate_ids") or [])
+        plan["required_static_gate_ids"] = list(compiled.get("required_static_gate_ids") or [])
+        plan["host_capacity_policy"] = dict(compiled.get("host_capacity_policy") or {})
         shards = list(compiled.get("shards") or [])
         if mode in {"full", "certification"} and not shards:
             raise ValueError(f"Repo `{repo['repo_id']}` has no configured full shards")
@@ -447,12 +633,12 @@ class CiControllerSkill(Skill):
                 or None,
                 "compiled_plan_id": stored_compiled_plan["compiled_plan_id"],
                 "windows_execution_mode": repo.get("windows_execution_mode"),
-                "required_static_gates": [
-                    str(gate.get("lane_id") or "")
-                    for gate in list(repo.get("mandatory_static_gates") or [])
-                ],
+                "required_static_gates": list(compiled.get("required_static_gate_ids") or []),
+                "required_security_gates": list(compiled.get("required_security_gate_ids") or []),
+                "required_gate_categories": list(compiled.get("required_gate_categories") or []),
                 "certification_required": mode == "certification",
                 "certification_requirements": list(repo.get("certification_requirements") or []),
+                "host_capacity_policy": dict(compiled.get("host_capacity_policy") or {}),
                 "platform_canary": bool((repo.get("metadata") or {}).get("platform_canary")),
                 "promotion_control_plane": "zetherion",
                 "status_contexts": {
@@ -501,19 +687,90 @@ class CiControllerSkill(Skill):
         run = await self._storage.get_run(owner_id, run_id)
         if run is None:
             raise ValueError(f"Run `{run_id}` not found")
+        repo_id = str(run.get("repo_id") or "").strip()
         pending = [
             shard
             for shard in list(run.get("shards") or [])
             if str(shard.get("status") or "").strip().lower() in {"queued_local", "planned"}
         ]
-        busy_groups = sorted(
-            {
-                str((shard.get("metadata") or {}).get("parallel_group") or "")
-                for shard in list(run.get("shards") or [])
-                if str(shard.get("status") or "").strip().lower() == "running"
-            }
-            - {""}
+        active_runs = [
+            run,
+            *[
+                item
+                for item in await self._storage.list_runs(owner_id, limit=200)
+                if str(item.get("run_id") or "").strip() != run_id
+            ],
+        ]
+        usage, busy_parallel_groups, active_run_count = _active_resource_usage(active_runs)
+        host_capacity_policy = dict(
+            run.get("plan", {}).get("host_capacity_policy")
+            or (run.get("metadata") or {}).get("host_capacity_policy")
+            or {}
         )
+        busy_groups = sorted(busy_parallel_groups)
+        snapshot = _capacity_snapshot_from_policy(
+            policy=host_capacity_policy,
+            usage=usage,
+            metadata={
+                "active_run_count": active_run_count,
+                "source": "owner_ci_runs",
+            },
+        )
+        planned_usage = dict(usage)
+        active_parallel_groups = set(busy_parallel_groups)
+        admission_decisions: list[dict[str, Any]] = []
+        admitted_shard_ids: list[str] = []
+        blocked_shard_ids: list[str] = []
+        for shard in pending:
+            reservation = _reservation_from_shard(repo_id, shard)
+            resource_class = reservation.resource_class.strip() or "cpu"
+            units = max(1, int(reservation.units or 1))
+            resource_budget = dict(host_capacity_policy.get("resource_budget") or {})
+            total_slots = int(resource_budget.get(resource_class) or 0)
+            blocking_reasons: list[str] = []
+            if total_slots and planned_usage.get(resource_class, 0) + units > total_slots:
+                current_usage = planned_usage.get(resource_class, 0)
+                blocking_reasons.append(
+                    f"{resource_class} budget exhausted ({current_usage}/{total_slots})"
+                )
+            if reservation.parallel_group and reservation.parallel_group in active_parallel_groups:
+                blocking_reasons.append(
+                    f"parallel group `{reservation.parallel_group}` already active"
+                )
+            decision = AdmissionDecision(
+                admitted=not blocking_reasons,
+                summary=(
+                    f"Shard `{shard.get('lane_id')}` is ready for admission."
+                    if not blocking_reasons
+                    else f"Shard `{shard.get('lane_id')}` is blocked from admission."
+                ),
+                blocking_reasons=blocking_reasons,
+                capacity_snapshot=_capacity_snapshot_from_policy(
+                    policy=host_capacity_policy,
+                    usage=planned_usage,
+                    blocking_reasons=blocking_reasons,
+                    metadata={
+                        "resource_class": resource_class,
+                        "parallel_group": reservation.parallel_group,
+                    },
+                ),
+                reservations=[reservation],
+                metadata={
+                    "run_id": run_id,
+                    "repo_id": repo_id,
+                    "lane_id": str(shard.get("lane_id") or "").strip(),
+                    "shard_id": str(shard.get("shard_id") or "").strip(),
+                    "execution_target": str(shard.get("execution_target") or "").strip(),
+                },
+            )
+            if decision.admitted:
+                planned_usage[resource_class] = planned_usage.get(resource_class, 0) + units
+                if reservation.parallel_group:
+                    active_parallel_groups.add(reservation.parallel_group)
+                admitted_shard_ids.append(str(shard.get("shard_id") or "").strip())
+            else:
+                blocked_shard_ids.append(str(shard.get("shard_id") or "").strip())
+            admission_decisions.append(decision.model_dump(mode="json"))
         return SkillResponse(
             request_id=request.id,
             message=f"Prepared rebalance guidance for `{run_id}`.",
@@ -521,6 +778,8 @@ class CiControllerSkill(Skill):
                 "run": run,
                 "rebalance": {
                     "requested": True,
+                    "host_capacity_policy": host_capacity_policy,
+                    "capacity_snapshot": snapshot.model_dump(mode="json"),
                     "pending_shards": [
                         {
                             "shard_id": shard.get("shard_id"),
@@ -531,6 +790,9 @@ class CiControllerSkill(Skill):
                         for shard in pending
                     ],
                     "busy_parallel_groups": busy_groups,
+                    "admission_decisions": admission_decisions,
+                    "admitted_shard_ids": admitted_shard_ids,
+                    "blocked_shard_ids": blocked_shard_ids,
                 },
             },
         )
@@ -631,7 +893,9 @@ class CiControllerSkill(Skill):
             local_receipt=local_repo_readiness,
             )
         )
-        require_release_receipt = bool((repo.get("promotion_policy") or {}).get("require_release_receipt"))
+        require_release_receipt = bool(
+            (repo.get("promotion_policy") or {}).get("require_release_receipt")
+        )
         if merge_receipt["state"] != "success" or (
             require_release_receipt and deploy_receipt["state"] != "success"
         ):
@@ -722,6 +986,12 @@ class CiControllerSkill(Skill):
         if bool(review.get("merge_blocked", True)):
             merge_state = "failure"
             merge_description = "Merge readiness is blocked by reviewer findings."
+        elif repo_readiness.missing_categories:
+            merge_state = "failure"
+            merge_description = (
+                "Required gate categories are incomplete: "
+                + ", ".join(repo_readiness.missing_categories[:3])
+            )
         elif repo_readiness.failed_required_paths:
             merge_state = "failure"
             merge_description = (
@@ -755,7 +1025,13 @@ class CiControllerSkill(Skill):
         deploy_state = "pending"
         deploy_description = "Release verification receipt is still pending."
         release_status = str(normalized_release.get("status") or "").strip().lower()
-        if release_status in {"healthy", "success"} and int(
+        if repo_readiness.missing_categories:
+            deploy_state = "failure"
+            deploy_description = (
+                "Deploy readiness is blocked by incomplete gate categories: "
+                + ", ".join(repo_readiness.missing_categories[:3])
+            )
+        elif release_status in {"healthy", "success"} and int(
             normalized_release.get("blocker_count") or 0
         ) == 0:
             deploy_state = "success"
@@ -866,22 +1142,40 @@ class CiControllerSkill(Skill):
         mandatory_static_gates = _coerce_lane_objects(
             list(repo.get("mandatory_static_gates") or [])
         )
+        mandatory_security_gates = _coerce_lane_objects(
+            list(repo.get("mandatory_security_gates") or [])
+        )
         local_fast_lanes = _coerce_lane_objects(list(repo.get("local_fast_lanes") or []))
         local_full_lanes = _coerce_lane_objects(list(repo.get("local_full_lanes") or []))
         windows_lanes = _coerce_lane_objects(list(repo.get("windows_full_lanes") or []))
         workspace_root = str((repo.get("allowed_paths") or [None])[0] or "").strip()
-        selected = [*mandatory_static_gates, *local_fast_lanes]
+        selected = [*mandatory_static_gates, *mandatory_security_gates, *local_fast_lanes]
         if mode in {"full", "certification"}:
             selected.extend(local_full_lanes)
         if mode == "certification":
-            windows_authoritative = bool(windows_lanes) and bool(
-                (repo.get("promotion_policy") or {}).get("require_windows_full", False)
-            )
-            selected = [*windows_lanes] if windows_authoritative else [*selected, *windows_lanes]
+            selected.extend(windows_lanes)
 
         shards: list[dict[str, Any]] = []
         static_gate_ids = [str(lane.get("lane_id") or "") for lane in mandatory_static_gates]
+        security_gate_ids = [
+            str(lane.get("lane_id") or "") for lane in mandatory_security_gates
+        ]
+        static_gate_id_set = {lane_id for lane_id in static_gate_ids if lane_id}
+        security_gate_id_set = {lane_id for lane_id in security_gate_ids if lane_id}
         windows_execution_mode = str(repo.get("windows_execution_mode") or "command").strip()
+        schedule_policy = dict(repo.get("scheduling_policy") or {})
+        resource_budget = {
+            key: int(value)
+            for key, value in dict(schedule_policy.get("resource_budgets") or {}).items()
+        }
+        host_capacity_policy = _host_capacity_policy_for(
+            repo,
+            resource_budget=resource_budget,
+            windows_execution_mode=windows_execution_mode,
+        )
+        required_gate_categories = (
+            list(_REQUIRED_CERTIFICATION_GATE_CATEGORIES) if mode == "certification" else []
+        )
 
         for lane in selected:
             shard = deepcopy(lane)
@@ -909,7 +1203,9 @@ class CiControllerSkill(Skill):
                 if str(value).strip()
             ]
             if shard.get("timeout_seconds") is None:
-                shard["timeout_seconds"] = int(shard["metadata"].get("timeout_seconds") or 0) or None
+                shard["timeout_seconds"] = (
+                    int(shard["metadata"].get("timeout_seconds") or 0) or None
+                )
 
             execution_target = str(shard.get("execution_target") or "local_mac").strip().lower()
             if execution_target in {"windows_local", "any_worker"}:
@@ -924,10 +1220,24 @@ class CiControllerSkill(Skill):
                             "Windows shard "
                             f"`{shard['lane_id']}` is missing container_spec for docker_only mode"
                         )
-                if static_gate_ids:
-                    shard["metadata"].setdefault("depends_on", static_gate_ids)
-            if shard["lane_id"] in static_gate_ids:
-                shard["metadata"]["gate_kind"] = "static"
+                dependency_gate_ids = _dedupe_strings([*static_gate_ids, *security_gate_ids])
+                if dependency_gate_ids:
+                    shard["metadata"].setdefault("depends_on", dependency_gate_ids)
+            gate_family = _gate_family_for_lane(
+                shard,
+                static_gate_ids=static_gate_id_set,
+                security_gate_ids=security_gate_id_set,
+            )
+            required_category = _required_category_for_family(gate_family)
+            shard["metadata"]["gate_family"] = gate_family
+            shard["metadata"]["gate_kind"] = gate_family
+            shard["metadata"]["blocking"] = True
+            if required_category is not None:
+                shard["metadata"]["required_category"] = required_category
+            shard["metadata"]["resource_reservation"] = _resource_reservation_for_shard(
+                str(repo["repo_id"]),
+                shard,
+            )
             if mode == "certification":
                 shard["payload"]["certification_matrix"] = list(
                     (repo.get("metadata") or {}).get("certification_matrix") or []
@@ -944,7 +1254,7 @@ class CiControllerSkill(Skill):
             git_ref=git_ref,
             mode=mode,
             windows_execution_mode=windows_execution_mode,
-            resource_budget=dict(schedule_policy.get("resource_budgets") or {}),
+            resource_budget=resource_budget,
             schedule_tags=[mode, str(repo.get("stack_kind") or "")],
             retry_policy={
                 "rerun_failed_shards": True,
@@ -959,8 +1269,11 @@ class CiControllerSkill(Skill):
                 ),
             },
             required_static_gate_ids=static_gate_ids,
+            required_security_gate_ids=security_gate_ids,
+            required_gate_categories=required_gate_categories,
             certification_requirements=list(repo.get("certification_requirements") or []),
             scheduled_canaries=list(repo.get("scheduled_canaries") or []),
+            host_capacity_policy=host_capacity_policy,
             required_paths=sorted(
                 {
                     path

@@ -35,6 +35,7 @@ def test_owner_ci_storage_encrypt_decrypt_and_core_row_mappers() -> None:
         {"windows_execution_mode": "docker_only", "scheduled_canaries": ["discord_dm"]}
     ) == {
         "mandatory_static_gates": [],
+        "mandatory_security_gates": [],
         "shard_templates": [],
         "scheduling_policy": {},
         "resource_classes": {},

@@ -90,7 +90,48 @@ class LocalGateShardSpec(BaseModel):
     relay_mode: str = "direct"
     workspace_root: str | None = None
     covered_required_paths: list[str] = Field(default_factory=list)
+    gate_family: str = "integration"
+    blocking: bool = True
+    required_category: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class HostCapacitySnapshot(BaseModel):
+    """Coarse host-capacity snapshot for admission decisions."""
+
+    host_id: str = "windows-owner-ci"
+    cpu_slots_total: int = 0
+    cpu_slots_used: int = 0
+    service_slots_total: int = 0
+    service_slots_used: int = 0
+    serial_slots_total: int = 0
+    serial_slots_used: int = 0
+    runtime_headroom_reserved: bool = True
+    blocking_reasons: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResourceReservation(BaseModel):
+    """Reservation request for one shard on the host scheduler."""
+
+    repo_id: str | None = None
+    shard_id: str | None = None
+    resource_class: str = "cpu"
+    units: int = 1
+    parallel_group: str | None = None
+    workspace_root: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AdmissionDecision(BaseModel):
+    """Result of a coarse host-admission evaluation."""
+
+    admitted: bool = True
+    summary: str = ""
+    blocking_reasons: list[str] = Field(default_factory=list)
+    capacity_snapshot: HostCapacitySnapshot | None = None
+    reservations: list[ResourceReservation] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -106,8 +147,11 @@ class LocalGatePlan(BaseModel):
     retry_policy: dict[str, Any] = Field(default_factory=dict)
     debug_bundle_contract: dict[str, Any] = Field(default_factory=dict)
     required_static_gate_ids: list[str] = Field(default_factory=list)
+    required_security_gate_ids: list[str] = Field(default_factory=list)
+    required_gate_categories: list[str] = Field(default_factory=list)
     certification_requirements: list[str] = Field(default_factory=list)
     scheduled_canaries: list[dict[str, Any]] = Field(default_factory=list)
+    host_capacity_policy: dict[str, Any] = Field(default_factory=dict)
     required_paths: list[str] = Field(default_factory=list)
     shards: list[LocalGateShardSpec] = Field(default_factory=list)
 
@@ -141,6 +185,10 @@ class ShardReceipt(BaseModel):
     cleanup_receipt_path: str | None = None
     service_slot: str | None = None
     release_blocking: bool = True
+    gate_family: str | None = None
+    blocking: bool = True
+    required_category: str | None = None
+    resource_reservation: ResourceReservation | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -182,6 +230,9 @@ class RepoReadinessReceipt(BaseModel):
     missing_evidence: list[str] = Field(default_factory=list)
     shard_receipts: list[ShardReceipt] = Field(default_factory=list)
     release_verification: ReleaseVerificationReceipt | None = None
+    category_complete: dict[str, bool] = Field(default_factory=dict)
+    missing_categories: list[str] = Field(default_factory=list)
+    host_capacity_snapshot: HostCapacitySnapshot | None = None
     summary: str = ""
 
 
@@ -193,6 +244,9 @@ class WorkspaceReadinessReceipt(BaseModel):
     repo_receipts: list[RepoReadinessReceipt] = Field(default_factory=list)
     failed_required_paths: list[str] = Field(default_factory=list)
     missing_evidence: list[str] = Field(default_factory=list)
+    category_complete: dict[str, bool] = Field(default_factory=dict)
+    missing_categories: list[str] = Field(default_factory=list)
+    host_capacity_snapshot: HostCapacitySnapshot | None = None
     summary: str = ""
 
 
@@ -471,7 +525,84 @@ def normalize_shard_receipt(repo_id: str, shard: dict[str, Any]) -> ShardReceipt
         release_blocking=bool(
             metadata.get("release_blocking", result.get("release_blocking", True))
         ),
+        gate_family=str(metadata.get("gate_family") or metadata.get("gate_kind") or "").strip()
+        or None,
+        blocking=bool(metadata.get("blocking", True)),
+        required_category=str(metadata.get("required_category") or "").strip() or None,
+        resource_reservation=(
+            ResourceReservation.model_validate(
+                dict(metadata.get("resource_reservation") or {})
+            )
+            if isinstance(metadata.get("resource_reservation"), dict)
+            else None
+        ),
         metadata=metadata,
+    )
+
+
+def _compiled_plan_payload(run: dict[str, Any]) -> dict[str, Any]:
+    plan = dict(run.get("plan") or {})
+    compiled_plan = dict(plan.get("compiled_plan") or {})
+    compiled_payload = dict(compiled_plan.get("plan") or {})
+    return compiled_payload or plan
+
+
+def _required_gate_categories(repo: dict[str, Any], run: dict[str, Any]) -> list[str]:
+    plan = _compiled_plan_payload(run)
+    plan_categories = [
+        str(category).strip().lower()
+        for category in list(plan.get("required_gate_categories") or [])
+        if str(category).strip()
+    ]
+    if plan_categories:
+        return sorted(dict.fromkeys(plan_categories))
+
+    metadata = dict(repo.get("metadata") or {})
+    repo_categories = [
+        str(category).strip().lower()
+        for category in list(metadata.get("required_gate_categories") or [])
+        if str(category).strip()
+    ]
+    if repo_categories:
+        return sorted(dict.fromkeys(repo_categories))
+
+    plan_mode = str(plan.get("mode") or run.get("metadata", {}).get("mode") or "").strip().lower()
+    if plan_mode == "certification":
+        return ["e2e", "integration", "security", "static", "unit"]
+    return []
+
+
+def _host_capacity_snapshot(
+    repo: dict[str, Any],
+    run: dict[str, Any],
+) -> HostCapacitySnapshot | None:
+    plan = _compiled_plan_payload(run)
+    host_policy = dict(
+        plan.get("host_capacity_policy")
+        or run.get("metadata", {}).get("host_capacity_policy")
+        or {}
+    )
+    resource_budget = dict(plan.get("resource_budget") or host_policy.get("resource_budget") or {})
+    if not resource_budget and not host_policy:
+        return None
+    return HostCapacitySnapshot(
+        host_id=str(host_policy.get("host_id") or "windows-owner-ci").strip() or "windows-owner-ci",
+        cpu_slots_total=int(resource_budget.get("cpu") or 0),
+        cpu_slots_used=int(host_policy.get("cpu_slots_used") or 0),
+        service_slots_total=int(resource_budget.get("service") or 0),
+        service_slots_used=int(host_policy.get("service_slots_used") or 0),
+        serial_slots_total=int(resource_budget.get("serial") or 0),
+        serial_slots_used=int(host_policy.get("serial_slots_used") or 0),
+        runtime_headroom_reserved=bool(host_policy.get("reserve_runtime_headroom", True)),
+        blocking_reasons=[
+            str(reason).strip()
+            for reason in list(host_policy.get("blocking_reasons") or [])
+            if str(reason).strip()
+        ],
+        metadata={
+            "repo_id": str(repo.get("repo_id") or run.get("repo_id") or "").strip() or None,
+            **host_policy,
+        },
     )
 
 
@@ -679,6 +810,20 @@ def build_repo_readiness_receipt(
         }
         | {path for path in release.missing_evidence if path}
     )
+    required_categories = _required_gate_categories(repo, run)
+    host_capacity_snapshot = _host_capacity_snapshot(repo, run)
+    category_complete = {
+        category: any(
+            shard.gate_family == category
+            and shard.blocking
+            and shard.status in {"succeeded", "skipped"}
+            for shard in shard_receipts
+        )
+        for category in required_categories
+    }
+    missing_categories = sorted(
+        category for category, complete in category_complete.items() if not complete
+    )
 
     merge_ready = not bool(review.get("merge_blocked", True))
     if merge_ready and any(shard.status in failed_statuses for shard in shard_receipts):
@@ -688,6 +833,9 @@ def build_repo_readiness_receipt(
     if any(shard.status in disconnected_statuses for shard in shard_receipts):
         merge_ready = False
     if any(shard.status in pending_statuses for shard in shard_receipts):
+        deploy_ready = False
+    if missing_categories:
+        merge_ready = False
         deploy_ready = False
 
     summary_bits: list[str] = []
@@ -699,6 +847,8 @@ def build_repo_readiness_receipt(
         summary_bits.append(f"failed paths: {', '.join(failed_required_paths[:4])}")
     if missing_evidence:
         summary_bits.append(f"missing evidence: {', '.join(missing_evidence[:4])}")
+    if missing_categories:
+        summary_bits.append(f"missing categories: {', '.join(missing_categories[:4])}")
 
     return RepoReadinessReceipt(
         repo_id=repo_id,
@@ -708,6 +858,9 @@ def build_repo_readiness_receipt(
         missing_evidence=missing_evidence,
         shard_receipts=shard_receipts,
         release_verification=release,
+        category_complete=category_complete,
+        missing_categories=missing_categories,
+        host_capacity_snapshot=host_capacity_snapshot,
         summary="; ".join(summary_bits) or "ready",
     )
 
@@ -733,9 +886,35 @@ def build_workspace_readiness_receipt(
             if path
         }
     )
+    all_categories = sorted(
+        {
+            category
+            for receipt in repo_receipts
+            for category in receipt.category_complete
+        }
+    )
+    category_complete = {
+        category: all(receipt.category_complete.get(category, False) for receipt in repo_receipts)
+        for category in all_categories
+    }
+    missing_categories = sorted(
+        {
+            category
+            for receipt in repo_receipts
+            for category in receipt.missing_categories
+        }
+    )
     merge_ready = all(receipt.merge_ready for receipt in repo_receipts) if repo_receipts else False
     deploy_ready = (
         all(receipt.deploy_ready for receipt in repo_receipts) if repo_receipts else False
+    )
+    host_capacity_snapshot = next(
+        (
+            receipt.host_capacity_snapshot
+            for receipt in repo_receipts
+            if receipt.host_capacity_snapshot is not None
+        ),
+        None,
     )
     return WorkspaceReadinessReceipt(
         merge_ready=merge_ready,
@@ -743,9 +922,18 @@ def build_workspace_readiness_receipt(
         repo_receipts=repo_receipts,
         failed_required_paths=failed_required_paths,
         missing_evidence=missing_evidence,
+        category_complete=category_complete,
+        missing_categories=missing_categories,
+        host_capacity_snapshot=host_capacity_snapshot,
         summary=(
             "ready"
-            if merge_ready and deploy_ready and not failed_required_paths and not missing_evidence
+            if (
+                merge_ready
+                and deploy_ready
+                and not failed_required_paths
+                and not missing_evidence
+                and not missing_categories
+            )
             else "workspace has blockers"
         ),
     )

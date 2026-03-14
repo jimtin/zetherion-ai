@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from zetherion_ai.owner_ci.models import (
+    RepoReadinessReceipt,
+    ShardReceipt,
     _as_bool,
     _bool_to_check_status,
     _check_passed,
-    RepoReadinessReceipt,
-    ShardReceipt,
     build_repo_readiness_receipt,
     build_workspace_readiness_receipt,
     normalize_release_verification_receipt,
@@ -60,6 +60,71 @@ def test_build_repo_and_workspace_readiness_receipts_capture_failed_paths() -> N
     assert repo_receipt.failed_required_paths == ["queue_reliability"]
     assert workspace.merge_ready is False
     assert workspace.failed_required_paths == ["queue_reliability"]
+
+
+def test_build_repo_and_workspace_readiness_receipts_track_required_categories_and_host_capacity(
+) -> None:
+    repo_receipt = build_repo_readiness_receipt(
+        repo={"repo_id": "zetherion-ai"},
+        run={
+            "repo_id": "zetherion-ai",
+            "metadata": {"mode": "certification"},
+            "plan": {
+                "required_gate_categories": ["static", "security", "unit"],
+                "resource_budget": {"cpu": 8, "service": 2, "serial": 1},
+                "host_capacity_policy": {
+                    "host_id": "windows-owner-ci",
+                    "reserve_runtime_headroom": True,
+                },
+            },
+            "shards": [
+                {
+                    "lane_id": "ruff-check",
+                    "status": "succeeded",
+                    "metadata": {
+                        "gate_family": "static",
+                        "blocking": True,
+                        "covered_required_paths": ["zetherion_repo_integrity"],
+                    },
+                    "result": {},
+                    "error": {},
+                    "artifact_contract": {},
+                },
+                {
+                    "lane_id": "gitleaks",
+                    "status": "succeeded",
+                    "metadata": {
+                        "gate_family": "security",
+                        "blocking": True,
+                        "covered_required_paths": ["zetherion_security_integrity"],
+                    },
+                    "result": {},
+                    "error": {},
+                    "artifact_contract": {},
+                },
+            ],
+        },
+        review={"merge_blocked": False},
+        release_receipt={"status": "healthy", "blocker_count": 0},
+    )
+
+    workspace = build_workspace_readiness_receipt([repo_receipt])
+
+    assert repo_receipt.category_complete == {
+        "security": True,
+        "static": True,
+        "unit": False,
+    }
+    assert repo_receipt.missing_categories == ["unit"]
+    assert repo_receipt.host_capacity_snapshot is not None
+    assert repo_receipt.host_capacity_snapshot.cpu_slots_total == 8
+    assert workspace.category_complete == {
+        "security": True,
+        "static": True,
+        "unit": False,
+    }
+    assert workspace.missing_categories == ["unit"]
+    assert workspace.host_capacity_snapshot is not None
 
 
 def test_normalize_release_verification_receipt_derives_status_and_counts() -> None:

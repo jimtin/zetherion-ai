@@ -51,7 +51,9 @@ def test_normalize_owner_id_prefers_context_then_user_then_default() -> None:
             context={"operator_id": "op-1", "actor_sub": "actor-1"},
         )
     ) == "op-1"
-    assert _normalize_owner_id(SkillRequest(user_id="user-1", context={"actor_sub": "actor-1"})) == "actor-1"
+    assert _normalize_owner_id(
+        SkillRequest(user_id="user-1", context={"actor_sub": "actor-1"})
+    ) == "actor-1"
     assert _normalize_owner_id(SkillRequest(user_id="user-1")) == "user-1"
     assert _normalize_owner_id(SkillRequest(user_id="")) == "owner"
 
@@ -98,17 +100,39 @@ async def test_ci_controller_certification_run_seeds_platform_canary_and_windows
     assert create_kwargs["metadata"]["certification_required"] is True
     assert create_kwargs["metadata"]["platform_canary"] is True
     assert create_kwargs["metadata"]["windows_execution_mode"] == "docker_only"
+    assert create_kwargs["metadata"]["required_security_gates"] == [
+        "bandit",
+        "gitleaks",
+        "pip-audit",
+    ]
+    assert create_kwargs["metadata"]["required_gate_categories"] == [
+        "static",
+        "security",
+        "unit",
+        "integration",
+        "e2e",
+    ]
     assert "discord_roundtrip" in create_kwargs["metadata"]["certification_requirements"]
     shards = create_kwargs["shards"]
     assert any(shard["execution_target"] == "windows_local" for shard in shards)
     assert any(shard["lane_id"] == "discord-required-e2e" for shard in shards)
-    assert all(shard["execution_target"] == "windows_local" for shard in shards)
-    assert not any(shard["lane_id"] == "ruff-check" for shard in shards)
+    assert any(shard["execution_target"] == "local_mac" for shard in shards)
+    assert any(shard["lane_id"] == "ruff-check" for shard in shards)
+    assert any(shard["lane_id"] == "bandit" for shard in shards)
     assert all(
         shard.get("runner") == "docker"
         for shard in shards
         if shard.get("execution_target") == "windows_local"
     )
+    for shard in shards:
+        if shard.get("execution_target") == "windows_local":
+            assert shard["metadata"]["depends_on"] == [
+                "ruff-check",
+                "ruff-format-check",
+                "bandit",
+                "gitleaks",
+                "pip-audit",
+            ]
     assert all(
         shard.get("payload", {}).get("certification_matrix")
         == profile["metadata"]["certification_matrix"]
@@ -290,6 +314,13 @@ async def test_ci_controller_repo_plan_schedule_and_run_read_handlers() -> None:
     storage.get_run.return_value = {
         "run_id": "run-1",
         "repo_id": "zetherion-ai",
+        "plan": {
+            "host_capacity_policy": {
+                "host_id": "windows-main",
+                "resource_budget": {"cpu": 1, "service": 2, "serial": 1},
+                "reserve_runtime_headroom": True,
+            }
+        },
         "shards": [
             {
                 "shard_id": "shard-1",
@@ -301,6 +332,12 @@ async def test_ci_controller_repo_plan_schedule_and_run_read_handlers() -> None:
                 "shard_id": "shard-2",
                 "lane_id": "z-int-runtime",
                 "status": "running",
+                "metadata": {"resource_class": "service", "parallel_group": "db"},
+            },
+            {
+                "shard_id": "shard-3",
+                "lane_id": "discord-required-e2e",
+                "status": "planned",
                 "metadata": {"resource_class": "service", "parallel_group": "db"},
             },
         ],
@@ -399,6 +436,13 @@ async def test_ci_controller_repo_plan_schedule_and_run_read_handlers() -> None:
     assert run_get.data["run"]["run_id"] == "run-1"
     assert run_list.data["runs"] == [{"run_id": "run-1"}]
     assert rebalance.data["rebalance"]["busy_parallel_groups"] == ["db"]
+    assert rebalance.data["rebalance"]["capacity_snapshot"]["host_id"] == "windows-main"
+    assert rebalance.data["rebalance"]["capacity_snapshot"]["service_slots_used"] == 1
+    assert rebalance.data["rebalance"]["admitted_shard_ids"] == ["shard-1"]
+    assert rebalance.data["rebalance"]["blocked_shard_ids"] == ["shard-3"]
+    assert rebalance.data["rebalance"]["admission_decisions"][1]["blocking_reasons"] == [
+        "parallel group `db` already active"
+    ]
 
 
 @pytest.mark.asyncio
@@ -526,6 +570,7 @@ async def test_pr_reviewer_supports_approved_and_needs_sync_verdicts() -> None:
         "repo_id": "catalyst-group-solutions",
         "metadata": {
             "required_static_gates": ["lint"],
+            "required_gate_categories": ["static", "e2e"],
             "certification_required": True,
             "certification_requirements": ["discord_roundtrip"],
             "platform_canary": False,
@@ -535,12 +580,14 @@ async def test_pr_reviewer_supports_approved_and_needs_sync_verdicts() -> None:
                 "lane_id": "lint",
                 "status": "succeeded",
                 "execution_target": "windows_local",
+                "metadata": {"gate_family": "static"},
                 "result": {},
             },
             {
                 "lane_id": "discord-required-e2e",
                 "status": "succeeded",
                 "execution_target": "windows_local",
+                "metadata": {"gate_family": "e2e"},
                 "result": {},
             },
         ],
@@ -569,6 +616,8 @@ def test_pr_reviewer_flags_missing_static_gate_pending_and_missing_discord_recei
             "repo_id": "zetherion-ai",
             "metadata": {
                 "required_static_gates": ["ruff-check"],
+                "required_security_gates": ["gitleaks"],
+                "required_gate_categories": ["static", "security", "unit", "integration", "e2e"],
                 "certification_required": True,
                 "certification_requirements": ["discord_roundtrip"],
                 "platform_canary": True,
@@ -587,6 +636,8 @@ def test_pr_reviewer_flags_missing_static_gate_pending_and_missing_discord_recei
     assert review["verdict"] == "blocked"
     assert {finding["code"] for finding in review["findings"]} >= {
         "mandatory_static_gates_missing",
+        "mandatory_security_gates_missing",
+        "required_gate_categories_missing",
         "shard_pending",
         "certification_incomplete",
         "discord_roundtrip_missing",
@@ -637,10 +688,27 @@ async def test_ci_controller_compile_plan_includes_static_gates_and_resource_bud
     plan = create_kwargs["plan"]
     assert plan["windows_execution_mode"] == "docker_only"
     assert "mandatory_static_gates" in plan["certification_requirements"]
+    assert plan["required_security_gate_ids"] == ["gitleaks", "yarn-audit"]
+    assert plan["required_gate_categories"] == [
+        "static",
+        "security",
+        "unit",
+        "integration",
+        "e2e",
+    ]
     assert any(shard["lane_id"] == "golive-gate" for shard in plan["shards"])
-    assert all(shard["execution_target"] == "windows_local" for shard in plan["shards"])
-    assert not any(shard["lane_id"] == "lint" for shard in plan["shards"])
-    assert not any(shard["lane_id"] == "c-unit-core" for shard in plan["shards"])
+    assert any(shard["execution_target"] == "windows_local" for shard in plan["shards"])
+    assert any(shard["execution_target"] == "local_mac" for shard in plan["shards"])
+    assert any(shard["lane_id"] == "lint" for shard in plan["shards"])
+    assert any(shard["lane_id"] == "c-unit-core" for shard in plan["shards"])
+    golive = next(shard for shard in plan["shards"] if shard["lane_id"] == "golive-gate")
+    assert golive["metadata"]["depends_on"] == [
+        "lint",
+        "format-check",
+        "typecheck",
+        "gitleaks",
+        "yarn-audit",
+    ]
 
 
 @pytest.mark.asyncio

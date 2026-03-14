@@ -20,6 +20,7 @@ def test_repo_profile_input_normalizes_extensions_and_validates_required_fields(
         "stack_kind": "python",
         "default_branch": "main",
         "mandatory_static_gates": [{"lane_id": "ruff"}],
+        "mandatory_security_gates": [{"lane_id": "gitleaks"}],
         "resource_classes": {"cpu": {"max_parallel": 8}},
         "windows_execution_mode": "docker_only",
         "allowed_paths": ["/tmp/zetherion-ai"],
@@ -32,6 +33,7 @@ def test_repo_profile_input_normalizes_extensions_and_validates_required_fields(
     assert normalized["github_repo"] == "jimtin/zetherion-ai"
     assert normalized["windows_execution_mode"] == "docker_only"
     assert normalized["metadata"]["mandatory_static_gates"] == [{"lane_id": "ruff"}]
+    assert normalized["metadata"]["mandatory_security_gates"] == [{"lane_id": "gitleaks"}]
     assert normalized["resource_classes"] == {"cpu": {"max_parallel": 8}}
     assert normalized["active"] is False
 
@@ -95,6 +97,14 @@ def test_compile_run_plan_sets_windows_dependencies_required_paths_and_certifica
                 "metadata": {"covered_required_paths": ["static_quality"]},
             }
         ],
+        "mandatory_security_gates": [
+            {
+                "lane_id": "gitleaks",
+                "lane_label": "Secrets",
+                "command": ["gitleaks", "detect"],
+                "metadata": {"covered_required_paths": ["security_quality"]},
+            }
+        ],
         "local_fast_lanes": [
             {
                 "lane_id": "z-unit-core",
@@ -135,16 +145,27 @@ def test_compile_run_plan_sets_windows_dependencies_required_paths_and_certifica
     plan = skill._compile_run_plan(repo=repo, mode="certification", git_ref="main")
 
     assert plan["required_static_gate_ids"] == ["ruff-check"]
+    assert plan["required_security_gate_ids"] == ["gitleaks"]
+    assert plan["required_gate_categories"] == [
+        "static",
+        "security",
+        "unit",
+        "integration",
+        "e2e",
+    ]
     assert plan["required_paths"] == [
         "discord_roundtrip",
         "dm_reply_path",
         "queue_reliability",
+        "security_quality",
         "static_quality",
     ]
     assert plan["resource_budget"] == {"cpu": 8, "service": 2, "serial": 1}
+    assert plan["host_capacity_policy"]["admission_mode"] == "dynamic_resource_based"
     assert plan["debug_bundle_contract"]["retain_debug_bundle_days"] == 7
     assert [shard["lane_id"] for shard in plan["shards"]] == [
         "ruff-check",
+        "gitleaks",
         "z-unit-core",
         "z-int-runtime",
         "discord-required-e2e",
@@ -152,12 +173,17 @@ def test_compile_run_plan_sets_windows_dependencies_required_paths_and_certifica
     windows_shard = plan["shards"][-1]
     assert windows_shard["runner"] == "docker"
     assert windows_shard["required_capabilities"] == ["ci.test.run"]
-    assert windows_shard["metadata"]["depends_on"] == ["ruff-check"]
+    assert windows_shard["metadata"]["depends_on"] == ["ruff-check", "gitleaks"]
     assert windows_shard["payload"]["certification_matrix"] == ["discord", "queue"]
     assert windows_shard["payload"]["certification_requirements"] == ["discord_roundtrip"]
     assert windows_shard["metadata"]["certification_mode"] is True
-    assert plan["shards"][0]["metadata"]["gate_kind"] == "static"
-    assert plan["shards"][2]["timeout_seconds"] == 600
+    assert plan["shards"][0]["metadata"]["gate_family"] == "static"
+    assert plan["shards"][1]["metadata"]["gate_family"] == "security"
+    assert plan["shards"][2]["metadata"]["gate_family"] == "unit"
+    assert plan["shards"][3]["metadata"]["gate_family"] == "integration"
+    assert plan["shards"][4]["metadata"]["gate_family"] == "e2e"
+    assert plan["shards"][4]["metadata"]["resource_reservation"]["resource_class"] == "serial"
+    assert plan["shards"][3]["timeout_seconds"] == 600
 
 
 def test_compile_run_plan_rejects_docker_only_windows_shard_without_container_spec() -> None:

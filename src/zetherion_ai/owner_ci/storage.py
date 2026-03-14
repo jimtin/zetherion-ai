@@ -1027,6 +1027,7 @@ class OwnerCiStorage:
     def _repo_profile_extensions(metadata: dict[str, Any]) -> dict[str, Any]:
         return {
             "mandatory_static_gates": list(metadata.get("mandatory_static_gates") or []),
+            "mandatory_security_gates": list(metadata.get("mandatory_security_gates") or []),
             "shard_templates": list(metadata.get("shard_templates") or []),
             "scheduling_policy": dict(metadata.get("scheduling_policy") or {}),
             "resource_classes": dict(metadata.get("resource_classes") or {}),

@@ -270,12 +270,25 @@ DEFAULT_REPO_PROFILES: dict[str, dict[str, Any]] = {
                 workspace_root=_CGS_ROOT,
                 required_paths=["cgs_repo_integrity"],
             ),
+        ],
+        "mandatory_security_gates": [
             _local_gate(
                 "gitleaks",
                 "Gitleaks secrets scan",
                 ["gitleaks", "detect", "--source", ".", "--no-git"],
                 workspace_root=_CGS_ROOT,
-                required_paths=["cgs_repo_integrity"],
+                required_paths=["cgs_security_integrity"],
+            ),
+            _local_gate(
+                "yarn-audit",
+                "Dependency audit",
+                [
+                    "bash",
+                    "-lc",
+                    "scripts/cgs-ai/docker-node-tool.sh sh -lc 'yarn audit --level high || true'",
+                ],
+                workspace_root=_CGS_ROOT,
+                required_paths=["cgs_security_integrity"],
             ),
         ],
         "local_fast_lanes": [
@@ -465,6 +478,7 @@ DEFAULT_REPO_PROFILES: dict[str, dict[str, Any]] = {
         "windows_execution_mode": "docker_only",
         "certification_requirements": [
             "mandatory_static_gates",
+            "mandatory_security_gates",
             "windows_full",
             "tenant_scope",
             "golive",
@@ -541,12 +555,36 @@ DEFAULT_REPO_PROFILES: dict[str, dict[str, Any]] = {
                 workspace_root=_ZETHERION_ROOT,
                 required_paths=["zetherion_repo_integrity"],
             ),
+        ],
+        "mandatory_security_gates": [
+            _local_gate(
+                "bandit",
+                "Bandit security scan",
+                [
+                    "bash",
+                    "-lc",
+                    "scripts/docker-python-tool.sh -m bandit -r src -c pyproject.toml -q",
+                ],
+                workspace_root=_ZETHERION_ROOT,
+                required_paths=["zetherion_security_integrity"],
+            ),
             _local_gate(
                 "gitleaks",
                 "Gitleaks secrets scan",
                 ["gitleaks", "detect", "--source", ".", "--no-git"],
                 workspace_root=_ZETHERION_ROOT,
-                required_paths=["zetherion_repo_integrity"],
+                required_paths=["zetherion_security_integrity"],
+            ),
+            _local_gate(
+                "pip-audit",
+                "Dependency audit",
+                [
+                    "bash",
+                    "-lc",
+                    "scripts/docker-python-tool.sh -m pip_audit -r requirements.txt --strict",
+                ],
+                workspace_root=_ZETHERION_ROOT,
+                required_paths=["zetherion_security_integrity"],
             ),
         ],
         "local_fast_lanes": [
@@ -781,6 +819,7 @@ DEFAULT_REPO_PROFILES: dict[str, dict[str, Any]] = {
         "windows_execution_mode": "docker_only",
         "certification_requirements": [
             "mandatory_static_gates",
+            "mandatory_security_gates",
             "windows_full",
             "discord_roundtrip",
         ],
