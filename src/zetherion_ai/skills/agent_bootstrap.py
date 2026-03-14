@@ -661,6 +661,53 @@ def _default_service_adapter_capabilities() -> dict[str, dict[str, Any]]:
     }
 
 
+def _connector_health_report(
+    connector: dict[str, Any],
+    capability: dict[str, Any] | None,
+) -> dict[str, Any]:
+    service_kind = str(connector.get("service_kind") or "").strip().lower()
+    metadata = dict(connector.get("metadata") or {})
+    blocking_reasons: list[str] = []
+    warnings: list[str] = []
+    auth_kind = str(connector.get("auth_kind") or "token").strip().lower() or "token"
+    has_secret = bool(connector.get("has_secret"))
+    active = bool(connector.get("active", True))
+    if not active:
+        blocking_reasons.append("connector_inactive")
+    if auth_kind not in {"none", "anonymous"} and not has_secret:
+        blocking_reasons.append("missing_secret")
+    if capability is None:
+        warnings.append("missing_service_capability_manifest")
+    if service_kind == "clerk" and not (
+        _derive_clerk_jwks_url(metadata)
+        or str(metadata.get("issuer") or "").strip()
+        or str(metadata.get("frontend_api_url") or "").strip()
+    ):
+        warnings.append("missing_clerk_metadata")
+    if service_kind == "vercel" and not (
+        str(metadata.get("team_id") or "").strip()
+        or str(metadata.get("project_ref") or "").strip()
+    ):
+        warnings.append("missing_vercel_project_metadata")
+    status = "healthy"
+    if blocking_reasons:
+        status = "blocked"
+    elif warnings:
+        status = "degraded"
+    return {
+        "connector_id": str(connector.get("connector_id") or "").strip(),
+        "service_kind": service_kind,
+        "status": status,
+        "auth_kind": auth_kind,
+        "active": active,
+        "auth_configured": auth_kind in {"none", "anonymous"} or has_secret,
+        "capability_manifest_present": capability is not None,
+        "blocking_reasons": blocking_reasons,
+        "warnings": warnings,
+        "checked_at": datetime.now(UTC).isoformat(),
+    }
+
+
 def _pick_fields(payload: dict[str, Any], fields: list[str]) -> dict[str, Any]:
     return {field: payload.get(field) for field in fields if field in payload}
 
@@ -777,6 +824,8 @@ class AgentBootstrapSkill(Skill):
                 "agent_managed_repo_enforce",
                 "agent_principal_upsert",
                 "agent_principal_list",
+                "agent_connector_get",
+                "agent_connector_health",
                 "agent_connector_upsert",
                 "agent_connector_list",
                 "agent_connector_rotate",
@@ -848,6 +897,8 @@ class AgentBootstrapSkill(Skill):
             "agent_managed_repo_enforce": self._handle_managed_repo_enforce,
             "agent_principal_upsert": self._handle_principal_upsert,
             "agent_principal_list": self._handle_principal_list,
+            "agent_connector_get": self._handle_connector_get,
+            "agent_connector_health": self._handle_connector_health,
             "agent_connector_upsert": self._handle_connector_upsert,
             "agent_connector_list": self._handle_connector_list,
             "agent_connector_rotate": self._handle_connector_rotate,
@@ -2228,6 +2279,54 @@ class AgentBootstrapSkill(Skill):
             request_id=request.id,
             message=f"Loaded {len(connectors)} connectors.",
             data={"connectors": connectors},
+        )
+
+    async def _handle_connector_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        connector_id = str(request.context.get("connector_id") or "").strip()
+        if not connector_id:
+            return SkillResponse.error_response(request.id, "connector_id is required")
+        connector = await self._storage.get_external_service_connector(owner_id, connector_id)
+        if connector is None:
+            return SkillResponse.error_response(request.id, f"Connector `{connector_id}` not found")
+        capability = await self._storage.get_service_adapter_capability(
+            owner_id,
+            str(connector.get("service_kind") or "").strip(),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded connector `{connector_id}`.",
+            data={
+                "connector": connector,
+                "capability": capability,
+                "health": _connector_health_report(connector, capability),
+            },
+        )
+
+    async def _handle_connector_health(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        connector_id = str(request.context.get("connector_id") or "").strip()
+        if not connector_id:
+            return SkillResponse.error_response(request.id, "connector_id is required")
+        connector = await self._storage.get_external_service_connector(owner_id, connector_id)
+        if connector is None:
+            return SkillResponse.error_response(request.id, f"Connector `{connector_id}` not found")
+        capability = await self._storage.get_service_adapter_capability(
+            owner_id,
+            str(connector.get("service_kind") or "").strip(),
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded connector health for `{connector_id}`.",
+            data={"health": _connector_health_report(connector, capability)},
         )
 
     async def _handle_connector_rotate(

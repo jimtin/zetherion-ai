@@ -361,6 +361,8 @@ class CiControllerSkill(Skill):
                 "ci_run_get",
                 "ci_run_list",
                 "ci_run_rebalance",
+                "ci_run_retry",
+                "ci_run_cancel",
                 "ci_run_store_github_receipt",
                 "ci_run_store_release_receipt",
                 "ci_run_publish_statuses",
@@ -388,6 +390,8 @@ class CiControllerSkill(Skill):
             "ci_run_get": self._handle_run_get,
             "ci_run_list": self._handle_run_list,
             "ci_run_rebalance": self._handle_run_rebalance,
+            "ci_run_retry": self._handle_run_retry,
+            "ci_run_cancel": self._handle_run_cancel,
             "ci_run_store_github_receipt": self._handle_store_github_receipt,
             "ci_run_store_release_receipt": self._handle_store_release_receipt,
             "ci_run_publish_statuses": self._handle_publish_statuses,
@@ -795,6 +799,86 @@ class CiControllerSkill(Skill):
                     "blocked_shard_ids": blocked_shard_ids,
                 },
             },
+        )
+
+    async def _handle_run_retry(self, request: SkillRequest) -> SkillResponse:
+        owner_id = _normalize_owner_id(request)
+        run_id = str(request.context.get("run_id") or "").strip()
+        if not run_id:
+            raise ValueError("run_id is required")
+        run = await self._storage.get_run(owner_id, run_id)
+        if run is None:
+            raise ValueError(f"Run `{run_id}` not found")
+        metadata = dict(run.get("metadata") or {})
+        retry_metadata = {
+            **dict(request.context.get("metadata") or {}),
+            "retry_of_run_id": run_id,
+            "retry_requested_by": owner_id,
+        }
+        retry_request = SkillRequest(
+            id=request.id,
+            user_id=request.user_id,
+            intent="ci_run_start",
+            message=request.message,
+            context={
+                "owner_id": owner_id,
+                "repo_id": str(run.get("repo_id") or "").strip(),
+                "mode": str(
+                    request.context.get("mode")
+                    or metadata.get("mode")
+                    or run.get("plan", {}).get("mode")
+                    or "full"
+                ).strip()
+                or "full",
+                "git_ref": str(
+                    request.context.get("git_ref") or run.get("git_ref") or "main"
+                ).strip()
+                or "main",
+                "git_sha": str(
+                    request.context.get("git_sha") or metadata.get("git_sha") or ""
+                ).strip()
+                or None,
+                "trigger": str(request.context.get("trigger") or "retry").strip() or "retry",
+                "metadata": retry_metadata,
+            },
+        )
+        response = await self._handle_run_start(retry_request)
+        return SkillResponse(
+            request_id=request.id,
+            message=(
+                f"Retried run `{run_id}` as "
+                f"`{((response.data.get('run') or {}).get('run_id') or '')}`."
+            ),
+            data={
+                **dict(response.data or {}),
+                "retried_run_id": run_id,
+            },
+        )
+
+    async def _handle_run_cancel(self, request: SkillRequest) -> SkillResponse:
+        owner_id = _normalize_owner_id(request)
+        run_id = str(request.context.get("run_id") or "").strip()
+        if not run_id:
+            raise ValueError("run_id is required")
+        run = await self._storage.get_run(owner_id, run_id)
+        if run is None:
+            raise ValueError(f"Run `{run_id}` not found")
+        cancel_reason = str(request.context.get("reason") or "").strip() or None
+        await self._storage.merge_run_metadata(
+            owner_id,
+            run_id,
+            {
+                "cancel_requested_by": owner_id,
+                "cancel_requested_at": request.timestamp.isoformat(),
+                "cancel_reason": cancel_reason,
+                "cancel_mode": "best_effort_control_plane",
+            },
+        )
+        updated = await self._storage.set_run_status(owner_id, run_id, "cancelled")
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Cancelled run `{run_id}`.",
+            data={"run": updated or run, "cancelled": True},
         )
 
     async def _handle_store_github_receipt(self, request: SkillRequest) -> SkillResponse:

@@ -27,9 +27,12 @@ def _storage() -> MagicMock:
     storage.create_run = AsyncMock()
     storage.get_run = AsyncMock()
     storage.list_runs = AsyncMock(return_value=[])
+    storage.list_worker_nodes = AsyncMock(return_value=[])
     storage.get_reporting_readiness = AsyncMock(
         return_value={"workspace_readiness": {"merge_ready": False, "deploy_ready": False}}
     )
+    storage.get_reporting_summary = AsyncMock(return_value={})
+    storage.get_worker_resource_report = AsyncMock(return_value={"samples": [], "totals": {}})
     storage.get_local_repo_readiness = AsyncMock(return_value=(None, None))
     storage.store_run_github_receipt = AsyncMock()
     storage.merge_run_metadata = AsyncMock()
@@ -494,6 +497,54 @@ async def test_ci_controller_store_github_receipt_and_publish_status_handlers() 
 
 
 @pytest.mark.asyncio
+async def test_ci_controller_supports_retry_and_cancel_run_handlers() -> None:
+    storage = _storage()
+    profile = default_repo_profile("zetherion-ai")
+    assert profile is not None
+    storage.get_repo_profile.return_value = profile
+    storage.get_run.return_value = {
+        "run_id": "run-1",
+        "repo_id": "zetherion-ai",
+        "git_ref": "feature/test",
+        "metadata": {"mode": "certification", "git_sha": "a" * 40},
+        "plan": {"mode": "certification"},
+        "shards": [],
+    }
+    storage.create_run.return_value = {"run_id": "run-2", "repo_id": "zetherion-ai"}
+    storage.set_run_status.return_value = {"run_id": "run-1", "status": "cancelled"}
+    skill = CiControllerSkill(storage=storage)
+
+    retry = await skill.handle(
+        SkillRequest(intent="ci_run_retry", user_id="owner-1", context={"run_id": "run-1"})
+    )
+    cancel = await skill.handle(
+        SkillRequest(
+            intent="ci_run_cancel",
+            user_id="owner-1",
+            context={"run_id": "run-1", "reason": "superseded by newer commit"},
+        )
+    )
+
+    assert retry.success is True
+    assert retry.data["run"]["run_id"] == "run-2"
+    assert retry.data["retried_run_id"] == "run-1"
+    create_kwargs = storage.create_run.await_args.kwargs
+    assert create_kwargs["trigger"] == "retry"
+    assert create_kwargs["metadata"]["git_sha"] == "a" * 40
+    assert create_kwargs["metadata"]["retry_of_run_id"] == "run-1"
+
+    assert cancel.success is True
+    assert cancel.data["cancelled"] is True
+    merge_args = storage.merge_run_metadata.await_args_list[-1].args
+    assert merge_args[0] == "owner-1"
+    assert merge_args[1] == "run-1"
+    assert merge_args[2]["cancel_requested_by"] == "owner-1"
+    assert merge_args[2]["cancel_reason"] == "superseded by newer commit"
+    assert merge_args[2]["cancel_mode"] == "best_effort_control_plane"
+    storage.set_run_status.assert_awaited_with("owner-1", "run-1", "cancelled")
+
+
+@pytest.mark.asyncio
 async def test_pr_reviewer_blocks_certification_repo_without_windows_success() -> None:
     storage = _storage()
     storage.get_run.return_value = {
@@ -831,6 +882,86 @@ async def test_ci_observer_supports_project_and_worker_reports() -> None:
         "windows-main",
         limit=10,
     )
+
+
+@pytest.mark.asyncio
+async def test_ci_observer_builds_owner_capacity_report() -> None:
+    storage = _storage()
+    storage.list_repo_profiles.return_value = [
+        {"repo_id": "zetherion-ai"},
+        {"repo_id": "catalyst-group-solutions"},
+    ]
+    storage.list_runs.return_value = [
+        {
+            "run_id": "run-1",
+            "repo_id": "zetherion-ai",
+            "plan": {
+                "host_capacity_policy": {
+                    "host_id": "windows-main",
+                    "resource_budget": {"cpu": 8, "service": 2, "serial": 1},
+                    "reserve_runtime_headroom": True,
+                    "admission_mode": "dynamic_resource_based",
+                }
+            },
+            "shards": [
+                {
+                    "status": "running",
+                    "metadata": {"resource_class": "service", "parallel_group": "db"},
+                },
+                {
+                    "status": "awaiting_sync",
+                    "metadata": {"resource_class": "cpu", "parallel_group": "unit"},
+                },
+            ],
+        }
+    ]
+    storage.list_worker_nodes.side_effect = [
+        [
+            {
+                "node_id": "windows-main",
+                "node_name": "Main Windows Worker",
+                "status": "active",
+                "health_status": "healthy",
+                "capabilities": ["docker", "playwright"],
+                "metadata": {"os": "windows"},
+            }
+        ],
+        [
+            {
+                "node_id": "windows-main",
+                "node_name": "Main Windows Worker",
+                "status": "active",
+                "health_status": "healthy",
+                "capabilities": ["docker", "playwright", "wsl_docker"],
+                "metadata": {"os": "windows"},
+            }
+        ],
+    ]
+    storage.get_worker_resource_report.return_value = {
+        "samples": [{"sample": {"memory_mb": 2048, "disk_used_bytes": 4096}}],
+        "totals": {"sample_count": 1, "peak_memory_mb": 2048.0},
+    }
+    skill = CiObserverSkill(storage=storage)
+
+    response = await skill.handle(
+        SkillRequest(intent="ci_reporting_capacity", user_id="owner-1")
+    )
+
+    assert response.success is True
+    capacity = response.data["capacity"]
+    assert capacity["totals"]["host_count"] == 1
+    assert capacity["totals"]["worker_count"] == 1
+    assert capacity["hosts"][0]["host_id"] == "windows-main"
+    assert capacity["hosts"][0]["resource_usage"] == {"cpu": 1, "service": 1, "serial": 0}
+    assert capacity["hosts"][0]["busy_parallel_groups"] == ["db", "unit"]
+    assert capacity["workers"][0]["repos"] == [
+        "catalyst-group-solutions",
+        "zetherion-ai",
+    ]
+    assert capacity["workers"][0]["latest_sample"] == {
+        "memory_mb": 2048,
+        "disk_used_bytes": 4096,
+    }
 
 
 @pytest.mark.asyncio

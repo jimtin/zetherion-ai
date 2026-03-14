@@ -89,6 +89,7 @@ def _storage() -> MagicMock:
     )
     storage.list_external_service_connectors = AsyncMock(return_value=[])
     storage.get_external_service_connector = AsyncMock(return_value=None)
+    storage.get_service_adapter_capability = AsyncMock(return_value=None)
     storage.replace_external_access_grants = AsyncMock(return_value=[])
     storage.upsert_agent_app_profile = AsyncMock(
         return_value={"app_id": "catalyst-group-solutions", "profile": {}}
@@ -713,3 +714,46 @@ async def test_principal_connector_app_secret_and_gap_handlers_cover_success_pat
     assert gap_list.data["gaps"] == [{"gap_id": "gap-1"}]
     assert gap_get.data["gap"]["gap_id"] == "gap-1"
     assert gap_update.data["gap"]["status"] == "resolved"
+
+
+@pytest.mark.asyncio
+async def test_connector_detail_and_health_handlers_report_configuration_state() -> None:
+    storage = _storage()
+    storage.get_external_service_connector.return_value = {
+        "connector_id": "clerk-primary",
+        "service_kind": "clerk",
+        "display_name": "Clerk Primary",
+        "auth_kind": "token",
+        "policy": {},
+        "metadata": {"issuer": "https://clerk.example.com"},
+        "active": True,
+        "has_secret": True,
+    }
+    storage.get_service_adapter_capability.return_value = {
+        "service_kind": "clerk",
+        "manifest": {"ingestion_modes": ["webhook", "poll"]},
+    }
+    skill = _skill(storage)
+
+    connector = await skill.handle(
+        SkillRequest(
+            intent="agent_connector_get",
+            user_id="owner-1",
+            context={"connector_id": "clerk-primary"},
+        )
+    )
+    health = await skill.handle(
+        SkillRequest(
+            intent="agent_connector_health",
+            user_id="owner-1",
+            context={"connector_id": "clerk-primary"},
+        )
+    )
+
+    assert connector.success is True
+    assert connector.data["connector"]["connector_id"] == "clerk-primary"
+    assert connector.data["capability"]["service_kind"] == "clerk"
+    assert connector.data["health"]["status"] == "healthy"
+    assert health.success is True
+    assert health.data["health"]["auth_configured"] is True
+    assert health.data["health"]["blocking_reasons"] == []

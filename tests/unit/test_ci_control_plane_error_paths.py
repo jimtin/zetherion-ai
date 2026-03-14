@@ -207,7 +207,8 @@ async def test_ci_controller_build_readiness_receipts_cover_failure_and_pending_
 
 
 @pytest.mark.asyncio
-async def test_ci_controller_build_readiness_receipts_pending_when_worker_receipts_are_syncing() -> None:
+async def test_ci_controller_build_readiness_receipts_pending_when_worker_receipts_sync(
+) -> None:
     skill = CiControllerSkill(storage=MagicMock())
     repo = {
         "repo_id": "zetherion-ai",
