@@ -965,6 +965,95 @@ async def test_ci_observer_builds_owner_capacity_report() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ci_observer_builds_scheduler_overview() -> None:
+    storage = _storage()
+    storage.list_runs.return_value = [
+        {
+            "run_id": "run-active",
+            "repo_id": "zetherion-ai",
+            "plan": {
+                "host_capacity_policy": {
+                    "host_id": "windows-main",
+                    "resource_budget": {"cpu": 2, "service": 1, "serial": 1},
+                    "reserve_runtime_headroom": True,
+                    "admission_mode": "dynamic_resource_based",
+                    "windows_execution_mode": "docker_only",
+                }
+            },
+            "shards": [
+                {
+                    "shard_id": "active-db",
+                    "lane_id": "integration-db",
+                    "status": "running",
+                    "metadata": {"resource_class": "service", "parallel_group": "db"},
+                },
+                {
+                    "shard_id": "queued-unit",
+                    "lane_id": "unit",
+                    "status": "queued_local",
+                    "metadata": {"resource_class": "cpu", "parallel_group": "unit"},
+                },
+            ],
+        },
+        {
+            "run_id": "run-second",
+            "repo_id": "catalyst-group-solutions",
+            "plan": {
+                "host_capacity_policy": {
+                    "host_id": "windows-main",
+                    "resource_budget": {"cpu": 2, "service": 1, "serial": 1},
+                    "reserve_runtime_headroom": True,
+                    "admission_mode": "dynamic_resource_based",
+                }
+            },
+            "shards": [
+                {
+                    "shard_id": "queued-public",
+                    "lane_id": "public-e2e",
+                    "status": "planned",
+                    "metadata": {"resource_class": "service", "parallel_group": "db"},
+                },
+                {
+                    "shard_id": "queued-lint",
+                    "lane_id": "lint",
+                    "status": "planned",
+                    "metadata": {"resource_class": "cpu", "parallel_group": "lint"},
+                },
+            ],
+        },
+    ]
+    skill = CiObserverSkill(storage=storage)
+
+    response = await skill.handle(
+        SkillRequest(intent="ci_reporting_scheduler", user_id="owner-1")
+    )
+
+    assert response.success is True
+    scheduler = response.data["scheduler"]
+    assert scheduler["totals"]["host_count"] == 1
+    assert scheduler["totals"]["pending_shard_count"] == 3
+    host = scheduler["hosts"][0]
+    assert host["host_id"] == "windows-main"
+    assert host["resource_available"] == {"cpu": 2, "service": 0, "serial": 1}
+    assert host["pending_run_count"] == 2
+    assert host["pending_shard_count"] == 3
+    assert host["repo_ids"] == ["catalyst-group-solutions", "zetherion-ai"]
+    assert [candidate["shard_id"] for candidate in host["admitted_candidates"]] == [
+        "queued-unit",
+        "queued-lint",
+    ]
+    assert [candidate["shard_id"] for candidate in host["blocked_candidates"]] == [
+        "queued-public"
+    ]
+    assert host["blocked_candidates"][0]["blocking_reasons"] == [
+        "service budget exhausted (1/1)",
+        "parallel group `db` already active",
+    ]
+    assert host["metadata"]["can_admit_more"] is True
+    storage.list_runs.assert_awaited_once_with("owner-1", limit=200)
+
+
+@pytest.mark.asyncio
 async def test_ci_observer_requires_run_or_repo_identifiers_for_scoped_intents() -> None:
     storage = _storage()
     skill = CiObserverSkill(storage=storage)

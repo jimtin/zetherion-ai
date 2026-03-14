@@ -135,6 +135,53 @@ class AdmissionDecision(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class SchedulerCandidate(BaseModel):
+    """One pending shard considered by the shared host scheduler."""
+
+    run_id: str | None = None
+    repo_id: str | None = None
+    shard_id: str | None = None
+    lane_id: str | None = None
+    resource_class: str = "cpu"
+    units: int = 1
+    parallel_group: str | None = None
+    admitted: bool = False
+    blocking_reasons: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SchedulerHostSummary(BaseModel):
+    """Host-level multi-app admission summary."""
+
+    host_id: str = "windows-owner-ci"
+    admission_mode: str = "dynamic_resource_based"
+    fairness_mode: str = "round_robin_by_repo"
+    resource_budget: dict[str, int] = Field(default_factory=dict)
+    resource_usage: dict[str, int] = Field(default_factory=dict)
+    resource_available: dict[str, int] = Field(default_factory=dict)
+    runtime_headroom_reserved: bool = True
+    active_run_count: int = 0
+    active_shard_count: int = 0
+    pending_run_count: int = 0
+    pending_shard_count: int = 0
+    busy_parallel_groups: list[str] = Field(default_factory=list)
+    repo_ids: list[str] = Field(default_factory=list)
+    blocking_reasons: list[str] = Field(default_factory=list)
+    admitted_candidates: list[SchedulerCandidate] = Field(default_factory=list)
+    blocked_candidates: list[SchedulerCandidate] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SchedulerOverview(BaseModel):
+    """Workspace-wide scheduler snapshot exposed through owner-CI."""
+
+    generated_at: str | None = None
+    fairness_mode: str = "round_robin_by_repo"
+    hosts: list[SchedulerHostSummary] = Field(default_factory=list)
+    totals: dict[str, int] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class LocalGatePlan(BaseModel):
     """Compiled shard plan for a repo-local gate."""
 
