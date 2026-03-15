@@ -7,6 +7,7 @@ from pathlib import Path
 from zetherion_ai.owner_ci.coverage_artifacts import build_coverage_artifacts
 from zetherion_ai.owner_ci.diagnostics import (
     build_coverage_diagnostics,
+    build_operation_diagnosis,
     build_run_diagnostics,
 )
 
@@ -206,3 +207,91 @@ def test_build_run_diagnostics_classifies_required_paths_capacity_release_and_pr
         "connector_auth_failed",
         "webhook_correlation_missing",
     } <= codes
+
+
+def test_build_operation_diagnosis_prefers_structured_evidence_and_incidents() -> None:
+    diagnosis = build_operation_diagnosis(
+        operation={
+            "operation_id": "op-1",
+            "repo_id": "zetherion-ai",
+            "app_id": "zetherion-ai",
+            "status": "failed",
+        },
+        evidence=[
+            {
+                "evidence_type": "coverage_summary",
+                "payload": {
+                    "passed": False,
+                    "metrics": {"branches": {"passed": False, "actual": 88.3}},
+                },
+            },
+            {
+                "evidence_type": "coverage_gaps",
+                "payload": {"gaps": [{"identifier": "foo", "metric": "branches"}]},
+            },
+            {
+                "evidence_type": "diagnostic_summary",
+                "payload": {
+                    "status": "failed",
+                    "blocking": True,
+                    "confidence": 0.94,
+                    "recommended_next_actions": ["Fix the shard contract."],
+                    "diagnostic_artifacts": [{"kind": "coverage_gate_failed", "path": "a.json"}],
+                },
+            },
+            {
+                "evidence_type": "diagnostic_findings",
+                "payload": {
+                    "findings": [
+                        {
+                            "code": "coverage_gate_failed",
+                            "blocking": True,
+                            "recommended_next_actions": ["Add targeted tests."],
+                        }
+                    ]
+                },
+            },
+        ],
+        incidents=[{"incident_id": "inc-1", "blocking": True}],
+    )
+
+    assert diagnosis["blocking"] is True
+    assert diagnosis["coverage_summary"]["passed"] is False
+    assert diagnosis["diagnostic_summary"]["confidence"] == 0.94
+    assert diagnosis["diagnostic_findings"][0]["code"] == "coverage_gate_failed"
+    assert diagnosis["diagnostic_artifacts"][0]["path"] == "a.json"
+    assert diagnosis["incident_count"] == 1
+    assert "coverage_summary" in diagnosis["evidence_types_present"]
+
+
+def test_build_operation_diagnosis_synthesizes_summary_from_coverage_when_missing() -> None:
+    diagnosis = build_operation_diagnosis(
+        operation={
+            "operation_id": "op-2",
+            "repo_id": "zetherion-ai",
+            "status": "failed",
+        },
+        evidence=[
+            {
+                "evidence_type": "coverage_summary",
+                "payload": {
+                    "passed": False,
+                    "metrics": {"functions": {"passed": False, "actual": 89.1}},
+                    "artifacts": {
+                        "coverage_json": ".artifacts/coverage/coverage.json",
+                        "coverage_report": ".artifacts/coverage/coverage-report.txt",
+                    },
+                },
+            },
+            {
+                "evidence_type": "coverage_gaps",
+                "payload": {"gaps": [{"identifier": "missing_fn", "metric": "functions"}]},
+            },
+        ],
+        incidents=[],
+    )
+
+    assert diagnosis["blocking"] is True
+    assert diagnosis["diagnostic_summary"]["blocking"] is True
+    assert diagnosis["diagnostic_findings"][0]["code"] == "coverage_gate_failed"
+    assert diagnosis["recommended_next_actions"]

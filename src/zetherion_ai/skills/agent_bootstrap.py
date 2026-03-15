@@ -19,7 +19,10 @@ from typing import Any
 
 from zetherion_ai.logging import get_logger
 from zetherion_ai.owner_ci import OwnerCiStorage, default_repo_profile, default_repo_profiles
-from zetherion_ai.owner_ci.diagnostics import build_run_diagnostics
+from zetherion_ai.owner_ci.diagnostics import (
+    build_operation_diagnosis,
+    build_run_diagnostics,
+)
 from zetherion_ai.skills.base import Skill, SkillMetadata, SkillRequest, SkillResponse
 from zetherion_ai.skills.ci_controller import CiControllerSkill
 from zetherion_ai.skills.clerk.client import ClerkMetadataClient, ClerkMetadataError
@@ -885,6 +888,7 @@ class AgentBootstrapSkill(Skill):
             "agent_operation_poll": self._handle_operation_poll,
             "agent_operation_list": self._handle_operation_list,
             "agent_operation_get": self._handle_operation_get,
+            "agent_operation_diagnosis_get": self._handle_operation_diagnosis_get,
             "agent_operation_evidence_list": self._handle_operation_evidence_list,
             "agent_operation_logs": self._handle_operation_logs,
             "agent_operation_incidents_list": self._handle_operation_incidents_list,
@@ -1695,6 +1699,48 @@ class AgentBootstrapSkill(Skill):
             request_id=request.id,
             message=f"Loaded {len(evidence)} evidence items.",
             data={"evidence": evidence},
+        )
+
+    async def _handle_operation_diagnosis_get(
+        self,
+        request: SkillRequest,
+        owner_id: str,
+        _public_base_url: str,
+    ) -> SkillResponse:
+        operation_id = str(request.context.get("operation_id") or "").strip()
+        if not operation_id:
+            return SkillResponse.error_response(request.id, "operation_id is required")
+        operation = await self._storage.get_managed_operation(owner_id, operation_id)
+        if operation is None:
+            return SkillResponse.error_response(request.id, f"Operation `{operation_id}` not found")
+        principal_id = str(request.context.get("principal_id") or "").strip() or None
+        if principal_id:
+            await self._require_app_access(
+                owner_id,
+                principal_id=principal_id,
+                app_id=str(operation.get("app_id") or ""),
+            )
+        evidence = await self._storage.list_operation_evidence(
+            owner_id,
+            operation_id,
+            service_kind=str(request.context.get("service_kind") or "").strip() or None,
+            limit=int(request.context.get("limit") or 200),
+        )
+        incidents = await self._storage.list_operation_incidents(
+            owner_id,
+            operation_id,
+            unresolved_only=bool(request.context.get("unresolved_only", False)),
+            limit=int(request.context.get("limit") or 200),
+        )
+        diagnosis = build_operation_diagnosis(
+            operation=operation,
+            evidence=evidence,
+            incidents=incidents,
+        )
+        return SkillResponse(
+            request_id=request.id,
+            message=f"Loaded diagnosis for `{operation_id}`.",
+            data={"diagnosis": diagnosis},
         )
 
     async def _handle_operation_logs(

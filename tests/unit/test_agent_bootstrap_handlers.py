@@ -453,6 +453,13 @@ async def test_service_and_operation_handlers_cover_success_and_gap_paths() -> N
             context={"operation_id": "op-1", "principal_id": "codex-1"},
         )
     )
+    diagnosis = await skill.handle(
+        SkillRequest(
+            intent="agent_operation_diagnosis_get",
+            user_id="owner-1",
+            context={"operation_id": "op-1", "principal_id": "codex-1"},
+        )
+    )
     logs = await skill.handle(
         SkillRequest(
             intent="agent_operation_logs",
@@ -477,6 +484,8 @@ async def test_service_and_operation_handlers_cover_success_and_gap_paths() -> N
     assert listed.data["operations"][0]["incident_count"] == 1
     assert loaded.data["operation"]["operation_id"] == "op-1"
     assert evidence.data["evidence"] == [{"evidence_id": "ev-1"}]
+    assert diagnosis.data["diagnosis"]["operation_id"] == "op-1"
+    assert diagnosis.data["diagnosis"]["evidence_count"] == 1
     assert logs.data["logs"] == [{"chunk_id": "log-1"}]
     assert incidents.data["incidents"] == [{"incident_id": "inc-1"}]
 

@@ -101,6 +101,42 @@ def _diagnostic_artifacts(findings: list[dict[str, Any]]) -> list[dict[str, Any]
     return artifacts
 
 
+def _first_payload_for_type(
+    evidence: list[dict[str, Any]],
+    evidence_type: str,
+) -> dict[str, Any] | None:
+    for entry in evidence:
+        if str(entry.get("evidence_type") or "").strip() != evidence_type:
+            continue
+        payload = entry.get("payload")
+        if isinstance(payload, dict):
+            return dict(payload)
+    return None
+
+
+def _list_payload_for_type(
+    evidence: list[dict[str, Any]],
+    evidence_type: str,
+    *,
+    key: str,
+) -> list[dict[str, Any]]:
+    payload = _first_payload_for_type(evidence, evidence_type)
+    values = list((payload or {}).get(key) or [])
+    return [dict(value) for value in values if isinstance(value, dict)]
+
+
+def _operation_recommended_actions(findings: list[dict[str, Any]]) -> list[str]:
+    actions: list[str] = []
+    seen: set[str] = set()
+    for finding in findings:
+        for action in _normalized_string_list(finding.get("recommended_next_actions")):
+            if action in seen:
+                continue
+            seen.add(action)
+            actions.append(action)
+    return actions
+
+
 def build_coverage_diagnostics(
     *,
     coverage_summary: dict[str, Any],
@@ -623,6 +659,112 @@ def build_run_diagnostics(
         "artifact_paths": debug_artifact_paths,
     }
     return summary, findings
+
+
+def build_operation_diagnosis(
+    *,
+    operation: dict[str, Any],
+    evidence: list[dict[str, Any]],
+    incidents: list[dict[str, Any]],
+) -> dict[str, Any]:
+    coverage_summary = _first_payload_for_type(evidence, "coverage_summary")
+    coverage_gaps = _first_payload_for_type(evidence, "coverage_gaps")
+    diagnostic_summary = _first_payload_for_type(evidence, "diagnostic_summary")
+    diagnostic_findings = _list_payload_for_type(
+        evidence,
+        "diagnostic_findings",
+        key="findings",
+    )
+    diagnostic_artifacts = _list_payload_for_type(
+        evidence,
+        "diagnostic_artifacts",
+        key="artifacts",
+    )
+
+    if (
+        diagnostic_summary is None
+        and coverage_summary
+        and coverage_gaps
+        and not bool(coverage_summary.get("passed", True))
+    ):
+        diagnostic_summary, coverage_findings = build_coverage_diagnostics(
+            coverage_summary=coverage_summary,
+            coverage_gaps=coverage_gaps,
+            run_id=str(operation.get("run_id") or ""),
+            repo_id=str(operation.get("repo_id") or "").strip() or "unknown-repo",
+        )
+        if not diagnostic_findings:
+            diagnostic_findings = coverage_findings
+        if not diagnostic_artifacts:
+            diagnostic_artifacts = list(diagnostic_summary.get("diagnostic_artifacts") or [])
+
+    recommended_next_actions = list(
+        dict(diagnostic_summary or {}).get("recommended_next_actions") or []
+    )
+    if not recommended_next_actions:
+        recommended_next_actions = _operation_recommended_actions(diagnostic_findings)
+
+    if diagnostic_summary is None and (diagnostic_findings or incidents):
+        blocking = any(
+            bool(finding.get("blocking")) for finding in diagnostic_findings
+        ) or any(bool(incident.get("blocking")) for incident in incidents)
+        diagnostic_summary = {
+            "generated_at": _utc_now_iso(),
+            "repo_id": str(operation.get("repo_id") or "").strip() or None,
+            "run_id": str(operation.get("run_id") or "").strip() or None,
+            "status": "failed" if blocking else "ready",
+            "finding_count": len(diagnostic_findings),
+            "blocking": blocking,
+            "confidence": 0.85 if diagnostic_findings else 0.7,
+            "recommended_next_actions": recommended_next_actions,
+            "diagnostic_artifacts": (
+                diagnostic_artifacts
+                if diagnostic_artifacts
+                else _diagnostic_artifacts(diagnostic_findings)
+            ),
+            "artifact_paths": [
+                path
+                for finding in diagnostic_findings
+                for path in _normalized_string_list(finding.get("artifact_paths"))
+            ],
+        }
+
+    if diagnostic_summary and not diagnostic_artifacts:
+        diagnostic_artifacts = list(diagnostic_summary.get("diagnostic_artifacts") or [])
+
+    blocking = bool(
+        dict(diagnostic_summary or {}).get("blocking")
+        if diagnostic_summary is not None
+        else False
+    ) or any(bool(incident.get("blocking")) for incident in incidents)
+    evidence_types_present = sorted(
+        {
+            str(entry.get("evidence_type") or "").strip()
+            for entry in evidence
+            if str(entry.get("evidence_type") or "").strip()
+        }
+    )
+
+    return {
+        "operation_id": str(operation.get("operation_id") or ""),
+        "repo_id": str(operation.get("repo_id") or "").strip() or None,
+        "app_id": str(operation.get("app_id") or "").strip() or None,
+        "status": str(
+            dict(diagnostic_summary or {}).get("status") or operation.get("status") or "unknown"
+        ),
+        "blocking": blocking,
+        "confidence": dict(diagnostic_summary or {}).get("confidence"),
+        "recommended_next_actions": recommended_next_actions,
+        "evidence_types_present": evidence_types_present,
+        "evidence_count": len(evidence),
+        "incident_count": len(incidents),
+        "coverage_summary": coverage_summary,
+        "coverage_gaps": coverage_gaps,
+        "diagnostic_summary": diagnostic_summary,
+        "diagnostic_findings": diagnostic_findings,
+        "diagnostic_artifacts": diagnostic_artifacts,
+        "incidents": incidents,
+    }
 
 
 def load_json_artifact(path: str | Path | None) -> dict[str, Any]:
