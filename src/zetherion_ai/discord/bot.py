@@ -379,6 +379,9 @@ class ZetherionAIBot(discord.Client):
                     registry,
                     poll_interval_seconds=poll_interval,
                     batch_size=batch_size,
+                    runtime_status_store=self._runtime_status_store,
+                    runtime_instance_id=self._runtime_instance_id,
+                    release_revision=self._release_revision(),
                 )
                 log.info(
                     "announcement_dispatcher_initialized",

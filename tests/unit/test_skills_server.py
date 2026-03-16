@@ -301,16 +301,33 @@ class TestSkillsServerEndpoints:
     async def test_internal_runtime_health_endpoint(self, mock_registry):
         """GET /internal/runtime/health should report runtime domains."""
         fake_pool = object()
+        bot_status = {
+            "service_name": "discord_bot",
+            "status": "healthy",
+            "summary": "Discord bot is connected and ready.",
+            "updated_at": datetime.now(UTC).isoformat(),
+            "release_revision": "abc123",
+            "details": {"guild_count": 2},
+        }
+        dispatcher_status = {
+            "service_name": "announcement_dispatcher",
+            "status": "healthy",
+            "summary": "Announcement dispatcher is running.",
+            "updated_at": datetime.now(UTC).isoformat(),
+            "release_revision": "abc123",
+            "details": {"running": True},
+        }
         fake_store = SimpleNamespace(
             get_status=AsyncMock(
-                return_value={
-                    "service_name": "discord_bot",
-                    "status": "healthy",
-                    "summary": "Discord bot is connected and ready.",
-                    "updated_at": datetime.now(UTC).isoformat(),
-                    "release_revision": "abc123",
-                    "details": {"guild_count": 2},
-                }
+                side_effect=lambda service_name: (
+                    bot_status
+                    if service_name == "discord_bot"
+                    else (
+                        dispatcher_status
+                        if service_name == "announcement_dispatcher"
+                        else None
+                    )
+                )
             )
         )
         server = SkillsServer(
@@ -3880,6 +3897,10 @@ async def test_owner_ci_worker_claim_and_submit_result_handlers_cover_success_an
                 "debug_bundle": {"compose_state": {"bot": "running"}},
                 "cleanup_receipt": {"status": "clean"},
                 "container_receipts": [{"container": "bot"}],
+                "steps": [{"step_id": "test", "status": "succeeded"}],
+                "artifacts": [{"artifact_id": "coverage-summary"}],
+                "evidence_references": [{"provider": "cloudwatch"}],
+                "correlation_context": {"trace_ids": ["trace-1"]},
             }
         )
     )
@@ -3904,6 +3925,11 @@ async def test_owner_ci_worker_claim_and_submit_result_handlers_cover_success_an
     assert replay_payload["idempotent"] is True
     storage.claim_worker_job.assert_awaited_once()
     assert storage.submit_worker_job_result.await_count == 2
+    first_submit_payload = storage.submit_worker_job_result.await_args_list[0].kwargs["payload"]
+    assert first_submit_payload["output"]["steps"][0]["step_id"] == "test"
+    assert first_submit_payload["output"]["artifacts"][0]["artifact_id"] == "coverage-summary"
+    assert first_submit_payload["output"]["evidence_references"][0]["provider"] == "cloudwatch"
+    assert first_submit_payload["output"]["correlation_context"]["trace_ids"] == ["trace-1"]
 
 
 @pytest.mark.asyncio
@@ -3958,22 +3984,23 @@ async def test_internal_runtime_health_endpoint_reports_blocked_queue_and_stale_
 ):
     fake_pool = object()
     stale_updated_at = datetime(2025, 3, 13, 10, 0, tzinfo=UTC).isoformat()
+    bot_status = {
+        "service_name": "discord_bot",
+        "status": "healthy",
+        "summary": "Discord bot is connected.",
+        "updated_at": stale_updated_at,
+        "release_revision": "rev-123",
+        "details": {
+            "queue": {
+                "accepting_work": False,
+                "healthy": False,
+                "workers": [{"worker_id": "worker-1", "status": "stale"}],
+            }
+        },
+    }
     fake_store = SimpleNamespace(
         get_status=AsyncMock(
-            return_value={
-                "service_name": "discord_bot",
-                "status": "healthy",
-                "summary": "Discord bot is connected.",
-                "updated_at": stale_updated_at,
-                "release_revision": "rev-123",
-                "details": {
-                    "queue": {
-                        "accepting_work": False,
-                        "healthy": False,
-                        "workers": [{"worker_id": "worker-1", "status": "stale"}],
-                    }
-                },
-            }
+            side_effect=lambda service_name: bot_status if service_name == "discord_bot" else None
         )
     )
     server = SkillsServer(
@@ -4031,24 +4058,25 @@ async def test_internal_runtime_health_uses_owner_ci_storage_pool_when_user_mana
     mock_registry,
 ):
     fake_pool = object()
+    bot_status = {
+        "service_name": "discord_bot",
+        "status": "healthy",
+        "summary": "Discord bot is connected.",
+        "updated_at": datetime.now(UTC).isoformat(),
+        "release_revision": "rev-owner-ci",
+        "details": {
+            "queue": {
+                "accepting_work": True,
+                "healthy": True,
+            },
+            "announcement_dispatcher": {
+                "running": True,
+            },
+        },
+    }
     fake_store = SimpleNamespace(
         get_status=AsyncMock(
-            return_value={
-                "service_name": "discord_bot",
-                "status": "healthy",
-                "summary": "Discord bot is connected.",
-                "updated_at": datetime.now(UTC).isoformat(),
-                "release_revision": "rev-owner-ci",
-                "details": {
-                    "queue": {
-                        "accepting_work": True,
-                        "healthy": True,
-                    },
-                    "announcement_dispatcher": {
-                        "running": True,
-                    },
-                },
-            }
+            side_effect=lambda service_name: bot_status if service_name == "discord_bot" else None
         )
     )
     server = SkillsServer(
@@ -4095,6 +4123,155 @@ async def test_internal_runtime_health_uses_owner_ci_storage_pool_when_user_mana
     assert domains["announcement_dispatcher"]["status"] == "healthy"
     assert domains["deploy_state"]["details"]["revision"] == "rev-owner-ci"
     assert domains["release_verification"]["status"] == "healthy"
+
+
+@pytest.mark.asyncio
+async def test_internal_runtime_health_recovers_revision_from_runtime_status_when_env_is_missing(
+    mock_registry,
+):
+    fake_pool = object()
+    bot_status = {
+        "service_name": "discord_bot",
+        "status": "healthy",
+        "summary": "Discord bot is connected.",
+        "updated_at": datetime.now(UTC).isoformat(),
+        "release_revision": "rev-from-status",
+        "details": {
+            "queue": {
+                "accepting_work": True,
+                "healthy": True,
+            },
+            "announcement_dispatcher": {
+                "running": True,
+            },
+        },
+    }
+    fake_store = SimpleNamespace(
+        get_status=AsyncMock(
+            side_effect=lambda service_name: bot_status if service_name == "discord_bot" else None
+        )
+    )
+    server = SkillsServer(
+        registry=mock_registry,
+        api_secret="test-secret",
+        owner_ci_storage=SimpleNamespace(_pool=fake_pool),
+    )
+    app = server.create_app()
+    settings = SimpleNamespace(queue_stale_timeout_seconds=30)
+
+    with (
+        patch("zetherion_ai.skills.server.QueueStorage") as mock_queue_storage,
+        patch("zetherion_ai.config.get_settings", return_value=settings),
+        patch.dict(
+            os.environ,
+            {"APP_GIT_SHA": "", "GITHUB_SHA": "", "RELEASE_SHA": ""},
+            clear=False,
+        ),
+    ):
+        queue_storage = mock_queue_storage.return_value
+        queue_storage.get_status_counts = AsyncMock(
+            return_value={"queued": 0, "processing": 0, "dead": 0}
+        )
+        queue_storage.count_stale_processing = AsyncMock(return_value=0)
+        server._get_runtime_status_store = AsyncMock(return_value=fake_store)  # type: ignore[method-assign]
+        server._runtime_external_services_domain = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "key": "external_services",
+                "label": "External Services",
+                "status": "healthy",
+                "summary": "Required external service dependencies are reachable.",
+                "details": {},
+                "incident_type": None,
+            }
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/internal/runtime/health",
+                headers={"X-API-Secret": "test-secret"},
+            )
+            assert resp.status == 200
+            data = await resp.json()
+
+    domains = {domain["key"]: domain for domain in data["domains"]}
+    assert domains["deploy_state"]["status"] == "healthy"
+    assert domains["deploy_state"]["details"]["revision"] == "rev-from-status"
+    assert domains["deploy_state"]["details"]["source"] == "discord_bot_runtime_status"
+
+
+@pytest.mark.asyncio
+async def test_internal_runtime_health_uses_direct_announcement_dispatcher_status(
+    mock_registry,
+):
+    fake_pool = object()
+    dispatcher_status = {
+        "service_name": "announcement_dispatcher",
+        "status": "healthy",
+        "summary": "Announcement dispatcher is running.",
+        "updated_at": datetime.now(UTC).isoformat(),
+        "release_revision": "rev-dispatcher",
+        "details": {
+            "running": True,
+            "last_processed_count": 2,
+        },
+    }
+    fake_store = SimpleNamespace(
+        get_status=AsyncMock(
+            side_effect=lambda service_name: (
+                dispatcher_status
+                if service_name == "announcement_dispatcher"
+                else None
+            )
+        )
+    )
+    server = SkillsServer(
+        registry=mock_registry,
+        api_secret="test-secret",
+        owner_ci_storage=SimpleNamespace(_pool=fake_pool),
+    )
+    app = server.create_app()
+    settings = SimpleNamespace(queue_stale_timeout_seconds=30)
+
+    with (
+        patch("zetherion_ai.skills.server.QueueStorage") as mock_queue_storage,
+        patch("zetherion_ai.config.get_settings", return_value=settings),
+        patch.dict(
+            os.environ,
+            {"APP_GIT_SHA": "", "GITHUB_SHA": "", "RELEASE_SHA": ""},
+            clear=False,
+        ),
+    ):
+        queue_storage = mock_queue_storage.return_value
+        queue_storage.get_status_counts = AsyncMock(
+            return_value={"queued": 0, "processing": 0, "dead": 0}
+        )
+        queue_storage.count_stale_processing = AsyncMock(return_value=0)
+        server._get_runtime_status_store = AsyncMock(return_value=fake_store)  # type: ignore[method-assign]
+        server._runtime_external_services_domain = AsyncMock(  # type: ignore[method-assign]
+            return_value={
+                "key": "external_services",
+                "label": "External Services",
+                "status": "healthy",
+                "summary": "Required external service dependencies are reachable.",
+                "details": {},
+                "incident_type": None,
+            }
+        )
+
+        async with TestClient(TestServer(app)) as client:
+            resp = await client.get(
+                "/internal/runtime/health",
+                headers={"X-API-Secret": "test-secret"},
+            )
+            assert resp.status == 200
+            data = await resp.json()
+
+    domains = {domain["key"]: domain for domain in data["domains"]}
+    assert domains["announcement_dispatcher"]["status"] == "healthy"
+    assert domains["announcement_dispatcher"]["details"]["service_status"] == "healthy"
+    assert domains["deploy_state"]["status"] == "healthy"
+    assert domains["deploy_state"]["details"]["revision"] == "rev-dispatcher"
+    assert domains["deploy_state"]["details"]["source"] == "announcement_dispatcher_runtime_status"
 
 
 @pytest.mark.asyncio

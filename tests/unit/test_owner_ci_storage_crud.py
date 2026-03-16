@@ -1693,6 +1693,7 @@ async def test_claim_worker_job_and_submit_result_cover_success_and_idempotent_r
     )
     storage = _storage(conn)
     storage._store_worker_observability = AsyncMock()  # type: ignore[method-assign]
+    storage._store_run_coaching_feedback = AsyncMock()  # type: ignore[method-assign]
     storage._recompute_run_status = AsyncMock()  # type: ignore[method-assign]
 
     claimed = await storage.claim_worker_job(
@@ -1729,6 +1730,7 @@ async def test_claim_worker_job_and_submit_result_cover_success_and_idempotent_r
     assert completed["idempotent"] is False
     assert replayed["idempotent"] is True
     storage._store_worker_observability.assert_awaited_once()  # type: ignore[attr-defined]
+    storage._store_run_coaching_feedback.assert_awaited_once()  # type: ignore[attr-defined]
     assert storage._recompute_run_status.await_count == 2  # type: ignore[attr-defined]
 
 
@@ -1884,6 +1886,88 @@ async def test_claim_worker_job_returns_none_when_host_budget_is_exhausted() -> 
 
     assert claimed is None
     storage._recompute_run_status.assert_not_awaited()  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_claim_worker_job_prefers_repo_with_lower_active_pressure() -> None:
+    queued_repo_a = {
+        **_worker_job_row(),
+        "job_id": "job-repo-a",
+        "repo_id": "repo-a",
+        "run_id": "run-a",
+    }
+    queued_repo_b = {
+        **_worker_job_row(),
+        "job_id": "job-repo-b",
+        "repo_id": "repo-b",
+        "run_id": "run-b",
+    }
+    active_repo_a = {
+        **_worker_job_row(),
+        "job_id": "job-active-a",
+        "repo_id": "repo-a",
+        "run_id": "run-active-a",
+        "status": "claimed",
+        "claimed_by_node_id": "node-1",
+        "claimed_session_id": "sess-1",
+    }
+    claimed_row = {
+        **queued_repo_b,
+        "status": "claimed",
+        "claimed_by_node_id": "node-1",
+        "claimed_session_id": "sess-1",
+    }
+    conn = _FakeConn(
+        fetchrow_results=[claimed_row],
+        fetch_results=[
+            [queued_repo_a, queued_repo_b],
+            [active_repo_a],
+            [
+                {
+                    "run_id": "run-a",
+                    "plan_json": {
+                        "host_capacity_policy": {
+                            "host_id": "windows-owner-ci",
+                            "resource_budget": {"cpu": 4},
+                        }
+                    },
+                    "metadata_json": {},
+                },
+                {
+                    "run_id": "run-b",
+                    "plan_json": {
+                        "host_capacity_policy": {
+                            "host_id": "windows-owner-ci",
+                            "resource_budget": {"cpu": 4},
+                        }
+                    },
+                    "metadata_json": {},
+                },
+                {
+                    "run_id": "run-active-a",
+                    "plan_json": {
+                        "host_capacity_policy": {
+                            "host_id": "windows-owner-ci",
+                            "resource_budget": {"cpu": 4},
+                        }
+                    },
+                    "metadata_json": {},
+                },
+            ],
+        ],
+    )
+    storage = _storage(conn)
+    storage._recompute_run_status = AsyncMock()  # type: ignore[method-assign]
+
+    claimed = await storage.claim_worker_job(
+        scope_id="owner:owner-1:repo:zetherion-ai",
+        node_id="node-1",
+        required_capabilities=["ci.test.run"],
+        session_id="sess-1",
+    )
+
+    assert claimed is not None
+    assert claimed["job_id"] == "job-repo-b"
 
 
 @pytest.mark.asyncio

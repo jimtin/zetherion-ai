@@ -182,6 +182,150 @@ class SchedulerOverview(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class EvidenceReference(BaseModel):
+    """Reference to external or local evidence correlated to a run node."""
+
+    evidence_ref_id: str
+    node_id: str | None = None
+    provider: str
+    service: str | None = None
+    query: str | None = None
+    time_range: dict[str, Any] = Field(default_factory=dict)
+    trace_id: str | None = None
+    request_id: str | None = None
+    artifact_ref: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class CorrelationContext(BaseModel):
+    """Correlation identifiers propagated for one CI run."""
+
+    run_id: str
+    commit_sha: str | None = None
+    environment: str | None = None
+    trace_ids: list[str] = Field(default_factory=list)
+    request_ids: list[str] = Field(default_factory=list)
+    services: list[str] = Field(default_factory=list)
+    containers: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RunGraphArtifactRef(BaseModel):
+    """Artifact attached to a run-graph node."""
+
+    artifact_id: str
+    node_id: str | None = None
+    kind: str = "artifact"
+    title: str | None = None
+    path: str | None = None
+    state: str = "ready"
+    created_at: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RunGraphDiagnosticRef(BaseModel):
+    """Diagnostic finding attached to a run-graph node."""
+
+    diagnostic_id: str
+    node_id: str | None = None
+    code: str
+    summary: str = ""
+    blocking: bool = False
+    severity: str = "medium"
+    created_at: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RunGraphNode(BaseModel):
+    """One node in the canonical CI execution graph."""
+
+    node_id: str
+    kind: str
+    label: str | None = None
+    parent_id: str | None = None
+    dependency_ids: list[str] = Field(default_factory=list)
+    state: str = "unknown"
+    run_id: str | None = None
+    shard_id: str | None = None
+    step_id: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    artifact_ids: list[str] = Field(default_factory=list)
+    diagnostic_ids: list[str] = Field(default_factory=list)
+    evidence_ref_ids: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RunGraph(BaseModel):
+    """Canonical machine-readable topology for a CI run."""
+
+    run_id: str
+    generated_at: str | None = None
+    state: str = "unknown"
+    nodes: list[RunGraphNode] = Field(default_factory=list)
+    artifacts: list[RunGraphArtifactRef] = Field(default_factory=list)
+    diagnostics: list[RunGraphDiagnosticRef] = Field(default_factory=list)
+    evidence_references: list[EvidenceReference] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentInstructionRecommendation(BaseModel):
+    """Explicit agent-facing remediation guidance."""
+
+    title: str
+    instructions: list[str] = Field(default_factory=list)
+    agents_md_update: str | None = None
+    patch_guidance: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentRuleViolation(BaseModel):
+    """One violated deterministic rule behind agent coaching."""
+
+    rule_code: str
+    summary: str
+    blocking: bool = False
+    evidence_ref_ids: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentCoachingFinding(BaseModel):
+    """One coaching finding for a principal or repo."""
+
+    finding_id: str
+    coaching_kind: str = "diagnostic"
+    rule_code: str
+    summary: str
+    remediation: str = ""
+    blocking: bool = False
+    recurrence_count: int = 1
+    confidence: float | None = None
+    evidence_ref_ids: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentCoachingFeedback(BaseModel):
+    """Stored coaching package returned to downstream agents."""
+
+    feedback_id: str
+    principal_id: str | None = None
+    repo_id: str | None = None
+    run_id: str | None = None
+    commit_sha: str | None = None
+    scope: str = "principal"
+    status: str = "open"
+    blocking: bool = False
+    recurrence_count: int = 1
+    confidence: float | None = None
+    summary: str = ""
+    findings: list[AgentCoachingFinding] = Field(default_factory=list)
+    recommendations: list[AgentInstructionRecommendation] = Field(default_factory=list)
+    rule_violations: list[AgentRuleViolation] = Field(default_factory=list)
+    evidence_references: list[EvidenceReference] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
 class LocalGatePlan(BaseModel):
     """Compiled shard plan for a repo-local gate."""
 

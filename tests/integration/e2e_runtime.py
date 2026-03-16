@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 
 DEFAULT_COMPOSE_FILE = "docker-compose.test.yml"
 DEFAULT_PROJECT = "zetherion-ai-test"
@@ -54,6 +55,44 @@ class E2ERuntime:
 
     def compose_base_command(self) -> list[str]:
         return ["docker", "compose", "-f", self.compose_file, "-p", self.project_name]
+
+    def env_file_path(self) -> Path | None:
+        candidate = os.getenv("E2E_RUN_ENV_PATH", "").strip()
+        if candidate:
+            path = Path(candidate)
+            return path if path.is_file() else None
+        if self.stack_root:
+            path = Path(self.stack_root) / "run.env"
+            return path if path.is_file() else None
+        return None
+
+    def env_file_values(self) -> dict[str, str]:
+        path = self.env_file_path()
+        if path is None:
+            return {}
+        values: dict[str, str] = {}
+        for line in path.read_text(encoding="utf-8").splitlines():
+            raw = line.strip()
+            if not raw or raw.startswith("#") or "=" not in raw:
+                continue
+            key, value = raw.split("=", 1)
+            values[key.strip()] = value.strip()
+        return values
+
+    def resolve_secret(
+        self,
+        *keys: str,
+        default: str | None = None,
+    ) -> str | None:
+        env_values = self.env_file_values()
+        for key in keys:
+            value = os.getenv(key)
+            if value:
+                return value
+            value = env_values.get(key)
+            if value:
+                return value
+        return default
 
     def service_container_id(self, service: str) -> str | None:
         result = subprocess.run(

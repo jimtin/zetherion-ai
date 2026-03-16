@@ -34,6 +34,29 @@ def _storage() -> MagicMock:
     storage.get_reporting_summary = AsyncMock(return_value={})
     storage.get_worker_resource_report = AsyncMock(return_value={"samples": [], "totals": {}})
     storage.get_local_repo_readiness = AsyncMock(return_value=(None, None))
+    storage.record_agent_gap_event = AsyncMock(
+        side_effect=lambda *args, **kwargs: {
+            "gap_id": "gap-1",
+            "principal_id": kwargs.get("principal_id"),
+            "repo_id": kwargs.get("repo_id"),
+            "run_id": kwargs.get("run_id"),
+            "gap_type": kwargs.get("gap_type"),
+            "suggested_fix": kwargs.get("suggested_fix"),
+            "blocker": kwargs.get("blocker", False),
+            "status": "open",
+            "occurrence_count": 1,
+            "metadata": kwargs.get("metadata") or {},
+            "first_seen_at": "2026-03-16T09:00:00Z",
+            "updated_at": "2026-03-16T09:00:00Z",
+        }
+    )
+    storage.get_run_report = AsyncMock(return_value={})
+    storage.get_run_graph = AsyncMock(return_value={})
+    storage.get_run_correlation_context = AsyncMock(return_value={})
+    storage.get_run_diagnostics = AsyncMock(return_value={})
+    storage.get_run_artifacts = AsyncMock(return_value=[])
+    storage.get_run_evidence = AsyncMock(return_value=[])
+    storage.list_agent_coaching_feedback = AsyncMock(return_value=[])
     storage.store_run_github_receipt = AsyncMock()
     storage.merge_run_metadata = AsyncMock()
     storage.set_run_status = AsyncMock()
@@ -93,7 +116,20 @@ async def test_ci_controller_certification_run_seeds_platform_canary_and_windows
         SkillRequest(
             intent="ci_run_start",
             user_id="owner-1",
-            context={"repo_id": "zetherion-ai", "mode": "certification"},
+            context={
+                "repo_id": "zetherion-ai",
+                "mode": "certification",
+                "preflight_checks": {
+                    "categories_completed": ["static", "security"],
+                    "checks": [
+                        {"id": "ruff-check", "status": "passed", "tool": "ruff"},
+                        {"id": "ruff-format-check", "status": "passed", "tool": "ruff"},
+                        {"id": "bandit", "status": "passed"},
+                        {"id": "gitleaks", "status": "passed"},
+                        {"id": "pip-audit", "status": "passed"},
+                    ],
+                },
+            },
         )
     )
 
@@ -144,6 +180,113 @@ async def test_ci_controller_certification_run_seeds_platform_canary_and_windows
 
 
 @pytest.mark.asyncio
+async def test_ci_controller_rejects_certification_without_preflight_attestation() -> None:
+    storage = _storage()
+    profile = default_repo_profile("zetherion-ai")
+    assert profile is not None
+    storage.get_repo_profile.return_value = profile
+    skill = CiControllerSkill(storage=storage)
+
+    response = await skill.handle(
+        SkillRequest(
+            intent="ci_run_start",
+            user_id="owner-1",
+            context={
+                "repo_id": "zetherion-ai",
+                "mode": "certification",
+                "principal_id": "codex-agent-1",
+            },
+        )
+    )
+
+    assert response.success is True
+    assert response.data["preflight"]["accepted"] is False
+    assert response.data["coaching"][0]["principal_id"] == "codex-agent-1"
+    storage.create_run.assert_not_awaited()
+    storage.record_agent_gap_event.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ci_controller_rejects_certification_when_gitleaks_is_missing() -> None:
+    storage = _storage()
+    profile = default_repo_profile("zetherion-ai")
+    assert profile is not None
+    storage.get_repo_profile.return_value = profile
+    skill = CiControllerSkill(storage=storage)
+
+    response = await skill.handle(
+        SkillRequest(
+            intent="ci_run_start",
+            user_id="owner-1",
+            context={
+                "repo_id": "zetherion-ai",
+                "mode": "certification",
+                "principal_id": "codex-agent-1",
+                "preflight_checks": {
+                    "categories_completed": ["static", "security"],
+                    "checks": [
+                        {"id": "ruff-check", "status": "passed", "tool": "ruff"},
+                        {"id": "ruff-format-check", "status": "passed", "tool": "ruff"},
+                        {"id": "bandit", "status": "passed"},
+                        {"id": "pip-audit", "status": "passed"},
+                    ],
+                },
+            },
+        )
+    )
+
+    assert response.success is True
+    assert response.data["preflight"]["accepted"] is False
+    assert {
+        violation["rule_code"] for violation in response.data["preflight"]["violations"]
+    } == {"missing_preflight_check"}
+    assert "gitleaks" in response.data["preflight"]["violations"][0]["summary"]
+    assert response.data["coaching"][0]["recommendations"][0]["agents_md_update"]
+    storage.create_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_ci_controller_rejects_certification_when_ruff_version_is_wrong() -> None:
+    storage = _storage()
+    profile = default_repo_profile("zetherion-ai")
+    assert profile is not None
+    storage.get_repo_profile.return_value = profile
+    skill = CiControllerSkill(storage=storage)
+
+    response = await skill.handle(
+        SkillRequest(
+            intent="ci_run_start",
+            user_id="owner-1",
+            context={
+                "repo_id": "zetherion-ai",
+                "mode": "certification",
+                "principal_id": "codex-agent-1",
+                "preflight_checks": {
+                    "categories_completed": ["static", "security"],
+                    "checks": [
+                        {"id": "ruff-check", "status": "passed", "tool": "ruff"},
+                        {"id": "ruff-format-check", "status": "passed", "tool": "ruff"},
+                        {"id": "bandit", "status": "passed"},
+                        {"id": "gitleaks", "status": "passed"},
+                        {"id": "pip-audit", "status": "passed"},
+                    ],
+                    "tool_versions": {"ruff": "0.9.9"},
+                },
+            },
+        )
+    )
+
+    assert response.success is True
+    assert response.data["preflight"]["accepted"] is False
+    assert {
+        violation["rule_code"] for violation in response.data["preflight"]["violations"]
+    } == {"tool_version_mismatch"}
+    assert "0.8.4" in response.data["preflight"]["violations"][0]["summary"]
+    assert response.data["coaching"][0]["recommendations"][0]["agents_md_update"]
+    storage.create_run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_ci_controller_promotion_blocks_when_shards_are_awaiting_sync() -> None:
     storage = _storage()
     profile = default_repo_profile("zetherion-ai")
@@ -169,6 +312,78 @@ async def test_ci_controller_promotion_blocks_when_shards_are_awaiting_sync() ->
     assert response.success is True
     assert response.data["promoted"] is False
     storage.set_run_status.assert_awaited_once_with("owner-1", "run-1", "promotion_blocked")
+
+
+@pytest.mark.asyncio
+async def test_ci_observer_loads_run_report_graph_and_coaching() -> None:
+    storage = _storage()
+    storage.get_run_report.return_value = {"run_id": "run-1"}
+    storage.get_run_graph.return_value = {"run_id": "run-1", "nodes": []}
+    storage.get_run_correlation_context.return_value = {"run_id": "run-1", "trace_ids": ["t-1"]}
+    storage.get_run_diagnostics.return_value = {
+        "diagnostic_findings": [{"code": "coverage_gate_failed"}]
+    }
+    storage.get_run_artifacts.return_value = [{"artifact_id": "a-1"}]
+    storage.get_run_evidence.return_value = [{"evidence_ref_id": "e-1"}]
+    storage.list_agent_coaching_feedback.return_value = [{"feedback_id": "coach-1"}]
+    skill = CiObserverSkill(storage=storage)
+
+    report = await skill.handle(
+        SkillRequest(intent="ci_run_report", user_id="owner-1", context={"run_id": "run-1"})
+    )
+    graph = await skill.handle(
+        SkillRequest(intent="ci_run_graph", user_id="owner-1", context={"run_id": "run-1"})
+    )
+    correlation = await skill.handle(
+        SkillRequest(
+            intent="ci_run_correlation_context",
+            user_id="owner-1",
+            context={"run_id": "run-1"},
+        )
+    )
+    diagnostics = await skill.handle(
+        SkillRequest(
+            intent="ci_run_diagnostics",
+            user_id="owner-1",
+            context={"run_id": "run-1", "node_id": "shard:run-1:shard-1"},
+        )
+    )
+    artifacts = await skill.handle(
+        SkillRequest(
+            intent="ci_run_artifacts",
+            user_id="owner-1",
+            context={"run_id": "run-1"},
+        )
+    )
+    evidence = await skill.handle(
+        SkillRequest(
+            intent="ci_run_evidence",
+            user_id="owner-1",
+            context={"run_id": "run-1"},
+        )
+    )
+    coaching = await skill.handle(
+        SkillRequest(
+            intent="ci_run_coaching",
+            user_id="owner-1",
+            context={"run_id": "run-1"},
+        )
+    )
+
+    assert report.data["report"]["run_id"] == "run-1"
+    assert graph.data["run_graph"]["run_id"] == "run-1"
+    assert correlation.data["correlation_context"]["trace_ids"] == ["t-1"]
+    assert diagnostics.data["diagnostics"]["diagnostic_findings"][0]["code"] == (
+        "coverage_gate_failed"
+    )
+    assert artifacts.data["artifacts"][0]["artifact_id"] == "a-1"
+    assert evidence.data["evidence"][0]["evidence_ref_id"] == "e-1"
+    assert coaching.data["coaching"][0]["feedback_id"] == "coach-1"
+    storage.get_run_diagnostics.assert_awaited_once_with(
+        "owner-1",
+        "run-1",
+        node_id="shard:run-1:shard-1",
+    )
 
 
 @pytest.mark.asyncio
@@ -506,7 +721,20 @@ async def test_ci_controller_supports_retry_and_cancel_run_handlers() -> None:
         "run_id": "run-1",
         "repo_id": "zetherion-ai",
         "git_ref": "feature/test",
-        "metadata": {"mode": "certification", "git_sha": "a" * 40},
+        "metadata": {
+            "mode": "certification",
+            "git_sha": "a" * 40,
+            "preflight_checks": {
+                "categories_completed": ["static", "security"],
+                "checks": [
+                    {"id": "ruff-check", "status": "passed", "tool": "ruff"},
+                    {"id": "ruff-format-check", "status": "passed", "tool": "ruff"},
+                    {"id": "bandit", "status": "passed"},
+                    {"id": "gitleaks", "status": "passed"},
+                    {"id": "pip-audit", "status": "passed"},
+                ],
+            },
+        },
         "plan": {"mode": "certification"},
         "shards": [],
     }

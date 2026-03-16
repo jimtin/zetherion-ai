@@ -94,3 +94,33 @@ def test_get_runtime_uses_slot_b_port_offset(monkeypatch) -> None:
     assert runtime.port_offset == 1000
     assert runtime.skills_port == 19080
     assert runtime.postgres_port == 16432
+
+
+def test_env_file_values_and_resolve_secret(monkeypatch, tmp_path) -> None:
+    env_file = tmp_path / "run.env"
+    env_file.write_text(
+        "SKILLS_API_SECRET=stack-secret\nOTHER_VALUE=ok\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("E2E_RUN_ENV_PATH", str(env_file))
+    monkeypatch.delenv("SKILLS_API_SECRET", raising=False)
+
+    module = importlib.import_module("tests.integration.e2e_runtime")
+    module._runtime = None
+    runtime = module.get_runtime()
+
+    assert runtime.env_file_values()["SKILLS_API_SECRET"] == "stack-secret"
+    assert runtime.resolve_secret("SKILLS_API_SECRET") == "stack-secret"
+
+
+def test_resolve_secret_prefers_process_env_over_run_env(monkeypatch, tmp_path) -> None:
+    env_file = tmp_path / "run.env"
+    env_file.write_text("SKILLS_API_SECRET=stack-secret\n", encoding="utf-8")
+    monkeypatch.setenv("E2E_RUN_ENV_PATH", str(env_file))
+    monkeypatch.setenv("SKILLS_API_SECRET", "process-secret")
+
+    module = importlib.import_module("tests.integration.e2e_runtime")
+    module._runtime = None
+    runtime = module.get_runtime()
+
+    assert runtime.resolve_secret("SKILLS_API_SECRET") == "process-secret"

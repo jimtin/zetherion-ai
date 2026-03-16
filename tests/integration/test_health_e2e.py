@@ -89,11 +89,14 @@ def _get_api_secret() -> str | None:
             continue
 
     # Final fallback when running with env-injected secrets outside Docker.
-    for key in secret_keys:
-        value = os.getenv(key)
-        if value:
-            return value
-    return None
+    return RUNTIME.resolve_secret(
+        *secret_keys,
+        default=(
+            "test-skills-secret"
+            if os.path.basename(RUNTIME.compose_file) == "docker-compose.test.yml"
+            else None
+        ),
+    )
 
 
 def _docker_running() -> bool:

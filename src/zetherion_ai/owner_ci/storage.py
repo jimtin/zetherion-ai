@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -21,6 +22,11 @@ from zetherion_ai.owner_ci.models import (
     normalize_shard_receipt,
     normalize_worker_certification_receipt,
     overlay_local_readiness_shards,
+)
+from zetherion_ai.owner_ci.run_reports import (
+    build_agent_coaching_feedback,
+    build_recurring_diagnostic_coaching_payloads,
+    build_run_report,
 )
 
 if TYPE_CHECKING:
@@ -46,6 +52,77 @@ _RUN_STATUSES = {
     "cancelled",
 }
 _SHARD_PENDING_STATUSES = {"planned", "queued_local", "running"}
+
+
+def _stable_feedback_key(parts: list[str | None]) -> str:
+    normalized = "||".join(str(part or "").strip().lower() for part in parts)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _filter_run_report_for_node(
+    report: dict[str, Any],
+    *,
+    node_id: str,
+) -> dict[str, Any]:
+    candidate = str(node_id or "").strip()
+    if not candidate:
+        return report
+
+    filtered = dict(report)
+    filtered["artifacts"] = [
+        artifact
+        for artifact in list(report.get("artifacts") or [])
+        if str(artifact.get("node_id") or "").strip() == candidate
+    ]
+    filtered["evidence"] = [
+        evidence
+        for evidence in list(report.get("evidence") or [])
+        if str(evidence.get("node_id") or "").strip() == candidate
+    ]
+    filtered["all_evidence_references"] = [
+        evidence
+        for evidence in list(report.get("all_evidence_references") or [])
+        if str(evidence.get("node_id") or "").strip() == candidate
+    ]
+
+    graph = dict(report.get("run_graph") or {})
+    graph["nodes"] = [
+        entry
+        for entry in list(graph.get("nodes") or [])
+        if str(entry.get("node_id") or "").strip() == candidate
+    ]
+    graph["artifacts"] = [
+        entry
+        for entry in list(graph.get("artifacts") or [])
+        if str(entry.get("node_id") or "").strip() == candidate
+    ]
+    graph["diagnostics"] = [
+        entry
+        for entry in list(graph.get("diagnostics") or [])
+        if str(entry.get("node_id") or "").strip() == candidate
+    ]
+    graph["evidence_references"] = [
+        entry
+        for entry in list(graph.get("evidence_references") or [])
+        if str(entry.get("node_id") or "").strip() == candidate
+    ]
+    filtered["run_graph"] = graph
+    filtered["diagnostic_findings"] = [
+        entry
+        for entry in list(report.get("diagnostic_findings") or [])
+        if (
+            not str(entry.get("shard_id") or "").strip()
+            and candidate
+            == str(
+                (report.get("run_graph") or {}).get("nodes", [{}])[0].get("node_id") or ""
+            )
+        )
+        or (
+            str(entry.get("shard_id") or "").strip()
+            and candidate.endswith(f":{str(entry.get('shard_id') or '').strip()}")
+        )
+    ]
+    return filtered
 
 
 def _pending_repo_readiness(repo_id: str, summary: str) -> RepoReadinessReceipt:
@@ -983,6 +1060,42 @@ def _job_host_capacity_policy(
     plan = dict(run_row.get("plan_json") or run_row.get("plan") or {})
     metadata = dict(run_row.get("metadata_json") or run_row.get("metadata") or {})
     return dict(plan.get("host_capacity_policy") or metadata.get("host_capacity_policy") or {})
+
+
+def _job_host_id(
+    job: dict[str, Any],
+    run_rows: dict[str, dict[str, Any]],
+) -> str:
+    host_policy = _job_host_capacity_policy(job, run_rows)
+    return str(host_policy.get("host_id") or "windows-owner-ci").strip() or "windows-owner-ci"
+
+
+def _fair_claim_order(
+    queued_jobs: list[dict[str, Any]],
+    active_jobs: list[dict[str, Any]],
+    run_rows: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    active_repo_pressure: dict[str, dict[str, int]] = {}
+    for job in active_jobs:
+        host_id = _job_host_id(job, run_rows)
+        repo_id = str(job.get("repo_id") or "").strip() or "unknown"
+        host_pressure = active_repo_pressure.setdefault(host_id, {})
+        host_pressure[repo_id] = int(host_pressure.get(repo_id) or 0) + 1
+
+    indexed_jobs = list(enumerate(queued_jobs))
+    indexed_jobs.sort(
+        key=lambda item: (
+            int(
+                active_repo_pressure.get(_job_host_id(item[1], run_rows), {}).get(
+                    str(item[1].get("repo_id") or "").strip() or "unknown",
+                    0,
+                )
+            ),
+            str(item[1].get("created_at") or ""),
+            item[0],
+        )
+    )
+    return [job for _, job in indexed_jobs]
 
 
 class OwnerCiStorage:
@@ -2598,11 +2711,7 @@ class OwnerCiStorage:
             for raw_row in active_rows:
                 active_job = self._worker_job_from_row(dict(raw_row))
                 reservation = _job_resource_reservation(active_job)
-                host_policy = _job_host_capacity_policy(active_job, run_rows)
-                host_id = (
-                    str(host_policy.get("host_id") or "windows-owner-ci").strip()
-                    or "windows-owner-ci"
-                )
+                host_id = _job_host_id(active_job, run_rows)
                 usage = usage_by_host.setdefault(host_id, {"cpu": 0, "service": 0, "serial": 0})
                 resource_class = reservation.resource_class.strip() or "cpu"
                 usage[resource_class] = usage.get(resource_class, 0) + max(
@@ -2611,17 +2720,21 @@ class OwnerCiStorage:
                 )
                 if reservation.parallel_group:
                     busy_groups_by_host.setdefault(host_id, set()).add(reservation.parallel_group)
-            for row in rows:
-                job = self._worker_job_from_row(dict(row))
+            queued_jobs = [
+                self._worker_job_from_row(dict(row))
+                for row in _fair_claim_order(
+                    [dict(row) for row in rows],
+                    [dict(row) for row in active_rows],
+                    run_rows,
+                )
+            ]
+            for job in queued_jobs:
                 job_required = set(job["required_capabilities"])
                 if not job_required.issubset(capability_set):
                     continue
                 reservation = _job_resource_reservation(job)
                 host_policy = _job_host_capacity_policy(job, run_rows)
-                host_id = (
-                    str(host_policy.get("host_id") or "windows-owner-ci").strip()
-                    or "windows-owner-ci"
-                )
+                host_id = _job_host_id(job, run_rows)
                 resource_budget = dict(host_policy.get("resource_budget") or {})
                 usage = usage_by_host.setdefault(host_id, {"cpu": 0, "service": 0, "serial": 0})
                 busy_groups = busy_groups_by_host.setdefault(host_id, set())
@@ -2756,11 +2869,72 @@ class OwnerCiStorage:
                 error_json=error_json,
             )
         await self._recompute_run_status(current["owner_id"], current["run_id"])
+        await self._store_run_coaching_feedback(current["owner_id"], current["run_id"])
         if updated is None:
             raise RuntimeError("Worker job update returned no row")
         completed = self._worker_job_from_row(dict(updated))
         completed["idempotent"] = False
         return completed
+
+    async def _store_run_coaching_feedback(self, owner_id: str, run_id: str) -> None:
+        run = await self.get_run(owner_id, run_id)
+        if run is None:
+            return
+        if str(run.get("status") or "").strip().lower() != "failed":
+            return
+        metadata = dict(run.get("metadata") or {})
+        principal_id = str(metadata.get("principal_id") or "").strip() or None
+        if not principal_id:
+            return
+        historical_feedback = await self.list_agent_coaching_feedback(
+            owner_id,
+            principal_id=principal_id,
+            repo_id=str(run.get("repo_id") or "").strip() or None,
+            limit=200,
+        )
+        historical_occurrences: dict[str, int] = {}
+        for feedback in historical_feedback:
+            recurrence = max(1, int(feedback.get("recurrence_count") or 1))
+            for rule in list(feedback.get("rule_violations") or []):
+                code = str(rule.get("rule_code") or "").strip()
+                if code:
+                    historical_occurrences[code] = max(
+                        historical_occurrences.get(code) or 0,
+                        recurrence,
+                    )
+        report = await self.get_run_report(owner_id, run_id)
+        if report is None:
+            return
+        coaching_payloads = build_recurring_diagnostic_coaching_payloads(
+            report=report,
+            principal_id=principal_id,
+            historical_occurrences=historical_occurrences,
+        )
+        for payload in coaching_payloads:
+            await self.record_agent_gap_event(
+                owner_id,
+                dedupe_key=_stable_feedback_key(
+                    [
+                        str(payload.get("gap_type") or ""),
+                        principal_id,
+                        str(payload.get("repo_id") or ""),
+                        str((payload.get("metadata") or {}).get("rule_code") or ""),
+                    ]
+                ),
+                session_id=str(metadata.get("session_id") or "").strip() or None,
+                principal_id=principal_id,
+                app_id=str(metadata.get("app_id") or "").strip() or None,
+                repo_id=str(payload.get("repo_id") or "").strip() or None,
+                run_id=str(payload.get("run_id") or "").strip() or run_id,
+                gap_type=str(payload.get("gap_type") or "agent_coaching"),
+                severity=str(payload.get("severity") or "medium"),
+                blocker=bool(payload.get("blocker", False)),
+                detected_from=str(payload.get("detected_from") or "ci_run_diagnostics"),
+                required_capability=str(payload.get("required_capability") or "").strip() or None,
+                observed_request=dict(payload.get("observed_request") or {}),
+                suggested_fix=str(payload.get("suggested_fix") or "").strip() or None,
+                metadata=dict(payload.get("metadata") or {}),
+            )
 
     async def list_worker_nodes(self, scope_id: str) -> list[dict[str, Any]]:
         table = f'"{self._schema}".owner_ci_worker_nodes'
@@ -3051,6 +3225,125 @@ class OwnerCiStorage:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(query, *params)
         return self._debug_bundle_from_row(dict(row)) if row is not None else None
+
+    async def list_agent_coaching_feedback(
+        self,
+        owner_id: str,
+        *,
+        principal_id: str | None = None,
+        repo_id: str | None = None,
+        run_id: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        gaps = await self.list_agent_gap_events(
+            owner_id,
+            principal_id=principal_id,
+            repo_id=repo_id,
+            run_id=run_id,
+            unresolved_only=False,
+            limit=limit,
+        )
+        return build_agent_coaching_feedback(gaps)
+
+    async def get_run_report(
+        self,
+        owner_id: str,
+        run_id: str,
+        *,
+        shard_id: str | None = None,
+        node_id: str | None = None,
+        log_limit: int = 500,
+    ) -> dict[str, Any] | None:
+        run = await self.get_run(owner_id, run_id)
+        if run is None:
+            return None
+        logs = await self.get_run_log_chunks(
+            owner_id,
+            run_id,
+            shard_id=shard_id,
+            limit=log_limit,
+        )
+        debug_bundle = await self.get_run_debug_bundle(
+            owner_id,
+            run_id,
+            shard_id=shard_id,
+        )
+        metadata = dict(run.get("metadata") or {})
+        principal_id = str(metadata.get("principal_id") or "").strip() or None
+        coaching = await self.list_agent_coaching_feedback(
+            owner_id,
+            principal_id=principal_id,
+            repo_id=str(run.get("repo_id") or "").strip() or None,
+            run_id=run_id,
+            limit=50,
+        )
+        report = build_run_report(
+            run=run,
+            logs=logs,
+            debug_bundle=debug_bundle,
+            coaching_feedback=coaching,
+        )
+        if node_id:
+            return _filter_run_report_for_node(
+                report,
+                node_id=str(node_id or "").strip(),
+            )
+        return report
+
+    async def get_run_graph(
+        self,
+        owner_id: str,
+        run_id: str,
+    ) -> dict[str, Any] | None:
+        report = await self.get_run_report(owner_id, run_id)
+        return dict(report.get("run_graph") or {}) if report is not None else None
+
+    async def get_run_correlation_context(
+        self,
+        owner_id: str,
+        run_id: str,
+    ) -> dict[str, Any] | None:
+        report = await self.get_run_report(owner_id, run_id)
+        return dict(report.get("correlation_context") or {}) if report is not None else None
+
+    async def get_run_diagnostics(
+        self,
+        owner_id: str,
+        run_id: str,
+        *,
+        node_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        report = await self.get_run_report(owner_id, run_id, node_id=node_id)
+        if report is None:
+            return None
+        return {
+            "diagnostic_summary": dict(report.get("diagnostic_summary") or {}),
+            "diagnostic_findings": list(report.get("diagnostic_findings") or []),
+            "diagnostic_artifacts": list(report.get("diagnostic_artifacts") or []),
+            "coverage_summary": dict(report.get("coverage_summary") or {}),
+            "coverage_gaps": dict(report.get("coverage_gaps") or {}),
+            "correlated_incidents": list(report.get("correlated_incidents") or []),
+        }
+
+    async def get_run_artifacts(
+        self,
+        owner_id: str,
+        run_id: str,
+        *,
+        node_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        report = await self.get_run_report(owner_id, run_id, node_id=node_id)
+        return list(report.get("artifacts") or []) if report is not None else []
+
+    async def get_run_evidence(
+        self,
+        owner_id: str,
+        run_id: str,
+        *,
+        node_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        report = await self.get_run_report(owner_id, run_id, node_id=node_id)
+        return list(report.get("evidence") or []) if report is not None else []
 
     async def get_local_repo_readiness(
         self,
@@ -4848,6 +5141,7 @@ class OwnerCiStorage:
         principal_id: str | None = None,
         app_id: str | None = None,
         repo_id: str | None = None,
+        run_id: str | None = None,
         status: str | None = None,
         blocker_only: bool = False,
         unresolved_only: bool = False,
@@ -4872,6 +5166,9 @@ class OwnerCiStorage:
         if repo_id:
             params.append(repo_id)
             query += f" AND repo_id = ${len(params)}"
+        if run_id:
+            params.append(run_id)
+            query += f" AND run_id = ${len(params)}"
         if status:
             params.append(status)
             query += f" AND status = ${len(params)}"

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Awaitable, Callable
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 from zetherion_ai.config import get_settings
@@ -20,6 +22,10 @@ from zetherion_ai.owner_ci import (
     normalize_release_verification_receipt,
 )
 from zetherion_ai.owner_ci.profiles import default_repo_profile, default_repo_profiles
+from zetherion_ai.owner_ci.run_reports import (
+    build_agent_coaching_feedback,
+    build_preflight_coaching_payloads,
+)
 from zetherion_ai.skills.base import Skill, SkillMetadata, SkillRequest, SkillResponse
 from zetherion_ai.skills.github.client import GitHubClient
 from zetherion_ai.skills.permissions import Permission, PermissionSet
@@ -168,6 +174,171 @@ def _dedupe_strings(values: list[str]) -> list[str]:
         deduped.append(value)
         seen.add(value)
     return deduped
+
+
+def _stable_coaching_key(parts: list[str | None]) -> str:
+    normalized = "||".join(str(part or "").strip().lower() for part in parts)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _passed_preflight_check(value: Any) -> bool:
+    candidate = str(value or "").strip().lower()
+    return candidate in {"passed", "success", "succeeded", "healthy", "green", "true", "1"}
+
+
+def _expected_ruff_version(repo: dict[str, Any]) -> str | None:
+    allowed_paths = [
+        str(item).strip()
+        for item in list(repo.get("allowed_paths") or [])
+        if str(item).strip()
+    ]
+    for root in allowed_paths:
+        requirements_path = Path(root) / "requirements-dev.txt"
+        if not requirements_path.is_file():
+            continue
+        try:
+            for line in requirements_path.read_text(encoding="utf-8").splitlines():
+                candidate = line.strip()
+                if candidate.startswith("ruff=="):
+                    return candidate.split("==", 1)[1].strip() or None
+        except OSError:
+            continue
+    return None
+
+
+def _collect_preflight_violations(
+    *,
+    repo: dict[str, Any],
+    compiled: dict[str, Any],
+    mode: str,
+    request_context: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if mode != "certification":
+        return []
+    raw_preflight = dict(
+        request_context.get("preflight_checks")
+        or dict(request_context.get("metadata") or {}).get("preflight_checks")
+        or {}
+    )
+    required_gate_ids = _dedupe_strings(
+        [
+            *list(compiled.get("required_static_gate_ids") or []),
+            *list(compiled.get("required_security_gate_ids") or []),
+        ]
+    )
+    if not raw_preflight:
+        return [
+            {
+                "rule_code": "missing_preflight_attestation",
+                "summary": (
+                    "Certification was rejected because no preflight attestation "
+                    "was provided."
+                ),
+                "remediation": (
+                    "Run the mandatory static and security checks first, then include a "
+                    "`preflight_checks` payload with completed check ids, statuses, "
+                    "and tool versions."
+                ),
+                "evidence_references": [],
+            }
+        ]
+
+    checks_by_id: dict[str, dict[str, Any]] = {}
+    for raw_check in list(raw_preflight.get("checks") or []):
+        if isinstance(raw_check, dict):
+            check = dict(raw_check)
+        else:
+            check_id = str(raw_check or "").strip()
+            if not check_id:
+                continue
+            check = {"id": check_id, "status": "passed"}
+        check_id = str(check.get("id") or check.get("lane_id") or "").strip()
+        if check_id:
+            checks_by_id[check_id] = check
+
+    categories = {
+        str(item).strip().lower()
+        for item in list(raw_preflight.get("categories_completed") or [])
+        if str(item).strip()
+    }
+    categories.update(
+        key.strip().lower()
+        for key, value in dict(raw_preflight.get("attestations") or {}).items()
+        if _passed_preflight_check(value)
+    )
+
+    violations: list[dict[str, Any]] = []
+    if not {"static", "security"} <= categories:
+        violations.append(
+            {
+                "rule_code": "missing_preflight_attestation",
+                "summary": "Certification requires both static and security preflight attestation.",
+                "remediation": (
+                    "Record `static` and `security` in `preflight_checks.categories_completed` "
+                    "or mark them true in `preflight_checks.attestations` before "
+                    "starting certification."
+                ),
+                "evidence_references": [],
+            }
+        )
+
+    missing_gate_ids = [
+        gate_id
+        for gate_id in required_gate_ids
+        if not _passed_preflight_check((checks_by_id.get(gate_id) or {}).get("status"))
+    ]
+    for gate_id in missing_gate_ids:
+        violations.append(
+            {
+                "rule_code": "missing_preflight_check",
+                "summary": (
+                    f"Mandatory certification preflight check `{gate_id}` is "
+                    "missing or not marked passed."
+                ),
+                "remediation": (
+                    f"Run `{gate_id}` before certification and include it in "
+                    "`preflight_checks.checks` "
+                    "with a passed status."
+                ),
+                "evidence_references": [],
+            }
+        )
+
+    expected_ruff_version = _expected_ruff_version(repo)
+    actual_ruff_version = str(
+        dict(raw_preflight.get("tool_versions") or {}).get("ruff")
+        or next(
+            (
+                dict(item).get("version")
+                for item in checks_by_id.values()
+                if str(dict(item).get("tool") or "").strip().lower() == "ruff"
+                and str(dict(item).get("version") or "").strip()
+            ),
+            "",
+        )
+        or ""
+    ).strip()
+    if (
+        expected_ruff_version
+        and actual_ruff_version
+        and actual_ruff_version != expected_ruff_version
+    ):
+        violations.append(
+            {
+                "rule_code": "tool_version_mismatch",
+                "summary": (
+                    f"Ruff version `{actual_ruff_version}` does not match the CI-pinned "
+                    f"version `{expected_ruff_version}`."
+                ),
+                "remediation": (
+                    f"Use Ruff `{expected_ruff_version}` for local preflight checks "
+                    "and record that "
+                    "version in the attestation before certification."
+                ),
+                "evidence_references": [],
+            }
+        )
+    return violations
 
 
 def _gate_family_for_lane(
@@ -599,6 +770,73 @@ class CiControllerSkill(Skill):
             if plan_snapshot is not None:
                 plan = {"plan_snapshot": plan_snapshot}
         compiled = self._compile_run_plan(repo=repo, mode=mode, git_ref=git_ref)
+        preflight_violations = _collect_preflight_violations(
+            repo=repo,
+            compiled=compiled,
+            mode=mode,
+            request_context=dict(request.context),
+        )
+        if preflight_violations:
+            principal_id = str(request.context.get("principal_id") or "").strip() or None
+            session_id = str(request.context.get("session_id") or "").strip() or None
+            app_id = str(request.context.get("app_id") or "").strip() or None
+            commit_sha = str(
+                request.context.get("git_sha")
+                or metadata.get("git_sha")
+                or metadata.get("head_sha")
+                or ""
+            ).strip() or None
+            stored_feedback: list[dict[str, Any]] = []
+            for payload in build_preflight_coaching_payloads(
+                principal_id=principal_id,
+                repo_id=str(repo["repo_id"]),
+                commit_sha=commit_sha,
+                violations=preflight_violations,
+            ):
+                stored_feedback.append(
+                    await self._storage.record_agent_gap_event(
+                        owner_id,
+                        dedupe_key=_stable_coaching_key(
+                            [
+                                str(payload.get("gap_type") or ""),
+                                principal_id,
+                                str(payload.get("repo_id") or ""),
+                                str((payload.get("metadata") or {}).get("rule_code") or ""),
+                            ]
+                        ),
+                        session_id=session_id,
+                        principal_id=principal_id,
+                        app_id=app_id,
+                        repo_id=str(payload.get("repo_id") or "").strip() or None,
+                        run_id=None,
+                        gap_type=str(payload.get("gap_type") or "agent_preflight"),
+                        severity=str(payload.get("severity") or "high"),
+                        blocker=bool(payload.get("blocker", True)),
+                        detected_from=str(payload.get("detected_from") or "ci_run_preflight"),
+                        required_capability=(
+                            str(payload.get("required_capability") or "").strip() or None
+                        ),
+                        observed_request=dict(payload.get("observed_request") or {}),
+                        suggested_fix=str(payload.get("suggested_fix") or "").strip() or None,
+                        metadata=dict(payload.get("metadata") or {}),
+                    )
+                )
+            return SkillResponse(
+                request_id=request.id,
+                success=True,
+                message=(
+                    f"Certification preflight rejected run start for `{repo['repo_id']}` "
+                    "until the required common checks are attested."
+                ),
+                data={
+                    "preflight": {
+                        "accepted": False,
+                        "mode": mode,
+                        "violations": preflight_violations,
+                    },
+                    "coaching": build_agent_coaching_feedback(stored_feedback),
+                },
+            )
         stored_compiled_plan = await self._storage.create_compiled_plan(
             owner_id=owner_id,
             repo_id=str(repo["repo_id"]),
@@ -628,6 +866,9 @@ class CiControllerSkill(Skill):
             metadata={
                 **metadata,
                 "mode": mode,
+                "principal_id": str(request.context.get("principal_id") or "").strip() or None,
+                "session_id": str(request.context.get("session_id") or "").strip() or None,
+                "app_id": str(request.context.get("app_id") or "").strip() or None,
                 "git_sha": str(
                     request.context.get("git_sha")
                     or metadata.get("git_sha")
@@ -635,6 +876,11 @@ class CiControllerSkill(Skill):
                     or ""
                 ).strip()
                 or None,
+                "preflight_checks": dict(
+                    request.context.get("preflight_checks")
+                    or metadata.get("preflight_checks")
+                    or {}
+                ),
                 "compiled_plan_id": stored_compiled_plan["compiled_plan_id"],
                 "windows_execution_mode": repo.get("windows_execution_mode"),
                 "required_static_gates": list(compiled.get("required_static_gate_ids") or []),
@@ -811,6 +1057,7 @@ class CiControllerSkill(Skill):
             raise ValueError(f"Run `{run_id}` not found")
         metadata = dict(run.get("metadata") or {})
         retry_metadata = {
+            **metadata,
             **dict(request.context.get("metadata") or {}),
             "retry_of_run_id": run_id,
             "retry_requested_by": owner_id,
@@ -840,6 +1087,11 @@ class CiControllerSkill(Skill):
                 or None,
                 "trigger": str(request.context.get("trigger") or "retry").strip() or "retry",
                 "metadata": retry_metadata,
+                "preflight_checks": (
+                    request.context.get("preflight_checks")
+                    or metadata.get("preflight_checks")
+                    or None
+                ),
             },
         )
         response = await self._handle_run_start(retry_request)

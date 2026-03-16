@@ -266,6 +266,37 @@ async def test_dispatcher_start_and_stop_lifecycle() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dispatcher_publishes_runtime_status_on_lifecycle_transitions() -> None:
+    repository = MagicMock()
+    adapter = MagicMock()
+    status_store = MagicMock()
+    status_store.upsert_status = AsyncMock(return_value=None)
+
+    dispatcher = AnnouncementDispatcher(
+        repository,
+        adapter,
+        runtime_status_store=status_store,
+        runtime_instance_id="instance-1",
+        release_revision="rev-1",
+    )
+    dispatcher._run_loop = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    await dispatcher.start()
+    await asyncio.sleep(0)
+    await dispatcher.stop()
+
+    statuses = [
+        call.kwargs["status"] for call in status_store.upsert_status.await_args_list
+    ]
+    assert "healthy" in statuses
+    assert "stopped" in statuses
+    assert all(
+        call.kwargs["service_name"] == "announcement_dispatcher"
+        for call in status_store.upsert_status.await_args_list
+    )
+
+
+@pytest.mark.asyncio
 async def test_dispatcher_stop_handles_completed_task() -> None:
     dispatcher = AnnouncementDispatcher(MagicMock(), MagicMock())
     dispatcher._running = True
@@ -301,6 +332,38 @@ async def test_dispatcher_run_loop_handles_exception_and_recovers() -> None:
         await dispatcher._run_loop()
 
     assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_run_loop_publishes_degraded_status_after_error() -> None:
+    dispatcher = AnnouncementDispatcher(
+        MagicMock(),
+        MagicMock(),
+        poll_interval_seconds=1,
+        runtime_status_store=MagicMock(upsert_status=AsyncMock(return_value=None)),
+    )
+    dispatcher._running = True
+    call_count = 0
+
+    async def _run_once():
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RuntimeError("boom")
+        dispatcher._running = False
+        return 0
+
+    dispatcher.run_once = _run_once  # type: ignore[method-assign]
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("zetherion_ai.announcements.dispatcher.asyncio.sleep", AsyncMock())
+        await dispatcher._run_loop()
+
+    statuses = [
+        call.kwargs["status"]
+        for call in dispatcher._runtime_status_store.upsert_status.await_args_list
+    ]
+    assert "degraded" in statuses
+    assert "healthy" in statuses
 
 
 @pytest.mark.asyncio

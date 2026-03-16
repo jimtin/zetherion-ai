@@ -388,6 +388,13 @@ class CiObserverSkill(Skill):
                 "ci_run_events",
                 "ci_run_logs",
                 "ci_run_debug_bundle",
+                "ci_run_report",
+                "ci_run_graph",
+                "ci_run_correlation_context",
+                "ci_run_diagnostics",
+                "ci_run_artifacts",
+                "ci_run_evidence",
+                "ci_run_coaching",
                 "ci_reporting_readiness",
                 "ci_reporting_summary",
                 "ci_reporting_capacity",
@@ -449,6 +456,99 @@ class CiObserverSkill(Skill):
                 request_id=request.id,
                 message="Loaded debug bundle.",
                 data={"debug_bundle": bundle},
+            )
+        if intent == "ci_run_report":
+            run_id = str(request.context.get("run_id") or "").strip()
+            if not run_id:
+                return SkillResponse.error_response(request.id, "run_id is required")
+            report = await self._storage.get_run_report(
+                owner_id,
+                run_id,
+                shard_id=str(request.context.get("shard_id") or "").strip() or None,
+                node_id=str(request.context.get("node_id") or "").strip() or None,
+                log_limit=int(request.context.get("limit") or 500),
+            )
+            return SkillResponse(
+                request_id=request.id,
+                message="Loaded run report.",
+                data={"report": report},
+            )
+        if intent == "ci_run_graph":
+            run_id = str(request.context.get("run_id") or "").strip()
+            if not run_id:
+                return SkillResponse.error_response(request.id, "run_id is required")
+            graph = await self._storage.get_run_graph(owner_id, run_id)
+            return SkillResponse(
+                request_id=request.id,
+                message="Loaded run graph.",
+                data={"run_graph": graph},
+            )
+        if intent == "ci_run_correlation_context":
+            run_id = str(request.context.get("run_id") or "").strip()
+            if not run_id:
+                return SkillResponse.error_response(request.id, "run_id is required")
+            correlation_context = await self._storage.get_run_correlation_context(owner_id, run_id)
+            return SkillResponse(
+                request_id=request.id,
+                message="Loaded correlation context.",
+                data={"correlation_context": correlation_context},
+            )
+        if intent == "ci_run_diagnostics":
+            run_id = str(request.context.get("run_id") or "").strip()
+            if not run_id:
+                return SkillResponse.error_response(request.id, "run_id is required")
+            diagnostics = await self._storage.get_run_diagnostics(
+                owner_id,
+                run_id,
+                node_id=str(request.context.get("node_id") or "").strip() or None,
+            )
+            return SkillResponse(
+                request_id=request.id,
+                message="Loaded run diagnostics.",
+                data={"diagnostics": diagnostics},
+            )
+        if intent == "ci_run_artifacts":
+            run_id = str(request.context.get("run_id") or "").strip()
+            if not run_id:
+                return SkillResponse.error_response(request.id, "run_id is required")
+            artifacts = await self._storage.get_run_artifacts(
+                owner_id,
+                run_id,
+                node_id=str(request.context.get("node_id") or "").strip() or None,
+            )
+            return SkillResponse(
+                request_id=request.id,
+                message=f"Loaded {len(artifacts)} run artifacts.",
+                data={"artifacts": artifacts},
+            )
+        if intent == "ci_run_evidence":
+            run_id = str(request.context.get("run_id") or "").strip()
+            if not run_id:
+                return SkillResponse.error_response(request.id, "run_id is required")
+            evidence = await self._storage.get_run_evidence(
+                owner_id,
+                run_id,
+                node_id=str(request.context.get("node_id") or "").strip() or None,
+            )
+            return SkillResponse(
+                request_id=request.id,
+                message=f"Loaded {len(evidence)} evidence references.",
+                data={"evidence": evidence},
+            )
+        if intent == "ci_run_coaching":
+            run_id = str(request.context.get("run_id") or "").strip()
+            if not run_id:
+                return SkillResponse.error_response(request.id, "run_id is required")
+            coaching = await self._storage.list_agent_coaching_feedback(
+                owner_id,
+                principal_id=str(request.context.get("principal_id") or "").strip() or None,
+                run_id=run_id,
+                limit=int(request.context.get("limit") or 50),
+            )
+            return SkillResponse(
+                request_id=request.id,
+                message=f"Loaded {len(coaching)} coaching items.",
+                data={"coaching": coaching},
             )
         if intent == "ci_reporting_summary":
             summary = await self._storage.get_reporting_summary(owner_id)

@@ -417,7 +417,7 @@ start_docker_background() {
     echo "[$(ts)] [docker] Building and starting containers..."
     docker compose -f "$COMPOSE_FILE" -p "$PROJECT" up -d --build 2>&1 | tail -5
 
-    # Wait for ALL services to be healthy
+    # Wait for the services required by the selected gate profile.
     echo "[$(ts)] [docker] Waiting for services to become healthy..."
     for i in $(seq 1 90); do
         postgres=$(inspect_service_field "postgres" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
@@ -435,9 +435,16 @@ start_docker_background() {
         skills=$(inspect_service_field "zetherion-ai-skills" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
         api=$(inspect_service_field "zetherion-ai-api" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
         cgs_gateway=$(inspect_service_field "zetherion-ai-cgs-gateway" '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}')
-        bot=$(inspect_service_field "zetherion-ai-bot" '{{.State.Status}}')
+        bot="not_required"
+        bot_ready=true
+        if [ "$RUN_DISCORD_E2E_REQUIRED" = "true" ]; then
+            bot=$(inspect_service_field "zetherion-ai-bot" '{{.State.Status}}')
+            if [ "$bot" != "running" ]; then
+                bot_ready=false
+            fi
+        fi
 
-        if [ "$postgres" = "healthy" ] && [ "$qdrant" = "healthy" ] && [ "$skills" = "healthy" ] && [ "$api" = "healthy" ] && [ "$cgs_gateway" = "healthy" ] && [ "$bot" = "running" ] && [ "$ollama_ready" = "true" ]; then
+        if [ "$postgres" = "healthy" ] && [ "$qdrant" = "healthy" ] && [ "$skills" = "healthy" ] && [ "$api" = "healthy" ] && [ "$cgs_gateway" = "healthy" ] && [ "$bot_ready" = "true" ] && [ "$ollama_ready" = "true" ]; then
             echo "[$(ts)] [docker] All services ready."
             break
         fi

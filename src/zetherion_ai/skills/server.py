@@ -1249,6 +1249,88 @@ class SkillsServer:
             status_store = await self._get_runtime_status_store()
             if status_store is not None:
                 bot_status = await status_store.get_status("discord_bot")
+                dispatcher_status = await status_store.get_status("announcement_dispatcher")
+                if dispatcher_status is not None:
+                    dispatcher_updated_at_raw = dispatcher_status.get("updated_at")
+                    dispatcher_age_seconds: float | None = None
+                    if isinstance(dispatcher_updated_at_raw, str):
+                        try:
+                            dispatcher_updated_at = datetime.fromisoformat(
+                                dispatcher_updated_at_raw
+                            )
+                            if dispatcher_updated_at.tzinfo is None:
+                                dispatcher_updated_at = dispatcher_updated_at.replace(
+                                    tzinfo=UTC
+                                )
+                            dispatcher_age_seconds = (
+                                datetime.now(UTC) - dispatcher_updated_at
+                            ).total_seconds()
+                        except ValueError:
+                            dispatcher_age_seconds = None
+                    dispatcher_status_value = str(
+                        dispatcher_status.get("status") or "unknown"
+                    ).strip() or "unknown"
+                    dispatcher_summary = str(
+                        dispatcher_status.get("summary")
+                        or "Announcement dispatcher runtime status is unavailable."
+                    )
+                    dispatcher_details = dispatcher_status.get("details")
+                    normalized_dispatcher_details = (
+                        dispatcher_details if isinstance(dispatcher_details, dict) else {}
+                    )
+                    dispatcher_revision = str(
+                        dispatcher_status.get("release_revision") or ""
+                    ).strip()
+                    if dispatcher_revision and not revision:
+                        revision = dispatcher_revision
+                        deploy_domain = self._runtime_domain(
+                            key="deploy_state",
+                            label="Deploy State",
+                            status="healthy",
+                            summary=(
+                                "Release revision metadata was recovered from runtime status."
+                            ),
+                            details={
+                                "revision": revision,
+                                "source": "announcement_dispatcher_runtime_status",
+                            },
+                        )
+
+                    announcement_status = "healthy"
+                    announcement_incident_type = None
+                    if dispatcher_status_value in {"blocked", "failed"}:
+                        announcement_status = "blocked"
+                        announcement_incident_type = "service_evidence_incomplete"
+                    elif dispatcher_status_value in {"starting", "stopped", "unknown"}:
+                        announcement_status = "degraded"
+                        announcement_incident_type = "service_evidence_incomplete"
+                    if (
+                        dispatcher_age_seconds is not None
+                        and dispatcher_age_seconds > 180
+                        and announcement_status == "healthy"
+                    ):
+                        announcement_status = "degraded"
+                        dispatcher_summary = (
+                            "Announcement dispatcher heartbeat is stale."
+                        )
+                        announcement_incident_type = "service_evidence_incomplete"
+
+                    announcement_domain = self._runtime_domain(
+                        key="announcement_dispatcher",
+                        label="Announcement Dispatcher",
+                        status=announcement_status,
+                        summary=dispatcher_summary,
+                        details={
+                            "service_status": dispatcher_status_value,
+                            "updated_at": dispatcher_status.get("updated_at"),
+                            "status_age_seconds": dispatcher_age_seconds,
+                            "release_revision": dispatcher_status.get(
+                                "release_revision"
+                            ),
+                            "details": normalized_dispatcher_details,
+                        },
+                        incident_type=announcement_incident_type,
+                    )
                 if bot_status is not None:
                     updated_at_raw = bot_status.get("updated_at")
                     status_age_seconds: float | None = None
@@ -1266,6 +1348,19 @@ class SkillsServer:
                     bot_summary = str(
                         bot_status.get("summary") or "Discord bot status is unavailable."
                     )
+                    bot_revision = str(bot_status.get("release_revision") or "").strip()
+                    if bot_revision and not revision:
+                        revision = bot_revision
+                        deploy_domain = self._runtime_domain(
+                            key="deploy_state",
+                            label="Deploy State",
+                            status="healthy",
+                            summary="Release revision metadata was recovered from runtime status.",
+                            details={
+                                "revision": revision,
+                                "source": "discord_bot_runtime_status",
+                            },
+                        )
                     bot_domain_status = "healthy"
                     bot_incident_type = None
                     if bot_status_value not in {"healthy", "starting"}:
@@ -5105,6 +5200,10 @@ class SkillsServer:
             raw_debug_bundle = payload.get("debug_bundle")
             raw_cleanup_receipt = payload.get("cleanup_receipt")
             raw_container_receipts = payload.get("container_receipts")
+            raw_steps = payload.get("steps")
+            raw_artifacts = payload.get("artifacts")
+            raw_evidence_references = payload.get("evidence_references")
+            raw_correlation_context = payload.get("correlation_context")
             if raw_events is not None and not isinstance(raw_events, list):
                 raise ValueError("events must be an array when provided")
             if raw_log_chunks is not None and not isinstance(raw_log_chunks, list):
@@ -5115,6 +5214,20 @@ class SkillsServer:
                 raise ValueError("debug_bundle must be an object when provided")
             if raw_cleanup_receipt is not None and not isinstance(raw_cleanup_receipt, dict):
                 raise ValueError("cleanup_receipt must be an object when provided")
+            if raw_steps is not None and not isinstance(raw_steps, list):
+                raise ValueError("steps must be an array when provided")
+            if raw_artifacts is not None and not isinstance(raw_artifacts, list):
+                raise ValueError("artifacts must be an array when provided")
+            if (
+                raw_evidence_references is not None
+                and not isinstance(raw_evidence_references, list)
+            ):
+                raise ValueError("evidence_references must be an array when provided")
+            if (
+                raw_correlation_context is not None
+                and not isinstance(raw_correlation_context, dict)
+            ):
+                raise ValueError("correlation_context must be an object when provided")
             submit_outcome = await self._owner_ci_storage.submit_worker_job_result(
                 scope_id=scope_id,
                 node_id=node_id,
@@ -5151,6 +5264,26 @@ class SkillsServer:
                         **(
                             {"container_receipts": raw_container_receipts}
                             if isinstance(raw_container_receipts, list) and raw_container_receipts
+                            else {}
+                        ),
+                        **(
+                            {"steps": raw_steps}
+                            if isinstance(raw_steps, list) and raw_steps
+                            else {}
+                        ),
+                        **(
+                            {"artifacts": raw_artifacts}
+                            if isinstance(raw_artifacts, list) and raw_artifacts
+                            else {}
+                        ),
+                        **(
+                            {"evidence_references": raw_evidence_references}
+                            if isinstance(raw_evidence_references, list) and raw_evidence_references
+                            else {}
+                        ),
+                        **(
+                            {"correlation_context": raw_correlation_context}
+                            if isinstance(raw_correlation_context, dict) and raw_correlation_context
                             else {}
                         ),
                     },

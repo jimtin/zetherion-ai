@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from zetherion_ai.announcements.storage import (
     AnnouncementDelivery,
@@ -14,6 +14,9 @@ from zetherion_ai.announcements.storage import (
     AnnouncementRepository,
 )
 from zetherion_ai.logging import exception_fields, get_logger
+
+if TYPE_CHECKING:
+    from zetherion_ai.runtime.status_store import RuntimeStatusStore
 
 log = get_logger("zetherion_ai.announcements.dispatcher")
 
@@ -105,6 +108,9 @@ class AnnouncementDispatcher:
         poll_interval_seconds: int = 15,
         batch_size: int = 25,
         max_retry_delay_seconds: int = 3600,
+        runtime_status_store: RuntimeStatusStore | None = None,
+        runtime_instance_id: str | None = None,
+        release_revision: str | None = None,
     ) -> None:
         self._repository: AnnouncementRepository = repository
         if isinstance(adapter, AnnouncementChannelRegistry):
@@ -117,15 +123,48 @@ class AnnouncementDispatcher:
         self._max_retry_delay_seconds: int = max(30, int(max_retry_delay_seconds))
         self._running = False
         self._task: asyncio.Task[None] | None = None
+        self._runtime_status_store = runtime_status_store
+        self._runtime_instance_id = runtime_instance_id
+        self._release_revision = release_revision
 
     @property
     def is_running(self) -> bool:
         return self._running
 
+    async def _publish_runtime_status(
+        self,
+        *,
+        status: str,
+        summary: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        store = self._runtime_status_store
+        if store is None:
+            return
+        await store.upsert_status(
+            service_name="announcement_dispatcher",
+            status=status,
+            summary=summary,
+            details={
+                "running": self._running,
+                **dict(details or {}),
+            },
+            release_revision=self._release_revision,
+            instance_id=self._runtime_instance_id,
+        )
+
     async def start(self) -> None:
         if self._running:
             return
         self._running = True
+        await self._publish_runtime_status(
+            status="healthy",
+            summary="Announcement dispatcher is running.",
+            details={
+                "poll_interval_seconds": self._poll_interval_seconds,
+                "batch_size": self._batch_size,
+            },
+        )
         self._task = asyncio.create_task(
             self._run_loop(),
             name="announcement-dispatcher",
@@ -144,6 +183,10 @@ class AnnouncementDispatcher:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         self._task = None
+        await self._publish_runtime_status(
+            status="stopped",
+            summary="Announcement dispatcher is stopped.",
+        )
         log.info("announcement_dispatcher_stopped")
 
     async def run_once(self) -> int:
@@ -159,11 +202,29 @@ class AnnouncementDispatcher:
         while self._running:
             try:
                 processed = await self.run_once()
+                await self._publish_runtime_status(
+                    status="healthy",
+                    summary="Announcement dispatcher is running.",
+                    details={
+                        "last_processed_count": processed,
+                        "poll_interval_seconds": self._poll_interval_seconds,
+                        "batch_size": self._batch_size,
+                    },
+                )
                 if processed <= 0:
                     await asyncio.sleep(self._poll_interval_seconds)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                await self._publish_runtime_status(
+                    status="degraded",
+                    summary="Announcement dispatcher hit an error and is retrying.",
+                    details={
+                        "error": exception_fields(exc),
+                        "poll_interval_seconds": self._poll_interval_seconds,
+                        "batch_size": self._batch_size,
+                    },
+                )
                 log.exception(
                     "announcement_dispatch_cycle_failed",
                     **exception_fields(exc),
